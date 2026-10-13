@@ -26,23 +26,57 @@ dependencies. Keep pure transformations as ordinary TypeScript functions.
 The Bun platform adapter is pinned alongside Effect. Its API is marked unstable
 in Effect 4, so dependency upgrades must include the CLI checks.
 
-## Planned modules
+## Modules
 
-| Module         | Responsibility                                                   | Dependencies                                                |
-| -------------- | ---------------------------------------------------------------- | ----------------------------------------------------------- |
-| `config.ts`    | Validate settings and provide `AppConfig`                        | Effect Config and Schema                                    |
-| `auth.ts`      | Registration, sign-in, protected credentials, serialized refresh | Configuration, scoped callback listener, credential storage |
-| `model.ts`     | Model discovery, streamed inference, normalized errors           | Authentication, OpenAI client                               |
-| `store.ts`     | SQLite migrations, sessions, messages, runs, facts, jobs         | Configuration, scoped Bun SQLite connection                 |
-| `agent.ts`     | Bounded conversation context and sequential tool loop            | Model, store, memory, tools                                 |
-| `tools.ts`     | Validated tool definitions and execution policies                | Schema, scoped filesystem access                            |
-| `memory.ts`    | Editable profile and explicitly saved facts                      | Store, configuration                                        |
-| `scheduler.ts` | Persisted due occurrences and sequential worker                  | Store, agent, clock, occurrence calculator                  |
-| `cli.ts`       | Typed commands and terminal presentation                         | Application services required by each command               |
+| Module           | Responsibility                                               | Dependencies                                      |
+| ---------------- | ------------------------------------------------------------ | ------------------------------------------------- |
+| `config.ts`      | Validate settings and provide `AppConfig`                    | Effect Config and Schema                          |
+| `connection.ts`  | Credential schemas, redacted tokens, typed connection errors | Effect Schema and Data                            |
+| `credentials.ts` | Atomic credential replacement and exclusive owner lock       | Configuration, scoped filesystem access           |
+| `oauth.ts`       | Discovery, OAuth exchange, JWT validation, revocation        | Fetch, Effect Schema, jose                        |
+| `sign-in.ts`     | One-use loopback callback, PKCE, state, nonce, browser       | Scoped Bun listener and subprocess                |
+| `auth.ts`        | Registration, identity matching, consent, serialized refresh | Configuration, sign-in, OAuth, credential storage |
+| `model.ts`       | Model discovery, streamed inference, normalized errors       | Authentication, OpenAI client                     |
+| `store.ts`       | SQLite migrations, sessions, messages, runs, facts, jobs     | Configuration, scoped Bun SQLite connection       |
+| `agent.ts`       | Bounded conversation context and sequential tool loop        | Model, store, memory, tools                       |
+| `tools.ts`       | Validated tool definitions and execution policies            | Schema, scoped filesystem access                  |
+| `memory.ts`      | Editable profile and explicitly saved facts                  | Store, configuration                              |
+| `scheduler.ts`   | Persisted due occurrences and sequential worker              | Store, agent, clock, occurrence calculator        |
+| `cli.ts`         | Typed commands and terminal presentation                     | Application services required by each command     |
 
 Each live service gets a layer at the application boundary. Tests replace model,
 authentication, and clock behavior without contacting an account. SQLite and
 filesystem tests use temporary directories.
+
+Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
+modules are implemented. `runtime.ts` composes the auth and model layers only for
+auth commands. SQLite storage, the agent loop, tools, memory, and scheduling are
+planned.
+
+## Current authentication flow
+
+`CredentialStoreLive` owns the filesystem lock for an auth command's scope.
+`BrowserSignIn` owns an ephemeral listener at `127.0.0.1` and releases it on
+success, failure, timeout, or interruption. Shutdown drains the current response
+so the browser receives the callback page. The callback consumes one attempt
+and validates state before handling errors or using the code.
+
+`OAuthClient` discovers endpoints from the fixed OpenAI issuer, validates their
+origin, exchanges codes, and verifies RS256 identity tokens against JWKS. The
+issued client ID is retained before exchange so a failed code can be replaced
+without registering again. Verified identity must match the saved account before
+credentials are replaced. An Effect semaphore serializes refresh and credential
+mutations within the command; the filesystem lock excludes other commands.
+
+`ChatGPTModel` discovers visible account models and uses the OpenAI SDK with the
+OAuth bearer token. Verification streams two requests with `store: false`, carries
+complete tool and reasoning history into the second request, and records success
+only after `response.completed` and a matching local tool result. It retains
+`response.output_item.done` items by output index, since the final event can omit
+the output array's contents. Those completed items take precedence over terminal
+snapshots when rebuilding history. It does not
+automatically retry model requests. The future chat runner will reuse this auth
+boundary and extend inference beyond verification.
 
 ## Data and execution rules
 
@@ -72,8 +106,10 @@ Oxfmt 0.73.0, Oxlint 1.88.0, and Bun 1.3.14 with matching Bun types. Versions ar
 pinned and the lockfile is checked in. Effect provides Config and Schema, so a separate schema
 library is unnecessary.
 
-Introduce the OpenAI client and sign-in reference dependencies during subscription
-verification. Add an occurrence calculator only when persisted schedules need it.
+Subscription verification adds OpenAI 7.32.0 for Responses streaming and jose
+6.2.12 for JWT/JWKS validation. The official sign-in devkit was not available as
+an installable package when this flow was added, so OAuth follows the documented
+public-client protocol directly. Add an occurrence calculator only when persisted schedules need it.
 Assess Effect's cron support then; timezone and downtime behavior must pass the
 same tests whichever calculator is chosen.
 

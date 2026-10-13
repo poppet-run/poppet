@@ -1,6 +1,6 @@
 # Poppet implementation plan
 
-Status: Foundation started
+Status: Foundation and live subscription verification complete; durable storage next
 
 Updated: 2026-10-13
 
@@ -14,26 +14,29 @@ route against the user's account before building the agent around it.
 
 ## Dependency order
 
-| Dependency                              | Purpose                                                                                | Introduce                 |
-| --------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------- |
-| Bun, TypeScript, Bun types              | Runtime, strict type checking, SQLite, tests                                           | Foundation                |
-| Effect and its Bun platform adapter     | Configuration, schemas, services, cancellation, resource scopes, retries               | Foundation                |
-| Oxfmt and Oxlint                        | Formatting and lint checks                                                             | Foundation                |
-| OpenAI client                           | Streamed Responses API access                                                          | Subscription verification |
-| Official sign-in reference dependencies | OAuth flow and identity validation; assess packaging first                             | Subscription verification |
-| Occurrence calculator                   | Timezone-aware recurring occurrences; assess Effect Cron before adding another package | Scheduled tasks           |
+| Dependency                          | Purpose                                                                                | Introduce                 |
+| ----------------------------------- | -------------------------------------------------------------------------------------- | ------------------------- |
+| Bun, TypeScript, Bun types          | Runtime, strict type checking, SQLite, tests                                           | Foundation                |
+| Effect and its Bun platform adapter | Configuration, schemas, services, cancellation, resource scopes, retries               | Foundation                |
+| Oxfmt and Oxlint                    | Formatting and lint checks                                                             | Foundation                |
+| OpenAI client                       | Streamed Responses API access                                                          | Subscription verification |
+| jose                                | JWT/JWKS identity validation for the documented OAuth flow                             | Subscription verification |
+| Occurrence calculator               | Timezone-aware recurring occurrences; assess Effect Cron before adding another package | Scheduled tasks           |
 
 Pin dependencies as they are introduced. See [architecture.md](architecture.md)
 for Effect service boundaries and execution rules.
 
 ## Phase 1: Foundation and subscription verification
 
-The foundation now includes project scripts, strict TypeScript, an Effect-based
-CLI, configuration validation, behavior tests, and continuous integration.
+The foundation includes project scripts, strict TypeScript, an Effect-based CLI,
+configuration validation, behavior tests, and continuous integration. The auth
+flow is now implemented with Effect services and layers in `connection.ts`,
+`credentials.ts`, `oauth.ts`, `sign-in.ts`, `auth.ts`, and `model.ts`.
 
-Next, add `auth.ts` and `model.ts` with Effect services and layers. Generate and
-persist a host identifier. Start a scoped loopback callback listener and open the
-system browser. Use authorization code flow with PKCE, state, and nonce.
+Implemented behavior generates and persists a host identifier, starts a scoped
+loopback callback listener, and opens the system browser. Authorization uses
+code flow with PKCE, state, and nonce. Credentials are validated and protected,
+refresh is serialized, and sign-out attempts revocation before clearing tokens.
 
 The user signs in, selects a workspace, and authorizes ChatGPT plan usage. Exchange
 the authorization code, validate the returned identity and granted permissions,
@@ -41,11 +44,24 @@ and save the issued client ID for subsequent sign-ins. Follow the supported
 registration and token-exchange flow without reading another application's tokens.
 [Registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
 
-Discover an available model, complete a streamed response, and exercise one local
-function-tool round trip. Classify reconnect, usage-limit, transient service,
-unsupported request, cancellation, and context-limit failures from this phase.
-Avoid automatic retries after a partially consumed response until their semantics
-are verified.
+`auth models` discovers visible account models. `auth verify [model]` completes
+two streamed Responses requests and a local namespaced function-tool round trip,
+then records the verified model and time. The implementation classifies reconnect,
+usage-limit, transient service, unsupported request, interrupted stream, and
+context-limit failures. It does not automatically retry model requests.
+
+Local-provider tests cover registration reuse, PKCE, JWT signature/audience/nonce
+and expiry, denied consent, refresh rotation, storage permissions, competing
+owners, revocation failure, callback cleanup, and incomplete model streams. They
+do not establish live account access.
+
+Live subscription verification passed on 2026-10-13 with `gpt-6.1-sol`, completing
+inference and a local tool round trip using Poppet's signed-in account. The
+subscription stream supplied output through `response.output_item.done` while
+the final `response.completed` output array was empty; inference now retains
+completed items in output order. A regression test covers this response shape.
+Live token renewal remains a follow-up in phase 2. Verification requests use
+subscription quota.
 
 Completion check: the account completes inference and a tool round trip through
 the documented subscription route. Denied permission or unsupported access leaves
@@ -61,6 +77,11 @@ credentials. Reuse the saved host identifier and registration. Add sign-in,
 connection-status, and sign-out commands. Sign-out attempts session revocation and
 clears local tokens even when revocation fails, while reporting the failure.
 [Accounts and sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions)
+
+The credential storage, refresh, auth commands, and exclusive auth-command lock
+are already implemented alongside phase 1. Authentication currently stores one
+account. A process crash can leave a lock requiring manual removal after checking
+that no auth command is running; automatic stale-lock recovery is deferred.
 
 Build a scoped `Store` layer using Bun SQLite. Add migrations for `sessions`,
 `messages`, and `runs`. Persist structured messages, status, timestamps, results,
