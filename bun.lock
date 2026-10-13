@@ -29,6 +29,13 @@
         "effect": "4.0.4",
       },
     },
+    "packages/provider": {
+      "name": "@poppet/provider",
+      "version": "0.0.0",
+      "dependencies": {
+        "effect": "4.0.4",
+      },
+    },
     "packages/provider-openai": {
       "name": "@poppet/provider-openai",
       "version": "0.0.0",
@@ -126,6 +133,8 @@
     "@poppet/cli": ["@poppet/cli@workspace:apps/cli"],
 
     "@poppet/config": ["@poppet/config@workspace:packages/config"],
+
+    "@poppet/provider": ["@poppet/provider@workspace:packages/provider"],
 
     "@poppet/provider-openai": ["@poppet/provider-openai@workspace:packages/provider-openai"],
 
