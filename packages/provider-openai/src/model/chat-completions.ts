@@ -21,6 +21,21 @@ import type {
 import { inferenceFailure } from "#src/model/errors";
 import { modelStream } from "#src/model/scoped-stream";
 
+// Preserve each reasoning delta, including provider metadata, in its original order.
+const ReasoningDetail = Schema.StructWithRest(
+  Schema.Struct({
+    type: Schema.Literals(["reasoning.text", "reasoning.summary", "reasoning.encrypted"]),
+    index: Schema.optionalKey(Schema.Natural),
+    id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    format: Schema.optionalKey(Schema.String),
+    text: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    summary: Schema.optionalKey(Schema.String),
+    data: Schema.optionalKey(Schema.String),
+    signature: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  }),
+  [Schema.Record(Schema.String, Schema.Json)],
+);
+
 const Chunk = Schema.Struct({
   choices: Schema.Array(
     Schema.Struct({
@@ -30,6 +45,8 @@ const Chunk = Schema.Struct({
         role: Schema.optionalKey(Schema.Literal("assistant")),
         content: Schema.optionalKey(Schema.NullOr(Schema.String)),
         reasoning_content: Schema.optionalKey(Schema.NullOr(Schema.String)),
+        reasoning: Schema.optionalKey(Schema.NullOr(Schema.String)),
+        reasoning_details: Schema.optionalKey(Schema.NullOr(Schema.Array(ReasoningDetail))),
         tool_calls: Schema.optionalKey(
           Schema.Array(
             Schema.Struct({
@@ -60,8 +77,21 @@ const Continuation = Schema.Struct({
   reasoningContent: Schema.NullOr(Schema.String),
 });
 
+const OpenRouterContinuation = Schema.Struct({
+  protocol: Schema.Literal("chat-completions"),
+  reasoningContent: Schema.NullOr(Schema.String),
+  reasoningDetails: Schema.Array(ReasoningDetail),
+});
+
 interface ReasoningMessage extends ChatCompletionAssistantMessageParam {
   reasoning_content?: string;
+  reasoning?: string;
+  reasoning_details?: ReadonlyArray<typeof ReasoningDetail.Type>;
+}
+
+interface ChatParameters extends ChatCompletionCreateParamsStreaming {
+  provider?: { require_parameters: true; allow_fallbacks: false };
+  session_id?: string;
 }
 
 const wireName = (tool: Tool) =>
@@ -84,7 +114,10 @@ const toolNames = (description: ModelDescription, request: ModelRequest) => {
   return names;
 };
 
-const chatMessages = (request: ModelRequest): ChatCompletionMessageParam[] => {
+const chatMessages = (
+  description: ModelDescription,
+  request: ModelRequest,
+): ChatCompletionMessageParam[] => {
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: request.instructions },
   ];
@@ -94,13 +127,6 @@ const chatMessages = (request: ModelRequest): ChatCompletionMessageParam[] => {
     else if (message.role === "tool")
       messages.push({ role: "tool", tool_call_id: message.callId, content: message.output });
     else {
-      const saved =
-        message.continuation === null
-          ? null
-          : Schema.decodeUnknownSync(Continuation, { onExcessProperty: "error" })(
-              message.continuation.data,
-            );
-
       const toolCalls = message.output.flatMap((part) =>
         part.type === "tool-call"
           ? [
@@ -124,8 +150,24 @@ const chatMessages = (request: ModelRequest): ChatCompletionMessageParam[] => {
         tool_calls: toolCalls,
       };
 
-      if (saved?.reasoningContent !== null && saved?.reasoningContent !== undefined)
-        assistant.reasoning_content = saved.reasoningContent;
+      if (message.continuation !== null) {
+        if (description.provider === "openrouter") {
+          const saved = Schema.decodeUnknownSync(OpenRouterContinuation, {
+            onExcessProperty: "error",
+          })(message.continuation.data);
+
+          if (saved.reasoningDetails.length > 0)
+            assistant.reasoning_details = saved.reasoningDetails;
+          else if (saved.reasoningContent !== null) assistant.reasoning = saved.reasoningContent;
+        } else {
+          const saved = Schema.decodeUnknownSync(Continuation, { onExcessProperty: "error" })(
+            message.continuation.data,
+          );
+
+          if (saved.reasoningContent !== null) assistant.reasoning_content = saved.reasoningContent;
+        }
+      }
+
       messages.push(assistant);
     }
   }
@@ -136,6 +178,7 @@ const chatMessages = (request: ModelRequest): ChatCompletionMessageParam[] => {
 export const chatCompletionsModel = (
   description: ModelDescription,
   client: Effect.Effect<OpenAI, ProviderError>,
+  outputTokenParameter: "max_tokens" | "max_completion_tokens" = "max_tokens",
 ): ModelOperations => ({
   description,
   stream: (request) =>
@@ -150,36 +193,47 @@ export const chatCompletionsModel = (
         });
 
         const messages = yield* Effect.try({
-          try: () => chatMessages(decoded),
+          try: () => chatMessages(description, decoded),
           catch: () =>
             invalidRequest(description.provider, "The Chat Completions continuation is invalid."),
         });
 
         const sdk = yield* client;
 
-        const parameters: ChatCompletionCreateParamsStreaming = {
+        const parameters: ChatParameters = {
           model: description.id,
           messages,
           stream: true,
           stream_options: { include_usage: true },
-          tools: [...names.entries()].map(([name, tool]) => ({
+        };
+
+        if (description.provider !== "openrouter" || names.size > 0) {
+          parameters.tools = [...names.entries()].map(([name, tool]) => ({
             type: "function",
             function: { name, description: tool.description, parameters: { ...tool.parameters } },
-          })),
-          tool_choice: decoded.settings.toolChoice ?? "auto",
-        };
+          }));
+          parameters.tool_choice = decoded.settings.toolChoice ?? "auto";
+        }
+
+        if (description.provider === "openrouter") {
+          parameters.provider = { require_parameters: true, allow_fallbacks: false };
+          parameters.session_id = decoded.sessionId;
+        }
 
         if (decoded.settings.temperature !== undefined)
           parameters.temperature = decoded.settings.temperature;
 
         if (decoded.settings.maxOutputTokens !== undefined)
-          parameters.max_tokens = decoded.settings.maxOutputTokens;
+          parameters[outputTokenParameter] = decoded.settings.maxOutputTokens;
 
         const stream = yield* Effect.tryPromise({
           try: () =>
             sdk.chat.completions.create(parameters, {
               signal,
-              headers: { "x-opencode-session": decoded.sessionId },
+              headers:
+                description.provider === "opencode-go"
+                  ? { "x-opencode-session": decoded.sessionId }
+                  : undefined,
             }),
           catch: (cause) => inferenceFailure(description.provider, cause),
         });
@@ -187,6 +241,7 @@ export const chatCompletionsModel = (
         const events = async function* (): AsyncGenerator<ModelEvent> {
           let text = "";
           let reasoning = "";
+          const reasoningDetails: Array<typeof ReasoningDetail.Type> = [];
           let finish: string | null = null;
           let usage: Completion["usage"] = null;
           const calls = new Map<number, { id: string; name: string; arguments: string }>();
@@ -216,7 +271,8 @@ export const chatCompletionsModel = (
                 yield { type: "text-delta", text: choice.delta.content };
               }
 
-              if (choice.delta.reasoning_content) reasoning += choice.delta.reasoning_content;
+              reasoning += choice.delta.reasoning ?? choice.delta.reasoning_content ?? "";
+              reasoningDetails.push(...(choice.delta.reasoning_details ?? []));
 
               for (const part of choice.delta.tool_calls ?? []) {
                 let call = calls.get(part.index);
@@ -270,16 +326,21 @@ export const chatCompletionsModel = (
               });
             }
 
+            const continuation = {
+              protocol: "chat-completions",
+              reasoningContent: reasoning.length === 0 ? null : reasoning,
+            };
+
             const response = Schema.decodeUnknownSync(Completion)({
               output,
               continuation: {
                 version: 1,
                 provider: description.provider,
                 model: description.id,
-                data: {
-                  protocol: "chat-completions",
-                  reasoningContent: reasoning.length === 0 ? null : reasoning,
-                },
+                data:
+                  description.provider === "openrouter"
+                    ? { ...continuation, reasoningDetails }
+                    : continuation,
               },
               finishReason: calls.size > 0 ? "tool-calls" : "stop",
               usage,

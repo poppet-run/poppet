@@ -9,6 +9,7 @@ import {
   OAuthClientLive,
 } from "@poppet/provider-openai";
 import { OpenCodeGoLive } from "@poppet/provider-opencode";
+import { OpenRouterLive } from "@poppet/provider-openrouter";
 import { Effect, Layer } from "effect";
 
 // Build independent services first, then supply them to the layers that need them.
@@ -28,7 +29,17 @@ export const selectProviderLayer = (
   provider: ProviderId,
   chatGPT = chatGPTProvider,
   openCode = OpenCodeGoLive,
-) => (provider === "openai-chatgpt" ? chatGPT : openCode);
+  openRouter = OpenRouterLive,
+) => {
+  switch (provider) {
+    case "openai-chatgpt":
+      return chatGPT;
+    case "opencode-go":
+      return openCode;
+    case "openrouter":
+      return openRouter;
+  }
+};
 
 export const ProviderRuntime = Layer.unwrap(
   Effect.gen(function* () {

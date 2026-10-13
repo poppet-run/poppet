@@ -4,6 +4,7 @@ A small personal AI agent for local use, built with TypeScript, Bun, and Effect.
 
 The project has a CLI, validated configuration, ChatGPT sign-in, and a shared
 streaming model interface. OpenCode Go supports a small set of coding models.
+OpenRouter supports concrete text models from its public catalog.
 Conversation storage, notes tools, memory, and scheduled tasks
 follow in the [implementation plan](docs/implementation-plan.md).
 
@@ -19,7 +20,7 @@ bun run check
 ```
 
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
-`@poppet/provider`, `@poppet/provider-openai`, and `@poppet/provider-opencode`.
+`@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`, and `@poppet/provider-openrouter`.
 Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
 
@@ -48,7 +49,7 @@ excluded from linting and formatting.
 | `POPPET_APP_NAME`  | `Poppet`                 | Application name used for initial ChatGPT registration      |
 | `POPPET_DATA_DIR`  | `~/.config/poppet`       | Credential storage and future database                      |
 | `POPPET_NOTES_DIR` | `<data directory>/notes` | Future notes tools' permitted directory                     |
-| `POPPET_PROVIDER`  | `openai-chatgpt`         | `openai-chatgpt` or `opencode-go`                           |
+| `POPPET_PROVIDER`  | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`            |
 | `POPPET_MODEL`     | Unset                    | Explicit model ID for provider verification and future runs |
 
 Paths become absolute relative to the current working directory. Explicit values
@@ -156,11 +157,38 @@ workload and rejects general assistant, notes, and scheduled-summary requests
 before reading its key or making inference requests.
 [OpenCode Go requirements and endpoints](https://opencode.ai/v2/docs/console/go/)
 
-Local tests cover both providers' text and tool exchanges, reasoning
+For OpenRouter, discovery uses its public catalog without an API key. Select a
+concrete model ID, then set `POPPET_OPENROUTER_API_KEY` for inference:
+
+```fish
+set -lx POPPET_PROVIDER openrouter
+bun run start provider models
+set -lx POPPET_MODEL anthropic/claude-sonnet-4.5
+set -lx POPPET_OPENROUTER_API_KEY '<your OpenRouter API key>'
+bun run start provider verify
+```
+
+Verification requires a catalog model with tool support and makes two requests
+that consume OpenRouter credits. The key is redacted and omitted from `config`.
+The adapter accepts both assistant and coding workloads through Chat Completions.
+It derives tools, temperature, output limits, and context size from catalog
+metadata. Models that generate images or audio and dynamic model routers such as
+`openrouter/auto` and `openrouter/free` are excluded.
+
+Requests require support for every requested parameter and disable provider
+fallbacks. A stable `session_id` groups the exchange. Plain reasoning and the
+complete structured reasoning sequence survive tool calls. Credit exhaustion,
+rate limits, upstream failures, and interrupted streams produce typed errors;
+requests are not automatically retried.
+[OpenRouter routing](https://openrouter.ai/docs/guides/routing/provider-selection),
+[reasoning continuation](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens),
+and [stream errors](https://openrouter.ai/docs/api/reference/streaming).
+
+Local tests cover all providers' text and tool exchanges, reasoning
 continuation, output ordering, malformed and incomplete streams, cancellation,
 deadlines, error classification, and provider selection. These tests do not prove
 live account access. The earlier phase 1 live ChatGPT check remains separate
-evidence; Go inference has not been verified against a live account.
+evidence; Go and OpenRouter inference have not been verified against live accounts.
 
 ## Source layout
 
@@ -189,6 +217,8 @@ packages/
       test/fixtures/      Local OAuth and model servers for behavior tests
   provider-opencode/      @poppet/provider-opencode
     src/service.ts        Go catalog, secret configuration, and protocol routing
+  provider-openrouter/    @poppet/provider-openrouter
+    src/service.ts        OpenRouter catalog, capabilities, and secret configuration
 docs/
   architecture.md  Service boundaries and Effect conventions
   implementation-plan.md

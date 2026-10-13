@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-export const ProviderId = Schema.Literals(["openai-chatgpt", "opencode-go"]);
+export const ProviderId = Schema.Literals(["openai-chatgpt", "opencode-go", "openrouter"]);
 
 export const Protocol = Schema.Literals(["responses", "chat-completions"]);
 

@@ -21,6 +21,7 @@
         "@poppet/provider": "workspace:*",
         "@poppet/provider-openai": "workspace:*",
         "@poppet/provider-opencode": "workspace:*",
+        "@poppet/provider-openrouter": "workspace:*",
         "effect": "4.0.4",
       },
     },
@@ -52,6 +53,16 @@
     },
     "packages/provider-opencode": {
       "name": "@poppet/provider-opencode",
+      "version": "0.0.0",
+      "dependencies": {
+        "@poppet/provider": "workspace:*",
+        "@poppet/provider-openai": "workspace:*",
+        "effect": "4.0.4",
+        "openai": "7.32.0",
+      },
+    },
+    "packages/provider-openrouter": {
+      "name": "@poppet/provider-openrouter",
       "version": "0.0.0",
       "dependencies": {
         "@poppet/provider": "workspace:*",
@@ -153,6 +164,8 @@
     "@poppet/provider-openai": ["@poppet/provider-openai@workspace:packages/provider-openai"],
 
     "@poppet/provider-opencode": ["@poppet/provider-opencode@workspace:packages/provider-opencode"],
+
+    "@poppet/provider-openrouter": ["@poppet/provider-openrouter@workspace:packages/provider-openrouter"],
 
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 

@@ -77,7 +77,7 @@ a clear connection state. Foundation work alone does not complete this phase.
 
 Depends on phase 1.
 
-Implemented with an initial supported Go model set. See the
+Implemented with an initial supported Go model set and an OpenRouter adapter. See the
 [provider interface](architecture.md#provider-interface) for the service contract
 and adapter requirements.
 
@@ -89,7 +89,7 @@ and adapter requirements.
   verification now uses the shared tool-exchange workflow. Streamed completed
   items retain their output order when terminal output is omitted. Encrypted
   reasoning is requested and retained for subsequent turns.
-- `POPPET_PROVIDER` defaults to `openai-chatgpt`; `opencode-go` is also supported.
+- `POPPET_PROVIDER` defaults to `openai-chatgpt`; `opencode-go` and `openrouter` are also supported.
   `openai-api` remains reserved and is rejected. `POPPET_MODEL` has no default.
   `provider verify` requires it before opening credentials. Help, configuration,
   and auth commands work before selection. Only the selected provider's live
@@ -100,6 +100,12 @@ and adapter requirements.
   user agent and stable `x-opencode-session`. Other model/protocol combinations
   remain deferred until tested.
   [OpenCode Go endpoints and requirements](https://opencode.ai/v2/docs/console/go/)
+- `@poppet/provider-openrouter` discovers concrete text models from the public
+  catalog and derives their supported settings. Inference uses a redacted
+  `POPPET_OPENROUTER_API_KEY` through Chat Completions for both workload types.
+  Requests require parameter support, disable provider fallbacks, and preserve
+  session identity and the full reasoning sequence across tool exchanges.
+  Dynamic routers and models that produce images or audio are excluded.
 
 Go documents coding-agent workloads. General notes and scheduled-assistant work
 is not established as supported, so the Go adapter rejects `assistant` requests
@@ -120,12 +126,12 @@ validate continuation version, protocol, provider, and model before sending it.
 Phase 3 will store these messages, continuation, and run selection durably.
 
 Local completion checks cover the same text and tool exchange through ChatGPT
-Responses, Go Responses, and Go Chat Completions, including output ordering,
+Responses, Go Responses, Go Chat Completions, and OpenRouter Chat Completions, including output ordering,
 missing terminal output, malformed arguments, incomplete streams, cancellation,
 deadlines, safe error classification, unsupported settings, and selected layer
-composition. Fake `Model` tests require neither account. The public Go catalog was
-checked on 2026-10-13; live Go inference and a fresh live ChatGPT check through the
-new contract remain separate checks. No agent loop or conversation database is
+composition. Fake `Model` tests require no account. The public Go and OpenRouter
+catalogs were checked on 2026-10-13; live Go and OpenRouter inference and a fresh
+live ChatGPT check through the new contract remain separate checks. No agent loop or conversation database is
 implemented in this phase.
 
 ## Phase 3: Durable credentials and storage

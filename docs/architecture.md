@@ -28,18 +28,20 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Workspaces
 
-The Bun monorepo has five private workspaces:
+The Bun monorepo has six private workspaces:
 
-| Workspace                   | Responsibility                                                              | Workspace dependencies                      |
-| --------------------------- | --------------------------------------------------------------------------- | ------------------------------------------- |
-| `@poppet/cli`               | Process startup, commands, terminal output, live layer composition          | Config, OpenAI provider                     |
-| `@poppet/config`            | Validated settings and the `AppConfig` service                              | Provider contract                           |
-| `@poppet/provider`          | Normalized messages, stream events, continuation, provider/model services   | None                                        |
-| `@poppet/provider-opencode` | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, OpenAI protocol adapters |
-| `@poppet/provider-openai`   | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Config                                      |
+| Workspace                     | Responsibility                                                              | Workspace dependencies                      |
+| ----------------------------- | --------------------------------------------------------------------------- | ------------------------------------------- |
+| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config and provider layers                  |
+| `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                           |
+| `@poppet/provider`            | Normalized messages, stream events, continuation, provider/model services   | None                                        |
+| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, OpenAI protocol adapters |
+| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration            | Provider contract, OpenAI protocol adapters |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Config                                      |
 
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
-`packages/provider-openai`, `packages/provider`, and `packages/provider-opencode`.
+`packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
+and `packages/provider-openrouter`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
@@ -61,7 +63,8 @@ package supply the selected model before durable conversation storage.
 The implemented modules below live under `packages/provider-openai/src`, except
 configuration in `packages/config/src` and CLI files in `apps/cli/src`.
 Shared provider types live in `packages/provider/src`, and Go routing lives in
-`packages/provider-opencode/src`. Storage,
+`packages/provider-opencode/src`. OpenRouter discovery and composition live in
+`packages/provider-openrouter/src`. Storage,
 agent, tools, memory, and scheduler modules are planned.
 
 | Module                | Responsibility                                                              | Dependencies                                      |
@@ -106,12 +109,20 @@ its schema can preserve normalized messages and provider continuation data.
 The future agent will depend on one selected `Model` service supplied by the CLI
 runtime. `provider models` and `provider verify` exercise this boundary now.
 
-| Workspace                   | Responsibility                                                                  |
-| --------------------------- | ------------------------------------------------------------------------------- |
-| `@poppet/provider`          | Shared messages, tools, model descriptions, stream events, and inference errors |
-| `@poppet/provider-openai`   | ChatGPT authentication, OpenAI request translation, streams, and continuation   |
-| `@poppet/provider-opencode` | OpenCode Go credentials, discovery, per-model protocol selection, and streams   |
-| `@poppet/cli`               | Provider/model configuration and composition of the selected live layer         |
+| Workspace                     | Responsibility                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------- |
+| `@poppet/provider`            | Shared messages, tools, model descriptions, stream events, and inference errors |
+| `@poppet/provider-openai`     | ChatGPT authentication, OpenAI request translation, streams, and continuation   |
+| `@poppet/provider-opencode`   | OpenCode Go credentials, discovery, per-model protocol selection, and streams   |
+| `@poppet/provider-openrouter` | OpenRouter credentials, catalog capabilities, and Chat Completions binding      |
+| `@poppet/cli`                 | Provider/model configuration and composition of the selected live layer         |
+
+OpenRouter reuses the Chat Completions adapter exported by the OpenAI workspace.
+It discovers concrete text models publicly and reads `POPPET_OPENROUTER_API_KEY`
+only when inference begins. Catalog parameters determine each model's supported
+settings. Requests require parameter support, disable provider fallbacks, and
+send a stable session ID. Continuation preserves structured reasoning deltas in
+arrival order, including signatures and opaque provider metadata.
 
 The agent owns context assembly, tool validation and execution, budgets, and run
 persistence. Provider adapters own authentication, HTTP requests, protocol

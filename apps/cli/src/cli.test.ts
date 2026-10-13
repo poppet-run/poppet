@@ -61,7 +61,7 @@ describe("CLI", () => {
     expect(invalidCommand.stderr).toContain("Unknown command");
   });
 
-  test.each(["openai-chatgpt", "opencode-go"])(
+  test.each(["openai-chatgpt", "opencode-go", "openrouter"])(
     "%s configuration hides secrets and requires a model before opening credentials",
     async (provider) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-provider-cli-"));
@@ -71,6 +71,7 @@ describe("CLI", () => {
           POPPET_DATA_DIR: directory,
           POPPET_PROVIDER: provider,
           POPPET_OPENCODE_GO_API_KEY: "test-secret",
+          POPPET_OPENROUTER_API_KEY: "test-secret",
         };
 
         const settings = await invoke(["config"], environment);

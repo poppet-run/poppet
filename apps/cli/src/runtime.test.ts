@@ -46,7 +46,7 @@ const fakeModel = (provider: ProviderId, id: string): ModelOperations => ({
 });
 
 describe("configured model runtime", () => {
-  test.each(["openai-chatgpt", "opencode-go"] as const)(
+  test.each(["openai-chatgpt", "opencode-go", "openrouter"] as const)(
     "builds only %s and resolves the explicit model",
     async (selected) => {
       const built: ProviderId[] = [];
@@ -75,7 +75,12 @@ describe("configured model runtime", () => {
         Layer.provide(
           Layer.mergeAll(
             Layer.succeed(AppConfig, { ...config, provider: selected }),
-            selectProviderLayer(selected, layer("openai-chatgpt"), layer("opencode-go")),
+            selectProviderLayer(
+              selected,
+              layer("openai-chatgpt"),
+              layer("opencode-go"),
+              layer("openrouter"),
+            ),
           ),
         ),
       );

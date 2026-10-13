@@ -26,6 +26,7 @@ const cases: ReadonlyArray<AdapterCase> = [
   { name: "ChatGPT Responses", provider: "openai-chatgpt", protocol: "responses" },
   { name: "Go Responses", provider: "opencode-go", protocol: "responses" },
   { name: "Go Chat Completions", provider: "opencode-go", protocol: "chat-completions" },
+  { name: "OpenRouter Chat Completions", provider: "openrouter", protocol: "chat-completions" },
 ];
 
 const request: ModelRequest = {
