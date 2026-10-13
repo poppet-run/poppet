@@ -26,6 +26,13 @@ The Oxfmt and Oxlint configs are based on
 [Memoir's configuration](https://github.com/tombell/memoir-app), with React and JSX
 lint plugins removed for this CLI project. Type checking also covers the configuration files.
 
+Oxlint also enforces the generic and Effect rules from
+[anti-slop](https://github.com/dmmulroy/anti-slop), vendored under
+`tools/oxlint/anti-slop/`. These rules are errors. Keep `@oxlint/plugins` and Oxlint
+at the same pinned version. See the [upstream record](tools/oxlint/anti-slop/UPSTREAM.md)
+for the source revision and update notes. Vendored code and agent tooling are
+excluded from linting and formatting.
+
 ## Configuration
 
 | Variable           | Default                  | Purpose                                                         |

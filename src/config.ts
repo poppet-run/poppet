@@ -17,10 +17,12 @@ export const loadConfig = Effect.gen(function* () {
   const applicationName = yield* Config.schema(ConfigText, "POPPET_APP_NAME").pipe(
     Config.withDefault("Poppet"),
   );
+
   const dataDirectory = yield* Config.schema(ConfigText, "POPPET_DATA_DIR").pipe(
     Config.withDefault(join(homedir(), ".config", "poppet")),
     Config.map((directory) => resolve(directory)),
   );
+
   const notesDirectory = yield* Config.schema(ConfigText, "POPPET_NOTES_DIR").pipe(
     Config.withDefault(join(dataDirectory, "notes")),
     Config.map((directory) => resolve(directory)),

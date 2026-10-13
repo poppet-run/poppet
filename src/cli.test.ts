@@ -11,6 +11,7 @@ const invoke = async (args: ReadonlyArray<string>, environment: Record<string, s
     stdout: "pipe",
     stderr: "pipe",
   });
+
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(subprocess.stdout).text(),
     new Response(subprocess.stderr).text(),
