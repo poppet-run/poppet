@@ -1,0 +1,47 @@
+import { type Connection, ConnectionError, type Credentials, planScope } from "../connection.ts";
+import type { TokenReply } from "../oauth/tokens.ts";
+
+export interface ConnectionStatus {
+  readonly connected: boolean;
+  readonly email: string | null;
+  readonly clientId: string | null;
+  readonly planUsage: boolean;
+  readonly expiresAt: number | null;
+  readonly verification: Connection["verification"];
+}
+
+export const reconnect = () =>
+  new ConnectionError({
+    reason: "reconnect",
+    message: "Sign in first with bun run start auth login.",
+  });
+
+export const statusFor = (connection: Connection): ConnectionStatus => ({
+  connected: connection.identity !== null && connection.credentials !== null,
+  email: connection.identity?.email ?? null,
+  clientId: connection.clientId,
+  planUsage: connection.credentials?.scopes.includes(planScope) ?? false,
+  expiresAt: connection.credentials?.expiresAt ?? null,
+  verification: connection.verification,
+});
+
+export const credentialsFor = (
+  reply: TokenReply,
+  now: number,
+  previous: Credentials | null,
+): Credentials | null => {
+  const idToken = reply.id_token ?? previous?.idToken;
+
+  if (!idToken) return null;
+
+  return {
+    accessToken: reply.access_token ?? null,
+    refreshToken: reply.refresh_token ?? previous?.refreshToken ?? null,
+    idToken,
+    expiresAt: reply.expires_in === undefined ? null : now + reply.expires_in * 1000,
+    scopes:
+      reply.scope === undefined
+        ? (previous?.scopes ?? [])
+        : reply.scope.split(/\s+/).filter(Boolean),
+  };
+};

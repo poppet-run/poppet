@@ -55,4 +55,13 @@ export default defineConfig({
     "anti-slop-effect/no-service-constructor-imports": "error",
     "anti-slop-effect/prefer-effect-match": "error",
   },
+  overrides: [
+    {
+      files: ["src/test/fixtures/**/*.ts"],
+      rules: {
+        // Shared test fixtures construct injected services just like test files.
+        "anti-slop-effect/no-service-constructor-imports": "off",
+      },
+    },
+  ],
 });

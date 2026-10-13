@@ -1,0 +1,26 @@
+import { Redacted } from "effect";
+import OpenAI, { APIError } from "openai";
+
+import { ConnectionError, requestFailure, resource } from "../connection.ts";
+import type { HttpFetch } from "../oauth/http.ts";
+
+export const modelFailure = (cause: unknown): ConnectionError => {
+  if (cause instanceof ConnectionError) return cause;
+
+  if (cause instanceof APIError)
+    return requestFailure(cause.status ?? 0, cause.code, cause.requestID);
+
+  return new ConnectionError({
+    reason: "temporary",
+    message: "The OpenAI request could not complete. No automatic retry was attempted.",
+  });
+};
+
+export const clientFor = (token: Redacted.Redacted<string>, http: HttpFetch) =>
+  new OpenAI({
+    apiKey: Redacted.value(token),
+    baseURL: resource,
+    maxRetries: 0,
+    timeout: 45_000,
+    fetch: http,
+  });

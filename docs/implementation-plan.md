@@ -30,8 +30,10 @@ for Effect service boundaries and execution rules.
 
 The foundation includes project scripts, strict TypeScript, an Effect-based CLI,
 configuration validation, behavior tests, and continuous integration. The auth
-flow is now implemented with Effect services and layers in `connection.ts`,
-`credentials.ts`, `oauth.ts`, `sign-in.ts`, `auth.ts`, and `model.ts`.
+flow is now implemented with Effect services and layers in `connection.ts` and
+the `auth/`, `oauth/`, `sign-in/`, and `model/` directories. Each capability has a
+service module and focused workflow helpers; `auth/credentials.ts` owns protected
+storage. See [architecture.md](architecture.md) for the module boundaries.
 
 Implemented behavior generates and persists a host identifier, starts a scoped
 loopback callback listener, and opens the system browser. Authorization uses

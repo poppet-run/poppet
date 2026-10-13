@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { Context, Effect, Layer, Schema } from "effect";
 
-import { AppConfig } from "./config.ts";
-import { Connection, ConnectionError } from "./connection.ts";
+import { AppConfig } from "../config.ts";
+import { Connection, ConnectionError } from "../connection.ts";
 
 interface StoreOperations {
   readonly read: Effect.Effect<Connection, ConnectionError>;

@@ -1,11 +1,11 @@
 import { Layer } from "effect";
 
-import { ChatGPTAuthLive } from "./auth.ts";
+import { CredentialStoreLive } from "./auth/credentials.ts";
+import { ChatGPTAuthLive } from "./auth/service.ts";
 import { AppConfigLive } from "./config.ts";
-import { CredentialStoreLive } from "./credentials.ts";
-import { ChatGPTModelLive } from "./model.ts";
-import { OAuthClientLive } from "./oauth.ts";
-import { BrowserSignInLive } from "./sign-in.ts";
+import { ChatGPTModelLive } from "./model/service.ts";
+import { OAuthClientLive } from "./oauth/client.ts";
+import { BrowserSignInLive } from "./sign-in/service.ts";
 
 const dependencies = Layer.mergeAll(AppConfigLive, OAuthClientLive, BrowserSignInLive);
 

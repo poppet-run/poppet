@@ -113,20 +113,38 @@ src/
   cli.ts           Command routing and terminal output
   config.ts        Effect Schema validation and AppConfig service/layer
   connection.ts    Credential schemas, redacted secrets, typed connection errors
-  credentials.ts   Protected atomic storage and an exclusive owner lock
-  oauth.ts         Discovery, code exchange, identity validation, revocation
-  sign-in.ts       Scoped loopback callback and system browser sign-in
-  auth.ts          Connection state, consent, serialized refresh, sign-out
-  model.ts         Account model catalog and streamed tool verification
   runtime.ts       Composition of authentication and model layers
-  *.test.ts        Configuration, CLI, OAuth, callback, and inference tests
+  auth/
+    service.ts     Authentication service and shared mutation semaphore
+    login.ts       Registration, consent, identity checks, credential replacement
+    refresh.ts     Access-token lookup and serialized renewal
+    state.ts       Pure connection-status and credential transformations
+    credentials.ts Protected atomic storage and an exclusive owner lock
+  oauth/
+    client.ts      OAuth service, code exchange, revocation
+    discovery.ts   Issuer metadata and endpoint validation
+    identity.ts    JWT signature and identity-claim validation
+    tokens.ts      Token-response schema and refresh request body
+    http.ts        Cancellable HTTP requests and network errors
+  sign-in/
+    service.ts     Authorization URL and sign-in orchestration
+    callback.ts    Scoped loopback listener, PKCE, state, nonce
+    browser.ts     Scoped system-browser subprocess
+  model/
+    service.ts     Account model catalog and verification orchestration
+    client.ts      OpenAI SDK configuration and error mapping
+    stream.ts      Completed streamed output collection and deadlines
+    verification.ts Local tool challenge and response validation
+  test/fixtures/   Shared local OAuth and model servers for behavior tests
+  *.test.ts        Tests beside the code they exercise
 docs/
   architecture.md  Service boundaries and Effect conventions
   implementation-plan.md
 ```
 
 Auth tests use a local OAuth server with signed test identities and fake model
-streams. They do not access a ChatGPT account. Modules for conversation storage,
+streams. Tests sit beside each capability and share fixtures under `test/fixtures`.
+They do not access a ChatGPT account. Modules for conversation storage,
 tools, memory, and scheduling will be added as their milestones start. See the
 [architecture notes](docs/architecture.md) for the service boundaries.
 

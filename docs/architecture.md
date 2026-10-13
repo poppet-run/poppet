@@ -28,25 +28,35 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Modules
 
-| Module           | Responsibility                                               | Dependencies                                      |
-| ---------------- | ------------------------------------------------------------ | ------------------------------------------------- |
-| `config.ts`      | Validate settings and provide `AppConfig`                    | Effect Config and Schema                          |
-| `connection.ts`  | Credential schemas, redacted tokens, typed connection errors | Effect Schema and Data                            |
-| `credentials.ts` | Atomic credential replacement and exclusive owner lock       | Configuration, scoped filesystem access           |
-| `oauth.ts`       | Discovery, OAuth exchange, JWT validation, revocation        | Fetch, Effect Schema, jose                        |
-| `sign-in.ts`     | One-use loopback callback, PKCE, state, nonce, browser       | Scoped Bun listener and subprocess                |
-| `auth.ts`        | Registration, identity matching, consent, serialized refresh | Configuration, sign-in, OAuth, credential storage |
-| `model.ts`       | Model discovery, streamed inference, normalized errors       | Authentication, OpenAI client                     |
-| `store.ts`       | SQLite migrations, sessions, messages, runs, facts, jobs     | Configuration, scoped Bun SQLite connection       |
-| `agent.ts`       | Bounded conversation context and sequential tool loop        | Model, store, memory, tools                       |
-| `tools.ts`       | Validated tool definitions and execution policies            | Schema, scoped filesystem access                  |
-| `memory.ts`      | Editable profile and explicitly saved facts                  | Store, configuration                              |
-| `scheduler.ts`   | Persisted due occurrences and sequential worker              | Store, agent, clock, occurrence calculator        |
-| `cli.ts`         | Typed commands and terminal presentation                     | Application services required by each command     |
+| Module                | Responsibility                                                              | Dependencies                                      |
+| --------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
+| `config.ts`           | Validate settings and provide `AppConfig`                                   | Effect Config and Schema                          |
+| `connection.ts`       | Credential schemas, redacted tokens, typed connection errors                | Effect Schema and Data                            |
+| `auth/credentials.ts` | Atomic credential replacement and exclusive owner lock                      | Configuration, scoped filesystem access           |
+| `oauth/`              | OAuth service with discovery, HTTP, token, and identity modules             | Fetch, Effect Schema, jose                        |
+| `sign-in/`            | Sign-in service with one-use callback and browser modules                   | Scoped Bun listener and subprocess                |
+| `auth/`               | Auth service with login, refresh, and pure state modules                    | Configuration, sign-in, OAuth, credential storage |
+| `model/`              | Model service with SDK adapter, stream collector, and verification protocol | Authentication, OpenAI client                     |
+| `store.ts`            | SQLite migrations, sessions, messages, runs, facts, jobs                    | Configuration, scoped Bun SQLite connection       |
+| `agent.ts`            | Bounded conversation context and sequential tool loop                       | Model, store, memory, tools                       |
+| `tools.ts`            | Validated tool definitions and execution policies                           | Schema, scoped filesystem access                  |
+| `memory.ts`           | Editable profile and explicitly saved facts                                 | Store, configuration                              |
+| `scheduler.ts`        | Persisted due occurrences and sequential worker                             | Store, agent, clock, occurrence calculator        |
+| `cli.ts`              | Typed commands and terminal presentation                                    | Application services required by each command     |
 
 Each live service gets a layer at the application boundary. Tests replace model,
 authentication, and clock behavior without contacting an account. SQLite and
 filesystem tests use temporary directories.
+
+Each capability's service module defines its contextual service and live layer.
+Its workflow modules contain the operations, while pure helpers stay separate.
+The auth layer captures login and refresh dependencies once and wraps those
+operations in one shared semaphore. The sign-in service scopes the callback
+listener; the OAuth service owns cached discovery. These helpers do not add
+services or layers of their own.
+
+Tests live beside their capability modules. `test/fixtures/` composes injected
+services with local OAuth and model servers shared by the behavior suites.
 
 Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
 modules are implemented. `runtime.ts` composes the auth and model layers only for
