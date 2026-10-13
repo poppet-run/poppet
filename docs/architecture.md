@@ -106,7 +106,7 @@ selected `Model` service supplied by the CLI runtime.
 | --------------------------- | ------------------------------------------------------------------------------- |
 | `@poppet/provider`          | Shared messages, tools, model descriptions, stream events, and inference errors |
 | `@poppet/provider-openai`   | ChatGPT authentication, OpenAI request translation, streams, and continuation   |
-| `@poppet/provider-opencode` | Go credentials, discovery, per-model protocol selection, and streams            |
+| `@poppet/provider-opencode` | OpenCode Go credentials, discovery, per-model protocol selection, and streams   |
 | `@poppet/cli`               | Provider/model configuration and composition of the selected live layer         |
 
 The agent owns context assembly, tool validation and execution, budgets, and run
@@ -178,9 +178,9 @@ credentials out of transcripts and continuation data.
 
 Extend the current environment configuration with `POPPET_PROVIDER` and
 `POPPET_MODEL`. Use `openai-chatgpt` for the existing subscription connection and
-`opencode-go` for Go. Reserve `openai-api` for later API-key support. Require an
-explicit model for agent runs, while keeping help, configuration, and connection
-commands usable before a model is selected. Credentials stay in separate
+`opencode-go` for OpenCode Go. Reserve `openai-api` for later API-key support.
+Require an explicit model for agent runs, while keeping help, configuration, and
+connection commands usable before a model is selected. Credentials stay in separate
 protected storage or provider-specific secret environment values and never
 appear in printable application settings.
 
@@ -203,9 +203,9 @@ OpenCode Go uses an API key and documents Responses, Chat Completions, and
 Anthropic Messages endpoints depending on the model. Its adapter selects the
 protocol per model and sends a Poppet user agent and a stable
 `x-opencode-session` conversation ID. Start with an explicit supported
-model/protocol set and expand it as each protocol passes validation. Go specifies
-coding-agent traffic; resolve its suitability for Poppet's general notes and
-scheduled-assistant workloads before enabling it for those uses.
+model/protocol set and expand it as each protocol passes validation. OpenCode Go
+specifies coding-agent traffic; resolve its suitability for Poppet's general notes
+and scheduled-assistant workloads before enabling it for those uses.
 [OpenCode Go requirements](https://opencode.ai/v2/docs/console/go/)
 
 ## Current authentication flow

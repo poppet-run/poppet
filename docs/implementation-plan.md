@@ -22,7 +22,7 @@ route against the user's account before building the agent around it.
 | Oxfmt and Oxlint                    | Formatting and lint checks                                                             | Foundation                |
 | OpenAI client                       | Streamed Responses API access                                                          | Subscription verification |
 | jose                                | JWT/JWKS identity validation for the documented OAuth flow                             | Subscription verification |
-| Additional provider clients         | Supported Go protocols; select and pin clients when implementing each adapter          | Provider interface        |
+| Additional provider clients         | Supported OpenCode Go protocols; select and pin clients when implementing each adapter | Provider interface        |
 | Occurrence calculator               | Timezone-aware recurring occurrences; assess Effect Cron before adding another package | Scheduled tasks           |
 
 Pin dependencies as they are introduced. See [architecture.md](architecture.md)
@@ -98,11 +98,11 @@ service contract and adapter requirements.
    connection commands remain usable before selection. Keep secrets out of
    printable settings. Compose only the selected provider's live dependencies
    in the CLI runtime, without opening unrelated credential stores.
-4. Add `@poppet/provider-opencode` for Go API-key access, discovery, and per-model
-   protocol routing. Support an explicit model/protocol set first, then expand
-   coverage after validating each protocol. Send a Poppet user agent and stable
-   `x-opencode-session`. Resolve Go's documented coding-agent workload requirement
-   before enabling it for general notes or scheduled-assistant tasks.
+4. Add `@poppet/provider-opencode` for OpenCode Go API-key access, discovery, and
+   per-model protocol routing. Support an explicit model/protocol set first, then
+   expand coverage after validating each protocol. Send a Poppet user agent and stable
+   `x-opencode-session`. Resolve OpenCode Go's documented coding-agent workload
+   requirement before enabling it for general notes or scheduled-assistant tasks.
    [OpenCode Go requirements](https://opencode.ai/v2/docs/console/go/)
 
 Adapters emit completed responses only after successful protocol completion.
