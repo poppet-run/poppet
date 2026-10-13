@@ -26,7 +26,37 @@ dependencies. Keep pure transformations as ordinary TypeScript functions.
 The Bun platform adapter is pinned alongside Effect. Its API is marked unstable
 in Effect 4, so dependency upgrades must include the CLI checks.
 
+## Workspaces
+
+The Bun monorepo has three private workspaces:
+
+| Workspace                 | Responsibility                                                              | Workspace dependencies  |
+| ------------------------- | --------------------------------------------------------------------------- | ----------------------- |
+| `@poppet/cli`             | Process startup, commands, terminal output, live layer composition          | Config, OpenAI provider |
+| `@poppet/config`          | Validated settings and the `AppConfig` service                              | None                    |
+| `@poppet/provider-openai` | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Config                  |
+
+The CLI lives in `apps/cli`; libraries live in `packages/config` and
+`packages/provider-openai`. Each workspace owns its dependencies, TypeScript
+config, and colocated tests. Libraries expose explicit package exports. Imports
+between workspaces use those exports, while relative imports stay within a
+workspace. Provider workflow helpers and test fixtures remain internal.
+
+Root scripts preserve `bun run start`, `bun run dev`, and `bun run check`.
+Start and dev run the CLI without changing the working directory. Root checks
+cover formatting, linting, tooling configuration types, every workspace's types,
+and all tests. The workspaces share `tsconfig.base.json` and one lockfile.
+
+The CLI owns `runtime.ts` and composes live layers supplied by the packages.
+OAuth, browser sign-in, credentials, and model access stay together in the OpenAI
+provider package. Add other provider packages when needed; a common provider
+interface will follow the agent runner's requirements.
+
 ## Modules
+
+The implemented modules below live under `packages/provider-openai/src`, except
+configuration in `packages/config/src` and CLI files in `apps/cli/src`. Storage,
+agent, tools, memory, and scheduler modules are planned.
 
 | Module                | Responsibility                                                              | Dependencies                                      |
 | --------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -55,7 +85,7 @@ operations in one shared semaphore. The sign-in service scopes the callback
 listener; the OAuth service owns cached discovery. These helpers do not add
 services or layers of their own.
 
-Tests live beside their capability modules. `test/fixtures/` composes injected
+Tests live beside their capability modules. The provider's `src/test/fixtures/` composes injected
 services with local OAuth and model servers shared by the behavior suites.
 
 Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI

@@ -2,11 +2,11 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { AppConfig } from "@poppet/config";
 import { Console, Effect, Layer, Schema } from "effect";
 
 import { CredentialStore, CredentialStoreLive } from "../../auth/credentials.ts";
 import { ChatGPTAuth, ChatGPTAuthLive } from "../../auth/service.ts";
-import { AppConfig } from "../../config.ts";
 import { Connection, ConnectionError } from "../../connection.ts";
 import { ChatGPTModel, makeChatGPTModel } from "../../model/service.ts";
 import { makeOAuthClient, OAuthClient } from "../../oauth/client.ts";

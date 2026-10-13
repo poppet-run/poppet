@@ -17,10 +17,16 @@ bun run start config
 bun run check
 ```
 
+The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`, and
+`@poppet/provider-openai`. Root `start` and `dev` commands run the CLI from the
+repository directory, so relative configuration paths keep the same meaning.
+
 `bun run dev` watches the CLI source. `bun run format` formats files with Oxfmt.
 `bun run lint:fix` applies safe Oxlint fixes. `bun run check` checks formatting,
 linting, TypeScript, and Bun tests. GitHub Actions runs the same checks on pushes
-and pull requests.
+and pull requests. Type checking covers each workspace and the root tooling
+configs. To check one workspace, use `bun run --filter '@poppet/config' typecheck`
+or `bun run --filter '@poppet/provider-openai' test`.
 
 The Oxfmt and Oxlint configs are based on
 [Memoir's configuration](https://github.com/tombell/memoir-app), with React and JSX
@@ -108,42 +114,39 @@ Settings.
 ## Source layout
 
 ```text
-src/
-  main.ts          Bun process entry point and Effect runtime
-  cli.ts           Command routing and terminal output
-  config.ts        Effect Schema validation and AppConfig service/layer
-  connection.ts    Credential schemas, redacted secrets, typed connection errors
-  runtime.ts       Composition of authentication and model layers
-  auth/
-    service.ts     Authentication service and shared mutation semaphore
-    login.ts       Registration, consent, identity checks, credential replacement
-    refresh.ts     Access-token lookup and serialized renewal
-    state.ts       Pure connection-status and credential transformations
-    credentials.ts Protected atomic storage and an exclusive owner lock
-  oauth/
-    client.ts      OAuth service, code exchange, revocation
-    discovery.ts   Issuer metadata and endpoint validation
-    identity.ts    JWT signature and identity-claim validation
-    tokens.ts      Token-response schema and refresh request body
-    http.ts        Cancellable HTTP requests and network errors
-  sign-in/
-    service.ts     Authorization URL and sign-in orchestration
-    callback.ts    Scoped loopback listener, PKCE, state, nonce
-    browser.ts     Scoped system-browser subprocess
-  model/
-    service.ts     Account model catalog and verification orchestration
-    client.ts      OpenAI SDK configuration and error mapping
-    stream.ts      Completed streamed output collection and deadlines
-    verification.ts Local tool challenge and response validation
-  test/fixtures/   Shared local OAuth and model servers for behavior tests
-  *.test.ts        Tests beside the code they exercise
+apps/
+  cli/                    @poppet/cli
+    src/
+      main.ts             Bun process entry point and Effect runtime
+      cli.ts              Command routing and terminal output
+      runtime.ts          Composition of authentication and model layers
+packages/
+  config/                 @poppet/config
+    src/config.ts         Validated settings and AppConfig service/layer
+  provider-openai/        @poppet/provider-openai
+    src/
+      index.ts            Public services, live layers, and connection errors
+      connection.ts       Credential schemas and redacted secrets
+      auth/               Login, refresh, status, protected credential storage
+      oauth/              Discovery, token exchange, JWT identity validation
+      sign-in/            Browser sign-in and scoped loopback callback
+      model/              Model catalog, SDK adapter, streams, verification
+      test/fixtures/      Local OAuth and model servers for behavior tests
 docs/
   architecture.md  Service boundaries and Effect conventions
   implementation-plan.md
+tools/
+  oxlint/anti-slop/        Vendored lint rules
 ```
 
+Each workspace declares its own dependencies. Imports between workspaces use
+package names and their explicit exports; relative imports stay within a
+workspace. Shared TypeScript options live in `tsconfig.base.json`. Formatting,
+linting, CI, and the lockfile remain at the root.
+
 Auth tests use a local OAuth server with signed test identities and fake model
-streams. Tests sit beside each capability and share fixtures under `test/fixtures`.
+streams. Tests sit beside each capability. Provider suites share fixtures under
+`packages/provider-openai/src/test/fixtures`.
 They do not access a ChatGPT account. Modules for conversation storage,
 tools, memory, and scheduling will be added as their milestones start. See the
 [architecture notes](docs/architecture.md) for the service boundaries.

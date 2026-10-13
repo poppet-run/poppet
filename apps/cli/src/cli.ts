@@ -1,9 +1,7 @@
+import { AppConfig, AppConfigLive } from "@poppet/config";
+import { ChatGPTAuth, ChatGPTModel, type ConnectionError } from "@poppet/provider-openai";
 import { type Config, Console, Data, Effect } from "effect";
 
-import { ChatGPTAuth } from "./auth/service.ts";
-import { AppConfig, AppConfigLive } from "./config.ts";
-import type { ConnectionError } from "./connection.ts";
-import { ChatGPTModel } from "./model/service.ts";
 import { ChatGPTRuntime } from "./runtime.ts";
 
 class UsageError extends Data.TaggedError("UsageError")<{

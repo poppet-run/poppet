@@ -1,0 +1,20 @@
+{
+  "name": "@poppet/provider-openai",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@poppet/config": "workspace:*",
+    "effect": "4.0.4",
+    "jose": "6.2.12",
+    "openai": "7.32.0"
+  }
+}

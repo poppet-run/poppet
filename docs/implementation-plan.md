@@ -29,9 +29,11 @@ for Effect service boundaries and execution rules.
 ## Phase 1: Foundation and subscription verification
 
 The foundation includes project scripts, strict TypeScript, an Effect-based CLI,
-configuration validation, behavior tests, and continuous integration. The auth
-flow is now implemented with Effect services and layers in `connection.ts` and
-the `auth/`, `oauth/`, `sign-in/`, and `model/` directories. Each capability has a
+configuration validation, behavior tests, and continuous integration. Bun
+workspaces separate `@poppet/cli`, `@poppet/config`, and `@poppet/provider-openai`,
+while preserving the root development commands. The auth flow is implemented
+with Effect services and layers in the provider's `src/connection.ts` and
+`src/auth/`, `src/oauth/`, `src/sign-in/`, and `src/model/` directories. Each capability has a
 service module and focused workflow helpers; `auth/credentials.ts` owns protected
 storage. See [architecture.md](architecture.md) for the module boundaries.
 

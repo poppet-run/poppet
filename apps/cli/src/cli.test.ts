@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const invoke = async (args: ReadonlyArray<string>, environment: Record<string, string> = {}) => {
-  const subprocess = Bun.spawn([process.execPath, "src/main.ts", ...args], {
-    cwd: fileURLToPath(new URL("..", import.meta.url)),
+  const subprocess = Bun.spawn([process.execPath, "run", "--silent", "start", ...args], {
+    cwd: fileURLToPath(new URL("../../..", import.meta.url)),
     env: {
       PATH: process.env.PATH ?? "",
       ...environment,
@@ -57,6 +57,21 @@ describe("CLI", () => {
     expect(invalidCommand.exitCode).toBe(1);
     expect(invalidCommand.stdout).toBe("");
     expect(invalidCommand.stderr).toContain("Unknown command");
+  });
+
+  test("root start resolves relative configuration paths from the repository directory", async () => {
+    const result = await invoke(["config"], {
+      POPPET_DATA_DIR: "relative-data",
+      POPPET_NOTES_DIR: "relative-notes",
+    });
+
+    const directory = fileURLToPath(new URL("../../..", import.meta.url));
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      dataDirectory: resolve(directory, "relative-data"),
+      notesDirectory: resolve(directory, "relative-notes"),
+    });
   });
 
   test("shows disconnected auth status and requires sign-in before verification", async () => {

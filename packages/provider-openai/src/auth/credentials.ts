@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
+import { AppConfig } from "@poppet/config";
 import { Context, Effect, Layer, Schema } from "effect";
 
-import { AppConfig } from "../config.ts";
 import { Connection, ConnectionError } from "../connection.ts";
 
 interface StoreOperations {

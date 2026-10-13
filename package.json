@@ -4,23 +4,21 @@
   "private": true,
   "description": "A small personal AI agent for local use.",
   "license": "BSD-3-Clause",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "type": "module",
   "scripts": {
-    "start": "bun src/main.ts",
-    "dev": "bun --watch src/main.ts",
-    "typecheck": "tsc --noEmit",
+    "start": "bun apps/cli/src/main.ts",
+    "dev": "bun --watch apps/cli/src/main.ts",
+    "typecheck": "tsc --noEmit && bun run --workspaces typecheck",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "test": "bun test",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test"
-  },
-  "dependencies": {
-    "@effect/platform-bun": "4.0.4",
-    "effect": "4.0.4",
-    "jose": "6.2.12",
-    "openai": "7.32.0"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.88.0",

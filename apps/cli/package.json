@@ -1,0 +1,19 @@
+{
+  "name": "@poppet/cli",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "scripts": {
+    "start": "bun src/main.ts",
+    "dev": "bun --watch src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.0.4",
+    "@poppet/config": "workspace:*",
+    "@poppet/provider-openai": "workspace:*",
+    "effect": "4.0.4"
+  }
+}

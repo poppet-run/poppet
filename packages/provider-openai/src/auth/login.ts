@@ -1,6 +1,6 @@
+import { AppConfig } from "@poppet/config";
 import { DateTime, Effect, Redacted } from "effect";
 
-import { AppConfig } from "../config.ts";
 import { ConnectionError, planScope, resource } from "../connection.ts";
 import { OAuthClient } from "../oauth/client.ts";
 import { BrowserSignIn } from "../sign-in/service.ts";
