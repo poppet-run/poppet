@@ -1,9 +1,19 @@
+import {
+  Provider,
+  invalidRequest,
+  verifyModel,
+  type ModelDescription,
+  type ModelOperations as SelectedModelOperations,
+  type ProviderError,
+  type ProviderOperations,
+} from "@poppet/provider";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { ChatGPTAuth } from "#src/auth/service";
 import { ConnectionError } from "#src/connection";
 import { clientFor, modelFailure } from "#src/model/client";
-import { verifySubscription } from "#src/model/verification";
+import { connectionFailure, providerFailure } from "#src/model/errors";
+import { responsesModel } from "#src/model/responses";
 import type { HttpFetch } from "#src/oauth/http";
 
 const ModelCatalog = Schema.Struct({
@@ -21,6 +31,7 @@ export type AvailableModel = (typeof ModelCatalog.Type.models)[number];
 interface ModelOperations {
   readonly models: Effect.Effect<ReadonlyArray<AvailableModel>, ConnectionError>;
   readonly verify: (model: string | null) => Effect.Effect<string, ConnectionError>;
+  readonly resolve: (model: string) => Effect.Effect<SelectedModelOperations, ProviderError>;
 }
 
 export class ChatGPTModel extends Context.Service<ChatGPTModel, ModelOperations>()(
@@ -65,9 +76,8 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
               message: "Choose a model from bun run start auth models.",
             }),
           );
-        const token = yield* auth.accessToken;
-        const client = clientFor(token, http);
-        yield* verifySubscription(client, model);
+        const selected = yield* resolve(model).pipe(Effect.mapError(connectionFailure));
+        yield* verifyModel(selected).pipe(Effect.mapError(connectionFailure));
         // Record success only after inference completes and the local tool result
         // comes back correctly. This confirms model access and tool handling.
         yield* auth.recordVerification(model);
@@ -75,7 +85,49 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
         return model;
       });
 
-    return { models, verify } satisfies ModelOperations;
+    const resolve = (model: string) =>
+      Effect.gen(function* () {
+        const catalog = yield* models.pipe(Effect.mapError(providerFailure));
+        const entry = catalog.find((candidate) => candidate.slug === model);
+
+        if (!entry)
+          return yield* Effect.fail(
+            invalidRequest("openai-chatgpt", "Choose a model from the ChatGPT catalog."),
+          );
+
+        const client = auth.accessToken.pipe(
+          Effect.map((token) => clientFor(token, http)),
+          Effect.mapError(providerFailure),
+        );
+
+        return responsesModel(describeModel(entry), client);
+      });
+
+    return { models, verify, resolve } satisfies ModelOperations;
   });
 
 export const ChatGPTModelLive = Layer.effect(ChatGPTModel, makeChatGPTModel());
+
+const describeModel = (model: AvailableModel): ModelDescription => ({
+  provider: "openai-chatgpt",
+  id: model.slug,
+  name: model.display_name,
+  protocol: "responses",
+  capabilities: { tools: true, generationSettings: [], contextWindow: null, maxOutputTokens: null },
+});
+
+export const makeChatGPTProvider = (http: HttpFetch = fetch) =>
+  Effect.gen(function* () {
+    const connection = yield* makeChatGPTModel(http);
+
+    return {
+      id: "openai-chatgpt",
+      models: connection.models.pipe(
+        Effect.map((models) => models.map(describeModel)),
+        Effect.mapError(providerFailure),
+      ),
+      resolve: connection.resolve,
+    } satisfies ProviderOperations;
+  });
+
+export const ChatGPTProviderLive = Layer.effect(Provider, makeChatGPTProvider());

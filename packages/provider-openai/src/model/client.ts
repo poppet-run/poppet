@@ -23,6 +23,7 @@ export const clientFor = (token: Redacted.Redacted<string>, http: HttpFetch) =>
     apiKey: Redacted.value(token),
     baseURL: resource,
     maxRetries: 0,
+    logLevel: "off",
     timeout: 45_000,
     fetch: http,
   });

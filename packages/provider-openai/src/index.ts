@@ -6,7 +6,12 @@ export type { ConnectionStatus } from "#src/auth/state";
 
 export { ConnectionError, type ConnectionFailure } from "#src/connection";
 
-export { type AvailableModel, ChatGPTModel, ChatGPTModelLive } from "#src/model/service";
+export {
+  type AvailableModel,
+  ChatGPTModel,
+  ChatGPTModelLive,
+  ChatGPTProviderLive,
+} from "#src/model/service";
 
 export { OAuthClientLive } from "#src/oauth/client";
 
