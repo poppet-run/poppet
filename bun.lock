@@ -18,6 +18,7 @@
       "dependencies": {
         "@effect/platform-bun": "4.0.4",
         "@poppet/config": "workspace:*",
+        "@poppet/credentials": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/provider-openai": "workspace:*",
         "@poppet/provider-opencode": "workspace:*",
@@ -29,6 +30,15 @@
       "name": "@poppet/config",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/provider": "workspace:*",
+        "effect": "4.0.4",
+      },
+    },
+    "packages/credentials": {
+      "name": "@poppet/credentials",
+      "version": "0.0.0",
+      "dependencies": {
+        "@poppet/config": "workspace:*",
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
       },
@@ -55,6 +65,7 @@
       "name": "@poppet/provider-opencode",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/credentials": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/provider-openai": "workspace:*",
         "effect": "4.0.4",
@@ -65,6 +76,7 @@
       "name": "@poppet/provider-openrouter",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/credentials": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/provider-openai": "workspace:*",
         "effect": "4.0.4",
@@ -158,6 +170,8 @@
     "@poppet/cli": ["@poppet/cli@workspace:apps/cli"],
 
     "@poppet/config": ["@poppet/config@workspace:packages/config"],
+
+    "@poppet/credentials": ["@poppet/credentials@workspace:packages/credentials"],
 
     "@poppet/provider": ["@poppet/provider@workspace:packages/provider"],
 

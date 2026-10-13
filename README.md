@@ -20,7 +20,8 @@ bun run check
 ```
 
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
-`@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`, and `@poppet/provider-openrouter`.
+`@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
+`@poppet/provider-openrouter`, and `@poppet/credentials`.
 Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
 
@@ -73,10 +74,10 @@ appear in this output.
 Sign in through the system browser, then verify subscription access:
 
 ```fish
-bun run start auth login
-bun run start auth models
-bun run start auth verify
-bun run start auth status
+bun run start auth login openai-chatgpt
+bun run start auth models openai-chatgpt
+bun run start auth verify --provider openai-chatgpt
+bun run start auth status openai-chatgpt
 ```
 
 Initial sign-in registers Poppet with its own host identifier and issued client
@@ -89,7 +90,7 @@ one account and rejects a returning identity that does not match it.
 
 `auth verify` selects the first visible model in the account's catalog. Pass a
 model slug from `auth models` to choose another, for example
-`bun run start auth verify <slug>`. Verification makes two streamed Responses
+`bun run start auth verify <slug> --provider openai-chatgpt`. Verification makes two streamed Responses
 requests, which consume ChatGPT plan usage. It requests a local tool, supplies a
 random token as the tool result, and requires the completed answer to return that
 token. Success records the model and verification time; it does not guarantee
@@ -97,7 +98,7 @@ future quota or eligibility.
 [Subscription inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
 
 If identity sign-in succeeds without plan-usage permission, status reports
-`planUsage: false`. Run `bun run start auth login --consent` to request consent
+`planUsage: false`. Run `bun run start auth login openai-chatgpt --consent` to request consent
 again. Usage limits, ineligible accounts, temporary failures, and interrupted
 streams produce separate errors. Model requests are not automatically retried.
 The flow uses OAuth credentials and requires no API key or client secret.
@@ -111,16 +112,18 @@ commands and is removed on normal shutdown or interruption. After a process
 crash, remove a remaining lock only after confirming no Poppet auth command is
 running.
 
-`bun run start auth logout` attempts remote revocation and clears local tokens,
+`bun run start auth logout openai-chatgpt` attempts remote revocation and clears local tokens,
 while retaining the host identifier and registration. If remote revocation cannot
 be confirmed, the command reports this so you can disconnect Poppet in ChatGPT
 Settings.
 
 ## Configured providers and models
 
-Select a provider and an explicit model. The `auth` commands remain specific to
-ChatGPT and work before model selection. General provider commands use the
-configured provider:
+Select a provider and an explicit model. Auth commands default to `POPPET_PROVIDER`.
+Pass a provider after `login`, `status`, `models`, or `logout`, or use
+`--provider <id>` for any auth command. This selects which credentials to manage
+without changing the configured inference provider. Login and status work before
+model selection. General provider commands use the configured provider:
 
 ```fish
 set -lx POPPET_PROVIDER openai-chatgpt
@@ -134,14 +137,13 @@ two requests and a local tool round trip. It consumes provider usage. A model
 must be selected before verification opens credentials. The runtime builds only
 the selected provider's dependencies and never falls back to another model.
 
-For OpenCode Go, discovery uses its public catalog without an API key. Set
-`POPPET_OPENCODE_GO_API_KEY` for inference; this secret is validated separately
-and never appears in `config` output:
+For OpenCode Go, discovery uses its public catalog without an API key. Log in
+with a hidden key prompt, then select a model:
 
 ```fish
 set -lx POPPET_PROVIDER opencode-go
 set -lx POPPET_MODEL glm-5.3
-set -lx POPPET_OPENCODE_GO_API_KEY '<your OpenCode Go API key>'
+bun run start auth login opencode-go
 bun run start provider models
 bun run start provider verify
 ```
@@ -158,15 +160,33 @@ before reading its key or making inference requests.
 [OpenCode Go requirements and endpoints](https://opencode.ai/v2/docs/console/go/)
 
 For OpenRouter, discovery uses its public catalog without an API key. Select a
-concrete model ID, then set `POPPET_OPENROUTER_API_KEY` for inference:
+concrete model ID and save a key through login:
 
 ```fish
 set -lx POPPET_PROVIDER openrouter
 bun run start provider models
 set -lx POPPET_MODEL anthropic/claude-sonnet-4.5
-set -lx POPPET_OPENROUTER_API_KEY '<your OpenRouter API key>'
+bun run start auth login openrouter
 bun run start provider verify
 ```
+
+API-key login saves credentials under `<POPPET_DATA_DIR>/auth/openrouter.json`
+or `opencode-go.json`, with `0600` file permissions inside a `0700` directory.
+Writes replace files atomically and use a separate lock for each provider.
+Login reads an existing environment key if set, otherwise prompts without echo.
+For scripts, `auth login openrouter --key-stdin` reads a key from standard input;
+keys are never accepted as command-line arguments.
+
+`POPPET_OPENROUTER_API_KEY` and `POPPET_OPENCODE_GO_API_KEY` override stored keys
+for inference and status. Empty or invalid overrides fail instead of falling
+back to a stored key. Status reports the credential source without secrets;
+remote access is checked separately by verification. `auth logout openrouter`
+removes that provider's saved key. It leaves other providers connected and does
+not revoke the remote key or unset an environment override.
+
+To verify a provider without changing `POPPET_PROVIDER`, use
+`bun run start auth verify <model-id> --provider openrouter`. ChatGPT's browser
+login and `--consent` remain available through `auth login openai-chatgpt`.
 
 Verification requires a catalog model with tool support and makes two requests
 that consume OpenRouter credits. The key is redacted and omitted from `config`.
@@ -202,6 +222,8 @@ apps/
 packages/
   config/                 @poppet/config
     src/config.ts         Validated settings and AppConfig service/layer
+  credentials/            @poppet/credentials
+    src/api-keys.ts       Protected API-key storage and environment overrides
   provider/               @poppet/provider
     src/schema.ts         Normalized messages, tools, events, and continuation
     src/service.ts        Provider and selected Model services, typed errors

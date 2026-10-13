@@ -1,3 +1,4 @@
+import { loadApiKey as storedApiKey } from "@poppet/credentials";
 import {
   Provider,
   ProviderError,
@@ -6,7 +7,7 @@ import {
   type ProviderOperations,
 } from "@poppet/provider";
 import { chatCompletionsModel, inferenceFailure } from "@poppet/provider-openai/protocol";
-import { Config, ConfigProvider, Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Layer, Redacted, Schema } from "effect";
 import OpenAI, { APIError } from "openai";
 
 export type HttpFetch = (input: Request | string | URL, init?: RequestInit) => Promise<Response>;
@@ -69,23 +70,7 @@ const describeModel = (model: typeof CatalogModel.Type): ModelDescription => {
   };
 };
 
-export const loadApiKey = Config.schema(
-  Schema.RedactedFromValue(Schema.NonEmptyString.check(Schema.isTrimmed())),
-  "POPPET_OPENROUTER_API_KEY",
-).pipe(
-  Effect.provideService(
-    ConfigProvider.ConfigProvider,
-    ConfigProvider.fromEnv({ preserveEmptyStrings: true }),
-  ),
-  Effect.mapError(
-    () =>
-      new ProviderError({
-        provider: "openrouter",
-        reason: "authentication",
-        message: "Set POPPET_OPENROUTER_API_KEY to your OpenRouter API key.",
-      }),
-  ),
-);
+export const loadApiKey = storedApiKey("openrouter");
 
 export const makeOpenRouterProvider = (
   key: Effect.Effect<Redacted.Redacted<string>, ProviderError> = loadApiKey,

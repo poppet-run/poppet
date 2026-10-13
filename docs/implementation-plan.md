@@ -95,17 +95,24 @@ and adapter requirements.
   and auth commands work before selection. Only the selected provider's live
   dependencies are built, and a resolved model cannot silently change selection.
 - `@poppet/provider-opencode` discovers the public Go catalog and uses a separately
-  validated, redacted `POPPET_OPENCODE_GO_API_KEY` for inference. The initial set is
+  validated, redacted API key from login storage or `POPPET_OPENCODE_GO_API_KEY`
+  for inference. The initial set is
   `gpt-6-luna` on Responses and `glm-5.3` on Chat Completions. Requests send a Poppet
   user agent and stable `x-opencode-session`. Other model/protocol combinations
   remain deferred until tested.
   [OpenCode Go endpoints and requirements](https://opencode.ai/v2/docs/console/go/)
 - `@poppet/provider-openrouter` discovers concrete text models from the public
   catalog and derives their supported settings. Inference uses a redacted
-  `POPPET_OPENROUTER_API_KEY` through Chat Completions for both workload types.
+  API key from login storage or `POPPET_OPENROUTER_API_KEY` through Chat
+  Completions for both workload types.
   Requests require parameter support, disable provider fallbacks, and preserve
   session identity and the full reasoning sequence across tool exchanges.
   Dynamic routers and models that produce images or audio are excluded.
+- Auth commands accept an explicit provider or default to `POPPET_PROVIDER`.
+  ChatGPT retains browser sign-in. `@poppet/credentials` supplies protected,
+  atomic API-key storage for OpenCode Go and OpenRouter. Login uses a hidden
+  prompt, environment input, or `--key-stdin`; status and logout keep providers
+  separate. Inference reads saved keys when no environment override is present.
 
 Go documents coding-agent workloads. General notes and scheduled-assistant work
 is not established as supported, so the Go adapter rejects `assistant` requests

@@ -4,13 +4,18 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const invoke = async (args: ReadonlyArray<string>, environment: Record<string, string> = {}) => {
+const invoke = async (
+  args: ReadonlyArray<string>,
+  environment: Record<string, string> = {},
+  input: string | null = null,
+) => {
   const subprocess = Bun.spawn([process.execPath, "run", "--silent", "start", ...args], {
     cwd: fileURLToPath(new URL("../../..", import.meta.url)),
     env: {
       PATH: process.env.PATH ?? "",
       ...environment,
     },
+    stdin: input === null ? "ignore" : new TextEncoder().encode(input),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -25,6 +30,133 @@ const invoke = async (args: ReadonlyArray<string>, environment: Record<string, s
 };
 
 describe("CLI", () => {
+  test("logs in to explicitly chosen API-key providers, defaults to the configured provider, and logs out independently", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-key-login-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "opencode-go" };
+
+    try {
+      const router = await invoke(
+        ["auth", "login", "openrouter", "--key-stdin"],
+        environment,
+        "router-test-secret\n",
+      );
+
+      const go = await invoke(["auth", "login", "--key-stdin"], environment, "go-test-secret\n");
+      expect(router.exitCode).toBe(0);
+      expect(go.exitCode).toBe(0);
+      expect(router.stdout).toContain("openrouter");
+
+      const routerStatus = await invoke(
+        ["auth", "status", "--provider", "openrouter"],
+        environment,
+      );
+
+      const goStatus = await invoke(["auth", "status"], environment);
+      expect(JSON.parse(routerStatus.stdout)).toEqual({
+        provider: "openrouter",
+        connected: true,
+        source: "stored",
+      });
+      expect(JSON.parse(goStatus.stdout)).toEqual({
+        provider: "opencode-go",
+        connected: true,
+        source: "stored",
+      });
+
+      for (const result of [router, go, routerStatus, goStatus]) {
+        expect(result.stdout + result.stderr).not.toContain("router-test-secret");
+        expect(result.stdout + result.stderr).not.toContain("go-test-secret");
+      }
+
+      expect((await readdir(join(directory, "auth"))).toSorted()).toEqual([
+        "opencode-go.json",
+        "openrouter.json",
+      ]);
+      const logout = await invoke(["auth", "logout", "openrouter"], environment);
+      expect(logout.exitCode).toBe(0);
+      expect(
+        JSON.parse((await invoke(["auth", "status", "openrouter"], environment)).stdout).connected,
+      ).toBe(false);
+      expect(JSON.parse((await invoke(["auth", "status"], environment)).stdout).connected).toBe(
+        true,
+      );
+      const chatGPT = await invoke(["auth", "status", "openai-chatgpt"], environment);
+      expect(chatGPT.exitCode).toBe(0);
+      expect(JSON.parse(chatGPT.stdout)).toMatchObject({ connected: false, planUsage: false });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("uses environment credentials without writing them until login and rejects invalid overrides", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-key-env-"));
+
+    const environment = {
+      POPPET_DATA_DIR: directory,
+      POPPET_PROVIDER: "openrouter",
+      POPPET_OPENROUTER_API_KEY: "env-test-secret",
+    };
+
+    try {
+      const status = await invoke(["auth", "status"], environment);
+      expect(JSON.parse(status.stdout)).toEqual({
+        provider: "openrouter",
+        connected: true,
+        source: "environment",
+      });
+      expect(await readdir(directory)).toEqual([]);
+      const login = await invoke(["auth", "login"], environment);
+      expect(login.exitCode).toBe(0);
+      expect(login.stdout + login.stderr).not.toContain("env-test-secret");
+      expect(
+        JSON.parse(
+          (
+            await invoke(["auth", "status"], {
+              POPPET_DATA_DIR: directory,
+              POPPET_PROVIDER: "openrouter",
+            })
+          ).stdout,
+        ).source,
+      ).toBe("stored");
+
+      const invalid = await invoke(["auth", "status"], {
+        ...environment,
+        POPPET_OPENROUTER_API_KEY: "",
+      });
+
+      expect(invalid.exitCode).toBe(1);
+      expect(invalid.stderr).toContain("POPPET_OPENROUTER_API_KEY");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects bad auth options and unattended or empty key input before creating credentials", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-key-invalid-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "openrouter" };
+
+    try {
+      const commands = [
+        ["auth", "login", "unknown"],
+        ["auth", "login", "--provider"],
+        ["auth", "login", "openrouter", "--provider", "opencode-go"],
+        ["auth", "login", "openrouter", "--consent"],
+        ["auth", "login", "openai-chatgpt", "--key-stdin"],
+        ["auth", "status", "--key-stdin"],
+        ["auth", "login", "openrouter"],
+        ["auth", "verify", "--provider", "openrouter"],
+      ];
+
+      const results = await Promise.all(commands.map((command) => invoke(command, environment)));
+      expect(results.every((result) => result.exitCode === 1)).toBe(true);
+      const empty = await invoke(["auth", "login", "openrouter", "--key-stdin"], environment, "\n");
+      expect(empty.exitCode).toBe(1);
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("help works even when application configuration is invalid", async () => {
     const result = await invoke(["--help"], { POPPET_DATA_DIR: "" });
 

@@ -1,3 +1,4 @@
+import { loadApiKey as storedApiKey } from "@poppet/credentials";
 import {
   Provider,
   ProviderError,
@@ -11,7 +12,7 @@ import {
   chatCompletionsModel,
   responsesModel,
 } from "@poppet/provider-openai/protocol";
-import { Config, ConfigProvider, Effect, Layer, Redacted, Schema, Stream } from "effect";
+import { Effect, Layer, Redacted, Schema, Stream } from "effect";
 import OpenAI, { APIError } from "openai";
 
 export type HttpFetch = (input: Request | string | URL, init?: RequestInit) => Promise<Response>;
@@ -48,23 +49,7 @@ const supportedModels: ReadonlyArray<ModelDescription> = [
   },
 ];
 
-export const loadApiKey = Config.schema(
-  Schema.RedactedFromValue(Schema.NonEmptyString.check(Schema.isTrimmed())),
-  "POPPET_OPENCODE_GO_API_KEY",
-).pipe(
-  Effect.provideService(
-    ConfigProvider.ConfigProvider,
-    ConfigProvider.fromEnv({ preserveEmptyStrings: true }),
-  ),
-  Effect.mapError(
-    () =>
-      new ProviderError({
-        provider: "opencode-go",
-        reason: "authentication",
-        message: "Set POPPET_OPENCODE_GO_API_KEY to your OpenCode Go API key.",
-      }),
-  ),
-);
+export const loadApiKey = storedApiKey("opencode-go");
 
 export const makeOpenCodeProvider = (
   key: Effect.Effect<Redacted.Redacted<string>, ProviderError> = loadApiKey,

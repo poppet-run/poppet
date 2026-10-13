@@ -28,20 +28,21 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Workspaces
 
-The Bun monorepo has six private workspaces:
+The Bun monorepo has seven private workspaces:
 
-| Workspace                     | Responsibility                                                              | Workspace dependencies                      |
-| ----------------------------- | --------------------------------------------------------------------------- | ------------------------------------------- |
-| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config and provider layers                  |
-| `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                           |
-| `@poppet/provider`            | Normalized messages, stream events, continuation, provider/model services   | None                                        |
-| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, OpenAI protocol adapters |
-| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration            | Provider contract, OpenAI protocol adapters |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Config                                      |
+| Workspace                     | Responsibility                                                              | Workspace dependencies                                   |
+| ----------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config and provider layers                               |
+| `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                                        |
+| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                 | Config, provider contract                                |
+| `@poppet/provider`            | Normalized messages, stream events, continuation, provider/model services   | None                                                     |
+| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, credentials, OpenAI protocol adapters |
+| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration            | Provider contract, credentials, OpenAI protocol adapters |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Config                                                   |
 
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
-and `packages/provider-openrouter`.
+`packages/provider-openrouter`, and `packages/credentials`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
@@ -118,11 +119,19 @@ runtime. `provider models` and `provider verify` exercise this boundary now.
 | `@poppet/cli`                 | Provider/model configuration and composition of the selected live layer         |
 
 OpenRouter reuses the Chat Completions adapter exported by the OpenAI workspace.
-It discovers concrete text models publicly and reads `POPPET_OPENROUTER_API_KEY`
+It discovers concrete text models publicly and loads an environment or saved API key
 only when inference begins. Catalog parameters determine each model's supported
 settings. Requests require parameter support, disable provider fallbacks, and
 send a stable session ID. Continuation preserves structured reasoning deltas in
 arrival order, including signatures and opaque provider metadata.
+
+Auth commands accept an explicit provider or default to `POPPET_PROVIDER`.
+ChatGPT uses its existing OAuth services. API-key providers use the shared
+credentials workspace, which stores versioned provider-specific files under
+`<data directory>/auth` and returns redacted keys. Environment overrides take
+precedence. Login supports hidden terminal input and explicit stdin input;
+status and logout operate on only the chosen provider. Key persistence does not
+claim remote access, which verification checks separately.
 
 The agent owns context assembly, tool validation and execution, budgets, and run
 persistence. Provider adapters own authentication, HTTP requests, protocol
