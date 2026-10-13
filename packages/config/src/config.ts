@@ -1,12 +1,15 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
+import { ProviderId } from "@poppet/provider";
+import { Config, ConfigProvider, Context, Effect, Layer, Option, Schema } from "effect";
 
 export interface Settings {
   readonly applicationName: string;
   readonly dataDirectory: string;
   readonly notesDirectory: string;
+  readonly provider: ProviderId;
+  readonly model: string | null;
 }
 
 export class AppConfig extends Context.Service<AppConfig, Settings>()("poppet/AppConfig") {}
@@ -28,7 +31,16 @@ export const loadConfig = Effect.gen(function* () {
     Config.map((directory) => resolve(directory)),
   );
 
-  return { applicationName, dataDirectory, notesDirectory } satisfies Settings;
+  const provider = yield* Config.schema(ProviderId, "POPPET_PROVIDER").pipe(
+    Config.withDefault("openai-chatgpt"),
+  );
+
+  const model = yield* Config.schema(ConfigText, "POPPET_MODEL").pipe(
+    Config.option,
+    Config.map(Option.getOrNull),
+  );
+
+  return { applicationName, dataDirectory, notesDirectory, provider, model } satisfies Settings;
 });
 
 export const AppConfigLive = Layer.effect(AppConfig, loadConfig).pipe(

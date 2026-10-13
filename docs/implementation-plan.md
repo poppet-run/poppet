@@ -1,6 +1,6 @@
 # Poppet implementation plan
 
-Status: Foundation and live subscription verification complete; provider interface next
+Status: Provider interface implemented and locally tested; durable storage next
 
 Updated: 2026-10-13
 
@@ -77,52 +77,56 @@ a clear connection state. Foundation work alone does not complete this phase.
 
 Depends on phase 1.
 
-Planned only. Complete this phase before durable conversation storage so its
-schema follows the shared message and continuation contracts. See the
-[planned provider interface](architecture.md#planned-provider-interface) for the
-service contract and adapter requirements.
+Implemented with an initial supported Go model set. See the
+[provider interface](architecture.md#provider-interface) for the service contract
+and adapter requirements.
 
-1. Add `@poppet/provider` with Effect Schema definitions for normalized messages,
-   tools, model descriptions, requests, completion events, continuation payloads,
-   and typed inference errors. Define provider discovery/resolution operations
-   and the selected `Model` service. Bind the provider/model during resolution.
-2. Adapt `@poppet/provider-openai` to expose general inference through `Model`.
-   Exercise the shared request and response contract in subscription verification
-   while retaining ChatGPT sign-in and protected credentials. Preserve streamed
-   output ordering, missing-terminal-output reconstruction, and reasoning/tool
-   continuation. Keep model discovery and connection management separate from
-   the agent's inference dependency.
-3. Add validated `POPPET_PROVIDER` and `POPPET_MODEL` configuration. Use
-   `openai-chatgpt` and `opencode-go`, with `openai-api` reserved for later API-key
-   support. Require an explicit model for agent runs. Help, configuration, and
-   connection commands remain usable before selection. Keep secrets out of
-   printable settings. Compose only the selected provider's live dependencies
-   in the CLI runtime, without opening unrelated credential stores.
-4. Add `@poppet/provider-opencode` for OpenCode Go API-key access, discovery, and
-   per-model protocol routing. Support an explicit model/protocol set first, then
-   expand coverage after validating each protocol. Send a Poppet user agent and stable
-   `x-opencode-session`. Resolve OpenCode Go's documented coding-agent workload
-   requirement before enabling it for general notes or scheduled-assistant tasks.
-   [OpenCode Go requirements](https://opencode.ai/v2/docs/console/go/)
+- `@poppet/provider` defines Effect Schemas for normalized messages, tools, model
+  descriptions, requests, completion events, and versioned continuation. `Provider`
+  discovers and resolves models; `Model` binds one provider/model for inference.
+- `@poppet/provider-openai` exposes general Responses inference through that
+  contract, retaining ChatGPT sign-in and protected credentials. Subscription
+  verification now uses the shared tool-exchange workflow. Streamed completed
+  items retain their output order when terminal output is omitted. Encrypted
+  reasoning is requested and retained for subsequent turns.
+- `POPPET_PROVIDER` defaults to `openai-chatgpt`; `opencode-go` is also supported.
+  `openai-api` remains reserved and is rejected. `POPPET_MODEL` has no default.
+  `provider verify` requires it before opening credentials. Help, configuration,
+  and auth commands work before selection. Only the selected provider's live
+  dependencies are built, and a resolved model cannot silently change selection.
+- `@poppet/provider-opencode` discovers the public Go catalog and uses a separately
+  validated, redacted `POPPET_OPENCODE_GO_API_KEY` for inference. The initial set is
+  `gpt-6-luna` on Responses and `glm-5.3` on Chat Completions. Requests send a Poppet
+  user agent and stable `x-opencode-session`. Other model/protocol combinations
+  remain deferred until tested.
+  [OpenCode Go endpoints and requirements](https://opencode.ai/v2/docs/console/go/)
 
-Adapters emit completed responses only after successful protocol completion.
-Text deltas and partial tool arguments cannot authorize tool execution. Validate
-model capabilities and generation settings before sending a request. Close
-streams on cancellation or early consumer termination, and keep automatic model
-retries disabled.
+Go documents coding-agent workloads. General notes and scheduled-assistant work
+is not established as supported, so the Go adapter rejects `assistant` requests
+before key access or inference. Verification uses an explicit `coding` workload.
 
-Resolve the configured provider/model at run start and keep it fixed through tool
-round trips. Store versioned provider continuation data alongside normalized
-messages in phase 3. Only the matching adapter interprets that data. Configuration
-changes affect new runs; provider changes initially start a new session. Do not
-silently select another provider or model.
+Adapters emit authoritative completion only after a successful protocol terminal
+response and validated output. Partial text and tool arguments never authorize
+tool execution. Model capabilities and generation settings are checked before
+requests. Failed, incomplete, malformed, or truncated streams fail distinctly.
+Request scopes close on cancellation or early consumer termination. An Effect
+clock enforces an absolute inference deadline. Automatic model retries remain
+disabled.
 
-Completion check: local adapter tests complete the same text and tool exchange
-through the shared contract for both providers. Cover continuation preservation,
-output ordering, missing completion, malformed or failed streams, cancellation,
-unsupported settings, and configured layer selection. Live provider checks remain
-separate evidence. A fake `Model` supports later agent tests without either
-account. No agent loop or conversation database is implemented in this phase.
+Continuation is attached to each normalized assistant message. Responses retains
+validated response items and encrypted reasoning; Chat Completions retains
+reasoning content alongside normalized text and ordered tool calls. Adapters
+validate continuation version, protocol, provider, and model before sending it.
+Phase 3 will store these messages, continuation, and run selection durably.
+
+Local completion checks cover the same text and tool exchange through ChatGPT
+Responses, Go Responses, and Go Chat Completions, including output ordering,
+missing terminal output, malformed arguments, incomplete streams, cancellation,
+deadlines, safe error classification, unsupported settings, and selected layer
+composition. Fake `Model` tests require neither account. The public Go catalog was
+checked on 2026-10-13; live Go inference and a fresh live ChatGPT check through the
+new contract remain separate checks. No agent loop or conversation database is
+implemented in this phase.
 
 ## Phase 3: Durable credentials and storage
 

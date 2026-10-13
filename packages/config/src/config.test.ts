@@ -22,6 +22,8 @@ describe("configuration", () => {
       applicationName: "Poppet",
       dataDirectory: join(homedir(), ".config", "poppet"),
       notesDirectory: join(homedir(), ".config", "poppet", "notes"),
+      provider: "openai-chatgpt",
+      model: null,
     });
   });
 
@@ -38,6 +40,8 @@ describe("configuration", () => {
         POPPET_APP_NAME: "My Poppet",
         POPPET_DATA_DIR: "./test-data",
         POPPET_NOTES_DIR: "./my-notes",
+        POPPET_PROVIDER: "opencode-go",
+        POPPET_MODEL: "glm-5.3",
       }),
     );
 
@@ -45,16 +49,31 @@ describe("configuration", () => {
       applicationName: "My Poppet",
       dataDirectory: resolve("./test-data"),
       notesDirectory: resolve("./my-notes"),
+      provider: "opencode-go",
+      model: "glm-5.3",
     });
   });
 
   test("invalid values fail instead of silently selecting defaults", () => {
-    for (const key of ["POPPET_APP_NAME", "POPPET_DATA_DIR", "POPPET_NOTES_DIR"]) {
+    for (const key of [
+      "POPPET_APP_NAME",
+      "POPPET_DATA_DIR",
+      "POPPET_NOTES_DIR",
+      "POPPET_PROVIDER",
+      "POPPET_MODEL",
+    ]) {
       for (const value of ["", "   ", " trailing-space "]) {
         const exit = Effect.runSyncExit(withEnvironment({ [key]: value }));
 
         expect(Exit.isFailure(exit)).toBe(true);
       }
     }
+  });
+
+  test("rejects reserved or unknown providers without falling back", () => {
+    for (const provider of ["openai-api", "unknown"])
+      expect(
+        Exit.isFailure(Effect.runSyncExit(withEnvironment({ POPPET_PROVIDER: provider }))),
+      ).toBe(true);
   });
 });

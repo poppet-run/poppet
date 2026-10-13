@@ -28,17 +28,19 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Workspaces
 
-The Bun monorepo has three private workspaces:
+The Bun monorepo has five private workspaces:
 
-| Workspace                 | Responsibility                                                              | Workspace dependencies  |
-| ------------------------- | --------------------------------------------------------------------------- | ----------------------- |
-| `@poppet/cli`             | Process startup, commands, terminal output, live layer composition          | Config, OpenAI provider |
-| `@poppet/config`          | Validated settings and the `AppConfig` service                              | None                    |
-| `@poppet/provider-openai` | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Config                  |
+| Workspace                   | Responsibility                                                              | Workspace dependencies                      |
+| --------------------------- | --------------------------------------------------------------------------- | ------------------------------------------- |
+| `@poppet/cli`               | Process startup, commands, terminal output, live layer composition          | Config, OpenAI provider                     |
+| `@poppet/config`            | Validated settings and the `AppConfig` service                              | Provider contract                           |
+| `@poppet/provider`          | Normalized messages, stream events, continuation, provider/model services   | None                                        |
+| `@poppet/provider-opencode` | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, OpenAI protocol adapters |
+| `@poppet/provider-openai`   | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Config                                      |
 
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
-`packages/provider-openai`. Each workspace owns its dependencies, TypeScript
-config, and colocated tests. Libraries expose explicit package exports. Imports
+`packages/provider-openai`, `packages/provider`, and `packages/provider-opencode`.
+Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
 Provider workflow helpers and test fixtures remain internal. Bun and TypeScript
@@ -51,13 +53,15 @@ and all tests. The workspaces share `tsconfig.base.json` and one lockfile.
 
 The CLI owns `runtime.ts` and composes live layers supplied by the packages.
 OAuth, browser sign-in, credentials, and model access stay together in the OpenAI
-provider package. Before durable conversation storage, add a shared provider
-contract and a separate OpenCode provider package as described below.
+provider package. A shared provider contract and a separate OpenCode provider
+package supply the selected model before durable conversation storage.
 
 ## Modules
 
 The implemented modules below live under `packages/provider-openai/src`, except
-configuration in `packages/config/src` and CLI files in `apps/cli/src`. Storage,
+configuration in `packages/config/src` and CLI files in `apps/cli/src`.
+Shared provider types live in `packages/provider/src`, and Go routing lives in
+`packages/provider-opencode/src`. Storage,
 agent, tools, memory, and scheduler modules are planned.
 
 | Module                | Responsibility                                                              | Dependencies                                      |
@@ -91,18 +95,18 @@ Tests live beside their capability modules. The provider's `src/test/fixtures/` 
 services with local OAuth and model servers shared by the behavior suites.
 
 Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
-modules are implemented. `runtime.ts` composes the auth and model layers only for
-auth commands. SQLite storage, the agent loop, tools, memory, and scheduling are
+modules are implemented. `runtime.ts` composes the ChatGPT layers for
+auth commands and only the selected provider for general provider commands. SQLite storage, the agent loop, tools, memory, and scheduling are
 planned.
 
-## Planned provider interface
+## Provider interface
 
-This interface is planned and has not been implemented. Introduce it before
-durable conversation storage so the storage schema can preserve normalized
-messages and provider continuation data. The main agent will depend on one
-selected `Model` service supplied by the CLI runtime.
+The shared interface is implemented before durable conversation storage so
+its schema can preserve normalized messages and provider continuation data.
+The future agent will depend on one selected `Model` service supplied by the CLI
+runtime. `provider models` and `provider verify` exercise this boundary now.
 
-| Workspace                   | Planned responsibility                                                          |
+| Workspace                   | Responsibility                                                                  |
 | --------------------------- | ------------------------------------------------------------------------------- |
 | `@poppet/provider`          | Shared messages, tools, model descriptions, stream events, and inference errors |
 | `@poppet/provider-openai`   | ChatGPT authentication, OpenAI request translation, streams, and continuation   |
@@ -114,7 +118,7 @@ persistence. Provider adapters own authentication, HTTP requests, protocol
 translation, and stream completion. The agent imports shared contracts without
 importing a concrete provider or its SDK types.
 
-The proposed contract uses Effect for discovery and model resolution, and Stream
+The contract uses Effect for discovery and model resolution, and Stream
 for inference. Supporting types belong in `@poppet/provider` and use Effect
 Schema wherever configuration or external data needs validation.
 
@@ -134,7 +138,7 @@ interface ModelOperations {
 export class Model extends Context.Service<Model, ModelOperations>()("poppet/Model") {}
 ```
 
-`resolve` validates and binds a provider/model selection. The agent obtains
+`resolve` validates and binds a provider/model selection. The future agent obtains
 `Model` through Effect and calls `model.stream(request)` for each model turn.
 Keep discovery and connection commands separate from the agent's inference
 dependency. Authentication flows remain provider-specific.
@@ -176,11 +180,12 @@ reasoning and protocol-specific response items. Only the matching adapter
 interprets this payload. Validate its version and provider/model identity; keep
 credentials out of transcripts and continuation data.
 
-Extend the current environment configuration with `POPPET_PROVIDER` and
-`POPPET_MODEL`. Use `openai-chatgpt` for the existing subscription connection and
-`opencode-go` for OpenCode Go. Reserve `openai-api` for later API-key support.
-Require an explicit model for agent runs, while keeping help, configuration, and
-connection commands usable before a model is selected. Credentials stay in separate
+Environment configuration includes `POPPET_PROVIDER` and `POPPET_MODEL`.
+Use `openai-chatgpt` for the existing subscription connection and `opencode-go`
+for OpenCode Go. Reserve `openai-api` for later API-key support.
+An explicit model is required for provider verification and future agent runs.
+Help, configuration, and connection commands remain usable before selection.
+Credentials stay in separate
 protected storage or provider-specific secret environment values and never
 appear in printable application settings.
 
@@ -208,6 +213,28 @@ specifies coding-agent traffic; resolve its suitability for Poppet's general not
 and scheduled-assistant workloads before enabling it for those uses.
 [OpenCode Go requirements](https://opencode.ai/v2/docs/console/go/)
 
+The first Go model set is `gpt-6-luna` using Responses and `glm-5.3` using
+Chat Completions. Only these models are listed from the remote public catalog;
+unrecognized models and Messages protocol models are rejected. The key is read
+from `POPPET_OPENCODE_GO_API_KEY` only when inference begins. Go requests require
+`workload: "coding"`; general assistant tasks fail before credentials are read.
+
+The pure protocol adapters in `@poppet/provider-openai/protocol` bind a model
+description and a supplied client Effect. Both providers reuse Responses parsing;
+Go also uses Chat Completions parsing. These adapters do not open a ChatGPT
+credential store. The contract package imports no SDK types.
+
+Responses continuation retains validated output items, including encrypted
+reasoning. Chat Completions continuation retains `reasoning_content`; normalized
+assistant output retains text and ordered tool calls. Each assistant message owns
+its continuation. Adapters reject mismatched provider/model/version/protocol data.
+
+A scoped abort controller and an Effect clock enforce a 60-second absolute
+inference deadline. Consumer termination aborts the request before awaiting the
+iterator's cleanup, so a pending network read cannot block cancellation. SDK
+retries are disabled. Shared adapter tests use injected HTTP responses and a test
+clock; phase 1 live evidence and future live Go checks are separate.
+
 ## Current authentication flow
 
 `CredentialStoreLive` owns the filesystem lock for an auth command's scope.
@@ -230,8 +257,9 @@ only after `response.completed` and a matching local tool result. It retains
 `response.output_item.done` items by output index, since the final event can omit
 the output array's contents. Those completed items take precedence over terminal
 snapshots when rebuilding history. It does not
-automatically retry model requests. The planned OpenAI adapter will reuse this
-auth boundary, and the chat runner will consume the shared `Model` service.
+automatically retry model requests. The OpenAI provider resolves general inference through this
+auth boundary. Subscription verification uses the shared `verifyModel` workflow.
+The future chat runner will consume the shared `Model` service.
 
 ## Data and execution rules
 

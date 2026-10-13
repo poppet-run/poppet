@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,8 @@ describe("CLI", () => {
       applicationName: "Test Poppet",
       dataDirectory: "/tmp/poppet-test",
       notesDirectory: "/tmp/poppet-test/notes",
+      provider: "openai-chatgpt",
+      model: null,
     });
   });
 
@@ -58,6 +60,33 @@ describe("CLI", () => {
     expect(invalidCommand.stdout).toBe("");
     expect(invalidCommand.stderr).toContain("Unknown command");
   });
+
+  test.each(["openai-chatgpt", "opencode-go"])(
+    "%s configuration hides secrets and requires a model before opening credentials",
+    async (provider) => {
+      const directory = await mkdtemp(join(tmpdir(), "poppet-provider-cli-"));
+
+      try {
+        const environment = {
+          POPPET_DATA_DIR: directory,
+          POPPET_PROVIDER: provider,
+          POPPET_OPENCODE_GO_API_KEY: "test-secret",
+        };
+
+        const settings = await invoke(["config"], environment);
+        const missingModel = await invoke(["provider", "verify"], environment);
+
+        expect(settings.exitCode).toBe(0);
+        expect(JSON.parse(settings.stdout)).toMatchObject({ provider, model: null });
+        expect(settings.stdout).not.toContain("test-secret");
+        expect(missingModel.exitCode).toBe(1);
+        expect(missingModel.stderr).toContain("POPPET_MODEL");
+        expect(await readdir(directory)).toEqual([]);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("root start resolves relative configuration paths from the repository directory", async () => {
     const result = await invoke(["config"], {

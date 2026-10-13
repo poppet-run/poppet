@@ -18,7 +18,9 @@
       "dependencies": {
         "@effect/platform-bun": "4.0.4",
         "@poppet/config": "workspace:*",
+        "@poppet/provider": "workspace:*",
         "@poppet/provider-openai": "workspace:*",
+        "@poppet/provider-opencode": "workspace:*",
         "effect": "4.0.4",
       },
     },
@@ -26,6 +28,7 @@
       "name": "@poppet/config",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
       },
     },

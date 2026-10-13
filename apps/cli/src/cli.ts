@@ -1,8 +1,9 @@
 import { AppConfig, AppConfigLive } from "@poppet/config";
+import { Model, Provider, verifyModel, type ProviderError } from "@poppet/provider";
 import { ChatGPTAuth, ChatGPTModel, type ConnectionError } from "@poppet/provider-openai";
 import { type Config, Console, Data, Effect } from "effect";
 
-import { ChatGPTRuntime } from "#src/runtime";
+import { ChatGPTRuntime, ProviderRuntime, SelectedModelRuntime } from "#src/runtime";
 
 class UsageError extends Data.TaggedError("UsageError")<{
   readonly message: string;
@@ -19,6 +20,8 @@ Commands:
   auth models              List models available to the account
   auth verify [model]      Verify subscription inference and a local tool round trip
   auth logout              Revoke the session and clear local tokens
+  provider models          List supported models for the configured provider
+  provider verify          Verify the configured provider/model with a local tool
   --help    Show this help
 
 Chat, memory, and scheduled tasks are planned next.`;
@@ -61,7 +64,7 @@ const runAuth = (args: ReadonlyArray<string>) =>
 
 export const run = (
   args: ReadonlyArray<string>,
-): Effect.Effect<void, UsageError | Config.ConfigError | ConnectionError> => {
+): Effect.Effect<void, UsageError | Config.ConfigError | ConnectionError | ProviderError> => {
   // Route help before providing any layers so it works even with invalid config
   // and does not open credential storage or acquire its lock.
   if (args.length === 0 || (args.length === 1 && (args[0] === "--help" || args[0] === "-h"))) {
@@ -71,6 +74,21 @@ export const run = (
   if (args.length === 1 && args[0] === "config") {
     return showConfig.pipe(Effect.provide(AppConfigLive));
   }
+
+  if (args.length === 2 && args[0] === "provider" && args[1] === "models")
+    return Effect.gen(function* () {
+      const provider = yield* Provider;
+      yield* Console.log(JSON.stringify(yield* provider.models, null, 2));
+    }).pipe(Effect.provide(ProviderRuntime));
+
+  if (args.length === 2 && args[0] === "provider" && args[1] === "verify")
+    return Effect.gen(function* () {
+      const model = yield* Model;
+      yield* verifyModel(model);
+      yield* Console.log(
+        `Provider verification passed with ${model.description.provider}/${model.description.id}. Completed inference and one local tool round trip.`,
+      );
+    }).pipe(Effect.provide(SelectedModelRuntime));
 
   if (args[0] === "auth") {
     const authArgs = args.slice(1);

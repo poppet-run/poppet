@@ -55,6 +55,8 @@ export const createHarness = async () => {
     applicationName: "Poppet",
     dataDirectory: directory,
     notesDirectory: join(directory, "notes"),
+    provider: "openai-chatgpt",
+    model: null,
   });
 
   const dependencies = Layer.mergeAll(

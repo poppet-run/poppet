@@ -2,8 +2,9 @@
 
 A small personal AI agent for local use, built with TypeScript, Bun, and Effect.
 
-The project has a CLI, validated configuration, and ChatGPT sign-in with a
-subscription verification command. Conversation storage, notes tools, memory, and scheduled tasks
+The project has a CLI, validated configuration, ChatGPT sign-in, and a shared
+streaming model interface. OpenCode Go supports a small set of coding models.
+Conversation storage, notes tools, memory, and scheduled tasks
 follow in the [implementation plan](docs/implementation-plan.md).
 
 ## Development
@@ -17,8 +18,9 @@ bun run start config
 bun run check
 ```
 
-The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`, and
-`@poppet/provider-openai`. Root `start` and `dev` commands run the CLI from the
+The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
+`@poppet/provider`, `@poppet/provider-openai`, and `@poppet/provider-opencode`.
+Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
 
 `bun run dev` watches the CLI source. `bun run format` formats files with Oxfmt.
@@ -41,11 +43,13 @@ excluded from linting and formatting.
 
 ## Configuration
 
-| Variable           | Default                  | Purpose                                                |
-| ------------------ | ------------------------ | ------------------------------------------------------ |
-| `POPPET_APP_NAME`  | `Poppet`                 | Application name used for initial ChatGPT registration |
-| `POPPET_DATA_DIR`  | `~/.config/poppet`       | Credential storage and future database                 |
-| `POPPET_NOTES_DIR` | `<data directory>/notes` | Future notes tools' permitted directory                |
+| Variable           | Default                  | Purpose                                                     |
+| ------------------ | ------------------------ | ----------------------------------------------------------- |
+| `POPPET_APP_NAME`  | `Poppet`                 | Application name used for initial ChatGPT registration      |
+| `POPPET_DATA_DIR`  | `~/.config/poppet`       | Credential storage and future database                      |
+| `POPPET_NOTES_DIR` | `<data directory>/notes` | Future notes tools' permitted directory                     |
+| `POPPET_PROVIDER`  | `openai-chatgpt`         | `openai-chatgpt` or `opencode-go`                           |
+| `POPPET_MODEL`     | Unset                    | Explicit model ID for provider verification and future runs |
 
 Paths become absolute relative to the current working directory. Explicit values
 must be nonempty and have no leading or trailing whitespace. Use a full path when
@@ -111,6 +115,53 @@ while retaining the host identifier and registration. If remote revocation canno
 be confirmed, the command reports this so you can disconnect Poppet in ChatGPT
 Settings.
 
+## Configured providers and models
+
+Select a provider and an explicit model. The `auth` commands remain specific to
+ChatGPT and work before model selection. General provider commands use the
+configured provider:
+
+```fish
+set -lx POPPET_PROVIDER openai-chatgpt
+set -lx POPPET_MODEL gpt-6.1-sol
+bun run start provider models
+bun run start provider verify
+```
+
+`provider verify` exercises the shared message and continuation contract with
+two requests and a local tool round trip. It consumes provider usage. A model
+must be selected before verification opens credentials. The runtime builds only
+the selected provider's dependencies and never falls back to another model.
+
+For OpenCode Go, discovery uses its public catalog without an API key. Set
+`POPPET_OPENCODE_GO_API_KEY` for inference; this secret is validated separately
+and never appears in `config` output:
+
+```fish
+set -lx POPPET_PROVIDER opencode-go
+set -lx POPPET_MODEL glm-5.3
+set -lx POPPET_OPENCODE_GO_API_KEY '<your OpenCode Go API key>'
+bun run start provider models
+bun run start provider verify
+```
+
+The initial Go adapter supports `gpt-6-luna` through Responses and `glm-5.3`
+through Chat Completions. Discovery lists those models when they appear in the
+remote catalog. Other Go models, including the Messages protocol, are not yet
+supported. Both protocols send `poppet/0.0.0` and a stable `x-opencode-session`
+header for the exchange.
+
+Go documents coding-agent traffic. Poppet's Go adapter requires a `coding`
+workload and rejects general assistant, notes, and scheduled-summary requests
+before reading its key or making inference requests.
+[OpenCode Go requirements and endpoints](https://opencode.ai/v2/docs/console/go/)
+
+Local tests cover both providers' text and tool exchanges, reasoning
+continuation, output ordering, malformed and incomplete streams, cancellation,
+deadlines, error classification, and provider selection. These tests do not prove
+live account access. The earlier phase 1 live ChatGPT check remains separate
+evidence; Go inference has not been verified against a live account.
+
 ## Source layout
 
 ```text
@@ -123,6 +174,10 @@ apps/
 packages/
   config/                 @poppet/config
     src/config.ts         Validated settings and AppConfig service/layer
+  provider/               @poppet/provider
+    src/schema.ts         Normalized messages, tools, events, and continuation
+    src/service.ts        Provider and selected Model services, typed errors
+    src/verification.ts   Shared local tool round-trip verification
   provider-openai/        @poppet/provider-openai
     src/
       index.ts            Public services, live layers, and connection errors
@@ -132,6 +187,8 @@ packages/
       sign-in/            Browser sign-in and scoped loopback callback
       model/              Model catalog, SDK adapter, streams, verification
       test/fixtures/      Local OAuth and model servers for behavior tests
+  provider-opencode/      @poppet/provider-opencode
+    src/service.ts        Go catalog, secret configuration, and protocol routing
 docs/
   architecture.md  Service boundaries and Effect conventions
   implementation-plan.md
