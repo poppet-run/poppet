@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFile, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { createHarness, status } from "../test/fixtures/chatgpt.ts";
+import { createHarness, status } from "#src/test/fixtures/chatgpt";
 
 describe("Credential storage", () => {
   test("rejects malformed stored credentials and competing owners", async () => {

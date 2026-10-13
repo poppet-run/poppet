@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { Redacted } from "effect";
 
-import { createHarness, login, verify } from "../test/fixtures/chatgpt.ts";
+import { createHarness, login, verify } from "#src/test/fixtures/chatgpt";
 
 describe("ChatGPT sign-in", () => {
   test("reuses host and issued registration across restarts with fresh sign-in values", async () => {

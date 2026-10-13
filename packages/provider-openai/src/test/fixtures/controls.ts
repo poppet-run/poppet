@@ -1,4 +1,4 @@
-import { planScope } from "../../connection.ts";
+import { planScope } from "#src/connection";
 
 type StreamMode =
   | "completed"

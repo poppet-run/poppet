@@ -1,10 +1,10 @@
 import { DateTime, Effect } from "effect";
 
-import { ConnectionError, planScope } from "../connection.ts";
-import { OAuthClient } from "../oauth/client.ts";
-import { refreshBody } from "../oauth/tokens.ts";
-import { CredentialStore } from "./credentials.ts";
-import { credentialsFor, reconnect } from "./state.ts";
+import { CredentialStore } from "#src/auth/credentials";
+import { credentialsFor, reconnect } from "#src/auth/state";
+import { ConnectionError, planScope } from "#src/connection";
+import { OAuthClient } from "#src/oauth/client";
+import { refreshBody } from "#src/oauth/tokens";
 
 export const accessTokenWorkflow = Effect.gen(function* () {
   const store = yield* CredentialStore;

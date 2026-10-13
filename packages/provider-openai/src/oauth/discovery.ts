@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 
-import { ConnectionError, requestFailure } from "../connection.ts";
-import { type HttpFetch, networkError, request } from "./http.ts";
+import { ConnectionError, requestFailure } from "#src/connection";
+import { type HttpFetch, networkError, request } from "#src/oauth/http";
 
 export const Discovery = Schema.Struct({
   issuer: Schema.NonEmptyString,

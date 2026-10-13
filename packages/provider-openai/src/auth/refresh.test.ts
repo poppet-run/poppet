@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import { Effect, Redacted } from "effect";
 
-import { createHarness, login, status, verify } from "../test/fixtures/chatgpt.ts";
-import { ChatGPTAuth } from "./service.ts";
+import { ChatGPTAuth } from "#src/auth/service";
+import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt";
 
 describe("ChatGPT token lifecycle", () => {
   test("serializes renewal and atomically retains the rotated refresh token", async () => {

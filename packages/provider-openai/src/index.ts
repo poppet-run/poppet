@@ -1,13 +1,13 @@
-export { CredentialStoreLive } from "./auth/credentials.ts";
+export { CredentialStoreLive } from "#src/auth/credentials";
 
-export { ChatGPTAuth, ChatGPTAuthLive } from "./auth/service.ts";
+export { ChatGPTAuth, ChatGPTAuthLive } from "#src/auth/service";
 
-export type { ConnectionStatus } from "./auth/state.ts";
+export type { ConnectionStatus } from "#src/auth/state";
 
-export { ConnectionError, type ConnectionFailure } from "./connection.ts";
+export { ConnectionError, type ConnectionFailure } from "#src/connection";
 
-export { type AvailableModel, ChatGPTModel, ChatGPTModelLive } from "./model/service.ts";
+export { type AvailableModel, ChatGPTModel, ChatGPTModelLive } from "#src/model/service";
 
-export { OAuthClientLive } from "./oauth/client.ts";
+export { OAuthClientLive } from "#src/oauth/client";
 
-export { BrowserSignInLive } from "./sign-in/service.ts";
+export { BrowserSignInLive } from "#src/sign-in/service";

@@ -1,6 +1,6 @@
 import { Redacted, Schema } from "effect";
 
-import { resource, Secret } from "../connection.ts";
+import { resource, Secret } from "#src/connection";
 
 export const TokenReply = Schema.Struct({
   access_token: Schema.optionalKey(Secret),

@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import { Console, Effect, Fiber } from "effect";
 
-import { ConnectionError } from "../connection.ts";
-import { makeBrowserSignIn, type SignInRequest } from "./service.ts";
+import { ConnectionError } from "#src/connection";
+import { makeBrowserSignIn, type SignInRequest } from "#src/sign-in/service";
 
 const request: SignInRequest = {
   endpoint: "https://auth.openai.com/api/accounts/authorize",

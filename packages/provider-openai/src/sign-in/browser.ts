@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 
-import { ConnectionError } from "../connection.ts";
+import { ConnectionError } from "#src/connection";
 
 const browserError = () =>
   new ConnectionError({ reason: "callback", message: "Could not open the system browser." });

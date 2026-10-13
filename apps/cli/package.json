@@ -4,6 +4,9 @@
   "private": true,
   "license": "BSD-3-Clause",
   "type": "module",
+  "imports": {
+    "#src/*": "./src/*.ts"
+  },
   "scripts": {
     "start": "bun src/main.ts",
     "dev": "bun --watch src/main.ts",

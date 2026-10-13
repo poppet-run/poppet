@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
-import type { Controls } from "./controls.ts";
+import type { Controls } from "#src/test/fixtures/controls";
 
 export const makeOAuthProvider = async (controls: Controls) => {
   const keys = await generateKeyPair("RS256");

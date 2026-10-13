@@ -7,8 +7,8 @@ import type {
   ResponseCreateParamsStreaming,
 } from "openai/resources/responses/responses";
 
-import { ConnectionError } from "../connection.ts";
-import { complete } from "./stream.ts";
+import { ConnectionError } from "#src/connection";
+import { complete } from "#src/model/stream";
 
 const ToolArguments = Schema.fromJsonString(Schema.Struct({ challenge: Schema.NonEmptyString }));
 

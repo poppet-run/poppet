@@ -1,11 +1,11 @@
 import { Context, DateTime, Effect, Layer, Redacted, Semaphore } from "effect";
 
-import type { ConnectionError } from "../connection.ts";
-import { OAuthClient } from "../oauth/client.ts";
-import { CredentialStore } from "./credentials.ts";
-import { loginWorkflow } from "./login.ts";
-import { accessTokenWorkflow } from "./refresh.ts";
-import { type ConnectionStatus, statusFor } from "./state.ts";
+import { CredentialStore } from "#src/auth/credentials";
+import { loginWorkflow } from "#src/auth/login";
+import { accessTokenWorkflow } from "#src/auth/refresh";
+import { type ConnectionStatus, statusFor } from "#src/auth/state";
+import type { ConnectionError } from "#src/connection";
+import { OAuthClient } from "#src/oauth/client";
 
 interface AuthOperations {
   readonly login: (consent: boolean) => Effect.Effect<ConnectionStatus, ConnectionError>;

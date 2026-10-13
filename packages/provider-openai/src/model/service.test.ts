@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { ConnectionError } from "../connection.ts";
-import { createHarness, login, status, verify } from "../test/fixtures/chatgpt.ts";
+import { ConnectionError } from "#src/connection";
+import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt";
 
 describe("ChatGPT model verification", () => {
   test("retains completed streamed items in output order when the terminal response omits them", async () => {

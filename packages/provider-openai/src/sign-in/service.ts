@@ -1,8 +1,8 @@
 import { Console, Context, Effect, Layer } from "effect";
 
-import { ConnectionError, requestedScopes, resource } from "../connection.ts";
-import { openBrowser } from "./browser.ts";
-import { type Authorization, startCallback } from "./callback.ts";
+import { ConnectionError, requestedScopes, resource } from "#src/connection";
+import { openBrowser } from "#src/sign-in/browser";
+import { type Authorization, startCallback } from "#src/sign-in/callback";
 
 export interface SignInRequest {
   readonly endpoint: string;

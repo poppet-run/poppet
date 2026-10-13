@@ -1,11 +1,11 @@
 import { AppConfig } from "@poppet/config";
 import { DateTime, Effect, Redacted } from "effect";
 
-import { ConnectionError, planScope, resource } from "../connection.ts";
-import { OAuthClient } from "../oauth/client.ts";
-import { BrowserSignIn } from "../sign-in/service.ts";
-import { CredentialStore } from "./credentials.ts";
-import { credentialsFor, statusFor } from "./state.ts";
+import { CredentialStore } from "#src/auth/credentials";
+import { credentialsFor, statusFor } from "#src/auth/state";
+import { ConnectionError, planScope, resource } from "#src/connection";
+import { OAuthClient } from "#src/oauth/client";
+import { BrowserSignIn } from "#src/sign-in/service";
 
 // Capture the supplied services when the auth layer is built. The returned
 // function describes a login attempt, which runs when its Effect is executed.

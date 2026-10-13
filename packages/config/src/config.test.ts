@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 
 import { ConfigProvider, Effect, Exit } from "effect";
 
-import { loadConfig } from "./config.ts";
+import { loadConfig } from "#src/config";
 
 const withEnvironment = (environment: Record<string, string>) =>
   loadConfig.pipe(

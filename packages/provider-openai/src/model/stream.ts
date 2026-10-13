@@ -5,8 +5,8 @@ import type {
   ResponseCreateParamsStreaming,
 } from "openai/resources/responses/responses";
 
-import { ConnectionError, requestFailure } from "../connection.ts";
-import { modelFailure } from "./client.ts";
+import { ConnectionError, requestFailure } from "#src/connection";
+import { modelFailure } from "#src/model/client";
 
 export const complete = (client: OpenAI, request: ResponseCreateParamsStreaming) =>
   Effect.tryPromise({

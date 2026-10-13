@@ -2,8 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { Deferred, Effect, Redacted } from "effect";
 
-import { ConnectionError } from "../connection.ts";
-import { callbackResponse } from "./page.ts";
+import { ConnectionError } from "#src/connection";
+import { callbackResponse } from "#src/sign-in/page";
 
 export interface Authorization {
   readonly code: Redacted.Redacted<string>;

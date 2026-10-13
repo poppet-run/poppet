@@ -140,8 +140,10 @@ tools/
 ```
 
 Each workspace declares its own dependencies. Imports between workspaces use
-package names and their explicit exports; relative imports stay within a
-workspace. Shared TypeScript options live in `tsconfig.base.json`. Formatting,
+package names and their explicit exports. Internal imports use `#src/*`, mapped
+to `./src/*.ts` by each workspace's `package.json`. For example,
+`#src/auth/service` resolves to that workspace's `src/auth/service.ts`.
+Shared TypeScript options live in `tsconfig.base.json`. Formatting,
 linting, CI, and the lockfile remain at the root.
 
 Auth tests use a local OAuth server with signed test identities and fake model

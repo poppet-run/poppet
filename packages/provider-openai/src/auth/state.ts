@@ -1,5 +1,5 @@
-import { type Connection, ConnectionError, type Credentials, planScope } from "../connection.ts";
-import type { TokenReply } from "../oauth/tokens.ts";
+import { type Connection, ConnectionError, type Credentials, planScope } from "#src/connection";
+import type { TokenReply } from "#src/oauth/tokens";
 
 export interface ConnectionStatus {
   readonly connected: boolean;

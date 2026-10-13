@@ -1,6 +1,6 @@
 import { Match, Schema } from "effect";
 
-import type { Controls } from "./controls.ts";
+import type { Controls } from "#src/test/fixtures/controls";
 
 const UserInput = Schema.Struct({ role: Schema.Literal("user"), content: Schema.String });
 

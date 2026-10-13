@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 
-import { ConnectionError } from "../connection.ts";
+import { ConnectionError } from "#src/connection";
 
 export type HttpFetch = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
 

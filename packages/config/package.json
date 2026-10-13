@@ -4,6 +4,9 @@
   "private": true,
   "license": "BSD-3-Clause",
   "type": "module",
+  "imports": {
+    "#src/*": "./src/*.ts"
+  },
   "exports": {
     ".": "./src/config.ts"
   },

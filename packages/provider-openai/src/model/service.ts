@@ -1,10 +1,10 @@
 import { Context, Effect, Layer, Schema } from "effect";
 
-import { ChatGPTAuth } from "../auth/service.ts";
-import { ConnectionError } from "../connection.ts";
-import type { HttpFetch } from "../oauth/http.ts";
-import { clientFor, modelFailure } from "./client.ts";
-import { verifySubscription } from "./verification.ts";
+import { ChatGPTAuth } from "#src/auth/service";
+import { ConnectionError } from "#src/connection";
+import { clientFor, modelFailure } from "#src/model/client";
+import { verifySubscription } from "#src/model/verification";
+import type { HttpFetch } from "#src/oauth/http";
 
 const ModelCatalog = Schema.Struct({
   models: Schema.Array(

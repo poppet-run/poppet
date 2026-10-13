@@ -5,16 +5,16 @@ import { join } from "node:path";
 import { AppConfig } from "@poppet/config";
 import { Console, Effect, Layer, Schema } from "effect";
 
-import { CredentialStore, CredentialStoreLive } from "../../auth/credentials.ts";
-import { ChatGPTAuth, ChatGPTAuthLive } from "../../auth/service.ts";
-import { Connection, ConnectionError } from "../../connection.ts";
-import { ChatGPTModel, makeChatGPTModel } from "../../model/service.ts";
-import { makeOAuthClient, OAuthClient } from "../../oauth/client.ts";
-import type { HttpFetch } from "../../oauth/http.ts";
-import { BrowserSignIn, makeBrowserSignIn } from "../../sign-in/service.ts";
-import { createControls } from "./controls.ts";
-import { makeOAuthProvider } from "./oauth.ts";
-import { makeResponsesProvider } from "./responses.ts";
+import { CredentialStore, CredentialStoreLive } from "#src/auth/credentials";
+import { ChatGPTAuth, ChatGPTAuthLive } from "#src/auth/service";
+import { Connection, ConnectionError } from "#src/connection";
+import { ChatGPTModel, makeChatGPTModel } from "#src/model/service";
+import { makeOAuthClient, OAuthClient } from "#src/oauth/client";
+import type { HttpFetch } from "#src/oauth/http";
+import { BrowserSignIn, makeBrowserSignIn } from "#src/sign-in/service";
+import { createControls } from "#src/test/fixtures/controls";
+import { makeOAuthProvider } from "#src/test/fixtures/oauth";
+import { makeResponsesProvider } from "#src/test/fixtures/responses";
 
 const localConsole: Console.Console = { ...console, log: () => undefined, error: () => undefined };
 

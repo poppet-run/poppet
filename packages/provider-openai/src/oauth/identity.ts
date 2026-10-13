@@ -1,9 +1,9 @@
 import { DateTime, Effect, Redacted, Schema } from "effect";
 import { createRemoteJWKSet, customFetch, jwtVerify } from "jose";
 
-import { ConnectionError } from "../connection.ts";
-import type { Discovery } from "./discovery.ts";
-import { type HttpFetch, networkError } from "./http.ts";
+import { ConnectionError } from "#src/connection";
+import type { Discovery } from "#src/oauth/discovery";
+import { type HttpFetch, networkError } from "#src/oauth/http";
 
 const Claims = Schema.Struct({
   sub: Schema.NonEmptyString,

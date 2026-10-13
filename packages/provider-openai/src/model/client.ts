@@ -1,8 +1,8 @@
 import { Redacted } from "effect";
 import OpenAI, { APIError } from "openai";
 
-import { ConnectionError, requestFailure, resource } from "../connection.ts";
-import type { HttpFetch } from "../oauth/http.ts";
+import { ConnectionError, requestFailure, resource } from "#src/connection";
+import type { HttpFetch } from "#src/oauth/http";
 
 export const modelFailure = (cause: unknown): ConnectionError => {
   if (cause instanceof ConnectionError) return cause;

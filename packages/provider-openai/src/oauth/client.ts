@@ -1,10 +1,10 @@
 import { Context, Effect, Layer, Redacted, Schema } from "effect";
 
-import { ConnectionError, type Identity, issuer, requestFailure } from "../connection.ts";
-import { discoverIssuer } from "./discovery.ts";
-import { type HttpFetch, networkError, request } from "./http.ts";
-import { identityVerifier } from "./identity.ts";
-import { TokenReply } from "./tokens.ts";
+import { ConnectionError, type Identity, issuer, requestFailure } from "#src/connection";
+import { discoverIssuer } from "#src/oauth/discovery";
+import { type HttpFetch, networkError, request } from "#src/oauth/http";
+import { identityVerifier } from "#src/oauth/identity";
+import { TokenReply } from "#src/oauth/tokens";
 
 const OAuthFailure = Schema.Struct({ error: Schema.optionalKey(Schema.String) });
 

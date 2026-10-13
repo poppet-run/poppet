@@ -14,8 +14,10 @@ Entry points:
 - `tools/oxlint/anti-slop/index.ts` for generic rules.
 - `tools/oxlint/anti-slop/effect/index.ts` for Effect rules.
 
-The rule source is unchanged. All 18 generic rules, all 5 Effect rules, and the
-native `oxc/no-accumulating-spread` companion rule are enabled as errors.
+The `no-service-constructor-imports` rule has one local change: it recognizes
+`#src/` package aliases as project-local imports alongside relative paths.
+The remaining rule source is unchanged. All 18 generic rules, all 5 Effect rules,
+and the native `oxc/no-accumulating-spread` companion rule are enabled as errors.
 Oxlint and `@oxlint/plugins` are both pinned to 1.88.0. Agent tooling directories
 and this vendored directory are excluded from linting and formatting.
 

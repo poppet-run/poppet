@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { AppConfig } from "@poppet/config";
 import { Context, Effect, Layer, Schema } from "effect";
 
-import { Connection, ConnectionError } from "../connection.ts";
+import { Connection, ConnectionError } from "#src/connection";
 
 interface StoreOperations {
   readonly read: Effect.Effect<Connection, ConnectionError>;

@@ -39,8 +39,10 @@ The Bun monorepo has three private workspaces:
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`. Each workspace owns its dependencies, TypeScript
 config, and colocated tests. Libraries expose explicit package exports. Imports
-between workspaces use those exports, while relative imports stay within a
-workspace. Provider workflow helpers and test fixtures remain internal.
+between workspaces use those exports. Internal imports use `#src/*` aliases,
+defined in each workspace's `package.json` and mapped to `./src/*.ts`.
+Provider workflow helpers and test fixtures remain internal. Bun and TypeScript
+resolve these package-local aliases without extra `tsconfig` path mappings.
 
 Root scripts preserve `bun run start`, `bun run dev`, and `bun run check`.
 Start and dev run the CLI without changing the working directory. Root checks
