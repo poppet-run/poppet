@@ -18,7 +18,9 @@
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.4",
-    "effect": "4.0.4"
+    "effect": "4.0.4",
+    "jose": "6.2.12",
+    "openai": "7.32.0"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.88.0",
