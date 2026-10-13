@@ -53,31 +53,47 @@ describe("ChatGPT token lifecycle", () => {
       await harness.close();
     }
   });
-  test("clears tokens on sign-out even when revocation fails, keeping registration", async () => {
-    const harness = await createHarness();
+  test.each([false, true])(
+    "clears account data on sign-out with revocation failure %s, keeping registration",
+    async (revokeFailure) => {
+      const harness = await createHarness();
 
-    try {
-      await harness.run(login);
-      harness.controls.revokeFailure = true;
+      try {
+        await harness.run(login);
+        await harness.run(verify);
+        const before = await harness.saved();
+        harness.controls.revokeFailure = revokeFailure;
 
-      const revoked = await harness.run(
-        Effect.gen(function* () {
-          const auth = yield* ChatGPTAuth;
+        const revoked = await harness.run(
+          Effect.gen(function* () {
+            const auth = yield* ChatGPTAuth;
 
-          return yield* auth.signOut;
-        }),
-      );
+            return yield* auth.signOut;
+          }),
+        );
 
-      expect(revoked).toBe(false);
-      expect(harness.revoked()).toBe("test-refresh-1");
-      expect(await harness.run(status)).toMatchObject({
-        connected: false,
-        clientId: "oaiapp_test",
-        planUsage: false,
-      });
-      expect((await harness.saved()).credentials).toBeNull();
-    } finally {
-      await harness.close();
-    }
-  });
+        expect(revoked).toBe(!revokeFailure);
+        expect(harness.revoked()).toBe("test-refresh-1");
+        expect(await harness.run(status)).toMatchObject({
+          connected: false,
+          email: null,
+          clientId: "oaiapp_test",
+          planUsage: false,
+          expiresAt: null,
+          verification: null,
+        });
+        expect(await harness.saved()).toEqual({
+          version: 1,
+          hostId: before.hostId,
+          clientId: before.clientId,
+          identity: null,
+          credentials: null,
+          verification: null,
+        });
+        await expect(harness.run(verify)).rejects.toMatchObject({ reason: "reconnect" });
+      } finally {
+        await harness.close();
+      }
+    },
+  );
 });

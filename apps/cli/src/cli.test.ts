@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,46 @@ const invoke = async (
 };
 
 describe("CLI", () => {
+  test("logout clears an identity retained by an earlier logout", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-logout-identity-"));
+    const environment = { POPPET_DATA_DIR: directory };
+
+    try {
+      await mkdir(join(directory, "auth"));
+      const path = join(directory, "auth/connection.json");
+      await writeFile(
+        path,
+        JSON.stringify({
+          version: 1,
+          hostId: "urn:uuid:00000000-0000-4000-8000-000000000000",
+          clientId: "oaiapp_test",
+          identity: { subject: "old-account", email: "signed-out@example.invalid" },
+          credentials: null,
+          verification: null,
+        }),
+      );
+
+      const logout = await invoke(["auth", "logout"], environment);
+      const status = await invoke(["auth", "status"], environment);
+
+      expect(logout.exitCode).toBe(0);
+      expect(logout.stdout).toContain("account identity, tokens, and verification were cleared");
+      expect(status.exitCode).toBe(0);
+      expect(JSON.parse(status.stdout)).toMatchObject({
+        connected: false,
+        email: null,
+        clientId: "oaiapp_test",
+      });
+      expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({
+        identity: null,
+        credentials: null,
+        verification: null,
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("logs in to explicitly chosen API-key providers, defaults to the configured provider, and logs out independently", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-login-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "opencode-go" };

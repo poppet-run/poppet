@@ -73,8 +73,8 @@ export const runChatGPTAuth = (command: AuthCommand) =>
       const revoked = yield* auth.signOut;
       yield* Console.log(
         revoked
-          ? "Signed out. Local tokens were cleared; the registration and host ID were retained."
-          : "Local tokens were cleared, but remote revocation was not confirmed. Disconnect Poppet in ChatGPT Settings.",
+          ? "Signed out. Local account identity, tokens, and verification were cleared; the registration and host ID were retained."
+          : "Local account identity, tokens, and verification were cleared, but remote revocation was not confirmed. Disconnect Poppet in ChatGPT Settings.",
       );
     }
   });

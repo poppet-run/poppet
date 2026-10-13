@@ -46,9 +46,14 @@ export const ChatGPTAuthLive = Layer.effect(
             );
         }
 
-        // Clear local tokens even if remote revocation fails. Keep the registration
+        // Clear account data even if remote revocation fails. Keep the registration
         // so the next sign-in can reuse it.
-        yield* store.write({ ...connection, credentials: null, verification: null });
+        yield* store.write({
+          ...connection,
+          identity: null,
+          credentials: null,
+          verification: null,
+        });
 
         return revoked;
       }),

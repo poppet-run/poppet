@@ -85,7 +85,7 @@ ID. The browser handles account and workspace selection and plan-usage consent.
 The local callback displays a confirmation page before its listener closes.
 Return to the terminal for the final identity and permission checks.
 Later sign-ins reuse the registration and host identifier. Poppet currently stores
-one account and rejects a returning identity that does not match it.
+one account and rejects a returning identity that does not match it until logout.
 [OpenAI registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
 
 `auth verify` selects the first visible model in the account's catalog. Pass a
@@ -112,7 +112,8 @@ commands and is removed on normal shutdown or interruption. After a process
 crash, remove a remaining lock only after confirming no Poppet auth command is
 running.
 
-`bun run start auth logout openai-chatgpt` attempts remote revocation and clears local tokens,
+`bun run start auth logout openai-chatgpt` attempts remote revocation and clears
+the local account identity, tokens, and verification record,
 while retaining the host identifier and registration. If remote revocation cannot
 be confirmed, the command reports this so you can disconnect Poppet in ChatGPT
 Settings.
