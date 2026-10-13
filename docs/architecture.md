@@ -51,8 +51,8 @@ and all tests. The workspaces share `tsconfig.base.json` and one lockfile.
 
 The CLI owns `runtime.ts` and composes live layers supplied by the packages.
 OAuth, browser sign-in, credentials, and model access stay together in the OpenAI
-provider package. Add other provider packages when needed; a common provider
-interface will follow the agent runner's requirements.
+provider package. Before durable conversation storage, add a shared provider
+contract and a separate OpenCode provider package as described below.
 
 ## Modules
 
@@ -95,6 +95,119 @@ modules are implemented. `runtime.ts` composes the auth and model layers only fo
 auth commands. SQLite storage, the agent loop, tools, memory, and scheduling are
 planned.
 
+## Planned provider interface
+
+This interface is planned and has not been implemented. Introduce it before
+durable conversation storage so the storage schema can preserve normalized
+messages and provider continuation data. The main agent will depend on one
+selected `Model` service supplied by the CLI runtime.
+
+| Workspace                   | Planned responsibility                                                          |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `@poppet/provider`          | Shared messages, tools, model descriptions, stream events, and inference errors |
+| `@poppet/provider-openai`   | ChatGPT authentication, OpenAI request translation, streams, and continuation   |
+| `@poppet/provider-opencode` | Go credentials, discovery, per-model protocol selection, and streams            |
+| `@poppet/cli`               | Provider/model configuration and composition of the selected live layer         |
+
+The agent owns context assembly, tool validation and execution, budgets, and run
+persistence. Provider adapters own authentication, HTTP requests, protocol
+translation, and stream completion. The agent imports shared contracts without
+importing a concrete provider or its SDK types.
+
+The proposed contract uses Effect for discovery and model resolution, and Stream
+for inference. Supporting types belong in `@poppet/provider` and use Effect
+Schema wherever configuration or external data needs validation.
+
+```ts
+interface ProviderOperations {
+  readonly models: Effect.Effect<ReadonlyArray<ModelDescription>, ProviderError>;
+
+  readonly resolve: (modelId: string) => Effect.Effect<ModelOperations, ProviderError>;
+}
+
+interface ModelOperations {
+  readonly description: ModelDescription;
+
+  readonly stream: (request: ModelRequest) => Stream.Stream<ModelEvent, ProviderError>;
+}
+
+export class Model extends Context.Service<Model, ModelOperations>()("poppet/Model") {}
+```
+
+`resolve` validates and binds a provider/model selection. The agent obtains
+`Model` through Effect and calls `model.stream(request)` for each model turn.
+Keep discovery and connection commands separate from the agent's inference
+dependency. Authentication flows remain provider-specific.
+
+### Shared request and response types
+
+- `ModelDescription` contains provider ID, model ID, display name, and supported
+  capabilities. Tool support and accepted generation settings belong to each
+  model. Represent unavailable metadata explicitly and reject unsupported
+  settings before inference.
+- `ModelRequest` contains a stable session ID, instructions, ordered conversation
+  history, tool definitions, and validated generation settings.
+- Conversation history supports user text, assistant text, tool calls, and tool
+  results. Preserve call IDs and output order. Tool definitions carry names,
+  descriptions, and argument schemas; adapters translate their wire format.
+- `ModelEvent` initially supports text deltas and a completed response containing
+  authoritative ordered output, tool calls, finish reason, and optional usage.
+  Expected failures use the stream's typed error channel.
+- `ProviderError` distinguishes authentication, permission, quota, rate limiting,
+  temporary failure, invalid request, context limits, and interrupted inference.
+  Include safe provider error codes and request IDs when available. Keep
+  provider-specific sign-in and credential-storage errors in their own services.
+
+The adapter emits completion only after the protocol confirms a successful
+terminal response. Missing completion, failed responses, and incomplete streams
+must fail even when text or tool arguments have arrived. The agent executes tools
+only from a completed response after argument and permission validation. Partial
+tool arguments never authorize execution.
+
+Each adapter scopes its active request and closes it on failure, interruption, or
+early stream-consumer termination. Propagate cancellation to the underlying
+request and enforce deadlines. Model requests are not automatically retried.
+
+### Continuation and selection
+
+Store a versioned, provider-owned continuation payload alongside normalized
+assistant output. It preserves data needed for later requests, such as encrypted
+reasoning and protocol-specific response items. Only the matching adapter
+interprets this payload. Validate its version and provider/model identity; keep
+credentials out of transcripts and continuation data.
+
+Extend the current environment configuration with `POPPET_PROVIDER` and
+`POPPET_MODEL`. Use `openai-chatgpt` for the existing subscription connection and
+`opencode-go` for Go. Reserve `openai-api` for later API-key support. Require an
+explicit model for agent runs, while keeping help, configuration, and connection
+commands usable before a model is selected. Credentials stay in separate
+protected storage or provider-specific secret environment values and never
+appear in printable application settings.
+
+The CLI builds only the selected provider's live dependencies. Resolve the
+selection at run start and record it with the run. Keep it fixed through every
+tool round trip. Configuration changes affect new runs, and changing providers
+initially starts a new session because continuation data may not be portable.
+Do not silently fall back to another provider or model.
+
+### Adapter requirements
+
+The OpenAI adapter keeps the existing ChatGPT credential lifecycle and exposes
+general inference through the shared contract. Subscription inference uses
+streamed Responses requests with `store: false`. Preserve completed output items
+by index when the terminal snapshot omits them, along with the complete tool and
+reasoning history required for continuation.
+[OpenAI inference requirements](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
+
+OpenCode Go uses an API key and documents Responses, Chat Completions, and
+Anthropic Messages endpoints depending on the model. Its adapter selects the
+protocol per model and sends a Poppet user agent and a stable
+`x-opencode-session` conversation ID. Start with an explicit supported
+model/protocol set and expand it as each protocol passes validation. Go specifies
+coding-agent traffic; resolve its suitability for Poppet's general notes and
+scheduled-assistant workloads before enabling it for those uses.
+[OpenCode Go requirements](https://opencode.ai/v2/docs/console/go/)
+
 ## Current authentication flow
 
 `CredentialStoreLive` owns the filesystem lock for an auth command's scope.
@@ -117,8 +230,8 @@ only after `response.completed` and a matching local tool result. It retains
 `response.output_item.done` items by output index, since the final event can omit
 the output array's contents. Those completed items take precedence over terminal
 snapshots when rebuilding history. It does not
-automatically retry model requests. The future chat runner will reuse this auth
-boundary and extend inference beyond verification.
+automatically retry model requests. The planned OpenAI adapter will reuse this
+auth boundary, and the chat runner will consume the shared `Model` service.
 
 ## Data and execution rules
 
@@ -127,10 +240,11 @@ replace persisted pending runs or task occurrences. A single owner executes runs
 and refreshes credentials; a background process will require a lock and protected
 local communication before it shares data with a CLI client.
 
-Store structured model messages, tool requests, and tool results. Trimming context
-must preserve complete exchanges and tool request/result pairs. Limit loaded
-memory, tool output, model turns, and tool calls. Stop clearly when the active
-exchange alone exceeds the context budget.
+Store normalized model messages, tool requests, tool results, versioned provider
+continuation data, and each run's provider/model selection. Trimming context must
+preserve complete exchanges, their continuation data, and tool request/result
+pairs. Limit loaded memory, tool output, model turns, and tool calls. Stop clearly
+when the active exchange alone exceeds the context budget.
 
 Keep credentials separate from notes, memory, and tool-readable files. Limit tools
 to the configured notes directory, including resolved symlink targets. The runner
