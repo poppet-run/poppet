@@ -15,9 +15,13 @@ export interface Authorization {
 
 export const startCallback = (selectedClientId: string | null) =>
   Effect.gen(function* () {
+    // State links the callback to this attempt; nonce does the same for the ID
+    // token. PKCE later proves that the code exchange holds this verifier.
     const state = randomBytes(32).toString("base64url");
     const nonce = randomBytes(32).toString("base64url");
     const verifier = randomBytes(64).toString("base64url");
+    // The HTTP handler completes this Deferred once, allowing the sign-in Effect
+    // to wait for the callback without polling.
     const result = yield* Deferred.make<Authorization, ConnectionError>();
     let consumed = false;
 
@@ -55,6 +59,7 @@ export const startCallback = (selectedClientId: string | null) =>
                 return callbackResponse(false);
               };
 
+              // Check state before accepting either a code or a reported sign-in error.
               if (
                 callback.searchParams.getAll("state").length !== 1 ||
                 callback.searchParams.get("state") !== state

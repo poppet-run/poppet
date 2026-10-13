@@ -46,6 +46,8 @@ export const CredentialStoreLive = Layer.effect(
       catch: storageError,
     });
 
+    // Exclusive file creation prevents another command from owning this store.
+    // The scope closes and removes the lock on completion or interruption.
     yield* Effect.acquireRelease(
       Effect.tryPromise({
         try: () => open(lockPath, "wx", 0o600),
@@ -62,6 +64,9 @@ export const CredentialStoreLive = Layer.effect(
         }),
     );
 
+    // Write and sync a separate file, then rename it over the saved connection
+    // so readers never see partial JSON. Cancellation waits for this write or
+    // its cleanup to finish because the whole operation is uninterruptible.
     const write = (connection: Connection) =>
       Effect.tryPromise({
         try: async () => {
@@ -84,6 +89,8 @@ export const CredentialStoreLive = Layer.effect(
       }).pipe(Effect.uninterruptible);
 
     const read = Effect.gen(function* () {
+      // lstat inspects the path itself, letting us reject symlinks before reading
+      // credentials or changing file permissions.
       const info = yield* Effect.tryPromise({
         try: () =>
           lstat(path).catch((cause: unknown) => {
@@ -94,6 +101,7 @@ export const CredentialStoreLive = Layer.effect(
       });
 
       if (info === null) {
+        // Persist the host ID on first use so later sign-ins identify this installation.
         const connection: Connection = {
           version: 1,
           hostId: `urn:uuid:${randomUUID()}`,

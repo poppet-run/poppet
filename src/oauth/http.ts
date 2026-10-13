@@ -10,6 +10,8 @@ export const networkError = () =>
     message: "Could not contact OpenAI. Retry later; existing credentials were retained.",
   });
 
+// Pass Effect's AbortSignal to fetch so interruption and deadlines cancel I/O.
+// Reject redirects so requests stay on the endpoints validated during discovery.
 export const request = (http: HttpFetch, url: string, init?: RequestInit) =>
   Effect.tryPromise({
     try: (signal) => http(url, { ...init, signal, redirect: "error" }),

@@ -9,6 +9,8 @@ export const planScope = "chatgpt.tokens.use.direct";
 export const requestedScopes =
   "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 
+// Redacted hides tokens when printed. Encoding this schema still produces the
+// actual token, so the credential file also needs protected permissions.
 export const Secret = Schema.RedactedFromValue(Schema.NonEmptyString);
 
 export const Identity = Schema.Struct({
@@ -67,6 +69,8 @@ export class ConnectionError extends Data.TaggedError("ConnectionError")<{
   readonly requestId?: string | undefined;
 }> {}
 
+// Translate remote status codes into reasons the auth flow can act on, such as
+// retaining credentials for a temporary failure or requiring a new sign-in.
 export const requestFailure = (
   status: number,
   code: string | null = null,

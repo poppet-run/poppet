@@ -15,6 +15,8 @@ interface AuthOperations {
   readonly recordVerification: (model: string) => Effect.Effect<void, ConnectionError>;
 }
 
+// This tag identifies the auth service in Effect's context. yield* ChatGPTAuth
+// retrieves the implementation supplied by the layer below.
 export class ChatGPTAuth extends Context.Service<ChatGPTAuth, AuthOperations>()(
   "poppet/ChatGPTAuth",
 ) {}
@@ -26,6 +28,8 @@ export const ChatGPTAuthLive = Layer.effect(
     const oauth = yield* OAuthClient;
     const login = yield* loginWorkflow;
     const accessToken = yield* accessTokenWorkflow;
+    // One permit serializes credential updates and status reads. In particular,
+    // two callers cannot renew the same refresh token at the same time.
     const semaphore = yield* Semaphore.make(1);
 
     const signOut = semaphore.withPermit(
@@ -42,6 +46,8 @@ export const ChatGPTAuthLive = Layer.effect(
             );
         }
 
+        // Clear local tokens even if remote revocation fails. Keep the registration
+        // so the next sign-in can reuse it.
         yield* store.write({ ...connection, credentials: null, verification: null });
 
         return revoked;

@@ -64,6 +64,8 @@ const runAuth = (args: ReadonlyArray<string>) =>
 export const run = (
   args: ReadonlyArray<string>,
 ): Effect.Effect<void, UsageError | Config.ConfigError | ConnectionError> => {
+  // Route help before providing any layers so it works even with invalid config
+  // and does not open credential storage or acquire its lock.
   if (args.length === 0 || (args.length === 1 && (args[0] === "--help" || args[0] === "-h"))) {
     return Console.log(help);
   }

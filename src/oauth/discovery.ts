@@ -33,6 +33,8 @@ export const discoverIssuer = (http: HttpFetch, expectedIssuer: string) =>
       ),
     );
 
+    // Restrict every advertised endpoint to the expected issuer before sending
+    // codes or tokens to it or fetching its signing keys.
     if (
       metadata.issuer !== expectedIssuer ||
       [

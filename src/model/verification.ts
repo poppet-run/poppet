@@ -14,6 +14,8 @@ const ToolArguments = Schema.fromJsonString(Schema.Struct({ challenge: Schema.No
 
 export const verifySubscription = (client: OpenAI, model: string) =>
   Effect.gen(function* () {
+    // The model knows the challenge, but can only learn this random proof through
+    // our tool result. Returning it checks the complete tool round trip.
     const challenge = randomBytes(24).toString("hex");
     const proof = `poppet_verified_${randomBytes(24).toString("hex")}`;
 
@@ -91,6 +93,8 @@ export const verifySubscription = (client: OpenAI, model: string) =>
           message: "The verification challenge did not match.",
         }),
       );
+    // Carry the complete first response forward, including encrypted reasoning,
+    // so the next request continues the same tool exchange.
     const history: ResponseInput = [];
 
     for (const item of first.output) {
@@ -105,6 +109,8 @@ export const verifySubscription = (client: OpenAI, model: string) =>
         );
     }
 
+    // Supply the tool result under the model's call ID. Disable further tool
+    // calls so the next response must return the proof we supplied.
     const second = yield* complete(client, {
       model,
       input: [

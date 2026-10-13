@@ -16,6 +16,7 @@ export const reconnect = () =>
     message: "Sign in first with bun run start auth login.",
   });
 
+// Expose connection metadata to the CLI without including any tokens.
 export const statusFor = (connection: Connection): ConnectionStatus => ({
   connected: connection.identity !== null && connection.credentials !== null,
   email: connection.identity?.email ?? null,
@@ -25,6 +26,8 @@ export const statusFor = (connection: Connection): ConnectionStatus => ({
   verification: connection.verification,
 });
 
+// Refresh replies can omit an unchanged ID token, refresh token, or scope.
+// Keep those fields; a missing access token or expiry stays empty.
 export const credentialsFor = (
   reply: TokenReply,
   now: number,

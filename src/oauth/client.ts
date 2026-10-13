@@ -28,6 +28,8 @@ export class OAuthClient extends Context.Service<OAuthClient, OAuthOperations>()
 
 export const makeOAuthClient = (http: HttpFetch = fetch, expectedIssuer = issuer) =>
   Effect.gen(function* () {
+    // Cache discovery within this client. The request stays lazy and runs when
+    // an operation first needs metadata, then shares the validated result.
     const discovery = yield* Effect.cached(discoverIssuer(http, expectedIssuer));
     const verifyIdentity = identityVerifier(http, expectedIssuer, discovery);
 

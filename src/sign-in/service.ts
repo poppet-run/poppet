@@ -24,11 +24,15 @@ export const makeBrowserSignIn = (
   timeoutMs = 300_000,
 ) => ({
   authorize: (request: SignInRequest) =>
+    // This scope owns the callback listener, including while waiting for the
+    // browser. Success, failure, timeout, and interruption all close it.
     Effect.scoped(
       Effect.gen(function* () {
         const callback = yield* startCallback(request.clientId);
         const url = new URL(request.endpoint);
         url.search = new URLSearchParams({
+          // The first sign-in asks for a registration. Later attempts reuse the
+          // client ID returned by the callback and saved in credential storage.
           client_id: request.clientId ?? "dynamic_agent_client",
           ext_agent_host_id: request.hostId,
           response_type: "code",

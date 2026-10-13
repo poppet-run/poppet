@@ -32,5 +32,7 @@ export const loadConfig = Effect.gen(function* () {
 });
 
 export const AppConfigLive = Layer.effect(AppConfig, loadConfig).pipe(
+  // Preserve empty environment values so validation rejects them instead of
+  // treating them as missing and silently choosing a default.
   Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))),
 );

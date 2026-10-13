@@ -16,6 +16,8 @@ export const modelFailure = (cause: unknown): ConnectionError => {
   });
 };
 
+// The SDK puts this OAuth access token in the bearer header through its apiKey
+// option. Disable retries so one verification attempt cannot silently repeat inference.
 export const clientFor = (token: Redacted.Redacted<string>, http: HttpFetch) =>
   new OpenAI({
     apiKey: Redacted.value(token),

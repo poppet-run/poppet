@@ -31,11 +31,14 @@ export const identityVerifier =
             [customFetch]: (url, options) =>
               http(url, {
                 ...options,
+                // Either jose's key-fetch timeout or Effect interruption can abort this request.
                 signal: options.signal ? AbortSignal.any([options.signal, signal]) : signal,
                 redirect: "error",
               }),
           });
 
+          // Verify the signature, issuer, audience, and lifetime before trusting
+          // the account claims. The audience binds this token to our registration.
           return jwtVerify(Redacted.value(token), keys, {
             issuer: expectedIssuer,
             audience: clientId,
@@ -54,6 +57,8 @@ export const identityVerifier =
       if ((verified.payload.iat ?? 0) > (yield* DateTime.nowAsDate).getTime() / 1000 + 5)
         return yield* Effect.fail(invalidIdentity());
 
+      // Initial sign-in checks the attempt's nonce. Refresh has no new browser
+      // attempt, so it passes null and the auth workflow checks the saved account ID.
       if (nonce !== null && claims.nonce !== nonce) return yield* Effect.fail(invalidIdentity());
 
       return { subject: claims.sub, email: claims.email ?? null };

@@ -3,6 +3,8 @@ import { Console, Effect } from "effect";
 
 import { run } from "./cli.ts";
 
+// Execute the CLI at the process boundary. BunRuntime handles interruption
+// and runs the cleanup registered by scoped resources.
 BunRuntime.runMain(
   run(Bun.argv.slice(2)).pipe(
     Effect.catch((error) =>

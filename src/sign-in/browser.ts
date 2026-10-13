@@ -10,6 +10,8 @@ export const openBrowser = (url: string) =>
     Effect.gen(function* () {
       const command = process.platform === "darwin" ? ["open", url] : ["xdg-open", url];
 
+      // Own the launcher subprocess until it exits. Cancellation kills a stuck
+      // launcher so sign-in does not leave a child process running.
       const browser = yield* Effect.acquireRelease(
         Effect.try({
           try: () => Bun.spawn(command, { stdout: "ignore", stderr: "ignore" }),

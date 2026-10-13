@@ -49,6 +49,7 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
         ),
       );
 
+      // Offer only models the account catalog marks as visible to the user.
       return catalog.models.filter((model) => model.visibility === "list");
     });
 
@@ -67,6 +68,8 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
         const token = yield* auth.accessToken;
         const client = clientFor(token, http);
         yield* verifySubscription(client, model);
+        // Record success only after inference completes and the local tool result
+        // comes back correctly. This confirms model access and tool handling.
         yield* auth.recordVerification(model);
 
         return model;
