@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const invoke = async (args: ReadonlyArray<string>, environment: Record<string, string> = {}) => {
@@ -54,5 +57,29 @@ describe("CLI", () => {
     expect(invalidCommand.exitCode).toBe(1);
     expect(invalidCommand.stdout).toBe("");
     expect(invalidCommand.stderr).toContain("Unknown command");
+  });
+
+  test("shows disconnected auth status and requires sign-in before verification", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-cli-test-"));
+
+    try {
+      const environment = { POPPET_DATA_DIR: directory };
+      const status = await invoke(["auth", "status"], environment);
+      expect(status.exitCode).toBe(0);
+      expect(JSON.parse(status.stdout)).toMatchObject({
+        connected: false,
+        planUsage: false,
+        verification: null,
+      });
+      const verification = await invoke(["auth", "verify"], environment);
+      expect(verification.exitCode).toBe(1);
+      expect(verification.stdout).toBe("");
+      expect(verification.stderr).toContain("auth login");
+      const invalid = await invoke(["auth", "login", "--unknown"], environment);
+      expect(invalid.exitCode).toBe(1);
+      expect(invalid.stderr).toContain("Unknown command");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
