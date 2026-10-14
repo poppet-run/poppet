@@ -20,6 +20,8 @@ import {
   RunOutcome,
   Session,
   StoredMessage,
+  ToolCall,
+  ToolOutcome,
   type StoreStatus,
 } from "#src/schema";
 
@@ -42,6 +44,17 @@ interface StoreOperations {
   readonly finishRun: (id: string, outcome: RunOutcome) => Effect.Effect<Run, StoreError>;
   readonly run: (id: string) => Effect.Effect<Run | null, StoreError>;
   readonly runs: (sessionId: string) => Effect.Effect<ReadonlyArray<Run>, StoreError>;
+  readonly recordToolCalls: (
+    runId: string,
+    response: Completion,
+  ) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;
+  readonly toolCalls: (runId: string) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;
+  readonly startToolCall: (runId: string, callId: string) => Effect.Effect<void, StoreError>;
+  readonly finishToolCall: (
+    runId: string,
+    callId: string,
+    outcome: ToolOutcome,
+  ) => Effect.Effect<void, StoreError>;
 }
 
 export class Store extends Context.Service<Store, StoreOperations>()("poppet/Store") {}
@@ -52,6 +65,39 @@ const runSql = `SELECT id, session_id AS sessionId, provider, model, workload, s
   started_at AS startedAt, finished_at AS finishedAt, result, failure_reason AS failureReason FROM runs`;
 
 const messageSql = `SELECT id, session_id AS sessionId, run_id AS runId, position, created_at AS createdAt, payload AS message FROM messages`;
+
+const toolSql = `SELECT run_id AS runId, call_id AS callId, position, name, namespace, arguments, status,
+  created_at AS createdAt, started_at AS startedAt, finished_at AS finishedAt, output, failure_reason AS failureReason FROM tool_calls`;
+
+const toolCallsFor = (database: Database, runId: string) =>
+  readRecord(() => {
+    using statement = database.prepare(`${toolSql} WHERE run_id = ? ORDER BY position`);
+
+    return Schema.decodeUnknownSync(Schema.Array(ToolCall))(statement.all(runId));
+  });
+
+const activeTool = (database: Database, runId: string, callId: string) => {
+  const run = requireRun(database, Schema.decodeUnknownSync(Id)(runId));
+  const call = toolCallsFor(database, runId).find((entry) => entry.callId === callId);
+
+  if (run.status !== "running" || !call || (call.status !== "pending" && call.status !== "running"))
+    throw new StoreError({
+      reason: "conflict",
+      message: "The tool call must belong to the running run and be active.",
+    });
+
+  return { run, call };
+};
+
+const interruptTools = (database: Database, runId: string, at: number, reason: string) => {
+  // Finalize this update before later run transitions and database shutdown.
+  using statement =
+    database.prepare(`UPDATE tool_calls SET status = CASE WHEN status = 'running' THEN 'uncertain' ELSE 'interrupted' END,
+    finished_at = MAX(created_at, COALESCE(started_at, 0), ?), failure_reason = ?
+    WHERE run_id = ? AND status IN ('pending', 'running')`);
+
+  statement.run(at, reason, runId);
+};
 
 const RunRecord = Schema.Struct({
   ...Run.fields,
@@ -215,10 +261,18 @@ export const StoreLive = Layer.effect(
     // Preserve its inputs, but never automatically replay work with uncertain effects.
     yield* atTime((at) =>
       database
-        .query(
-          `UPDATE runs SET status = 'interrupted', finished_at = MAX(created_at, COALESCE(started_at, 0), ?), failure_reason = 'process-exit' WHERE status IN ('pending', 'running')`,
-        )
-        .run(at),
+        .transaction(() => {
+          for (const run of Schema.decodeUnknownSync(Schema.Array(RunRecord))(
+            database.query(`${runSql} WHERE status IN ('pending', 'running')`).all(),
+          ))
+            interruptTools(database, run.id, at, "process-exit");
+          database
+            .query(
+              `UPDATE runs SET status = 'interrupted', finished_at = MAX(created_at, COALESCE(started_at, 0), ?), failure_reason = 'process-exit' WHERE status IN ('pending', 'running')`,
+            )
+            .run(at);
+        })
+        .immediate(),
     );
 
     const createSession = (
@@ -312,6 +366,11 @@ export const StoreLive = Layer.effect(
             const finishedAt = Math.max(at, run.createdAt, run.startedAt ?? 0);
 
             if (terminal.status === "completed") {
+              if (toolCallsFor(database, id).some((call) => call.status !== "completed"))
+                throw new StoreError({
+                  reason: "conflict",
+                  message: "All tool calls must complete before the run succeeds.",
+                });
               append(
                 database,
                 requireSession(database, run.sessionId),
@@ -335,6 +394,7 @@ export const StoreLive = Layer.effect(
                   id,
                 );
             } else {
+              interruptTools(database, id, finishedAt, terminal.reason);
               database
                 .query(
                   "UPDATE runs SET status = ?, finished_at = ?, failure_reason = ? WHERE id = ?",
@@ -390,7 +450,144 @@ export const StoreLive = Layer.effect(
           .immediate(),
       );
 
+    const recordToolCalls = (runId: string, response: Completion) =>
+      atTime((at) =>
+        database
+          .transaction(() => {
+            const run = requireRun(database, Schema.decodeUnknownSync(Id)(runId));
+
+            const decoded = Schema.decodeUnknownSync(Completion, { onExcessProperty: "error" })(
+              response,
+            );
+
+            const calls = decoded.output.flatMap((part) =>
+              part.type === "tool-call" ? [part] : [],
+            );
+
+            if (
+              run.status !== "running" ||
+              decoded.finishReason !== "tool-calls" ||
+              calls.length === 0
+            )
+              throw new StoreError({
+                reason: "conflict",
+                message: "Only completed tool requests in a running run can be recorded.",
+              });
+            const position = toolCallsFor(database, runId).length;
+            const createdAt = Math.max(at, run.startedAt ?? run.createdAt);
+
+            using existing = database.prepare(
+              "SELECT call_id FROM tool_calls WHERE run_id = ? AND call_id = ?",
+            );
+
+            using insert =
+              database.prepare(`INSERT INTO tool_calls (run_id, call_id, position, name, namespace, arguments, status, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`);
+
+            for (const [index, call] of calls.entries()) {
+              if (existing.get(runId, call.callId))
+                throw new StoreError({
+                  reason: "conflict",
+                  message: "Tool call IDs cannot be reused within a run.",
+                });
+              insert.run(
+                runId,
+                call.callId,
+                position + index,
+                call.name,
+                call.namespace,
+                call.arguments,
+                createdAt,
+              );
+            }
+
+            append(
+              database,
+              requireSession(database, run.sessionId),
+              runId,
+              [{ role: "assistant", output: decoded.output, continuation: decoded.continuation }],
+              createdAt,
+            );
+
+            return toolCallsFor(database, runId).slice(position);
+          })
+          .immediate(),
+      );
+
+    const startToolCall = (runId: string, callId: string) =>
+      atTime((at) =>
+        database
+          .transaction(() => {
+            const { call } = activeTool(database, runId, callId);
+
+            if (call.status !== "pending")
+              throw new StoreError({
+                reason: "conflict",
+                message: "The tool call has already started.",
+              });
+
+            using statement = database.prepare(
+              "UPDATE tool_calls SET status = 'running', started_at = ? WHERE run_id = ? AND call_id = ?",
+            );
+
+            statement.run(Math.max(at, call.createdAt), runId, callId);
+          })
+          .immediate(),
+      );
+
+    const finishToolCall = (runId: string, callId: string, outcome: ToolOutcome) =>
+      atTime((at) =>
+        database
+          .transaction(() => {
+            const { run, call } = activeTool(database, runId, callId);
+
+            const decoded = Schema.decodeUnknownSync(ToolOutcome, { onExcessProperty: "error" })(
+              outcome,
+            );
+
+            const finishedAt = Math.max(at, call.startedAt ?? call.createdAt);
+
+            if (decoded.status === "completed") {
+              if (call.status !== "running")
+                throw new StoreError({
+                  reason: "conflict",
+                  message: "Only a started tool call can complete.",
+                });
+              append(
+                database,
+                requireSession(database, run.sessionId),
+                runId,
+                [{ role: "tool", callId, output: decoded.output }],
+                finishedAt,
+              );
+            }
+
+            using statement = database.prepare(
+              "UPDATE tool_calls SET status = ?, finished_at = ?, output = ?, failure_reason = ? WHERE run_id = ? AND call_id = ?",
+            );
+
+            statement.run(
+              decoded.status,
+              finishedAt,
+              decoded.status === "completed" ? decoded.output : null,
+              decoded.status === "completed" ? null : decoded.reason,
+              runId,
+              callId,
+            );
+          })
+          .immediate(),
+      );
+
     return {
+      recordToolCalls,
+      startToolCall,
+      finishToolCall,
+      toolCalls: (runId) =>
+        atTime(() => {
+          requireRun(database, Schema.decodeUnknownSync(Id)(runId));
+
+          return toolCallsFor(database, runId);
+        }),
       createSession,
       queueRun,
       startRun,

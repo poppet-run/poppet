@@ -66,6 +66,27 @@ export const migrations: ReadonlyArray<Migration> = [
     ALTER TABLE runs ADD COLUMN workload TEXT NOT NULL DEFAULT 'assistant' CHECK (workload IN ('assistant', 'coding'));
   `,
   },
+  {
+    version: 4,
+    name: "durable-tool-calls",
+    sql: `
+    CREATE TABLE tool_calls (
+      run_id TEXT NOT NULL REFERENCES runs (id), call_id TEXT NOT NULL,
+      position INTEGER NOT NULL CHECK (position >= 0), name TEXT NOT NULL, namespace TEXT,
+      arguments TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'interrupted', 'uncertain')),
+      created_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER, output TEXT, failure_reason TEXT,
+      PRIMARY KEY (run_id, call_id), UNIQUE (run_id, position),
+      CHECK (created_at >= 0), CHECK (started_at IS NULL OR started_at >= created_at),
+      CHECK (finished_at IS NULL OR finished_at >= created_at),
+      CHECK (
+        (status = 'pending' AND started_at IS NULL AND finished_at IS NULL AND output IS NULL AND failure_reason IS NULL) OR
+        (status = 'running' AND started_at IS NOT NULL AND finished_at IS NULL AND output IS NULL AND failure_reason IS NULL) OR
+        (status = 'completed' AND started_at IS NOT NULL AND finished_at IS NOT NULL AND output IS NOT NULL AND failure_reason IS NULL) OR
+        (status IN ('failed', 'interrupted', 'uncertain') AND finished_at IS NOT NULL AND output IS NULL AND failure_reason IS NOT NULL)
+      )
+    ) STRICT;
+  `,
+  },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

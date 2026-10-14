@@ -9,5 +9,7 @@ export {
   RunStatus,
   RunOutcome,
   MessageBatch,
+  ToolCall,
+  ToolOutcome,
   type StoreStatus,
 } from "#src/schema";

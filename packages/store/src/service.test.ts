@@ -65,6 +65,78 @@ const reject = <A>(operation: Effect.Effect<A, StoreError>, reason: StoreError["
   );
 
 describe("conversation store", () => {
+  test.each(["pending", "running"])(
+    "recovers abandoned %s tool calls without replaying them",
+    async (state) => {
+      const fixtureStore = await fixture();
+
+      try {
+        const run = await fixtureStore.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("new-provider", "selected-model");
+            const pending = yield* store.queueRun(session.id, [user]);
+            yield* store.startRun(pending.id);
+            yield* store.recordToolCalls(pending.id, {
+              ...responseFor("new-provider"),
+              finishReason: "tool-calls",
+              output: [
+                {
+                  type: "tool-call",
+                  callId: "write",
+                  name: "save_note",
+                  namespace: "notes",
+                  arguments: '{"path":"a.md","content":"May already exist"}',
+                },
+                {
+                  type: "tool-call",
+                  callId: "read",
+                  name: "read_note",
+                  namespace: "notes",
+                  arguments: '{"path":"a.md"}',
+                },
+              ],
+            });
+
+            if (state === "running") yield* store.startToolCall(pending.id, "write");
+
+            return pending;
+          }),
+        );
+
+        await fixtureStore.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            expect(yield* store.run(run.id)).toMatchObject({
+              status: "interrupted",
+              failureReason: "process-exit",
+            });
+            expect(yield* store.toolCalls(run.id)).toEqual([
+              expect.objectContaining({
+                callId: "write",
+                status: state === "running" ? "uncertain" : "interrupted",
+                failureReason: "process-exit",
+                output: null,
+              }),
+              expect.objectContaining({
+                callId: "read",
+                status: "interrupted",
+                failureReason: "process-exit",
+                output: null,
+              }),
+            ]);
+            yield* reject(store.startToolCall(run.id, "write"), "conflict");
+            expect(
+              (yield* store.messages(run.sessionId)).map((entry) => entry.message.role),
+            ).toEqual(["user", "assistant"]);
+          }),
+        );
+      } finally {
+        await fixtureStore.close();
+      }
+    },
+  );
+
   test.each(["first-provider", "second-provider", "new-provider"] as const)(
     "persists %s messages, tools, continuation and completed runs across reopening",
     async (provider) => {
@@ -135,7 +207,7 @@ describe("conversation store", () => {
               { role: "assistant", output: response.output, continuation: response.continuation },
             ]);
             expect(yield* store.status).toMatchObject({
-              schemaVersion: 3,
+              schemaVersion: 4,
               sessions: 1,
               messages: 4,
               runs: 1,
@@ -332,7 +404,7 @@ describe("conversation store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 3,
+        schemaVersion: 4,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));
@@ -340,8 +412,8 @@ describe("conversation store", () => {
     }
   });
 
-  test.each([1, 2])(
-    "upgrades schema %s while retaining session history and defaulting to assistant workloads",
+  test.each([1, 2, 3])(
+    "upgrades schema %s while retaining session history and existing or default workloads",
     async (version) => {
       const fixtureStore = await fixture();
 
@@ -353,13 +425,22 @@ describe("conversation store", () => {
         old.run("PRAGMA foreign_keys = ON");
         applyMigrations(old, migrations.slice(0, version));
         old
-          .query("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)")
+          .query(
+            "INSERT INTO sessions (id, provider, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+          )
           .run("old-session", "new-provider", "selected-model", 1, 1);
         old
           .query(
             "INSERT INTO runs (id, session_id, provider, model, status, created_at) VALUES (?, ?, ?, ?, 'pending', 1)",
           )
           .run("old-run", "old-session", "new-provider", "selected-model");
+        const workload = version === 3 ? "coding" : "assistant";
+
+        if (version === 3) {
+          old.run("UPDATE sessions SET workload = 'coding'");
+          old.run("UPDATE runs SET workload = 'coding'");
+        }
+
         old
           .query(
             "INSERT INTO messages (session_id, position, created_at, payload) VALUES (?, ?, ?, ?)",
@@ -369,17 +450,17 @@ describe("conversation store", () => {
         await fixtureStore.run(
           Store.use((store) =>
             Effect.gen(function* () {
-              expect((yield* store.status).schemaVersion).toBe(3);
+              expect((yield* store.status).schemaVersion).toBe(4);
               expect((yield* store.messages("old-session"))[0]?.message).toEqual(user);
-              expect((yield* store.session("old-session"))?.workload).toBe("assistant");
+              expect((yield* store.session("old-session"))?.workload).toBe(workload);
               expect(yield* store.run("old-run")).toMatchObject({
                 status: "interrupted",
-                workload: "assistant",
+                workload,
                 failureReason: "process-exit",
               });
               expect(yield* store.queueRun("old-session", [user])).toMatchObject({
                 provider: "new-provider",
-                workload: "assistant",
+                workload,
               });
             }),
           ),

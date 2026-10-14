@@ -1,4 +1,4 @@
-import { Completion, Message, ModelRequest, ProviderId } from "@poppet/provider";
+import { Completion, Message, ModelRequest, ProviderId, Tool } from "@poppet/provider";
 import { Schema } from "effect";
 
 export const Id = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/));
@@ -58,6 +58,40 @@ export const MessageBatch = Schema.Struct({
   runId: Schema.NullOr(Id),
   messages: Schema.Array(Message),
 });
+
+export const ToolCall = Schema.Struct({
+  runId: Id,
+  callId: Schema.NonEmptyString,
+  position: Schema.Natural,
+  name: Tool.fields.name,
+  namespace: Tool.fields.namespace,
+  arguments: Schema.String,
+  status: Schema.Literals([
+    "pending",
+    "running",
+    "completed",
+    "failed",
+    "interrupted",
+    "uncertain",
+  ]),
+  createdAt: Schema.Natural,
+  startedAt: Schema.NullOr(Schema.Natural),
+  finishedAt: Schema.NullOr(Schema.Natural),
+  output: Schema.NullOr(Schema.String),
+  failureReason: Schema.NullOr(Schema.NonEmptyString),
+});
+
+export const ToolOutcome = Schema.Union([
+  Schema.Struct({ status: Schema.Literal("completed"), output: Schema.String }),
+  Schema.Struct({
+    status: Schema.Literals(["failed", "interrupted", "uncertain"]),
+    reason: Schema.NonEmptyString,
+  }),
+]);
+
+export type ToolCall = typeof ToolCall.Type;
+
+export type ToolOutcome = typeof ToolOutcome.Type;
 
 export type Session = typeof Session.Type;
 
