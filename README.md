@@ -511,11 +511,13 @@ returns the number of tasks removed, and repeating it on an empty list is safe.
 `@poppet/tasks` owns scheduling, task persistence, recovery, and the worker socket.
 The CLI parses arguments, prints results, and composes the live layers.
 
-`tasks work` owns SQLite and serves task commands through `store/tasks.sock`,
-protected by the `0700` store directory and `0600` socket. Task commands also work
-with the worker stopped and need no credentials or model to inspect existing tasks.
-Stop the worker before using chat, memory, or store commands. Ctrl-C finalizes
-active work as interrupted and releases the socket and owner lock. After a crash,
+`tasks work` owns SQLite and serves task, chat, memory, and store-status commands
+through `store/tasks.sock`, protected by the `0700` store directory and `0600`
+socket. Commands use the worker when it is running and execute locally when it
+is stopped. Inspecting saved data needs no model or provider credentials.
+Interactive and scheduled model requests share one runner. Chat streams to the
+invoking terminal; Ctrl-C cancels that request and leaves the worker running.
+Stopping the worker interrupts active requests and releases the socket and owner lock. After a crash,
 a new owner automatically reclaims storage from a dead process; unfinished work
 needs an explicit retry. Already queued work survives restart, and a committed
 answer is recovered without repeating its request. Task commands can open the
@@ -581,8 +583,27 @@ and retains tasks, results, notes, credentials, and logs. Inspection errors fail
 the command and preserve the installed configuration. Lifecycle mutations finish
 before an interruption returns; each launchctl subprocess has a 35-second timeout.
 Starting an already
-loaded worker does not interrupt an active request. Stop the worker before using
-chat, memory, or store commands.
+loaded worker does not interrupt an active request. Chat, memory, session
+inspection, and `store status` work while it is running:
+
+```fish
+bun run start memory remember project.name Acorn
+bun run start chat new "What is the project called?"
+bun run start chat sessions
+bun run start memory list
+bun run start store status
+```
+
+New chats use the invoking terminal's provider, model, and workload; continued
+chats use their saved selection. The worker's saved notes directory and budgets
+apply to remote requests. Memory changes are loaded on the next run. Chat output
+and session IDs go to the client terminal and are excluded from worker logs.
+Request bodies have a 10-second read deadline and a 2 MiB transport limit,
+which leaves room for the supported 1 MiB serialized chat context and command
+metadata. Oversized requests report a size error without being retried.
+Only an absent socket or refused connection permits local fallback. A lost,
+incomplete, or incompatible response fails without replaying the command. Restart
+an older worker with `worker stop` followed by `worker start` after updating code.
 
 The worker does not keep the Mac awake. After sleep, it runs an overdue one-off
 once. For a delayed recurring task, it runs the earliest due occurrence once and
@@ -641,6 +662,7 @@ apps/
       providers.ts        Provider registrations; first entry is the default
       tasks.ts            Task argument parsing
       worker.ts           Worker argument parsing, launch settings, and platform selection
+      worker-commands.ts  Interactive command transport and host request handling
 packages/
   agent/                  @poppet/agent
     src/service.ts        Persisted chat runner, deadlines, run finalization

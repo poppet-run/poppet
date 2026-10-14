@@ -16,4 +16,4 @@ export { executeLocalTaskCommand, readLocalTaskStatus, taskOperation } from "#sr
 
 export { runTaskWorker, WorkerConnections } from "#src/scheduler";
 
-export { remoteTaskCommand, taskSocketPath } from "#src/task-socket";
+export { remoteTaskCommand, taskSocketPath, requestWorker, WorkerRequests } from "#src/task-socket";

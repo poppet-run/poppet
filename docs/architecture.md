@@ -356,6 +356,9 @@ assembly, and model execution are outside this store's record APIs.
 ## Persisted chat
 
 `AgentLive` captures `Store`, `ModelResolver`, and validated `ChatSettings`.
+One scoped semaphore serializes interactive and scheduled request streams,
+including persistence and provider cleanup. Waiting consumers can be cancelled
+before creating a run.
 Its `send` stream first saves the input and starts a run, then resolves the
 session's provider/model. The CLI supplies a resolver that builds only that
 registration inside the stream scope. Provider resources, including credential
@@ -546,6 +549,35 @@ by sleep enqueues one due occurrence and records the skipped interval; it does
 not replay every missed recurrence. Expiry, quota pauses, and explicit retry rules
 remain in the task package. Native startup and physical sleep/wake need manual
 validation in addition to injected lifecycle and clock tests.
+
+## Interactive worker commands
+
+The existing task socket also accepts host-provided interactive requests.
+`WorkerRequests` lets the CLI supply `/commands` without importing CLI command
+schemas or memory behavior into the task package. The host validates chat,
+memory, and store-status payloads and uses the same command functions as direct
+local execution. New chat payloads include the client's provider, model, and
+workload; continued chats resolve their saved session. Notes paths and chat
+budgets come from the worker's existing layers.
+
+The listener owns the full request, including JSON body decoding, in a scoped
+fiber. Body reads have a 10-second deadline; idle timeouts are disabled only after
+a streaming response is ready. The transport accepts up to 2 MiB, leaving room
+for a supported 1 MiB serialized chat context and command metadata. Oversized
+requests return a clear size error without local fallback.
+
+Each streaming response owns a worker-scoped fiber and a bounded output queue. Responses
+stream validated stdout/stderr frames and end with an explicit success or failure
+frame. Disconnecting a client interrupts its fiber, finalizes the run, and releases
+the shared agent permit. Worker shutdown also cancels queued and active requests
+before releasing storage. Session IDs and interactive output go to the client,
+not the worker log. Memory edits affect subsequent run snapshots.
+
+Clients check the same socket ownership and permissions as task commands. Only
+absence or connection refusal permits direct local execution. Once delivered,
+commands are never replayed after a transport error, malformed frame, or missing
+completion. Older workers must be restarted to expose the new endpoint. No saved
+record schema or migration changes are needed.
 
 ## Dependencies
 

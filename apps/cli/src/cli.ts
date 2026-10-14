@@ -38,6 +38,7 @@ import { providers } from "#src/providers";
 import { findProvider, runtimeLayers } from "#src/runtime";
 import { parseTaskCommand } from "#src/tasks";
 import { manageWorker, parseWorkerCommand } from "#src/worker";
+import { remoteWorkerCommand, WorkerRequestsLive, type WorkerCommand } from "#src/worker-commands";
 
 class UsageError extends Data.TaggedError("UsageError")<{
   readonly message: string;
@@ -104,6 +105,19 @@ export const makeCLI = (
   write: ChatWriter = writeChatText,
 ) => {
   const runtime = runtimeLayers(registered);
+
+  const throughWorker = <E>(command: WorkerCommand, local: Effect.Effect<void, E>) =>
+    Effect.gen(function* () {
+      const config = yield* AppConfig;
+
+      const handled = yield* remoteWorkerCommand(
+        taskSocketPath(config.dataDirectory),
+        command,
+        write,
+      );
+
+      if (!handled) yield* local;
+    }).pipe(Effect.provide(runtime.config));
 
   const runAuth = (command: AuthCommand) =>
     Effect.gen(function* () {
@@ -174,10 +188,14 @@ export const makeCLI = (
       return showConfig.pipe(Effect.provide(runtime.config));
 
     if (args.length === 2 && args[0] === "store" && args[1] === "status")
-      return Effect.gen(function* () {
-        const store = yield* Store;
-        yield* Console.log(JSON.stringify(yield* store.status, null, 2));
-      }).pipe(Effect.provide(runtime.store));
+      return throughWorker(
+        { kind: "store" },
+        Store.use((store) =>
+          store.status.pipe(
+            Effect.flatMap((status) => Console.log(JSON.stringify(status, null, 2))),
+          ),
+        ).pipe(Effect.provide(runtime.store)),
+      );
 
     if (args.length === 2 && args[0] === "provider" && args[1] === "models")
       return Effect.gen(function* () {
@@ -204,9 +222,12 @@ export const makeCLI = (
       // Validate arguments before acquiring the store and applying migrations.
       return parseMemoryCommand(args.slice(1)).pipe(
         Effect.flatMap((command) =>
-          manageMemory(command).pipe(
-            Effect.provide(runtime.memory),
-            Effect.flatMap((text) => Console.log(text)),
+          throughWorker(
+            { kind: "memory", command },
+            manageMemory(command).pipe(
+              Effect.provide(runtime.memory),
+              Effect.flatMap((text) => Console.log(text)),
+            ),
           ),
         ),
       );
@@ -260,7 +281,11 @@ export const makeCLI = (
 
     if (args[0] === "tasks") {
       if (args.length === 2 && args[1] === "work")
-        return runTaskWorker.pipe(Effect.provide(Layer.merge(runtime.chat, runtime.tasks)));
+        return runTaskWorker.pipe(
+          Effect.provide(
+            Layer.merge(WorkerRequestsLive.pipe(Layer.provideMerge(runtime.chat)), runtime.tasks),
+          ),
+        );
 
       return Effect.gen(function* () {
         const command = yield* parseTaskCommand(args.slice(1));
@@ -279,17 +304,23 @@ export const makeCLI = (
 
       if (command !== null) {
         if (command.action === "show" || command.action === "sessions")
-          return inspectChat(command).pipe(
-            Effect.provide(runtime.store),
-            Effect.flatMap((text) => Console.log(text)),
+          return throughWorker(
+            { kind: "chat", command },
+            inspectChat(command).pipe(
+              Effect.provide(runtime.store),
+              Effect.flatMap((text) => Console.log(text)),
+            ),
           );
-        const selected = command;
 
-        return Effect.gen(function* () {
-          const submission = yield* prepareChat(selected);
-
-          return yield* sendChat(submission, write).pipe(Effect.provide(runtime.chat));
-        }).pipe(Effect.provide(runtime.config));
+        return prepareChat(command).pipe(
+          Effect.flatMap((submission) =>
+            throughWorker(
+              { kind: "chat", command: submission },
+              sendChat(submission, write).pipe(Effect.provide(runtime.chat)),
+            ),
+          ),
+          Effect.provide(runtime.config),
+        );
       }
     }
 

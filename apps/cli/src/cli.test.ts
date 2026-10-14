@@ -29,6 +29,7 @@ const invoke = async (
   return { stdout, stderr, exitCode };
 };
 
+// Multi-command flows include repeated Bun startup; allow slower CI runners to finish.
 describe("CLI", () => {
   test("rejects missing prompts and invalid task IDs as argument errors before opening the store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-invalid-"));
@@ -205,9 +206,9 @@ describe("CLI", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
-  test("task clients reach the running worker and a second worker cannot acquire ownership", async () => {
+  test("task, memory, and inspection clients reach the worker and a second worker cannot acquire ownership", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-cli-"));
     const environment = { PATH: process.env.PATH ?? "", POPPET_DATA_DIR: directory };
 
@@ -236,6 +237,16 @@ describe("CLI", () => {
       expect(added.exitCode).toBe(0);
       const task = JSON.parse(added.stdout);
       expect(task.model).toBe("saved-model");
+      const remembered = await invoke(["memory", "remember", "project", "Acorn"], environment);
+      expect(remembered.exitCode).toBe(0);
+      expect(JSON.parse(remembered.stdout)).toMatchObject({ key: "project", value: "Acorn" });
+      expect(JSON.parse((await invoke(["memory", "list"], environment)).stdout)).toMatchObject([
+        { key: "project", value: "Acorn" },
+      ]);
+      expect(JSON.parse((await invoke(["chat", "sessions"], environment)).stdout)).toEqual([]);
+      expect(JSON.parse((await invoke(["store", "status"], environment)).stdout)).toMatchObject({
+        sessions: 0,
+      });
       expect(JSON.parse((await invoke(["tasks", "status"], environment)).stdout)).toMatchObject({
         running: true,
         pid: worker.pid,
@@ -267,7 +278,7 @@ describe("CLI", () => {
       expect(await readdir(join(directory, "store"))).not.toContain("tasks.sock");
       await rm(directory, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   test("manages explicit facts across CLI restarts without a provider connection or model", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-memory-cli-"));
@@ -314,7 +325,7 @@ describe("CLI", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   test("rejects invalid memory commands before creating a store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-memory-args-"));
@@ -416,7 +427,7 @@ describe("CLI", () => {
         });
         expect(await Bun.file(path).exists()).toBe(false);
         expect((await invoke(["auth", "logout"], environment)).exitCode).toBe(0);
-        expect(await readdir(join(directory, "auth"))).toEqual([
+        expect((await readdir(join(directory, "auth"))).toSorted()).toEqual([
           "other-provider.json",
           "owner.lock.sqlite",
         ]);
@@ -485,7 +496,7 @@ describe("CLI", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   test("uses environment credentials without writing them until login and rejects invalid overrides", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-env-"));

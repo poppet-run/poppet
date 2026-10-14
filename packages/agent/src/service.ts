@@ -1,6 +1,6 @@
 import { ProviderError, type ModelOperations, type ProviderId } from "@poppet/provider";
 import { Store, StoreError, type Run, type RunOutcome } from "@poppet/store";
-import { Cause, Context, Effect, Exit, Layer, Option, Stream, type Scope } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Option, Semaphore, Stream, type Scope } from "effect";
 
 import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
@@ -61,6 +61,7 @@ export const AgentLive = Layer.effect(
     const resolver = yield* ModelResolver;
     const converse = yield* conversation;
     const readMemoryPrompt = yield* memoryPrompt;
+    const requests = yield* Semaphore.make(1);
 
     const send = (
       sessionId: string,
@@ -153,12 +154,19 @@ export const AgentLive = Layer.effect(
           ),
         );
 
-        return stream.pipe(
+        const settledStream = stream.pipe(
           Stream.onExit((exit) =>
             active === null || settled
               ? Effect.void
               : store.finishRun(active.id, failureOutcome(exit)).pipe(Effect.asVoid, Effect.orDie),
           ),
+        );
+
+        // Interactive and scheduled requests share one permit for the full stream lifetime.
+        return Stream.unwrap(
+          Effect.acquireRelease(requests.take(1).pipe(Effect.interruptible), () =>
+            requests.release(1),
+          ).pipe(Effect.as(settledStream)),
         );
       });
 

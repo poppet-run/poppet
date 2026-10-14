@@ -1,8 +1,8 @@
 # Poppet implementation plan
 
-Status: Phases 1–8 implemented with automated checks; macOS login startup, physical sleep/wake, and live unattended inference require manual validation
+Status: Phases 1–9 implemented with automated checks; macOS login startup, physical sleep/wake, and live unattended inference require manual validation
 
-Updated: 2026-10-14
+Updated: 2026-10-15
 
 One user, one active ChatGPT account, a configured provider/model, a local
 TypeScript application, SQLite, explicit memory, and locally scheduled tasks.
@@ -383,7 +383,8 @@ need explicit provider resume. Temporary/rate-limit failures delay subsequent wo
 from 30 seconds up to five minutes without replaying failed requests. Restart
 retains pending work, interrupts active work for manual retry, and recovers answers
 committed before an occurrence outcome. Task commands use a protected Unix socket
-while the worker owns SQLite. Other store commands require stopping it first.
+while the worker owns SQLite. Phase 9 also routes chat, memory, and store status
+through that owner.
 Automated tests cover scheduling, recovery, injected model runs, and concurrent
 task clients. Live provider inference remains a manual check.
 
@@ -426,6 +427,43 @@ Automated checks cover injected launchctl lifecycle operations, protected files,
 secret exclusion, process-crash ownership recovery, SIGTERM shutdown, cached
 connection status, and scheduling after a simulated sleep/wake clock jump. Native
 launchd startup, actual sleep/wake, and a live daily summary remain manual checks.
+
+## Phase 9: Interactive use with the worker running
+
+Depends on phase 8.
+
+Route chat, memory, session inspection, and store status through the existing
+protected worker socket. Retain direct execution when the worker is stopped.
+Share one model runner between interactive and scheduled requests, and preserve
+streamed output, cancellation, saved provider/model selection, and tool permissions.
+
+Implemented with a host-supplied `WorkerRequests` service. The task package owns
+the listener and socket protection; the CLI owns interactive command validation,
+execution, and terminal output. No additional server, workspace, dependency, or
+migration is introduced. The agent holds a single scoped permit across each
+request stream, including persistence and provider cleanup. Queued requests can
+be cancelled before they start.
+
+The listener owns decoding and command execution. Body reads have a 10-second
+deadline, and shutdown interrupts incomplete uploads. A 2 MiB transport limit
+covers the supported 1 MiB serialized chat budget plus command metadata;
+oversized requests report a size error without being retried.
+
+Responses carry stdout, stderr, and an explicit success or failure frame over a
+bounded stream. Client disconnects and worker shutdown interrupt owned requests.
+Only an absent socket or refused connection allows local execution; malformed,
+lost, incomplete, or older-worker replies never replay a delivered command.
+Interactive content is returned to the client without entering worker logs.
+Remote execution uses the worker's notes directory and budgets, while new chats
+retain the client's selected provider, model, and workload. Auth commands retain
+their existing direct credential-storage behavior.
+
+Completion check: leave the worker running, chat, change memory, inspect sessions
+and scheduled results, and cancel a request without stopping the worker.
+Automated socket tests cover these flows with injected providers, queued chat and
+scheduled execution, native transport cancellation, shutdown cleanup, invalid
+requests, and safe local fallback after stop. Live provider inference remains a
+manual check.
 
 ## Validation
 
