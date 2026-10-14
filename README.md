@@ -84,7 +84,8 @@ Initial sign-in registers Poppet with its own host identifier and issued client
 ID. The browser handles account and workspace selection and plan-usage consent.
 The local callback displays a confirmation page before its listener closes.
 Return to the terminal for the final identity and permission checks.
-Later sign-ins reuse the registration and host identifier. Poppet currently stores
+Later sign-ins reuse the registration and host identifier until logout. The next
+login after logout creates a fresh registration and host identifier. Poppet currently stores
 one account and rejects a returning identity that does not match it until logout.
 [OpenAI registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
 
@@ -112,9 +113,10 @@ commands and is removed on normal shutdown or interruption. After a process
 crash, remove a remaining lock only after confirming no Poppet auth command is
 running.
 
-`bun run start auth logout openai-chatgpt` attempts remote revocation and clears
-the local account identity, tokens, and verification record,
-while retaining the host identifier and registration. If remote revocation cannot
+`bun run start auth logout openai-chatgpt` deletes the saved connection file,
+including account identity, tokens, verification, registration, and host identifier,
+then attempts remote revocation. Status does not recreate those details.
+Other providers' credentials are preserved. If remote revocation cannot
 be confirmed, the command reports this so you can disconnect Poppet in ChatGPT
 Settings.
 

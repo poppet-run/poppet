@@ -17,13 +17,13 @@ export const reconnect = () =>
   });
 
 // Expose connection metadata to the CLI without including any tokens.
-export const statusFor = (connection: Connection): ConnectionStatus => ({
-  connected: connection.identity !== null && connection.credentials !== null,
-  email: connection.identity?.email ?? null,
-  clientId: connection.clientId,
-  planUsage: connection.credentials?.scopes.includes(planScope) ?? false,
-  expiresAt: connection.credentials?.expiresAt ?? null,
-  verification: connection.verification,
+export const statusFor = (connection: Connection | null): ConnectionStatus => ({
+  connected: connection !== null && connection.identity !== null && connection.credentials !== null,
+  email: connection?.identity?.email ?? null,
+  clientId: connection?.clientId ?? null,
+  planUsage: connection?.credentials?.scopes.includes(planScope) ?? false,
+  expiresAt: connection?.credentials?.expiresAt ?? null,
+  verification: connection?.verification ?? null,
 });
 
 // Refresh replies can omit an unchanged ID token, refresh token, or scope.

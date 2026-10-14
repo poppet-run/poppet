@@ -17,7 +17,7 @@ export const loginWorkflow = Effect.gen(function* () {
 
   return (consent: boolean) =>
     Effect.gen(function* () {
-      const saved = yield* store.read;
+      const saved = yield* store.initialize;
       const endpoint = yield* oauth.authorizationEndpoint;
 
       const authorization = yield* browser.authorize({

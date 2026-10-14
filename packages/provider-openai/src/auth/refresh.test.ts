@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { Effect, Redacted } from "effect";
 
@@ -54,7 +56,7 @@ describe("ChatGPT token lifecycle", () => {
     }
   });
   test.each([false, true])(
-    "clears account data on sign-out with revocation failure %s, keeping registration",
+    "deletes all local provider details on sign-out with revocation failure %s and starts a fresh registration",
     async (revokeFailure) => {
       const harness = await createHarness();
 
@@ -62,6 +64,8 @@ describe("ChatGPT token lifecycle", () => {
         await harness.run(login);
         await harness.run(verify);
         const before = await harness.saved();
+        const unrelated = join(harness.directory, "auth/other-provider.json");
+        await writeFile(unrelated, "other-provider-details");
         harness.controls.revokeFailure = revokeFailure;
 
         const revoked = await harness.run(
@@ -77,20 +81,21 @@ describe("ChatGPT token lifecycle", () => {
         expect(await harness.run(status)).toMatchObject({
           connected: false,
           email: null,
-          clientId: "oaiapp_test",
+          clientId: null,
           planUsage: false,
           expiresAt: null,
           verification: null,
         });
-        expect(await harness.saved()).toEqual({
-          version: 1,
-          hostId: before.hostId,
-          clientId: before.clientId,
-          identity: null,
-          credentials: null,
-          verification: null,
-        });
+        const connectionFile = Bun.file(join(harness.directory, "auth/connection.json"));
+        expect(await connectionFile.exists()).toBe(false);
+        expect(await readFile(unrelated, "utf8")).toBe("other-provider-details");
         await expect(harness.run(verify)).rejects.toMatchObject({ reason: "reconnect" });
+        expect(await connectionFile.exists()).toBe(false);
+        await harness.run(login);
+        expect((await harness.saved()).hostId).not.toBe(before.hostId);
+        expect(harness.authorizations.at(-1)?.searchParams.get("client_id")).toBe(
+          "dynamic_agent_client",
+        );
       } finally {
         await harness.close();
       }

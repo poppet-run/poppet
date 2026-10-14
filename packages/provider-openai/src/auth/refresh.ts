@@ -13,6 +13,8 @@ export const accessTokenWorkflow = Effect.gen(function* () {
   // Reusing this Effect still reads current credentials each time it is executed.
   return Effect.gen(function* () {
     const connection = yield* store.read;
+
+    if (connection === null) return yield* Effect.fail(reconnect());
     const credentials = connection.credentials;
     const clientId = connection.clientId;
 

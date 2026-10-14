@@ -40,8 +40,8 @@ const connection = Layer.effect(
         Effect.mapError(providerFailure),
         Effect.map((revoked) =>
           revoked
-            ? "Signed out. Local account identity, tokens, and verification were cleared; the registration and host ID were retained."
-            : "Local account identity, tokens, and verification were cleared, but remote revocation was not confirmed. Disconnect Poppet in ChatGPT Settings.",
+            ? "Signed out. All local ChatGPT connection details were deleted, including identity, tokens, verification, registration, and host ID."
+            : "All local ChatGPT connection details were deleted, but remote revocation was not confirmed. Disconnect Poppet in ChatGPT Settings.",
         ),
       ),
       verify: (modelId) => model.verify(modelId).pipe(Effect.mapError(providerFailure)),

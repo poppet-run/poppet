@@ -154,9 +154,10 @@ Depends on phase 2.
 
 Keep credentials in protected local storage separate from transcripts, notes, and
 memory. Refresh near expiry, serialize refresh attempts, and atomically replace
-credentials. Reuse the saved host identifier and registration. Add sign-in,
-connection-status, and sign-out commands. Sign-out attempts session revocation and
-clears local tokens even when revocation fails, while reporting the failure.
+credentials. Reuse the saved host identifier and registration until explicit logout.
+Sign-out deletes all local connection details before attempting session revocation,
+reports revocation failures, and leaves other providers' credentials intact.
+Status reads do not recreate deleted details; the next login starts a fresh registration.
 [Accounts and sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions)
 
 The credential storage, refresh, auth commands, and exclusive auth-command lock
@@ -193,7 +194,8 @@ Live ChatGPT token renewal remains a follow-up; the storage implementation does
 not establish that live check. Automatic recovery of crash-left ownership locks
 remains deferred.
 
-Completion check: reconnecting reuses registration, refresh survives restart,
+Completion check: reconnecting before logout reuses registration, login after logout
+creates a fresh host identity and registration, refresh survives restart,
 unusable credentials request reconnect, and stored records migrate and reopen
 correctly. Test interrupted credential writes and competing owners.
 

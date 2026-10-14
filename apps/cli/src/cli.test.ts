@@ -63,45 +63,52 @@ describe("CLI", () => {
     }
   });
 
-  test("logout clears an identity retained by an earlier logout", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-logout-identity-"));
-    const environment = { POPPET_DATA_DIR: directory };
+  test.each(["retained registration", "malformed details"])(
+    "logout deletes %s completely without affecting another provider or recreating details",
+    async (kind) => {
+      const directory = await mkdtemp(join(tmpdir(), "poppet-logout-details-"));
+      const environment = { POPPET_DATA_DIR: directory };
 
-    try {
-      await mkdir(join(directory, "auth"));
-      const path = join(directory, "auth/connection.json");
-      await writeFile(
-        path,
-        JSON.stringify({
-          version: 1,
-          hostId: "urn:uuid:00000000-0000-4000-8000-000000000000",
-          clientId: "oaiapp_test",
-          identity: { subject: "old-account", email: "signed-out@example.invalid" },
-          credentials: null,
+      try {
+        await mkdir(join(directory, "auth"));
+        const path = join(directory, "auth/connection.json");
+        await writeFile(
+          path,
+          kind === "malformed details"
+            ? "invalid-json"
+            : JSON.stringify({
+                version: 1,
+                hostId: "urn:uuid:00000000-0000-4000-8000-000000000000",
+                clientId: "oaiapp_test",
+                identity: { subject: "old-account", email: "signed-out@example.invalid" },
+                credentials: null,
+                verification: { model: "previous-model", at: 1 },
+              }),
+        );
+        const unrelated = join(directory, "auth/other-provider.json");
+        await writeFile(unrelated, "other-provider-details");
+
+        const logout = await invoke(["auth", "logout"], environment);
+        expect(logout.exitCode).toBe(0);
+        expect(logout.stdout).toContain("All local ChatGPT connection details were deleted");
+        expect(await Bun.file(path).exists()).toBe(false);
+        const status = await invoke(["auth", "status"], environment);
+        expect(status.exitCode).toBe(0);
+        expect(JSON.parse(status.stdout)).toMatchObject({
+          connected: false,
+          email: null,
+          clientId: null,
           verification: null,
-        }),
-      );
-
-      const logout = await invoke(["auth", "logout"], environment);
-      const status = await invoke(["auth", "status"], environment);
-
-      expect(logout.exitCode).toBe(0);
-      expect(logout.stdout).toContain("account identity, tokens, and verification were cleared");
-      expect(status.exitCode).toBe(0);
-      expect(JSON.parse(status.stdout)).toMatchObject({
-        connected: false,
-        email: null,
-        clientId: "oaiapp_test",
-      });
-      expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({
-        identity: null,
-        credentials: null,
-        verification: null,
-      });
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
+        });
+        expect(await Bun.file(path).exists()).toBe(false);
+        expect((await invoke(["auth", "logout"], environment)).exitCode).toBe(0);
+        expect(await readdir(join(directory, "auth"))).toEqual(["other-provider.json"]);
+        expect(await readFile(unrelated, "utf8")).toBe("other-provider-details");
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("logs in to explicitly chosen API-key providers, defaults to the configured provider, and logs out independently", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-login-"));
@@ -325,6 +332,7 @@ describe("CLI", () => {
       expect(verification.exitCode).toBe(1);
       expect(verification.stdout).toBe("");
       expect(verification.stderr).toContain("auth login");
+      expect(await Bun.file(join(directory, "auth/connection.json")).exists()).toBe(false);
       const invalid = await invoke(["auth", "login", "--unknown"], environment);
       expect(invalid.exitCode).toBe(1);
       expect(invalid.stderr).toContain("Unknown command");

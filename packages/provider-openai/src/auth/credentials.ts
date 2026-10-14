@@ -8,7 +8,9 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { Connection, ConnectionError } from "#src/connection";
 
 interface StoreOperations {
-  readonly read: Effect.Effect<Connection, ConnectionError>;
+  readonly read: Effect.Effect<Connection | null, ConnectionError>;
+  readonly initialize: Effect.Effect<Connection, ConnectionError>;
+  readonly remove: Effect.Effect<void, ConnectionError>;
   readonly write: (connection: Connection) => Effect.Effect<void, ConnectionError>;
 }
 
@@ -100,21 +102,7 @@ export const CredentialStoreLive = Layer.effect(
         catch: storageError,
       });
 
-      if (info === null) {
-        // Persist the host ID on first use so later sign-ins identify this installation.
-        const connection: Connection = {
-          version: 1,
-          hostId: `urn:uuid:${randomUUID()}`,
-          clientId: null,
-          identity: null,
-          credentials: null,
-          verification: null,
-        };
-
-        yield* write(connection);
-
-        return connection;
-      }
+      if (info === null) return null;
 
       const contents = yield* Effect.tryPromise({
         try: async () => {
@@ -132,6 +120,35 @@ export const CredentialStoreLive = Layer.effect(
       );
     });
 
-    return { read, write } satisfies StoreOperations;
+    const initialize = Effect.gen(function* () {
+      const saved = yield* read;
+
+      if (saved !== null) return saved;
+
+      // Only a login creates provider identity. Status and logout stay read-only
+      // when no connection has been saved.
+      const connection: Connection = {
+        version: 1,
+        hostId: `urn:uuid:${randomUUID()}`,
+        clientId: null,
+        identity: null,
+        credentials: null,
+        verification: null,
+      };
+
+      yield* write(connection);
+
+      return connection;
+    });
+
+    const remove = Effect.tryPromise({
+      try: () =>
+        unlink(path).catch((cause: unknown) => {
+          if (!Schema.is(MissingFile)(cause)) throw cause;
+        }),
+      catch: storageError,
+    }).pipe(Effect.uninterruptible);
+
+    return { read, initialize, write, remove } satisfies StoreOperations;
   }),
 );

@@ -3,7 +3,7 @@ import { Context, DateTime, Effect, Layer, Redacted, Semaphore } from "effect";
 import { CredentialStore } from "#src/auth/credentials";
 import { loginWorkflow } from "#src/auth/login";
 import { accessTokenWorkflow } from "#src/auth/refresh";
-import { type ConnectionStatus, statusFor } from "#src/auth/state";
+import { type ConnectionStatus, statusFor, reconnect } from "#src/auth/state";
 import type { ConnectionError } from "#src/connection";
 import { OAuthClient } from "#src/oauth/client";
 
@@ -34,10 +34,23 @@ export const ChatGPTAuthLive = Layer.effect(
 
     const signOut = semaphore.withPermit(
       Effect.gen(function* () {
-        const connection = yield* store.read;
         let revoked = true;
 
-        if (connection.credentials?.refreshToken && connection.clientId) {
+        const connection = yield* store.read.pipe(
+          Effect.catchTag("ConnectionError", () => {
+            // Corrupt or unreadable details still need deleting; remote revocation
+            // cannot be confirmed without their token and registration.
+            revoked = false;
+
+            return Effect.succeed(null);
+          }),
+        );
+
+        // Delete local identity before contacting the remote endpoint so failure
+        // or interruption cannot leave provider details behind.
+        yield* store.remove;
+
+        if (connection?.credentials?.refreshToken && connection.clientId) {
           revoked = yield* oauth
             .revoke(connection.credentials.refreshToken, connection.clientId)
             .pipe(
@@ -45,15 +58,6 @@ export const ChatGPTAuthLive = Layer.effect(
               Effect.catch(() => Effect.succeed(false)),
             );
         }
-
-        // Clear account data even if remote revocation fails. Keep the registration
-        // so the next sign-in can reuse it.
-        yield* store.write({
-          ...connection,
-          identity: null,
-          credentials: null,
-          verification: null,
-        });
 
         return revoked;
       }),
@@ -63,6 +67,8 @@ export const ChatGPTAuthLive = Layer.effect(
       semaphore.withPermit(
         Effect.gen(function* () {
           const connection = yield* store.read;
+
+          if (connection === null) return yield* Effect.fail(reconnect());
           yield* store.write({
             ...connection,
             verification: { model, at: (yield* DateTime.nowAsDate).getTime() },
