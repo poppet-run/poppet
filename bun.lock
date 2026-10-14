@@ -26,6 +26,7 @@
         "@poppet/provider-opencode": "workspace:*",
         "@poppet/provider-openrouter": "workspace:*",
         "@poppet/store": "workspace:*",
+        "@poppet/tasks": "workspace:*",
         "effect": "4.0.4",
       },
     },
@@ -128,6 +129,20 @@
         "@poppet/config": "workspace:*",
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
+      },
+    },
+    "packages/tasks": {
+      "name": "@poppet/tasks",
+      "version": "0.0.0",
+      "dependencies": {
+        "@poppet/agent": "workspace:*",
+        "@poppet/config": "workspace:*",
+        "@poppet/provider": "workspace:*",
+        "@poppet/store": "workspace:*",
+        "effect": "4.0.4",
+      },
+      "devDependencies": {
+        "@poppet/memory": "workspace:*",
       },
     },
   },
@@ -235,6 +250,8 @@
     "@poppet/provider-protocol": ["@poppet/provider-protocol@workspace:packages/provider-protocol"],
 
     "@poppet/store": ["@poppet/store@workspace:packages/store"],
+
+    "@poppet/tasks": ["@poppet/tasks@workspace:packages/tasks"],
 
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 

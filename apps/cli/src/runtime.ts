@@ -11,10 +11,10 @@ import {
   type ProviderError,
 } from "@poppet/provider";
 import { StoreLive } from "@poppet/store";
+import { TaskRepositoryLive } from "@poppet/tasks";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { providers } from "#src/providers";
-import { TaskRepositoryLive } from "#src/task-store";
 
 export const findProvider = (
   id: ProviderId,

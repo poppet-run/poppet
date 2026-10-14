@@ -15,10 +15,10 @@ import {
   Stream,
 } from "effect";
 
+import { executeTaskCommand, taskOperation } from "#src/commands";
 import { type Occurrence, type ProviderPause, type Task, type TaskError } from "#src/task-schema";
 import { serveTasks, taskSocketPath } from "#src/task-socket";
 import { TaskRepository, type TaskStore } from "#src/task-store";
-import { executeTaskCommand, taskOperation } from "#src/tasks";
 
 const workerLog = (at: number, message: string, failed = false) => {
   const line = `[${new Date(at).toISOString()}] ${message}`;

@@ -28,25 +28,27 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Workspaces
 
-The Bun monorepo has eleven private workspaces:
+The Bun monorepo has twelve private workspaces:
 
-| Workspace                     | Responsibility                                                              | Workspace dependencies                            |
-| ----------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
-| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config, agent, store, provider layers             |
-| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states             | Config, memory, store, provider contract          |
-| `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                                 |
-| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                 | Provider contract                                 |
-| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle       | Config, provider contract                         |
-| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots            | Config and store for the local implementation     |
-| `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts   | None                                              |
-| `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming         | Provider contract                                 |
-| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, credentials, protocol adapters |
-| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration            | Provider contract, credentials, protocol adapters |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Provider contract, protocol adapters              |
+| Workspace                     | Responsibility                                                              | Workspace dependencies                               |
+| ----------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config, agent, memory, tasks, store, provider layers |
+| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states             | Config, memory, store, provider contract             |
+| `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                                    |
+| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                 | Provider contract                                    |
+| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle       | Config, provider contract                            |
+| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots            | Config and store for the local implementation        |
+| `@poppet/tasks`               | Scheduling, task persistence, recovery, worker, and local commands          | Config, agent, store, provider contract              |
+| `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts   | None                                                 |
+| `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming         | Provider contract                                    |
+| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, credentials, protocol adapters    |
+| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration            | Provider contract, credentials, protocol adapters    |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Provider contract, protocol adapters                 |
 
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
-`packages/provider-openrouter`, `packages/provider-protocol`, `packages/credentials`, `packages/store`, and `packages/agent`.
+`packages/provider-openrouter`, `packages/provider-protocol`, `packages/credentials`,
+`packages/store`, `packages/agent`, `packages/memory`, and `packages/tasks`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
@@ -73,7 +75,10 @@ Shared provider types live in `packages/provider/src`, and Go routing lives in
 `packages/provider-openrouter/src`. SQLite storage lives in `packages/store/src`.
 Persisted chat lives in `packages/agent/src`. Notes tools and their sequential model loop are implemented in that workspace.
 The memory contract and local implementation live in `packages/memory/src`.
-The agent formats memory snapshots into model instructions; scheduler modules are planned.
+The agent formats memory snapshots into model instructions. Task scheduling, persistence,
+recovery, command execution, and the protected worker socket live in `packages/tasks/src`.
+The CLI keeps task argument parsing, JSON presentation, and live layer composition.
+Task tables remain in the shared store migrations.
 
 | Module                  | Responsibility                                                              | Dependencies                                      |
 | ----------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -93,7 +98,7 @@ The agent formats memory snapshots into model instructions; scheduler modules ar
 | `agent/notes.ts`        | Note schemas, bounded filesystem access, atomic replacement                 | Config, chat settings, scoped filesystem access   |
 | `agent/memory.ts`       | Run-start snapshot loading and model instructions                           | Memory service, chat settings                     |
 | `memory/`               | Memory contract, local fact operations, bounded profile reads               | Effect; config and shared database for local I/O  |
-| `scheduler.ts`          | Persisted due occurrences and sequential worker                             | Store, agent, clock, occurrence calculator        |
+| `tasks/scheduler.ts`    | Persisted due occurrences and sequential worker                             | Store, agent, clock, occurrence calculator        |
 | `cli.ts`                | Typed commands and terminal presentation                                    | Application services required by each command     |
 
 Each live service gets a layer at the application boundary. Tests replace model,

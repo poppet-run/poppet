@@ -24,7 +24,8 @@ bun run check
 
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
-`@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`, `@poppet/store`, and `@poppet/agent`.
+`@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`,
+`@poppet/store`, `@poppet/agent`, `@poppet/memory`, and `@poppet/tasks`.
 Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
 
@@ -503,6 +504,9 @@ work before clearing and continues serving commands. Saved chat sessions and run
 notes, facts, credentials, and provider quota pauses are retained. The command
 returns the number of tasks removed, and repeating it on an empty list is safe.
 
+`@poppet/tasks` owns scheduling, task persistence, recovery, and the worker socket.
+The CLI parses arguments, prints results, and composes the live layers.
+
 `tasks work` owns SQLite and serves task commands through `store/tasks.sock`,
 protected by the `0700` store directory and `0600` socket. Task commands also work
 with the worker stopped and need no credentials or model to inspect existing tasks.
@@ -546,11 +550,7 @@ apps/
       chat.ts             Chat commands, streaming output, session inspection
       runtime.ts          Generic selection and host configuration layers
       providers.ts        Provider registrations; first entry is the default
-      scheduler.ts        Serialized scheduled runs and wake queue
-      tasks.ts            Task commands and result inspection
-      task-store.ts       Durable scheduling and occurrence transitions
-      task-schema.ts      Typed commands, cron expressions, and timestamps
-      task-socket.ts      Protected local commands for the worker
+      tasks.ts            Task argument parsing
 packages/
   agent/                  @poppet/agent
     src/service.ts        Persisted chat runner, deadlines, run finalization
@@ -574,6 +574,12 @@ packages/
     src/migrations.ts     Versioned schema and transactional migration ledger
     src/schema.ts         Durable session, message, and run schemas
     src/service.ts        Validated record operations and run lifecycle
+  tasks/                  @poppet/tasks
+    src/scheduler.ts      Serialized scheduled runs and wake queue
+    src/commands.ts       Task operations and result inspection
+    src/task-store.ts     Durable scheduling and occurrence transitions
+    src/task-schema.ts    Typed commands, cron expressions, and timestamps
+    src/task-socket.ts    Protected local commands for the worker
   provider/               @poppet/provider
     src/schema.ts         Normalized messages, tools, events, and continuation
     src/service.ts        Provider and selected Model services, typed errors

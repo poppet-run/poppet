@@ -16,11 +16,11 @@ import { Store, StoreDatabase, StoreLive } from "@poppet/store";
 import { Console, Deferred, Effect, Fiber, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
+import { executeTaskCommand } from "#src/commands";
 import { executeOccurrence, reconcileTasks, runTaskWorker } from "#src/scheduler";
 import { TaskError, type NewTask } from "#src/task-schema";
 import { remoteTaskCommand, taskSocketPath } from "#src/task-socket";
 import { TaskRepository, TaskRepositoryLive } from "#src/task-store";
-import { executeTaskCommand } from "#src/tasks";
 
 const response = (output: ReadonlyArray<Output>) =>
   Stream.make({

@@ -11,6 +11,13 @@ import {
   type ProviderError,
 } from "@poppet/provider";
 import { Store, type StoreError } from "@poppet/store";
+import {
+  runTaskWorker,
+  remoteTaskCommand,
+  taskSocketPath,
+  executeLocalTaskCommand,
+  type TaskError,
+} from "@poppet/tasks";
 import { Console, Data, Effect, Layer, type Config } from "effect";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
@@ -26,10 +33,7 @@ import {
 import { manageMemory, parseMemoryCommand } from "#src/memory";
 import { providers } from "#src/providers";
 import { findProvider, runtimeLayers } from "#src/runtime";
-import { runTaskWorker } from "#src/scheduler";
-import type { TaskError } from "#src/task-schema";
-import { remoteTaskCommand, taskSocketPath } from "#src/task-socket";
-import { localTaskCommand, parseTaskCommand } from "#src/tasks";
+import { parseTaskCommand } from "#src/tasks";
 
 class UsageError extends Data.TaggedError("UsageError")<{
   readonly message: string;
@@ -202,7 +206,8 @@ export const makeCLI = (
 
         if (reply !== null) return yield* Console.log(JSON.stringify(reply.value, null, 2));
 
-        return yield* localTaskCommand(command).pipe(Effect.provide(runtime.tasks));
+        const result = yield* executeLocalTaskCommand(command).pipe(Effect.provide(runtime.tasks));
+        yield* Console.log(JSON.stringify(result, null, 2));
       }).pipe(Effect.provide(runtime.config));
     }
 
