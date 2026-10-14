@@ -3,6 +3,7 @@ export { responsesModel } from "#src/responses";
 export {
   chatCompletionsModel,
   type ChatContinuation,
+  type ChatChunk,
   type ChatOptions,
 } from "#src/chat-completions";
 

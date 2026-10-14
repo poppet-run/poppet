@@ -61,6 +61,8 @@ const Continuation = Schema.Struct({
   protocol: Schema.Literal("chat-completions"),
 });
 
+export type ChatChunk = typeof Chunk.Type;
+
 export interface ChatContinuation {
   readonly restore: (
     data: Schema.JsonObject,
@@ -71,6 +73,7 @@ export interface ChatContinuation {
 }
 
 export interface ChatOptions extends InferenceOptions {
+  readonly isAccountingFrame?: (chunk: ChatChunk, finishReason: string) => boolean;
   readonly prepareRequest?: (
     parameters: ChatCompletionCreateParamsStreaming,
     request: ModelRequest,
@@ -231,6 +234,7 @@ export const chatCompletionsModel = (
             const events = async function* (): AsyncGenerator<ModelEvent> {
               let text = "";
               let finish: string | null = null;
+              let accountingFrameSeen = false;
               let usage: Completion["usage"] = null;
               const calls = new Map<number, { id: string; name: string; arguments: string }>();
 
@@ -248,16 +252,25 @@ export const chatCompletionsModel = (
 
                   const choice = chunk.choices[0];
 
-                  if (
-                    !choice ||
-                    chunk.choices.length !== 1 ||
-                    choice.index !== 0 ||
-                    finish !== null
-                  )
+                  if (!choice || chunk.choices.length !== 1 || choice.index !== 0)
                     throw interrupted(
                       description.provider,
                       "The model returned an invalid choice sequence.",
                     );
+
+                  if (finish !== null) {
+                    // A provider may recognize one content-free accounting frame
+                    // after its terminal choice. No inference output is appended.
+                    if (!accountingFrameSeen && options.isAccountingFrame?.(chunk, finish)) {
+                      accountingFrameSeen = true;
+                      continue;
+                    }
+
+                    throw interrupted(
+                      description.provider,
+                      "The model returned an invalid choice sequence.",
+                    );
+                  }
 
                   if (choice.delta.content) {
                     text += choice.delta.content;

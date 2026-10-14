@@ -64,6 +64,22 @@ export const routerFailure = (cause: unknown): ProviderError => {
 
 export const routerOptions: ChatOptions = {
   failure: routerFailure,
+  isAccountingFrame: (chunk, finishReason) => {
+    const choice = chunk.choices[0];
+
+    // OpenRouter's final usage frame repeats the terminal choice with an empty
+    // delta. Keep this exception local to OpenRouter and require matching finish.
+    return (
+      chunk.usage != null &&
+      choice !== undefined &&
+      choice.finish_reason === finishReason &&
+      Object.entries(choice.delta).every(([key, value]) =>
+        key === "role"
+          ? value === "assistant"
+          : key === "content" && (value === null || value === ""),
+      )
+    );
+  },
   prepareRequest: (parameters, request) => {
     const routed: ChatCompletionCreateParamsStreaming & {
       provider: { require_parameters: true; allow_fallbacks: false };

@@ -54,6 +54,7 @@ const toolRequest: ModelRequest = {
 };
 
 type Mode =
+  | "trailing-usage"
   | "normal"
   | "text"
   | "truncated"
@@ -263,6 +264,14 @@ const fixture = (
         });
     }
 
+    if (mode === "trailing-usage")
+      events.push({
+        choices: [
+          { index: 0, delta: { role: "assistant", content: "" }, finish_reason: "tool_calls" },
+        ],
+        usage: { prompt_tokens: 11, completion_tokens: 3 },
+      });
+
     if (mode === "stall") {
       const first =
         adapter.protocol === "responses"
@@ -352,6 +361,18 @@ for (const adapter of cases) {
         },
       });
     });
+
+    if (adapter.protocol === "chat-completions")
+      test("rejects repeated terminal choices without an accounting-frame extension", async () => {
+        const harness = fixture(adapter, "trailing-usage");
+        await expect(
+          Effect.runPromise(completeModel(harness.model, toolRequest)),
+        ).rejects.toMatchObject({
+          reason: "interrupted",
+          message: "The model returned an invalid choice sequence.",
+        });
+        expect(harness.requests).toHaveLength(1);
+      });
 
     test("preserves authoritative output or tool-call index order", async () => {
       const harness = fixture(adapter, "ordered");

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { completeModel, verifyModel, type ModelRequest } from "@poppet/provider";
-import { Effect, Fiber, Redacted, Schema } from "effect";
+import { Effect, Fiber, Redacted, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { makeOpenRouterProvider, type HttpFetch } from "#src/service";
@@ -70,7 +70,13 @@ const toolResponse = (body: Schema.JsonObject) => {
   const proof = json.match(/poppet_verified_[a-f0-9]+/)?.[0];
 
   if (proof)
-    return sse([{ choices: [{ index: 0, delta: { content: proof }, finish_reason: "stop" }] }]);
+    return sse([
+      { choices: [{ index: 0, delta: { content: proof }, finish_reason: "stop" }] },
+      {
+        choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 12, completion_tokens: 3 },
+      },
+    ]);
 
   const args = JSON.stringify({ challenge: json.match(/challenge ([a-f0-9]+)/)?.[1] ?? "" });
 
@@ -110,7 +116,12 @@ const toolResponse = (body: Schema.JsonObject) => {
         },
       ],
     },
-    { choices: [], usage: { prompt_tokens: 10, completion_tokens: 5 } },
+    {
+      choices: [
+        { index: 0, delta: { role: "assistant", content: "" }, finish_reason: "tool_calls" },
+      ],
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+    },
   ]);
 };
 
@@ -284,6 +295,120 @@ describe("OpenRouter", () => {
       "router-test-secret",
     );
   });
+
+  test.each([
+    ["empty choices", []],
+    ["empty delta", [{ index: 0, delta: {}, finish_reason: "stop" }]],
+    [
+      "empty content",
+      [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: "stop" }],
+    ],
+  ] satisfies ReadonlyArray<readonly [string, ReadonlyArray<Schema.JsonObject>]>)(
+    "accepts final accounting with %s without duplicating output and retains its usage",
+    async (_label, choices) => {
+      const harness = fixture(undefined, () =>
+        sse([
+          { choices: [{ index: 0, delta: { content: "Complete" }, finish_reason: "stop" }] },
+          { choices, usage: { prompt_tokens: 10, completion_tokens: 5 } },
+        ]),
+      );
+
+      const model = await Effect.runPromise(harness.provider.resolve("vendor/model"));
+      const events = await Effect.runPromise(Stream.runCollect(model.stream(request)));
+      expect(events).toEqual([
+        { type: "text-delta", text: "Complete" },
+        {
+          type: "completed",
+          response: expect.objectContaining({
+            output: [{ type: "text", text: "Complete" }],
+            usage: { inputTokens: 10, outputTokens: 5 },
+          }),
+        },
+      ]);
+      expect(harness.requests).toHaveLength(1);
+    },
+  );
+
+  test("rejects another accounting choice after accepting the final usage frame", async () => {
+    const accounting = {
+      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+    };
+
+    const harness = fixture(undefined, () =>
+      sse([
+        { choices: [{ index: 0, delta: { content: "Complete" }, finish_reason: "stop" }] },
+        accounting,
+        accounting,
+      ]),
+    );
+
+    const model = await Effect.runPromise(harness.provider.resolve("vendor/model"));
+    const events: string[] = [];
+    await expect(
+      Effect.runPromise(
+        Stream.runForEach(model.stream(request), (event) =>
+          Effect.sync(() => events.push(event.type)),
+        ),
+      ),
+    ).rejects.toMatchObject({ reason: "interrupted" });
+    expect(events).not.toContain("completed");
+    expect(harness.requests).toHaveLength(1);
+  });
+
+  test.each([
+    ["text", { choices: [{ index: 0, delta: { content: "unexpected" }, finish_reason: "stop" }] }],
+    [
+      "tool call",
+      {
+        choices: [
+          {
+            index: 0,
+            delta: { tool_calls: [{ index: 0, function: { arguments: "{}" } }] },
+            finish_reason: "stop",
+          },
+        ],
+      },
+    ],
+    [
+      "reasoning",
+      { choices: [{ index: 0, delta: { reasoning_details: details }, finish_reason: "stop" }] },
+    ],
+    ["changed finish", { choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] }],
+    ["changed index", { choices: [{ index: 1, delta: {}, finish_reason: "stop" }] }],
+    [
+      "multiple choices",
+      {
+        choices: [
+          { index: 0, delta: {}, finish_reason: "stop" },
+          { index: 1, delta: {}, finish_reason: "stop" },
+        ],
+      },
+    ],
+    ["missing usage", { choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: null }],
+  ] satisfies ReadonlyArray<readonly [string, Schema.JsonObject]>)(
+    "rejects %s in a frame after the terminal choice without completing",
+    async (_label, frame) => {
+      const harness = fixture(undefined, () =>
+        sse([
+          { choices: [{ index: 0, delta: { content: "Complete" }, finish_reason: "stop" }] },
+          { usage: { prompt_tokens: 10, completion_tokens: 5 }, ...frame },
+        ]),
+      );
+
+      const model = await Effect.runPromise(harness.provider.resolve("vendor/model"));
+      const events: string[] = [];
+      await expect(
+        Effect.runPromise(
+          Stream.runForEach(model.stream(request), (event) =>
+            Effect.sync(() => events.push(event.type)),
+          ),
+        ),
+      ).rejects.toMatchObject({ reason: "interrupted" });
+      expect(events).not.toContain("completed");
+      expect(harness.requests).toHaveLength(1);
+    },
+  );
 
   test.each(["max_tokens", "max_completion_tokens"])(
     "supports assistant text with %s and omits unused tool fields",
