@@ -10,7 +10,7 @@ describe("store migrations", () => {
     database.run("INSERT INTO sessions VALUES ('saved', 'openrouter', 'model', 1, 1)");
 
     const broken = {
-      version: 3,
+      version: 4,
       name: "broken",
       sql: "CREATE TABLE partial (id INTEGER); invalid SQL;",
     };
@@ -28,8 +28,8 @@ describe("store migrations", () => {
         .all(),
     ).toEqual([]);
     expect(database.query("SELECT id FROM sessions").get()).toEqual({ id: "saved" });
-    expect(applyMigrations(database)).toBe(2);
-    expect(applyMigrations(database)).toBe(2);
+    expect(applyMigrations(database)).toBe(3);
+    expect(applyMigrations(database)).toBe(3);
   });
 
   test.each(["future-version", "changed-checksum", "missing-ledger"])(
@@ -38,7 +38,7 @@ describe("store migrations", () => {
       using database = new Database(":memory:");
       applyMigrations(database);
 
-      if (failure === "future-version") database.run("PRAGMA user_version = 3");
+      if (failure === "future-version") database.run("PRAGMA user_version = 99");
       else if (failure === "changed-checksum")
         database.run("UPDATE schema_migrations SET checksum = 'changed' WHERE version = 1");
       else database.run("DELETE FROM schema_migrations WHERE version = 1");

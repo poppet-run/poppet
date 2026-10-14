@@ -58,6 +58,14 @@ export const migrations: ReadonlyArray<Migration> = [
     CREATE INDEX messages_by_run ON messages (run_id);
   `,
   },
+  {
+    version: 3,
+    name: "session-and-run-workload",
+    sql: `
+    ALTER TABLE sessions ADD COLUMN workload TEXT NOT NULL DEFAULT 'assistant' CHECK (workload IN ('assistant', 'coding'));
+    ALTER TABLE runs ADD COLUMN workload TEXT NOT NULL DEFAULT 'assistant' CHECK (workload IN ('assistant', 'coding'));
+  `,
+  },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

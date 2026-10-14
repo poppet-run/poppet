@@ -93,12 +93,13 @@ describe("conversation store", () => {
         const saved = await fixtureStore.run(
           Effect.gen(function* () {
             const store = yield* Store;
-            const session = yield* store.createSession(provider, "selected-model");
+            const session = yield* store.createSession(provider, "selected-model", "coding");
             const pending = yield* store.queueRun(session.id, [user]);
             expect(pending).toMatchObject({
               status: "pending",
               provider,
               model: "selected-model",
+              workload: "coding",
               startedAt: null,
               result: null,
             });
@@ -121,6 +122,7 @@ describe("conversation store", () => {
             expect(yield* store.session(saved.session.id)).toMatchObject({
               provider,
               model: "selected-model",
+              workload: "coding",
             });
             expect(yield* store.run(saved.completed.id)).toEqual(saved.completed);
             expect(yield* store.runs(saved.session.id)).toEqual([saved.completed]);
@@ -133,7 +135,7 @@ describe("conversation store", () => {
               { role: "assistant", output: response.output, continuation: response.continuation },
             ]);
             expect(yield* store.status).toMatchObject({
-              schemaVersion: 2,
+              schemaVersion: 3,
               sessions: 1,
               messages: 4,
               runs: 1,
@@ -219,7 +221,10 @@ describe("conversation store", () => {
           const pending = yield* store.queueRun(first.id, [user]);
           yield* reject(store.queueRun(other.id, [user]), "conflict");
           yield* reject(
-            store.finishRun(pending.id, { status: "failed", reason: "quota" }),
+            store.finishRun(pending.id, {
+              status: "completed",
+              response: responseFor("new-provider"),
+            }),
             "conflict",
           );
           yield* reject(
@@ -239,7 +244,12 @@ describe("conversation store", () => {
             }),
             "invalid-request",
           );
-          const failed = yield* store.finishRun(pending.id, { status: "failed", reason: "quota" });
+
+          const failed = yield* store.finishRun(pending.id, {
+            status: "failed",
+            reason: "quota",
+          });
+
           expect(failed).toMatchObject({ status: "failed", failureReason: "quota", result: null });
           yield* reject(
             store.finishRun(pending.id, {
@@ -322,7 +332,7 @@ describe("conversation store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 2,
+        schemaVersion: 3,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));
@@ -330,38 +340,55 @@ describe("conversation store", () => {
     }
   });
 
-  test("upgrades an earlier schema while retaining session history", async () => {
-    const fixtureStore = await fixture();
+  test.each([1, 2])(
+    "upgrades schema %s while retaining session history and defaulting to assistant workloads",
+    async (version) => {
+      const fixtureStore = await fixture();
 
-    try {
-      await fixtureStore.run(Store.use((store) => store.status));
-      await rm(join(fixtureStore.directory, "store"), { recursive: true });
-      await mkdir(join(fixtureStore.directory, "store"));
-      using old = new Database(fixtureStore.path);
-      old.run("PRAGMA foreign_keys = ON");
-      applyMigrations(old, migrations.slice(0, 1));
-      old
-        .query("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)")
-        .run("old-session", "new-provider", "selected-model", 1, 1);
-      old
-        .query(
-          "INSERT INTO messages (session_id, position, created_at, payload) VALUES (?, ?, ?, ?)",
-        )
-        .run("old-session", 0, 1, JSON.stringify(user));
-      old.close(true);
-      await fixtureStore.run(
-        Store.use((store) =>
-          Effect.gen(function* () {
-            expect((yield* store.status).schemaVersion).toBe(2);
-            expect((yield* store.messages("old-session"))[0]?.message).toEqual(user);
-            expect((yield* store.queueRun("old-session", [user])).provider).toBe("new-provider");
-          }),
-        ),
-      );
-    } finally {
-      await fixtureStore.close();
-    }
-  });
+      try {
+        await fixtureStore.run(Store.use((store) => store.status));
+        await rm(join(fixtureStore.directory, "store"), { recursive: true });
+        await mkdir(join(fixtureStore.directory, "store"));
+        using old = new Database(fixtureStore.path);
+        old.run("PRAGMA foreign_keys = ON");
+        applyMigrations(old, migrations.slice(0, version));
+        old
+          .query("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)")
+          .run("old-session", "new-provider", "selected-model", 1, 1);
+        old
+          .query(
+            "INSERT INTO runs (id, session_id, provider, model, status, created_at) VALUES (?, ?, ?, ?, 'pending', 1)",
+          )
+          .run("old-run", "old-session", "new-provider", "selected-model");
+        old
+          .query(
+            "INSERT INTO messages (session_id, position, created_at, payload) VALUES (?, ?, ?, ?)",
+          )
+          .run("old-session", 0, 1, JSON.stringify(user));
+        old.close(true);
+        await fixtureStore.run(
+          Store.use((store) =>
+            Effect.gen(function* () {
+              expect((yield* store.status).schemaVersion).toBe(3);
+              expect((yield* store.messages("old-session"))[0]?.message).toEqual(user);
+              expect((yield* store.session("old-session"))?.workload).toBe("assistant");
+              expect(yield* store.run("old-run")).toMatchObject({
+                status: "interrupted",
+                workload: "assistant",
+                failureReason: "process-exit",
+              });
+              expect(yield* store.queueRun("old-session", [user])).toMatchObject({
+                provider: "new-provider",
+                workload: "assistant",
+              });
+            }),
+          ),
+        );
+      } finally {
+        await fixtureStore.close();
+      }
+    },
+  );
 
   test.each(["malformed-json", "foreign-continuation"])(
     "rejects %s rows without exposing payloads",

@@ -28,6 +28,7 @@ interface StoreOperations {
   readonly createSession: (
     provider: ProviderId,
     model: string,
+    workload?: Session["workload"],
   ) => Effect.Effect<Session, StoreError>;
   readonly session: (id: string) => Effect.Effect<Session | null, StoreError>;
   readonly sessions: Effect.Effect<ReadonlyArray<Session>, StoreError>;
@@ -45,9 +46,9 @@ interface StoreOperations {
 
 export class Store extends Context.Service<Store, StoreOperations>()("poppet/Store") {}
 
-const sessionSql = `SELECT id, provider, model, created_at AS createdAt, updated_at AS updatedAt FROM sessions`;
+const sessionSql = `SELECT id, provider, model, workload, created_at AS createdAt, updated_at AS updatedAt FROM sessions`;
 
-const runSql = `SELECT id, session_id AS sessionId, provider, model, status, created_at AS createdAt,
+const runSql = `SELECT id, session_id AS sessionId, provider, model, workload, status, created_at AS createdAt,
   started_at AS startedAt, finished_at AS finishedAt, result, failure_reason AS failureReason FROM runs`;
 
 const messageSql = `SELECT id, session_id AS sessionId, run_id AS runId, position, created_at AS createdAt, payload AS message FROM messages`;
@@ -112,6 +113,7 @@ const validateRunRecord = (database: Database, run: Run) => {
     !session ||
     run.provider !== session.provider ||
     run.model !== session.model ||
+    run.workload !== session.workload ||
     (run.result !== null && !continuationMatches(run, run.result.continuation))
   )
     throw corruptRecord();
@@ -219,14 +221,21 @@ export const StoreLive = Layer.effect(
         .run(at),
     );
 
-    const createSession = (provider: ProviderId, model: string) =>
+    const createSession = (
+      provider: ProviderId,
+      model: string,
+      workload: Session["workload"] = "assistant",
+    ) =>
       atTime((at) => {
         const selectedProvider = Schema.decodeUnknownSync(ProviderId)(provider);
         const selectedModel = Schema.decodeUnknownSync(ModelId)(model);
+        const selectedWorkload = Schema.decodeUnknownSync(Session.fields.workload)(workload);
         const id = randomUUID();
         database
-          .query("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)")
-          .run(id, selectedProvider, selectedModel, at, at);
+          .query(
+            "INSERT INTO sessions (id, provider, model, created_at, updated_at, workload) VALUES (?, ?, ?, ?, ?, ?)",
+          )
+          .run(id, selectedProvider, selectedModel, at, at, selectedWorkload);
 
         return requireSession(database, id);
       });
@@ -252,9 +261,9 @@ export const StoreLive = Layer.effect(
             const createdAt = Math.max(at, session.createdAt);
             database
               .query(
-                `INSERT INTO runs (id, session_id, provider, model, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)`,
+                `INSERT INTO runs (id, session_id, provider, model, workload, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
               )
-              .run(runId, id, session.provider, session.model, createdAt);
+              .run(runId, id, session.provider, session.model, session.workload, createdAt);
             append(database, session, runId, messages, createdAt);
 
             return requireRun(database, runId);
@@ -292,10 +301,13 @@ export const StoreLive = Layer.effect(
               outcome,
             );
 
-            if (run.status !== "running")
+            if (
+              run.status !== "running" &&
+              !(run.status === "pending" && terminal.status !== "completed")
+            )
               throw new StoreError({
                 reason: "conflict",
-                message: "Only a running run can be finished.",
+                message: "Only an active run can be finished; completion requires a running run.",
               });
             const finishedAt = Math.max(at, run.createdAt, run.startedAt ?? 0);
 

@@ -1,4 +1,4 @@
-import { Completion, Message, ProviderId } from "@poppet/provider";
+import { Completion, Message, ModelRequest, ProviderId } from "@poppet/provider";
 import { Schema } from "effect";
 
 export const Id = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/));
@@ -9,6 +9,7 @@ export const Session = Schema.Struct({
   id: Id,
   provider: ProviderId,
   model: ModelId,
+  workload: ModelRequest.fields.workload,
   createdAt: Schema.Natural,
   updatedAt: Schema.Natural,
 });
@@ -35,6 +36,7 @@ export const Run = Schema.Struct({
   sessionId: Id,
   provider: ProviderId,
   model: ModelId,
+  workload: ModelRequest.fields.workload,
   status: RunStatus,
   createdAt: Schema.Natural,
   startedAt: Schema.NullOr(Schema.Natural),
