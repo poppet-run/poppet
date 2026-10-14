@@ -771,4 +771,4 @@ export const StoreLive = Layer.effect(
       }),
     } satisfies StoreOperations;
   }),
-).pipe(Layer.provide(StoreDatabaseLive));
+).pipe(Layer.provideMerge(StoreDatabaseLive));

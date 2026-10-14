@@ -2,6 +2,8 @@ export { Store, StoreLive } from "#src/service";
 
 export { StoreError } from "#src/errors";
 
+export { StoreDatabase, StoreDatabaseLive } from "#src/database";
+
 export {
   Session,
   StoredMessage,
