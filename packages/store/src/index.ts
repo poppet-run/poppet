@@ -11,5 +11,8 @@ export {
   MessageBatch,
   ToolCall,
   ToolOutcome,
+  MemoryKey,
+  MemoryValue,
+  MemoryFact,
   type StoreStatus,
 } from "#src/schema";

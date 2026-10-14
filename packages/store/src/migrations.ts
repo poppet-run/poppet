@@ -87,6 +87,18 @@ export const migrations: ReadonlyArray<Migration> = [
     ) STRICT;
   `,
   },
+  {
+    version: 5,
+    name: "explicit-memory",
+    sql: `
+    CREATE TABLE memories (
+      key TEXT PRIMARY KEY NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
+      value TEXT NOT NULL CHECK (length(CAST(value AS BLOB)) BETWEEN 1 AND 4096),
+      source_run_id TEXT REFERENCES runs (id),
+      updated_at INTEGER NOT NULL CHECK (updated_at >= 0)
+    ) STRICT;
+  `,
+  },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

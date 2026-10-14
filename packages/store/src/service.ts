@@ -16,6 +16,7 @@ import {
   Id,
   MessageBatch,
   ModelId,
+  MemoryFact,
   Run,
   RunOutcome,
   Session,
@@ -26,6 +27,18 @@ import {
 } from "#src/schema";
 
 interface StoreOperations {
+  readonly memories: Effect.Effect<ReadonlyArray<MemoryFact>, StoreError>;
+  readonly rememberMemory: (
+    key: string,
+    value: string,
+    sourceRunId?: string | null,
+  ) => Effect.Effect<MemoryFact, StoreError>;
+  readonly replaceMemory: (
+    key: string,
+    value: string,
+    sourceRunId?: string | null,
+  ) => Effect.Effect<MemoryFact, StoreError>;
+  readonly forgetMemory: (key: string) => Effect.Effect<void, StoreError>;
   readonly status: Effect.Effect<StoreStatus, StoreError>;
   readonly createSession: (
     provider: ProviderId,
@@ -65,6 +78,8 @@ const runSql = `SELECT id, session_id AS sessionId, provider, model, workload, s
   started_at AS startedAt, finished_at AS finishedAt, result, failure_reason AS failureReason FROM runs`;
 
 const messageSql = `SELECT id, session_id AS sessionId, run_id AS runId, position, created_at AS createdAt, payload AS message FROM messages`;
+
+const memorySql = `SELECT key, value, source_run_id AS sourceRunId, updated_at AS updatedAt FROM memories`;
 
 const toolSql = `SELECT run_id AS runId, call_id AS callId, position, name, namespace, arguments, status,
   created_at AS createdAt, started_at AS startedAt, finished_at AS finishedAt, output, failure_reason AS failureReason FROM tool_calls`;
@@ -578,7 +593,90 @@ export const StoreLive = Layer.effect(
           .immediate(),
       );
 
+    const saveMemory = (
+      key: string,
+      value: string,
+      sourceRunId: string | null,
+      mode: "remember" | "replace",
+    ) =>
+      atTime((at) =>
+        database
+          .transaction(() => {
+            const input = Schema.decodeUnknownSync(MemoryFact, { onExcessProperty: "error" })({
+              key,
+              value,
+              sourceRunId,
+              updatedAt: at,
+            });
+
+            if (sourceRunId !== null) requireRun(database, sourceRunId);
+            using select = database.prepare(`${memorySql} WHERE key = ?`);
+
+            const existing = readRecord(() =>
+              Schema.decodeUnknownSync(Schema.NullOr(MemoryFact))(select.get(key)),
+            );
+
+            if (mode === "replace" && existing === null)
+              throw new StoreError({
+                reason: "not-found",
+                message: "The fact does not exist. Use memory remember to create it.",
+              });
+
+            if (mode === "remember" && existing !== null)
+              throw new StoreError({
+                reason: "conflict",
+                message: "The fact already exists. Use memory replace to change it.",
+              });
+
+            if (mode === "remember") {
+              using count = database.prepare("SELECT COUNT(*) AS count FROM memories");
+
+              const total = Schema.decodeUnknownSync(Schema.Struct({ count: Schema.Natural }))(
+                count.get(),
+              ).count;
+
+              if (total >= 128)
+                throw new StoreError({
+                  reason: "conflict",
+                  message: "Memory holds at most 128 facts. Forget a fact before adding another.",
+                });
+            }
+
+            const fact = { ...input, updatedAt: Math.max(at, existing?.updatedAt ?? 0) };
+
+            using write = database.prepare(
+              mode === "replace"
+                ? "UPDATE memories SET value = ?, source_run_id = ?, updated_at = ? WHERE key = ?"
+                : "INSERT INTO memories (value, source_run_id, updated_at, key) VALUES (?, ?, ?, ?)",
+            );
+
+            write.run(fact.value, fact.sourceRunId, fact.updatedAt, fact.key);
+
+            return fact;
+          })
+          .immediate(),
+      );
+
     return {
+      memories: atTime(() =>
+        readRecord(() => {
+          using statement = database.prepare(`${memorySql} ORDER BY key`);
+
+          return Schema.decodeUnknownSync(Schema.Array(MemoryFact))(statement.all());
+        }),
+      ),
+      rememberMemory: (key, value, sourceRunId = null) =>
+        saveMemory(key, value, sourceRunId, "remember"),
+      replaceMemory: (key, value, sourceRunId = null) =>
+        saveMemory(key, value, sourceRunId, "replace"),
+      forgetMemory: (key) =>
+        atTime(() => {
+          Schema.decodeUnknownSync(MemoryFact.fields.key)(key);
+          using statement = database.prepare("DELETE FROM memories WHERE key = ?");
+
+          if (statement.run(key).changes === 0)
+            throw new StoreError({ reason: "not-found", message: "The fact does not exist." });
+        }),
       recordToolCalls,
       startToolCall,
       finishToolCall,

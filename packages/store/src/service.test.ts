@@ -65,6 +65,82 @@ const reject = <A>(operation: Effect.Effect<A, StoreError>, reason: StoreError["
   );
 
 describe("conversation store", () => {
+  test("creates, replaces and forgets keyed facts across reopening with source-run provenance", async () => {
+    const saved = await fixture();
+
+    try {
+      const fact = await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("first-provider", "selected-model");
+          const run = yield* store.queueRun(session.id, [user]);
+          yield* store.startRun(run.id);
+          yield* store.finishRun(run.id, {
+            status: "completed",
+            response: responseFor("first-provider"),
+          });
+
+          return yield* store.rememberMemory("answer.style", "Keep answers concise", run.id);
+        }),
+      );
+
+      expect(fact.sourceRunId).not.toBeNull();
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          expect(yield* store.memories).toEqual([fact]);
+          yield* reject(store.rememberMemory(fact.key, "Overwrite"), "conflict");
+          const updated = yield* store.replaceMemory(fact.key, "Explain the reasoning");
+          expect(updated.sourceRunId).toBeNull();
+          expect(updated.updatedAt).toBeGreaterThanOrEqual(fact.updatedAt);
+        }),
+      );
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          expect((yield* store.memories)[0]?.value).toBe("Explain the reasoning");
+          yield* store.forgetMemory(fact.key);
+          yield* reject(store.replaceMemory(fact.key, "Restore"), "not-found");
+          yield* reject(store.forgetMemory(fact.key), "not-found");
+        }),
+      );
+      expect(await saved.run(Store.use((store) => store.memories))).toEqual([]);
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test("rejects invalid facts, unknown source runs and capacity overflow without changing saved values", async () => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          yield* reject(store.rememberMemory("bad key", "value"), "invalid-request");
+          yield* reject(store.rememberMemory("empty", " "), "invalid-request");
+          yield* reject(store.rememberMemory("large", "😀".repeat(1025)), "invalid-request");
+          yield* reject(store.rememberMemory("unknown", "value", "missing-run"), "not-found");
+          yield* Effect.forEach(
+            Array.from({ length: 128 }, (_, index) => `fact-${index}`),
+            (key) => store.rememberMemory(key, "Original"),
+          );
+          yield* reject(store.rememberMemory("overflow", "value"), "conflict");
+          yield* reject(store.replaceMemory("fact-0", "😀".repeat(1025)), "invalid-request");
+          expect((yield* store.memories).find((fact) => fact.key === "fact-0")?.value).toBe(
+            "Original",
+          );
+          yield* store.replaceMemory("fact-0", "Replacement at capacity");
+          yield* store.forgetMemory("fact-1");
+          yield* store.rememberMemory("new", "Slot freed");
+          expect(yield* store.memories).toHaveLength(128);
+        }),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
   test.each(["pending", "running"])(
     "recovers abandoned %s tool calls without replaying them",
     async (state) => {
@@ -207,7 +283,7 @@ describe("conversation store", () => {
               { role: "assistant", output: response.output, continuation: response.continuation },
             ]);
             expect(yield* store.status).toMatchObject({
-              schemaVersion: 4,
+              schemaVersion: 5,
               sessions: 1,
               messages: 4,
               runs: 1,
@@ -404,7 +480,7 @@ describe("conversation store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 4,
+        schemaVersion: 5,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));
@@ -412,7 +488,7 @@ describe("conversation store", () => {
     }
   });
 
-  test.each([1, 2, 3])(
+  test.each([1, 2, 3, 4])(
     "upgrades schema %s while retaining session history and existing or default workloads",
     async (version) => {
       const fixtureStore = await fixture();
@@ -434,9 +510,9 @@ describe("conversation store", () => {
             "INSERT INTO runs (id, session_id, provider, model, status, created_at) VALUES (?, ?, ?, ?, 'pending', 1)",
           )
           .run("old-run", "old-session", "new-provider", "selected-model");
-        const workload = version === 3 ? "coding" : "assistant";
+        const workload = version >= 3 ? "coding" : "assistant";
 
-        if (version === 3) {
+        if (version >= 3) {
           old.run("UPDATE sessions SET workload = 'coding'");
           old.run("UPDATE runs SET workload = 'coding'");
         }
@@ -450,7 +526,8 @@ describe("conversation store", () => {
         await fixtureStore.run(
           Store.use((store) =>
             Effect.gen(function* () {
-              expect((yield* store.status).schemaVersion).toBe(4);
+              expect((yield* store.status).schemaVersion).toBe(5);
+              expect(yield* store.memories).toEqual([]);
               expect((yield* store.messages("old-session"))[0]?.message).toEqual(user);
               expect((yield* store.session("old-session"))?.workload).toBe(workload);
               expect(yield* store.run("old-run")).toMatchObject({
