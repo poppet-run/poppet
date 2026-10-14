@@ -370,6 +370,22 @@ Completion check: schedule a notes summary, inspect its result, pause it, and
 restart around a due time without duplicate runs. Test daylight-saving changes,
 long-running jobs, downtime, plan-limit recovery, and explicit one-off failures.
 
+Implemented with `tasks add/list/show/pause/resume/cancel/retry`, provider pause
+inspection and resume commands, and the foreground `tasks work` owner. Migration 6
+adds jobs, unique occurrences, skipped intervals, and provider pauses. Effect Cron
+calculates five-field schedules with explicit timezones; no dependency was added.
+SQLite transactions enqueue work and advance next times together. A bounded Effect
+queue wakes one runner. Scheduled sessions load current memory and reject note writes.
+
+Recurring pending work expires after 24 hours; one-offs never expire. Quota pauses
+need explicit provider resume. Temporary/rate-limit failures delay subsequent work
+from 30 seconds up to five minutes without replaying failed requests. Restart
+retains pending work, interrupts active work for manual retry, and recovers answers
+committed before an occurrence outcome. Task commands use a protected Unix socket
+while the worker owns SQLite. Other store commands require stopping it first.
+Automated tests cover scheduling, recovery, injected model runs, and concurrent
+task clients. Live provider inference remains a manual check.
+
 ## Phase 8: Unattended operation
 
 Depends on phase 7.

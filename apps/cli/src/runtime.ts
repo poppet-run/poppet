@@ -14,6 +14,7 @@ import { StoreLive } from "@poppet/store";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { providers } from "#src/providers";
+import { TaskRepositoryLive } from "#src/task-store";
 
 export const findProvider = (
   id: ProviderId,
@@ -102,6 +103,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   const store = StoreLive.pipe(Layer.provide(config));
 
   const memory = LocalMemoryLive.pipe(Layer.provide(Layer.merge(store, config)));
+  const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
 
   const resolver = Layer.succeed(ModelResolver, {
     resolve: (providerId, modelId) =>
@@ -136,6 +138,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     selectedProvider,
     store,
     memory,
+    tasks,
     chat,
   };
 };

@@ -27,7 +27,11 @@ export type ChatFailure = AgentError | ProviderError | StoreError;
 export class Agent extends Context.Service<
   Agent,
   {
-    readonly send: (sessionId: string, text: string) => Stream.Stream<ChatEvent, ChatFailure>;
+    readonly send: (
+      sessionId: string,
+      text: string,
+      options?: { readonly readOnlyNotes: boolean },
+    ) => Stream.Stream<ChatEvent, ChatFailure>;
   }
 >()("poppet/Agent") {}
 
@@ -58,7 +62,11 @@ export const AgentLive = Layer.effect(
     const converse = yield* conversation;
     const readMemoryPrompt = yield* memoryPrompt;
 
-    const send = (sessionId: string, text: string): Stream.Stream<ChatEvent, ChatFailure> =>
+    const send = (
+      sessionId: string,
+      text: string,
+      options = { readOnlyNotes: false },
+    ): Stream.Stream<ChatEvent, ChatFailure> =>
       Stream.suspend(() => {
         let active: Run | null = null;
         let settled = false;
@@ -109,7 +117,7 @@ export const AgentLive = Layer.effect(
                 const history = yield* store.messages(sessionId);
                 const runs = yield* store.runs(sessionId);
 
-                return converse(run, model, text, history, runs, prompt);
+                return converse(run, model, text, history, runs, prompt, options.readOnlyNotes);
               }),
             ).pipe(
               Stream.mapEffect((event) => {

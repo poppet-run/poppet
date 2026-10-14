@@ -7,7 +7,8 @@ streaming model interface. OpenCode Go supports a small set of coding models.
 OpenRouter supports concrete text models from its public catalog.
 SQLite stores sessions, messages, and runs. Chat streams answers and resumes
 saved sessions and can read, search, and save local notes. An editable profile and
-explicitly saved facts provide context across sessions. Scheduled tasks follow in the
+explicitly saved facts provide context across sessions. A foreground worker executes
+durable one-off and recurring tasks. Unattended startup follows in the
 [implementation plan](docs/implementation-plan.md).
 
 ## Development
@@ -426,6 +427,95 @@ rollback, transaction rollback, invalid records, run transitions, competing
 owners, and scoped cleanup. Live ChatGPT token renewal
 remains a separate phase 3 follow-up.
 
+## Scheduled tasks
+
+Select a provider and model as for chat, and sign in before running a task.
+Tasks save that selection when added. The worker uses each saved selection even
+if its environment selects a different model later.
+
+For a quick test, create a note in `POPPET_NOTES_DIR`, then schedule its summary
+one minute from now:
+
+```fish
+set when (bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
+bun run start tasks add summary --at $when "Read project.md and summarize it"
+bun run start tasks work
+```
+
+The worker prints timestamped lifecycle messages for starts, completed or failed
+runs, interruptions, cancellation, skipped intervals, and task/provider pauses and
+resumes. Occurrence messages include the task name and occurrence ID. Failures use
+reason codes; prompts, note contents, and model answers stay in saved results.
+An idle worker does not print polling messages.
+
+Leave the worker running. In another terminal using the same `POPPET_DATA_DIR`:
+
+```fish
+bun run start tasks list
+bun run start tasks show <task-id>
+bun run start tasks pause <task-id>
+bun run start tasks resume <task-id>
+```
+
+Use a five-field cron expression and explicit timezone for a recurring task:
+
+```fish
+bun run start tasks add daily-summary --cron "0 9 * * *" --tz Europe/London "Summarize my notes"
+```
+
+One-off timestamps require `Z` or an explicit UTC offset. Cron schedules retain
+local wall time across timezone changes. A missing local time during spring DST
+shifts forward; a repeated time during autumn DST runs once. The database stores
+times as UTC milliseconds. `show` includes final answers, run/session IDs, failures,
+and skipped intervals. Each occurrence has a fresh session, current profile and
+facts, and only `read_note` and `search_notes`. A returned `save_note` call is rejected.
+Use `--coding` before the prompt only for coding work that the chosen provider accepts.
+
+The worker executes one occurrence at a time. Recurring times missed while stopped
+are skipped. An overdue one-off runs once. A recurring task keeps at most one pending
+or running occurrence; additional due times are recorded as skipped intervals.
+Pending recurring summaries expire after 24 hours. One-off work never expires.
+Pausing cancels pending work and keeps previous results. An active run needs an
+explicit cancellation:
+
+```fish
+bun run start tasks cancel <occurrence-id>
+bun run start tasks retry <occurrence-id>
+bun run start tasks providers
+bun run start tasks resume-provider openai-chatgpt
+```
+
+Quota failures pause scheduled requests for that provider until `resume-provider`.
+Temporary and rate-limit failures delay subsequent work by 30 seconds, doubling
+after further failures up to five minutes. A failed occurrence is never retried
+automatically. `retry` creates a fresh session for an unsuccessful occurrence;
+earlier runs remain available through chat inspection. Resume a paused task before
+retrying it. A cancelled one-off needs `retry`, since it has no future occurrences.
+
+To remove every task and its occurrence/skip history:
+
+```fish
+bun run start tasks clear
+```
+
+This works with the worker running or stopped. A running worker interrupts active
+work before clearing and continues serving commands. Saved chat sessions and runs,
+notes, facts, credentials, and provider quota pauses are retained. The command
+returns the number of tasks removed, and repeating it on an empty list is safe.
+
+`tasks work` owns SQLite and serves task commands through `store/tasks.sock`,
+protected by the `0700` store directory and `0600` socket. Task commands also work
+with the worker stopped and need no credentials or model to inspect existing tasks.
+Stop the worker before using chat, memory, or store commands. Ctrl-C finalizes
+active work as interrupted and releases the socket and owner lock. After a crash,
+follow the stale-lock guidance above; unfinished work needs an explicit retry.
+Already queued work survives restart, and a committed answer is recovered without
+repeating its request. Automatic startup and sleep/wake handling belong to phase 8.
+After the stale owner lock is removed, task commands can open the store even if a
+dead worker left its socket behind. A lost response to a delivered command does
+not trigger local fallback. Task outcomes and provider pauses commit together;
+recovery restores a quota pause from an unfinished occurrence's saved run.
+
 ## Adding a provider
 
 Each provider exports a `ProviderRegistration` from its own workspace package.
@@ -456,6 +546,11 @@ apps/
       chat.ts             Chat commands, streaming output, session inspection
       runtime.ts          Generic selection and host configuration layers
       providers.ts        Provider registrations; first entry is the default
+      scheduler.ts        Serialized scheduled runs and wake queue
+      tasks.ts            Task commands and result inspection
+      task-store.ts       Durable scheduling and occurrence transitions
+      task-schema.ts      Typed commands, cron expressions, and timestamps
+      task-socket.ts      Protected local commands for the worker
 packages/
   agent/                  @poppet/agent
     src/service.ts        Persisted chat runner, deadlines, run finalization
@@ -520,7 +615,7 @@ Auth tests use a local OAuth server with signed test identities and fake model
 streams. Tests sit beside each capability. Provider suites share fixtures under
 `packages/provider-openai/src/test/fixtures`.
 They do not access a ChatGPT account. Storage tests use temporary SQLite databases.
-Modules for the agent, tools, memory, and scheduling will be added as their milestones start. See the
+See the
 [architecture notes](docs/architecture.md) for the service boundaries.
 
 ## Licence

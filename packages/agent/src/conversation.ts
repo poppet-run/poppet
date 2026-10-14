@@ -52,9 +52,13 @@ export const conversation = Effect.gen(function* () {
     history: ReadonlyArray<StoredMessage>,
     runs: ReadonlyArray<Run>,
     prompt: string,
+    readOnlyNotes: boolean,
   ) =>
     Stream.suspend(() => {
-      const tools = model.description.capabilities.tools ? noteTools : [];
+      const tools = model.description.capabilities.tools
+        ? noteTools.filter((tool) => !readOnlyNotes || tool.name !== "save_note")
+        : [];
+
       const current: Message[] = [{ role: "user", text }];
       let turns = 0;
       let callsUsed = 0;

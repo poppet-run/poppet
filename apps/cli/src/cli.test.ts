@@ -30,6 +30,204 @@ const invoke = async (
 };
 
 describe("CLI", () => {
+  test("rejects missing prompts and invalid task IDs as argument errors before opening the store", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "p7-invalid-"));
+
+    try {
+      const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+
+      const missing = await invoke(
+        ["tasks", "add", "Missing prompt", "--at", "2099-10-14T09:00:00Z"],
+        environment,
+      );
+
+      expect(missing.exitCode).toBe(1);
+      expect(missing.stderr).toContain("prompt");
+      expect(missing.stderr).not.toContain("Could not read or update");
+      const invalid = await invoke(["tasks", "show", "bad/id"], environment);
+      expect(invalid.exitCode).toBe(1);
+      expect(invalid.stderr).toContain("Invalid task or provider ID");
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("uses local task commands after a worker crashes and its stale owner lock is removed", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "p7-crash-"));
+
+    const environment = {
+      PATH: process.env.PATH ?? "",
+      POPPET_DATA_DIR: directory,
+      POPPET_MODEL: "saved-model",
+    };
+
+    const worker = Bun.spawn([process.execPath, "apps/cli/src/main.ts", "tasks", "work"], {
+      cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+      env: environment,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const errors = new Response(worker.stderr).text();
+
+    try {
+      const ready = await worker.stdout.getReader().read();
+      expect(new TextDecoder().decode(ready.value)).toContain("Task worker running");
+      expect(
+        (
+          await invoke(
+            ["tasks", "add", "Later", "--at", "2099-10-14T09:00:00Z", "Hello"],
+            environment,
+          )
+        ).exitCode,
+      ).toBe(0);
+      worker.kill("SIGKILL");
+      await worker.exited;
+      expect(await readdir(join(directory, "store"))).toContain("tasks.sock");
+      expect((await invoke(["tasks", "list"], environment)).stderr).toContain(
+        "Another Poppet store may be open",
+      );
+      await rm(join(directory, "store/owner.lock"));
+      const list = await invoke(["tasks", "list"], environment);
+      expect(list.exitCode).toBe(0);
+      expect(JSON.parse(list.stdout)).toMatchObject([{ name: "Later" }]);
+      const clear = await invoke(["tasks", "clear"], environment);
+      expect(clear.exitCode).toBe(0);
+      expect(JSON.parse(clear.stdout)).toEqual({ cleared: 1 });
+      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
+    } finally {
+      worker.kill("SIGKILL");
+      await worker.exited;
+      expect(await errors).toBe("");
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("manages saved tasks without credentials and validates schedules before creating a store", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-tasks-cli-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+
+    try {
+      const invalid = await invoke(
+        [
+          "tasks",
+          "add",
+          "Summary",
+          "--cron",
+          "* * * * *",
+          "--tz",
+          "Invalid/Zone",
+          "Summarize notes",
+        ],
+        environment,
+      );
+
+      expect(invalid.exitCode).toBe(1);
+      expect(invalid.stderr).toContain("Invalid cron");
+      expect(await readdir(directory)).toEqual([]);
+
+      const added = await invoke(
+        [
+          "tasks",
+          "add",
+          "Summary",
+          "--cron",
+          "0 9 * * *",
+          "--tz",
+          "Europe/London",
+          "Summarize notes",
+        ],
+        environment,
+      );
+
+      expect(added.exitCode).toBe(0);
+      const task = JSON.parse(added.stdout);
+      expect(task).toMatchObject({
+        name: "Summary",
+        provider: "openai-chatgpt",
+        model: "test-model",
+        schedule: { expression: "0 9 * * *", timezone: "Europe/London" },
+      });
+      const offline = { POPPET_DATA_DIR: directory };
+      expect(JSON.parse((await invoke(["tasks", "list"], offline)).stdout)).toHaveLength(1);
+      expect(JSON.parse((await invoke(["tasks", "pause", task.id], offline)).stdout).paused).toBe(
+        1,
+      );
+      expect(JSON.parse((await invoke(["tasks", "resume", task.id], offline)).stdout).paused).toBe(
+        0,
+      );
+      expect(JSON.parse((await invoke(["tasks", "show", task.id], offline)).stdout)).toMatchObject({
+        occurrences: [],
+        skipped: [],
+      });
+      expect((await invoke(["tasks", "show", "missing"], offline)).stderr).toContain(
+        "does not exist",
+      );
+      expect((await invoke(["tasks", "clear", "extra"], offline)).exitCode).toBe(1);
+      expect(JSON.parse((await invoke(["tasks", "clear"], offline)).stdout)).toEqual({
+        cleared: 1,
+      });
+      expect(JSON.parse((await invoke(["tasks", "list"], offline)).stdout)).toEqual([]);
+      expect(JSON.parse((await invoke(["tasks", "clear"], offline)).stdout)).toEqual({
+        cleared: 0,
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("task clients reach the running worker and a second worker cannot acquire ownership", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "p7-cli-"));
+    const environment = { PATH: process.env.PATH ?? "", POPPET_DATA_DIR: directory };
+
+    const worker = Bun.spawn([process.execPath, "apps/cli/src/main.ts", "tasks", "work"], {
+      cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+      env: environment,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const errors = new Response(worker.stderr).text();
+
+    try {
+      const ready = await worker.stdout.getReader().read();
+      expect(new TextDecoder().decode(ready.value)).toContain("Task worker running");
+      const second = await invoke(["tasks", "work"], environment);
+      expect(second.exitCode).toBe(1);
+      expect(second.stderr).toContain("Another Poppet store may be open");
+
+      const added = await invoke(
+        ["tasks", "add", "Later", "--at", "2099-10-14T09:00:00Z", "Summarize notes"],
+        { ...environment, POPPET_MODEL: "saved-model" },
+      );
+
+      expect(added.exitCode).toBe(0);
+      const task = JSON.parse(added.stdout);
+      expect(task.model).toBe("saved-model");
+      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toMatchObject([
+        { id: task.id },
+      ]);
+      expect((await invoke(["tasks", "pause", task.id], environment)).exitCode).toBe(0);
+      expect((await invoke(["tasks", "show", "missing"], environment)).stderr).toContain(
+        "does not exist",
+      );
+      expect(JSON.parse((await invoke(["tasks", "clear"], environment)).stdout)).toEqual({
+        cleared: 1,
+      });
+      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
+    } finally {
+      worker.kill("SIGINT");
+      await worker.exited;
+      expect(await errors).toBe("");
+      expect(await readdir(join(directory, "store"))).not.toContain("owner.lock");
+      expect(await readdir(join(directory, "store"))).not.toContain("tasks.sock");
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("manages explicit facts across CLI restarts without a provider connection or model", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-memory-cli-"));
     const environment = { POPPET_DATA_DIR: directory };

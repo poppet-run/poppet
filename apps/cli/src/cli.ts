@@ -11,7 +11,7 @@ import {
   type ProviderError,
 } from "@poppet/provider";
 import { Store, type StoreError } from "@poppet/store";
-import { Console, Data, Effect, type Config } from "effect";
+import { Console, Data, Effect, Layer, type Config } from "effect";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
 import { parseAuthCommand, type AuthCommand } from "#src/auth-command";
@@ -26,6 +26,10 @@ import {
 import { manageMemory, parseMemoryCommand } from "#src/memory";
 import { providers } from "#src/providers";
 import { findProvider, runtimeLayers } from "#src/runtime";
+import { runTaskWorker } from "#src/scheduler";
+import type { TaskError } from "#src/task-schema";
+import { remoteTaskCommand, taskSocketPath } from "#src/task-socket";
+import { localTaskCommand, parseTaskCommand } from "#src/tasks";
 
 class UsageError extends Data.TaggedError("UsageError")<{
   readonly message: string;
@@ -46,6 +50,18 @@ Commands:
   memory remember <key> <value>  Save a new fact
   memory replace <key> <value>   Change an existing fact
   memory forget <key>      Delete a fact
+  tasks add <name> --at <timestamp> [--coding] <prompt>
+  tasks add <name> --cron <expression> --tz <timezone> [--coding] <prompt>
+  tasks list               List saved tasks
+  tasks show <task>        Show occurrences, results, and skipped intervals
+  tasks pause <task>       Pause scheduling and cancel pending work
+  tasks resume <task>      Resume future occurrences
+  tasks cancel <occurrence> Cancel pending or active work
+  tasks retry <occurrence> Explicitly retry an unsuccessful occurrence
+  tasks clear              Interrupt active work and remove all tasks and task history
+  tasks providers          Show provider quota pauses and temporary backoff
+  tasks resume-provider <provider> Allow scheduled requests again
+  tasks work               Run the foreground task worker
   auth login [provider] [--consent | --key-stdin]  Sign in or save an API key
   auth status [provider]   Show connection status without secrets
   auth models [provider]   List available models
@@ -61,7 +77,8 @@ ${registered.map((entry) => `${entry.name}: ${entry.authentication.help}`).join(
 
 Chat includes read_note, search_notes and save_note within POPPET_NOTES_DIR.
 Chat loads <data directory>/profile.md and explicitly saved facts on each run.
-Scheduled tasks are planned next.`;
+Scheduled tasks use fresh sessions, current memory, and read-only note tools.
+Run tasks work to execute them; task commands can reach the running worker.`;
 
 const showConfig = Effect.gen(function* () {
   yield* Console.log(JSON.stringify(yield* AppConfig, null, 2));
@@ -125,7 +142,13 @@ export const makeCLI = (
     args: ReadonlyArray<string>,
   ): Effect.Effect<
     void,
-    Config.ConfigError | ProviderError | StoreError | MemoryError | UsageError | AgentError
+    | Config.ConfigError
+    | ProviderError
+    | StoreError
+    | MemoryError
+    | UsageError
+    | AgentError
+    | TaskError
   > => {
     // Help works before configuration or credential storage is opened.
     if (args.length === 0 || (args.length === 1 && (args[0] === "--help" || args[0] === "-h")))
@@ -166,6 +189,21 @@ export const makeCLI = (
       return parseMemoryCommand(args.slice(1)).pipe(
         Effect.flatMap((command) => manageMemory(command).pipe(Effect.provide(runtime.memory))),
       );
+    }
+
+    if (args[0] === "tasks") {
+      if (args.length === 2 && args[1] === "work")
+        return runTaskWorker.pipe(Effect.provide(Layer.merge(runtime.chat, runtime.tasks)));
+
+      return Effect.gen(function* () {
+        const command = yield* parseTaskCommand(args.slice(1));
+        const config = yield* AppConfig;
+        const reply = yield* remoteTaskCommand(taskSocketPath(config.dataDirectory), command);
+
+        if (reply !== null) return yield* Console.log(JSON.stringify(reply.value, null, 2));
+
+        return yield* localTaskCommand(command).pipe(Effect.provide(runtime.tasks));
+      }).pipe(Effect.provide(runtime.config));
     }
 
     if (args[0] === "chat") {

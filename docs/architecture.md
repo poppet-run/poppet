@@ -478,8 +478,8 @@ The future chat runner will consume the shared `Model` service.
 
 SQLite owns durable records. An Effect queue can wake a worker, but it does not
 replace persisted pending runs or task occurrences. A single owner executes runs
-and refreshes credentials; a background process will require a lock and protected
-local communication before it shares data with a CLI client.
+and refreshes credentials. The foreground `tasks work` owner uses the store lock
+and a protected Unix socket for task commands while its runner is active.
 
 Store normalized model messages, tool requests, tool results, versioned provider
 continuation data, and each run's provider/model selection. Trimming context must
@@ -506,9 +506,9 @@ library is unnecessary.
 Subscription verification adds OpenAI 7.32.0 for Responses streaming and jose
 6.2.12 for JWT/JWKS validation. The official sign-in devkit was not available as
 an installable package when this flow was added, so OAuth follows the documented
-public-client protocol directly. Add an occurrence calculator only when persisted schedules need it.
-Assess Effect's cron support then; timezone and downtime behavior must pass the
-same tests whichever calculator is chosen.
+public-client protocol directly. Scheduled tasks use Effect Cron for five-field
+expressions with explicit timezones. Tests cover DST, downtime, and durable
+occurrence transitions without another scheduling dependency.
 
 References: [Effect installation](https://effect.website/docs/v4/getting-started/installation),
 [services](https://effect.website/docs/v4/requirements-management/services),
