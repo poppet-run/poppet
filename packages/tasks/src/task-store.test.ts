@@ -57,6 +57,52 @@ const fixture = async () => {
 };
 
 describe("task schedules", () => {
+  test("status reports reconnect and quota actions without exposing failure messages or prompts", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo, store) =>
+        Effect.gen(function* () {
+          const job = repo.add({ ...once, prompt: "private prompt" }, start);
+          repo.reconcile(start);
+          const active = repo.claim(start)!;
+          const session = yield* store.createSession("test-provider", "test-model");
+          const run = yield* store.queueRun(session.id, [{ role: "user", text: "private prompt" }]);
+          yield* store.startRun(run.id);
+          yield* store.finishRun(run.id, { status: "failed", reason: "provider:authentication" });
+          repo.link(active.occurrence.id, session.id, run.id);
+          repo.finish(active.occurrence.id, "failed", "private provider diagnostic", start);
+          repo.blockProvider("test-provider", "quota", start);
+          const overview = repo.status();
+
+          expect(overview).toMatchObject({
+            taskCount: 1,
+            providers: ["test-provider"],
+            pendingCount: 0,
+            providerPauses: [
+              {
+                provider: "test-provider",
+                action: "Run tasks resume-provider test-provider when quota is available.",
+              },
+            ],
+            recent: [
+              {
+                jobId: job.id,
+                runId: run.id,
+                failureReason: "provider:authentication",
+                action: `Run auth login test-provider, then tasks retry ${active.occurrence.id}.`,
+              },
+            ],
+          });
+          expect(JSON.stringify(overview)).not.toContain("private prompt");
+          expect(JSON.stringify(overview)).not.toContain("private provider diagnostic");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("rolls back a failed quota-pause write and restores the pause from the saved run on restart", async () => {
     const state = await fixture();
 

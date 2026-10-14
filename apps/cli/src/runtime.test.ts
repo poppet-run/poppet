@@ -6,14 +6,16 @@ import {
   Provider,
   ProviderConnection,
   ProviderEnvironment,
+  ProviderError,
   type ProviderRegistration,
   completeModel,
   type ModelOperations,
   type ProviderId,
 } from "@poppet/provider";
+import { WorkerConnections } from "@poppet/tasks";
 import { Effect, Layer, Stream } from "effect";
 
-import { resolveConfiguredModel, selectProviderLayer } from "#src/runtime";
+import { resolveConfiguredModel, selectProviderLayer, runtimeLayers } from "#src/runtime";
 
 const config: Settings = {
   applicationName: "Test",
@@ -167,5 +169,82 @@ describe("configured model runtime", () => {
         message: "The provider resolved a different model. No fallback is allowed.",
       });
     },
+  );
+});
+
+test("worker connection status strips secrets, identifies consent and login actions, and labels cached metadata", async () => {
+  const id = process.env.POPPET_PROVIDER ?? "test-provider";
+  let busy = false;
+  let connected = true;
+
+  const layer = Layer.unwrap(
+    Effect.sync(() =>
+      busy
+        ? Layer.effect(
+            ProviderConnection,
+            Effect.fail(
+              new ProviderError({
+                provider: id,
+                reason: "authentication",
+                code: "credential_store_busy",
+                message: "busy",
+              }),
+            ),
+          )
+        : Layer.succeed(ProviderConnection, {
+            login: () => Effect.succeed("connected"),
+            logout: Effect.succeed("disconnected"),
+            verify: () => Effect.succeed("model"),
+            status: Effect.sync(() => ({
+              connected,
+              email: "person@example.com",
+              planUsage: false,
+              apiKey: "must-not-appear",
+            })),
+          }),
+    ),
+  );
+
+  const runtime = runtimeLayers([
+    {
+      id,
+      name: "Test",
+      authentication: { apiKey: false, consent: true, help: "Test" },
+      layer: Layer.merge(
+        layer,
+        Layer.succeed(Provider, {
+          id,
+          models: Effect.succeed([]),
+          resolve: () => Effect.succeed(fakeModel(id, "model")),
+        }),
+      ),
+    },
+  ]);
+
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const service = yield* WorkerConnections;
+      const first = yield* service.status(id);
+      expect(first).toMatchObject({
+        account: "person@example.com",
+        planUsage: false,
+        cached: false,
+        action: `Run auth login ${id} --consent.`,
+      });
+      expect(JSON.stringify(first)).not.toContain("must-not-appear");
+      busy = true;
+      expect(yield* service.status(id)).toMatchObject({
+        account: "person@example.com",
+        cached: true,
+        observedAt: first.observedAt,
+      });
+      busy = false;
+      connected = false;
+      expect(yield* service.status(id)).toMatchObject({
+        connected: false,
+        cached: false,
+        action: `Run auth login ${id}.`,
+      });
+    }).pipe(Effect.provide(runtime.connections)),
   );
 });

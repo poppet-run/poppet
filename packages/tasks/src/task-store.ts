@@ -377,8 +377,73 @@ export const makeTaskStore = (database: Database) => {
     return Schema.decodeUnknownSync(Schema.Array(Skipped))(statement.all(jobId));
   };
 
+  const status = () => {
+    const jobs = list();
+
+    using pending = database.prepare(
+      "SELECT COUNT(*) AS count FROM job_occurrences WHERE status = 'pending'",
+    );
+
+    using recent =
+      database.prepare(`SELECT occurrences.id, jobs.id AS jobId, jobs.provider, jobs.name, occurrences.status,
+      occurrences.scheduled_at AS scheduledAt, occurrences.run_id AS runId,
+      runs.failure_reason AS failureReason
+      FROM job_occurrences AS occurrences JOIN jobs ON jobs.id = occurrences.job_id
+      LEFT JOIN runs ON runs.id = occurrences.run_id
+      ORDER BY COALESCE(occurrences.finished_at, occurrences.scheduled_at) DESC, occurrences.id DESC LIMIT 5`);
+
+    const upcoming = jobs.filter((job) => !job.paused && job.nextAt !== null);
+
+    const results = Schema.decodeUnknownSync(
+      Schema.Array(
+        Schema.Struct({
+          id: Occurrence.fields.id,
+          jobId: Occurrence.fields.jobId,
+          provider: NewTask.fields.provider,
+          name: NewTask.fields.name,
+          status: Occurrence.fields.status,
+          scheduledAt: Schema.Natural,
+          runId: Occurrence.fields.runId,
+          failureReason: Schema.NullOr(Schema.String),
+        }),
+      ),
+    )(recent.all());
+
+    return {
+      taskCount: jobs.length,
+      providers: [...new Set(jobs.map((job) => job.provider))],
+      pausedTaskCount: jobs.filter((job) => job.paused).length,
+      pendingCount: Schema.decodeUnknownSync(Schema.Struct({ count: Schema.Natural }))(
+        pending.get(),
+      ).count,
+      nextScheduledAt:
+        upcoming.length === 0 ? null : Math.min(...upcoming.map((job) => job.nextAt!)),
+      providerPauses: providers().map((held) =>
+        Object.assign(held, {
+          action:
+            held.resumeAt === null
+              ? `Run tasks resume-provider ${held.provider} when quota is available.`
+              : `Future work can resume at ${new Date(held.resumeAt).toISOString()}.`,
+        }),
+      ),
+      recent: results.map((item) =>
+        Object.assign(item, {
+          action:
+            item.failureReason === "provider:authentication"
+              ? `Run auth login ${item.provider}, then tasks retry ${item.id}.`
+              : item.status === "interrupted"
+                ? `Run tasks retry ${item.id} if this work should run again.`
+                : item.status === "failed"
+                  ? `Run tasks show ${item.jobId} to inspect the failure before retrying.`
+                  : null,
+        }),
+      ),
+    };
+  };
+
   return {
     list,
+    status,
     task,
     occurrence,
     occurrences,

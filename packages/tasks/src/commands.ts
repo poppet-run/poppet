@@ -47,6 +47,8 @@ export const executeTaskCommand = (
           return repo.add(command.task, now);
         case "list":
           return repo.list();
+        case "status":
+          return repo.status();
         case "clear":
           return { cleared: repo.clear() };
         case "providers":
@@ -67,11 +69,21 @@ export const executeTaskCommand = (
     });
   });
 
+const recoveredTasks = Effect.gen(function* () {
+  const repo = yield* TaskRepository;
+  yield* taskOperation(() => repo.recover(Date.now()));
+
+  return repo;
+});
+
+export const readLocalTaskStatus = recoveredTasks.pipe(
+  Effect.flatMap((repo) => taskOperation(() => repo.status())),
+);
+
 export const executeLocalTaskCommand = (command: TaskCommand) =>
   Effect.gen(function* () {
     const store = yield* Store;
-    const repo = yield* TaskRepository;
-    yield* taskOperation(() => repo.recover(Date.now()));
+    const repo = yield* recoveredTasks;
 
     return yield* executeTaskCommand(repo, store, command, Date.now());
   });

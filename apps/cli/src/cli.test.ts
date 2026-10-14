@@ -203,6 +203,18 @@ describe("CLI", () => {
       expect(added.exitCode).toBe(0);
       const task = JSON.parse(added.stdout);
       expect(task.model).toBe("saved-model");
+      expect(JSON.parse((await invoke(["tasks", "status"], environment)).stdout)).toMatchObject({
+        running: true,
+        pid: worker.pid,
+        taskCount: 1,
+        connections: [
+          {
+            provider: "openai-chatgpt",
+            connected: false,
+            action: "Run auth login openai-chatgpt.",
+          },
+        ],
+      });
       expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toMatchObject([
         { id: task.id },
       ]);

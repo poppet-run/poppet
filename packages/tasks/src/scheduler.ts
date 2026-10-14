@@ -6,6 +6,8 @@ import {
   Cause,
   Clock,
   Console,
+  Context,
+  Schema,
   Effect,
   Exit,
   Fiber,
@@ -19,6 +21,14 @@ import { executeTaskCommand, taskOperation } from "#src/commands";
 import { type Occurrence, type ProviderPause, type Task, type TaskError } from "#src/task-schema";
 import { serveTasks, taskSocketPath } from "#src/task-socket";
 import { TaskRepository, type TaskStore } from "#src/task-store";
+
+// The host supplies provider status without making task scheduling depend on concrete adapters.
+export class WorkerConnections extends Context.Service<
+  WorkerConnections,
+  {
+    readonly status: (provider: string) => Effect.Effect<Schema.JsonObject>;
+  }
+>()("poppet/WorkerConnections") {}
 
 const workerLog = (at: number, message: string, failed = false) => {
   const line = `[${new Date(at).toISOString()}] ${message}`;
@@ -163,6 +173,8 @@ export const runTaskWorker = Effect.scoped(
     const wake = yield* Queue.make<void>({ capacity: 1, strategy: "dropping" });
     const commands = yield* Semaphore.make(1);
     let active: ActiveOccurrence | null = null;
+    const startedAt = clock.currentTimeMillisUnsafe();
+    const connections = yield* Effect.serviceOption(WorkerConnections);
 
     yield* reconcileTasks(repo, clock.currentTimeMillisUnsafe(), true);
     const pauses = yield* taskOperation(() => repo.providers());
@@ -175,6 +187,23 @@ export const runTaskWorker = Effect.scoped(
     yield* serveTasks(taskSocketPath(config.dataDirectory), (command) =>
       Effect.gen(function* () {
         const now = clock.currentTimeMillisUnsafe();
+
+        if (command.action === "status") {
+          const overview = yield* taskOperation(() => repo.status());
+
+          const ids = [...new Set([config.provider, ...overview.providers])];
+
+          return {
+            ...overview,
+            running: true,
+            pid: process.pid,
+            startedAt,
+            activeOccurrence: active?.id ?? null,
+            connections: Option.isSome(connections)
+              ? yield* Effect.forEach(ids, (id) => connections.value.status(id))
+              : [],
+          };
+        }
 
         if (command.action === "clear")
           return yield* Effect.uninterruptible(

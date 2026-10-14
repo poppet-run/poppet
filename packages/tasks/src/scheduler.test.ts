@@ -13,7 +13,7 @@ import {
   type Output,
 } from "@poppet/provider";
 import { Store, StoreDatabase, StoreLive } from "@poppet/store";
-import { Console, Deferred, Effect, Fiber, Layer, Stream } from "effect";
+import { Clock, Console, Deferred, Effect, Fiber, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { executeTaskCommand } from "#src/commands";
@@ -513,6 +513,13 @@ describe("task worker", () => {
           const listing = yield* remoteTaskCommand(path, { action: "list" });
           expect(listing?.value).toMatchObject([{ id: job.id }]);
           const active = repo.occurrences(job.id)[0]!;
+          expect((yield* remoteTaskCommand(path, { action: "status" }))?.value).toMatchObject({
+            running: true,
+            pid: process.pid,
+            activeOccurrence: active.id,
+            taskCount: 1,
+            recent: [{ id: active.id, status: "running" }],
+          });
           yield* remoteTaskCommand(path, { action: "pause", id: job.id });
           expect(repo.occurrence(active.id).status).toBe("running");
           yield* remoteTaskCommand(path, { action: "cancel", id: active.id });
@@ -542,6 +549,65 @@ describe("task worker", () => {
       );
       expect(await Bun.file(taskSocketPath(state.directory)).exists()).toBe(false);
       expect(await Bun.file(join(state.directory, "store/owner.lock")).exists()).toBe(false);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("a sleeping worker resumes one overdue summary and one-off, records skips, and does not replay them", async () => {
+    const started = await Effect.runPromise(Deferred.make<void>());
+
+    const state = await fixture(() =>
+      Stream.unwrap(Deferred.succeed(started, undefined).pipe(Effect.as(final()))),
+    );
+
+    let wallTime = 0;
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const clock = yield* Clock.Clock;
+          const initial = repo.add(state.task, 0);
+
+          const recurring = repo.add(
+            { ...state.task, schedule: { type: "cron", expression: "* * * * *", timezone: "UTC" } },
+            0,
+          );
+
+          const once = repo.add({ ...state.task, schedule: { type: "once", at: 120_000 } }, 0);
+
+          const worker = yield* runTaskWorker.pipe(
+            Effect.provideService(Clock.Clock, {
+              ...clock,
+              currentTimeMillisUnsafe: () => wallTime,
+              currentTimeMillis: Effect.sync(() => wallTime),
+            }),
+            Effect.forkChild,
+          );
+
+          yield* Deferred.await(started);
+
+          while (repo.occurrences(initial.id)[0]?.status !== "completed") yield* Effect.yieldNow;
+          wallTime = 3_600_000;
+          yield* TestClock.adjust("1 second");
+
+          while (
+            repo.occurrences(once.id)[0]?.status !== "completed" ||
+            repo.occurrences(recurring.id)[0]?.status !== "completed"
+          )
+            yield* Effect.yieldNow;
+          yield* TestClock.adjust("1 second");
+          expect(repo.occurrences(recurring.id)).toHaveLength(1);
+          expect(repo.occurrences(once.id)).toHaveLength(1);
+          expect(repo.skips(recurring.id)).toEqual([
+            { firstAt: 120_000, lastAt: wallTime, reason: "worker-delayed" },
+          ]);
+          expect(state.requests).toHaveLength(3);
+          expect(repo.status()).toMatchObject({ pendingCount: 0, nextScheduledAt: 3_660_000 });
+          yield* Fiber.interrupt(worker);
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
     } finally {
       await state.close();
     }

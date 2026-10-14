@@ -76,7 +76,7 @@ export type NewTask = typeof NewTask.Type;
 
 export const TaskCommand = Schema.Union([
   Schema.Struct({ action: Schema.Literal("add"), task: NewTask }),
-  Schema.Struct({ action: Schema.Literals(["list", "providers", "clear"]) }),
+  Schema.Struct({ action: Schema.Literals(["list", "providers", "clear", "status"]) }),
   Schema.Struct({
     action: Schema.Literals(["show", "pause", "resume", "cancel", "retry"]),
     id: Session.fields.id,

@@ -65,6 +65,7 @@ Commands:
   tasks clear              Interrupt active work and remove all tasks and task history
   tasks providers          Show provider quota pauses and temporary backoff
   tasks resume-provider <provider> Allow scheduled requests again
+  tasks status             Show task counts, recent outcomes, and worker status
   tasks work               Run the foreground task worker
   auth login [provider] [--consent | --key-stdin]  Sign in or save an API key
   auth status [provider]   Show connection status without secrets

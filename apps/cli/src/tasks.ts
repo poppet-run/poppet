@@ -13,8 +13,10 @@ export const parseTaskCommand = (args: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const action = args[0];
 
-    if ((action === "list" || action === "providers" || action === "clear") && args.length === 1)
-      return { action } satisfies TaskCommand;
+    if (["list", "providers", "clear", "status"].includes(action ?? "") && args.length === 1)
+      return yield* Schema.decodeUnknownEffect(TaskCommand)({ action }).pipe(
+        Effect.mapError(() => new TaskError({ message: "Invalid task command." })),
+      );
 
     if (
       ["show", "pause", "resume", "cancel", "retry", "resume-provider"].includes(action ?? "") &&
@@ -33,7 +35,7 @@ export const parseTaskCommand = (args: ReadonlyArray<string>) =>
       return yield* Effect.fail(
         new TaskError({
           message:
-            "Use tasks add, list, show, pause, resume, cancel, retry, clear, providers, resume-provider, or work. See --help.",
+            "Use tasks add, list, show, status, pause, resume, cancel, retry, clear, providers, resume-provider, or work. See --help.",
         }),
       );
 
