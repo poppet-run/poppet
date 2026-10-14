@@ -582,8 +582,9 @@ record schema or migration changes are needed.
 ## Dependencies
 
 The foundation uses Effect 4.0.4, its Bun platform adapter, TypeScript 7.0.2,
-Oxfmt 0.73.0, Oxlint 1.88.0, and Bun 1.3.14 with matching Bun types. Versions are
-pinned and the lockfile is checked in. Effect provides Config and Schema, so a separate schema
+Oxfmt 0.73.0, Oxlint 1.88.0, and Bun 1.4.3 with matching Bun types. Bun checks types;
+TypeScript provides editor support. Versions are pinned and the lockfile is
+checked in. Effect provides Config and Schema, so a separate schema
 library is unnecessary.
 
 Subscription verification adds OpenAI 7.32.0 for Responses streaming and jose

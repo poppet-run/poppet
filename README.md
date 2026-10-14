@@ -13,7 +13,7 @@ running after you close the terminal and start it at login.
 
 ## Development
 
-Use Bun 1.3.14, pinned in `mise.toml` and `package.json`.
+Use Bun 1.4.3, pinned in `mise.toml` and `package.json`.
 
 ```fish
 bun install --frozen-lockfile
@@ -32,9 +32,10 @@ repository directory, so relative configuration paths keep the same meaning.
 
 `bun run dev` watches the CLI source. `bun run format` formats files with Oxfmt.
 `bun run lint:fix` applies safe Oxlint fixes. `bun run check` checks formatting,
-linting, TypeScript, and Bun tests. GitHub Actions runs the same checks on pushes
-and pull requests. Type checking covers each workspace and the root tooling
-configs. To check one workspace, use `bun run --filter '@poppet/config' typecheck`
+linting, types, and Bun tests. GitHub Actions runs the same checks on pushes
+and pull requests. Bun's built-in type checker covers each workspace and the root
+tooling configs. TypeScript stays installed for editor support. To check one
+workspace, use `bun run --filter '@poppet/config' typecheck`
 or `bun run --filter '@poppet/provider-openai' test`.
 
 The Oxfmt and Oxlint configs are based on
