@@ -16,3 +16,5 @@ export {
 export { OAuthClientLive } from "#src/oauth/client";
 
 export { BrowserSignInLive } from "#src/sign-in/service";
+
+export { chatGPT } from "#src/registration";

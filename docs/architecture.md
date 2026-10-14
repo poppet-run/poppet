@@ -28,22 +28,23 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Workspaces
 
-The Bun monorepo has eight private workspaces:
+The Bun monorepo has nine private workspaces:
 
-| Workspace                     | Responsibility                                                              | Workspace dependencies                                   |
-| ----------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config and provider layers                               |
-| `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                                        |
-| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                 | Config, provider contract                                |
-| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle       | Config, provider contract                                |
-| `@poppet/provider`            | Normalized messages, stream events, continuation, provider/model services   | None                                                     |
-| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, credentials, OpenAI protocol adapters |
-| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration            | Provider contract, credentials, OpenAI protocol adapters |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Config                                                   |
+| Workspace                     | Responsibility                                                              | Workspace dependencies                            |
+| ----------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
+| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config and provider layers                        |
+| `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                                 |
+| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                 | Provider contract                                 |
+| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle       | Config, provider contract                         |
+| `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts   | None                                              |
+| `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming         | Provider contract                                 |
+| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, credentials, protocol adapters |
+| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration            | Provider contract, credentials, protocol adapters |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Provider contract, protocol adapters              |
 
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
-`packages/provider-openrouter`, `packages/credentials`, and `packages/store`.
+`packages/provider-openrouter`, `packages/provider-protocol`, `packages/credentials`, and `packages/store`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
@@ -55,10 +56,11 @@ Start and dev run the CLI without changing the working directory. Root checks
 cover formatting, linting, tooling configuration types, every workspace's types,
 and all tests. The workspaces share `tsconfig.base.json` and one lockfile.
 
-The CLI owns `runtime.ts` and composes live layers supplied by the packages.
-OAuth, browser sign-in, credentials, and model access stay together in the OpenAI
-provider package. A shared provider contract and a separate OpenCode provider
-package supply the selected model before durable conversation storage.
+The CLI owns `runtime.ts` and selects complete provider layers from
+`apps/cli/src/providers.ts`. Each provider package composes its own authentication,
+credentials, and model services. The host supplies `ProviderEnvironment` with the
+application name and data directory, and `CredentialInput` for terminal key input.
+Providers do not depend on application configuration or other provider packages.
 
 ## Modules
 
@@ -100,9 +102,8 @@ Tests live beside their capability modules. The provider's `src/test/fixtures/` 
 services with local OAuth and model servers shared by the behavior suites.
 
 Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
-modules are implemented. `runtime.ts` composes the ChatGPT layers for
-auth commands and only the selected provider for general provider commands.
-`StoreRuntime` opens SQLite only for store commands. The agent loop, tools, memory,
+modules are implemented. `runtime.ts` builds only the registered provider selected
+for an auth or inference command. Its store layer opens SQLite only for store commands. The agent loop, tools, memory,
 and scheduling remain planned.
 
 ## Provider interface
@@ -112,15 +113,16 @@ its schema can preserve normalized messages and provider continuation data.
 The future agent will depend on one selected `Model` service supplied by the CLI
 runtime. `provider models` and `provider verify` exercise this boundary now.
 
-| Workspace                     | Responsibility                                                                  |
-| ----------------------------- | ------------------------------------------------------------------------------- |
-| `@poppet/provider`            | Shared messages, tools, model descriptions, stream events, and inference errors |
-| `@poppet/provider-openai`     | ChatGPT authentication, OpenAI request translation, streams, and continuation   |
-| `@poppet/provider-opencode`   | OpenCode Go credentials, discovery, per-model protocol selection, and streams   |
-| `@poppet/provider-openrouter` | OpenRouter credentials, catalog capabilities, and Chat Completions binding      |
-| `@poppet/cli`                 | Provider/model configuration and composition of the selected live layer         |
+| Workspace                     | Responsibility                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| `@poppet/provider`            | Shared inference, connection, registration, and message contracts             |
+| `@poppet/provider-protocol`   | Reusable wire codecs, validated completion, deadlines, and cancellation       |
+| `@poppet/provider-openai`     | ChatGPT authentication, OpenAI request translation, streams, and continuation |
+| `@poppet/provider-opencode`   | OpenCode Go credentials, discovery, per-model protocol selection, and streams |
+| `@poppet/provider-openrouter` | OpenRouter credentials, catalog capabilities, and Chat Completions binding    |
+| `@poppet/cli`                 | Provider/model configuration and composition of the selected live layer       |
 
-OpenRouter reuses the Chat Completions adapter exported by the OpenAI workspace.
+OpenRouter reuses the Chat Completions adapter in `@poppet/provider-protocol`.
 It discovers concrete text models publicly and loads an environment or saved API key
 only when inference begins. Catalog parameters determine each model's supported
 settings. Requests require parameter support, disable provider fallbacks, and
@@ -164,6 +166,39 @@ export class Model extends Context.Service<Model, ModelOperations>()("poppet/Mod
 `Model` through Effect and calls `model.stream(request)` for each model turn.
 Keep discovery and connection commands separate from the agent's inference
 dependency. Authentication flows remain provider-specific.
+
+### Provider registration and ownership
+
+`ProviderRegistration` contains an ID, display name, authentication capabilities,
+help text, and a layer supplying the shared `Provider` and `ProviderConnection`
+services. `ProviderConnection` exposes login, secret-free status, logout, and
+verification. Login returns provider-owned guidance; verification returns the
+verified model ID. Provider-owned verification can record subscription metadata.
+The CLI uses these services for every auth command, including normalized model
+listing through `Provider.models`.
+
+Provider IDs are bounded, path-safe strings, not an enumeration of installed
+providers. Configuration receives registered IDs and the default from the host;
+the first registration is the default. Unknown selections fail before provider
+resources are opened. The store validates IDs and preserves continuation data
+without needing the corresponding provider installed. Model descriptions expose
+capabilities; HTTP protocol selection stays inside provider implementations.
+
+To add a provider:
+
+1. Create a workspace package exporting a `ProviderRegistration`. Implement the
+   shared inference and connection services and compose their live dependencies
+   inside the package. The layer may require `ProviderEnvironment`; login may
+   request terminal input through `CredentialInput`.
+2. Register that export in `apps/cli/src/providers.ts` and declare its workspace
+   dependency in the CLI's package manifest. Run `bun install` to update workspace
+   links and the lockfile.
+
+Shared contracts, configuration, credentials, storage, and command routing need
+no provider-specific edits. API-key providers can reuse `makeApiKeyConnection`
+and `loadApiKey` by supplying their own ID and environment-variable name.
+Concrete provider imports are restricted by lint to the registration list.
+Shared protocol helpers accept extensions rather than importing providers.
 
 ### Shared request and response types
 
@@ -241,13 +276,16 @@ unrecognized models and Messages protocol models are rejected. The key is read
 from `POPPET_OPENCODE_GO_API_KEY` only when inference begins. Go requests require
 `workload: "coding"`; general assistant tasks fail before credentials are read.
 
-The pure protocol adapters in `@poppet/provider-openai/protocol` bind a model
+The reusable protocol adapters in `@poppet/provider-protocol` bind a model
 description and a supplied client Effect. Both providers reuse Responses parsing;
-Go also uses Chat Completions parsing. These adapters do not open a ChatGPT
+Go also uses Chat Completions parsing. Provider packages supply request headers,
+error classification, and reasoning-continuation extensions. The shared adapters
+never branch on provider IDs or open a ChatGPT
 credential store. The contract package imports no SDK types.
 
 Responses continuation retains validated output items, including encrypted
-reasoning. Chat Completions continuation retains `reasoning_content`; normalized
+reasoning. Go owns `reasoning_content` continuation; OpenRouter owns its structured
+reasoning sequence. Normalized
 assistant output retains text and ordered tool calls. Each assistant message owns
 its continuation. Adapters reject mismatched provider/model/version/protocol data.
 
@@ -260,7 +298,7 @@ clock; phase 1 live evidence and future live Go checks are separate.
 ## Conversation store
 
 `@poppet/store` exposes a scoped `Store` service through `StoreLive`. The CLI
-provides configuration through `StoreRuntime`; `store status` migrates the
+provides configuration through its store runtime layer; `store status` migrates the
 schema and reports counts without opening authentication services.
 
 `database.ts` protects `<data directory>/store`, acquires the process ownership

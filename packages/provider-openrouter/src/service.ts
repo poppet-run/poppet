@@ -1,14 +1,23 @@
-import { loadApiKey as storedApiKey } from "@poppet/credentials";
+import {
+  ApiKeyStoreLive,
+  makeApiKeyConnection,
+  loadApiKey as storedApiKey,
+} from "@poppet/credentials";
 import {
   Provider,
+  ProviderEnvironment,
+  ProviderConnection,
+  type ProviderRegistration,
   ProviderError,
   invalidRequest,
   type ModelDescription,
   type ProviderOperations,
 } from "@poppet/provider";
-import { chatCompletionsModel, inferenceFailure } from "@poppet/provider-openai/protocol";
+import { chatCompletionsModel } from "@poppet/provider-protocol";
 import { Effect, Layer, Redacted, Schema } from "effect";
 import OpenAI, { APIError } from "openai";
+
+import { routerFailure, routerOptions } from "#src/protocol";
 
 export type HttpFetch = (input: Request | string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -58,7 +67,6 @@ const describeModel = (model: typeof CatalogModel.Type): ModelDescription => {
     provider: "openrouter",
     id: model.id,
     name: model.name,
-    protocol: "chat-completions",
     capabilities: {
       tools:
         model.supported_parameters.includes("tools") &&
@@ -70,10 +78,12 @@ const describeModel = (model: typeof CatalogModel.Type): ModelDescription => {
   };
 };
 
-export const loadApiKey = storedApiKey("openrouter");
+const apiKeyEnvironment = "POPPET_OPENROUTER_API_KEY";
+
+export const loadApiKey = storedApiKey("openrouter", apiKeyEnvironment);
 
 export const makeOpenRouterProvider = (
-  key: Effect.Effect<Redacted.Redacted<string>, ProviderError> = loadApiKey,
+  key: Effect.Effect<Redacted.Redacted<string>, ProviderError>,
   http: HttpFetch = fetch,
   baseUrl = "https://openrouter.ai/api/v1",
 ): ProviderOperations => {
@@ -85,8 +95,7 @@ export const makeOpenRouterProvider = (
 
         if (!response.ok) {
           await response.body?.cancel();
-          throw inferenceFailure(
-            "openrouter",
+          throw routerFailure(
             new APIError(response.status, undefined, undefined, response.headers),
           );
         }
@@ -97,7 +106,7 @@ export const makeOpenRouterProvider = (
           throw invalidRequest("openrouter", "OpenRouter returned an invalid model catalog.");
         }
       },
-      catch: (cause) => inferenceFailure("openrouter", cause),
+      catch: (cause) => routerFailure(cause),
     });
 
     return yield* Schema.decodeUnknownEffect(Catalog)(body).pipe(
@@ -156,9 +165,37 @@ export const makeOpenRouterProvider = (
           selected.supported_parameters.includes("max_tokens")
             ? "max_tokens"
             : "max_completion_tokens",
+          routerOptions,
         );
       }),
   };
 };
 
-export const OpenRouterLive = Layer.succeed(Provider, makeOpenRouterProvider());
+const inference = Layer.effect(
+  Provider,
+  Effect.gen(function* () {
+    const environment = yield* ProviderEnvironment;
+
+    return makeOpenRouterProvider(
+      loadApiKey.pipe(Effect.provideService(ProviderEnvironment, environment)),
+    );
+  }),
+);
+
+export const OpenRouterLive = Layer.effect(
+  ProviderConnection,
+  Effect.gen(function* () {
+    return yield* makeApiKeyConnection(yield* Provider, apiKeyEnvironment);
+  }),
+).pipe(Layer.provideMerge(Layer.mergeAll(inference, ApiKeyStoreLive)));
+
+export const openRouter: ProviderRegistration = {
+  id: "openrouter",
+  name: "OpenRouter",
+  authentication: {
+    consent: false,
+    apiKey: true,
+    help: "API key from hidden input, --key-stdin, or POPPET_OPENROUTER_API_KEY.",
+  },
+  layer: OpenRouterLive,
+};

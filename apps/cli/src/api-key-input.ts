@@ -1,23 +1,23 @@
 import { BunTerminal } from "@effect/platform-bun";
-import { ApiKey, type ApiKeyProvider } from "@poppet/credentials";
-import { ProviderError } from "@poppet/provider";
+import { ApiKey } from "@poppet/credentials";
+import { ProviderError, type ProviderId } from "@poppet/provider";
 import { Console, Effect, Option, Queue, Schema, Terminal } from "effect";
 
-const inputError = (provider: ApiKeyProvider, message: string) =>
+const inputError = (provider: ProviderId, message: string) =>
   new ProviderError({ provider, reason: "authentication", message });
 
-const decodeKey = (provider: ApiKeyProvider, value: string) =>
+const decodeKey = (provider: ProviderId, value: string) =>
   Schema.decodeUnknownEffect(ApiKey)(value).pipe(
     Effect.mapError(() => inputError(provider, "Enter a nonempty API key without whitespace.")),
   );
 
-export const readKeyStdin = (provider: ApiKeyProvider) =>
+export const readKeyStdin = (provider: ProviderId) =>
   Effect.tryPromise({
     try: () => Bun.stdin.text(),
     catch: () => inputError(provider, "Could not read the API key from stdin."),
   }).pipe(Effect.flatMap((value) => decodeKey(provider, value.replace(/\r?\n$/, ""))));
 
-export const readHiddenKey = (provider: ApiKeyProvider) => {
+export const readHiddenKey = (provider: ProviderId) => {
   if (!process.stdin.isTTY)
     return Effect.fail(
       inputError(

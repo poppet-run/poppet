@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
-import { AppConfig } from "@poppet/config";
+import { ProviderEnvironment } from "@poppet/provider";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { Connection, ConnectionError } from "#src/connection";
@@ -29,7 +29,7 @@ const storageError = () =>
 export const CredentialStoreLive = Layer.effect(
   CredentialStore,
   Effect.gen(function* () {
-    const config = yield* AppConfig;
+    const config = yield* ProviderEnvironment;
     const directory = join(config.dataDirectory, "auth");
     const path = join(directory, "connection.json");
     const lockPath = join(directory, "owner.lock");

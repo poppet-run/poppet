@@ -5,28 +5,26 @@ import {
   verifyModel,
   type ModelDescription,
   type ModelRequest,
-  type Protocol,
   type ProviderId,
 } from "@poppet/provider";
 import { Effect, Fiber, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import OpenAI from "openai";
 
-import { chatCompletionsModel } from "#src/model/chat-completions";
-import { responsesModel } from "#src/model/responses";
-import type { HttpFetch } from "#src/oauth/http";
+import { chatCompletionsModel } from "#src/chat-completions";
+import { responsesModel } from "#src/responses";
+
+type HttpFetch = (input: Request | string | URL, init?: RequestInit) => Promise<Response>;
 
 interface AdapterCase {
   readonly name: string;
   readonly provider: ProviderId;
-  readonly protocol: Protocol;
+  readonly protocol: "responses" | "chat-completions";
 }
 
 const cases: ReadonlyArray<AdapterCase> = [
-  { name: "ChatGPT Responses", provider: "openai-chatgpt", protocol: "responses" },
-  { name: "Go Responses", provider: "opencode-go", protocol: "responses" },
-  { name: "Go Chat Completions", provider: "opencode-go", protocol: "chat-completions" },
-  { name: "OpenRouter Chat Completions", provider: "openrouter", protocol: "chat-completions" },
+  { name: "Responses", provider: "test-responses", protocol: "responses" },
+  { name: "Chat Completions", provider: "test-chat", protocol: "chat-completions" },
 ];
 
 const request: ModelRequest = {
@@ -190,7 +188,7 @@ const fixture = (
       else if (mode === "failed")
         events.push({
           type: "response.failed",
-          response: { error: { code: "subscription_sharing_usage_limit_exceeded" } },
+          response: { error: { code: "insufficient_quota" } },
         });
       else if (mode === "incomplete")
         events.push({ type: "response.incomplete", response: { status: "incomplete" } });
@@ -297,7 +295,6 @@ const fixture = (
     provider: adapter.provider,
     id: "test-model",
     name: "Test model",
-    protocol: adapter.protocol,
     capabilities: {
       tools: true,
       generationSettings: [],
@@ -335,16 +332,9 @@ for (const adapter of cases) {
       expect(
         harness.headers.every((header) => header.get("authorization") === "Bearer test-secret"),
       ).toBe(true);
-      expect(JSON.stringify(harness.requests[1])).toContain(
-        adapter.protocol === "responses" ? "encrypted-test-reasoning" : "retained-test-reasoning",
-      );
 
-      if (adapter.provider === "opencode-go") {
-        expect(harness.headers[0]?.get("x-opencode-session")).toBeTruthy();
-        expect(harness.headers[1]?.get("x-opencode-session")).toBe(
-          harness.headers[0]?.get("x-opencode-session"),
-        );
-      }
+      if (adapter.protocol === "responses")
+        expect(JSON.stringify(harness.requests[1])).toContain("encrypted-test-reasoning");
 
       expect(harness.signals.every((signal) => signal.aborted)).toBe(true);
     });
@@ -434,7 +424,6 @@ for (const adapter of cases) {
       ["429 rate limit", 429, "rate_limit_exceeded", "rate-limit"],
       ["503", 503, "request_failed", "temporary"],
       ["context limit", 400, "context_length_exceeded", "context-limit"],
-      ["invalid user", 400, "subscription_sharing_invalid_user", "authentication"],
     ] as const)(
       "classifies HTTP %s safely and never retries",
       async (_label, status, errorCode, reason) => {
@@ -462,7 +451,7 @@ for (const adapter of cases) {
       ).rejects.toMatchObject({ reason: "invalid-request" });
 
       const continuations = [
-        [adapter.provider === "opencode-go" ? "openai-chatgpt" : "opencode-go", "test-model", 1],
+        ["other-provider", "test-model", 1],
         [adapter.provider, "other-model", 1],
         [adapter.provider, "test-model", 2],
         [adapter.provider, "test-model", 1],

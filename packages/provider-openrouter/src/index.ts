@@ -1,1 +1,1 @@
-export { OpenRouterLive, makeOpenRouterProvider } from "#src/service";
+export { openRouter, OpenRouterLive, makeOpenRouterProvider } from "#src/service";

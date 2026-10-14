@@ -7,13 +7,14 @@ import {
   type ProviderError,
   type ProviderOperations,
 } from "@poppet/provider";
+import { responsesModel } from "@poppet/provider-protocol";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { ChatGPTAuth } from "#src/auth/service";
 import { ConnectionError } from "#src/connection";
 import { clientFor, modelFailure } from "#src/model/client";
 import { connectionFailure, providerFailure } from "#src/model/errors";
-import { responsesModel } from "#src/model/responses";
+import { inferenceFailure, remoteFailure } from "#src/model/errors";
 import type { HttpFetch } from "#src/oauth/http";
 
 const ModelCatalog = Schema.Struct({
@@ -100,7 +101,11 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
           Effect.mapError(providerFailure),
         );
 
-        return responsesModel(describeModel(entry), client);
+        return responsesModel(describeModel(entry), client, {
+          failure: (cause) => inferenceFailure("openai-chatgpt", cause),
+          remoteFailure: (status, code, requestId) =>
+            remoteFailure("openai-chatgpt", status, code, requestId),
+        });
       });
 
     return { models, verify, resolve } satisfies ModelOperations;
@@ -112,7 +117,6 @@ const describeModel = (model: AvailableModel): ModelDescription => ({
   provider: "openai-chatgpt",
   id: model.slug,
   name: model.display_name,
-  protocol: "responses",
   capabilities: { tools: true, generationSettings: [], contextWindow: null, maxOutputTokens: null },
 });
 

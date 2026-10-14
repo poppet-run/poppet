@@ -39,7 +39,6 @@
       "name": "@poppet/credentials",
       "version": "0.0.0",
       "dependencies": {
-        "@poppet/config": "workspace:*",
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
       },
@@ -55,8 +54,8 @@
       "name": "@poppet/provider-openai",
       "version": "0.0.0",
       "dependencies": {
-        "@poppet/config": "workspace:*",
         "@poppet/provider": "workspace:*",
+        "@poppet/provider-protocol": "workspace:*",
         "effect": "4.0.4",
         "jose": "6.2.12",
         "openai": "7.32.0",
@@ -68,7 +67,7 @@
       "dependencies": {
         "@poppet/credentials": "workspace:*",
         "@poppet/provider": "workspace:*",
-        "@poppet/provider-openai": "workspace:*",
+        "@poppet/provider-protocol": "workspace:*",
         "effect": "4.0.4",
         "openai": "7.32.0",
       },
@@ -79,7 +78,16 @@
       "dependencies": {
         "@poppet/credentials": "workspace:*",
         "@poppet/provider": "workspace:*",
-        "@poppet/provider-openai": "workspace:*",
+        "@poppet/provider-protocol": "workspace:*",
+        "effect": "4.0.4",
+        "openai": "7.32.0",
+      },
+    },
+    "packages/provider-protocol": {
+      "name": "@poppet/provider-protocol",
+      "version": "0.0.0",
+      "dependencies": {
+        "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
         "openai": "7.32.0",
       },
@@ -190,6 +198,8 @@
     "@poppet/provider-opencode": ["@poppet/provider-opencode@workspace:packages/provider-opencode"],
 
     "@poppet/provider-openrouter": ["@poppet/provider-openrouter@workspace:packages/provider-openrouter"],
+
+    "@poppet/provider-protocol": ["@poppet/provider-protocol@workspace:packages/provider-protocol"],
 
     "@poppet/store": ["@poppet/store@workspace:packages/store"],
 

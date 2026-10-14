@@ -84,6 +84,13 @@ and adapter requirements.
 - `@poppet/provider` defines Effect Schemas for normalized messages, tools, model
   descriptions, requests, completion events, and versioned continuation. `Provider`
   discovers and resolves models; `Model` binds one provider/model for inference.
+- Provider packages export registrations with their own live composition and
+  connection operations. The CLI registers them once and uses shared interfaces
+  for auth, model discovery, and inference. Provider IDs are generic; configuration
+  validates them against the registry. Shared protocol codecs live in
+  `@poppet/provider-protocol`, with provider-owned headers, reasoning extensions,
+  and error classification. A synthetic registered provider exercises the same
+  command and storage paths without modifying shared code.
 - `@poppet/provider-openai` exposes general Responses inference through that
   contract, retaining ChatGPT sign-in and protected credentials. Subscription
   verification now uses the shared tool-exchange workflow. Streamed completed

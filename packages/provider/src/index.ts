@@ -1,6 +1,5 @@
 export {
   ProviderId,
-  Protocol,
   GenerationSetting,
   Tool,
   Output,
@@ -25,3 +24,12 @@ export {
 } from "#src/service";
 
 export { verifyModel } from "#src/verification";
+
+export {
+  ProviderEnvironment,
+  CredentialInput,
+  ProviderConnection,
+  type LoginOptions,
+  type ConnectionOperations,
+  type ProviderRegistration,
+} from "#src/registration";

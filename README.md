@@ -21,7 +21,7 @@ bun run check
 
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
-`@poppet/provider-openrouter`, `@poppet/credentials`, and `@poppet/store`.
+`@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`, and `@poppet/store`.
 Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
 
@@ -256,6 +256,25 @@ owners, and scoped cleanup. The storage API is ready for the phase 4 chat runner
 CLI conversation commands are not implemented yet. Live ChatGPT token renewal
 remains a separate phase 3 follow-up.
 
+## Adding a provider
+
+Each provider exports a `ProviderRegistration` from its own workspace package.
+Register it in `apps/cli/src/providers.ts` and declare its CLI workspace dependency.
+The registration supplies the ID, display name, authentication capabilities, help,
+and complete live layer. Configuration defaults to the first registered provider.
+
+The CLI consumes shared `Provider`, `Model`, and `ProviderConnection` services.
+Provider packages own authentication, environment-variable names, protocol choice,
+headers, continuation extensions, and error rules. Shared credentials and protocol
+helpers receive these settings from their owner. Adding a provider needs no changes
+to shared schemas, storage, or command routing. Lint enforces the import boundary.
+See [provider registration and ownership](docs/architecture.md#provider-registration-and-ownership)
+for the contract and integration steps.
+
+`auth models` now returns normalized model descriptions for every provider,
+including ChatGPT. Wire protocol names are internal and omitted from those descriptions.
+Existing credential files and conversation records keep their formats.
+
 ## Source layout
 
 ```text
@@ -264,7 +283,8 @@ apps/
     src/
       main.ts             Bun process entry point and Effect runtime
       cli.ts              Command routing and terminal output
-      runtime.ts          Composition of authentication and model layers
+      runtime.ts          Generic selection and host configuration layers
+      providers.ts        Provider registrations; first entry is the default
 packages/
   config/                 @poppet/config
     src/config.ts         Validated settings and AppConfig service/layer
@@ -279,6 +299,9 @@ packages/
     src/schema.ts         Normalized messages, tools, events, and continuation
     src/service.ts        Provider and selected Model services, typed errors
     src/verification.ts   Shared local tool round-trip verification
+    src/registration.ts   Connection interface, provider metadata, and host services
+  provider-protocol/      @poppet/provider-protocol
+    src/                  Reusable Responses/Chat Completions codecs and cancellation
   provider-openai/        @poppet/provider-openai
     src/
       index.ts            Public services, live layers, and connection errors
@@ -286,12 +309,15 @@ packages/
       auth/               Login, refresh, status, protected credential storage
       oauth/              Discovery, token exchange, JWT identity validation
       sign-in/            Browser sign-in and scoped loopback callback
-      model/              Model catalog, SDK adapter, streams, verification
+      model/              Model catalog, subscription errors, verification
+      registration.ts     Provider-owned live composition and connection operations
       test/fixtures/      Local OAuth and model servers for behavior tests
   provider-opencode/      @poppet/provider-opencode
     src/service.ts        Go catalog, secret configuration, and protocol routing
+    src/protocol.ts       Go session headers and reasoning continuation
   provider-openrouter/    @poppet/provider-openrouter
     src/service.ts        OpenRouter catalog, capabilities, and secret configuration
+    src/protocol.ts       Routing, reasoning continuation, and stream error rules
 docs/
   architecture.md  Service boundaries and Effect conventions
   implementation-plan.md

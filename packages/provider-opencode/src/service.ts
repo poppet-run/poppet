@@ -1,19 +1,24 @@
-import { loadApiKey as storedApiKey } from "@poppet/credentials";
+import {
+  ApiKeyStoreLive,
+  makeApiKeyConnection,
+  loadApiKey as storedApiKey,
+} from "@poppet/credentials";
 import {
   Provider,
+  ProviderEnvironment,
+  ProviderConnection,
+  ModelDescription,
+  type ProviderRegistration,
   ProviderError,
   invalidRequest,
-  type ModelDescription,
   type ModelOperations,
   type ProviderOperations,
 } from "@poppet/provider";
-import {
-  inferenceFailure,
-  chatCompletionsModel,
-  responsesModel,
-} from "@poppet/provider-openai/protocol";
+import { inferenceFailure, chatCompletionsModel, responsesModel } from "@poppet/provider-protocol";
 import { Effect, Layer, Redacted, Schema, Stream } from "effect";
 import OpenAI, { APIError } from "openai";
+
+import { sessionHeaders, goOptions } from "#src/protocol";
 
 export type HttpFetch = (input: Request | string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -22,7 +27,9 @@ const userAgent = "poppet/0.0.0";
 const Catalog = Schema.Struct({ data: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString })) });
 
 // Expand this list only after the model's protocol and continuation are tested.
-const supportedModels: ReadonlyArray<ModelDescription> = [
+const supportedModels: ReadonlyArray<
+  ModelDescription & { readonly protocol: "responses" | "chat-completions" }
+> = [
   {
     provider: "opencode-go",
     id: "gpt-6-luna",
@@ -49,10 +56,12 @@ const supportedModels: ReadonlyArray<ModelDescription> = [
   },
 ];
 
-export const loadApiKey = storedApiKey("opencode-go");
+const apiKeyEnvironment = "POPPET_OPENCODE_GO_API_KEY";
+
+export const loadApiKey = storedApiKey("opencode-go", apiKeyEnvironment);
 
 export const makeOpenCodeProvider = (
-  key: Effect.Effect<Redacted.Redacted<string>, ProviderError> = loadApiKey,
+  key: Effect.Effect<Redacted.Redacted<string>, ProviderError>,
   http: HttpFetch = fetch,
   baseUrl = "https://opencode.ai/inference/go/v1",
 ): ProviderOperations => {
@@ -84,7 +93,11 @@ export const makeOpenCodeProvider = (
       ),
     );
 
-    return supportedModels.filter((model) => catalog.data.some((entry) => entry.id === model.id));
+    return supportedModels
+      .values()
+      .filter((model) => catalog.data.some((entry) => entry.id === model.id))
+      .map((model) => Schema.decodeUnknownSync(ModelDescription)(model))
+      .toArray();
   }).pipe(
     Effect.timeout("30 seconds"),
     Effect.catchTag("TimeoutError", () =>
@@ -135,9 +148,10 @@ export const makeOpenCodeProvider = (
       );
 
       const model =
-        description.protocol === "responses"
-          ? responsesModel(description, client)
-          : chatCompletionsModel(description, client);
+        supportedModels.find((candidate) => candidate.id === description.id)?.protocol ===
+        "responses"
+          ? responsesModel(description, client, { headers: sessionHeaders })
+          : chatCompletionsModel(description, client, "max_tokens", goOptions);
 
       return {
         description,
@@ -158,4 +172,31 @@ export const makeOpenCodeProvider = (
   return { id: "opencode-go", models, resolve };
 };
 
-export const OpenCodeGoLive = Layer.succeed(Provider, makeOpenCodeProvider());
+const inference = Layer.effect(
+  Provider,
+  Effect.gen(function* () {
+    const environment = yield* ProviderEnvironment;
+
+    return makeOpenCodeProvider(
+      loadApiKey.pipe(Effect.provideService(ProviderEnvironment, environment)),
+    );
+  }),
+);
+
+export const OpenCodeGoLive = Layer.effect(
+  ProviderConnection,
+  Effect.gen(function* () {
+    return yield* makeApiKeyConnection(yield* Provider, apiKeyEnvironment);
+  }),
+).pipe(Layer.provideMerge(Layer.mergeAll(inference, ApiKeyStoreLive)));
+
+export const openCodeGo: ProviderRegistration = {
+  id: "opencode-go",
+  name: "OpenCode Go",
+  authentication: {
+    consent: false,
+    apiKey: true,
+    help: "API key from hidden input, --key-stdin, or POPPET_OPENCODE_GO_API_KEY.",
+  },
+  layer: OpenCodeGoLive,
+};

@@ -1,8 +1,7 @@
 import { Schema } from "effect";
 
-export const ProviderId = Schema.Literals(["openai-chatgpt", "opencode-go", "openrouter"]);
-
-export const Protocol = Schema.Literals(["responses", "chat-completions"]);
+// IDs are also used as credential filenames. Keep them bounded and path-safe.
+export const ProviderId = Schema.NonEmptyString.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,63}$/));
 
 export const GenerationSetting = Schema.Literals(["temperature", "maxOutputTokens"]);
 
@@ -51,7 +50,6 @@ export const ModelDescription = Schema.Struct({
   provider: ProviderId,
   id: Schema.NonEmptyString,
   name: Schema.NonEmptyString,
-  protocol: Protocol,
   capabilities: Schema.Struct({
     tools: Schema.Boolean,
     generationSettings: Schema.Array(GenerationSetting),
@@ -90,8 +88,6 @@ export const ModelEvent = Schema.Union([
 ]);
 
 export type ProviderId = typeof ProviderId.Type;
-
-export type Protocol = typeof Protocol.Type;
 
 export type Tool = typeof Tool.Type;
 

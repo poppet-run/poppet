@@ -4,6 +4,9 @@ import { AppConfig, type Settings } from "@poppet/config";
 import {
   Model,
   Provider,
+  ProviderConnection,
+  ProviderEnvironment,
+  type ProviderRegistration,
   completeModel,
   type ModelOperations,
   type ProviderId,
@@ -25,7 +28,6 @@ const fakeModel = (provider: ProviderId, id: string): ModelOperations => ({
     provider,
     id,
     name: id,
-    protocol: "responses",
     capabilities: {
       tools: true,
       generationSettings: [],
@@ -46,7 +48,7 @@ const fakeModel = (provider: ProviderId, id: string): ModelOperations => ({
 });
 
 describe("configured model runtime", () => {
-  test.each(["openai-chatgpt", "opencode-go", "openrouter"] as const)(
+  test.each(["first-provider", "second-provider", "new-provider"] as const)(
     "builds only %s and resolves the explicit model",
     async (selected) => {
       const built: ProviderId[] = [];
@@ -77,9 +79,29 @@ describe("configured model runtime", () => {
             Layer.succeed(AppConfig, { ...config, provider: selected }),
             selectProviderLayer(
               selected,
-              layer("openai-chatgpt"),
-              layer("opencode-go"),
-              layer("openrouter"),
+              ["first-provider", "second-provider", "new-provider"].map(
+                (id): ProviderRegistration => ({
+                  id,
+                  name: id,
+                  authentication: { consent: false, apiKey: false, help: "Test connection" },
+                  layer: Layer.merge(
+                    layer(id),
+                    Layer.succeed(ProviderConnection, {
+                      login: () => Effect.succeed("Connected"),
+                      status: Effect.succeed({ connected: false }),
+                      logout: Effect.succeed("Disconnected"),
+                      verify: () => Effect.succeed("selected-model"),
+                    }),
+                  ),
+                }),
+              ),
+            ).pipe(
+              Layer.provide(
+                Layer.succeed(ProviderEnvironment, {
+                  applicationName: "Test",
+                  dataDirectory: "/unused",
+                }),
+              ),
             ),
           ),
         ),

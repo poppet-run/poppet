@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 
+import { completeModel } from "@poppet/provider";
+import { Effect, Redacted } from "effect";
+
+import { ChatGPTAuth } from "#src/auth/service";
 import { ConnectionError } from "#src/connection";
+import { makeChatGPTProvider } from "#src/model/service";
+import type { HttpFetch } from "#src/oauth/http";
 import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt";
 
 describe("ChatGPT model verification", () => {
@@ -72,6 +78,69 @@ describe("ChatGPT model verification", () => {
       } finally {
         await harness.close();
       }
+    },
+  );
+});
+
+describe("ChatGPT provider inference", () => {
+  test.each([
+    ["subscription_sharing_invalid_user", "authentication"],
+    ["subscription_sharing_user_not_eligible", "permission"],
+    ["subscription_sharing_usage_limit_exceeded", "quota"],
+    ["subscription_sharing_usage_unavailable", "temporary"],
+  ] as const)(
+    "classifies %s through the shared model interface without retrying or exposing server details",
+    async (code, reason) => {
+      let inferenceRequests = 0;
+
+      const http: HttpFetch = async (input) => {
+        const url = input instanceof Request ? input.url : input.toString();
+
+        if (url.endsWith("/models"))
+          return Response.json({
+            models: [{ slug: "test-model", display_name: "Test model", visibility: "list" }],
+          });
+        inferenceRequests++;
+
+        return Response.json(
+          { error: { code, message: "secret-server-message" } },
+          { status: 400, headers: { "x-request-id": "req_subscription" } },
+        );
+      };
+
+      const auth: ChatGPTAuth["Service"] = {
+        accessToken: Effect.succeed(Redacted.make("test-token")),
+        login: () => Effect.die("Login must not run."),
+        status: Effect.die("Status must not run."),
+        signOut: Effect.die("Sign-out must not run."),
+        recordVerification: () => Effect.die("Verification must not be recorded."),
+      };
+
+      const failure = await Effect.runPromise(
+        Effect.gen(function* () {
+          const provider = yield* makeChatGPTProvider(http);
+          const model = yield* provider.resolve("test-model");
+
+          return yield* completeModel(model, {
+            sessionId: "subscription-test",
+            workload: "assistant",
+            instructions: "",
+            messages: [{ role: "user", text: "Test" }],
+            tools: [],
+            settings: {},
+          }).pipe(Effect.match({ onSuccess: () => null, onFailure: (error) => error }));
+        }).pipe(Effect.provideService(ChatGPTAuth, auth)),
+      );
+
+      expect(failure).toMatchObject({
+        provider: "openai-chatgpt",
+        reason,
+        code,
+        status: 400,
+        requestId: "req_subscription",
+      });
+      expect(JSON.stringify(failure)).not.toContain("secret-server-message");
+      expect(inferenceRequests).toBe(1);
     },
   );
 });

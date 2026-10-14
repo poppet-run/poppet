@@ -8,7 +8,7 @@ import {
 } from "@poppet/provider";
 import { Effect, Stream } from "effect";
 
-import { inferenceFailure } from "#src/model/errors";
+import { inferenceFailure } from "#src/errors";
 
 // The stream scope owns both cancellation and an absolute request deadline.
 // Taking only a delta still aborts the underlying request when the consumer exits.
@@ -19,6 +19,8 @@ export const modelStream = (
     request: ModelRequest,
     signal: AbortSignal,
   ) => Effect.Effect<AsyncIterable<ModelEvent>, ProviderError>,
+  failure: (cause: unknown) => ProviderError = (cause) =>
+    inferenceFailure(description.provider, cause),
 ) =>
   Stream.unwrap(
     Effect.gen(function* () {
@@ -67,7 +69,7 @@ export const modelStream = (
       return Stream.fromAsyncIterable(cancellable, (cause) =>
         expired
           ? interrupted(description.provider, "The inference deadline expired.")
-          : inferenceFailure(description.provider, cause),
+          : failure(cause),
       );
     }),
   );

@@ -123,10 +123,8 @@ describe("OpenCode Go", () => {
     const harness = fixture();
     const models = await Effect.runPromise(harness.provider.models);
 
-    expect(models.map((model) => [model.id, model.protocol])).toEqual([
-      ["gpt-6-luna", "responses"],
-      ["glm-5.3", "chat-completions"],
-    ]);
+    expect(models.map((model) => model.id)).toEqual(["gpt-6-luna", "glm-5.3"]);
+    expect(models.every((model) => !("protocol" in model))).toBe(true);
     expect(harness.keyReads()).toBe(0);
   });
 

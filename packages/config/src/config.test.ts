@@ -7,7 +7,7 @@ import { ConfigProvider, Effect, Exit } from "effect";
 import { loadConfig } from "#src/config";
 
 const withEnvironment = (environment: Record<string, string>) =>
-  loadConfig.pipe(
+  loadConfig("test-provider", ["test-provider", "other-provider"]).pipe(
     Effect.provideService(
       ConfigProvider.ConfigProvider,
       ConfigProvider.fromEnv({ env: environment, preserveEmptyStrings: true }),
@@ -22,7 +22,7 @@ describe("configuration", () => {
       applicationName: "Poppet",
       dataDirectory: join(homedir(), ".config", "poppet"),
       notesDirectory: join(homedir(), ".config", "poppet", "notes"),
-      provider: "openai-chatgpt",
+      provider: "test-provider",
       model: null,
     });
   });
@@ -40,7 +40,7 @@ describe("configuration", () => {
         POPPET_APP_NAME: "My Poppet",
         POPPET_DATA_DIR: "./test-data",
         POPPET_NOTES_DIR: "./my-notes",
-        POPPET_PROVIDER: "opencode-go",
+        POPPET_PROVIDER: "other-provider",
         POPPET_MODEL: "glm-5.3",
       }),
     );
@@ -49,7 +49,7 @@ describe("configuration", () => {
       applicationName: "My Poppet",
       dataDirectory: resolve("./test-data"),
       notesDirectory: resolve("./my-notes"),
-      provider: "opencode-go",
+      provider: "other-provider",
       model: "glm-5.3",
     });
   });

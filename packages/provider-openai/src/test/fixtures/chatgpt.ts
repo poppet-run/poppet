@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { AppConfig } from "@poppet/config";
+import { ProviderEnvironment } from "@poppet/provider";
 import { Console, Effect, Layer, Schema } from "effect";
 
 import { CredentialStore, CredentialStoreLive } from "#src/auth/credentials";
@@ -51,12 +51,9 @@ export const createHarness = async () => {
     }),
   );
 
-  const config = Layer.succeed(AppConfig, {
+  const config = Layer.succeed(ProviderEnvironment, {
     applicationName: "Poppet",
     dataDirectory: directory,
-    notesDirectory: join(directory, "notes"),
-    provider: "openai-chatgpt",
-    model: null,
   });
 
   const dependencies = Layer.mergeAll(

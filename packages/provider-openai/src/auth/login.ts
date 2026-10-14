@@ -1,4 +1,4 @@
-import { AppConfig } from "@poppet/config";
+import { ProviderEnvironment } from "@poppet/provider";
 import { DateTime, Effect, Redacted } from "effect";
 
 import { CredentialStore } from "#src/auth/credentials";
@@ -10,7 +10,7 @@ import { BrowserSignIn } from "#src/sign-in/service";
 // Capture the supplied services when the auth layer is built. The returned
 // function describes a login attempt, which runs when its Effect is executed.
 export const loginWorkflow = Effect.gen(function* () {
-  const config = yield* AppConfig;
+  const config = yield* ProviderEnvironment;
   const store = yield* CredentialStore;
   const oauth = yield* OAuthClient;
   const browser = yield* BrowserSignIn;

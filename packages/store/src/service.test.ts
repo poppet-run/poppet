@@ -22,7 +22,7 @@ const fixture = async () => {
         applicationName: "Test",
         dataDirectory: directory,
         notesDirectory: join(directory, "notes"),
-        provider: "openai-chatgpt",
+        provider: "first-provider",
         model: null,
       }),
     ),
@@ -65,7 +65,7 @@ const reject = <A>(operation: Effect.Effect<A, StoreError>, reason: StoreError["
   );
 
 describe("conversation store", () => {
-  test.each(["openai-chatgpt", "opencode-go", "openrouter"] as const)(
+  test.each(["first-provider", "second-provider", "new-provider"] as const)(
     "persists %s messages, tools, continuation and completed runs across reopening",
     async (provider) => {
       const fixtureStore = await fixture();
@@ -156,7 +156,7 @@ describe("conversation store", () => {
       await fixtureStore.run(
         Effect.gen(function* () {
           const store = yield* Store;
-          const session = yield* store.createSession("openrouter", "selected-model");
+          const session = yield* store.createSession("new-provider", "selected-model");
           using injected = new Database(fixtureStore.path);
           injected.run(
             `CREATE TRIGGER reject_second_message BEFORE INSERT ON messages WHEN NEW.position = 1 BEGIN SELECT RAISE(ABORT, 'secret-sql-failure'); END`,
@@ -178,7 +178,7 @@ describe("conversation store", () => {
           );
 
           const failedCompletion = yield* store
-            .finishRun(run.id, { status: "completed", response: responseFor("openrouter") })
+            .finishRun(run.id, { status: "completed", response: responseFor("new-provider") })
             .pipe(Effect.match({ onFailure: (error) => error, onSuccess: () => null }));
 
           expect(failedCompletion).toMatchObject({ reason: "storage" });
@@ -188,7 +188,7 @@ describe("conversation store", () => {
           expect(
             (yield* store.finishRun(run.id, {
               status: "completed",
-              response: responseFor("openrouter"),
+              response: responseFor("new-provider"),
             })).status,
           ).toBe("completed");
         }),
@@ -205,13 +205,13 @@ describe("conversation store", () => {
       await fixtureStore.run(
         Effect.gen(function* () {
           const store = yield* Store;
-          const first = yield* store.createSession("openrouter", "selected-model");
-          const other = yield* store.createSession("opencode-go", "selected-model");
+          const first = yield* store.createSession("new-provider", "selected-model");
+          const other = yield* store.createSession("second-provider", "selected-model");
 
           const foreign: Message = {
             role: "assistant",
             output: [],
-            continuation: responseFor("opencode-go").continuation,
+            continuation: responseFor("second-provider").continuation,
           };
 
           yield* reject(store.queueRun(first.id, [foreign]), "invalid-request");
@@ -235,7 +235,7 @@ describe("conversation store", () => {
           yield* reject(
             store.finishRun(pending.id, {
               status: "completed",
-              response: responseFor("opencode-go"),
+              response: responseFor("second-provider"),
             }),
             "invalid-request",
           );
@@ -244,7 +244,7 @@ describe("conversation store", () => {
           yield* reject(
             store.finishRun(pending.id, {
               status: "completed",
-              response: responseFor("openrouter"),
+              response: responseFor("new-provider"),
             }),
             "conflict",
           );
@@ -270,7 +270,7 @@ describe("conversation store", () => {
         const before = await fixtureStore.run(
           Effect.gen(function* () {
             const store = yield* Store;
-            const session = yield* store.createSession("openrouter", "selected-model");
+            const session = yield* store.createSession("new-provider", "selected-model");
             const run = yield* store.queueRun(session.id, [user]);
 
             if (state === "running") yield* store.startRun(run.id);
@@ -342,7 +342,7 @@ describe("conversation store", () => {
       applyMigrations(old, migrations.slice(0, 1));
       old
         .query("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)")
-        .run("old-session", "openrouter", "selected-model", 1, 1);
+        .run("old-session", "new-provider", "selected-model", 1, 1);
       old
         .query(
           "INSERT INTO messages (session_id, position, created_at, payload) VALUES (?, ?, ?, ?)",
@@ -354,7 +354,7 @@ describe("conversation store", () => {
           Effect.gen(function* () {
             expect((yield* store.status).schemaVersion).toBe(2);
             expect((yield* store.messages("old-session"))[0]?.message).toEqual(user);
-            expect((yield* store.queueRun("old-session", [user])).provider).toBe("openrouter");
+            expect((yield* store.queueRun("old-session", [user])).provider).toBe("new-provider");
           }),
         ),
       );
@@ -370,7 +370,7 @@ describe("conversation store", () => {
 
       try {
         const session = await fixtureStore.run(
-          Store.use((store) => store.createSession("openrouter", "selected-model")),
+          Store.use((store) => store.createSession("new-provider", "selected-model")),
         );
 
         using tampered = new Database(fixtureStore.path);
@@ -387,7 +387,7 @@ describe("conversation store", () => {
               : JSON.stringify({
                   role: "assistant",
                   output: [],
-                  continuation: responseFor("opencode-go").continuation,
+                  continuation: responseFor("second-provider").continuation,
                 }),
           );
         tampered.close(true);

@@ -16,35 +16,43 @@ export class AppConfig extends Context.Service<AppConfig, Settings>()("poppet/Ap
 
 const ConfigText = Schema.NonEmptyString.check(Schema.isTrimmed());
 
-export const loadConfig = Effect.gen(function* () {
-  const applicationName = yield* Config.schema(ConfigText, "POPPET_APP_NAME").pipe(
-    Config.withDefault("Poppet"),
+export const loadConfig = (defaultProvider: ProviderId, providers: ReadonlyArray<ProviderId>) =>
+  Effect.gen(function* () {
+    const applicationName = yield* Config.schema(ConfigText, "POPPET_APP_NAME").pipe(
+      Config.withDefault("Poppet"),
+    );
+
+    const dataDirectory = yield* Config.schema(ConfigText, "POPPET_DATA_DIR").pipe(
+      Config.withDefault(join(homedir(), ".config", "poppet")),
+      Config.map((directory) => resolve(directory)),
+    );
+
+    const notesDirectory = yield* Config.schema(ConfigText, "POPPET_NOTES_DIR").pipe(
+      Config.withDefault(join(dataDirectory, "notes")),
+      Config.map((directory) => resolve(directory)),
+    );
+
+    const provider = yield* Config.schema(
+      ProviderId.check(
+        Schema.makeFilter((id) => providers.includes(id) || "Choose a registered provider."),
+      ),
+      "POPPET_PROVIDER",
+    ).pipe(Config.withDefault(defaultProvider));
+
+    const model = yield* Config.schema(ConfigText, "POPPET_MODEL").pipe(
+      Config.option,
+      Config.map(Option.getOrNull),
+    );
+
+    return { applicationName, dataDirectory, notesDirectory, provider, model } satisfies Settings;
+  });
+
+export const makeAppConfigLive = (
+  defaultProvider: ProviderId,
+  providers: ReadonlyArray<ProviderId>,
+) =>
+  Layer.effect(AppConfig, loadConfig(defaultProvider, providers)).pipe(
+    // Preserve empty environment values so validation rejects them instead of
+    // treating them as missing and silently choosing a default.
+    Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))),
   );
-
-  const dataDirectory = yield* Config.schema(ConfigText, "POPPET_DATA_DIR").pipe(
-    Config.withDefault(join(homedir(), ".config", "poppet")),
-    Config.map((directory) => resolve(directory)),
-  );
-
-  const notesDirectory = yield* Config.schema(ConfigText, "POPPET_NOTES_DIR").pipe(
-    Config.withDefault(join(dataDirectory, "notes")),
-    Config.map((directory) => resolve(directory)),
-  );
-
-  const provider = yield* Config.schema(ProviderId, "POPPET_PROVIDER").pipe(
-    Config.withDefault("openai-chatgpt"),
-  );
-
-  const model = yield* Config.schema(ConfigText, "POPPET_MODEL").pipe(
-    Config.option,
-    Config.map(Option.getOrNull),
-  );
-
-  return { applicationName, dataDirectory, notesDirectory, provider, model } satisfies Settings;
-});
-
-export const AppConfigLive = Layer.effect(AppConfig, loadConfig).pipe(
-  // Preserve empty environment values so validation rejects them instead of
-  // treating them as missing and silently choosing a default.
-  Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))),
-);

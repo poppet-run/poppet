@@ -8,16 +8,15 @@
     "#src/*": "./src/*.ts"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./protocol": "./src/model/protocol.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@poppet/config": "workspace:*",
     "@poppet/provider": "workspace:*",
+    "@poppet/provider-protocol": "workspace:*",
     "effect": "4.0.4",
     "jose": "6.2.12",
     "openai": "7.32.0"

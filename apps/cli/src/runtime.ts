@@ -1,54 +1,31 @@
-import { AppConfig, AppConfigLive } from "@poppet/config";
-import { Model, Provider, invalidRequest, type ProviderId } from "@poppet/provider";
+import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import {
-  BrowserSignInLive,
-  ChatGPTAuthLive,
-  ChatGPTModelLive,
-  ChatGPTProviderLive,
-  CredentialStoreLive,
-  OAuthClientLive,
-} from "@poppet/provider-openai";
-import { OpenCodeGoLive } from "@poppet/provider-opencode";
-import { OpenRouterLive } from "@poppet/provider-openrouter";
+  Model,
+  Provider,
+  ProviderEnvironment,
+  ProviderId,
+  invalidRequest,
+  type ProviderRegistration,
+  type ProviderError,
+} from "@poppet/provider";
 import { StoreLive } from "@poppet/store";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 
-// Build independent services first, then supply them to the layers that need them.
-const dependencies = Layer.mergeAll(AppConfigLive, OAuthClientLive, BrowserSignInLive);
+import { providers } from "#src/providers";
 
-// provideMerge supplies dependencies and keeps them available to later layers,
-// so storage, authentication, and model operations share the same services.
-const storage = CredentialStoreLive.pipe(Layer.provideMerge(dependencies));
+export const findProvider = (
+  id: ProviderId,
+  registered: ReadonlyArray<ProviderRegistration>,
+): Effect.Effect<ProviderRegistration, ProviderError> => {
+  const provider = registered.find((entry) => entry.id === id);
 
-const authentication = ChatGPTAuthLive.pipe(Layer.provideMerge(storage));
-
-export const ChatGPTRuntime = ChatGPTModelLive.pipe(Layer.provideMerge(authentication));
-
-const chatGPTProvider = ChatGPTProviderLive.pipe(Layer.provide(authentication));
-
-export const selectProviderLayer = (
-  provider: ProviderId,
-  chatGPT = chatGPTProvider,
-  openCode = OpenCodeGoLive,
-  openRouter = OpenRouterLive,
-) => {
-  switch (provider) {
-    case "openai-chatgpt":
-      return chatGPT;
-    case "opencode-go":
-      return openCode;
-    case "openrouter":
-      return openRouter;
-  }
+  return provider === undefined
+    ? Effect.fail(invalidRequest(id, `Unknown provider ${id}. Choose a registered provider.`))
+    : Effect.succeed(provider);
 };
 
-export const ProviderRuntime = Layer.unwrap(
-  Effect.gen(function* () {
-    const config = yield* AppConfig;
-
-    return selectProviderLayer(config.provider);
-  }),
-).pipe(Layer.provideMerge(AppConfigLive));
+export const selectProviderLayer = (id: ProviderId, registered = providers) =>
+  Layer.unwrap(findProvider(id, registered).pipe(Effect.map((entry) => entry.layer)));
 
 export const resolveConfiguredModel = Effect.gen(function* () {
   const config = yield* AppConfig;
@@ -59,7 +36,6 @@ export const resolveConfiguredModel = Effect.gen(function* () {
     );
 
   const provider = yield* Provider;
-
   const model = yield* provider.resolve(config.model);
 
   if (model.description.provider !== config.provider || model.description.id !== config.model)
@@ -73,17 +49,59 @@ export const resolveConfiguredModel = Effect.gen(function* () {
   return model;
 });
 
-export const SelectedModelRuntime = Layer.unwrap(
-  Effect.gen(function* () {
-    const config = yield* AppConfig;
+export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) => {
+  const first = registered[0];
 
-    if (config.model === null)
-      return yield* Effect.fail(
-        invalidRequest(config.provider, "Set POPPET_MODEL to a model from provider models."),
-      );
+  if (first === undefined) throw new Error("Register at least one provider.");
+  const ids = new Set<ProviderId>();
 
-    return Layer.effect(Model, resolveConfiguredModel).pipe(Layer.provideMerge(ProviderRuntime));
-  }),
-).pipe(Layer.provide(AppConfigLive));
+  for (const entry of registered) {
+    Schema.decodeUnknownSync(ProviderId)(entry.id);
 
-export const StoreRuntime = StoreLive.pipe(Layer.provide(AppConfigLive));
+    if (ids.has(entry.id)) throw new Error(`Duplicate provider registration: ${entry.id}`);
+    ids.add(entry.id);
+  }
+
+  const config = makeAppConfigLive(first.id, [...ids]);
+
+  const environment = Layer.effect(
+    ProviderEnvironment,
+    Effect.gen(function* () {
+      const settings = yield* AppConfig;
+
+      return { applicationName: settings.applicationName, dataDirectory: settings.dataDirectory };
+    }),
+  );
+
+  const selectedProvider = (id: ProviderId) =>
+    selectProviderLayer(id, registered).pipe(Layer.provide(environment), Layer.provide(config));
+
+  const provider = Layer.unwrap(
+    Effect.gen(function* () {
+      const settings = yield* AppConfig;
+
+      return selectedProvider(settings.provider);
+    }),
+  ).pipe(Layer.provideMerge(config));
+
+  const model = Layer.unwrap(
+    Effect.gen(function* () {
+      const settings = yield* AppConfig;
+
+      if (settings.model === null)
+        return yield* Effect.fail(
+          invalidRequest(settings.provider, "Set POPPET_MODEL to a model from provider models."),
+        );
+
+      return Layer.effect(Model, resolveConfiguredModel).pipe(Layer.provideMerge(provider));
+    }),
+  ).pipe(Layer.provide(config));
+
+  return {
+    config,
+    provider,
+    model,
+    selectedProvider,
+    store: StoreLive.pipe(Layer.provide(config)),
+  };
+};

@@ -1,5 +1,4 @@
 import { ProviderError, type ProviderId } from "@poppet/provider";
-import { Option, Schema } from "effect";
 import { APIError, APIConnectionError, APIConnectionTimeoutError, APIUserAbortError } from "openai";
 
 import { ConnectionError } from "#src/connection";
@@ -79,7 +78,6 @@ export const remoteFailure = (
   else if (status === 403 || code === "subscription_sharing_user_not_eligible")
     reason = "permission";
   else if (
-    (provider === "openrouter" && status === 402) ||
     [
       "subscription_sharing_usage_limit_exceeded",
       "insufficient_quota",
@@ -91,7 +89,6 @@ export const remoteFailure = (
   else if (code === "context_length_exceeded") reason = "context-limit";
   else if (
     (status ?? 0) >= 500 ||
-    (provider === "openrouter" && ["server_error", "provider_error"].includes(code ?? "")) ||
     ["subscription_sharing_usage_unavailable", "subscription_sharing_user_unavailable"].includes(
       code ?? "",
     )
@@ -128,17 +125,7 @@ export const inferenceFailure = (provider: ProviderId, cause: unknown): Provider
     });
 
   if (cause instanceof APIError) {
-    // OpenRouter can send numeric HTTP-style codes inside an HTTP 200 SSE error.
-    const numericCode = Option.getOrUndefined(
-      Schema.decodeUnknownOption(
-        Schema.Int.check(Schema.isBetween({ minimum: 400, maximum: 599 })),
-      )(cause.code),
-    );
-
-    const code = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(cause.code));
-    const status = cause.status ?? (provider === "openrouter" ? numericCode : undefined);
-
-    return remoteFailure(provider, status, code, cause.requestID);
+    return remoteFailure(provider, cause.status, cause.code, cause.requestID);
   }
 
   return new ProviderError({

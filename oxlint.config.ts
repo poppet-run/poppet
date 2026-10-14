@@ -57,6 +57,32 @@ export default defineConfig({
   },
   overrides: [
     {
+      files: ["packages/**/*.ts", "apps/cli/src/**/*.ts"],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                group: [
+                  "@poppet/provider-*",
+                  "@poppet/provider-*/**",
+                  "!@poppet/provider-protocol",
+                  "!@poppet/provider-protocol/**",
+                ],
+                message:
+                  "Use the shared provider interface. Concrete providers may only be imported by the registration list.",
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      files: ["apps/cli/src/providers.ts"],
+      rules: { "no-restricted-imports": "off" },
+    },
+    {
       files: ["packages/provider-openai/src/test/fixtures/**/*.ts"],
       rules: {
         // Shared test fixtures construct injected services just like test files.

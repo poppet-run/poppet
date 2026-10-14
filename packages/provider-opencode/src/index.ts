@@ -1,1 +1,1 @@
-export { OpenCodeGoLive, makeOpenCodeProvider } from "#src/service";
+export { openCodeGo, OpenCodeGoLive, makeOpenCodeProvider } from "#src/service";

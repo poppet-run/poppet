@@ -26,7 +26,6 @@ const model = (events: ReadonlyArray<ModelEvent>): ModelOperations => ({
     provider: "openai-chatgpt",
     id: "fake",
     name: "Fake model",
-    protocol: "responses",
     capabilities: {
       tools: false,
       generationSettings: ["maxOutputTokens"],

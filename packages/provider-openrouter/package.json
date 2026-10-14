@@ -17,7 +17,7 @@
   "dependencies": {
     "@poppet/credentials": "workspace:*",
     "@poppet/provider": "workspace:*",
-    "@poppet/provider-openai": "workspace:*",
+    "@poppet/provider-protocol": "workspace:*",
     "effect": "4.0.4",
     "openai": "7.32.0"
   }

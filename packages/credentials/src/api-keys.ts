@@ -3,13 +3,17 @@ import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
-import { AppConfig, AppConfigLive } from "@poppet/config";
-import { ProviderError } from "@poppet/provider";
+import {
+  CredentialInput,
+  ProviderEnvironment,
+  ProviderId,
+  ProviderError,
+  verifyModel,
+  invalidRequest,
+  type ConnectionOperations,
+  type ProviderOperations,
+} from "@poppet/provider";
 import { Config, ConfigProvider, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
-
-export const ApiKeyProvider = Schema.Literals(["opencode-go", "openrouter"]);
-
-export type ApiKeyProvider = typeof ApiKeyProvider.Type;
 
 export const ApiKey = Schema.RedactedFromValue(
   Schema.NonEmptyString.check(Schema.isPattern(/^\S{1,8192}$/)),
@@ -17,13 +21,13 @@ export const ApiKey = Schema.RedactedFromValue(
 
 interface StoreOperations {
   readonly read: (
-    provider: ApiKeyProvider,
+    provider: ProviderId,
   ) => Effect.Effect<Redacted.Redacted<string> | null, ProviderError>;
   readonly write: (
-    provider: ApiKeyProvider,
+    provider: ProviderId,
     key: Redacted.Redacted<string>,
   ) => Effect.Effect<void, ProviderError>;
-  readonly remove: (provider: ApiKeyProvider) => Effect.Effect<void, ProviderError>;
+  readonly remove: (provider: ProviderId) => Effect.Effect<void, ProviderError>;
 }
 
 export class ApiKeyStore extends Context.Service<ApiKeyStore, StoreOperations>()(
@@ -33,21 +37,18 @@ export class ApiKeyStore extends Context.Service<ApiKeyStore, StoreOperations>()
 const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 
 const SavedKey = Schema.fromJsonString(
-  Schema.Struct({ version: Schema.Literal(1), provider: ApiKeyProvider, key: ApiKey }),
+  Schema.Struct({ version: Schema.Literal(1), provider: ProviderId, key: ApiKey }),
 );
 
-const storageError = (provider: ApiKeyProvider) =>
+const storageError = (provider: ProviderId) =>
   new ProviderError({
     provider,
     reason: "authentication",
     message: `Cannot read or write Poppet's protected ${provider} credentials.`,
   });
 
-export const apiKeyEnvironment = (provider: ApiKeyProvider) =>
-  provider === "openrouter" ? "POPPET_OPENROUTER_API_KEY" : "POPPET_OPENCODE_GO_API_KEY";
-
-export const environmentApiKey = (provider: ApiKeyProvider) =>
-  Config.schema(ApiKey, apiKeyEnvironment(provider)).pipe(
+export const environmentApiKey = (provider: ProviderId, environment: string) =>
+  Config.schema(ApiKey, environment).pipe(
     Config.option,
     Effect.provideService(
       ConfigProvider.ConfigProvider,
@@ -58,7 +59,7 @@ export const environmentApiKey = (provider: ApiKeyProvider) =>
         new ProviderError({
           provider,
           reason: "authentication",
-          message: `${apiKeyEnvironment(provider)} must contain a nonempty API key without whitespace.`,
+          message: `${environment} must contain a nonempty API key without whitespace.`,
         }),
     ),
   );
@@ -66,11 +67,11 @@ export const environmentApiKey = (provider: ApiKeyProvider) =>
 export const ApiKeyStoreLive = Layer.effect(
   ApiKeyStore,
   Effect.gen(function* () {
-    const config = yield* AppConfig;
+    const config = yield* ProviderEnvironment;
     const directory = join(config.dataDirectory, "auth");
-    const path = (provider: ApiKeyProvider) => join(directory, `${provider}.json`);
+    const path = (provider: ProviderId) => join(directory, `${provider}.json`);
 
-    const prepare = (provider: ApiKeyProvider, create: boolean) =>
+    const prepare = (provider: ProviderId, create: boolean) =>
       Effect.tryPromise({
         try: async () => {
           if (create) await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -91,7 +92,7 @@ export const ApiKeyStoreLive = Layer.effect(
         catch: () => storageError(provider),
       });
 
-    const locked = (provider: ApiKeyProvider, operation: Effect.Effect<void, ProviderError>) =>
+    const locked = (provider: ProviderId, operation: Effect.Effect<void, ProviderError>) =>
       Effect.scoped(
         Effect.gen(function* () {
           yield* prepare(provider, true);
@@ -116,8 +117,12 @@ export const ApiKeyStoreLive = Layer.effect(
         }),
       );
 
-    const read = (provider: ApiKeyProvider) =>
+    const read = (provider: ProviderId) =>
       Effect.gen(function* () {
+        yield* Schema.decodeUnknownEffect(ProviderId)(provider).pipe(
+          Effect.mapError(() => storageError(provider)),
+        );
+
         if (!(yield* prepare(provider, false))) return null;
 
         const contents = yield* Effect.tryPromise({
@@ -155,58 +160,72 @@ export const ApiKeyStoreLive = Layer.effect(
         return saved.key;
       });
 
-    const write = (provider: ApiKeyProvider, key: Redacted.Redacted<string>) =>
-      locked(
-        provider,
-        Effect.tryPromise({
-          try: async () => {
-            const contents = Schema.encodeSync(SavedKey)({ version: 1, provider, key });
-            const temporary = join(directory, `.${provider}-${randomUUID()}.tmp`);
-            const handle = await open(temporary, "wx", 0o600);
+    const write = (provider: ProviderId, key: Redacted.Redacted<string>) =>
+      Schema.decodeUnknownEffect(ProviderId)(provider)
+        .pipe(
+          Effect.mapError(() => storageError(provider)),
+          Effect.flatMap(() =>
+            locked(
+              provider,
+              Effect.tryPromise({
+                try: async () => {
+                  const contents = Schema.encodeSync(SavedKey)({ version: 1, provider, key });
+                  const temporary = join(directory, `.${provider}-${randomUUID()}.tmp`);
+                  const handle = await open(temporary, "wx", 0o600);
 
-            try {
-              await handle.writeFile(contents, "utf8");
-              await handle.sync();
-              await handle.close();
-              await rename(temporary, path(provider));
-            } catch (cause) {
-              await handle.close().catch(() => undefined);
-              await unlink(temporary).catch(() => undefined);
-              throw cause;
-            }
-          },
-          catch: () => storageError(provider),
-        }),
-      ).pipe(Effect.uninterruptible);
+                  try {
+                    await handle.writeFile(contents, "utf8");
+                    await handle.sync();
+                    await handle.close();
+                    await rename(temporary, path(provider));
+                  } catch (cause) {
+                    await handle.close().catch(() => undefined);
+                    await unlink(temporary).catch(() => undefined);
+                    throw cause;
+                  }
+                },
+                catch: () => storageError(provider),
+              }),
+            ),
+          ),
+        )
+        .pipe(Effect.uninterruptible);
 
-    const remove = (provider: ApiKeyProvider) =>
-      locked(
-        provider,
-        Effect.tryPromise({
-          try: () =>
-            unlink(path(provider)).catch((cause: unknown) => {
-              if (!Schema.is(MissingFile)(cause)) throw cause;
-            }),
-          catch: () => storageError(provider),
-        }),
-      ).pipe(Effect.uninterruptible);
+    const remove = (provider: ProviderId) =>
+      Schema.decodeUnknownEffect(ProviderId)(provider)
+        .pipe(
+          Effect.mapError(() => storageError(provider)),
+          Effect.flatMap(() =>
+            locked(
+              provider,
+              Effect.tryPromise({
+                try: () =>
+                  unlink(path(provider)).catch((cause: unknown) => {
+                    if (!Schema.is(MissingFile)(cause)) throw cause;
+                  }),
+                catch: () => storageError(provider),
+              }),
+            ),
+          ),
+        )
+        .pipe(Effect.uninterruptible);
 
     return { read, write, remove } satisfies StoreOperations;
   }),
 );
 
-export const loadApiKey = (provider: ApiKeyProvider) =>
+export const loadApiKey = (provider: ProviderId, environment: string) =>
   Effect.gen(function* () {
-    const environment = yield* environmentApiKey(provider);
+    const configured = yield* environmentApiKey(provider, environment);
 
-    if (Option.isSome(environment)) return environment.value;
+    if (Option.isSome(configured)) return configured.value;
 
     const saved = yield* Effect.gen(function* () {
       const store = yield* ApiKeyStore;
 
       return yield* store.read(provider);
     }).pipe(
-      Effect.provide(ApiKeyStoreLive.pipe(Layer.provide(AppConfigLive))),
+      Effect.provide(ApiKeyStoreLive),
       Effect.mapError((error) => (error instanceof ProviderError ? error : storageError(provider))),
     );
 
@@ -216,7 +235,69 @@ export const loadApiKey = (provider: ApiKeyProvider) =>
       new ProviderError({
         provider,
         reason: "authentication",
-        message: `Run auth login ${provider} or set ${apiKeyEnvironment(provider)}.`,
+        message: `Run auth login ${provider} or set ${environment}.`,
       }),
     );
+  });
+
+// Reusable API-key behavior receives all provider-specific settings from its owner.
+export const makeApiKeyConnection = (provider: ProviderOperations, environment: string) =>
+  Effect.gen(function* () {
+    const store = yield* ApiKeyStore;
+    const id = provider.id;
+
+    return {
+      login: (options) =>
+        Effect.gen(function* () {
+          const input = yield* CredentialInput;
+
+          const key = options.keyStdin
+            ? yield* input.readKey(id, true)
+            : yield* environmentApiKey(id, environment).pipe(
+                Effect.flatMap(
+                  Option.match({ onSome: Effect.succeed, onNone: () => input.readKey(id, false) }),
+                ),
+              );
+
+          yield* store.write(id, key);
+
+          return `API key saved for ${id}. Run auth verify <model> --provider ${id} to check access.`;
+        }),
+      status: Effect.gen(function* () {
+        const key = yield* environmentApiKey(id, environment);
+        const saved = Option.isSome(key) ? null : yield* store.read(id);
+
+        return {
+          provider: id,
+          connected: Option.isSome(key) || saved !== null,
+          source: Option.isSome(key) ? "environment" : saved !== null ? "stored" : null,
+        };
+      }),
+      logout: store
+        .remove(id)
+        .pipe(
+          Effect.as(
+            `Saved ${id} API key removed. An environment API key, if set, still overrides local storage. Remote keys are not revoked.`,
+          ),
+        ),
+      verify: (modelId) =>
+        Effect.gen(function* () {
+          if (modelId === null)
+            return yield* Effect.fail(
+              invalidRequest(id, "Choose a model with auth verify <model> or set POPPET_MODEL."),
+            );
+          const model = yield* provider.resolve(modelId);
+
+          if (model.description.provider !== id || model.description.id !== modelId)
+            return yield* Effect.fail(
+              invalidRequest(
+                id,
+                "The provider resolved a different model. No fallback is allowed.",
+              ),
+            );
+          yield* verifyModel(model);
+
+          return model.description.id;
+        }),
+    } satisfies ConnectionOperations;
   });
