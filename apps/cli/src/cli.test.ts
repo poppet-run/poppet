@@ -30,6 +30,81 @@ const invoke = async (
 };
 
 describe("CLI", () => {
+  test("manages explicit facts across CLI restarts without a provider connection or model", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-memory-cli-"));
+    const environment = { POPPET_DATA_DIR: directory };
+
+    try {
+      expect((await invoke(["memory", "list"], environment)).stdout.trim()).toBe("[]");
+
+      const remembered = await invoke(
+        ["memory", "remember", "answer.style", "Keep answers concise"],
+        environment,
+      );
+
+      expect(remembered.exitCode).toBe(0);
+      expect(JSON.parse(remembered.stdout)).toMatchObject({
+        key: "answer.style",
+        value: "Keep answers concise",
+        sourceRunId: null,
+      });
+
+      const duplicate = await invoke(
+        ["memory", "remember", "answer.style", "Overwrite"],
+        environment,
+      );
+
+      expect(duplicate.exitCode).toBe(1);
+      expect(duplicate.stderr).toContain("memory replace");
+
+      const replaced = await invoke(
+        ["memory", "replace", "answer.style", "Explain", "the reasoning"],
+        environment,
+      );
+
+      expect(replaced.exitCode).toBe(0);
+      expect(JSON.parse((await invoke(["memory", "list"], environment)).stdout)[0]?.value).toBe(
+        "Explain the reasoning",
+      );
+      expect((await invoke(["memory", "forget", "answer.style"], environment)).exitCode).toBe(0);
+      expect((await invoke(["memory", "list"], environment)).stdout.trim()).toBe("[]");
+      expect((await invoke(["memory", "replace", "missing", "Value"], environment)).exitCode).toBe(
+        1,
+      );
+      expect(await readdir(directory)).toEqual(["store"]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects invalid memory commands before creating a store", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-memory-args-"));
+
+    try {
+      const cases = [
+        { args: ["list", "extra"], message: "Use memory list" },
+        { args: ["remember", "bad key", "Value"], message: "Memory keys must" },
+        { args: ["remember", "key"], message: "Memory values must be nonempty" },
+        { args: ["replace", "key", " "], message: "no surrounding whitespace" },
+        { args: ["remember", "key", "😀".repeat(1025)], message: "4096 UTF-8 bytes" },
+        { args: ["forget", "key", "extra"], message: "Use memory list" },
+        { args: ["unknown"], message: "Use memory list" },
+      ];
+
+      await Promise.all(
+        cases.map(async ({ args, message }) => {
+          const result = await invoke(["memory", ...args], { POPPET_DATA_DIR: directory });
+          expect(result.exitCode).toBe(1);
+          expect(result.stderr).toContain(message);
+          expect(result.stderr).not.toContain("Unknown command");
+        }),
+      );
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("opens and reopens the conversation store without authentication or model selection", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-store-cli-"));
 

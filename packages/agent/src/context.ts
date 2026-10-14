@@ -42,8 +42,8 @@ const validateExchange = (messages: ReadonlyArray<Message>) => {
 export const outputBudget = (model: ModelDescription, policy: ChatPolicy) =>
   Math.min(policy.outputTokens, model.capabilities.maxOutputTokens ?? policy.outputTokens);
 
-const size = (messages: ReadonlyArray<Message>, tools: ReadonlyArray<Tool>) =>
-  byteSize(JSON.stringify({ instructions, messages, tools }));
+const size = (messages: ReadonlyArray<Message>, tools: ReadonlyArray<Tool>, prompt: string) =>
+  byteSize(JSON.stringify({ instructions: prompt, messages, tools }));
 
 export const assembleContext = (
   history: ReadonlyArray<StoredMessage>,
@@ -52,6 +52,7 @@ export const assembleContext = (
   model: ModelDescription,
   policy: ChatPolicy,
   tools: ReadonlyArray<Tool> = [],
+  prompt: string = instructions,
 ): ReadonlyArray<Message> => {
   const completed = new Set(runs.flatMap((run) => (run.status === "completed" ? [run.id] : [])));
   const exchanges: Message[][] = [];
@@ -94,7 +95,7 @@ export const assembleContext = (
 
   let selected: ReadonlyArray<Message> = [...incoming];
 
-  if (size(selected, tools) > available)
+  if (size(selected, tools, prompt) > available)
     throw new AgentError({
       reason: "context-limit",
       message:
@@ -104,7 +105,7 @@ export const assembleContext = (
   for (const exchange of exchanges.slice(-policy.historyTurns).toReversed()) {
     const candidate = [...exchange, ...selected];
 
-    if (size(candidate, tools) > available) break;
+    if (size(candidate, tools, prompt) > available) break;
     selected = candidate;
   }
 

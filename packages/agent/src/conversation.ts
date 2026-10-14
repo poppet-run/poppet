@@ -8,7 +8,7 @@ import type {
 import { Store, type Run, type StoreError, type StoredMessage } from "@poppet/store";
 import { Effect, Stream } from "effect";
 
-import { assembleContext, byteSize, instructions, outputBudget } from "#src/context";
+import { assembleContext, byteSize, outputBudget } from "#src/context";
 import { AgentError } from "#src/errors";
 import { Notes, decodeNoteCall, noteTools, type NoteCall } from "#src/notes";
 import { maxTextBytes, streamReply } from "#src/reply";
@@ -51,6 +51,7 @@ export const conversation = Effect.gen(function* () {
     text: string,
     history: ReadonlyArray<StoredMessage>,
     runs: ReadonlyArray<Run>,
+    prompt: string,
   ) =>
     Stream.suspend(() => {
       const tools = model.description.capabilities.tools ? noteTools : [];
@@ -72,7 +73,8 @@ export const conversation = Effect.gen(function* () {
               );
 
             const messages = yield* Effect.try({
-              try: () => assembleContext(history, runs, current, model.description, policy, tools),
+              try: () =>
+                assembleContext(history, runs, current, model.description, policy, tools, prompt),
               catch: (cause) =>
                 cause instanceof AgentError
                   ? cause
@@ -93,7 +95,7 @@ export const conversation = Effect.gen(function* () {
               {
                 sessionId: run.sessionId,
                 workload: run.workload,
-                instructions,
+                instructions: prompt,
                 messages,
                 tools,
                 settings,

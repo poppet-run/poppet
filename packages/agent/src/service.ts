@@ -4,6 +4,7 @@ import { Cause, Context, Effect, Exit, Layer, Option, Stream, type Scope } from 
 
 import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
+import { memoryPrompt } from "#src/memory";
 
 // The host resolves registrations while the request's scope remains open.
 export class ModelResolver extends Context.Service<
@@ -55,6 +56,7 @@ export const AgentLive = Layer.effect(
     const store = yield* Store;
     const resolver = yield* ModelResolver;
     const converse = yield* conversation;
+    const readMemoryPrompt = yield* memoryPrompt;
 
     const send = (sessionId: string, text: string): Stream.Stream<ChatEvent, ChatFailure> =>
       Stream.suspend(() => {
@@ -90,6 +92,7 @@ export const AgentLive = Layer.effect(
 
             const reply = Stream.unwrap(
               Effect.gen(function* () {
+                const prompt = yield* readMemoryPrompt();
                 const model = yield* resolver.resolve(session.provider, session.model);
 
                 if (
@@ -106,7 +109,7 @@ export const AgentLive = Layer.effect(
                 const history = yield* store.messages(sessionId);
                 const runs = yield* store.runs(sessionId);
 
-                return converse(run, model, text, history, runs);
+                return converse(run, model, text, history, runs, prompt);
               }),
             ).pipe(
               Stream.mapEffect((event) => {

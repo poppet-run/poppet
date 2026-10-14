@@ -48,7 +48,7 @@ const fixture = async (resolve: ModelResolver["Service"]["resolve"]) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-agent-"));
 
   const store = StoreLive.pipe(
-    Layer.provide(
+    Layer.provideMerge(
       Layer.succeed(AppConfig, {
         applicationName: "Test",
         dataDirectory: directory,

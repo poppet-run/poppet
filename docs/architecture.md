@@ -71,7 +71,7 @@ Shared provider types live in `packages/provider/src`, and Go routing lives in
 `packages/provider-opencode/src`. OpenRouter discovery and composition live in
 `packages/provider-openrouter/src`. SQLite storage lives in `packages/store/src`.
 Persisted chat lives in `packages/agent/src`. Notes tools and their sequential model loop are implemented in that workspace.
-Memory and scheduler modules are planned.
+Explicit memory is implemented in that workspace; scheduler modules are planned.
 
 | Module                  | Responsibility                                                              | Dependencies                                      |
 | ----------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -89,7 +89,7 @@ Memory and scheduler modules are planned.
 | `agent/context.ts`      | Complete-exchange context assembly and size limits                          | Shared message and record types                   |
 | `agent/settings.ts`     | Validated context, history, and output budgets                              | Effect Config and Schema                          |
 | `agent/notes.ts`        | Note schemas, bounded filesystem access, atomic replacement                 | Config, chat settings, scoped filesystem access   |
-| `memory.ts`             | Editable profile and explicitly saved facts                                 | Store, configuration                              |
+| `agent/memory.ts`       | Bounded run-start profile and saved-fact snapshots                          | Store, configuration, chat settings               |
 | `scheduler.ts`          | Persisted due occurrences and sequential worker                             | Store, agent, clock, occurrence calculator        |
 | `cli.ts`                | Typed commands and terminal presentation                                    | Application services required by each command     |
 
@@ -110,7 +110,8 @@ services with local OAuth and model servers shared by the behavior suites.
 Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
 modules are implemented. `runtime.ts` builds only the registered provider selected
 for an auth or inference command. Its store layer opens SQLite only for store
-and chat commands. Chat and notes tools are implemented; memory and scheduling remain planned.
+and chat and memory commands. Chat, notes tools, and explicit memory are implemented;
+scheduling remains planned.
 
 ## Provider interface
 
@@ -373,8 +374,8 @@ Only completed inference becomes a saved assistant message, atomically with its
 result. Stopping consumption or cancelling a request saves no partial answer.
 Failed inputs remain visible in `chat show` but are not retried implicitly.
 Inspection omits provider continuation while retaining normalized output, usage,
-and run failure reasons. Tool results have a separate content budget. Profile
-and fact budgets arrive with memory support.
+and run failure reasons. Tool results, profile content, and saved facts each have
+separate content budgets.
 
 ## Notes and tool execution
 
@@ -410,6 +411,27 @@ Run failure/reopening interrupts pending calls and marks remaining running calls
 uncertain. Completed calls are immutable; terminal calls cannot restart. Calls
 and model requests are never replayed. `chat show` exposes the ledger for manual
 inspection. An uncertain write requires checking the file before an explicit retry.
+
+## Explicit memory
+
+Migration 5 adds `memories` with stable keys, values, optional source-run foreign
+keys, and update times. Store methods provide explicit creation, replacement,
+listing, and deletion; they retain up to 128 facts of at most 4096 UTF-8 bytes each.
+The CLI manages facts without constructing a provider or requiring a model.
+
+`agent/memory.ts` captures the store, configuration, and chat settings, then reads
+one snapshot at the start of each run. The editable `<data directory>/profile.md`
+is optional. Reads are bounded and reject non-regular files, profile symlinks,
+invalid UTF-8, and NUL bytes. Profile and serialized-fact budgets default to 8 KiB
+each; exceeding them fails before provider resolution. Empty memory preserves
+the base instructions.
+
+The profile and keyed values are serialized into the prompt as personal context.
+Metadata such as source runs and timestamps stays in the store. This prompt is
+kept throughout the tool loop and included in every context-size estimate. The
+next run reads fresh memory even when continuing an existing session. Neither
+notes tools nor chat can create or mutate facts. Forgetting affects future memory
+snapshots; it does not erase prior messages or notes.
 
 ## Current authentication flow
 

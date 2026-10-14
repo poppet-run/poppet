@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -181,6 +181,31 @@ const fixture = async () => {
 };
 
 describe("chat CLI", () => {
+  test("loads CLI-managed facts and the editable profile in new and resumed chats", async () => {
+    const saved = await fixture();
+
+    try {
+      await writeFile(join(saved.directory, "profile.md"), "My name is Tom.");
+      await saved.invoke(["memory", "remember", "answer.style", "Keep answers concise"]);
+      expect(saved.state.built).toBe(0);
+      await saved.invoke(["chat", "new", "How should you answer?"]);
+      expect(saved.requests[0]?.instructions).toContain("Keep answers concise");
+      expect(saved.requests[0]?.instructions).toContain("My name is Tom.");
+      const session = saved.errors.find((line) => line.startsWith("Session: "))?.slice(9) ?? "";
+      await saved.invoke(["memory", "replace", "answer.style", "Explain the reasoning"]);
+      await saved.invoke(["chat", "send", session, "What about now?"]);
+      expect(saved.requests[1]?.instructions).toContain("Explain the reasoning");
+      expect(saved.requests[1]?.instructions).not.toContain("Keep answers concise");
+      await saved.invoke(["memory", "forget", "answer.style"]);
+      await saved.invoke(["chat", "new", "What about now?"]);
+      expect(saved.requests[2]?.instructions).not.toContain("answer.style");
+      await saved.invoke(["memory", "list"]);
+      expect(saved.lines.at(-1)).toBe("[]");
+    } finally {
+      await saved.close();
+    }
+  });
+
   test("saves a requested note through chat and exposes tool execution in session inspection", async () => {
     const chat = await fixture();
 

@@ -308,6 +308,23 @@ model-callable memory tool later if chat usage establishes a need for it.
 Completion check: save a preference, use it in a fresh session, update it, and
 forget it across restarts. This completes the first personal-assistant milestone.
 
+Implemented `memory list`, `memory remember`, `memory replace`, and `memory forget`.
+Migration 5 adds keyed values, optional source-run provenance, and update times.
+Creation and replacement are separate operations; missing keys and duplicate
+creation fail clearly. Values are limited to 4096 UTF-8 bytes, with at most 128 facts.
+
+Each run reads `<POPPET_DATA_DIR>/profile.md` and the current facts before resolving
+its provider. Missing profiles are empty; existing profiles must be regular UTF-8
+files without symlinks. Profile and serialized-fact budgets default to 8192 bytes
+each, configurable through `POPPET_PROFILE_BYTES` and `POPPET_FACTS_BYTES`. Oversized
+memory fails without truncation. The snapshot stays fixed throughout the run and
+counts toward the overall context budget. Resuming reloads current memory.
+
+Tests cover CLI restarts, new and resumed chat context, replacement and deletion,
+source runs, migration from schemas 1–4, limits, malformed profiles, and fixed
+snapshots during tool execution. Chat does not save facts automatically; a callable
+memory tool remains deferred. Live model use of memory remains a manual check.
+
 ## Phase 7: Durable scheduled tasks
 
 Depends on phases 5 and 6.

@@ -22,6 +22,7 @@ import {
   writeChatText,
   type ChatWriter,
 } from "#src/chat";
+import { manageMemory, parseMemoryCommand } from "#src/memory";
 import { providers } from "#src/providers";
 import { findProvider, runtimeLayers } from "#src/runtime";
 
@@ -40,6 +41,10 @@ Commands:
   chat send <session> <message> Continue a saved session
   chat sessions            List sessions
   chat show <session>      Show messages and run outcomes
+  memory list              List explicitly saved facts
+  memory remember <key> <value>  Save a new fact
+  memory replace <key> <value>   Change an existing fact
+  memory forget <key>      Delete a fact
   auth login [provider] [--consent | --key-stdin]  Sign in or save an API key
   auth status [provider]   Show connection status without secrets
   auth models [provider]   List available models
@@ -54,7 +59,8 @@ ${registered.map((entry) => `${entry.name}: ${entry.authentication.help}`).join(
   --help    Show this help
 
 Chat includes read_note, search_notes and save_note within POPPET_NOTES_DIR.
-Memory and scheduled tasks are planned next.`;
+Chat loads <data directory>/profile.md and explicitly saved facts on each run.
+Scheduled tasks are planned next.`;
 
 const showConfig = Effect.gen(function* () {
   yield* Console.log(JSON.stringify(yield* AppConfig, null, 2));
@@ -152,6 +158,13 @@ export const makeCLI = (
       const command = parseAuthCommand(args.slice(1));
 
       if (command !== null) return runAuth(command).pipe(Effect.provide(runtime.config));
+    }
+
+    if (args[0] === "memory") {
+      // Validate arguments before acquiring the store and applying migrations.
+      return parseMemoryCommand(args.slice(1)).pipe(
+        Effect.flatMap((command) => manageMemory(command).pipe(Effect.provide(runtime.store))),
+      );
     }
 
     if (args[0] === "chat") {

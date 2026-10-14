@@ -6,8 +6,8 @@ The project has a CLI, validated configuration, ChatGPT sign-in, and a shared
 streaming model interface. OpenCode Go supports a small set of coding models.
 OpenRouter supports concrete text models from its public catalog.
 SQLite stores sessions, messages, and runs. Chat streams answers and resumes
-saved sessions and can read, search, and save local notes. Memory and scheduled
-tasks follow in the
+saved sessions and can read, search, and save local notes. An editable profile and
+explicitly saved facts provide context across sessions. Scheduled tasks follow in the
 [implementation plan](docs/implementation-plan.md).
 
 ## Development
@@ -60,6 +60,8 @@ excluded from linting and formatting.
 | `POPPET_MODEL_TURNS`   | `8`                      | Maximum model requests per run; range `1–32`                                                     |
 | `POPPET_TOOL_CALLS`    | `16`                     | Maximum tool calls per run; range `1–64`                                                         |
 | `POPPET_TOOL_BYTES`    | `16384`                  | Maximum UTF-8 bytes per serialized tool result; range `1024–65536`                               |
+| `POPPET_PROFILE_BYTES` | `8192`                   | Maximum UTF-8 bytes in `profile.md`; range `1–65536`                                             |
+| `POPPET_FACTS_BYTES`   | `8192`                   | Maximum UTF-8 bytes of serialized saved facts sent to the model; range `1–65536`                 |
 
 Paths become absolute relative to the current working directory. Explicit values
 must be nonempty and have no leading or trailing whitespace. Use a full path when
@@ -323,9 +325,51 @@ before its result is saved; inspect the file before manually retrying an uncerta
 write. Failed or interrupted exchanges remain inspectable and are excluded from
 later model context. Calls and writes are never automatically replayed.
 
-Profile and fact memory follow in phase 6. Local tests cover the full note flow,
+Local tests cover the full note flow,
 boundaries, limits, cancellation, and uncertain outcomes. They use injected models
 and do not establish fresh live provider access.
+
+## Explicit memory
+
+Save preferences and facts with stable keys:
+
+```fish
+bun run start memory remember answer.style "Keep answers concise"
+bun run start memory list
+bun run start chat new "How should you answer my questions?"
+bun run start memory replace answer.style "Explain the reasoning"
+bun run start chat new "How should you answer my questions?"
+bun run start memory forget answer.style
+bun run start memory list
+```
+
+Memory management requires no login or model. Chat still requires a configured
+provider/model and its connection. `remember` creates a new key; it rejects an
+existing key so facts cannot be overwritten accidentally. `replace` and `forget`
+require an existing key. Keys start with a letter or digit and contain only letters,
+digits, dots, underscores, and hyphens, up to 128 characters. Values must be nonempty,
+have no surrounding whitespace, and fit in 4096 UTF-8 bytes. The store holds up to
+128 facts. Listing includes keys, values, update times, and source run IDs when
+available; CLI-created facts have no source run.
+
+Edit `<POPPET_DATA_DIR>/profile.md` for your name, background, and preferences.
+With the default data directory, this is `~/.config/poppet/profile.md`. A missing
+profile is empty and is never created automatically. Existing profiles must be
+regular UTF-8 files; profile symlinks are rejected.
+
+Every chat run reads the current profile and saved facts once, then keeps that
+snapshot across its model/tool turns. New sessions and resumed sessions pick up
+changes on their next run. Memory is shared across sessions and providers in the
+same data directory. Facts are included in key order as personal context, with no
+provenance metadata sent to the model. Chat has no memory-writing tool and does
+not infer or automatically save facts from conversations.
+
+Profile and fact budgets default to 8 KiB each. Oversized memory fails clearly
+instead of silently omitting preferences. Both count toward `POPPET_CONTEXT_BYTES`
+alongside instructions, tool definitions, and history. A malformed or oversized
+profile or facts block fails before resolving a provider; a context overflow fails
+before inference. Forgetting removes the saved fact from future snapshots; existing
+conversation messages and note files remain in their own storage.
 
 ## Conversation storage
 
@@ -345,7 +389,8 @@ set -lx POPPET_DATA_DIR /tmp/poppet-storage-test
 bun run start store status
 ```
 
-Migration 4 adds durable tool calls and their execution states.
+Migration 4 adds durable tool calls and their execution states. Migration 5 adds
+explicitly saved facts in `memories`.
 
 `@poppet/store` provides a scoped Effect `Store` service backed by
 [Bun SQLite](https://bun.sh/docs/runtime/sqlite). The initial migrations create
@@ -411,6 +456,7 @@ packages/
     src/conversation.ts   Sequential model/tool loop and run budgets
     src/reply.ts          Validated model stream completion
     src/notes.ts          Note schemas, bounded access, atomic writes
+    src/memory.ts         Run-start profile and saved-fact snapshots
     src/context.ts        Complete-exchange context assembly and limits
     src/settings.ts       Validated chat budgets
   config/                 @poppet/config

@@ -97,6 +97,7 @@ const fixture = async (
   const layer = AgentLive.pipe(
     Layer.provideMerge(
       Layer.mergeAll(
+        config,
         StoreLive.pipe(Layer.provide(config)),
         notes,
         settings,
