@@ -213,6 +213,22 @@ evidence; Go and OpenRouter inference have not been verified against live accoun
 
 ## Conversation storage
 
+Open or inspect the local database:
+
+```fish
+bun run start store status
+```
+
+This opens `<POPPET_DATA_DIR>/store/poppet.sqlite`, applies pending migrations,
+and prints its path, schema version, and session/message/run counts. It requires
+no login or selected model. Help, configuration, and auth commands do not open
+this database. To experiment in a separate directory:
+
+```fish
+set -lx POPPET_DATA_DIR /tmp/poppet-storage-test
+bun run start store status
+```
+
 `@poppet/store` provides a scoped Effect `Store` service backed by
 [Bun SQLite](https://bun.sh/docs/runtime/sqlite). The initial migrations create
 sessions, messages, runs, and history indexes. A checksummed migration ledger
@@ -237,7 +253,7 @@ with a `process-exit` reason. Poppet does not automatically replay them.
 Tests cover persistent tool exchanges for all providers, upgrades and migration
 rollback, transaction rollback, invalid records, run transitions, competing
 owners, and scoped cleanup. The storage API is ready for the phase 4 chat runner;
-CLI store and conversation commands are not implemented yet. Live ChatGPT token renewal
+CLI conversation commands are not implemented yet. Live ChatGPT token renewal
 remains a separate phase 3 follow-up.
 
 ## Source layout

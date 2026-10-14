@@ -21,6 +21,7 @@
     "@poppet/provider-openai": "workspace:*",
     "@poppet/provider-opencode": "workspace:*",
     "@poppet/provider-openrouter": "workspace:*",
+    "@poppet/store": "workspace:*",
     "effect": "4.0.4"
   }
 }

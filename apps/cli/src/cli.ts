@@ -7,6 +7,7 @@ import {
 } from "@poppet/credentials";
 import { Model, Provider, verifyModel, type ProviderError } from "@poppet/provider";
 import { ChatGPTAuth, ChatGPTModel, type ConnectionError } from "@poppet/provider-openai";
+import { Store, type StoreError } from "@poppet/store";
 import { type Config, Console, Data, Effect, Option } from "effect";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
@@ -15,6 +16,7 @@ import {
   ChatGPTRuntime,
   ProviderRuntime,
   SelectedModelRuntime,
+  StoreRuntime,
   selectProviderLayer,
 } from "#src/runtime";
 
@@ -28,6 +30,7 @@ Usage: bun run start [command]
 
 Commands:
   config    Show validated configuration
+  store status             Open/migrate the conversation store and show counts
   auth login [provider] [--consent | --key-stdin]  Sign in or save an API key
   auth status [provider]   Show connection status without secrets
   auth models [provider]   List available models
@@ -170,7 +173,10 @@ const runAuth = (command: AuthCommand) =>
 
 export const run = (
   args: ReadonlyArray<string>,
-): Effect.Effect<void, UsageError | Config.ConfigError | ConnectionError | ProviderError> => {
+): Effect.Effect<
+  void,
+  UsageError | Config.ConfigError | ConnectionError | ProviderError | StoreError
+> => {
   // Route help before providing any layers so it works even with invalid config
   // and does not open credential storage or acquire its lock.
   if (args.length === 0 || (args.length === 1 && (args[0] === "--help" || args[0] === "-h"))) {
@@ -180,6 +186,12 @@ export const run = (
   if (args.length === 1 && args[0] === "config") {
     return showConfig.pipe(Effect.provide(AppConfigLive));
   }
+
+  if (args.length === 2 && args[0] === "store" && args[1] === "status")
+    return Effect.gen(function* () {
+      const store = yield* Store;
+      yield* Console.log(JSON.stringify(yield* store.status, null, 2));
+    }).pipe(Effect.provide(StoreRuntime));
 
   if (args.length === 2 && args[0] === "provider" && args[1] === "models")
     return Effect.gen(function* () {

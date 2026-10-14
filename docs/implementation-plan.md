@@ -161,7 +161,7 @@ Implemented `@poppet/store` with a scoped Bun SQLite connection under
 `<data directory>/store/poppet.sqlite`. Its process ownership lock is acquired
 before opening or migrating the database and released after the connection
 closes. Database files and WAL sidecars have owner-only permissions. Store
-operations do not build authentication or model layers.
+commands do not build authentication or model layers.
 
 Numbered migrations create `sessions`, `messages`, `runs`, and indexes. An
 application ID, schema version, and checksummed ledger reject unrelated
@@ -175,8 +175,8 @@ transitions and allows one pending or running run. Successful completion saves
 its assistant message and result atomically; failures and interruptions retain
 separate reasons. Reopening marks abandoned work interrupted without replay.
 
-The store service opens/migrates the database and reports schema and record
-counts without a login or selected model. CLI store commands are next. Tests cover reopening and
+`bun run start store status` opens/migrates the database and prints schema and
+record counts without a login or selected model. Tests cover reopening and
 upgrades, migration and record-write rollback, complete tool exchanges across all
 providers, continuation identity, invalid records, competing owners, and
 interruption cleanup. Facts and jobs remain for their later phases. The chat

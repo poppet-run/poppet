@@ -30,6 +30,39 @@ const invoke = async (
 };
 
 describe("CLI", () => {
+  test("opens and reopens the conversation store without authentication or model selection", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-store-cli-"));
+
+    const environment = {
+      POPPET_DATA_DIR: directory,
+      POPPET_PROVIDER: "openrouter",
+      POPPET_OPENROUTER_API_KEY: "test-secret",
+    };
+
+    try {
+      const before = await invoke(["config"], environment);
+      expect(before.exitCode).toBe(0);
+      expect(await readdir(directory)).toEqual([]);
+      const first = await invoke(["store", "status"], environment);
+      const reopened = await invoke(["store", "status"], environment);
+      expect(first.exitCode).toBe(0);
+      expect(reopened.exitCode).toBe(0);
+      expect(JSON.parse(first.stdout)).toEqual({
+        path: join(directory, "store/poppet.sqlite"),
+        schemaVersion: 2,
+        sessions: 0,
+        messages: 0,
+        runs: 0,
+      });
+      expect(JSON.parse(reopened.stdout)).toEqual(JSON.parse(first.stdout));
+      expect(first.stdout + first.stderr).not.toContain("test-secret");
+      expect(await readdir(directory)).toEqual(["store"]);
+      expect(await readdir(join(directory, "store"))).not.toContain("owner.lock");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("logout clears an identity retained by an earlier logout", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-logout-identity-"));
     const environment = { POPPET_DATA_DIR: directory };

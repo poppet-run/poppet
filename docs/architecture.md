@@ -102,7 +102,7 @@ services with local OAuth and model servers shared by the behavior suites.
 Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
 modules are implemented. `runtime.ts` composes the ChatGPT layers for
 auth commands and only the selected provider for general provider commands.
-The SQLite store is implemented; CLI store commands, the agent loop, tools, memory,
+`StoreRuntime` opens SQLite only for store commands. The agent loop, tools, memory,
 and scheduling remain planned.
 
 ## Provider interface
@@ -259,9 +259,9 @@ clock; phase 1 live evidence and future live Go checks are separate.
 
 ## Conversation store
 
-`@poppet/store` exposes a scoped `Store` service through `StoreLive`. Applications
-provide `AppConfig` when building the layer. Opening the store migrates its schema
-without opening authentication services.
+`@poppet/store` exposes a scoped `Store` service through `StoreLive`. The CLI
+provides configuration through `StoreRuntime`; `store status` migrates the
+schema and reports counts without opening authentication services.
 
 `database.ts` protects `<data directory>/store`, acquires the process ownership
 lock, and opens Bun SQLite with strict bindings, foreign keys, WAL, and full

@@ -10,6 +10,7 @@ import {
 } from "@poppet/provider-openai";
 import { OpenCodeGoLive } from "@poppet/provider-opencode";
 import { OpenRouterLive } from "@poppet/provider-openrouter";
+import { StoreLive } from "@poppet/store";
 import { Effect, Layer } from "effect";
 
 // Build independent services first, then supply them to the layers that need them.
@@ -84,3 +85,5 @@ export const SelectedModelRuntime = Layer.unwrap(
     return Layer.effect(Model, resolveConfiguredModel).pipe(Layer.provideMerge(ProviderRuntime));
   }),
 ).pipe(Layer.provide(AppConfigLive));
+
+export const StoreRuntime = StoreLive.pipe(Layer.provide(AppConfigLive));
