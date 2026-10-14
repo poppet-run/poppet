@@ -99,6 +99,38 @@ export const migrations: ReadonlyArray<Migration> = [
     ) STRICT;
   `,
   },
+  {
+    version: 6,
+    name: "scheduled-tasks",
+    sql: `
+    CREATE TABLE jobs (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, prompt TEXT NOT NULL,
+      provider TEXT NOT NULL, model TEXT NOT NULL,
+      workload TEXT NOT NULL CHECK (workload IN ('assistant', 'coding')),
+      schedule TEXT NOT NULL, next_at INTEGER,
+      paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
+      created_at INTEGER NOT NULL CHECK (created_at >= 0)
+    ) STRICT;
+    CREATE TABLE job_occurrences (
+      id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs (id),
+      scheduled_at INTEGER NOT NULL CHECK (scheduled_at >= 0),
+      status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'interrupted', 'cancelled', 'expired')),
+      session_id TEXT REFERENCES sessions (id), run_id TEXT REFERENCES runs (id),
+      finished_at INTEGER, reason TEXT,
+      UNIQUE (job_id, scheduled_at)
+    ) STRICT;
+    CREATE UNIQUE INDEX one_pending_job_occurrence ON job_occurrences (job_id) WHERE status IN ('pending', 'running');
+    CREATE INDEX pending_job_occurrences ON job_occurrences (status, scheduled_at);
+    CREATE TABLE job_skips (
+      id INTEGER PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs (id),
+      first_at INTEGER NOT NULL, last_at INTEGER NOT NULL, reason TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE job_provider_pauses (
+      provider TEXT PRIMARY KEY, reason TEXT NOT NULL CHECK (reason IN ('quota', 'temporary', 'rate-limit')),
+      resume_at INTEGER, failures INTEGER NOT NULL CHECK (failures > 0)
+    ) STRICT;
+  `,
+  },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });
