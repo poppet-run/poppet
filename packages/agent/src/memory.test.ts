@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
+import { Memory, MemoryError, LocalMemoryLive, type SnapshotLimits } from "@poppet/memory";
 import { type Completion, type ModelOperations, type ModelRequest } from "@poppet/provider";
 import { Store, StoreLive } from "@poppet/store";
 import { Effect, Layer, Stream } from "effect";
@@ -34,7 +35,7 @@ interface MemoryFixtureState {
   stream: ModelOperations["stream"];
 }
 
-const fixture = async (overrides: Partial<ChatPolicy> = {}) => {
+const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Memory["Service"]) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-memory-agent-"));
   const profile = join(directory, "profile.md");
   const requests: ModelRequest[] = [];
@@ -71,11 +72,17 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}) => {
     },
   };
 
+  const store = StoreLive.pipe(Layer.provideMerge(config));
+
+  const memory = injectedMemory
+    ? Layer.succeed(Memory, injectedMemory)
+    : LocalMemoryLive.pipe(Layer.provide(store));
+
   const layer = AgentLive.pipe(
     Layer.provideMerge(
       Layer.mergeAll(
-        config,
-        StoreLive.pipe(Layer.provide(config)),
+        store,
+        memory,
         Layer.succeed(ChatSettings, { ...defaultPolicy, ...overrides }),
         Layer.succeed(Notes, { execute: () => Effect.succeed("Note contents") }),
         Layer.succeed(ModelResolver, {
@@ -95,7 +102,7 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}) => {
     profile,
     requests,
     state,
-    run: <A, E>(program: Effect.Effect<A, E, Agent | Store>) =>
+    run: <A, E>(program: Effect.Effect<A, E, Agent | Store | Memory>) =>
       Effect.runPromise(program.pipe(Effect.provide(layer))),
     close: () => rm(directory, { recursive: true, force: true }),
   };
@@ -105,6 +112,43 @@ const send = (id: string) =>
   Agent.use((agent) => Stream.runDrain(agent.send(id, "How should you answer?")));
 
 describe("explicit memory in chat", () => {
+  test("uses an injected memory implementation without reading the local profile or facts", async () => {
+    const snapshots: SnapshotLimits[] = [];
+
+    const injected: Memory["Service"] = {
+      snapshot: (limits) =>
+        Effect.sync(() => {
+          snapshots.push(limits);
+
+          return {
+            profile: "From another implementation",
+            facts: [{ key: "answer.style", value: "Use short answers" }],
+          };
+        }),
+      list: Effect.die("Chat must use the snapshot operation."),
+      remember: () => Effect.die("Chat must not create facts."),
+      replace: () => Effect.die("Chat must not replace facts."),
+      forget: () => Effect.die("Chat must not forget facts."),
+    };
+
+    const saved = await fixture({ profileBytes: 32, factsBytes: 128 }, injected);
+
+    try {
+      await writeFile(saved.profile, Buffer.from([0xff]));
+      await saved.run(
+        Effect.gen(function* () {
+          const session = yield* (yield* Store).createSession("test-provider", "test-model");
+          yield* send(session.id);
+        }),
+      );
+      expect(snapshots).toEqual([{ profileBytes: 32, factsBytes: 128 }]);
+      expect(saved.requests[0]?.instructions).toContain("From another implementation");
+      expect(saved.requests[0]?.instructions).toContain("Use short answers");
+    } finally {
+      await saved.close();
+    }
+  });
+
   test("uses saved preferences in fresh sessions, reloads edits on resume and forgets across reopening", async () => {
     const saved = await fixture();
 
@@ -114,7 +158,8 @@ describe("explicit memory in chat", () => {
       const id = await saved.run(
         Effect.gen(function* () {
           const store = yield* Store;
-          yield* store.rememberMemory("answer.style", "Keep answers concise");
+          const memory = yield* Memory;
+          yield* memory.remember("answer.style", "Keep answers concise");
           const session = yield* store.createSession("test-provider", "test-model");
           yield* send(session.id);
 
@@ -130,7 +175,7 @@ describe("explicit memory in chat", () => {
       await writeFile(saved.profile, "My name is Thomas.");
       await saved.run(
         Effect.gen(function* () {
-          yield* (yield* Store).replaceMemory("answer.style", "Explain the reasoning");
+          yield* (yield* Memory).replace("answer.style", "Explain the reasoning");
           yield* send(id);
         }),
       );
@@ -142,10 +187,11 @@ describe("explicit memory in chat", () => {
       await saved.run(
         Effect.gen(function* () {
           const store = yield* Store;
-          yield* store.forgetMemory("answer.style");
+          const memory = yield* Memory;
+          yield* memory.forget("answer.style");
           const session = yield* store.createSession("test-provider", "test-model");
           yield* Stream.runDrain((yield* Agent).send(session.id, "Remember that I like tea"));
-          expect(yield* store.memories).toEqual([]);
+          expect(yield* memory.list).toEqual([]);
         }),
       );
       expect(saved.requests[2]?.instructions).not.toContain("User-supplied profile");
@@ -163,12 +209,13 @@ describe("explicit memory in chat", () => {
       await saved.run(
         Effect.gen(function* () {
           const store = yield* Store;
-          yield* store.rememberMemory("preference", "Starting preference");
+          const memory = yield* Memory;
+          yield* memory.remember("preference", "Starting preference");
           saved.state.stream = () =>
             saved.requests.length === 1
               ? Stream.fromEffect(
                   Effect.gen(function* () {
-                    yield* store.replaceMemory("preference", "Next run preference");
+                    yield* memory.replace("preference", "Next run preference");
                     yield* Effect.promise(() => writeFile(saved.profile, "Next run profile"));
 
                     return { type: "completed" as const, response: completion(true) };
@@ -177,7 +224,7 @@ describe("explicit memory in chat", () => {
               : Stream.make({ type: "completed" as const, response: completion() });
           const session = yield* store.createSession("test-provider", "test-model");
           yield* send(session.id);
-          expect(yield* store.memories).toEqual([
+          expect(yield* memory.list).toEqual([
             expect.objectContaining({ value: "Next run preference" }),
           ]);
         }),
@@ -192,57 +239,79 @@ describe("explicit memory in chat", () => {
   });
 
   test.each([
-    { kind: "profile bytes", reason: "memory-limit", resolved: 0 },
-    { kind: "facts bytes", reason: "memory-limit", resolved: 0 },
-    { kind: "invalid UTF-8", reason: "memory-storage", resolved: 0 },
-    { kind: "symlink", reason: "memory-storage", resolved: 0 },
-    { kind: "context bytes", reason: "context-limit", resolved: 1 },
-  ])(
-    "fails before inference for $kind and preserves the failed run",
-    async ({ kind, reason, resolved }) => {
-      const saved = await fixture({
-        profileBytes: 63,
-        factsBytes: 40,
-        contextBytes: kind === "context bytes" ? 1 : defaultPolicy.contextBytes,
-      });
+    { reason: "limit", expected: "memory-limit" },
+    { reason: "storage", expected: "memory-storage" },
+  ] as const)(
+    "records an injected $reason memory failure before resolving the model",
+    async ({ reason, expected }) => {
+      const injected: Memory["Service"] = {
+        snapshot: () => Effect.fail(new MemoryError({ reason, message: "Snapshot unavailable" })),
+        list: Effect.die("Chat must use the snapshot operation."),
+        remember: () => Effect.die("Chat must not create facts."),
+        replace: () => Effect.die("Chat must not replace facts."),
+        forget: () => Effect.die("Chat must not forget facts."),
+      };
+
+      const saved = await fixture({}, injected);
 
       try {
-        if (kind === "profile bytes") await writeFile(saved.profile, "😀".repeat(16));
-
-        if (kind === "invalid UTF-8") await writeFile(saved.profile, Buffer.from([0xff]));
-
-        if (kind === "symlink") {
-          await writeFile(join(saved.directory, "outside.md"), "Not the profile");
-          await symlink(join(saved.directory, "outside.md"), saved.profile);
-        }
-
         await saved.run(
           Effect.gen(function* () {
             const store = yield* Store;
-
-            if (kind === "facts bytes")
-              yield* store.rememberMemory(
-                "long",
-                "A preference that exceeds the small serialized facts budget",
-              );
             const session = yield* store.createSession("test-provider", "test-model");
 
             const error = yield* send(session.id).pipe(
               Effect.match({ onFailure: (failure) => failure, onSuccess: () => null }),
             );
 
-            expect(error).toMatchObject({ reason });
+            expect(error).toMatchObject({ reason: expected });
             expect((yield* store.runs(session.id))[0]).toMatchObject({
               status: "failed",
-              failureReason: `agent:${reason}`,
+              failureReason: `agent:${expected}`,
             });
           }),
         );
         expect(saved.requests).toEqual([]);
-        expect(saved.state.resolved).toBe(resolved);
+        expect(saved.state.resolved).toBe(0);
       } finally {
         await saved.close();
       }
     },
   );
+
+  test("counts the memory prompt toward the overall context budget before inference", async () => {
+    const saved = await fixture({ contextBytes: 4096 });
+
+    try {
+      await writeFile(saved.profile, "Background information\n".repeat(250));
+
+      const id = await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("test-provider", "test-model");
+
+          const error = yield* send(session.id).pipe(
+            Effect.match({ onFailure: (failure) => failure, onSuccess: () => null }),
+          );
+
+          expect(error).toMatchObject({ reason: "context-limit" });
+          expect((yield* store.runs(session.id))[0]).toMatchObject({
+            status: "failed",
+            failureReason: "agent:context-limit",
+          });
+
+          return session.id;
+        }),
+      );
+
+      expect(saved.requests).toEqual([]);
+      expect(saved.state.resolved).toBe(1);
+      await rm(saved.profile);
+      await saved.run(send(id));
+      expect(saved.requests).toHaveLength(1);
+      expect(saved.state.resolved).toBe(2);
+    } finally {
+      await saved.close();
+    }
+  });
 });

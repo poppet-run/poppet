@@ -1,5 +1,6 @@
 import type { AgentError } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
+import type { MemoryError } from "@poppet/memory";
 import {
   CredentialInput,
   Model,
@@ -124,7 +125,7 @@ export const makeCLI = (
     args: ReadonlyArray<string>,
   ): Effect.Effect<
     void,
-    Config.ConfigError | ProviderError | StoreError | UsageError | AgentError
+    Config.ConfigError | ProviderError | StoreError | MemoryError | UsageError | AgentError
   > => {
     // Help works before configuration or credential storage is opened.
     if (args.length === 0 || (args.length === 1 && (args[0] === "--help" || args[0] === "-h")))
@@ -163,7 +164,7 @@ export const makeCLI = (
     if (args[0] === "memory") {
       // Validate arguments before acquiring the store and applying migrations.
       return parseMemoryCommand(args.slice(1)).pipe(
-        Effect.flatMap((command) => manageMemory(command).pipe(Effect.provide(runtime.store))),
+        Effect.flatMap((command) => manageMemory(command).pipe(Effect.provide(runtime.memory))),
       );
     }
 

@@ -1,4 +1,4 @@
-import { MemoryKey, MemoryValue, Store, StoreError } from "@poppet/store";
+import { Memory, MemoryKey, MemoryValue, MemoryError } from "@poppet/memory";
 import { Console, Effect, Schema } from "effect";
 
 export type MemoryCommand =
@@ -7,11 +7,11 @@ export type MemoryCommand =
   | { readonly action: "forget"; readonly key: string };
 
 const invalidArguments = (message: string) =>
-  new StoreError({ reason: "invalid-request", message });
+  new MemoryError({ reason: "invalid-request", message });
 
 export const parseMemoryCommand = (
   args: ReadonlyArray<string>,
-): Effect.Effect<MemoryCommand, StoreError> =>
+): Effect.Effect<MemoryCommand, MemoryError> =>
   Effect.gen(function* () {
     const action = args[0];
 
@@ -50,21 +50,21 @@ export const parseMemoryCommand = (
 
 export const manageMemory = (command: MemoryCommand) =>
   Effect.gen(function* () {
-    const store = yield* Store;
+    const memory = yield* Memory;
 
     if (command.action === "list")
-      return yield* Console.log(JSON.stringify(yield* store.memories, null, 2));
+      return yield* Console.log(JSON.stringify(yield* memory.list, null, 2));
 
     if (command.action === "forget") {
-      yield* store.forgetMemory(command.key);
+      yield* memory.forget(command.key);
 
       return yield* Console.log(`Forgot ${command.key}.`);
     }
 
     const operation =
       command.action === "remember"
-        ? store.rememberMemory(command.key, command.value)
-        : store.replaceMemory(command.key, command.value);
+        ? memory.remember(command.key, command.value)
+        : memory.replace(command.key, command.value);
 
     const fact = yield* operation;
 

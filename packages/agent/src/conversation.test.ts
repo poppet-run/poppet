@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
+import { LocalMemoryLive } from "@poppet/memory";
 import {
   ProviderError,
   type Completion,
@@ -94,11 +95,13 @@ const fixture = async (
     },
   };
 
+  const store = StoreLive.pipe(Layer.provideMerge(config));
+
   const layer = AgentLive.pipe(
     Layer.provideMerge(
       Layer.mergeAll(
-        config,
-        StoreLive.pipe(Layer.provide(config)),
+        store,
+        LocalMemoryLive.pipe(Layer.provide(store)),
         notes,
         settings,
         Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),

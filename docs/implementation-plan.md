@@ -1,6 +1,6 @@
 # Poppet implementation plan
 
-Status: Tools and notes implemented and locally tested; explicit memory next
+Status: Tools, notes, and explicit memory implemented and locally tested; scheduling next
 
 Updated: 2026-10-14
 
@@ -324,6 +324,12 @@ Tests cover CLI restarts, new and resumed chat context, replacement and deletion
 source runs, migration from schemas 1–4, limits, malformed profiles, and fixed
 snapshots during tool execution. Chat does not save facts automatically; a callable
 memory tool remains deferred. Live model use of memory remains a manual check.
+
+Memory now lives in `@poppet/memory` behind a small `Memory` service. The CLI wires
+`LocalMemoryLive` to the store's shared scoped database. Fact operations and profile
+reading belong to that implementation; the agent retains prompt formatting and
+overall context limits. Migration 5 and saved data formats remain unchanged.
+Tests also cover using an injected memory implementation without local profile access.
 
 ## Phase 7: Durable scheduled tasks
 

@@ -364,6 +364,12 @@ same data directory. Facts are included in key order as personal context, with n
 provenance metadata sent to the model. Chat has no memory-writing tool and does
 not infer or automatically save facts from conversations.
 
+`@poppet/memory` provides a `Memory` service for snapshots and fact management.
+The CLI supplies `LocalMemoryLive`, backed by the existing SQLite database and
+profile file. The agent consumes the service and formats its snapshot into model
+instructions. A future implementation can replace the memory layer at the CLI
+boundary without changing the agent loop or command behavior.
+
 Profile and fact budgets default to 8 KiB each. Oversized memory fails clearly
 instead of silently omitting preferences. Both count toward `POPPET_CONTEXT_BYTES`
 alongside instructions, tool definitions, and history. A malformed or oversized
@@ -456,13 +462,18 @@ packages/
     src/conversation.ts   Sequential model/tool loop and run budgets
     src/reply.ts          Validated model stream completion
     src/notes.ts          Note schemas, bounded access, atomic writes
-    src/memory.ts         Run-start profile and saved-fact snapshots
+    src/memory.ts         Memory snapshots formatted into model instructions
     src/context.ts        Complete-exchange context assembly and limits
     src/settings.ts       Validated chat budgets
   config/                 @poppet/config
     src/config.ts         Validated settings and AppConfig service/layer
   credentials/            @poppet/credentials
     src/api-keys.ts       Protected API-key storage and environment overrides
+  memory/                 @poppet/memory
+    src/service.ts        Memory service and domain errors
+    src/schema.ts         Facts, snapshot data, and snapshot limits
+    src/local.ts          Local fact operations and bounded snapshots
+    src/profile.ts        Bounded UTF-8 profile reads
   store/                  @poppet/store
     src/database.ts       Scoped SQLite connection, ownership, and permissions
     src/migrations.ts     Versioned schema and transactional migration ledger

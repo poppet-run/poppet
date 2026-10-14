@@ -1,5 +1,6 @@
 import { AgentLive, ChatSettingsLive, ModelResolver, NotesLive } from "@poppet/agent";
 import { AppConfig, makeAppConfigLive } from "@poppet/config";
+import { LocalMemoryLive } from "@poppet/memory";
 import {
   Model,
   Provider,
@@ -100,6 +101,8 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
 
   const store = StoreLive.pipe(Layer.provide(config));
 
+  const memory = LocalMemoryLive.pipe(Layer.provide(Layer.merge(store, config)));
+
   const resolver = Layer.succeed(ModelResolver, {
     resolve: (providerId, modelId) =>
       Effect.gen(function* () {
@@ -117,6 +120,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     Layer.provideMerge(
       Layer.mergeAll(
         store,
+        memory,
         resolver,
         ChatSettingsLive,
         NotesLive.pipe(Layer.provide(Layer.merge(config, ChatSettingsLive))),
@@ -131,6 +135,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     model,
     selectedProvider,
     store,
+    memory,
     chat,
   };
 };

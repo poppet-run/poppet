@@ -103,26 +103,6 @@ export type RunOutcome = typeof RunOutcome.Type;
 
 export type MessageBatch = typeof MessageBatch.Type;
 
-export const MemoryKey = Schema.NonEmptyString.check(
-  Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/),
-);
-
-export const MemoryValue = Schema.NonEmptyString.check(
-  Schema.isTrimmed(),
-  Schema.makeFilter(
-    (value) => Buffer.byteLength(value, "utf8") <= 4096 || "Use at most 4096 UTF-8 bytes.",
-  ),
-);
-
-export const MemoryFact = Schema.Struct({
-  key: MemoryKey,
-  value: MemoryValue,
-  sourceRunId: Schema.NullOr(Id),
-  updatedAt: Schema.Natural,
-});
-
-export type MemoryFact = typeof MemoryFact.Type;
-
 export interface StoreStatus {
   readonly path: string;
   readonly schemaVersion: number;
