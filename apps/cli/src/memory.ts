@@ -1,10 +1,17 @@
 import { Memory, MemoryKey, MemoryValue, MemoryError } from "@poppet/memory";
-import { Console, Effect, Schema } from "effect";
+import { Effect, Schema } from "effect";
 
-export type MemoryCommand =
-  | { readonly action: "list" }
-  | { readonly action: "remember" | "replace"; readonly key: string; readonly value: string }
-  | { readonly action: "forget"; readonly key: string };
+export const MemoryCommand = Schema.Union([
+  Schema.Struct({ action: Schema.Literal("list") }),
+  Schema.Struct({
+    action: Schema.Literals(["remember", "replace"]),
+    key: MemoryKey,
+    value: MemoryValue,
+  }),
+  Schema.Struct({ action: Schema.Literal("forget"), key: MemoryKey }),
+]);
+
+export type MemoryCommand = typeof MemoryCommand.Type;
 
 const invalidArguments = (message: string) =>
   new MemoryError({ reason: "invalid-request", message });
@@ -52,13 +59,12 @@ export const manageMemory = (command: MemoryCommand) =>
   Effect.gen(function* () {
     const memory = yield* Memory;
 
-    if (command.action === "list")
-      return yield* Console.log(JSON.stringify(yield* memory.list, null, 2));
+    if (command.action === "list") return JSON.stringify(yield* memory.list, null, 2);
 
     if (command.action === "forget") {
       yield* memory.forget(command.key);
 
-      return yield* Console.log(`Forgot ${command.key}.`);
+      return `Forgot ${command.key}.`;
     }
 
     const operation =
@@ -68,5 +74,5 @@ export const manageMemory = (command: MemoryCommand) =>
 
     const fact = yield* operation;
 
-    yield* Console.log(JSON.stringify(fact, null, 2));
+    return JSON.stringify(fact, null, 2);
   });

@@ -203,7 +203,12 @@ export const makeCLI = (
     if (args[0] === "memory") {
       // Validate arguments before acquiring the store and applying migrations.
       return parseMemoryCommand(args.slice(1)).pipe(
-        Effect.flatMap((command) => manageMemory(command).pipe(Effect.provide(runtime.memory))),
+        Effect.flatMap((command) =>
+          manageMemory(command).pipe(
+            Effect.provide(runtime.memory),
+            Effect.flatMap((text) => Console.log(text)),
+          ),
+        ),
       );
     }
 
@@ -274,7 +279,10 @@ export const makeCLI = (
 
       if (command !== null) {
         if (command.action === "show" || command.action === "sessions")
-          return inspectChat(command).pipe(Effect.provide(runtime.store));
+          return inspectChat(command).pipe(
+            Effect.provide(runtime.store),
+            Effect.flatMap((text) => Console.log(text)),
+          );
         const selected = command;
 
         return Effect.gen(function* () {
