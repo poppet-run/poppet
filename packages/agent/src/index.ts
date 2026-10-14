@@ -2,4 +2,6 @@ export { Agent, AgentLive, ModelResolver, type ChatEvent, type ChatFailure } fro
 
 export { AgentError } from "#src/errors";
 
+export { Notes, NotesLive } from "#src/notes";
+
 export { ChatSettings, ChatSettingsLive, defaultPolicy, type ChatPolicy } from "#src/settings";

@@ -1,6 +1,6 @@
 # Poppet implementation plan
 
-Status: Persisted chat implemented and locally tested; tools and notes next
+Status: Tools and notes implemented and locally tested; explicit memory next
 
 Updated: 2026-10-14
 
@@ -239,9 +239,8 @@ No automatic retries or provider/model fallbacks are enabled.
 Context preserves complete exchanges and opaque continuation. Limits cover
 recent exchanges, serialized UTF-8 bytes, requested output tokens when supported,
 and model capacity when advertised. This is an estimate rather than an exact
-tokenizer. Trimming does not delete stored history. Chat sends no tools and
-rejects tool calls without execution. Tool content limits arrive with phase 5;
-separate profile/fact budgets arrive with phase 6.
+tokenizer. Trimming does not delete stored history. Phase 5 adds the tool loop
+and separate tool-content budgets. Profile/fact budgets arrive with phase 6.
 
 Tests cover restart/resume with continuation, changed environment settings,
 provider resource lifetime, provider failures, context trimming, malformed
@@ -269,6 +268,30 @@ of the write.
 Completion check: find notes, read them, and save a summary. Invalid arguments,
 forbidden paths or tools, write failures, cancellation, and exhausted budgets
 terminate predictably. Verify crash recovery without repeating a write.
+
+Implemented the sequential tool loop in `@poppet/agent`, with `poppet_notes.read_note`,
+`poppet_notes.search_notes`, and `poppet_notes.save_note`. Tools are supplied only to models
+advertising tool support. Every batch is decoded and permission-checked before
+execution. Whole tool exchanges and provider continuation remain together across
+model turns and history trimming. Model-turn, tool-call, result-size, context,
+and aggregate text limits bound the run. The absolute run deadline remains 90
+seconds, and model requests are never retried or switched to a fallback.
+
+Migration 4 adds durable call IDs, ordering, names, raw arguments, execution
+states, output, and failure reasons. Complete tool requests are recorded before
+execution; successful results commit with transcript messages. Graceful
+cancellation keeps an in-flight atomic save and result persistence together.
+Reopening interrupts queued calls and marks unfinished started calls uncertain.
+No call is replayed. `chat show` exposes these states without opaque continuation.
+
+The notes service restricts UTF-8 `.md`, `.markdown`, and `.txt` files to the
+configured directory. It rejects escaped paths, symlinks, and hard-linked files.
+Reads, search traversal and matches, result content, and writes have explicit
+bounds. Note writes use protected temporary files, sync, and atomic replacement.
+Tests cover find/read/save/resume, filesystem boundaries, malformed and forbidden
+calls, duplicate IDs, budgets, cancellation, migration recovery, and a successful
+write whose result could not be persisted. Live provider use remains a manual
+check. Profile and saved facts remain phase 6 work.
 
 ## Phase 6: Explicit memory
 

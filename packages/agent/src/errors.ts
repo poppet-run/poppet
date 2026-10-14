@@ -6,8 +6,12 @@ export class AgentError extends Data.TaggedError("AgentError")<{
     | "context-limit"
     | "history"
     | "protocol"
-    | "tools-unavailable"
     | "output-limit"
-    | "interrupted";
+    | "interrupted"
+    | "tool-arguments"
+    | "tool-permission"
+    | "tool-storage"
+    | "tool-limit"
+    | "budget";
   readonly message: string;
 }> {}

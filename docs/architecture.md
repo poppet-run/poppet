@@ -33,7 +33,7 @@ The Bun monorepo has ten private workspaces:
 | Workspace                     | Responsibility                                                              | Workspace dependencies                            |
 | ----------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
 | `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config, agent, store, provider layers             |
-| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states             | Store, provider contract                          |
+| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states             | Config, store, provider contract                  |
 | `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                                 |
 | `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                 | Provider contract                                 |
 | `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle       | Config, provider contract                         |
@@ -70,26 +70,28 @@ configuration in `packages/config/src` and CLI files in `apps/cli/src`.
 Shared provider types live in `packages/provider/src`, and Go routing lives in
 `packages/provider-opencode/src`. OpenRouter discovery and composition live in
 `packages/provider-openrouter/src`. SQLite storage lives in `packages/store/src`.
-Persisted chat lives in `packages/agent/src`. Tools, memory, and scheduler modules
-are planned.
+Persisted chat lives in `packages/agent/src`. Notes tools and their sequential model loop are implemented in that workspace.
+Memory and scheduler modules are planned.
 
-| Module                | Responsibility                                                              | Dependencies                                      |
-| --------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
-| `config.ts`           | Validate settings and provide `AppConfig`                                   | Effect Config and Schema                          |
-| `connection.ts`       | Credential schemas, redacted tokens, typed connection errors                | Effect Schema and Data                            |
-| `auth/credentials.ts` | Atomic credential replacement and exclusive owner lock                      | Configuration, scoped filesystem access           |
-| `oauth/`              | OAuth service with discovery, HTTP, token, and identity modules             | Fetch, Effect Schema, jose                        |
-| `sign-in/`            | Sign-in service with one-use callback and browser modules                   | Scoped Bun listener and subprocess                |
-| `auth/`               | Auth service with login, refresh, and pure state modules                    | Configuration, sign-in, OAuth, credential storage |
-| `model/`              | Model service with SDK adapter, stream collector, and verification protocol | Authentication, OpenAI client                     |
-| `store/`              | Scoped SQLite ownership, migrations, sessions, messages, and runs           | Configuration, shared provider schemas            |
-| `agent/service.ts`    | Persisted chat, deadlines, cancellation, completion validation              | Model resolver, store, chat settings              |
-| `agent/context.ts`    | Complete-exchange context assembly and size limits                          | Shared message and record types                   |
-| `agent/settings.ts`   | Validated context, history, and output budgets                              | Effect Config and Schema                          |
-| `tools.ts`            | Validated tool definitions and execution policies                           | Schema, scoped filesystem access                  |
-| `memory.ts`           | Editable profile and explicitly saved facts                                 | Store, configuration                              |
-| `scheduler.ts`        | Persisted due occurrences and sequential worker                             | Store, agent, clock, occurrence calculator        |
-| `cli.ts`              | Typed commands and terminal presentation                                    | Application services required by each command     |
+| Module                  | Responsibility                                                              | Dependencies                                      |
+| ----------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
+| `config.ts`             | Validate settings and provide `AppConfig`                                   | Effect Config and Schema                          |
+| `connection.ts`         | Credential schemas, redacted tokens, typed connection errors                | Effect Schema and Data                            |
+| `auth/credentials.ts`   | Atomic credential replacement and exclusive owner lock                      | Configuration, scoped filesystem access           |
+| `oauth/`                | OAuth service with discovery, HTTP, token, and identity modules             | Fetch, Effect Schema, jose                        |
+| `sign-in/`              | Sign-in service with one-use callback and browser modules                   | Scoped Bun listener and subprocess                |
+| `auth/`                 | Auth service with login, refresh, and pure state modules                    | Configuration, sign-in, OAuth, credential storage |
+| `model/`                | Model service with SDK adapter, stream collector, and verification protocol | Authentication, OpenAI client                     |
+| `store/`                | Scoped SQLite ownership, migrations, sessions, messages, and runs           | Configuration, shared provider schemas            |
+| `agent/service.ts`      | Persisted chat, deadlines, cancellation, run finalization                   | Model resolver, store, conversation workflow      |
+| `agent/conversation.ts` | Sequential model/tool loop, permission checks, run budgets                  | Model, store, notes, chat settings                |
+| `agent/reply.ts`        | Validated stream completion and output limits                               | Shared model contract                             |
+| `agent/context.ts`      | Complete-exchange context assembly and size limits                          | Shared message and record types                   |
+| `agent/settings.ts`     | Validated context, history, and output budgets                              | Effect Config and Schema                          |
+| `agent/notes.ts`        | Note schemas, bounded filesystem access, atomic replacement                 | Config, chat settings, scoped filesystem access   |
+| `memory.ts`             | Editable profile and explicitly saved facts                                 | Store, configuration                              |
+| `scheduler.ts`          | Persisted due occurrences and sequential worker                             | Store, agent, clock, occurrence calculator        |
+| `cli.ts`                | Typed commands and terminal presentation                                    | Application services required by each command     |
 
 Each live service gets a layer at the application boundary. Tests replace model,
 authentication, and clock behavior without contacting an account. SQLite and
@@ -108,7 +110,7 @@ services with local OAuth and model servers shared by the behavior suites.
 Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
 modules are implemented. `runtime.ts` builds only the registered provider selected
 for an auth or inference command. Its store layer opens SQLite only for store
-and chat commands. Chat is implemented; tools, memory, and scheduling remain planned.
+and chat commands. Chat and notes tools are implemented; memory and scheduling remain planned.
 
 ## Provider interface
 
@@ -356,7 +358,9 @@ continuation together. The newest input must fit by itself or the run fails with
 tokens. Advertised model capacity further limits input and output. The UTF-8 size
 estimate is not an exact tokenizer, and trimming never changes stored history.
 
-The runner requests no tools in this phase. Tool calls fail without execution.
+Tool-capable models receive the three notes tools. The conversation workflow
+validates complete tool requests, records them, executes sequentially, and
+continues with the saved results. Models without tool support receive no tools.
 Text deltas stream immediately; terminal-only text or an unstreamed final suffix
 is emitted before committing the answer. The source must end cleanly after one
 validated completion matching the session identity. Malformed, missing, duplicate,
@@ -369,8 +373,43 @@ Only completed inference becomes a saved assistant message, atomically with its
 result. Stopping consumption or cancelling a request saves no partial answer.
 Failed inputs remain visible in `chat show` but are not retried implicitly.
 Inspection omits provider continuation while retaining normalized output, usage,
-and run failure reasons. Profile/facts and tools receive separate content budgets
-when those capabilities are implemented.
+and run failure reasons. Tool results have a separate content budget. Profile
+and fact budgets arrive with memory support.
+
+## Notes and tool execution
+
+`conversation.ts` captures the store, notes service, and chat budgets. It keeps
+one model instance throughout each run. `reply.ts` forwards text but emits a
+completion only after clean source termination and validates continuation,
+finish reason, output limits, and agreement with streamed text. Complete tool
+requests pass through the shared contract; no SDK types enter the agent.
+
+The loop advertises only allowed tools, validates the whole batch, and requires
+another model turn before performing side effects. Default budgets are eight
+model turns, sixteen calls, and 16 KiB per tool result. Current-run messages are
+never trimmed independently of their tool pairs. Definitions and tool results
+count toward the context estimate; overflowing the current exchange fails clearly.
+Recorded usage sums all model turns when complete usage data is available.
+
+`notes.ts` defines argument schemas, tool descriptions, and the scoped `Notes`
+service. Filesystem access begins only when a tool executes, so inspection and
+text-only requests do not create the notes directory. Paths must resolve within
+the configured root, with checked directories and no-follow file opens. Symlinks,
+hard-linked files, non-regular files, and unsupported extensions are rejected.
+Read and search I/O is bounded. Search treats its query as literal text.
+
+Saves create checked parents, write a protected temporary file, sync it, verify
+the parent again, atomically rename it, and sync the directory. The agent keeps
+this save and its durable result recording uninterruptible during graceful
+shutdown. An abrupt crash can still separate a write from result persistence.
+
+Migration 4 adds `tool_calls`. Store methods atomically record an assistant tool
+request with pending calls and a completed tool result with its transcript
+message. The state progresses from pending to running to completed or failed.
+Run failure/reopening interrupts pending calls and marks remaining running calls
+uncertain. Completed calls are immutable; terminal calls cannot restart. Calls
+and model requests are never replayed. `chat show` exposes the ledger for manual
+inspection. An uncertain write requires checking the file before an explicit retry.
 
 ## Current authentication flow
 

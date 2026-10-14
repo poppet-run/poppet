@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -35,9 +35,13 @@ const fixture = async () => {
     POPPET_PROVIDER: "chat-provider",
     POPPET_MODEL: "chat-model",
     POPPET_DATA_DIR: directory,
+    POPPET_NOTES_DIR: join(directory, "notes"),
     POPPET_CONTEXT_BYTES: "65536",
     POPPET_HISTORY_TURNS: "20",
     POPPET_OUTPUT_TOKENS: "2048",
+    POPPET_MODEL_TURNS: "8",
+    POPPET_TOOL_CALLS: "16",
+    POPPET_TOOL_BYTES: "16384",
   };
 
   const previous = new Map(Object.keys(environment).map((key) => [key, process.env[key]]));
@@ -46,7 +50,7 @@ const fixture = async () => {
   const lines: string[] = [];
   const errors: string[] = [];
   const chunks: string[] = [];
-  const state = { open: false, built: 0, writeFails: false };
+  const state = { open: false, built: 0, writeFails: false, useTools: false };
 
   const provider = Layer.effect(
     Provider,
@@ -62,24 +66,40 @@ const fixture = async () => {
             id !== description.id
               ? Effect.fail(invalidRequest(description.provider, "Unknown model"))
               : Effect.succeed({
-                  description,
+                  description: state.useTools
+                    ? { ...description, capabilities: { ...description.capabilities, tools: true } }
+                    : description,
                   stream: (request: ModelRequest) =>
                     Stream.fromEffect(
                       Effect.sync(() => {
                         expect(state.open).toBe(true);
                         requests.push(request);
 
+                        const save =
+                          state.useTools &&
+                          !request.messages.some((message) => message.role === "tool");
+
                         return {
                           type: "completed" as const,
                           response: {
-                            output: [{ type: "text" as const, text: "Answer" }],
+                            output: save
+                              ? [
+                                  {
+                                    type: "tool-call" as const,
+                                    callId: "save",
+                                    name: "save_note",
+                                    namespace: "poppet_notes",
+                                    arguments: '{"path":"summary.md","content":"A saved summary"}',
+                                  },
+                                ]
+                              : [{ type: "text" as const, text: "Answer" }],
                             continuation: {
                               version: 1 as const,
                               provider: description.provider,
                               model: description.id,
                               data: { secretOpaqueState: "retain privately" },
                             },
-                            finishReason: "stop" as const,
+                            finishReason: save ? ("tool-calls" as const) : ("stop" as const),
                             usage: null,
                           },
                         };
@@ -161,6 +181,35 @@ const fixture = async () => {
 };
 
 describe("chat CLI", () => {
+  test("saves a requested note through chat and exposes tool execution in session inspection", async () => {
+    const chat = await fixture();
+
+    try {
+      chat.state.useTools = true;
+      await chat.invoke(["chat", "new", "Save a summary as summary.md"]);
+      expect(chat.state.open).toBe(false);
+      expect(chat.chunks.join("")).toBe("Answer\n");
+      expect(await readFile(join(chat.directory, "notes/summary.md"), "utf8")).toBe(
+        "A saved summary",
+      );
+      await chat.invoke(["chat", "show", chat.errors[0]?.slice("Session: ".length) ?? ""]);
+      const saved = JSON.parse(chat.lines.at(-1) ?? "");
+      expect(saved.toolCalls).toEqual([
+        expect.objectContaining({
+          name: "save_note",
+          namespace: "poppet_notes",
+          status: "completed",
+        }),
+      ]);
+      expect(
+        saved.messages.map((entry: { message: { role: string } }) => entry.message.role),
+      ).toEqual(["user", "assistant", "tool", "assistant"]);
+      expect(chat.requests).toHaveLength(2);
+    } finally {
+      await chat.close();
+    }
+  });
+
   test("reopens a coding session using its saved selection and hides continuation when inspecting", async () => {
     const chat = await fixture();
 

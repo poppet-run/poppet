@@ -4,6 +4,9 @@ export interface ChatPolicy {
   readonly contextBytes: number;
   readonly historyTurns: number;
   readonly outputTokens: number;
+  readonly modelTurns: number;
+  readonly toolCalls: number;
+  readonly toolBytes: number;
 }
 
 export class ChatSettings extends Context.Service<ChatSettings, ChatPolicy>()(
@@ -14,6 +17,9 @@ export const defaultPolicy: ChatPolicy = {
   contextBytes: 65536,
   historyTurns: 20,
   outputTokens: 2048,
+  modelTurns: 8,
+  toolCalls: 16,
+  toolBytes: 16384,
 };
 
 const bounded = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }));
@@ -33,7 +39,20 @@ export const ChatSettingsLive = Layer.effect(
       Config.withDefault(defaultPolicy.outputTokens),
     );
 
-    return { contextBytes, historyTurns, outputTokens };
+    const modelTurns = yield* Config.schema(bounded(32), "POPPET_MODEL_TURNS").pipe(
+      Config.withDefault(defaultPolicy.modelTurns),
+    );
+
+    const toolCalls = yield* Config.schema(bounded(64), "POPPET_TOOL_CALLS").pipe(
+      Config.withDefault(defaultPolicy.toolCalls),
+    );
+
+    const toolBytes = yield* Config.schema(
+      Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 })),
+      "POPPET_TOOL_BYTES",
+    ).pipe(Config.withDefault(defaultPolicy.toolBytes));
+
+    return { contextBytes, historyTurns, outputTokens, modelTurns, toolCalls, toolBytes };
   }),
 ).pipe(
   Layer.provide(

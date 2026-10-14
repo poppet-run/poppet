@@ -6,7 +6,8 @@ The project has a CLI, validated configuration, ChatGPT sign-in, and a shared
 streaming model interface. OpenCode Go supports a small set of coding models.
 OpenRouter supports concrete text models from its public catalog.
 SQLite stores sessions, messages, and runs. Chat streams answers and resumes
-saved sessions. Notes tools, memory, and scheduled tasks follow in the
+saved sessions and can read, search, and save local notes. Memory and scheduled
+tasks follow in the
 [implementation plan](docs/implementation-plan.md).
 
 ## Development
@@ -50,12 +51,15 @@ excluded from linting and formatting.
 | ---------------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
 | `POPPET_APP_NAME`      | `Poppet`                 | Application name used for initial ChatGPT registration                                           |
 | `POPPET_DATA_DIR`      | `~/.config/poppet`       | Credential and conversation storage                                                              |
-| `POPPET_NOTES_DIR`     | `<data directory>/notes` | Future notes tools' permitted directory                                                          |
+| `POPPET_NOTES_DIR`     | `<data directory>/notes` | Notes tools' permitted directory                                                                 |
 | `POPPET_PROVIDER`      | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`                                                 |
 | `POPPET_MODEL`         | Unset                    | Explicit model ID for verification and new chat sessions                                         |
 | `POPPET_CONTEXT_BYTES` | `65536`                  | Context size estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576` |
 | `POPPET_HISTORY_TURNS` | `20`                     | Maximum previous complete exchanges sent to the model; maximum `100`                             |
 | `POPPET_OUTPUT_TOKENS` | `2048`                   | Requested output limit when supported, capped by model metadata; maximum `32768`                 |
+| `POPPET_MODEL_TURNS`   | `8`                      | Maximum model requests per run; range `1–32`                                                     |
+| `POPPET_TOOL_CALLS`    | `16`                     | Maximum tool calls per run; range `1–64`                                                         |
+| `POPPET_TOOL_BYTES`    | `16384`                  | Maximum UTF-8 bytes per serialized tool result; range `1024–65536`                               |
 
 Paths become absolute relative to the current working directory. Explicit values
 must be nonempty and have no leading or trailing whitespace. Use a full path when
@@ -273,10 +277,55 @@ only the request, not saved history. Answers are limited to 128 KiB of text and
 1 MiB including continuation. The runner has a 90-second absolute deadline;
 provider inference also retains its 60-second deadline.
 
-Chat currently sends no tools. Tool requests fail without execution; note tools
-arrive in phase 5 and profile/fact memory in phase 6. The restart/resume flow is
-covered with injected providers and temporary SQLite databases. Live chat with
-your account remains a manual check and consumes provider usage.
+Tool-capable models receive the three notes tools below. Models without tool
+support continue to answer text requests. The runner checks complete tool
+requests before execution and keeps one provider/model throughout the exchange.
+Recorded usage sums all model turns when every turn reports usage, otherwise it
+is null. Live account chat remains a manual check and consumes provider usage.
+
+## Notes tools
+
+`read_note`, `search_notes`, and `save_note` operate within `POPPET_NOTES_DIR`.
+Use UTF-8 `.md`, `.markdown`, or `.txt` files. Relative paths are preferred;
+absolute paths must remain within the canonical notes directory. Root, parent,
+and file symlinks are rejected, as are hard-linked files. Searches skip symlinks.
+
+Try the complete flow with an existing notes directory and a tool-capable model:
+
+```fish
+set -lx POPPET_NOTES_DIR "$HOME/Documents/Notes"
+bun run start chat new "Find notes about Acorn, read them, and save a summary as acorn-summary.md."
+```
+
+Saving creates or atomically replaces a note. Existing content is replaced, so
+include the intended path in your request. New files have owner-only permissions;
+checked parent directories are created as needed. Each note write is limited to
+64 KiB of UTF-8 text. Reads scan at most 64 KiB per note and explicitly report
+truncation. Search uses literal case-insensitive text, returning relative paths,
+line numbers, and snippets. It scans at most 128 files and 128 directories,
+returns at most 100 matches, and rejects directories exceeding 1000 entries.
+The per-tool result budget can truncate read/search results further.
+
+Runs default to eight model turns and sixteen tool calls. Every requested batch
+is checked against the run's allowed tools and argument schemas before any call
+in that batch executes. A batch is not executed unless another model turn remains
+to consume its results. Tool results and definitions count toward context size;
+the current exchange is kept whole and fails if it cannot fit. The 90-second
+run deadline includes all model turns and tools. The 128 KiB text limit applies
+across all turns, and each serialized completion is limited to 1 MiB.
+
+Inputs, complete tool requests, execution states, and results are saved in SQLite.
+`chat show` includes a `toolCalls` list. Results are recorded atomically with their
+transcript messages. Graceful cancellation waits for an in-flight save and its
+result recording before stopping. On reopening, queued calls become interrupted
+and started calls without recorded results become uncertain. A write can succeed
+before its result is saved; inspect the file before manually retrying an uncertain
+write. Failed or interrupted exchanges remain inspectable and are excluded from
+later model context. Calls and writes are never automatically replayed.
+
+Profile and fact memory follow in phase 6. Local tests cover the full note flow,
+boundaries, limits, cancellation, and uncertain outcomes. They use injected models
+and do not establish fresh live provider access.
 
 ## Conversation storage
 
@@ -295,6 +344,8 @@ this database. To experiment in a separate directory:
 set -lx POPPET_DATA_DIR /tmp/poppet-storage-test
 bun run start store status
 ```
+
+Migration 4 adds durable tool calls and their execution states.
 
 `@poppet/store` provides a scoped Effect `Store` service backed by
 [Bun SQLite](https://bun.sh/docs/runtime/sqlite). The initial migrations create
@@ -357,6 +408,9 @@ apps/
 packages/
   agent/                  @poppet/agent
     src/service.ts        Persisted chat runner, deadlines, run finalization
+    src/conversation.ts   Sequential model/tool loop and run budgets
+    src/reply.ts          Validated model stream completion
+    src/notes.ts          Note schemas, bounded access, atomic writes
     src/context.ts        Complete-exchange context assembly and limits
     src/settings.ts       Validated chat budgets
   config/                 @poppet/config

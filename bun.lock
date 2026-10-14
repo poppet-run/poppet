@@ -32,12 +32,14 @@
       "name": "@poppet/agent",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/config": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/store": "workspace:*",
         "effect": "4.0.4",
       },
       "devDependencies": {
-        "@poppet/config": "workspace:*",
+        "@poppet/provider-protocol": "workspace:*",
+        "openai": "7.32.0",
       },
     },
     "packages/config": {

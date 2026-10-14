@@ -53,7 +53,8 @@ ${registered.map((entry) => `${entry.name}: ${entry.authentication.help}`).join(
   provider verify          Verify the configured provider/model with a local tool
   --help    Show this help
 
-Notes tools, memory, and scheduled tasks are planned next.`;
+Chat includes read_note, search_notes and save_note within POPPET_NOTES_DIR.
+Memory and scheduled tasks are planned next.`;
 
 const showConfig = Effect.gen(function* () {
   yield* Console.log(JSON.stringify(yield* AppConfig, null, 2));

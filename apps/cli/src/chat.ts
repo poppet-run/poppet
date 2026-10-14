@@ -73,10 +73,12 @@ export const inspectChat = (command: Extract<ChatCommand, { action: "show" | "se
       );
     const messages = yield* store.messages(session.id);
     const runs = yield* store.runs(session.id);
+    const toolCalls = (yield* Effect.forEach(runs, (run) => store.toolCalls(run.id))).flat();
     yield* Console.log(
       JSON.stringify(
         {
           session,
+          toolCalls,
           messages: messages.map((entry) => ({
             id: entry.id,
             sessionId: entry.sessionId,

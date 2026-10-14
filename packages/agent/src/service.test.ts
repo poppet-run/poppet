@@ -16,6 +16,7 @@ import { Deferred, Effect, Fiber, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { AgentError } from "#src/errors";
+import { Notes } from "#src/notes";
 import { Agent, AgentLive, ModelResolver, type ChatEvent } from "#src/service";
 import { ChatSettings, defaultPolicy } from "#src/settings";
 
@@ -62,6 +63,12 @@ const fixture = async (resolve: ModelResolver["Service"]["resolve"]) => {
     Layer.provideMerge(
       Layer.mergeAll(
         store,
+        Layer.succeed(Notes, {
+          execute: () =>
+            Effect.fail(
+              new AgentError({ reason: "tool-permission", message: "No fixture tools allowed" }),
+            ),
+        }),
         Layer.succeed(ModelResolver, { resolve }),
         Layer.succeed(ChatSettings, defaultPolicy),
       ),
@@ -143,7 +150,6 @@ describe("persisted agent", () => {
       expect(requests[1]).toMatchObject({
         sessionId: savedSession.id,
         workload: "coding",
-        tools: [],
         settings: { maxOutputTokens: 1000 },
         messages: [
           { role: "user", text: "First" },
@@ -341,28 +347,6 @@ describe("persisted agent", () => {
         },
       ],
       reason: "protocol",
-    },
-    {
-      name: "tool",
-      events: [
-        {
-          type: "completed",
-          response: {
-            ...response(),
-            output: [
-              {
-                type: "tool-call",
-                callId: "call",
-                namespace: "notes",
-                name: "read_note",
-                arguments: "{}",
-              },
-            ],
-            finishReason: "tool-calls",
-          },
-        },
-      ],
-      reason: "tools-unavailable",
     },
     {
       name: "oversize",

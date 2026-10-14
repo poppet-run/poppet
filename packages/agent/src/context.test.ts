@@ -45,14 +45,14 @@ const toolExchange = [
         type: "tool-call",
         callId: "call-1",
         name: "read_note",
-        namespace: "notes",
+        namespace: "poppet_notes",
         arguments: "{}",
       },
       {
         type: "tool-call",
         callId: "call-2",
         name: "read_note",
-        namespace: "notes",
+        namespace: "poppet_notes",
         arguments: "{}",
       },
     ],
@@ -67,7 +67,7 @@ describe("chat context", () => {
   test("keeps complete tool exchanges and continuation together under turn and byte limits", () => {
     const history = stored([{ role: "user", text: "Old question" }, assistant, ...toolExchange]);
     expect(
-      assembleContext(history, [], incoming, model, { ...defaultPolicy, historyTurns: 1 }),
+      assembleContext(history, [], [incoming], model, { ...defaultPolicy, historyTurns: 1 }),
     ).toEqual([...toolExchange, incoming]);
 
     const contextBytes = byteSize(
@@ -75,10 +75,10 @@ describe("chat context", () => {
     );
 
     expect(
-      assembleContext(history, [], incoming, model, { ...defaultPolicy, contextBytes }),
+      assembleContext(history, [], [incoming], model, { ...defaultPolicy, contextBytes }),
     ).toEqual([...toolExchange, incoming]);
     expect(
-      assembleContext(history, [], incoming, model, {
+      assembleContext(history, [], [incoming], model, {
         ...defaultPolicy,
         contextBytes: contextBytes - 1,
       }),
@@ -93,11 +93,17 @@ describe("chat context", () => {
 
     const bigOld: Message = { role: "user", text: "x".repeat(3000) };
     expect(
-      assembleContext(stored([bigOld, assistant]), [], incoming, smallModel, defaultPolicy),
+      assembleContext(stored([bigOld, assistant]), [], [incoming], smallModel, defaultPolicy),
     ).toEqual([incoming]);
     expect(() =>
-      assembleContext([], [], { role: "user", text: "😀".repeat(600) }, smallModel, defaultPolicy),
-    ).toThrow("new message exceeds the context budget");
+      assembleContext(
+        [],
+        [],
+        [{ role: "user", text: "😀".repeat(600) }],
+        smallModel,
+        defaultPolicy,
+      ),
+    ).toThrow("current exchange exceeds the context budget");
   });
 
   test.each([
@@ -106,7 +112,7 @@ describe("chat context", () => {
     [...toolExchange.slice(0, 4), toolExchange[3], assistant],
     [toolExchange[0], assistant, toolExchange[2], assistant],
   ])("rejects orphaned, duplicate or unresolved tool history", (...messages) => {
-    expect(() => assembleContext(stored(messages), [], incoming, model, defaultPolicy)).toThrow(
+    expect(() => assembleContext(stored(messages), [], [incoming], model, defaultPolicy)).toThrow(
       "incomplete or invalid exchange",
     );
   });

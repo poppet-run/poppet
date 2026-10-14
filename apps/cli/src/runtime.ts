@@ -1,4 +1,4 @@
-import { AgentLive, ChatSettingsLive, ModelResolver } from "@poppet/agent";
+import { AgentLive, ChatSettingsLive, ModelResolver, NotesLive } from "@poppet/agent";
 import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import {
   Model,
@@ -114,7 +114,14 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   });
 
   const chat = AgentLive.pipe(
-    Layer.provideMerge(Layer.mergeAll(store, resolver, ChatSettingsLive)),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        store,
+        resolver,
+        ChatSettingsLive,
+        NotesLive.pipe(Layer.provide(Layer.merge(config, ChatSettingsLive))),
+      ),
+    ),
     Layer.provideMerge(config),
   );
 
