@@ -53,7 +53,7 @@ describe("CLI", () => {
     }
   });
 
-  test("uses local task commands after a worker crashes and its stale owner lock is removed", async () => {
+  test("recovers local task commands after a worker crashes without deleting its owner lock", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-crash-"));
 
     const environment = {
@@ -86,10 +86,6 @@ describe("CLI", () => {
       worker.kill("SIGKILL");
       await worker.exited;
       expect(await readdir(join(directory, "store"))).toContain("tasks.sock");
-      expect((await invoke(["tasks", "list"], environment)).stderr).toContain(
-        "Another Poppet store may be open",
-      );
-      await rm(join(directory, "store/owner.lock"));
       const list = await invoke(["tasks", "list"], environment);
       expect(list.exitCode).toBe(0);
       expect(JSON.parse(list.stdout)).toMatchObject([{ name: "Later" }]);
@@ -219,7 +215,7 @@ describe("CLI", () => {
       });
       expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
     } finally {
-      worker.kill("SIGINT");
+      worker.kill("SIGTERM");
       await worker.exited;
       expect(await errors).toBe("");
       expect(await readdir(join(directory, "store"))).not.toContain("owner.lock");
@@ -375,7 +371,10 @@ describe("CLI", () => {
         });
         expect(await Bun.file(path).exists()).toBe(false);
         expect((await invoke(["auth", "logout"], environment)).exitCode).toBe(0);
-        expect(await readdir(join(directory, "auth"))).toEqual(["other-provider.json"]);
+        expect(await readdir(join(directory, "auth"))).toEqual([
+          "other-provider.json",
+          "owner.lock.sqlite",
+        ]);
         expect(await readFile(unrelated, "utf8")).toBe("other-provider-details");
       } finally {
         await rm(directory, { recursive: true, force: true });
@@ -423,7 +422,9 @@ describe("CLI", () => {
 
       expect((await readdir(join(directory, "auth"))).toSorted()).toEqual([
         "opencode-go.json",
+        "opencode-go.lock.sqlite",
         "openrouter.json",
+        "openrouter.lock.sqlite",
       ]);
       const logout = await invoke(["auth", "logout", "openrouter"], environment);
       expect(logout.exitCode).toBe(0);

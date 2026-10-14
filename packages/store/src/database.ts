@@ -1,9 +1,10 @@
 import { Database } from "bun:sqlite";
 import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, open } from "node:fs/promises";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
+import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { StoreError, storageFailure } from "#src/errors";
@@ -38,32 +39,15 @@ export const StoreDatabaseLive = Layer.effect(
 
     // Acquire ownership before SQLite opens, migrates, or recovers unfinished work.
     // Database finalization runs before this lock is released.
-    yield* Effect.acquireRelease(
-      Effect.tryPromise({
-        try: async () => {
-          const handle = await open(lockPath, "wx", 0o600);
-
-          try {
-            await handle.writeFile(JSON.stringify({ pid: process.pid }));
-
-            return handle;
-          } catch (cause) {
-            await handle.close();
-            await unlink(lockPath);
-            throw cause;
-          }
-        },
-        catch: () =>
-          new StoreError({
-            reason: "busy",
-            message: `Another Poppet store may be open. If no Poppet process owns this database, remove ${lockPath} and retry.`,
-          }),
-      }),
-      (handle) =>
-        Effect.promise(async () => {
-          await handle.close();
-          await unlink(lockPath);
-        }),
+    yield* acquireOwnerLock(lockPath).pipe(
+      Effect.mapError((error) =>
+        error.reason === "busy"
+          ? new StoreError({
+              reason: "busy",
+              message: `Another Poppet store may be open. If an older Poppet process crashed, confirm it has stopped before removing ${lockPath}.`,
+            })
+          : storageFailure(error),
+      ),
     );
 
     yield* Effect.tryPromise({

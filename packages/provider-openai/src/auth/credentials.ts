@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
+import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { ProviderEnvironment } from "@poppet/provider";
 import { Context, Effect, Layer, Schema } from "effect";
 
@@ -48,22 +49,16 @@ export const CredentialStoreLive = Layer.effect(
       catch: storageError,
     });
 
-    // Exclusive file creation prevents another command from owning this store.
-    // The scope closes and removes the lock on completion or interruption.
-    yield* Effect.acquireRelease(
-      Effect.tryPromise({
-        try: () => open(lockPath, "wx", 0o600),
-        catch: () =>
-          new ConnectionError({
-            reason: "busy",
-            message: `Another Poppet authentication command may be active. If no command is running, remove ${lockPath} and retry.`,
-          }),
-      }),
-      (handle) =>
-        Effect.promise(async () => {
-          await handle.close();
-          await unlink(lockPath);
-        }),
+    yield* acquireOwnerLock(lockPath).pipe(
+      Effect.mapError((error) =>
+        error.reason === "busy"
+          ? new ConnectionError({
+              reason: "busy",
+              code: "credential_store_busy",
+              message: `Another Poppet authentication command may be active. If an older command crashed, confirm it has stopped before removing ${lockPath}.`,
+            })
+          : storageError(),
+      ),
     );
 
     // Write and sync a separate file, then rename it over the saved connection

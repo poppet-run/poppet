@@ -15,6 +15,8 @@ import {
 } from "@poppet/provider";
 import { Config, ConfigProvider, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 
+import { acquireOwnerLock } from "#src/lock";
+
 export const ApiKey = Schema.RedactedFromValue(
   Schema.NonEmptyString.check(Schema.isPattern(/^\S{1,8192}$/)),
 );
@@ -97,22 +99,7 @@ export const ApiKeyStoreLive = Layer.effect(
         Effect.gen(function* () {
           yield* prepare(provider, true);
           const lock = join(directory, `${provider}.lock`);
-          yield* Effect.acquireRelease(
-            Effect.tryPromise({
-              try: () => open(lock, "wx", 0o600),
-              catch: () =>
-                new ProviderError({
-                  provider,
-                  reason: "authentication",
-                  message: `Another ${provider} auth command may be active. If no command is running, remove ${lock} and retry.`,
-                }),
-            }),
-            (handle) =>
-              Effect.promise(async () => {
-                await handle.close();
-                await unlink(lock);
-              }),
-          );
+          yield* acquireOwnerLock(lock).pipe(Effect.mapError(() => storageError(provider)));
           yield* operation;
         }),
       );

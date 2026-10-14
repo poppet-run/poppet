@@ -121,7 +121,9 @@ describe("API-key storage", () => {
       );
       expect((await readdir(join(store.directory, "auth"))).toSorted()).toEqual([
         "other-provider.json",
+        "other-provider.lock.sqlite",
         "test-provider.json",
+        "test-provider.lock.sqlite",
       ]);
       await store.run((keys) => keys.remove("test-provider"));
       expect(await store.run((keys) => keys.read("test-provider"))).toBeNull();
