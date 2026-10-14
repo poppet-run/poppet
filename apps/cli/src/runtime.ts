@@ -1,3 +1,4 @@
+import { AgentLive, ChatSettingsLive, ModelResolver } from "@poppet/agent";
 import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import {
   Model,
@@ -9,7 +10,7 @@ import {
   type ProviderError,
 } from "@poppet/provider";
 import { StoreLive } from "@poppet/store";
-import { Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 
 import { providers } from "#src/providers";
 
@@ -97,11 +98,32 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     }),
   ).pipe(Layer.provide(config));
 
+  const store = StoreLive.pipe(Layer.provide(config));
+
+  const resolver = Layer.succeed(ModelResolver, {
+    resolve: (providerId, modelId) =>
+      Effect.gen(function* () {
+        const context = yield* Layer.build(selectedProvider(providerId));
+
+        return yield* Context.get(context, Provider).resolve(modelId);
+      }).pipe(
+        Effect.catchTag("ConfigError", () =>
+          Effect.fail(invalidRequest(providerId, "Could not load the provider configuration.")),
+        ),
+      ),
+  });
+
+  const chat = AgentLive.pipe(
+    Layer.provideMerge(Layer.mergeAll(store, resolver, ChatSettingsLive)),
+    Layer.provideMerge(config),
+  );
+
   return {
     config,
     provider,
     model,
     selectedProvider,
-    store: StoreLive.pipe(Layer.provide(config)),
+    store,
+    chat,
   };
 };

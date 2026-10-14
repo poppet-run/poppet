@@ -5,8 +5,9 @@ A small personal AI agent for local use, built with TypeScript, Bun, and Effect.
 The project has a CLI, validated configuration, ChatGPT sign-in, and a shared
 streaming model interface. OpenCode Go supports a small set of coding models.
 OpenRouter supports concrete text models from its public catalog.
-SQLite stores sessions, messages, and runs. Chat commands, notes tools, memory,
-and scheduled tasks follow in the [implementation plan](docs/implementation-plan.md).
+SQLite stores sessions, messages, and runs. Chat streams answers and resumes
+saved sessions. Notes tools, memory, and scheduled tasks follow in the
+[implementation plan](docs/implementation-plan.md).
 
 ## Development
 
@@ -21,7 +22,7 @@ bun run check
 
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
-`@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`, and `@poppet/store`.
+`@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`, `@poppet/store`, and `@poppet/agent`.
 Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
 
@@ -45,13 +46,16 @@ excluded from linting and formatting.
 
 ## Configuration
 
-| Variable           | Default                  | Purpose                                                     |
-| ------------------ | ------------------------ | ----------------------------------------------------------- |
-| `POPPET_APP_NAME`  | `Poppet`                 | Application name used for initial ChatGPT registration      |
-| `POPPET_DATA_DIR`  | `~/.config/poppet`       | Credential and conversation storage                         |
-| `POPPET_NOTES_DIR` | `<data directory>/notes` | Future notes tools' permitted directory                     |
-| `POPPET_PROVIDER`  | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`            |
-| `POPPET_MODEL`     | Unset                    | Explicit model ID for provider verification and future runs |
+| Variable               | Default                  | Purpose                                                                                          |
+| ---------------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
+| `POPPET_APP_NAME`      | `Poppet`                 | Application name used for initial ChatGPT registration                                           |
+| `POPPET_DATA_DIR`      | `~/.config/poppet`       | Credential and conversation storage                                                              |
+| `POPPET_NOTES_DIR`     | `<data directory>/notes` | Future notes tools' permitted directory                                                          |
+| `POPPET_PROVIDER`      | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`                                                 |
+| `POPPET_MODEL`         | Unset                    | Explicit model ID for verification and new chat sessions                                         |
+| `POPPET_CONTEXT_BYTES` | `65536`                  | Context size estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576` |
+| `POPPET_HISTORY_TURNS` | `20`                     | Maximum previous complete exchanges sent to the model; maximum `100`                             |
+| `POPPET_OUTPUT_TOKENS` | `2048`                   | Requested output limit when supported, capped by model metadata; maximum `32768`                 |
 
 Paths become absolute relative to the current working directory. Explicit values
 must be nonempty and have no leading or trailing whitespace. Use a full path when
@@ -68,6 +72,9 @@ bun run start config
 The `config` command prints settings. It does not create directories, open a
 database, or contact OpenAI. Credentials use separate protected storage and never
 appear in this output.
+
+Chat budgets must be positive integers. They are validated for chat execution;
+session listing and inspection work independently of these budgets.
 
 ## ChatGPT connection
 
@@ -213,6 +220,64 @@ deadlines, error classification, and provider selection. These tests do not prov
 live account access. The earlier phase 1 live ChatGPT check remains separate
 evidence; Go and OpenRouter inference have not been verified against live accounts.
 
+## Chat
+
+After signing in and choosing a model, start a session:
+
+```fish
+set -lx POPPET_PROVIDER openai-chatgpt
+set -lx POPPET_MODEL gpt-6.1-sol
+bun run start chat new "Help me plan a small TypeScript project"
+bun run start chat sessions
+```
+
+The answer streams to stdout. The session and run IDs print to stderr. Copy the
+session ID to continue or inspect it in a later invocation:
+
+```fish
+set session_id 'paste-session-id-here'
+bun run start chat send $session_id "What should I build first?"
+bun run start chat show $session_id
+```
+
+Each invocation sends one message. `chat sessions` lists saved sessions;
+`chat show` prints the session, ordered messages, run states, failures, output,
+and usage as JSON. Opaque provider continuation is retained privately in SQLite
+and omitted from this display. Inspection needs no selected model or login.
+
+New sessions use `POPPET_PROVIDER` and the required `POPPET_MODEL`. Existing
+sessions keep their saved provider, model, and workload when configuration
+changes. Start a new session to change that selection. OpenCode Go requires a
+coding session:
+
+```fish
+set -lx POPPET_PROVIDER opencode-go
+set -lx POPPET_MODEL glm-5.3
+bun run start chat new --coding "Explain how to structure a TypeScript CLI"
+```
+
+Poppet saves each input before resolving its model. Only an authoritative
+completed response becomes a saved answer. Provider failures, context errors,
+Ctrl-C, closed output, and deadlines leave inspectable failed or interrupted
+runs. Partial output may already be visible in the terminal but is not saved as
+an answer. Failed inputs remain visible and are excluded from subsequent model
+context; sending another message is an explicit new request. Requests are never
+automatically retried or switched to another provider/model.
+
+Context retains recent complete exchanges, including tool pairs and continuation,
+up to the configured turn and byte budgets. When model capacity is known,
+Poppet also reserves room for output and request overhead. UTF-8 bytes are a
+conservative estimate rather than an exact tokenizer; providers can still reject
+oversized context. A new message that cannot fit fails clearly. Trimming changes
+only the request, not saved history. Answers are limited to 128 KiB of text and
+1 MiB including continuation. The runner has a 90-second absolute deadline;
+provider inference also retains its 60-second deadline.
+
+Chat currently sends no tools. Tool requests fail without execution; note tools
+arrive in phase 5 and profile/fact memory in phase 6. The restart/resume flow is
+covered with injected providers and temporary SQLite databases. Live chat with
+your account remains a manual check and consumes provider usage.
+
 ## Conversation storage
 
 Open or inspect the local database:
@@ -237,7 +302,9 @@ sessions, messages, runs, and history indexes. A checksummed migration ledger
 rejects newer schemas and changed migration history. All pending migrations
 commit together; a failure rolls back the pending batch.
 
-Sessions retain their selected provider and model. Messages preserve order, tool
+Sessions retain their selected provider, model, and workload. Migration 3 adds
+workload to sessions and runs, defaulting existing records to `assistant`.
+Messages preserve order, tool
 call IDs, tool results, and versioned provider continuation. Runs persist pending
 inputs before execution, then transition through running to completed, failed,
 or interrupted. Successful completion writes its assistant message and result
@@ -254,8 +321,7 @@ with a `process-exit` reason. Poppet does not automatically replay them.
 
 Tests cover persistent tool exchanges for all providers, upgrades and migration
 rollback, transaction rollback, invalid records, run transitions, competing
-owners, and scoped cleanup. The storage API is ready for the phase 4 chat runner;
-CLI conversation commands are not implemented yet. Live ChatGPT token renewal
+owners, and scoped cleanup. Live ChatGPT token renewal
 remains a separate phase 3 follow-up.
 
 ## Adding a provider
@@ -285,9 +351,14 @@ apps/
     src/
       main.ts             Bun process entry point and Effect runtime
       cli.ts              Command routing and terminal output
+      chat.ts             Chat commands, streaming output, session inspection
       runtime.ts          Generic selection and host configuration layers
       providers.ts        Provider registrations; first entry is the default
 packages/
+  agent/                  @poppet/agent
+    src/service.ts        Persisted chat runner, deadlines, run finalization
+    src/context.ts        Complete-exchange context assembly and limits
+    src/settings.ts       Validated chat budgets
   config/                 @poppet/config
     src/config.ts         Validated settings and AppConfig service/layer
   credentials/            @poppet/credentials

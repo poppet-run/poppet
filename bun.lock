@@ -17,6 +17,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@effect/platform-bun": "4.0.4",
+        "@poppet/agent": "workspace:*",
         "@poppet/config": "workspace:*",
         "@poppet/credentials": "workspace:*",
         "@poppet/provider": "workspace:*",
@@ -25,6 +26,18 @@
         "@poppet/provider-openrouter": "workspace:*",
         "@poppet/store": "workspace:*",
         "effect": "4.0.4",
+      },
+    },
+    "packages/agent": {
+      "name": "@poppet/agent",
+      "version": "0.0.0",
+      "dependencies": {
+        "@poppet/provider": "workspace:*",
+        "@poppet/store": "workspace:*",
+        "effect": "4.0.4",
+      },
+      "devDependencies": {
+        "@poppet/config": "workspace:*",
       },
     },
     "packages/config": {
@@ -184,6 +197,8 @@
     "@oxlint/binding-win32-x64-msvc": ["@oxlint/binding-win32-x64-msvc@1.88.0", "", { "os": "win32", "cpu": "x64" }, "sha512-3Sz6rVWe8Dy+ufsXurFN1GX2dX43F/lQMSLelK9gFjiba7nHvLlqlhR5cHlWVnCpSqUY1hN9pyCX9XToe6ve6g=="],
 
     "@oxlint/plugins": ["@oxlint/plugins@1.88.0", "", {}, "sha512-G2xbfWTrbqYRhR/vfeKNMQf/sS3/ti0iKJAAkRxHuXWZH/hne/dyIb9QKk5LuR6cJLARxsL6FMoAYmfspd74MQ=="],
+
+    "@poppet/agent": ["@poppet/agent@workspace:packages/agent"],
 
     "@poppet/cli": ["@poppet/cli@workspace:apps/cli"],
 

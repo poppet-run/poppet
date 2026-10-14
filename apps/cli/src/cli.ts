@@ -1,3 +1,4 @@
+import type { AgentError } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import {
   CredentialInput,
@@ -13,6 +14,14 @@ import { Console, Data, Effect, type Config } from "effect";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
 import { parseAuthCommand, type AuthCommand } from "#src/auth-command";
+import {
+  inspectChat,
+  parseChatCommand,
+  prepareChat,
+  sendChat,
+  writeChatText,
+  type ChatWriter,
+} from "#src/chat";
 import { providers } from "#src/providers";
 import { findProvider, runtimeLayers } from "#src/runtime";
 
@@ -27,6 +36,10 @@ Usage: bun run start [command]
 Commands:
   config    Show validated configuration
   store status             Open/migrate the conversation store and show counts
+  chat new [--coding] <message>  Start a session with the configured provider/model
+  chat send <session> <message> Continue a saved session
+  chat sessions            List sessions
+  chat show <session>      Show messages and run outcomes
   auth login [provider] [--consent | --key-stdin]  Sign in or save an API key
   auth status [provider]   Show connection status without secrets
   auth models [provider]   List available models
@@ -40,13 +53,16 @@ ${registered.map((entry) => `${entry.name}: ${entry.authentication.help}`).join(
   provider verify          Verify the configured provider/model with a local tool
   --help    Show this help
 
-Chat, memory, and scheduled tasks are planned next.`;
+Notes tools, memory, and scheduled tasks are planned next.`;
 
 const showConfig = Effect.gen(function* () {
   yield* Console.log(JSON.stringify(yield* AppConfig, null, 2));
 });
 
-export const makeCLI = (registered: ReadonlyArray<ProviderRegistration>) => {
+export const makeCLI = (
+  registered: ReadonlyArray<ProviderRegistration>,
+  write: ChatWriter = writeChatText,
+) => {
   const runtime = runtimeLayers(registered);
 
   const runAuth = (command: AuthCommand) =>
@@ -99,7 +115,10 @@ export const makeCLI = (registered: ReadonlyArray<ProviderRegistration>) => {
 
   return (
     args: ReadonlyArray<string>,
-  ): Effect.Effect<void, Config.ConfigError | ProviderError | StoreError | UsageError> => {
+  ): Effect.Effect<
+    void,
+    Config.ConfigError | ProviderError | StoreError | UsageError | AgentError
+  > => {
     // Help works before configuration or credential storage is opened.
     if (args.length === 0 || (args.length === 1 && (args[0] === "--help" || args[0] === "-h")))
       return Console.log(help(registered));
@@ -132,6 +151,22 @@ export const makeCLI = (registered: ReadonlyArray<ProviderRegistration>) => {
       const command = parseAuthCommand(args.slice(1));
 
       if (command !== null) return runAuth(command).pipe(Effect.provide(runtime.config));
+    }
+
+    if (args[0] === "chat") {
+      const command = parseChatCommand(args.slice(1));
+
+      if (command !== null) {
+        if (command.action === "show" || command.action === "sessions")
+          return inspectChat(command).pipe(Effect.provide(runtime.store));
+        const selected = command;
+
+        return Effect.gen(function* () {
+          const submission = yield* prepareChat(selected);
+
+          return yield* sendChat(submission, write).pipe(Effect.provide(runtime.chat));
+        }).pipe(Effect.provide(runtime.config));
+      }
     }
 
     return Effect.fail(new UsageError({ message: "Unknown command. Run bun run start --help." }));

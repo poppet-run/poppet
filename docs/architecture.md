@@ -28,11 +28,12 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Workspaces
 
-The Bun monorepo has nine private workspaces:
+The Bun monorepo has ten private workspaces:
 
 | Workspace                     | Responsibility                                                              | Workspace dependencies                            |
 | ----------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
-| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config and provider layers                        |
+| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config, agent, store, provider layers             |
+| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states             | Store, provider contract                          |
 | `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                                 |
 | `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                 | Provider contract                                 |
 | `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle       | Config, provider contract                         |
@@ -44,7 +45,7 @@ The Bun monorepo has nine private workspaces:
 
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
-`packages/provider-openrouter`, `packages/provider-protocol`, `packages/credentials`, and `packages/store`.
+`packages/provider-openrouter`, `packages/provider-protocol`, `packages/credentials`, `packages/store`, and `packages/agent`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
@@ -69,7 +70,8 @@ configuration in `packages/config/src` and CLI files in `apps/cli/src`.
 Shared provider types live in `packages/provider/src`, and Go routing lives in
 `packages/provider-opencode/src`. OpenRouter discovery and composition live in
 `packages/provider-openrouter/src`. SQLite storage lives in `packages/store/src`.
-Agent, tools, memory, and scheduler modules are planned.
+Persisted chat lives in `packages/agent/src`. Tools, memory, and scheduler modules
+are planned.
 
 | Module                | Responsibility                                                              | Dependencies                                      |
 | --------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -81,7 +83,9 @@ Agent, tools, memory, and scheduler modules are planned.
 | `auth/`               | Auth service with login, refresh, and pure state modules                    | Configuration, sign-in, OAuth, credential storage |
 | `model/`              | Model service with SDK adapter, stream collector, and verification protocol | Authentication, OpenAI client                     |
 | `store/`              | Scoped SQLite ownership, migrations, sessions, messages, and runs           | Configuration, shared provider schemas            |
-| `agent.ts`            | Bounded conversation context and sequential tool loop                       | Model, store, memory, tools                       |
+| `agent/service.ts`    | Persisted chat, deadlines, cancellation, completion validation              | Model resolver, store, chat settings              |
+| `agent/context.ts`    | Complete-exchange context assembly and size limits                          | Shared message and record types                   |
+| `agent/settings.ts`   | Validated context, history, and output budgets                              | Effect Config and Schema                          |
 | `tools.ts`            | Validated tool definitions and execution policies                           | Schema, scoped filesystem access                  |
 | `memory.ts`           | Editable profile and explicitly saved facts                                 | Store, configuration                              |
 | `scheduler.ts`        | Persisted due occurrences and sequential worker                             | Store, agent, clock, occurrence calculator        |
@@ -103,15 +107,16 @@ services with local OAuth and model servers shared by the behavior suites.
 
 Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
 modules are implemented. `runtime.ts` builds only the registered provider selected
-for an auth or inference command. Its store layer opens SQLite only for store commands. The agent loop, tools, memory,
-and scheduling remain planned.
+for an auth or inference command. Its store layer opens SQLite only for store
+and chat commands. Chat is implemented; tools, memory, and scheduling remain planned.
 
 ## Provider interface
 
 The shared interface is implemented before durable conversation storage so
 its schema can preserve normalized messages and provider continuation data.
-The future agent will depend on one selected `Model` service supplied by the CLI
-runtime. `provider models` and `provider verify` exercise this boundary now.
+The agent depends on `ModelResolver`, supplied by the CLI runtime, and calls the
+resolved model through the shared contract. `provider models` and
+`provider verify` also exercise this boundary.
 
 | Workspace                     | Responsibility                                                                |
 | ----------------------------- | ----------------------------------------------------------------------------- |
@@ -162,8 +167,8 @@ interface ModelOperations {
 export class Model extends Context.Service<Model, ModelOperations>()("poppet/Model") {}
 ```
 
-`resolve` validates and binds a provider/model selection. The future agent obtains
-`Model` through Effect and calls `model.stream(request)` for each model turn.
+`resolve` validates and binds a provider/model selection. The agent resolves
+the session's saved selection and calls `model.stream(request)` for each model turn.
 Keep discovery and connection commands separate from the agent's inference
 dependency. Authentication flows remain provider-specific.
 
@@ -242,7 +247,7 @@ credentials out of transcripts and continuation data.
 Environment configuration includes `POPPET_PROVIDER` and `POPPET_MODEL`.
 Use `openai-chatgpt` for the existing subscription connection and `opencode-go`
 for OpenCode Go. Reserve `openai-api` for later API-key support.
-An explicit model is required for provider verification and future agent runs.
+An explicit model is required for provider verification and new chat sessions.
 Help, configuration, and connection commands remain usable before selection.
 Credentials stay in separate
 protected storage or provider-specific secret environment values and never
@@ -250,8 +255,8 @@ appear in printable application settings.
 
 The CLI builds only the selected provider's live dependencies. Resolve the
 selection at run start and record it with the run. Keep it fixed through every
-tool round trip. Configuration changes affect new runs, and changing providers
-initially starts a new session because continuation data may not be portable.
+tool round trip. Configuration changes affect new sessions. Resumed sessions
+retain their saved provider/model/workload because continuation data may not be portable.
 Do not silently fall back to another provider or model.
 
 ### Adapter requirements
@@ -316,13 +321,15 @@ schema and ledger. Changed history and future schema versions require an explici
 migration decision rather than silent repair.
 
 `schema.ts` defines session, message, run, and terminal-outcome records with
-Effect Schema. `service.ts` binds provider/model selection to sessions and runs,
+Effect Schema. Migration 3 adds persisted workloads, defaulting legacy records to
+`assistant`. `service.ts` binds provider/model/workload selection to sessions and runs,
 validates persisted messages and completion payloads, and checks continuation
 identity. SQLite foreign keys enforce record ownership and a partial unique
 index permits only one pending or running run.
 
 `queueRun` persists its pending run and input messages in one transaction.
-`startRun` accepts only pending work. `appendMessages` preserves exchanges inside
+`startRun` accepts only pending work. Pending work can fail or be interrupted;
+successful completion requires a running run. `appendMessages` preserves exchanges inside
 a running run. `finishRun` atomically saves a successful response and assistant
 message, or records a failure/interruption reason. Read methods retain message
 order and provider continuation. No raw SQLite handle is exported publicly.
@@ -331,6 +338,39 @@ A new owner marks unfinished runs interrupted with `process-exit`, preserving
 their inputs without replaying them. A hard crash may leave the ownership lock;
 automatic stale-lock recovery remains deferred. Credentials, facts, jobs, context
 assembly, and model execution are outside this store's record APIs.
+
+## Persisted chat
+
+`AgentLive` captures `Store`, `ModelResolver`, and validated `ChatSettings`.
+Its `send` stream first saves the input and starts a run, then resolves the
+session's provider/model. The CLI supplies a resolver that builds only that
+registration inside the stream scope. Provider resources, including credential
+locks, remain alive through the request and close on completion or interruption.
+Listing sessions and inspecting history require only the store layer.
+
+Context uses completed runs and excludes failed/interrupted inputs. Imported
+exchanges with no run are validated as complete message sequences. History is
+trimmed at exchange boundaries, preserving tool request/result pairs and opaque
+continuation together. The newest input must fit by itself or the run fails with
+`context-limit`. Settings bound context bytes, history turns, and requested output
+tokens. Advertised model capacity further limits input and output. The UTF-8 size
+estimate is not an exact tokenizer, and trimming never changes stored history.
+
+The runner requests no tools in this phase. Tool calls fail without execution.
+Text deltas stream immediately; terminal-only text or an unstreamed final suffix
+is emitted before committing the answer. The source must end cleanly after one
+validated completion matching the session identity. Malformed, missing, duplicate,
+or trailing events fail. Text is capped at 128 KiB and serialized completion at
+1 MiB. A 90-second absolute deadline includes provider resolution and streaming;
+provider adapters retain their own 60-second inference deadlines.
+
+Run finalizers record provider/agent/store failure categories or interruption.
+Only completed inference becomes a saved assistant message, atomically with its
+result. Stopping consumption or cancelling a request saves no partial answer.
+Failed inputs remain visible in `chat show` but are not retried implicitly.
+Inspection omits provider continuation while retaining normalized output, usage,
+and run failure reasons. Profile/facts and tools receive separate content budgets
+when those capabilities are implemented.
 
 ## Current authentication flow
 

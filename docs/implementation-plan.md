@@ -1,8 +1,8 @@
 # Poppet implementation plan
 
-Status: Durable conversation storage implemented and locally tested; persisted chat next
+Status: Persisted chat implemented and locally tested; tools and notes next
 
-Updated: 2026-10-13
+Updated: 2026-10-14
 
 One user, one active ChatGPT account, a configured provider/model, a local
 TypeScript application, SQLite, explicit memory, and locally scheduled tasks.
@@ -220,6 +220,34 @@ streams remain distinguishable from completed answers.
 Completion check: chat across several turns, restart, and continue the session.
 Invalid authentication, plan limits, excessive context, interrupted requests, and
 temporary failures leave inspectable run states.
+
+Implemented `@poppet/agent` and `chat new [--coding] <message>`,
+`chat send <session> <message>`, `chat sessions`, and `chat show <session>`.
+Each invocation sends one message; an interactive prompt is deferred. Sessions
+pin provider, model, and workload. Migration 3 persists workload with an
+`assistant` default for existing sessions/runs. The host resolves providers
+inside the request scope so credential ownership survives through streaming.
+
+The runner saves input before provider resolution, enforces one active run,
+streams text, and commits an answer only after exactly one completed response
+and clean stream termination. Provider errors, invalid completion sequences,
+oversized context/output, cancellation, early consumption, and a 90-second
+absolute deadline leave inspectable terminal runs. Partial answers are not
+committed; failed inputs remain inspectable but are excluded from later context.
+No automatic retries or provider/model fallbacks are enabled.
+
+Context preserves complete exchanges and opaque continuation. Limits cover
+recent exchanges, serialized UTF-8 bytes, requested output tokens when supported,
+and model capacity when advertised. This is an estimate rather than an exact
+tokenizer. Trimming does not delete stored history. Chat sends no tools and
+rejects tool calls without execution. Tool content limits arrive with phase 5;
+separate profile/fact budgets arrive with phase 6.
+
+Tests cover restart/resume with continuation, changed environment settings,
+provider resource lifetime, provider failures, context trimming, malformed
+streams, deadlines, cancellation, CLI inspection, and schema upgrades. Live chat
+against an account remains a manual completion check; local tests do not claim
+fresh subscription or API-key access.
 
 ## Phase 5: Tools and notes
 

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.4",
+    "@poppet/agent": "workspace:*",
     "@poppet/config": "workspace:*",
     "@poppet/credentials": "workspace:*",
     "@poppet/provider": "workspace:*",
