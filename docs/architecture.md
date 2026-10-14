@@ -28,13 +28,14 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Workspaces
 
-The Bun monorepo has seven private workspaces:
+The Bun monorepo has eight private workspaces:
 
 | Workspace                     | Responsibility                                                              | Workspace dependencies                                   |
 | ----------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------- |
 | `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config and provider layers                               |
 | `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                                        |
 | `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                 | Config, provider contract                                |
+| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle       | Config, provider contract                                |
 | `@poppet/provider`            | Normalized messages, stream events, continuation, provider/model services   | None                                                     |
 | `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, credentials, OpenAI protocol adapters |
 | `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration            | Provider contract, credentials, OpenAI protocol adapters |
@@ -42,7 +43,7 @@ The Bun monorepo has seven private workspaces:
 
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
-`packages/provider-openrouter`, and `packages/credentials`.
+`packages/provider-openrouter`, `packages/credentials`, and `packages/store`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
@@ -65,8 +66,8 @@ The implemented modules below live under `packages/provider-openai/src`, except
 configuration in `packages/config/src` and CLI files in `apps/cli/src`.
 Shared provider types live in `packages/provider/src`, and Go routing lives in
 `packages/provider-opencode/src`. OpenRouter discovery and composition live in
-`packages/provider-openrouter/src`. Storage,
-agent, tools, memory, and scheduler modules are planned.
+`packages/provider-openrouter/src`. SQLite storage lives in `packages/store/src`.
+Agent, tools, memory, and scheduler modules are planned.
 
 | Module                | Responsibility                                                              | Dependencies                                      |
 | --------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -77,7 +78,7 @@ agent, tools, memory, and scheduler modules are planned.
 | `sign-in/`            | Sign-in service with one-use callback and browser modules                   | Scoped Bun listener and subprocess                |
 | `auth/`               | Auth service with login, refresh, and pure state modules                    | Configuration, sign-in, OAuth, credential storage |
 | `model/`              | Model service with SDK adapter, stream collector, and verification protocol | Authentication, OpenAI client                     |
-| `store.ts`            | SQLite migrations, sessions, messages, runs, facts, jobs                    | Configuration, scoped Bun SQLite connection       |
+| `store/`              | Scoped SQLite ownership, migrations, sessions, messages, and runs           | Configuration, shared provider schemas            |
 | `agent.ts`            | Bounded conversation context and sequential tool loop                       | Model, store, memory, tools                       |
 | `tools.ts`            | Validated tool definitions and execution policies                           | Schema, scoped filesystem access                  |
 | `memory.ts`           | Editable profile and explicitly saved facts                                 | Store, configuration                              |
@@ -100,8 +101,9 @@ services with local OAuth and model servers shared by the behavior suites.
 
 Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
 modules are implemented. `runtime.ts` composes the ChatGPT layers for
-auth commands and only the selected provider for general provider commands. SQLite storage, the agent loop, tools, memory, and scheduling are
-planned.
+auth commands and only the selected provider for general provider commands.
+The SQLite store is implemented; CLI store commands, the agent loop, tools, memory,
+and scheduling remain planned.
 
 ## Provider interface
 
@@ -254,6 +256,41 @@ inference deadline. Consumer termination aborts the request before awaiting the
 iterator's cleanup, so a pending network read cannot block cancellation. SDK
 retries are disabled. Shared adapter tests use injected HTTP responses and a test
 clock; phase 1 live evidence and future live Go checks are separate.
+
+## Conversation store
+
+`@poppet/store` exposes a scoped `Store` service through `StoreLive`. Applications
+provide `AppConfig` when building the layer. Opening the store migrates its schema
+without opening authentication services.
+
+`database.ts` protects `<data directory>/store`, acquires the process ownership
+lock, and opens Bun SQLite with strict bindings, foreign keys, WAL, and full
+synchronous commits. Scope finalizers close SQLite before releasing ownership.
+Database files and WAL sidecars use owner-only permissions.
+
+`migrations.ts` owns append-only numbered SQL migrations and a ledger containing
+names, checksums, and application times. It checks the application ID and schema
+version, validates all applied ledger entries, and applies every pending step
+inside one immediate transaction. A failed migration preserves the previous
+schema and ledger. Changed history and future schema versions require an explicit
+migration decision rather than silent repair.
+
+`schema.ts` defines session, message, run, and terminal-outcome records with
+Effect Schema. `service.ts` binds provider/model selection to sessions and runs,
+validates persisted messages and completion payloads, and checks continuation
+identity. SQLite foreign keys enforce record ownership and a partial unique
+index permits only one pending or running run.
+
+`queueRun` persists its pending run and input messages in one transaction.
+`startRun` accepts only pending work. `appendMessages` preserves exchanges inside
+a running run. `finishRun` atomically saves a successful response and assistant
+message, or records a failure/interruption reason. Read methods retain message
+order and provider continuation. No raw SQLite handle is exported publicly.
+
+A new owner marks unfinished runs interrupted with `process-exit`, preserving
+their inputs without replaying them. A hard crash may leave the ownership lock;
+automatic stale-lock recovery remains deferred. Credentials, facts, jobs, context
+assembly, and model execution are outside this store's record APIs.
 
 ## Current authentication flow
 

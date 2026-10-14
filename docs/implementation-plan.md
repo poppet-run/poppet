@@ -1,6 +1,6 @@
 # Poppet implementation plan
 
-Status: Provider interface implemented and locally tested; durable storage next
+Status: Durable conversation storage implemented and locally tested; persisted chat next
 
 Updated: 2026-10-13
 
@@ -157,11 +157,34 @@ are already implemented alongside phase 1. Authentication currently stores one
 account. A process crash can leave a lock requiring manual removal after checking
 that no auth command is running; automatic stale-lock recovery is deferred.
 
-Build a scoped `Store` layer using Bun SQLite. Add migrations for `sessions`,
-`messages`, and `runs`. Persist the shared normalized messages, versioned provider
-continuation data, each run's provider/model selection, status, timestamps,
-results, and failure reasons. Record pending work before execution. Add a
-single-owner lock before multiple processes can access credentials or execute work.
+Implemented `@poppet/store` with a scoped Bun SQLite connection under
+`<data directory>/store/poppet.sqlite`. Its process ownership lock is acquired
+before opening or migrating the database and released after the connection
+closes. Database files and WAL sidecars have owner-only permissions. Store
+operations do not build authentication or model layers.
+
+Numbered migrations create `sessions`, `messages`, `runs`, and indexes. An
+application ID, schema version, and checksummed ledger reject unrelated
+databases, newer versions, and changed history. All pending migrations and their
+ledger entries commit together or roll back together.
+
+Sessions and runs retain provider/model selection. Messages persist the shared
+normalized history, tool calls/results, and versioned continuation. Input batches
+and pending runs are saved atomically before execution. The service validates
+transitions and allows one pending or running run. Successful completion saves
+its assistant message and result atomically; failures and interruptions retain
+separate reasons. Reopening marks abandoned work interrupted without replay.
+
+The store service opens/migrates the database and reports schema and record
+counts without a login or selected model. CLI store commands are next. Tests cover reopening and
+upgrades, migration and record-write rollback, complete tool exchanges across all
+providers, continuation identity, invalid records, competing owners, and
+interruption cleanup. Facts and jobs remain for their later phases. The chat
+runner remains phase 4 work.
+
+Live ChatGPT token renewal remains a follow-up; the storage implementation does
+not establish that live check. Automatic recovery of crash-left ownership locks
+remains deferred.
 
 Completion check: reconnecting reuses registration, refresh survives restart,
 unusable credentials request reconnect, and stored records migrate and reopen

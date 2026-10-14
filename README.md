@@ -5,8 +5,8 @@ A small personal AI agent for local use, built with TypeScript, Bun, and Effect.
 The project has a CLI, validated configuration, ChatGPT sign-in, and a shared
 streaming model interface. OpenCode Go supports a small set of coding models.
 OpenRouter supports concrete text models from its public catalog.
-Conversation storage, notes tools, memory, and scheduled tasks
-follow in the [implementation plan](docs/implementation-plan.md).
+SQLite stores sessions, messages, and runs. Chat commands, notes tools, memory,
+and scheduled tasks follow in the [implementation plan](docs/implementation-plan.md).
 
 ## Development
 
@@ -21,7 +21,7 @@ bun run check
 
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
-`@poppet/provider-openrouter`, and `@poppet/credentials`.
+`@poppet/provider-openrouter`, `@poppet/credentials`, and `@poppet/store`.
 Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
 
@@ -48,7 +48,7 @@ excluded from linting and formatting.
 | Variable           | Default                  | Purpose                                                     |
 | ------------------ | ------------------------ | ----------------------------------------------------------- |
 | `POPPET_APP_NAME`  | `Poppet`                 | Application name used for initial ChatGPT registration      |
-| `POPPET_DATA_DIR`  | `~/.config/poppet`       | Credential storage and future database                      |
+| `POPPET_DATA_DIR`  | `~/.config/poppet`       | Credential and conversation storage                         |
 | `POPPET_NOTES_DIR` | `<data directory>/notes` | Future notes tools' permitted directory                     |
 | `POPPET_PROVIDER`  | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`            |
 | `POPPET_MODEL`     | Unset                    | Explicit model ID for provider verification and future runs |
@@ -211,6 +211,35 @@ deadlines, error classification, and provider selection. These tests do not prov
 live account access. The earlier phase 1 live ChatGPT check remains separate
 evidence; Go and OpenRouter inference have not been verified against live accounts.
 
+## Conversation storage
+
+`@poppet/store` provides a scoped Effect `Store` service backed by
+[Bun SQLite](https://bun.sh/docs/runtime/sqlite). The initial migrations create
+sessions, messages, runs, and history indexes. A checksummed migration ledger
+rejects newer schemas and changed migration history. All pending migrations
+commit together; a failure rolls back the pending batch.
+
+Sessions retain their selected provider and model. Messages preserve order, tool
+call IDs, tool results, and versioned provider continuation. Runs persist pending
+inputs before execution, then transition through running to completed, failed,
+or interrupted. Successful completion writes its assistant message and result
+in one transaction. The store validates continuation identity on write and read.
+It permits one pending or running run across all sessions.
+
+The store directory uses `0700` permissions; the database and WAL sidecars use
+`0600`. Credentials stay in the separate `auth` directory. The store holds an
+exclusive `store/owner.lock` until its SQLite connection closes, including on
+interruption and initialization failure. A crash can leave this lock behind.
+Remove it only after confirming no Poppet process owns the database; automatic
+stale-lock recovery is deferred. On reopening, unfinished runs become interrupted
+with a `process-exit` reason. Poppet does not automatically replay them.
+
+Tests cover persistent tool exchanges for all providers, upgrades and migration
+rollback, transaction rollback, invalid records, run transitions, competing
+owners, and scoped cleanup. The storage API is ready for the phase 4 chat runner;
+CLI store and conversation commands are not implemented yet. Live ChatGPT token renewal
+remains a separate phase 3 follow-up.
+
 ## Source layout
 
 ```text
@@ -225,6 +254,11 @@ packages/
     src/config.ts         Validated settings and AppConfig service/layer
   credentials/            @poppet/credentials
     src/api-keys.ts       Protected API-key storage and environment overrides
+  store/                  @poppet/store
+    src/database.ts       Scoped SQLite connection, ownership, and permissions
+    src/migrations.ts     Versioned schema and transactional migration ledger
+    src/schema.ts         Durable session, message, and run schemas
+    src/service.ts        Validated record operations and run lifecycle
   provider/               @poppet/provider
     src/schema.ts         Normalized messages, tools, events, and continuation
     src/service.ts        Provider and selected Model services, typed errors
@@ -259,8 +293,8 @@ linting, CI, and the lockfile remain at the root.
 Auth tests use a local OAuth server with signed test identities and fake model
 streams. Tests sit beside each capability. Provider suites share fixtures under
 `packages/provider-openai/src/test/fixtures`.
-They do not access a ChatGPT account. Modules for conversation storage,
-tools, memory, and scheduling will be added as their milestones start. See the
+They do not access a ChatGPT account. Storage tests use temporary SQLite databases.
+Modules for the agent, tools, memory, and scheduling will be added as their milestones start. See the
 [architecture notes](docs/architecture.md) for the service boundaries.
 
 ## Licence
