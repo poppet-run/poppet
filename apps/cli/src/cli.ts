@@ -1,6 +1,7 @@
 import type { AgentError } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import type { MemoryError } from "@poppet/memory";
+import { WorkerError } from "@poppet/platform";
 import {
   CredentialInput,
   Model,
@@ -13,10 +14,12 @@ import {
 import { Store, type StoreError } from "@poppet/store";
 import {
   runTaskWorker,
+  WorkerConnections,
   remoteTaskCommand,
   taskSocketPath,
   executeLocalTaskCommand,
   type TaskError,
+  readLocalTaskStatus,
 } from "@poppet/tasks";
 import { Console, Data, Effect, Layer, type Config } from "effect";
 
@@ -34,6 +37,7 @@ import { manageMemory, parseMemoryCommand } from "#src/memory";
 import { providers } from "#src/providers";
 import { findProvider, runtimeLayers } from "#src/runtime";
 import { parseTaskCommand } from "#src/tasks";
+import { manageWorker, parseWorkerCommand } from "#src/worker";
 
 class UsageError extends Data.TaggedError("UsageError")<{
   readonly message: string;
@@ -67,6 +71,12 @@ Commands:
   tasks resume-provider <provider> Allow scheduled requests again
   tasks status             Show task counts, recent outcomes, and worker status
   tasks work               Run the foreground task worker
+  worker install           Install and start the macOS login worker
+  worker start             Start an installed worker
+  worker stop              Stop it until the next login or explicit start
+  worker status            Show launch agent, scheduling, and connection status
+  worker logs              Print the last 64 KiB of worker logs
+  worker uninstall         Stop and remove login startup; retain saved data
   auth login [provider] [--consent | --key-stdin]  Sign in or save an API key
   auth status [provider]   Show connection status without secrets
   auth models [provider]   List available models
@@ -154,6 +164,7 @@ export const makeCLI = (
     | UsageError
     | AgentError
     | TaskError
+    | WorkerError
   > => {
     // Help works before configuration or credential storage is opened.
     if (args.length === 0 || (args.length === 1 && (args[0] === "--help" || args[0] === "-h")))
@@ -194,6 +205,52 @@ export const makeCLI = (
       return parseMemoryCommand(args.slice(1)).pipe(
         Effect.flatMap((command) => manageMemory(command).pipe(Effect.provide(runtime.memory))),
       );
+    }
+
+    if (args[0] === "worker") {
+      return Effect.gen(function* () {
+        const action = yield* parseWorkerCommand(args.slice(1));
+
+        const config = yield* AppConfig;
+        const managed = yield* manageWorker(action, config);
+
+        if (action !== "status") return yield* Console.log(managed);
+
+        const reply = yield* remoteTaskCommand(taskSocketPath(config.dataDirectory), {
+          action: "status",
+        });
+
+        if (reply !== null)
+          return yield* Console.log(
+            JSON.stringify({ launchAgent: managed, worker: reply.value }, null, 2),
+          );
+
+        const overview = yield* readLocalTaskStatus.pipe(Effect.provide(runtime.tasks));
+
+        const ids = [...new Set([config.provider, ...overview.providers])];
+
+        const connections = yield* WorkerConnections.use((service) =>
+          Effect.forEach(ids, (id) => service.status(id)),
+        ).pipe(Effect.provide(runtime.connections));
+
+        yield* Console.log(
+          JSON.stringify(
+            {
+              launchAgent: managed,
+              worker: {
+                ...overview,
+                running: false,
+                pid: null,
+                startedAt: null,
+                activeOccurrence: null,
+                connections,
+              },
+            },
+            null,
+            2,
+          ),
+        );
+      }).pipe(Effect.provide(runtime.config));
     }
 
     if (args[0] === "tasks") {

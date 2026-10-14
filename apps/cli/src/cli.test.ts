@@ -53,6 +53,39 @@ describe("CLI", () => {
     }
   });
 
+  test.skipIf(process.platform !== "darwin")(
+    "stopped worker status includes providers assigned to saved tasks",
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), "poppet-worker-providers-"));
+
+      try {
+        const added = await invoke(
+          ["tasks", "add", "Router task", "--at", "2099-10-14T09:00:00Z", "Summarize notes"],
+          {
+            POPPET_DATA_DIR: directory,
+            POPPET_PROVIDER: "openrouter",
+            POPPET_MODEL: "saved-model",
+          },
+        );
+
+        expect(added.exitCode).toBe(0);
+        const result = await invoke(["worker", "status"], { POPPET_DATA_DIR: directory });
+        expect(result.exitCode).toBe(0);
+        expect(JSON.parse(result.stdout).worker).toMatchObject({
+          running: false,
+          taskCount: 1,
+          providers: ["openrouter"],
+          connections: [
+            { provider: "openai-chatgpt", connected: false },
+            { provider: "openrouter", connected: false, action: "Run auth login openrouter." },
+          ],
+        });
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
   test("recovers local task commands after a worker crashes without deleting its owner lock", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-crash-"));
 

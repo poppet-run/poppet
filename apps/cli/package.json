@@ -19,6 +19,8 @@
     "@poppet/config": "workspace:*",
     "@poppet/credentials": "workspace:*",
     "@poppet/memory": "workspace:*",
+    "@poppet/platform": "workspace:*",
+    "@poppet/platform-macos": "workspace:*",
     "@poppet/provider": "workspace:*",
     "@poppet/provider-openai": "workspace:*",
     "@poppet/provider-opencode": "workspace:*",

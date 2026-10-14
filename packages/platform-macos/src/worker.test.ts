@@ -1,0 +1,194 @@
+import { expect, test } from "bun:test";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { Effect, Fiber } from "effect";
+
+import { manageWorker, workerPaths } from "#src/worker";
+
+test("installs, starts, stops, and removes a login worker with the supplied launch description and protected files", async () => {
+  const home = await mkdtemp(join(tmpdir(), "poppet-launchd-"));
+
+  const launch = {
+    dataDirectory: join(home, "data & notes"),
+    executable: process.execPath,
+    arguments: ["/custom path/entry.ts", "tasks", "work"],
+    workingDirectory: home,
+    environment: new Map([["POPPET_APP_NAME", "Poppet & Acorn"]]),
+  };
+
+  const paths = workerPaths(launch, home);
+  const calls: ReadonlyArray<string>[] = [];
+  let loaded = false;
+
+  const launchctl = async (args: ReadonlyArray<string>) => {
+    calls.push(args);
+
+    if (args[0] === "print") return loaded ? 0 : 113;
+
+    if (args[0] === "bootstrap" || args[0] === "kickstart") loaded = true;
+
+    if (args[0] === "bootout") loaded = false;
+
+    return 0;
+  };
+
+  try {
+    await Effect.runPromise(manageWorker("install", launch, home, launchctl));
+    const plist = await readFile(paths.plist, "utf8");
+    expect(plist).toContain("Poppet &amp; Acorn");
+    expect(plist).toContain("<key>KeepAlive</key><true/>");
+    expect(plist).toContain("<string>tasks</string><string>work</string>");
+    expect(plist).toContain("<string>/custom path/entry.ts</string>");
+    expect((await stat(paths.plist)).mode & 0o777).toBe(0o600);
+    expect((await stat(paths.logs)).mode & 0o777).toBe(0o700);
+    expect((await stat(paths.log)).mode & 0o777).toBe(0o600);
+    await expect(
+      Effect.runPromise(manageWorker("install", launch, home, launchctl)),
+    ).rejects.toMatchObject({ message: expect.stringContaining("already installed") });
+    await Effect.runPromise(manageWorker("stop", launch, home, launchctl));
+    expect(await Effect.runPromise(manageWorker("status", launch, home, launchctl))).toMatchObject({
+      installed: true,
+      loaded: false,
+    });
+    await Effect.runPromise(manageWorker("start", launch, home, launchctl));
+    await Effect.runPromise(manageWorker("start", launch, home, launchctl));
+    expect(calls).toContainEqual(["kickstart", `gui/${process.getuid?.()}/${paths.label}`]);
+    expect(calls.flat()).not.toContain("-k");
+    await writeFile(paths.log, "completed\nfailed reason=provider:quota\n");
+    expect(await Effect.runPromise(manageWorker("logs", launch, home, launchctl))).toContain(
+      "failed reason=provider:quota",
+    );
+    await Effect.runPromise(manageWorker("uninstall", launch, home, launchctl));
+    expect(await Bun.file(paths.plist).exists()).toBe(false);
+    expect(await Bun.file(paths.log).exists()).toBe(true);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("reports launch failure without discarding the installed configuration", async () => {
+  const home = await mkdtemp(join(tmpdir(), "poppet-launchd-error-"));
+
+  const launch = {
+    dataDirectory: join(home, "data"),
+    executable: process.execPath,
+    arguments: ["/custom path/entry.ts", "tasks", "work"],
+    workingDirectory: home,
+    environment: new Map<string, string>(),
+  };
+
+  try {
+    await expect(
+      Effect.runPromise(manageWorker("install", launch, home, async () => 113)),
+    ).rejects.toMatchObject({ message: expect.stringContaining("bootstrap failed") });
+    expect(await Bun.file(workerPaths(launch, home).plist).exists()).toBe(true);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("inspection errors preserve the installed worker and never report successful removal", async () => {
+  const home = await mkdtemp(join(tmpdir(), "poppet-launchd-inspection-"));
+
+  const launch = {
+    dataDirectory: join(home, "data"),
+    executable: process.execPath,
+    arguments: ["/custom/entry.ts"],
+    workingDirectory: home,
+    environment: new Map<string, string>(),
+  };
+
+  const paths = workerPaths(launch, home);
+  let loaded = false;
+
+  const successful = async (args: ReadonlyArray<string>) => {
+    if (args[0] === "print") return loaded ? 0 : 113;
+
+    if (args[0] === "bootstrap") loaded = true;
+
+    return 0;
+  };
+
+  try {
+    await Effect.runPromise(manageWorker("install", launch, home, successful));
+    const original = await readFile(paths.plist, "utf8");
+    const calls: ReadonlyArray<string>[] = [];
+
+    const failed = async (args: ReadonlyArray<string>) => {
+      calls.push(args);
+
+      return 1;
+    };
+
+    await Promise.all(
+      (["status", "stop", "uninstall"] as const).map(async (action) => {
+        await expect(
+          Effect.runPromise(manageWorker(action, launch, home, failed)),
+        ).rejects.toMatchObject({ message: expect.stringContaining("print failed (exit 1)") });
+        expect(await readFile(paths.plist, "utf8")).toBe(original);
+      }),
+    );
+
+    expect(calls.every((args) => args[0] === "print")).toBe(true);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("interruption waits for installation to finish instead of leaving mutations running", async () => {
+  const home = await mkdtemp(join(tmpdir(), "poppet-launchd-interrupt-"));
+
+  const launch = {
+    dataDirectory: join(home, "data"),
+    executable: process.execPath,
+    arguments: ["/custom/entry.ts"],
+    workingDirectory: home,
+    environment: new Map<string, string>(),
+  };
+
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const calls: ReadonlyArray<string>[] = [];
+
+  const launchctl = async (args: ReadonlyArray<string>) => {
+    calls.push(args);
+
+    if (args[0] === "print") {
+      entered.resolve();
+      await release.promise;
+
+      return 113;
+    }
+
+    return 0;
+  };
+
+  const owner = Effect.runFork(manageWorker("install", launch, home, launchctl));
+  let interrupted = false;
+  let stopped: Promise<boolean> | null = null;
+
+  try {
+    await entered.promise;
+    stopped = Effect.runPromise(Fiber.interrupt(owner)).then(() => {
+      interrupted = true;
+
+      return true;
+    });
+    await Bun.sleep(10);
+    expect(interrupted).toBe(false);
+    expect(await Bun.file(workerPaths(launch, home).plist).exists()).toBe(false);
+    release.resolve();
+    await stopped;
+    expect(interrupted).toBe(true);
+    expect(calls.map((args) => args[0])).toEqual(["print", "bootstrap"]);
+    expect(await Bun.file(workerPaths(launch, home).plist).exists()).toBe(true);
+  } finally {
+    release.resolve();
+
+    if (stopped !== null) await stopped;
+    await Effect.runPromise(Fiber.interrupt(owner));
+    await rm(home, { recursive: true, force: true });
+  }
+});

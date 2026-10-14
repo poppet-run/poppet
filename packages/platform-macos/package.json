@@ -1,0 +1,21 @@
+{
+  "name": "@poppet/platform-macos",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@poppet/platform": "workspace:*",
+    "effect": "4.0.4"
+  }
+}

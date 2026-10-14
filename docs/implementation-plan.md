@@ -1,6 +1,6 @@
 # Poppet implementation plan
 
-Status: Tools, notes, and explicit memory implemented and locally tested; scheduling next
+Status: Phases 1–8 implemented with automated checks; macOS login startup, physical sleep/wake, and live unattended inference require manual validation
 
 Updated: 2026-10-14
 
@@ -162,8 +162,9 @@ Status reads do not recreate deleted details; the next login starts a fresh regi
 
 The credential storage, refresh, auth commands, and exclusive auth-command lock
 are already implemented alongside phase 1. Authentication currently stores one
-account. A process crash can leave a lock requiring manual removal after checking
-that no auth command is running; automatic stale-lock recovery is deferred.
+account. Phase 8 adds shared crash-safe ownership and automatic recovery for known
+dead processes. Unknown legacy locks still require manual inspection after
+confirming that no old auth command is running.
 
 Implemented `@poppet/store` with a scoped Bun SQLite connection under
 `<data directory>/store/poppet.sqlite`. Its process ownership lock is acquired
@@ -400,6 +401,31 @@ content; enforce tool permissions in the runtime.
 
 Completion check: a daily summary runs unattended while the machine is awake,
 survives restarts, and leaves inspectable results, skipped occurrences, or failures.
+
+Implemented with macOS `worker install/start/stop/status/logs/uninstall` commands
+and the existing `@poppet/tasks` runner. Shared launch data lives in
+`@poppet/platform`; LaunchAgent control lives in `@poppet/platform-macos`.
+The CLI supplies paths and ordinary settings and selects the platform.
+The LaunchAgent saves absolute runtime
+paths and ordinary settings, starts at login, and keeps the process running with
+30-second restart throttling. API keys are excluded from its environment;
+providers use protected saved credentials. SIGTERM uses existing scoped cleanup. Lifecycle mutations finish before
+interruption returns, with bounded launchctl subprocesses. Inspection failures
+retain the installed configuration. Running and stopped status include providers
+assigned to saved tasks.
+
+`tasks status` and `worker status` expose scheduling counts, active work, recent
+outcomes, provider pauses, and safe local connection metadata with recovery
+actions. Full results remain available through `tasks show`. Logs are protected
+and bounded on read; rotation is deferred. Shared SQLite ownership locks recover
+dead processes automatically without replaying unfinished requests. Unknown
+legacy PID markers still need manual inspection. Saved record schemas and
+migration 6 remain unchanged.
+
+Automated checks cover injected launchctl lifecycle operations, protected files,
+secret exclusion, process-crash ownership recovery, SIGTERM shutdown, cached
+connection status, and scheduling after a simulated sleep/wake clock jump. Native
+launchd startup, actual sleep/wake, and a live daily summary remain manual checks.
 
 ## Validation
 

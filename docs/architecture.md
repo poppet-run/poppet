@@ -28,27 +28,30 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Workspaces
 
-The Bun monorepo has twelve private workspaces:
+The Bun monorepo has fourteen private workspaces:
 
-| Workspace                     | Responsibility                                                              | Workspace dependencies                               |
-| ----------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config, agent, memory, tasks, store, provider layers |
-| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states             | Config, memory, store, provider contract             |
-| `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                                    |
-| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                 | Provider contract                                    |
-| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle       | Config, provider contract                            |
-| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots            | Config and store for the local implementation        |
-| `@poppet/tasks`               | Scheduling, task persistence, recovery, worker, and local commands          | Config, agent, store, provider contract              |
-| `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts   | None                                                 |
-| `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming         | Provider contract                                    |
-| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, credentials, protocol adapters    |
-| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration            | Provider contract, credentials, protocol adapters    |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Provider contract, protocol adapters                 |
+| Workspace                     | Responsibility                                                              | Workspace dependencies                                         |
+| ----------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config, agent, memory, tasks, store, platform, provider layers |
+| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states             | Config, memory, store, provider contract                       |
+| `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                                              |
+| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                 | Provider contract                                              |
+| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle       | Config, credentials, provider contract                         |
+| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots            | Config and store for the local implementation                  |
+| `@poppet/platform`            | Worker actions, errors, and a host-supplied launch description              | None                                                           |
+| `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                | Platform contract                                              |
+| `@poppet/tasks`               | Scheduling, task persistence, recovery, worker, and local commands          | Config, agent, store, provider contract                        |
+| `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts   | None                                                           |
+| `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming         | Provider contract                                              |
+| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, credentials, protocol adapters              |
+| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration            | Provider contract, credentials, protocol adapters              |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Provider contract, protocol adapters                           |
 
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
 `packages/provider-openrouter`, `packages/provider-protocol`, `packages/credentials`,
-`packages/store`, `packages/agent`, `packages/memory`, and `packages/tasks`.
+`packages/store`, `packages/agent`, `packages/memory`, `packages/tasks`,
+`packages/platform`, and `packages/platform-macos`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
@@ -347,7 +350,7 @@ order and provider continuation. No raw SQLite handle is exported publicly.
 
 A new owner marks unfinished runs interrupted with `process-exit`, preserving
 their inputs without replaying them. A hard crash may leave the ownership lock;
-automatic stale-lock recovery remains deferred. Credentials, facts, jobs, context
+dead-process ownership recovery uses the shared scoped lock helper. Credentials, facts, jobs, context
 assembly, and model execution are outside this store's record APIs.
 
 ## Persisted chat
@@ -455,7 +458,7 @@ without changing the agent or command handlers. No memory-provider registry is n
 
 ## Current authentication flow
 
-`CredentialStoreLive` owns the filesystem lock for an auth command's scope.
+`CredentialStoreLive` owns the shared storage lock for an auth command's scope.
 `BrowserSignIn` owns an ephemeral listener at `127.0.0.1` and releases it on
 success, failure, timeout, or interruption. Shutdown drains the current response
 so the browser receives the callback page. The callback consumes one attempt
@@ -466,7 +469,7 @@ origin, exchanges codes, and verifies RS256 identity tokens against JWKS. The
 issued client ID is retained before exchange so a failed code can be replaced
 without registering again. Verified identity must match the saved account before
 credentials are replaced. An Effect semaphore serializes refresh and credential
-mutations within the command; the filesystem lock excludes other commands.
+mutations within the command; the shared ownership lock excludes other commands.
 
 `ChatGPTModel` discovers visible account models and uses the OpenAI SDK with the
 OAuth bearer token. Verification streams two requests with `store: false`, carries
@@ -500,6 +503,49 @@ tools.
 Do not automatically retry a side effect whose completion is uncertain. Record
 its state and require an explicit retry. Note writes use atomic replacement;
 database updates use transactions. Exactly-once external execution is not assumed.
+
+## Unattended operation
+
+The CLI's `worker.ts` parses actions, selects the platform, and supplies absolute
+Bun and entry-point paths, a working directory, and an explicit settings
+allowlist. `@poppet/platform` defines the shared action, error, and launch data.
+`@poppet/platform-macos` owns LaunchAgent installation and control, plist
+encoding, bounded subprocesses, and log reading. It depends on the platform
+contract and Effect, and does not import task scheduling or CLI configuration.
+Only the macOS implementation is currently provided.
+
+`KeepAlive` lets launchd restart the existing `tasks work` process, with a
+30-second throttle. Removing the registration sends SIGTERM; Effect finalizers
+interrupt work and release resources. Mutating control operations finish under
+an uninterruptible region, and launchctl subprocesses are killed after 35 seconds
+if they do not finish. Only exit 113 confirms that a service is absent; other
+inspection errors preserve its registration and plist. API keys remain in
+protected provider storage and are excluded from the host's launch environment.
+See [Apple's launchd guide](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html).
+
+`@poppet/credentials/lock` shares storage ownership between conversation storage,
+ChatGPT credentials, and API-key mutations. A small lock database uses
+[SQLite exclusive locking](https://www.sqlite.org/pragma.html#pragma_locking_mode),
+which remains held across transactions and is released by the OS after a crash.
+An atomic PID marker preserves compatibility with older file-lock owners and
+permits automatic reclamation only for a known dead process. Unknown markers or
+live PIDs remain blocked. Lock databases are protected and are never removed
+while an owner might hold them. They contain no user credentials or records.
+
+The task package owns status data and recent occurrence summaries. The host
+supplies `WorkerConnections` through its registered provider layers. Status
+whitelists safe metadata and caches it before model resolution so it remains
+available while ChatGPT credentials are owned by an active run. Cached status
+includes its observation time. This reports local credentials and consent, not
+live account verification. Running and stopped status derive their provider set
+from the configured provider and saved tasks. Task results and note permissions use the existing
+store and agent behavior. No second runner or service implementation is added.
+
+Scheduling uses wall-clock UTC times and a one-second wake timer. A timer delayed
+by sleep enqueues one due occurrence and records the skipped interval; it does
+not replay every missed recurrence. Expiry, quota pauses, and explicit retry rules
+remain in the task package. Native startup and physical sleep/wake need manual
+validation in addition to injected lifecycle and clock tests.
 
 ## Dependencies
 

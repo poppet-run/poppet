@@ -8,8 +8,8 @@ OpenRouter supports concrete text models from its public catalog.
 SQLite stores sessions, messages, and runs. Chat streams answers and resumes
 saved sessions and can read, search, and save local notes. An editable profile and
 explicitly saved facts provide context across sessions. A foreground worker executes
-durable one-off and recurring tasks. Unattended startup follows in the
-[implementation plan](docs/implementation-plan.md).
+durable one-off and recurring tasks. On macOS, a LaunchAgent can keep that worker
+running after you close the terminal and start it at login.
 
 ## Development
 
@@ -25,7 +25,8 @@ bun run check
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`,
-`@poppet/store`, `@poppet/agent`, `@poppet/memory`, and `@poppet/tasks`.
+`@poppet/store`, `@poppet/agent`, `@poppet/memory`, `@poppet/tasks`,
+`@poppet/platform`, and `@poppet/platform-macos`.
 Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
 
@@ -417,10 +418,13 @@ It permits one pending or running run across all sessions.
 
 The store directory uses `0700` permissions; the database and WAL sidecars use
 `0600`. Credentials stay in the separate `auth` directory. The store holds an
-exclusive `store/owner.lock` until its SQLite connection closes, including on
-interruption and initialization failure. A crash can leave this lock behind.
-Remove it only after confirming no Poppet process owns the database; automatic
-stale-lock recovery is deferred. On reopening, unfinished runs become interrupted
+exclusive ownership until its SQLite connection closes, including on interruption
+and initialization failure. A shared helper uses an OS-held SQLite lock in
+`store/owner.lock.sqlite` and an atomic PID marker in `store/owner.lock`.
+A dead owner is recovered automatically. Unknown legacy markers still require
+manual removal after confirming no old Poppet process owns the storage.
+Never remove a `.lock.sqlite` file while Poppet is running. These small lock
+databases contain no credentials and remain after logout. On reopening, unfinished runs become interrupted
 with a `process-exit` reason. Poppet does not automatically replay them.
 
 Tests cover persistent tool exchanges for all providers, upgrades and migration
@@ -512,13 +516,98 @@ protected by the `0700` store directory and `0600` socket. Task commands also wo
 with the worker stopped and need no credentials or model to inspect existing tasks.
 Stop the worker before using chat, memory, or store commands. Ctrl-C finalizes
 active work as interrupted and releases the socket and owner lock. After a crash,
-follow the stale-lock guidance above; unfinished work needs an explicit retry.
-Already queued work survives restart, and a committed answer is recovered without
-repeating its request. Automatic startup and sleep/wake handling belong to phase 8.
-After the stale owner lock is removed, task commands can open the store even if a
-dead worker left its socket behind. A lost response to a delivered command does
+a new owner automatically reclaims storage from a dead process; unfinished work
+needs an explicit retry. Already queued work survives restart, and a committed
+answer is recovered without repeating its request. Task commands can open the
+store even if a dead worker left its socket behind. A lost response to a delivered command does
 not trigger local fallback. Task outcomes and provider pauses commit together;
 recovery restores a quota pause from an unfinished occurrence's saved run.
+
+## Background worker
+
+On macOS, stop any foreground worker, then install a user LaunchAgent to start
+the existing task worker at login and keep it running while you are logged in:
+
+```fish
+bun run start worker install
+bun run start worker status
+bun run start worker logs
+```
+
+Installation starts it immediately. It records the absolute Bun executable, CLI
+entry point, current working directory, validated configuration paths, and any
+explicit chat budgets. Keep that checkout and Bun executable in place. To change
+saved settings or move the checkout, uninstall and install again. Each data
+directory has its own launch agent. Manage it with the same `POPPET_DATA_DIR`.
+
+API keys are excluded from the launch agent's environment. Save them first with
+`auth login openrouter` or `auth login opencode-go`; ChatGPT uses its existing
+protected sign-in storage. The worker refreshes credentials through the same
+provider code as chat. Installation does not verify live inference.
+
+`worker status` reports whether the launch agent is installed and loaded, whether
+the worker is responding, its PID and active occurrence, task and pending counts,
+the next scheduled timestamp, provider pauses, and five recent outcomes. It also
+shows local connection metadata and the account and plan-usage permission where
+supported, with actions for login, consent, quota resume, and failed work.
+Running and stopped status include providers assigned to saved tasks, even when
+the current CLI default provider differs.
+Connection metadata is not a live provider verification. During an active
+credential-owning request, the last observed metadata is labelled `cached` with
+its observation time. `tasks status` works for the foreground worker too.
+
+Inspect full task results using the existing commands:
+
+```fish
+bun run start tasks list
+bun run start tasks show <task-id>
+```
+
+Lifecycle logs go to `<data directory>/logs/worker.log`, with `0700` directory and
+`0600` file permissions. They exclude prompts, notes, model output, and tokens.
+`worker logs` prints at most the last 64 KiB. Log rotation is not implemented;
+remove or truncate old logs while the worker is stopped if needed.
+
+```fish
+bun run start worker stop
+bun run start worker start
+bun run start worker uninstall
+```
+
+Stopping removes the running launchd registration and sends SIGTERM. Scoped
+cleanup interrupts active work, records its outcome, closes the socket, and
+releases storage. `stop` keeps login startup configured; `uninstall` disables it
+and retains tasks, results, notes, credentials, and logs. Inspection errors fail
+the command and preserve the installed configuration. Lifecycle mutations finish
+before an interruption returns; each launchctl subprocess has a 35-second timeout.
+Starting an already
+loaded worker does not interrupt an active request. Stop the worker before using
+chat, memory, or store commands.
+
+The worker does not keep the Mac awake. After sleep, it runs an overdue one-off
+once. For a delayed recurring task, it runs the earliest due occurrence once and
+records later missed occurrences as skipped. Summaries older than 24 hours expire.
+Restart skips recurring work missed while the process was stopped. Failed or
+interrupted requests are never automatically replayed.
+
+To manually test background execution with your configured provider and model:
+
+```fish
+set when (date -u -v+1M +%Y-%m-%dT%H:%M:%SZ)
+bun run start tasks add background-summary --at $when "Read project.md and summarize it"
+bun run start worker install
+bun run start worker status
+# After the scheduled time, inspect the task ID returned by tasks add:
+bun run start tasks show <task-id>
+bun run start worker logs
+```
+
+Use `worker start` instead of `install` if it is already installed. Repeat with a
+sleep/wake cycle, then stop/start the worker and confirm a completed occurrence
+does not run again. Automated tests simulate clock jumps, crash recovery, and
+SIGTERM cleanup. Actual login startup, physical sleep/wake, and live provider
+execution remain manual checks. Other platforms can use `tasks work` in the
+foreground; background installation currently supports macOS only.
 
 ## Adding a provider
 
@@ -551,6 +640,7 @@ apps/
       runtime.ts          Generic selection and host configuration layers
       providers.ts        Provider registrations; first entry is the default
       tasks.ts            Task argument parsing
+      worker.ts           Worker argument parsing, launch settings, and platform selection
 packages/
   agent/                  @poppet/agent
     src/service.ts        Persisted chat runner, deadlines, run finalization
@@ -564,6 +654,7 @@ packages/
     src/config.ts         Validated settings and AppConfig service/layer
   credentials/            @poppet/credentials
     src/api-keys.ts       Protected API-key storage and environment overrides
+    src/lock.ts           Scoped ownership shared by credentials and SQLite storage
   memory/                 @poppet/memory
     src/service.ts        Memory service and domain errors
     src/schema.ts         Facts, snapshot data, and snapshot limits
@@ -580,6 +671,10 @@ packages/
     src/task-store.ts     Durable scheduling and occurrence transitions
     src/task-schema.ts    Typed commands, cron expressions, and timestamps
     src/task-socket.ts    Protected local commands for the worker
+  platform/               @poppet/platform
+    src/index.ts          Worker actions, errors, and launch description
+  platform-macos/         @poppet/platform-macos
+    src/worker.ts         LaunchAgent control, plist generation, and bounded log reading
   provider/               @poppet/provider
     src/schema.ts         Normalized messages, tools, events, and continuation
     src/service.ts        Provider and selected Model services, typed errors
