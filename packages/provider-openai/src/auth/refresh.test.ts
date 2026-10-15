@@ -7,7 +7,7 @@ import { Effect, Redacted } from "effect";
 import { ChatGPTAuth } from "#src/auth/service";
 import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt";
 
-describe("ChatGPT token lifecycle", () => {
+describe.concurrent("ChatGPT token lifecycle", () => {
   test("serializes renewal and atomically retains the rotated refresh token", async () => {
     const harness = await createHarness();
 

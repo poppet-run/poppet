@@ -100,20 +100,30 @@ test.concurrent("unattended key input fails without creating credentials", async
   }
 });
 
+const discordSetup = ["gateway", "discord", "setup", "100", "200", "300", "400", "--key-stdin"];
+
+test.concurrent.each([
+  { name: "empty", input: "\n" },
+  { name: "oversized", input: "x".repeat(8195) },
+])("Discord setup rejects $name input without writing credentials", async ({ input }) => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-discord-invalid-"));
+
+  try {
+    const result = await invokeProcess(discordSetup, { POPPET_DATA_DIR: directory }, input);
+    expect(result.exitCode).toBe(1);
+    expect(await readdir(directory)).toEqual([]);
+    expect(result.stdout + result.stderr).not.toContain("x".repeat(64));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test.concurrent("Discord setup saves protected settings and status never prints the token", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-discord-setup-"));
   const environment = { POPPET_DATA_DIR: directory };
-  const args = ["gateway", "discord", "setup", "100", "200", "300", "400", "--key-stdin"];
 
   try {
-    const invalid = await invokeProcess(args, environment, "\n");
-    expect(invalid.exitCode).toBe(1);
-    expect(await readdir(directory)).toEqual([]);
-    const oversized = await invokeProcess(args, environment, "x".repeat(8195));
-    expect(oversized.exitCode).toBe(1);
-    expect(await readdir(directory)).toEqual([]);
-    expect(oversized.stdout + oversized.stderr).not.toContain("x".repeat(64));
-    const saved = await invokeProcess(args, environment, "discord-test-secret\n");
+    const saved = await invokeProcess(discordSetup, environment, "discord-test-secret\n");
     expect(saved.exitCode).toBe(0);
     expect(saved.stdout + saved.stderr).not.toContain("discord-test-secret");
     expect((await stat(join(directory, "channels/discord.json"))).mode & 0o777).toBe(0o600);

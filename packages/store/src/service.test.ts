@@ -419,8 +419,6 @@ describe("conversation store", () => {
       const fixtureStore = await fixture();
 
       try {
-        await fixtureStore.run(Store.use((store) => store.status));
-        await rm(join(fixtureStore.directory, "store"), { recursive: true });
         await mkdir(join(fixtureStore.directory, "store"));
         using old = new Database(fixtureStore.path);
         old.run("PRAGMA foreign_keys = ON");

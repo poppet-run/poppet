@@ -4,7 +4,7 @@ import { Redacted } from "effect";
 
 import { createHarness, login, verify } from "#src/test/fixtures/chatgpt";
 
-describe("ChatGPT sign-in", () => {
+describe.concurrent("ChatGPT sign-in", () => {
   test("reuses host and issued registration across restarts with fresh sign-in values", async () => {
     const harness = await createHarness();
 
