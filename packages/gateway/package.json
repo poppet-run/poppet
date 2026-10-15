@@ -1,0 +1,27 @@
+{
+  "name": "@poppet/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "bun --check",
+    "test": "bun --no-env-file ../../tools/testing/run.ts"
+  },
+  "dependencies": {
+    "@poppet/agent": "workspace:*",
+    "@poppet/config": "workspace:*",
+    "@poppet/provider": "workspace:*",
+    "@poppet/store": "workspace:*",
+    "effect": "4.0.4"
+  },
+  "devDependencies": {
+    "@poppet/memory": "workspace:*"
+  }
+}
