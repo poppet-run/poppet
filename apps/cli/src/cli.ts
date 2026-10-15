@@ -1,6 +1,6 @@
 import type { AgentError } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
-import type { ChannelError } from "@poppet/gateway";
+import type { ChannelError, ChannelRegistration } from "@poppet/gateway";
 import type { MemoryError } from "@poppet/memory";
 import { WorkerError } from "@poppet/platform";
 import {
@@ -25,7 +25,13 @@ import { Console, Data, Effect, Layer, type Config } from "effect";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
 import { parseAuthCommand, type AuthCommand } from "#src/auth-command";
-import { MessagingWorkerLive, setupDiscord, stoppedMessagingStatus } from "#src/channels";
+import { channels } from "#src/channel-registry";
+import {
+  MessagingWorkerLive,
+  setupChannel,
+  stoppedMessagingStatus,
+  validateChannels,
+} from "#src/channels";
 import {
   inspectChat,
   parseChatCommand,
@@ -46,7 +52,10 @@ class UsageError extends Data.TaggedError("UsageError")<{
   readonly message: string;
 }> {}
 
-const help = (registered: ReadonlyArray<ProviderRegistration>) => `Poppet
+const help = (
+  registered: ReadonlyArray<ProviderRegistration>,
+  registeredChannels: ReadonlyArray<ChannelRegistration>,
+) => `Poppet
 
 Usage: bun run start [command]
 
@@ -74,8 +83,7 @@ Commands:
   tasks resume-provider <provider> Allow scheduled requests again
   tasks status             Show task counts, recent outcomes, and worker status
   tasks work               Run scheduling only in the foreground
-  gateway discord setup <bot-id> <owner-id> <guild-id> <channel-id>... --key-stdin
-                           Save protected Discord settings; restart the worker to apply
+${registeredChannels.map((entry) => `  gateway ${entry.id} ${entry.setupHelp}`).join("\n")}
   gateway work             Run messaging only in the foreground
   gateway status           Show messaging connection, queue, and delivery status
   worker run               Run scheduling and messaging in one foreground worker
@@ -111,14 +119,18 @@ export const makeCLI = (
   registered: ReadonlyArray<ProviderRegistration>,
   write: ChatWriter = writeChatText,
   worker: typeof manageWorker = manageWorker,
+  registeredChannels: ReadonlyArray<ChannelRegistration> = channels,
 ) => {
   const runtime = runtimeLayers(registered);
+  validateChannels(registeredChannels);
 
   const startWorker = (mode: WorkerMode) =>
     runWorker(mode).pipe(
       Effect.provide(
         WorkerRequestsLive.pipe(
-          Layer.provideMerge(mode === "tasks" ? Layer.empty : MessagingWorkerLive),
+          Layer.provideMerge(
+            mode === "tasks" ? Layer.empty : MessagingWorkerLive(registeredChannels),
+          ),
           Layer.provideMerge(runtime.tasks),
           Layer.provideMerge(runtime.chat),
         ),
@@ -203,7 +215,7 @@ export const makeCLI = (
   > => {
     // Help works before configuration or credential storage is opened.
     if (args.length === 0 || (args.length === 1 && (args[0] === "--help" || args[0] === "-h")))
-      return Console.log(help(registered));
+      return Console.log(help(registered, registeredChannels));
 
     if (args.length === 1 && args[0] === "config")
       return showConfig.pipe(Effect.provide(runtime.config));
@@ -245,17 +257,16 @@ export const makeCLI = (
     if (args.length === 2 && args[0] === "worker" && args[1] === "run") return startWorker("all");
 
     if (args[0] === "gateway") {
-      if (args[1] === "discord")
-        return setupDiscord(args.slice(2)).pipe(Effect.provide(runtime.config));
-
       if (args.length === 2 && args[1] === "status")
         return throughWorker(
           { kind: "gateway" },
-          stoppedMessagingStatus.pipe(
+          stoppedMessagingStatus(registeredChannels).pipe(
             Effect.flatMap((status) => Console.log(JSON.stringify(status, null, 2))),
             Effect.provide(runtime.messagingStatus),
           ),
         );
+
+      return setupChannel(registeredChannels, args.slice(1)).pipe(Effect.provide(runtime.config));
     }
 
     if (args[0] === "memory") {

@@ -40,7 +40,10 @@ const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatWriter
   Effect.gen(function* () {
     if (request.kind === "gateway") {
       const messaging = yield* Effect.serviceOption(MessagingWorker);
-      const status = Option.isSome(messaging) ? yield* messaging.value.status : { enabled: false };
+
+      const status = Option.isSome(messaging)
+        ? yield* messaging.value.status
+        : { enabled: false, channels: [] };
 
       return yield* write(
         `${JSON.stringify({ running: Option.isSome(messaging), ...status }, null, 2)}\n`,

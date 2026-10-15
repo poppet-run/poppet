@@ -9,7 +9,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./settings": "./src/settings.ts"
+    "./settings": "./src/settings.ts",
+    "./registration": "./src/registration.ts"
   },
   "scripts": {
     "typecheck": "bun --check",

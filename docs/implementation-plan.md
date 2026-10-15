@@ -567,6 +567,21 @@ send acknowledgements remain uncertain for manual inspection. Live Discord
 setup, visibility, intent/permission failures, and reconnect behavior remain
 unverified. See the [setup and manual path](../README.md#discord-thread-chat).
 
+Channel setup and loading now use `ChannelRegistration` from `@poppet/gateway`,
+following provider registrations. Each package owns setup validation, credential
+storage, help metadata, and a lazy channel layer. The CLI supplies its data directory
+and bounded secret input, generates help, and dispatches through
+`apps/cli/src/channel-registry.ts`. Adding a channel requires its package and one
+registry entry. Discord's setup command and protected settings file remain
+compatible, and its SDK loads only when a connection layer is built.
+
+The host builds separate gateways for configured registrations while sharing the
+agent, store, and repository. Status reports per-channel connection/errors in
+`channels` and persisted totals once at the top level. Fake-channel integration
+coverage exercises setup, help, lazy loading, independent sessions for identical
+external IDs, serialized inference, configuration-error isolation, and cleanup.
+Stopped status only inspects settings; live messaging remains a manual check.
+
 The neutral worker host supports `worker run` for both services, `tasks work` for
 scheduling only, and `gateway work` for messaging only. Scheduling exposes commands
 and a run loop without owning the socket. Task commands remain usable when only
