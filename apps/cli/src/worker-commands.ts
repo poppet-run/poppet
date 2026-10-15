@@ -2,8 +2,20 @@ import { Agent, type AgentError } from "@poppet/agent";
 import { Memory } from "@poppet/memory";
 import { Store } from "@poppet/store";
 import { WorkerRequests, TaskError, requestWorker } from "@poppet/tasks";
-import { Cause, Console, Effect, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
+import {
+  Cause,
+  Console,
+  Context,
+  Effect,
+  Layer,
+  Option,
+  Queue,
+  Schema,
+  Stream,
+  Scope,
+} from "effect";
 
+import { MessagingWorker } from "#src/channels";
 import { ChatRequest, inspectChat, sendChat, type ChatWriter } from "#src/chat";
 import { MemoryCommand, manageMemory } from "#src/memory";
 
@@ -11,6 +23,7 @@ const WorkerCommand = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("chat"), command: ChatRequest }),
   Schema.Struct({ kind: Schema.Literal("memory"), command: MemoryCommand }),
   Schema.Struct({ kind: Schema.Literal("store") }),
+  Schema.Struct({ kind: Schema.Literal("gateway") }),
 ]);
 
 export type WorkerCommand = typeof WorkerCommand.Type;
@@ -25,6 +38,13 @@ type Frame = typeof Frame.Type;
 
 const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatWriter) =>
   Effect.gen(function* () {
+    if (request.kind === "gateway") {
+      const messaging = yield* Effect.serviceOption(MessagingWorker);
+      const status = Option.isSome(messaging) ? yield* messaging.value.status : { enabled: false };
+
+      return yield* write(`${JSON.stringify({ running: true, ...status }, null, 2)}\n`);
+    }
+
     if (request.kind === "memory")
       return yield* manageMemory(request.command).pipe(
         Effect.flatMap((text) => write(`${text}\n`)),
@@ -48,6 +68,11 @@ export const WorkerRequestsLive = Layer.effect(
   WorkerRequests,
   Effect.gen(function* () {
     const services = yield* Effect.context<Agent | Store | Memory>();
+    const messaging = yield* Effect.serviceOption(MessagingWorker);
+
+    const provided = Option.isSome(messaging)
+      ? Context.add(services, MessagingWorker, messaging.value)
+      : services;
 
     return {
       handle: (request, payload): Effect.Effect<Response, never, Scope.Scope> =>
@@ -68,7 +93,7 @@ export const WorkerRequestsLive = Layer.effect(
             (text) => Queue.offer(frames, { type: "stdout", text }).pipe(Effect.asVoid),
             (text) => Queue.offer(frames, { type: "stderr", text }).pipe(Effect.asVoid),
           ).pipe(
-            Effect.provide(services),
+            Effect.provide(provided),
             Effect.matchEffect({
               onFailure: (error) => Queue.offer(frames, { type: "failed", message: error.message }),
               onSuccess: () => Queue.offer(frames, { type: "done" }),

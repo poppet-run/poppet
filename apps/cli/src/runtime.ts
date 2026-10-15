@@ -1,5 +1,6 @@
 import { AgentLive, ChatSettingsLive, ModelResolver, NotesLive } from "@poppet/agent";
 import { AppConfig, makeAppConfigLive } from "@poppet/config";
+import { GatewayRepositoryLive } from "@poppet/gateway";
 import { LocalMemoryLive } from "@poppet/memory";
 import {
   Model,
@@ -215,5 +216,9 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     tasks,
     chat,
     connections,
+    messagingStatus: GatewayRepositoryLive.pipe(
+      Layer.provideMerge(store),
+      Layer.provideMerge(config),
+    ),
   };
 };

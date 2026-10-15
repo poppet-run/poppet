@@ -10,6 +10,8 @@ saved sessions and can read, search, and save local notes. An editable profile a
 explicitly saved facts provide context across sessions. A foreground worker executes
 durable one-off and recurring tasks. On macOS, a LaunchAgent can keep that worker
 running after you close the terminal and start it at login.
+The same worker can connect a Discord bot, with one saved Poppet session per
+thread.
 
 ## Development
 
@@ -26,7 +28,8 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`,
 `@poppet/store`, `@poppet/agent`, `@poppet/memory`, `@poppet/tasks`,
-`@poppet/platform`, and `@poppet/platform-macos`.
+`@poppet/platform`, `@poppet/platform-macos`, `@poppet/gateway`, and
+`@poppet/channel-discord`.
 Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
 
@@ -91,6 +94,67 @@ appear in this output.
 
 Chat budgets must be positive integers. They are validated for chat execution;
 session listing and inspection work independently of these budgets.
+
+## Discord thread chat
+
+Create a bot in the [Discord Developer Portal](https://discord.com/developers/applications).
+Enable its Message Content intent and install it in your server with the bot
+scope. In the intended parent text channel, give it View Channel, Read Message
+History, Create Public Threads, and Send Messages in Threads permissions. It
+does not need Administrator. Use Discord's Developer Mode to copy the bot user,
+your user, server, and parent channel IDs.
+
+Start with a private parent channel that only trusted people can read. The
+configured user is the only person who can invoke Poppet, but everyone with
+channel access can read replies containing personal memory and notes.
+
+Select an assistant-capable provider and model, then save the bot token through
+stdin. The token is never accepted as an argument. For fish:
+
+```fish
+read --silent --prompt-str 'Discord bot token: ' discord_token
+printf '%s\n' $discord_token | bun run start gateway discord setup <bot-id> <your-user-id> <server-id> <parent-channel-id> --key-stdin
+set -e discord_token
+bun run start tasks work
+```
+
+Replace the angle-bracket placeholders with Discord IDs before running the
+setup command. Additional parent channel IDs can follow the first one. Settings
+and the redacted token live in `<POPPET_DATA_DIR>/channels/discord.json`, protected
+with `0600` file and `0700` directory permissions. Model-provider credentials
+remain separate. Restart an existing worker after changing channel settings;
+on macOS, use `worker stop` followed by `worker start`. The installed worker reads
+the saved settings without placing the bot token in its LaunchAgent environment.
+
+Mention `@Poppet` with a message in an allowed parent text channel. The bot starts
+a thread and replies there. Inside any thread under an allowed parent channel,
+your text messages are addressed to the bot without a mention. The first message
+attaches a session, and subsequent messages continue it. Each thread keeps its own history and selected model
+across worker restarts, renames, and archiving. Start a new thread for a new
+session. Earlier messages in an existing thread are not imported.
+
+The bot shows Discord's typing indicator while working, including during tool
+calls. It refreshes every eight seconds and stops refreshing when the request
+finishes, fails, or is cancelled. Discord clears it after a reply or within ten
+seconds of the last refresh. Indicator failures do not interrupt the request.
+
+In an attached thread, `@Poppet /status` reports its session and latest run;
+`@Poppet /cancel` interrupts its active request and cancels its queued requests.
+These are text messages, not registered Discord slash commands. The bot ignores
+other users, bots, and webhooks. DMs, forums, attachments, voice, and streaming
+message edits are not supported in this phase.
+
+Use `bun run start gateway status` for connection state, rejected/dropped event
+counts while running, and persisted queue/delivery counts. Completed answers
+are saved before sending; a delivery retry never repeats model or tool work.
+Uncertain sends are recorded without automatic resending, since Discord may
+already have posted them. Use the session ID and `chat show <session>` to inspect
+the saved answer before manually reposting it. No reply is redirected to another
+channel when a thread becomes inaccessible. Telegram, WhatsApp, and scheduled
+result delivery remain planned work.
+
+Automated tests use injected Discord events and API responses. Live bot setup,
+permissions, reconnection, and model inference still need manual validation.
 
 ## ChatGPT connection
 

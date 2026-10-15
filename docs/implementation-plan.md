@@ -1,8 +1,9 @@
 # Poppet implementation plan
 
-Status: Phases 1–9 implemented with automated checks; macOS login startup, physical sleep/wake, and live unattended inference require manual validation
+Status: Phases 1–10 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, and live Discord behavior require manual validation
 
-Phases 10–12 are planned only. Messaging gateway support is not implemented.
+Phases 11–12 are planned only. Discord thread chat is implemented; additional
+adapters and scheduled-result delivery are deferred.
 
 Updated: 2026-10-15
 
@@ -475,12 +476,12 @@ manual check.
 
 ## Phase 10: Messaging gateway with Discord thread sessions
 
-Planned, not implemented. Depends on phase 9. See the planned
-[messaging gateway architecture](architecture.md#messaging-gateway-planned).
+Implemented with automated checks. Depends on phase 9. See the
+[messaging gateway architecture](architecture.md#messaging-gateway).
 
-Add `@poppet/gateway` for authorization, persisted conversation bindings, incoming
-message deduplication, and reply delivery. Add `@poppet/channel-discord` for
-Discord transport and credentials. The CLI registers and composes them inside
+`@poppet/gateway` owns authorization, persisted conversation bindings, incoming
+message deduplication, and reply delivery. `@poppet/channel-discord` owns
+Discord transport and credentials through pinned discord.js 14.27.0. The CLI registers and composes them inside
 the existing worker, sharing its store and agent instance. Keep Discord details
 out of task scheduling, the agent, and inference-provider packages.
 
@@ -488,8 +489,9 @@ Implement these conversation rules first:
 
 - A mention of the actual bot ID in an explicitly allowed guild/text channel
   creates a thread from that message and starts a Poppet session with its text.
-- A mention in an existing allowed thread attaches or resumes that thread's
-  session. Do not create nested threads or import its earlier unrelated messages.
+- A message from the allowed user in any allowed thread attaches or resumes its
+  session without requiring a mention. Do not create nested threads or import
+  its earlier unrelated messages.
 - Follow-up text from the allowed user continues an attached thread's session
   without another mention. Each thread has one durable binding, and new threads
   start separate sessions. Existing sessions retain provider/model/workload.
@@ -508,7 +510,9 @@ policy before enabling them.
 Keep bot tokens in protected channel storage and out of launchd environment
 data, logs, and model inputs. Persist non-secret settings for worker startup.
 Send only completed text answers, split to platform limits with automatic
-mentions disabled. Defer DMs, attachments, voice, progressive editing, and
+mentions disabled. Refresh the typing indicator during model and tool work,
+stopping on completion, failure, or cancellation. Indicator failures do not
+interrupt requests. Defer DMs, attachments, voice, progressive editing, and
 forum-specific handling.
 
 Add migrations and a gateway repository on the shared database for bindings,
@@ -539,6 +543,26 @@ secret exclusion, and shutdown. Run `bun run check`. Separately validate bot
 setup, intent/permission errors, real mentions, thread visibility, follow-ups,
 and reconnection in a private Discord test channel. Fake transport tests do not
 establish live Discord or model access.
+
+Migration 7 adds gateway bindings, inbox records with reserved run IDs, and reply
+chunks. The store and agent accept caller-supplied IDs so a restart can correlate
+an accepted message with its run before any tool work, including a crash before
+the gateway observed completion. One owner and one guild can be configured with
+up to 32 parent text channels. Settings are loaded on worker startup through
+`gateway discord setup ... --key-stdin`; `gateway status` reports connection and
+persisted execution/delivery counts through the protected worker socket, with
+local inspection when stopped. Controls use `@Poppet /status` and
+`@Poppet /cancel` text messages within attached threads.
+
+The inbox accepts up to 64 pending/executing inputs per bot account. Transport
+events also use a bounded queue; overflow counts appear in status. Discord
+Gateway events have no application-level durable acknowledgement, so messages
+not yet accepted when the process crashes or an unrecoverable disconnect occurs
+can require resending. Accepted inputs and completed answers survive restarts.
+Known safe failures use bounded backoff and Discord's rate-limit delay; lost
+send acknowledgements remain uncertain for manual inspection. Live Discord
+setup, visibility, intent/permission failures, and reconnect behavior remain
+unverified. See the [setup and manual path](../README.md#discord-thread-chat).
 
 ## Phase 11: Scheduled results in messaging conversations
 

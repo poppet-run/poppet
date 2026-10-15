@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -95,6 +95,28 @@ test.concurrent("unattended key input fails without creating credentials", async
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("interactive terminal");
     expect(await readdir(directory)).toEqual([]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test.concurrent("Discord setup saves protected settings and status never prints the token", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-discord-setup-"));
+  const environment = { POPPET_DATA_DIR: directory };
+  const args = ["gateway", "discord", "setup", "100", "200", "300", "400", "--key-stdin"];
+
+  try {
+    const invalid = await invokeProcess(args, environment, "\n");
+    expect(invalid.exitCode).toBe(1);
+    expect(await readdir(directory)).toEqual([]);
+    const saved = await invokeProcess(args, environment, "discord-test-secret\n");
+    expect(saved.exitCode).toBe(0);
+    expect(saved.stdout + saved.stderr).not.toContain("discord-test-secret");
+    expect((await stat(join(directory, "channels/discord.json"))).mode & 0o777).toBe(0o600);
+    const status = await invokeProcess(["gateway", "status"], environment);
+    expect(status.exitCode).toBe(0);
+    expect(JSON.parse(status.stdout)).toMatchObject({ running: false, enabled: true });
+    expect(status.stdout + status.stderr).not.toContain("discord-test-secret");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

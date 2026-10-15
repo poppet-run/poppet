@@ -18,8 +18,10 @@
       "dependencies": {
         "@effect/platform-bun": "4.0.4",
         "@poppet/agent": "workspace:*",
+        "@poppet/channel-discord": "workspace:*",
         "@poppet/config": "workspace:*",
         "@poppet/credentials": "workspace:*",
+        "@poppet/gateway": "workspace:*",
         "@poppet/memory": "workspace:*",
         "@poppet/platform": "workspace:*",
         "@poppet/platform-macos": "workspace:*",
