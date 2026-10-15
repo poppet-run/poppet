@@ -1,8 +1,8 @@
-import type { AgentError } from "@poppet/agent";
+import { BunServices } from "@effect/platform-bun";
 import { AppConfig } from "@poppet/config";
-import type { ChannelError, ChannelRegistration } from "@poppet/gateway";
-import type { MemoryError } from "@poppet/memory";
-import { WorkerError } from "@poppet/platform";
+import type { ChannelRegistration } from "@poppet/gateway";
+import { MemoryKey, MemoryValue } from "@poppet/memory";
+import type { WorkerAction } from "@poppet/platform";
 import {
   CredentialInput,
   Model,
@@ -10,21 +10,25 @@ import {
   ProviderConnection,
   verifyModel,
   type ProviderRegistration,
-  type ProviderError,
+  ProviderId,
 } from "@poppet/provider";
-import { Store, type StoreError } from "@poppet/store";
+import { Session, Store } from "@poppet/store";
 import {
   WorkerConnections,
   remoteTaskCommand,
   executeLocalTaskCommand,
-  type TaskError,
+  TaskCommand,
+  TaskError,
+  parseTimestamp,
+  taskOperation,
   readLocalTaskStatus,
 } from "@poppet/tasks";
-import { workerSocketPath, WorkerRequestError } from "@poppet/worker";
-import { Console, Data, Effect, Layer, type Config } from "effect";
+import { workerSocketPath } from "@poppet/worker";
+import { Console, Data, Effect, Layer, Option, Schema } from "effect";
+import { Argument, CliConfig, CliOutput, Command, Flag, GlobalFlag } from "effect/cli";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
-import { parseAuthCommand, type AuthCommand } from "#src/auth-command";
+import type { AuthCommand } from "#src/auth-command";
 import { channels } from "#src/channel-registry";
 import {
   MessagingWorkerLive,
@@ -34,17 +38,19 @@ import {
 } from "#src/channels";
 import {
   inspectChat,
-  parseChatCommand,
+  type ChatCommand,
+  MessageText,
   prepareChat,
   sendChat,
   writeChatText,
   type ChatWriter,
 } from "#src/chat";
-import { manageMemory, parseMemoryCommand } from "#src/memory";
+import { commandArgs } from "#src/command-args";
+import { manageMemory, type MemoryCommand } from "#src/memory";
 import { providers } from "#src/providers";
 import { findProvider, runtimeLayers } from "#src/runtime";
-import { parseTaskCommand } from "#src/tasks";
-import { manageWorker, parseWorkerCommand } from "#src/worker";
+import { prepareTask } from "#src/tasks";
+import { manageWorker } from "#src/worker";
 import { remoteWorkerCommand, WorkerRequestsLive, type WorkerCommand } from "#src/worker-commands";
 import { runWorker, type WorkerMode } from "#src/worker-host";
 
@@ -52,64 +58,17 @@ class UsageError extends Data.TaggedError("UsageError")<{
   readonly message: string;
 }> {}
 
-const help = (
-  registered: ReadonlyArray<ProviderRegistration>,
-  registeredChannels: ReadonlyArray<ChannelRegistration>,
-) => `Poppet
+const textArgument = (name: string) =>
+  Argument.String(name).pipe(
+    Argument.variadic({ min: 1 }),
+    Argument.map((words) => words.join(" ")),
+  );
 
-Usage: bun run start [command]
-
-Commands:
-  config    Show validated configuration
-  store status             Open/migrate the conversation store and show counts
-  chat new [--coding] <message>  Start a session with the configured provider/model
-  chat send <session> <message> Continue a saved session
-  chat sessions            List sessions
-  chat show <session>      Show messages and run outcomes
-  memory list              List explicitly saved facts
-  memory remember <key> <value>  Save a new fact
-  memory replace <key> <value>   Change an existing fact
-  memory forget <key>      Delete a fact
-  tasks add <name> --at <timestamp> [--coding] <prompt>
-  tasks add <name> --cron <expression> --tz <timezone> [--coding] <prompt>
-  tasks list               List saved tasks
-  tasks show <task>        Show occurrences, results, and skipped intervals
-  tasks pause <task>       Pause scheduling and cancel pending work
-  tasks resume <task>      Resume future occurrences
-  tasks cancel <occurrence> Cancel pending or active work
-  tasks retry <occurrence> Explicitly retry an unsuccessful occurrence
-  tasks clear              Interrupt active work and remove all tasks and task history
-  tasks providers          Show provider quota pauses and temporary backoff
-  tasks resume-provider <provider> Allow scheduled requests again
-  tasks status             Show task counts, recent outcomes, and worker status
-  tasks work               Run scheduling only in the foreground
-${registeredChannels.map((entry) => `  gateway ${entry.id} ${entry.setupHelp}`).join("\n")}
-  gateway work             Run messaging only in the foreground
-  gateway status           Show messaging connection, queue, and delivery status
-  worker run               Run scheduling and messaging in one foreground worker
-  worker install           Install and start the macOS login worker
-  worker start             Start an installed worker
-  worker stop              Stop it until the next login or explicit start
-  worker status            Show launch agent, scheduling, and connection status
-  worker logs              Print the last 64 KiB of worker logs
-  worker uninstall         Stop and remove login startup; retain saved data
-  auth login [provider] [--consent | --key-stdin]  Sign in or save an API key
-  auth status [provider]   Show connection status without secrets
-  auth models [provider]   List available models
-  auth verify [model]      Verify inference and a local tool round trip
-  auth logout [provider]   Clear the selected provider
-
-Auth accepts --provider <id> for any action, overriding POPPET_PROVIDER.
-Providers: ${registered.map((entry) => entry.id).join(", ")}.
-${registered.map((entry) => `${entry.name}: ${entry.authentication.help}`).join("\n")}
-  provider models          List supported models for the configured provider
-  provider verify          Verify the configured provider/model with a local tool
-  --help    Show this help
-
-Chat includes read_note, search_notes and save_note within POPPET_NOTES_DIR.
-Chat loads <data directory>/profile.md and explicitly saved facts on each run.
-Scheduled tasks use fresh sessions, current memory, and read-only note tools.
-Run tasks work to execute them; task commands can reach the running worker.`;
+const codingFlag = Flag.Boolean("coding").pipe(
+  Flag.withDescription("Use the coding workload"),
+  Flag.atMost(1),
+  Flag.map(([value = false]) => value),
+);
 
 const showConfig = Effect.gen(function* () {
   yield* Console.log(JSON.stringify(yield* AppConfig, null, 2));
@@ -198,180 +157,445 @@ export const makeCLI = (
       );
     });
 
-  return (
-    args: ReadonlyArray<string>,
-  ): Effect.Effect<
-    void,
-    | Config.ConfigError
-    | ProviderError
-    | StoreError
-    | MemoryError
-    | UsageError
-    | AgentError
-    | TaskError
-    | WorkerError
-    | WorkerRequestError
-    | ChannelError
-  > => {
-    // Help works before configuration or credential storage is opened.
-    if (args.length === 0 || (args.length === 1 && (args[0] === "--help" || args[0] === "-h")))
-      return Console.log(help(registered, registeredChannels));
+  const runMemory = (command: MemoryCommand) =>
+    throughWorker(
+      { kind: "memory", command },
+      manageMemory(command).pipe(
+        Effect.provide(runtime.memory),
+        Effect.flatMap((text) => Console.log(text)),
+      ),
+    );
 
-    if (args.length === 1 && args[0] === "config")
-      return showConfig.pipe(Effect.provide(runtime.config));
+  const runWorkerCommand = (action: WorkerAction) =>
+    Effect.gen(function* () {
+      const config = yield* AppConfig;
+      const managed = yield* worker(action, config);
 
-    if (args.length === 2 && args[0] === "store" && args[1] === "status")
+      if (action !== "status") return yield* Console.log(managed);
+
+      const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), {
+        action: "status",
+      });
+
+      if (reply !== null)
+        return yield* Console.log(
+          JSON.stringify({ launchAgent: managed, worker: reply.value }, null, 2),
+        );
+
+      const overview = yield* readLocalTaskStatus.pipe(Effect.provide(runtime.tasks));
+
+      const ids = [...new Set([config.provider, ...overview.providers])];
+
+      const connections = yield* WorkerConnections.use((service) =>
+        Effect.forEach(ids, (id) => service.status(id)),
+      ).pipe(Effect.provide(runtime.connections));
+
+      yield* Console.log(
+        JSON.stringify(
+          {
+            launchAgent: managed,
+            worker: {
+              ...overview,
+              running: false,
+              pid: null,
+              startedAt: null,
+              activeOccurrence: null,
+              connections,
+            },
+          },
+          null,
+          2,
+        ),
+      );
+    }).pipe(Effect.provide(runtime.config));
+
+  const runTasks = (command: TaskCommand) =>
+    Effect.gen(function* () {
+      const config = yield* AppConfig;
+      const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), command);
+
+      if (reply !== null) return yield* Console.log(JSON.stringify(reply.value, null, 2));
+
+      const result = yield* executeLocalTaskCommand(command).pipe(Effect.provide(runtime.tasks));
+      yield* Console.log(JSON.stringify(result, null, 2));
+    }).pipe(Effect.provide(runtime.config));
+
+  const runChat = (command: ChatCommand) => {
+    if (command.action === "show" || command.action === "sessions")
       return throughWorker(
-        { kind: "store" },
-        Store.use((store) =>
-          store.status.pipe(
-            Effect.flatMap((status) => Console.log(JSON.stringify(status, null, 2))),
-          ),
-        ).pipe(Effect.provide(runtime.store)),
+        { kind: "chat", command },
+        inspectChat(command).pipe(
+          Effect.provide(runtime.store),
+          Effect.flatMap((text) => Console.log(text)),
+        ),
       );
 
-    if (args.length === 2 && args[0] === "provider" && args[1] === "models")
-      return Effect.gen(function* () {
-        const provider = yield* Provider;
-        yield* Console.log(JSON.stringify(yield* provider.models, null, 2));
-      }).pipe(Effect.provide(runtime.provider));
+    return prepareChat(command).pipe(
+      Effect.flatMap((submission) =>
+        throughWorker(
+          { kind: "chat", command: submission },
+          sendChat(submission, write).pipe(Effect.provide(runtime.chat)),
+        ),
+      ),
+      Effect.provide(runtime.config),
+    );
+  };
 
-    if (args.length === 2 && args[0] === "provider" && args[1] === "verify")
-      return Effect.gen(function* () {
-        const model = yield* Model;
-        yield* verifyModel(model);
-        yield* Console.log(
-          `Provider verification passed with ${model.description.provider}/${model.description.id}. Completed inference and one local tool round trip.`,
-        );
-      }).pipe(Effect.provide(runtime.model));
+  const providerHelp = registered
+    .map((entry) => `${entry.id} (${entry.name}): ${entry.authentication.help}`)
+    .join("\n");
 
-    if (args[0] === "auth") {
-      const command = parseAuthCommand(args.slice(1));
+  const authCommands = (["login", "status", "models", "verify", "logout"] as const).map(
+    (action) => {
+      const targetArgument = Argument.String(action === "verify" ? "model" : "provider").pipe(
+        Argument.optional,
+      );
 
-      if (command !== null) return runAuth(command).pipe(Effect.provide(runtime.config));
-    }
+      const providerFlag = Flag.String("provider").pipe(
+        Flag.withSchema(ProviderId),
+        Flag.withDescription("Override POPPET_PROVIDER"),
+        Flag.atMost(1),
+        Flag.map(([value]) => Option.fromUndefinedOr(value)),
+      );
 
-    if (args.length === 2 && args[1] === "work" && args[0] === "gateway")
-      return startWorker("gateway");
+      const config =
+        action === "login"
+          ? {
+              target: targetArgument,
+              provider: providerFlag,
+              consent: Flag.Boolean("consent").pipe(
+                Flag.withDescription("Request ChatGPT consent"),
+                Flag.atMost(1),
+                Flag.map(([value = false]) => value),
+              ),
+              keyStdin: Flag.Boolean("key-stdin").pipe(
+                Flag.withDescription("Read an API key from stdin"),
+                Flag.atMost(1),
+                Flag.map(([value = false]) => value),
+              ),
+            }
+          : { target: targetArgument, provider: providerFlag };
 
-    if (args.length === 2 && args[0] === "worker" && args[1] === "run") return startWorker("all");
+      return Command.make(action, config, (input) =>
+        Effect.gen(function* () {
+          const target = Option.getOrNull(input.target);
+          const provider = Option.getOrNull(input.provider);
 
-    if (args[0] === "gateway") {
-      if (args.length === 2 && args[1] === "status")
-        return throughWorker(
+          if (action !== "verify" && target !== null && provider !== null)
+            return yield* Effect.fail(
+              new UsageError({
+                message: "Choose a provider either positionally or with --provider, not both.",
+              }),
+            );
+          const selected = action === "verify" ? provider : (provider ?? target);
+
+          if (selected !== null && !Schema.is(ProviderId)(selected))
+            return yield* Effect.fail(new UsageError({ message: "Invalid provider ID." }));
+          yield* runAuth({
+            action,
+            provider: selected,
+            model: action === "verify" ? target : null,
+            consent: input.consent ?? false,
+            keyStdin: input.keyStdin ?? false,
+          });
+        }).pipe(Effect.provide(runtime.config)),
+      ).pipe(
+        Command.withDescription(
+          {
+            login: "Sign in or save an API key",
+            status: "Show connection status without secrets",
+            models: "List available models",
+            verify: "Verify inference and a local tool round trip",
+            logout: "Clear the selected provider",
+          }[action],
+        ),
+      );
+    },
+  );
+
+  const chat = Command.make("chat").pipe(
+    Command.withDescription("Chat with the configured provider and model"),
+    Command.withSubcommands([
+      Command.make(
+        "new",
+        {
+          coding: codingFlag,
+          text: textArgument("message").pipe(Argument.withSchema(MessageText)),
+        },
+        ({ coding, text }) => runChat({ action: "new", coding, text }),
+      ).pipe(Command.withDescription("Start a session")),
+      Command.make(
+        "send",
+        {
+          id: Argument.String("session").pipe(Argument.withSchema(Session.fields.id)),
+          text: textArgument("message").pipe(Argument.withSchema(MessageText)),
+        },
+        ({ id, text }) => runChat({ action: "send", id, text }),
+      ).pipe(Command.withDescription("Continue a saved session")),
+      Command.make("sessions", {}, () => runChat({ action: "sessions" })).pipe(
+        Command.withDescription("List sessions"),
+      ),
+      Command.make(
+        "show",
+        {
+          id: Argument.String("session").pipe(Argument.withSchema(Session.fields.id)),
+        },
+        ({ id }) => runChat({ action: "show", id }),
+      ).pipe(Command.withDescription("Show messages and run outcomes")),
+    ]),
+  );
+
+  const memory = Command.make("memory").pipe(
+    Command.withDescription("Manage explicitly saved facts"),
+    Command.withSubcommands([
+      Command.make("list", {}, () => runMemory({ action: "list" })).pipe(
+        Command.withDescription("List saved facts"),
+      ),
+      ...(["remember", "replace"] as const).map((action) =>
+        Command.make(
+          action,
+          {
+            key: Argument.String("key").pipe(Argument.withSchema(MemoryKey)),
+            value: textArgument("value").pipe(Argument.withSchema(MemoryValue)),
+          },
+          ({ key, value }) => runMemory({ action, key, value }),
+        ).pipe(
+          Command.withDescription(
+            action === "remember" ? "Save a new fact" : "Change an existing fact",
+          ),
+        ),
+      ),
+      Command.make(
+        "forget",
+        {
+          key: Argument.String("key").pipe(Argument.withSchema(MemoryKey)),
+        },
+        ({ key }) => runMemory({ action: "forget", key }),
+      ).pipe(Command.withDescription("Delete a fact")),
+    ]),
+  );
+
+  const tasks = Command.make("tasks").pipe(
+    Command.withDescription("Schedule and manage requests"),
+    Command.withSubcommands([
+      Command.make(
+        "add",
+        {
+          name: Argument.String("name"),
+          at: Flag.String("at").pipe(
+            Flag.withDescription("One-off timestamp with timezone"),
+            Flag.atMost(1),
+            Flag.map(([value]) => Option.fromUndefinedOr(value)),
+          ),
+          cron: Flag.String("cron").pipe(
+            Flag.withDescription("Recurring cron expression"),
+            Flag.atMost(1),
+            Flag.map(([value]) => Option.fromUndefinedOr(value)),
+          ),
+          tz: Flag.String("tz").pipe(
+            Flag.withDescription("Timezone for --cron"),
+            Flag.atMost(1),
+            Flag.map(([value]) => Option.fromUndefinedOr(value)),
+          ),
+          coding: codingFlag,
+          prompt: textArgument("prompt"),
+        },
+        ({ name, at, cron, tz, coding, prompt }) =>
+          Effect.gen(function* () {
+            const schedule = yield* taskOperation(() => {
+              if (Option.isSome(at) && Option.isNone(cron) && Option.isNone(tz))
+                return { type: "once" as const, at: parseTimestamp(at.value) };
+
+              if (Option.isNone(at) && Option.isSome(cron) && Option.isSome(tz))
+                return { type: "cron" as const, expression: cron.value, timezone: tz.value };
+              throw new TaskError({
+                message: "Use either --at <timestamp> or --cron <expression> --tz <timezone>.",
+              });
+            });
+
+            const command = yield* prepareTask(name, schedule, coding, prompt);
+            yield* runTasks(command);
+          }).pipe(Effect.provide(runtime.config)),
+      ).pipe(
+        Command.withDescription("Schedule a request"),
+        Command.withExamples([
+          { command: 'bun run start tasks add Later --at 2099-10-15T09:00:00Z "Review notes"' },
+          {
+            command:
+              'bun run start tasks add Daily --cron "0 9 * * *" --tz Europe/London "Review notes"',
+          },
+        ]),
+      ),
+      ...(["list", "providers", "clear", "status"] as const).map((action) =>
+        Command.make(action, {}, () => runTasks({ action })).pipe(
+          Command.withDescription(
+            {
+              list: "List saved tasks",
+              providers: "Show provider quota pauses and temporary backoff",
+              clear: "Interrupt active work and remove all tasks and task history",
+              status: "Show task counts, recent outcomes, and worker status",
+            }[action],
+          ),
+        ),
+      ),
+      ...(["show", "pause", "resume", "cancel", "retry"] as const).map((action) =>
+        Command.make(
+          action,
+          {
+            id: Argument.String(
+              action === "cancel" || action === "retry" ? "occurrence" : "task",
+            ).pipe(Argument.withSchema(Session.fields.id)),
+          },
+          ({ id }) => runTasks({ action, id }),
+        ).pipe(
+          Command.withDescription(
+            {
+              show: "Show occurrences, results, and skipped intervals",
+              pause: "Pause scheduling and cancel pending work",
+              resume: "Resume future occurrences",
+              cancel: "Cancel pending or active work",
+              retry: "Explicitly retry an unsuccessful occurrence",
+            }[action],
+          ),
+        ),
+      ),
+      Command.make(
+        "resume-provider",
+        {
+          provider: Argument.String("provider").pipe(Argument.withSchema(ProviderId)),
+        },
+        ({ provider }) => runTasks({ action: "resume-provider", provider }),
+      ).pipe(Command.withDescription("Allow scheduled requests again")),
+      Command.make("work", {}, () => startWorker("tasks")).pipe(
+        Command.withDescription("Run scheduling only in the foreground"),
+      ),
+    ]),
+  );
+
+  const gateway = Command.make("gateway").pipe(
+    Command.withDescription("Set up and run messaging channels"),
+    Command.withSubcommands([
+      ...registeredChannels.map((entry) =>
+        Command.make(
+          entry.id,
+          {
+            args: Argument.String("args").pipe(Argument.variadic()),
+          },
+          ({ args }) =>
+            setupChannel(registeredChannels, [entry.id, ...args]).pipe(
+              Effect.provide(runtime.config),
+            ),
+        ).pipe(Command.withDescription(`${entry.name}: gateway ${entry.id} ${entry.setupHelp}`)),
+      ),
+      Command.make("work", {}, () => startWorker("gateway")).pipe(
+        Command.withDescription("Run messaging only in the foreground"),
+      ),
+      Command.make("status", {}, () =>
+        throughWorker(
           { kind: "gateway" },
           stoppedMessagingStatus(registeredChannels).pipe(
             Effect.flatMap((status) => Console.log(JSON.stringify(status, null, 2))),
             Effect.provide(runtime.messagingStatus),
           ),
-        );
+        ),
+      ).pipe(Command.withDescription("Show messaging connection, queue, and delivery status")),
+    ]),
+  );
 
-      return setupChannel(registeredChannels, args.slice(1)).pipe(Effect.provide(runtime.config));
-    }
-
-    if (args[0] === "memory") {
-      // Validate arguments before acquiring the store and applying migrations.
-      return parseMemoryCommand(args.slice(1)).pipe(
-        Effect.flatMap((command) =>
-          throughWorker(
-            { kind: "memory", command },
-            manageMemory(command).pipe(
-              Effect.provide(runtime.memory),
-              Effect.flatMap((text) => Console.log(text)),
-            ),
+  const workerCommand = Command.make("worker").pipe(
+    Command.withDescription("Run and manage the background worker"),
+    Command.withSubcommands([
+      Command.make("run", {}, () => startWorker("all")).pipe(
+        Command.withDescription("Run scheduling and messaging in one foreground worker"),
+      ),
+      ...(["install", "start", "stop", "status", "logs", "uninstall"] as const).map((action) =>
+        Command.make(action, {}, () => runWorkerCommand(action)).pipe(
+          Command.withDescription(
+            {
+              install: "Install and start the macOS login worker",
+              start: "Start an installed worker",
+              stop: "Stop it until the next login or explicit start",
+              status: "Show launch agent, scheduling, and connection status",
+              logs: "Print the last 64 KiB of worker logs",
+              uninstall: "Stop and remove login startup; retain saved data",
+            }[action],
           ),
         ),
-      );
-    }
+      ),
+    ]),
+  );
 
-    if (args[0] === "worker") {
-      return Effect.gen(function* () {
-        const action = yield* parseWorkerCommand(args.slice(1));
-
-        const config = yield* AppConfig;
-        const managed = yield* worker(action, config);
-
-        if (action !== "status") return yield* Console.log(managed);
-
-        const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), {
-          action: "status",
-        });
-
-        if (reply !== null)
-          return yield* Console.log(
-            JSON.stringify({ launchAgent: managed, worker: reply.value }, null, 2),
-          );
-
-        const overview = yield* readLocalTaskStatus.pipe(Effect.provide(runtime.tasks));
-
-        const ids = [...new Set([config.provider, ...overview.providers])];
-
-        const connections = yield* WorkerConnections.use((service) =>
-          Effect.forEach(ids, (id) => service.status(id)),
-        ).pipe(Effect.provide(runtime.connections));
-
-        yield* Console.log(
-          JSON.stringify(
-            {
-              launchAgent: managed,
-              worker: {
-                ...overview,
-                running: false,
-                pid: null,
-                startedAt: null,
-                activeOccurrence: null,
-                connections,
-              },
-            },
-            null,
-            2,
-          ),
-        );
-      }).pipe(Effect.provide(runtime.config));
-    }
-
-    if (args[0] === "tasks") {
-      if (args.length === 2 && args[1] === "work") return startWorker("tasks");
-
-      return Effect.gen(function* () {
-        const command = yield* parseTaskCommand(args.slice(1));
-        const config = yield* AppConfig;
-        const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), command);
-
-        if (reply !== null) return yield* Console.log(JSON.stringify(reply.value, null, 2));
-
-        const result = yield* executeLocalTaskCommand(command).pipe(Effect.provide(runtime.tasks));
-        yield* Console.log(JSON.stringify(result, null, 2));
-      }).pipe(Effect.provide(runtime.config));
-    }
-
-    if (args[0] === "chat") {
-      const command = parseChatCommand(args.slice(1));
-
-      if (command !== null) {
-        if (command.action === "show" || command.action === "sessions")
-          return throughWorker(
-            { kind: "chat", command },
-            inspectChat(command).pipe(
-              Effect.provide(runtime.store),
-              Effect.flatMap((text) => Console.log(text)),
-            ),
-          );
-
-        return prepareChat(command).pipe(
-          Effect.flatMap((submission) =>
+  const app = Command.make("bun run start").pipe(
+    Command.withDescription(`Poppet\n\nProviders:\n${providerHelp}`),
+    Command.withSubcommands([
+      Command.make("config", {}, () => showConfig.pipe(Effect.provide(runtime.config))).pipe(
+        Command.withDescription("Show validated configuration"),
+      ),
+      Command.make("store").pipe(
+        Command.withDescription("Inspect the conversation store"),
+        Command.withSubcommands([
+          Command.make("status", {}, () =>
             throughWorker(
-              { kind: "chat", command: submission },
-              sendChat(submission, write).pipe(Effect.provide(runtime.chat)),
+              { kind: "store" },
+              Store.use((store) =>
+                store.status.pipe(
+                  Effect.flatMap((status) => Console.log(JSON.stringify(status, null, 2))),
+                ),
+              ).pipe(Effect.provide(runtime.store)),
             ),
-          ),
-          Effect.provide(runtime.config),
-        );
-      }
-    }
+          ).pipe(Command.withDescription("Open/migrate the conversation store and show counts")),
+        ]),
+      ),
+      Command.make("auth").pipe(
+        Command.withDescription(`Manage provider connections\n\n${providerHelp}`),
+        Command.withShortDescription("Manage provider connections"),
+        Command.withSubcommands(authCommands),
+      ),
+      Command.make("provider").pipe(
+        Command.withDescription("Inspect and verify the configured provider"),
+        Command.withSubcommands([
+          Command.make("models", {}, () =>
+            Effect.gen(function* () {
+              const provider = yield* Provider;
+              yield* Console.log(JSON.stringify(yield* provider.models, null, 2));
+            }).pipe(Effect.provide(runtime.provider)),
+          ).pipe(Command.withDescription("List supported models")),
+          Command.make("verify", {}, () =>
+            Effect.gen(function* () {
+              const model = yield* Model;
+              yield* verifyModel(model);
+              yield* Console.log(
+                `Provider verification passed with ${model.description.provider}/${model.description.id}. Completed inference and one local tool round trip.`,
+              );
+            }).pipe(Effect.provide(runtime.model)),
+          ).pipe(Command.withDescription("Verify the configured model with a local tool")),
+        ]),
+      ),
+      chat,
+      memory,
+      tasks,
+      gateway,
+      workerCommand,
+    ]),
+  );
 
-    return Effect.fail(new UsageError({ message: "Unknown command. Run bun run start --help." }));
-  };
+  const execute = Command.runWith(app, { version: "0.0.0", renderErrors: false });
+
+  return (args: ReadonlyArray<string>) =>
+    execute(commandArgs(args, registeredChannels)).pipe(
+      Effect.catchTag("ShowHelp", (error) =>
+        Effect.gen(function* () {
+          const formatter = yield* CliOutput.Formatter;
+
+          return yield* Effect.fail(
+            new UsageError({ message: formatter.formatErrors(error.errors) }),
+          );
+        }),
+      ),
+      // Parsing and help need platform services, but no application resources.
+      Effect.provideService(CliConfig.CliConfig, CliConfig.make({ builtIns: [GlobalFlag.Help] })),
+      Effect.provide(BunServices.layer),
+    );
 };
 
 export const run = makeCLI(providers);

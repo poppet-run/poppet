@@ -37,8 +37,8 @@ test.concurrent("invalid configuration and commands exit unsuccessfully", async 
   expect(invalidConfig.stdout).toBe("");
   expect(invalidConfig.stderr).toContain("POPPET_DATA_DIR");
   expect(invalidCommand.exitCode).toBe(1);
-  expect(invalidCommand.stdout).toBe("");
-  expect(invalidCommand.stderr).toContain("Unknown command");
+  expect(invalidCommand.stdout).toContain("bun run start config");
+  expect(invalidCommand.stderr).toContain("Unexpected positional argument");
 });
 
 test.concurrent("the CLI resolves relative configuration paths from the repository directory", async () => {

@@ -1,9 +1,7 @@
 import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 
-import { Effect } from "effect";
-
-import { parseWorkerCommand, workerLaunch } from "#src/worker";
+import { workerLaunch } from "#src/worker";
 
 test("builds an absolute CLI launch description without including shell credentials", () => {
   const previous = process.env.POPPET_OPENROUTER_API_KEY;
@@ -39,10 +37,4 @@ test("builds an absolute CLI launch description without including shell credenti
     if (previousSoulBytes === undefined) delete process.env.POPPET_SOUL_BYTES;
     else process.env.POPPET_SOUL_BYTES = previousSoulBytes;
   }
-});
-
-test("rejects invalid worker commands", async () => {
-  await expect(Effect.runPromise(parseWorkerCommand(["start", "extra"]))).rejects.toMatchObject({
-    message: expect.stringContaining("Use worker"),
-  });
 });

@@ -7,6 +7,13 @@ Run commands from the repository root with `bun run start`. Run
 are placeholders; replace them before running a command. Quote prompts and values
 that contain spaces.
 
+Every command has its own help, for example `bun run start tasks add --help` or
+`bun run start auth login -h`. Help works without valid configuration or credentials.
+Argument errors print the relevant command's help and exit unsuccessfully.
+The remaining words of a message, memory value, or task prompt are joined with
+spaces; flags inside that text stay literal. Use `--` before the text when it
+starts with `--help` or `-h`.
+
 ## Configuration and storage
 
 | Command        | Action                                                                             |

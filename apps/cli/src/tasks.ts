@@ -3,58 +3,13 @@ import {
   TaskCommand,
   TaskError,
   nextOccurrence,
-  parseTimestamp,
   taskOperation,
   type Schedule,
 } from "@poppet/tasks";
 import { Effect, Schema } from "effect";
 
-export const parseTaskCommand = (args: ReadonlyArray<string>) =>
+export const prepareTask = (name: string, schedule: Schedule, coding: boolean, prompt: string) =>
   Effect.gen(function* () {
-    const action = args[0];
-
-    if (["list", "providers", "clear", "status"].includes(action ?? "") && args.length === 1)
-      return yield* Schema.decodeUnknownEffect(TaskCommand)({ action }).pipe(
-        Effect.mapError(() => new TaskError({ message: "Invalid task command." })),
-      );
-
-    if (
-      ["show", "pause", "resume", "cancel", "retry", "resume-provider"].includes(action ?? "") &&
-      args.length === 2
-    )
-      return yield* Schema.decodeUnknownEffect(TaskCommand)(
-        action === "resume-provider" ? { action, provider: args[1] } : { action, id: args[1] },
-      ).pipe(
-        Effect.mapError(
-          () =>
-            new TaskError({ message: "Invalid task or provider ID. Run bun run start --help." }),
-        ),
-      );
-
-    if (action !== "add")
-      return yield* Effect.fail(
-        new TaskError({
-          message:
-            "Use tasks add, list, show, status, pause, resume, cancel, retry, clear, providers, resume-provider, or work. See --help.",
-        }),
-      );
-
-    const name = args[1];
-
-    const schedule = yield* taskOperation((): Schedule => {
-      if (args[2] === "--at" && args[3]) return { type: "once", at: parseTimestamp(args[3]) };
-
-      if (args[2] === "--cron" && args[3] && args[4] === "--tz" && args[5])
-        return { type: "cron", expression: args[3], timezone: args[5] };
-
-      throw new TaskError({
-        message:
-          "Use tasks add <name> --at <timestamp> <prompt>, or --cron <expression> --tz <timezone> <prompt>.",
-      });
-    });
-
-    const offset = schedule.type === "once" ? 4 : 6;
-    const coding = args[offset] === "--coding";
     yield* taskOperation(() => nextOccurrence(schedule, Date.now()));
     const config = yield* AppConfig;
 
@@ -64,11 +19,11 @@ export const parseTaskCommand = (args: ReadonlyArray<string>) =>
       );
 
     return yield* Schema.decodeUnknownEffect(TaskCommand)({
-      action,
+      action: "add",
       task: {
         name,
         schedule,
-        prompt: args.slice(offset + (coding ? 1 : 0)).join(" "),
+        prompt,
         provider: config.provider,
         model: config.model,
         workload: coding ? "coding" : "assistant",

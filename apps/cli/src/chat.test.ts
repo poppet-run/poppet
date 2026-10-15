@@ -325,13 +325,12 @@ describe("chat CLI", () => {
     let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
 
     try {
-      await chat.invoke(["--help"]);
+      await chat.invoke(["gateway", "--help"]);
       expect(chat.lines.at(-1)).toContain("gateway example-channel setup");
       expect(chat.lines.at(-1)).not.toContain("gateway discord");
-      await expect(chat.invoke(["gateway", "missing-channel", "setup"])).rejects.toHaveProperty(
-        "reason",
-        "configuration",
-      );
+      await expect(chat.invoke(["gateway", "missing-channel", "setup"])).rejects.toMatchObject({
+        message: expect.stringContaining('Unknown subcommand "missing-channel"'),
+      });
       await chat.invoke(["gateway", "status"]);
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ running: false, enabled: false });
 
@@ -836,7 +835,7 @@ describe("chat CLI", () => {
     const chat = await fixture();
 
     try {
-      await chat.invoke(["chat", "new", "--coding", "First question"]);
+      await chat.invoke(["chat", "new", "--coding", "First", "question", "--help", "--coding"]);
       expect(chat.state.open).toBe(false);
       expect(chat.chunks.join("")).toBe("Answer\n");
       expect(chat.errors[0]).toStartWith("Session: ");
@@ -860,14 +859,14 @@ describe("chat CLI", () => {
       });
       expect(chat.state.built).toBe(built);
       process.env.POPPET_CONTEXT_BYTES = "65536";
-      await chat.invoke(["chat", "send", session.id, "Second question"]);
+      await chat.invoke(["chat", "send", session.id, "--unknown", "Second", "question"]);
       expect(chat.state.open).toBe(false);
       expect(chat.requests[1]).toMatchObject({
         workload: "coding",
         messages: [
-          { role: "user", text: "First question" },
+          { role: "user", text: "First question --help --coding" },
           { role: "assistant", continuation: { data: { secretOpaqueState: "retain privately" } } },
-          { role: "user", text: "Second question" },
+          { role: "user", text: "--unknown Second question" },
         ],
         settings: {},
       });

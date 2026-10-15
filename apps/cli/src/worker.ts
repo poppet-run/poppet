@@ -2,25 +2,9 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import type { Settings } from "@poppet/config";
-import { WorkerAction, WorkerError, type WorkerLaunch } from "@poppet/platform";
+import { type WorkerAction, WorkerError, type WorkerLaunch } from "@poppet/platform";
 import { manageWorker as manageMacOSWorker } from "@poppet/platform-macos";
-import { Effect, Schema } from "effect";
-
-export const parseWorkerCommand = (args: ReadonlyArray<string>) =>
-  args.length === 1
-    ? Schema.decodeUnknownEffect(WorkerAction)(args[0]).pipe(
-        Effect.mapError(
-          () =>
-            new WorkerError({
-              message: "Use worker run, install, start, stop, status, logs, or uninstall.",
-            }),
-        ),
-      )
-    : Effect.fail(
-        new WorkerError({
-          message: "Use worker run, install, start, stop, status, logs, or uninstall.",
-        }),
-      );
+import { Effect } from "effect";
 
 export const workerLaunch = (config: Settings): WorkerLaunch => {
   const environment = new Map([
