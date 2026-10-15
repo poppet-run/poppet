@@ -38,6 +38,12 @@ tooling configs. TypeScript stays installed for editor support. To check one
 workspace, use `bun run --filter '@poppet/config' typecheck`
 or `bun run --filter '@poppet/provider-openai' test`.
 
+Use `bun run test` for the suite or `bun run test <path>` for focused tests.
+The test runner starts Bun with an empty environment, a temporary home, and dotenv
+loading disabled. It blocks external HTTP requests and system commands, and passes
+the same guards to CLI subprocesses. Workspace test scripts use this runner too.
+Direct `bun test` is rejected unless the isolation runner started it.
+
 The Oxfmt and Oxlint configs are based on
 [Memoir's configuration](https://github.com/tombell/memoir-app), with React and JSX
 lint plugins removed for this CLI project. Type checking also covers the configuration files.

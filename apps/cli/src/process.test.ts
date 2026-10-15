@@ -9,7 +9,7 @@ const invokeProcess = async (
   environment: Record<string, string> = {},
   input: string | null = null,
 ) => {
-  const subprocess = Bun.spawn([process.execPath, "run", "--silent", "start", ...args], {
+  const subprocess = Bun.spawn([process.execPath, "apps/cli/src/main.ts", ...args], {
     cwd: fileURLToPath(new URL("../../..", import.meta.url)),
     env: {
       PATH: process.env.PATH ?? "",
@@ -41,7 +41,7 @@ test.concurrent("invalid configuration and commands exit unsuccessfully", async 
   expect(invalidCommand.stderr).toContain("Unknown command");
 });
 
-test.concurrent("root start resolves relative configuration paths from the repository directory", async () => {
+test.concurrent("the CLI resolves relative configuration paths from the repository directory", async () => {
   const result = await invokeProcess(["config"], {
     POPPET_DATA_DIR: "relative-data",
     POPPET_NOTES_DIR: "relative-notes",

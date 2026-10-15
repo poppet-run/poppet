@@ -3,7 +3,14 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { Agent, AgentLive, ChatSettingsLive, ModelResolver, NotesLive } from "@poppet/agent";
+import {
+  Agent,
+  AgentLive,
+  ChatSettings,
+  defaultPolicy,
+  ModelResolver,
+  NotesLive,
+} from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive, Memory } from "@poppet/memory";
 import {
@@ -91,14 +98,15 @@ const fixture = async (stream: ModelOperations["stream"]) => {
   const store = StoreLive.pipe(Layer.provideMerge(config));
   const memory = LocalMemoryLive.pipe(Layer.provideMerge(store));
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
+  const settings = Layer.succeed(ChatSettings, defaultPolicy);
 
   const agent = AgentLive.pipe(
     Layer.provideMerge(
       Layer.mergeAll(
         store,
         memory,
-        ChatSettingsLive,
-        NotesLive.pipe(Layer.provide(Layer.merge(config, ChatSettingsLive))),
+        settings,
+        NotesLive.pipe(Layer.provide(Layer.merge(config, settings))),
         Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),
       ),
     ),

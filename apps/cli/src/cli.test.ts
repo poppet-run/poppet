@@ -14,7 +14,14 @@ const invoke = async (args: ReadonlyArray<string>, environment: Record<string, s
 
   // Bun's import.meta.env retains this object, so update it without replacing it.
   for (const key of Object.keys(process.env)) delete process.env[key];
-  Object.assign(process.env, { PATH: previous.PATH ?? "", ...environment });
+  Object.assign(process.env, {
+    PATH: previous.PATH ?? "",
+    HOME: previous.HOME,
+    USERPROFILE: previous.USERPROFILE,
+    XDG_CONFIG_HOME: previous.XDG_CONFIG_HOME,
+    TMPDIR: previous.TMPDIR,
+    ...environment,
+  });
   let stdout = "";
   const errors: string[] = [];
 
@@ -26,10 +33,23 @@ const invoke = async (args: ReadonlyArray<string>, environment: Record<string, s
     error: (...values) => errors.push(values.join(" ")),
   };
 
-  const run = makeCLI(providers, (text) =>
-    Effect.sync(() => {
-      stdout += text;
-    }),
+  const run = makeCLI(
+    providers,
+    (text) =>
+      Effect.sync(() => {
+        stdout += text;
+      }),
+    (action, config) =>
+      Effect.sync(() => {
+        expect(action).toBe("status");
+
+        return {
+          installed: false,
+          loaded: false,
+          plist: join(config.dataDirectory, "home/Library/LaunchAgents/test.plist"),
+          log: join(config.dataDirectory, "logs/worker.log"),
+        };
+      }),
   );
 
   try {
@@ -124,38 +144,35 @@ describe("CLI", () => {
     }
   });
 
-  test.skipIf(process.platform !== "darwin")(
-    "stopped worker status includes providers assigned to saved tasks",
-    async () => {
-      const directory = await mkdtemp(join(tmpdir(), "poppet-worker-providers-"));
+  test("stopped worker status includes providers assigned to saved tasks", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-worker-providers-"));
 
-      try {
-        const added = await invoke(
-          ["tasks", "add", "Router task", "--at", "2099-10-14T09:00:00Z", "Summarize notes"],
-          {
-            POPPET_DATA_DIR: directory,
-            POPPET_PROVIDER: "openrouter",
-            POPPET_MODEL: "saved-model",
-          },
-        );
+    try {
+      const added = await invoke(
+        ["tasks", "add", "Router task", "--at", "2099-10-14T09:00:00Z", "Summarize notes"],
+        {
+          POPPET_DATA_DIR: directory,
+          POPPET_PROVIDER: "openrouter",
+          POPPET_MODEL: "saved-model",
+        },
+      );
 
-        expect(added.exitCode).toBe(0);
-        const result = await invoke(["worker", "status"], { POPPET_DATA_DIR: directory });
-        expect(result.exitCode).toBe(0);
-        expect(JSON.parse(result.stdout).worker).toMatchObject({
-          running: false,
-          taskCount: 1,
-          providers: ["openrouter"],
-          connections: [
-            { provider: "openai-chatgpt", connected: false },
-            { provider: "openrouter", connected: false, action: "Run auth login openrouter." },
-          ],
-        });
-      } finally {
-        await rm(directory, { recursive: true, force: true });
-      }
-    },
-  );
+      expect(added.exitCode).toBe(0);
+      const result = await invoke(["worker", "status"], { POPPET_DATA_DIR: directory });
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout).worker).toMatchObject({
+        running: false,
+        taskCount: 1,
+        providers: ["openrouter"],
+        connections: [
+          { provider: "openai-chatgpt", connected: false },
+          { provider: "openrouter", connected: false, action: "Run auth login openrouter." },
+        ],
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 
   test("recovers local task commands after a worker crashes without deleting its owner lock", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-crash-"));

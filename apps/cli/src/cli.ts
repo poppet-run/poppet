@@ -103,6 +103,7 @@ const showConfig = Effect.gen(function* () {
 export const makeCLI = (
   registered: ReadonlyArray<ProviderRegistration>,
   write: ChatWriter = writeChatText,
+  worker: typeof manageWorker = manageWorker,
 ) => {
   const runtime = runtimeLayers(registered);
 
@@ -238,7 +239,7 @@ export const makeCLI = (
         const action = yield* parseWorkerCommand(args.slice(1));
 
         const config = yield* AppConfig;
-        const managed = yield* manageWorker(action, config);
+        const managed = yield* worker(action, config);
 
         if (action !== "status") return yield* Console.log(managed);
 

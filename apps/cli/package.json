@@ -11,7 +11,7 @@
     "start": "bun src/main.ts",
     "dev": "bun --watch src/main.ts",
     "typecheck": "bun --check",
-    "test": "bun test"
+    "test": "bun --no-env-file ../../tools/testing/run.ts"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.4",
