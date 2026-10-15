@@ -40,6 +40,7 @@ export const workerLaunch = (config: Settings): WorkerLaunch => {
     "MODEL_TURNS",
     "TOOL_CALLS",
     "TOOL_BYTES",
+    "SOUL_BYTES",
     "PROFILE_BYTES",
     "FACTS_BYTES",
   ]) {

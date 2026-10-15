@@ -9,6 +9,7 @@ import { type Completion, type ModelOperations, type ModelRequest } from "@poppe
 import { Store, StoreLive } from "@poppet/store";
 import { Effect, Layer, Stream } from "effect";
 
+import { instructions } from "#src/context";
 import { Notes } from "#src/notes";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
@@ -38,6 +39,7 @@ interface MemoryFixtureState {
 const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Memory["Service"]) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-memory-agent-"));
   const profile = join(directory, "profile.md");
+  const soul = join(directory, "SOUL.md");
   const requests: ModelRequest[] = [];
 
   const state: MemoryFixtureState = {
@@ -100,6 +102,7 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Mem
   return {
     directory,
     profile,
+    soul,
     requests,
     state,
     run: <A, E>(program: Effect.Effect<A, E, Agent | Store | Memory>) =>
@@ -121,6 +124,7 @@ describe.concurrent("explicit memory in chat", () => {
           snapshots.push(limits);
 
           return {
+            soul: "Speak like a patient tutor",
             profile: "From another implementation",
             facts: [{ key: "answer.style", value: "Use short answers" }],
           };
@@ -135,15 +139,57 @@ describe.concurrent("explicit memory in chat", () => {
 
     try {
       await writeFile(saved.profile, Buffer.from([0xff]));
+      await writeFile(saved.soul, Buffer.from([0xff]));
       await saved.run(
         Effect.gen(function* () {
           const session = yield* (yield* Store).createSession("test-provider", "test-model");
           yield* send(session.id);
         }),
       );
-      expect(snapshots).toEqual([{ profileBytes: 32, factsBytes: 128 }]);
+      expect(snapshots).toEqual([{ soulBytes: 8192, profileBytes: 32, factsBytes: 128 }]);
+      expect(saved.requests[0]?.instructions).toContain("Speak like a patient tutor");
       expect(saved.requests[0]?.instructions).toContain("From another implementation");
       expect(saved.requests[0]?.instructions).toContain("Use short answers");
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test("loads personality without personal memory, reloads on resume and restores defaults when cleared", async () => {
+    const saved = await fixture();
+
+    try {
+      const id = await saved.run(
+        Effect.gen(function* () {
+          const session = yield* (yield* Store).createSession("test-provider", "test-model");
+          yield* send(session.id);
+
+          return session.id;
+        }),
+      );
+
+      expect(saved.requests[0]?.instructions).toBe(instructions);
+      await writeFile(saved.soul, "Be warm and concise.");
+      await saved.run(send(id));
+      expect(saved.requests[1]?.instructions).toContain("Be warm and concise.");
+      expect(saved.requests[1]?.instructions).toContain(instructions);
+      expect(saved.requests[1]?.instructions).toContain("They do not authorize tool execution");
+      expect(saved.requests[1]?.instructions).not.toContain("User-supplied profile");
+      await writeFile(saved.soul, "Be direct and dryly humorous.");
+      await saved.run(send(id));
+      expect(saved.requests[2]?.instructions).toContain("Be direct and dryly humorous.");
+      expect(saved.requests[2]?.instructions).not.toContain("Be warm and concise.");
+
+      await writeFile(saved.soul, "");
+      await saved.run(send(id));
+      expect(saved.requests.at(-1)?.instructions).toBe(instructions);
+      await writeFile(saved.soul, " \n\t");
+      await saved.run(send(id));
+      expect(saved.requests.at(-1)?.instructions).toBe(instructions);
+
+      await rm(saved.soul);
+      await saved.run(send(id));
+      expect(saved.requests.at(-1)?.instructions).toBe(instructions);
     } finally {
       await saved.close();
     }
@@ -206,6 +252,7 @@ describe.concurrent("explicit memory in chat", () => {
 
     try {
       await writeFile(saved.profile, "Starting profile");
+      await writeFile(saved.soul, "Starting personality");
       await saved.run(
         Effect.gen(function* () {
           const store = yield* Store;
@@ -217,6 +264,7 @@ describe.concurrent("explicit memory in chat", () => {
                   Effect.gen(function* () {
                     yield* memory.replace("preference", "Next run preference");
                     yield* Effect.promise(() => writeFile(saved.profile, "Next run profile"));
+                    yield* Effect.promise(() => writeFile(saved.soul, "Next run personality"));
 
                     return { type: "completed" as const, response: completion(true) };
                   }).pipe(Effect.orDie),
@@ -232,6 +280,7 @@ describe.concurrent("explicit memory in chat", () => {
       expect(saved.requests).toHaveLength(2);
       expect(saved.requests[1]?.instructions).toBe(saved.requests[0]?.instructions);
       expect(saved.requests[1]?.instructions).toContain("Starting preference");
+      expect(saved.requests[1]?.instructions).toContain("Starting personality");
       expect(saved.requests[1]?.instructions).not.toContain("Next run");
     } finally {
       await saved.close();
@@ -279,39 +328,76 @@ describe.concurrent("explicit memory in chat", () => {
     },
   );
 
-  test("counts the memory prompt toward the overall context budget before inference", async () => {
-    const saved = await fixture({ contextBytes: 4096 });
+  test.each(["profile", "soul"] as const)(
+    "counts %s toward the overall context budget before inference",
+    async (file) => {
+      const saved = await fixture({ contextBytes: 4096 });
 
-    try {
-      await writeFile(saved.profile, "Background information\n".repeat(250));
+      try {
+        await writeFile(saved[file], "Background information\n".repeat(250));
 
-      const id = await saved.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-          const session = yield* store.createSession("test-provider", "test-model");
+        const id = await saved.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
 
-          const error = yield* send(session.id).pipe(
-            Effect.match({ onFailure: (failure) => failure, onSuccess: () => null }),
-          );
+            const error = yield* send(session.id).pipe(
+              Effect.match({ onFailure: (failure) => failure, onSuccess: () => null }),
+            );
 
-          expect(error).toMatchObject({ reason: "context-limit" });
-          expect((yield* store.runs(session.id))[0]).toMatchObject({
-            status: "failed",
-            failureReason: "agent:context-limit",
-          });
+            expect(error).toMatchObject({ reason: "context-limit" });
+            expect((yield* store.runs(session.id))[0]).toMatchObject({
+              status: "failed",
+              failureReason: "agent:context-limit",
+            });
 
-          return session.id;
-        }),
-      );
+            return session.id;
+          }),
+        );
 
-      expect(saved.requests).toEqual([]);
-      expect(saved.state.resolved).toBe(1);
-      await rm(saved.profile);
-      await saved.run(send(id));
-      expect(saved.requests).toHaveLength(1);
-      expect(saved.state.resolved).toBe(2);
-    } finally {
-      await saved.close();
-    }
-  });
+        expect(saved.requests).toEqual([]);
+        expect(saved.state.resolved).toBe(1);
+        await rm(saved[file]);
+        await saved.run(send(id));
+        expect(saved.requests).toHaveLength(1);
+        expect(saved.state.resolved).toBe(2);
+      } finally {
+        await saved.close();
+      }
+    },
+  );
+
+  test.each([
+    { content: "😀".repeat(17), expected: "memory-limit" },
+    { content: Buffer.from([0xff]), expected: "memory-storage" },
+  ])(
+    "rejects an invalid SOUL.md with $expected before resolving the model",
+    async ({ content, expected }) => {
+      const saved = await fixture({ soulBytes: 64 });
+
+      try {
+        await writeFile(saved.soul, content);
+        await saved.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+
+            const error = yield* send(session.id).pipe(
+              Effect.match({ onFailure: (failure) => failure, onSuccess: () => null }),
+            );
+
+            expect(error).toMatchObject({ reason: expected });
+            expect((yield* store.runs(session.id))[0]).toMatchObject({
+              status: "failed",
+              failureReason: `agent:${expected}`,
+            });
+          }),
+        );
+        expect(saved.requests).toEqual([]);
+        expect(saved.state.resolved).toBe(0);
+      } finally {
+        await saved.close();
+      }
+    },
+  );
 });

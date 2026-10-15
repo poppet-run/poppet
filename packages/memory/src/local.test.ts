@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -76,7 +76,10 @@ describe.concurrent("local memory", () => {
         Effect.gen(function* () {
           const memory = yield* Memory;
           expect(yield* memory.list).toEqual([fact]);
-          expect(yield* memory.snapshot({ profileBytes: 8192, factsBytes: 8192 })).toEqual({
+          expect(
+            yield* memory.snapshot({ soulBytes: 8192, profileBytes: 8192, factsBytes: 8192 }),
+          ).toEqual({
+            soul: "",
             profile: "",
             facts: [{ key: fact.key, value: fact.value }],
           });
@@ -139,23 +142,31 @@ describe.concurrent("local memory", () => {
   });
 
   test.each([
-    { kind: "profile bytes", reason: "limit" },
-    { kind: "facts bytes", reason: "limit" },
-    { kind: "invalid UTF-8", reason: "storage" },
-    { kind: "symlink", reason: "storage" },
-  ] as const)("rejects $kind through the local snapshot operation", async ({ kind, reason }) => {
+    ...["profile.md", "SOUL.md"].flatMap((file) => [
+      { file, kind: "file bytes", reason: "limit" } as const,
+      { file, kind: "invalid UTF-8", reason: "storage" } as const,
+      { file, kind: "NUL", reason: "storage" } as const,
+      { file, kind: "symlink", reason: "storage" } as const,
+      { file, kind: "directory", reason: "storage" } as const,
+    ]),
+    { file: "profile.md", kind: "facts bytes", reason: "limit" } as const,
+  ])("rejects $file $kind through the local snapshot operation", async ({ file, kind, reason }) => {
     const saved = await fixture();
-    const profile = join(saved.directory, "profile.md");
+    const path = join(saved.directory, file);
 
     try {
-      if (kind === "profile bytes") await writeFile(profile, "😀".repeat(16));
+      if (kind === "file bytes") await writeFile(path, "😀".repeat(16));
 
-      if (kind === "invalid UTF-8") await writeFile(profile, Buffer.from([0xff]));
+      if (kind === "invalid UTF-8") await writeFile(path, Buffer.from([0xff]));
+
+      if (kind === "NUL") await writeFile(path, "Invalid\0text");
+
+      if (kind === "directory") await mkdir(path);
 
       if (kind === "symlink") {
         const outside = join(saved.directory, "outside.md");
         await writeFile(outside, "Not the profile");
-        await symlink(outside, profile);
+        await symlink(outside, path);
       }
 
       await saved.run(
@@ -167,7 +178,10 @@ describe.concurrent("local memory", () => {
               "long",
               "A preference that exceeds the small serialized facts budget",
             );
-          yield* reject(memory.snapshot({ profileBytes: 63, factsBytes: 40 }), reason);
+          yield* reject(
+            memory.snapshot({ soulBytes: 63, profileBytes: 63, factsBytes: 40 }),
+            reason,
+          );
         }),
       );
     } finally {

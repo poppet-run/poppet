@@ -7,7 +7,9 @@ import { parseWorkerCommand, workerLaunch } from "#src/worker";
 
 test("builds an absolute CLI launch description without including shell credentials", () => {
   const previous = process.env.POPPET_OPENROUTER_API_KEY;
+  const previousSoulBytes = process.env.POPPET_SOUL_BYTES;
   process.env.POPPET_OPENROUTER_API_KEY = "must-not-be-written";
+  process.env.POPPET_SOUL_BYTES = "4096";
 
   try {
     const launch = workerLaunch({
@@ -27,11 +29,15 @@ test("builds an absolute CLI launch description without including shell credenti
     expect(launch.workingDirectory).toBe(process.cwd());
     expect(launch.environment.get("POPPET_MODEL")).toBe("selected-model");
     expect(launch.environment.get("POPPET_DATA_DIR")).toBe("/tmp/data");
+    expect(launch.environment.get("POPPET_SOUL_BYTES")).toBe("4096");
     expect(launch.environment.has("POPPET_OPENROUTER_API_KEY")).toBe(false);
     expect(JSON.stringify(Array.from(launch.environment))).not.toContain("must-not-be-written");
   } finally {
     if (previous === undefined) delete process.env.POPPET_OPENROUTER_API_KEY;
     else process.env.POPPET_OPENROUTER_API_KEY = previous;
+
+    if (previousSoulBytes === undefined) delete process.env.POPPET_SOUL_BYTES;
+    else process.env.POPPET_SOUL_BYTES = previousSoulBytes;
   }
 });
 

@@ -438,8 +438,8 @@ inspection. An uncertain write requires checking the file before an explicit ret
 `@poppet/memory` owns the `Memory` service, fact and snapshot schemas, and
 `MemoryError`. Its operations are `snapshot`, `list`, `remember`, `replace`, and
 `forget`. `LocalMemoryLive` implements these operations using the existing
-`memories` table and editable `<data directory>/profile.md`. It retains up to
-128 facts of at most 4096 UTF-8 bytes each.
+`memories` table and editable `<data directory>/profile.md` and `SOUL.md` files.
+It retains up to 128 facts of at most 4096 UTF-8 bytes each.
 
 The store owns database acquisition and migration 5. `StoreLive` also exposes the
 scoped `StoreDatabase` service, allowing the CLI to supply one connection and
@@ -449,14 +449,18 @@ the memory package. Existing migration checksums and persisted formats are uncha
 
 The CLI manages facts through `Memory` without constructing a model provider or
 requiring a model. The agent asks for one snapshot at run start, passing the chat
-policy's profile and fact limits. The local implementation enforces these limits
-while reading data and returns profile text and keyed values without provenance.
-Profiles are optional, bounded, and reject non-regular files, symlinks, invalid
-UTF-8, and NUL bytes. Both budgets default to 8 KiB; exceeding them fails before
+policy's personality, profile, and fact limits. The local implementation enforces
+these limits while reading data and returns personality and profile text and keyed
+values without provenance.
+Context files are optional, bounded, and reject non-regular files, symlinks, invalid
+UTF-8, and NUL bytes. All three budgets default to 8 KiB; exceeding them fails before
 model-provider resolution. Empty memory preserves the base instructions.
 
-The profile and keyed values are serialized into the prompt as personal context.
-Metadata such as source runs and timestamps stays in the store. This prompt is
+`SOUL.md` is included as personality and tone guidance, subject to the base tool
+and file access rules. Missing, empty, or whitespace-only personality files preserve
+the default personality. The profile and keyed values are serialized into the
+prompt as personal context. Metadata such as source runs and timestamps stays in
+the store. This prompt is
 kept throughout the tool loop and included in every context-size estimate. The
 next run reads fresh memory even when continuing an existing session. Neither
 notes tools nor chat can create or mutate facts. Forgetting affects future memory

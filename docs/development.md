@@ -85,7 +85,7 @@ packages/
     src/service.ts        Memory service and domain errors
     src/schema.ts         Facts, snapshot data, and snapshot limits
     src/local.ts          Local fact operations and bounded snapshots
-    src/profile.ts        Bounded UTF-8 profile reads
+    src/context-file.ts   Bounded UTF-8 personality and profile reads
   store/                  @poppet/store
     src/database.ts       Scoped SQLite connection, ownership, and permissions
     src/migrations.ts     Versioned schema and transactional migration ledger

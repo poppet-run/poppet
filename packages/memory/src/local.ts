@@ -4,7 +4,7 @@ import { AppConfig } from "@poppet/config";
 import { StoreDatabase } from "@poppet/store";
 import { DateTime, Effect, Layer, Schema } from "effect";
 
-import { memoryLimit, readProfile } from "#src/profile";
+import { memoryLimit, readContextFile } from "#src/context-file";
 import { MemoryFact, SnapshotLimits } from "#src/schema";
 import { Memory, MemoryError } from "#src/service";
 
@@ -41,7 +41,21 @@ export const LocalMemoryLive = Layer.effect(
   Effect.gen(function* () {
     const { database } = yield* StoreDatabase;
     const config = yield* AppConfig;
-    const path = join(config.dataDirectory, "profile.md");
+
+    const readContext = (name: string, maximum: number, setting: string) => {
+      const path = join(config.dataDirectory, name);
+
+      return Effect.tryPromise({
+        try: () => readContextFile(path, maximum, setting),
+        catch: (cause) =>
+          cause instanceof MemoryError
+            ? cause
+            : new MemoryError({
+                reason: "storage",
+                message: `Could not read ${path}. Use a regular UTF-8 file without a symlink.`,
+              }),
+      });
+    };
 
     const list = Effect.try({
       try: () =>
@@ -154,16 +168,13 @@ export const LocalMemoryLive = Layer.effect(
             onExcessProperty: "error",
           })(limits).pipe(Effect.mapError(requestFailure));
 
-          const profile = yield* Effect.tryPromise({
-            try: () => readProfile(path, budget.profileBytes),
-            catch: (cause) =>
-              cause instanceof MemoryError
-                ? cause
-                : new MemoryError({
-                    reason: "storage",
-                    message: `Could not read ${path}. Use a regular UTF-8 file without a symlink.`,
-                  }),
-          });
+          const soul = yield* readContext("SOUL.md", budget.soulBytes, "POPPET_SOUL_BYTES");
+
+          const profile = yield* readContext(
+            "profile.md",
+            budget.profileBytes,
+            "POPPET_PROFILE_BYTES",
+          );
 
           const facts = (yield* list).map(({ key, value }) => ({ key, value }));
 
@@ -173,7 +184,7 @@ export const LocalMemoryLive = Layer.effect(
           )
             return yield* Effect.fail(memoryLimit("saved facts", "POPPET_FACTS_BYTES"));
 
-          return { profile, facts };
+          return { soul, profile, facts };
         }),
     } satisfies Memory["Service"];
   }),
