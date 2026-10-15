@@ -1,0 +1,24 @@
+{
+  "name": "@poppet/channel-discord",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./settings": "./src/settings.ts"
+  },
+  "scripts": {
+    "typecheck": "bun --check",
+    "test": "bun --no-env-file ../../tools/testing/run.ts"
+  },
+  "dependencies": {
+    "@poppet/credentials": "workspace:*",
+    "@poppet/gateway": "workspace:*",
+    "discord.js": "14.27.0",
+    "effect": "4.0.4"
+  }
+}
