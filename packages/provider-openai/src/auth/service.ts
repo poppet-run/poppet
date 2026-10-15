@@ -10,13 +10,14 @@ import { OAuthClient } from "#src/oauth/client";
 interface AuthOperations {
   readonly login: (consent: boolean) => Effect.Effect<ConnectionStatus, ConnectionError>;
   readonly status: Effect.Effect<ConnectionStatus, ConnectionError>;
+  /** Reads current credentials and refreshes near expiry while holding the auth permit. */
   readonly accessToken: Effect.Effect<Redacted.Redacted<string>, ConnectionError>;
+  /** Deletes local connection details first; false means remote revocation was not confirmed. */
   readonly signOut: Effect.Effect<boolean, ConnectionError>;
   readonly recordVerification: (model: string) => Effect.Effect<void, ConnectionError>;
 }
 
-// This tag identifies the auth service in Effect's context. yield* ChatGPTAuth
-// retrieves the implementation supplied by the layer below.
+/** Serializes ChatGPT sign-in, token refresh, status reads, and sign-out. */
 export class ChatGPTAuth extends Context.Service<ChatGPTAuth, AuthOperations>()(
   "poppet/ChatGPTAuth",
 ) {}

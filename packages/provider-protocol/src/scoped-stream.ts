@@ -10,8 +10,7 @@ import { Effect, Stream } from "effect";
 
 import { inferenceFailure } from "#src/errors";
 
-// The stream scope owns both cancellation and an absolute request deadline.
-// Taking only a delta still aborts the underlying request when the consumer exits.
+/** Validates inference input and aborts the request on deadline or early consumer exit. */
 export const modelStream = (
   description: ModelDescription,
   request: ModelRequest,

@@ -2,6 +2,7 @@ import { Redacted, Schema } from "effect";
 
 import { resource, Secret } from "#src/connection";
 
+/** Token-endpoint fields; refresh replies may omit unchanged credentials and scope. */
 export const TokenReply = Schema.Struct({
   access_token: Schema.optionalKey(Secret),
   refresh_token: Schema.optionalKey(Secret),

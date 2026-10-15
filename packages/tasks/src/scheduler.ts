@@ -27,7 +27,7 @@ import {
 } from "#src/task-schema";
 import { TaskRepository, type TaskStore } from "#src/task-store";
 
-// The host supplies provider status without making task scheduling depend on concrete adapters.
+/** Host-supplied provider status that keeps scheduling independent of concrete adapters. */
 export class WorkerConnections extends Context.Service<
   WorkerConnections,
   {
@@ -54,6 +54,7 @@ const logProviderPause = (at: number, pause: ProviderPause) =>
     }`,
   );
 
+/** Reconciles due work and logs only skips committed by the repository. */
 export const reconcileTasks = (repo: TaskStore, now: number, startup = false) =>
   Effect.gen(function* () {
     const skipped = yield* taskOperation(() => repo.reconcile(now, startup));
@@ -66,6 +67,7 @@ export const reconcileTasks = (repo: TaskStore, now: number, startup = false) =>
     );
   });
 
+/** Runs an occurrence in a fresh session with read-only notes, then saves its outcome. */
 export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) =>
   Effect.gen(function* () {
     const store = yield* Store;
@@ -168,6 +170,7 @@ interface ActiveOccurrence {
   readonly fiber: Fiber.Fiber<void, TaskError | StoreError>;
 }
 
+/** Recovers task state and builds serialized command handling plus the scheduling loop. */
 export const makeTaskWorker = Effect.gen(function* () {
   const config = yield* AppConfig;
   const store = yield* Store;

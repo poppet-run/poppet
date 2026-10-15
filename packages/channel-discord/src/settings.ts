@@ -7,8 +7,10 @@ import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { ChannelError } from "@poppet/gateway";
 import { Effect, Schema } from "effect";
 
+/** A Discord snowflake kept as text to preserve integer precision. */
 export const DiscordId = Schema.String.check(Schema.isPattern(/^\d{1,20}$/));
 
+/** Protected bot credentials and the explicit owner, guild, and channels allowed to use them. */
 export const DiscordSettings = Schema.Struct({
   version: Schema.Literal(1),
   botId: DiscordId,

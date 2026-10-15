@@ -27,6 +27,7 @@ const ModelCatalog = Schema.Struct({
   ),
 });
 
+/** An account-catalog entry before translation into the shared model description. */
 export type AvailableModel = (typeof ModelCatalog.Type.models)[number];
 
 interface ModelOperations {
@@ -35,6 +36,7 @@ interface ModelOperations {
   readonly resolve: (model: string) => Effect.Effect<SelectedModelOperations, ProviderError>;
 }
 
+/** Lists, verifies, and resolves models available through the current ChatGPT connection. */
 export class ChatGPTModel extends Context.Service<ChatGPTModel, ModelOperations>()(
   "poppet/ChatGPTModel",
 ) {}

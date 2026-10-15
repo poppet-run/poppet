@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 
 import { Context, Data, Effect, Exit, Fiber, Option, Schema, Scope } from "effect";
 
+/** A rejected local request or a failure to use the protected worker endpoint. */
 export class WorkerRequestError extends Data.TaggedError("WorkerRequestError")<{
   readonly message: string;
 }> {}
@@ -10,6 +11,7 @@ export class WorkerRequestError extends Data.TaggedError("WorkerRequestError")<{
 // Retain the existing endpoint so older clients still reach the single store owner.
 export const workerSocketPath = (directory: string) => join(directory, "store", "tasks.sock");
 
+/** Host routing for decoded worker requests, using the listener's resource scope. */
 export class WorkerRequests extends Context.Service<
   WorkerRequests,
   {
@@ -27,7 +29,7 @@ const UnavailableSocket = Schema.Struct({
   code: Schema.Literals(["ECONNREFUSED", "FailedToOpenSocket"]),
 });
 
-// Only absence or a refused connection permits fallback, never a lost response.
+/** Returns null only when no worker is reachable; a lost response must not trigger local replay. */
 export const requestWorker = async (
   path: string,
   route: string,
@@ -74,6 +76,7 @@ export const requestWorker = async (
   return response;
 };
 
+/** Opens a protected Unix socket in scope; the caller must already own the store. */
 export const serveWorker = (path: string, handle: WorkerRequests["Service"]["handle"]) =>
   Effect.acquireRelease(
     Effect.gen(function* () {

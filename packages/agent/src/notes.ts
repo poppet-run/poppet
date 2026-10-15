@@ -63,11 +63,13 @@ export const noteTools: ReadonlyArray<Tool> = [
   ),
 ];
 
+/** Validated arguments for one of the agent's allowed note operations. */
 export type NoteCall =
   | { readonly name: "read_note"; readonly path: string }
   | { readonly name: "search_notes"; readonly query: string }
   | { readonly name: "save_note"; readonly path: string; readonly content: string };
 
+/** Checks the tool namespace, name, and JSON arguments before any note operation executes. */
 export const decodeNoteCall = (
   call: Extract<Output, { type: "tool-call" }>,
 ): Effect.Effect<NoteCall, AgentError> => {
@@ -121,6 +123,7 @@ export const decodeNoteCall = (
   }
 };
 
+/** Executes bounded note operations within the configured directory and returns JSON text. */
 export class Notes extends Context.Service<
   Notes,
   {
@@ -150,6 +153,7 @@ const checkDirectory = async (path: string) => {
   return info;
 };
 
+// Check every parent as well as the target so a nested link cannot escape the notes directory.
 const notePath = async (root: string, requested: string, createParents: boolean) => {
   if (requested.includes("\0")) throw forbidden();
   const target = resolve(root, requested);
@@ -315,6 +319,7 @@ const searchResult = async (root: string, query: string, limit: number, signal: 
   return JSON.stringify({ matches, truncated });
 };
 
+// Sync a temporary file before replacement, then sync the directory before reporting success.
 const saveResult = async (
   root: string,
   call: Extract<NoteCall, { name: "save_note" }>,

@@ -31,6 +31,7 @@ const taskSql = `SELECT id, name, prompt, provider, model, workload, schedule,
 const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, status,
   session_id AS sessionId, run_id AS runId, finished_at AS finishedAt, reason FROM job_occurrences`;
 
+/** Builds synchronous task operations on the caller's owned database; failures are thrown. */
 export const makeTaskStore = (database: Database) => {
   const list = () => {
     using statement = database.prepare(`${taskSql} ORDER BY created_at, id`);
@@ -112,6 +113,7 @@ export const makeTaskStore = (database: Database) => {
     statement.run(now, now - recurringExpiry);
   };
 
+  /** Queues due work and advances schedules together, recording missed recurring work as skips. */
   const reconcile = (now: number, startup = false) =>
     database
       .transaction(() => {
@@ -284,6 +286,7 @@ export const makeTaskStore = (database: Database) => {
       })
       .immediate();
 
+  /** Atomically starts the oldest eligible occurrence, respecting task and provider pauses. */
   const claim = (now: number) =>
     database
       .transaction(() => {
@@ -339,6 +342,7 @@ export const makeTaskStore = (database: Database) => {
       })
       .immediate();
 
+  // Quota failures need manual resumption; transient failures delay future work with capped backoff.
   const blockProvider = (
     provider: string,
     reason: "quota" | "temporary" | "rate-limit",
@@ -467,6 +471,7 @@ export const makeTaskStore = (database: Database) => {
 
 export type TaskStore = ReturnType<typeof makeTaskStore>;
 
+/** Task definitions, occurrence state, and provider pauses stored alongside conversation history. */
 export class TaskRepository extends Context.Service<TaskRepository, TaskStore>()(
   "poppet/TaskRepository",
 ) {}

@@ -15,6 +15,7 @@ const invalidHistory = () =>
     message: "Stored history contains an incomplete or invalid exchange. Start a new session.",
   });
 
+// Replay whole exchanges only; every tool call needs one matching reply before the next answer.
 const validateExchange = (messages: ReadonlyArray<Message>) => {
   if (messages[0]?.role !== "user" || messages.at(-1)?.role !== "assistant") throw invalidHistory();
   const pending = new Set<string>();
@@ -45,6 +46,7 @@ export const outputBudget = (model: ModelDescription, policy: ChatPolicy) =>
 const size = (messages: ReadonlyArray<Message>, tools: ReadonlyArray<Tool>, prompt: string) =>
   byteSize(JSON.stringify({ instructions: prompt, messages, tools }));
 
+/** Selects recent complete exchanges within budget, keeping the current exchange intact. */
 export const assembleContext = (
   history: ReadonlyArray<StoredMessage>,
   runs: ReadonlyArray<Run>,

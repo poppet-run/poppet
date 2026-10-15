@@ -5,6 +5,7 @@ import { Deferred, Effect, Redacted } from "effect";
 import { ConnectionError } from "#src/connection";
 import { callbackResponse } from "#src/sign-in/page";
 
+/** A validated browser callback plus the local verifier needed for the code exchange. */
 export interface Authorization {
   readonly code: Redacted.Redacted<string>;
   readonly verifier: Redacted.Redacted<string>;

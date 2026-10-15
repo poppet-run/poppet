@@ -13,6 +13,7 @@ import {
 import { StoreError } from "@poppet/store";
 import { Console, Context, Effect, Layer, Redacted, Result, Schema } from "effect";
 
+/** Runs configured messaging gateways and combines their connection and delivery status. */
 export class MessagingWorker extends Context.Service<
   MessagingWorker,
   {

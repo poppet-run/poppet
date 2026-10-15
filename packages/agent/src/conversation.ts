@@ -14,6 +14,7 @@ import { Notes, decodeNoteCall, noteTools, type NoteCall } from "#src/notes";
 import { maxTextBytes, streamReply } from "#src/reply";
 import { ChatSettings } from "#src/settings";
 
+/** Builds the bounded model/tool loop; the caller owns the run's final outcome. */
 export const conversation = Effect.gen(function* () {
   const store = yield* Store;
   const notes = yield* Notes;
@@ -159,6 +160,7 @@ export const conversation = Effect.gen(function* () {
                         }),
                       );
 
+                    // Validate the whole batch before any call can change notes.
                     const planned = yield* Effect.forEach(calls, (call) => {
                       if (
                         !tools.some(

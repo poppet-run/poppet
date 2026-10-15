@@ -7,6 +7,7 @@ import { completeModel, invalidRequest, type ModelOperations } from "#src/servic
 
 const Arguments = Schema.fromJsonString(Schema.Struct({ challenge: Schema.NonEmptyString }));
 
+/** Uses live inference to check a tool request and a second turn consuming its secret result. */
 export const verifyModel = (model: ModelOperations) =>
   Effect.gen(function* () {
     const challenge = randomBytes(24).toString("hex");

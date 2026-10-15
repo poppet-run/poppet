@@ -1,6 +1,7 @@
 import { Memory, MemoryKey, MemoryValue } from "@poppet/memory";
 import { Effect, Schema } from "effect";
 
+/** Explicit fact-management requests shared by direct CLI execution and worker routing. */
 export const MemoryCommand = Schema.Union([
   Schema.Struct({ action: Schema.Literal("list") }),
   Schema.Struct({

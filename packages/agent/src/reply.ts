@@ -28,6 +28,7 @@ const outputLimit = () =>
     message: "The response exceeded the output size limit.",
   });
 
+// The final response must agree with the selected model and text already shown to the consumer.
 const validateCompletion = (response: Completion | null, run: Run, streamed: string) => {
   if (response === null) throw protocolFailure();
 
@@ -50,7 +51,7 @@ const validateCompletion = (response: Completion | null, run: Run, streamed: str
   return { response, remaining: finalText.slice(streamed.length) };
 };
 
-// Forward text immediately, but emit completion only after the source ends cleanly.
+/** Forwards text immediately, but validates and emits completion only after the source ends cleanly. */
 export const streamReply = (
   model: ModelOperations,
   request: ModelRequest,

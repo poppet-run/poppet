@@ -6,7 +6,7 @@ import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
 import { memoryPrompt } from "#src/memory";
 
-// The host resolves registrations while the request's scope remains open.
+/** Resolves registered models through the host while the request's resource scope stays open. */
 export class ModelResolver extends Context.Service<
   ModelResolver,
   {
@@ -17,16 +17,20 @@ export class ModelResolver extends Context.Service<
   }
 >()("poppet/ModelResolver") {}
 
+/** Run lifecycle events and incremental answer text emitted by the agent. */
 export type ChatEvent =
   | { readonly type: "started"; readonly run: Run }
   | { readonly type: "text-delta"; readonly text: string }
   | { readonly type: "completed"; readonly run: Run };
 
+/** Failures from orchestration, model inference, or persistence of a chat request. */
 export type ChatFailure = AgentError | ProviderError | StoreError;
 
+/** Coordinates model requests, tool execution, and saved conversation history. */
 export class Agent extends Context.Service<
   Agent,
   {
+    /** Streams a reply into an existing session; execution starts when consumed. */
     readonly send: (
       sessionId: string,
       text: string,
@@ -35,6 +39,7 @@ export class Agent extends Context.Service<
   }
 >()("poppet/Agent") {}
 
+// A clean consumer exit can still mean it stopped reading before the answer completed.
 const failureOutcome = (exit: Exit.Exit<unknown, ChatFailure>): RunOutcome => {
   if (Exit.isSuccess(exit)) return { status: "interrupted", reason: "consumer-stopped" };
 
@@ -88,6 +93,7 @@ export const AgentLive = Layer.effect(
                 }),
               );
 
+            // Track the saved run before allowing cancellation, so finalization can always settle it.
             const run = yield* Effect.uninterruptible(
               Effect.gen(function* () {
                 const pending = yield* store.queueRun(
@@ -167,6 +173,7 @@ export const AgentLive = Layer.effect(
           ),
         );
 
+        // Failure or early stream closure must leave a terminal run instead of stranded work.
         const settledStream = stream.pipe(
           Stream.onExit((exit) =>
             active === null || settled

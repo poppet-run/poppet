@@ -17,6 +17,7 @@ const Inbox = Schema.Struct({
   attempts: Schema.Natural,
 });
 
+/** A durable incoming request with IDs linking its remote conversation, session, and run. */
 export type Inbox = typeof Inbox.Type;
 
 const Delivery = Schema.Struct({
@@ -26,6 +27,7 @@ const Delivery = Schema.Struct({
   attempts: Schema.Natural,
 });
 
+/** One ordered reply chunk awaiting delivery to the inbox entry's conversation. */
 export type Delivery = typeof Delivery.Type;
 
 const inboxSql = `SELECT id, adapter, account, payload AS message, conversation_id AS conversationId,
@@ -102,6 +104,7 @@ const repository = Effect.gen(function* () {
           return item(Number(result.lastInsertRowid));
         })
         .immediate(),
+    // A delayed request blocks later input in the same conversation to preserve history order.
     next: (adapter: string, account: string, now: number) =>
       Schema.decodeUnknownSync(Schema.NullOr(Inbox))(
         database
@@ -193,6 +196,7 @@ const repository = Effect.gen(function* () {
           "UPDATE gateway_deliveries SET state = ?, attempts = attempts + 1, retry_at = ? WHERE inbox_id = ? AND position = ?",
         )
         .run(state, retryAt, entry.inboxId, entry.position),
+    // A crash after a send began cannot prove whether the remote service accepted it.
     recoverDelivery: (adapter: string, account: string) =>
       database
         .query(`UPDATE gateway_deliveries SET state = 'uncertain' WHERE state = 'sending'
@@ -222,6 +226,7 @@ const repository = Effect.gen(function* () {
   };
 });
 
+/** Persists inbox deduplication, conversation bindings, and ordered reply delivery state. */
 export class GatewayRepository extends Context.Service<
   GatewayRepository,
   Effect.Success<typeof repository>

@@ -1,5 +1,6 @@
 import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
 
+/** Per-run limits for context, model turns, tool execution, and memory loaded into the prompt. */
 export interface ChatPolicy {
   readonly contextBytes: number;
   readonly historyTurns: number;
@@ -12,6 +13,7 @@ export interface ChatPolicy {
   readonly factsBytes: number;
 }
 
+/** Supplies validated chat limits shared by context assembly and the tool loop. */
 export class ChatSettings extends Context.Service<ChatSettings, ChatPolicy>()(
   "poppet/ChatSettings",
 ) {}

@@ -1,10 +1,13 @@
 import { Completion, Message, ModelRequest, ProviderId, Tool } from "@poppet/provider";
 import { Schema } from "effect";
 
+/** A bounded identifier shared by persisted sessions, runs, and task records. */
 export const Id = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/));
 
+/** A provider's model identifier without leading or trailing whitespace. */
 export const ModelId = Schema.NonEmptyString.check(Schema.isTrimmed());
 
+/** A saved conversation whose provider, model, and workload stay fixed across runs. */
 export const Session = Schema.Struct({
   id: Id,
   provider: ProviderId,
@@ -14,6 +17,7 @@ export const Session = Schema.Struct({
   updatedAt: Schema.Natural,
 });
 
+/** A message ordered within a session; runId is null for history saved outside a run. */
 export const StoredMessage = Schema.Struct({
   id: Schema.Int.check(Schema.isGreaterThan(0)),
   sessionId: Id,
@@ -23,6 +27,7 @@ export const StoredMessage = Schema.Struct({
   message: Message,
 });
 
+/** A run starts pending, becomes running, then ends completed, failed, or interrupted. */
 export const RunStatus = Schema.Literals([
   "pending",
   "running",
@@ -31,6 +36,7 @@ export const RunStatus = Schema.Literals([
   "interrupted",
 ]);
 
+/** Durable execution state for one user request, with timestamps in Unix milliseconds. */
 export const Run = Schema.Struct({
   id: Id,
   sessionId: Id,
@@ -45,6 +51,7 @@ export const Run = Schema.Struct({
   failureReason: Schema.NullOr(Schema.NonEmptyString),
 });
 
+/** The terminal result used to finish an active run. */
 export const RunOutcome = Schema.Union([
   Schema.Struct({ status: Schema.Literal("completed"), response: Completion }),
   Schema.Struct({
@@ -53,12 +60,14 @@ export const RunOutcome = Schema.Union([
   }),
 ]);
 
+/** Messages appended together to one session, optionally through its active run. */
 export const MessageBatch = Schema.Struct({
   sessionId: Id,
   runId: Schema.NullOr(Id),
   messages: Schema.Array(Message),
 });
 
+/** A saved tool invocation; uncertain means its effects could not be confirmed. */
 export const ToolCall = Schema.Struct({
   runId: Id,
   callId: Schema.NonEmptyString,
@@ -81,6 +90,7 @@ export const ToolCall = Schema.Struct({
   failureReason: Schema.NullOr(Schema.NonEmptyString),
 });
 
+/** A tool's confirmed output or the reason execution failed, stopped, or became uncertain. */
 export const ToolOutcome = Schema.Union([
   Schema.Struct({ status: Schema.Literal("completed"), output: Schema.String }),
   Schema.Struct({
@@ -103,6 +113,7 @@ export type RunOutcome = typeof RunOutcome.Type;
 
 export type MessageBatch = typeof MessageBatch.Type;
 
+/** Database location, migration version, and saved record counts for status commands. */
 export interface StoreStatus {
   readonly path: string;
   readonly schemaVersion: number;

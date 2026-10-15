@@ -3,16 +3,19 @@ import { AppConfig } from "@poppet/config";
 import { Session, Store } from "@poppet/store";
 import { Console, Effect, Schema, Stream } from "effect";
 
+/** Parsed chat actions before defaults are resolved into an executable request. */
 export type ChatCommand =
   | { readonly action: "new"; readonly text: string; readonly coding: boolean }
   | { readonly action: "send"; readonly id: string; readonly text: string }
   | { readonly action: "sessions" }
   | { readonly action: "show"; readonly id: string };
 
+/** Nonblank user input whose original spacing is preserved. */
 export const MessageText = Schema.NonEmptyString.check(
   Schema.makeFilter((text) => text.trim().length > 0 || "Enter a nonempty message."),
 );
 
+/** Validated local or worker chat requests; new sessions carry an explicit model selection. */
 export const ChatRequest = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("new"),
@@ -30,6 +33,7 @@ export type ChatRequest = typeof ChatRequest.Type;
 
 type ChatSubmission = Extract<ChatRequest, { action: "new" | "send" }>;
 
+/** A streamed text sink that can report write failures to the active request. */
 export type ChatWriter = (text: string) => Effect.Effect<void, AgentError>;
 
 export const writeChatText: ChatWriter = (text) =>

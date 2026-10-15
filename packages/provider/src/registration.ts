@@ -3,7 +3,7 @@ import { Context, Effect, Layer, Redacted, Schema } from "effect";
 import type { ProviderId } from "#src/schema";
 import type { Provider, ProviderError } from "#src/service";
 
-// The host supplies only the settings provider implementations need.
+/** Host settings available to provider implementations. */
 export class ProviderEnvironment extends Context.Service<
   ProviderEnvironment,
   {
@@ -12,7 +12,7 @@ export class ProviderEnvironment extends Context.Service<
   }
 >()("poppet/ProviderEnvironment") {}
 
-// Terminal input belongs to the host. Providers decide when it is needed.
+/** Host-owned terminal input that providers request when a key is needed. */
 export class CredentialInput extends Context.Service<
   CredentialInput,
   {
@@ -23,22 +23,27 @@ export class CredentialInput extends Context.Service<
   }
 >()("poppet/CredentialInput") {}
 
+/** Consent and key-input choices supplied by the host's login command. */
 export interface LoginOptions {
   readonly consent: boolean;
   readonly keyStdin: boolean;
 }
 
+/** Provider-owned authentication, connection status, and live model verification. */
 export interface ConnectionOperations {
   readonly login: (options: LoginOptions) => Effect.Effect<string, ProviderError, CredentialInput>;
   readonly status: Effect.Effect<Schema.JsonObject, ProviderError>;
   readonly logout: Effect.Effect<string, ProviderError>;
+  /** Runs live inference checks; a null model lets the provider choose or require one. */
   readonly verify: (model: string | null) => Effect.Effect<string, ProviderError>;
 }
 
+/** Supplies authentication commands independently of model inference. */
 export class ProviderConnection extends Context.Service<ProviderConnection, ConnectionOperations>()(
   "poppet/ProviderConnection",
 ) {}
 
+/** Everything the host needs to register a provider without knowing its implementation. */
 export interface ProviderRegistration {
   readonly id: ProviderId;
   readonly name: string;

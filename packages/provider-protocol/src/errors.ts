@@ -1,6 +1,7 @@
 import { ProviderError, type ProviderId, type ModelRequest } from "@poppet/provider";
 import { APIError, APIConnectionError, APIConnectionTimeoutError, APIUserAbortError } from "openai";
 
+/** Adapter hooks for request headers and provider-specific inference error classification. */
 export interface InferenceOptions {
   readonly failure?: (cause: unknown) => ProviderError;
   readonly remoteFailure?: (

@@ -17,21 +17,26 @@ import { Config, ConfigProvider, Context, Effect, Layer, Option, Redacted, Schem
 
 import { acquireOwnerLock } from "#src/lock";
 
+/** A nonempty key without whitespace, redacted in diagnostic output. */
 export const ApiKey = Schema.RedactedFromValue(
   Schema.NonEmptyString.check(Schema.isPattern(/^\S{1,8192}$/)),
 );
 
 interface StoreOperations {
+  /** Reads only this provider's saved key; null means none exists. */
   readonly read: (
     provider: ProviderId,
   ) => Effect.Effect<Redacted.Redacted<string> | null, ProviderError>;
+  /** Atomically replaces this provider's saved key under its owner lock. */
   readonly write: (
     provider: ProviderId,
     key: Redacted.Redacted<string>,
   ) => Effect.Effect<void, ProviderError>;
+  /** Removes the saved key if present; environment keys and remote credentials are unaffected. */
   readonly remove: (provider: ProviderId) => Effect.Effect<void, ProviderError>;
 }
 
+/** Protected API-key files kept separately for each provider. */
 export class ApiKeyStore extends Context.Service<ApiKeyStore, StoreOperations>()(
   "poppet/ApiKeyStore",
 ) {}
@@ -201,6 +206,7 @@ export const ApiKeyStoreLive = Layer.effect(
   }),
 );
 
+/** Prefers the environment key, then protected storage; a present but invalid key is an error. */
 export const loadApiKey = (provider: ProviderId, environment: string) =>
   Effect.gen(function* () {
     const configured = yield* environmentApiKey(provider, environment);

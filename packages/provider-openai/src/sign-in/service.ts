@@ -4,6 +4,7 @@ import { ConnectionError, requestedScopes, resource } from "#src/connection";
 import { openBrowser } from "#src/sign-in/browser";
 import { type Authorization, startCallback } from "#src/sign-in/callback";
 
+/** Browser authorization settings; a null clientId requests a new client registration. */
 export interface SignInRequest {
   readonly endpoint: string;
   readonly applicationName: string;
@@ -12,6 +13,7 @@ export interface SignInRequest {
   readonly consent: boolean;
 }
 
+/** Owns browser authorization and its temporary callback listener through completion or timeout. */
 export class BrowserSignIn extends Context.Service<
   BrowserSignIn,
   {

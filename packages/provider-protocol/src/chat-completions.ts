@@ -61,8 +61,10 @@ const Continuation = Schema.Struct({
   protocol: Schema.Literal("chat-completions"),
 });
 
+/** Decoded Chat Completions frame exposed to provider-specific accounting checks. */
 export type ChatChunk = typeof Chunk.Type;
 
+/** Preserves adapter-specific assistant state across tool replies and later requests. */
 export interface ChatContinuation {
   readonly restore: (
     data: Schema.JsonObject,
@@ -72,6 +74,7 @@ export interface ChatContinuation {
   readonly save: () => Schema.JsonObject;
 }
 
+/** Provider hooks for request translation, continuation state, and terminal accounting frames. */
 export interface ChatOptions extends InferenceOptions {
   readonly isAccountingFrame?: (chunk: ChatChunk, finishReason: string) => boolean;
   readonly prepareRequest?: (

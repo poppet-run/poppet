@@ -5,6 +5,7 @@ import { open, rename, unlink } from "node:fs/promises";
 
 import { Data, Effect, Option, Schema } from "effect";
 
+/** Reports an existing storage owner or a failure to protect the ownership files. */
 export class OwnerLockError extends Data.TaggedError("OwnerLockError")<{
   readonly reason: "busy" | "storage";
   readonly message: string;

@@ -26,6 +26,7 @@ const WorkerCommand = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("gateway") }),
 ]);
 
+/** Chat, memory, and status operations sent to the process that owns local storage. */
 export type WorkerCommand = typeof WorkerCommand.Type;
 
 const Frame = Schema.Union([
@@ -144,7 +145,7 @@ const lostResponse = () =>
       "Lost the worker response. The command was not retried; inspect the saved session or memory before trying again.",
   });
 
-// A terminal frame confirms completion. EOF or any other transport failure never retries locally.
+/** Streams worker output; only a terminal frame confirms completion, and lost replies are not replayed. */
 export const remoteWorkerCommand = (path: string, command: WorkerCommand, write: ChatWriter) =>
   Effect.scoped(
     Effect.gen(function* () {

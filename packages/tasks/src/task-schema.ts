@@ -2,6 +2,7 @@ import { ProviderId } from "@poppet/provider";
 import { Session } from "@poppet/store";
 import { Cron, Data, Schema } from "effect";
 
+/** A task validation, scheduling, or storage failure suitable for command output. */
 export class TaskError extends Data.TaggedError("TaskError")<{
   readonly message: string;
 }> {}
@@ -12,6 +13,7 @@ const boundedText = (bytes: number) =>
     Schema.makeFilter((text) => Buffer.byteLength(text) <= bytes || `Use at most ${bytes} bytes.`),
   );
 
+/** A one-off Unix millisecond timestamp or a five-field cron schedule with a timezone. */
 export const Schedule = Schema.Union([
   Schema.Struct({ type: Schema.Literal("once"), at: Schema.Natural }),
   Schema.Struct({
@@ -23,6 +25,7 @@ export const Schedule = Schema.Union([
 
 export type Schedule = typeof Schedule.Type;
 
+/** Finds the next cron time after the given Unix milliseconds; one-off schedules do not repeat. */
 export const nextOccurrence = (schedule: Schedule, after: number): number | null => {
   if (schedule.type === "once") return null;
 
@@ -40,6 +43,7 @@ export const nextOccurrence = (schedule: Schedule, after: number): number | null
   }
 };
 
+/** Parses an ISO timestamp with an explicit offset, rejecting invalid dates and pre-epoch times. */
 export const parseTimestamp = (text: string): number => {
   const parts =
     /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.exec(
@@ -63,6 +67,7 @@ export const parseTimestamp = (text: string): number => {
   return at;
 };
 
+/** Task input with an explicit provider and model, independent of later host defaults. */
 export const NewTask = Schema.Struct({
   name: boundedText(128),
   prompt: boundedText(16_384),
@@ -74,6 +79,7 @@ export const NewTask = Schema.Struct({
 
 export type NewTask = typeof NewTask.Type;
 
+/** Commands accepted by both the local task store and the worker endpoint. */
 export const TaskCommand = Schema.Union([
   Schema.Struct({ action: Schema.Literal("add"), task: NewTask }),
   Schema.Struct({ action: Schema.Literals(["list", "providers", "clear", "status"]) }),
@@ -86,6 +92,7 @@ export const TaskCommand = Schema.Union([
 
 export type TaskCommand = typeof TaskCommand.Type;
 
+/** A persisted task row whose JSON schedule is decoded on read; times are Unix milliseconds. */
 export const Task = Schema.Struct({
   ...NewTask.fields,
   schedule: Schema.fromJsonString(Schedule),
@@ -97,6 +104,7 @@ export const Task = Schema.Struct({
 
 export type Task = typeof Task.Type;
 
+/** One scheduled execution, linked to its session and run as they are created. */
 export const Occurrence = Schema.Struct({
   id: Session.fields.id,
   jobId: Session.fields.id,
@@ -118,6 +126,7 @@ export const Occurrence = Schema.Struct({
 
 export type Occurrence = typeof Occurrence.Type;
 
+/** A provider-wide scheduling pause; null resumeAt requires explicit manual resumption. */
 export const ProviderPause = Schema.Struct({
   provider: ProviderId,
   reason: Schema.Literals(["quota", "temporary", "rate-limit"]),
@@ -127,6 +136,7 @@ export const ProviderPause = Schema.Struct({
 
 export type ProviderPause = typeof ProviderPause.Type;
 
+/** A range of schedule times skipped during reconciliation, with the reason recorded. */
 export const Skipped = Schema.Struct({
   firstAt: Schema.Natural,
   lastAt: Schema.Natural,

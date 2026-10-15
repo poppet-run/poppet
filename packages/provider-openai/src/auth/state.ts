@@ -1,6 +1,7 @@
 import { type Connection, ConnectionError, type Credentials, planScope } from "#src/connection";
 import type { TokenReply } from "#src/oauth/tokens";
 
+/** Connection metadata safe to show in status output, excluding authentication tokens. */
 export interface ConnectionStatus {
   readonly connected: boolean;
   readonly email: string | null;

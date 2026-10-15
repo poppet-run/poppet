@@ -9,12 +9,17 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { Connection, ConnectionError } from "#src/connection";
 
 interface StoreOperations {
+  /** Returns null without creating identity when no connection file exists. */
   readonly read: Effect.Effect<Connection | null, ConnectionError>;
+  /** Reuses a saved connection or creates a host identity for a new login. */
   readonly initialize: Effect.Effect<Connection, ConnectionError>;
+  /** Deletes the entire saved connection, including identity, registration, and verification. */
   readonly remove: Effect.Effect<void, ConnectionError>;
+  /** Atomically replaces the protected connection file, deferring cancellation until cleanup. */
   readonly write: (connection: Connection) => Effect.Effect<void, ConnectionError>;
 }
 
+/** Protected ChatGPT connection storage held by one owner for the service's scope. */
 export class CredentialStore extends Context.Service<CredentialStore, StoreOperations>()(
   "poppet/CredentialStore",
 ) {}

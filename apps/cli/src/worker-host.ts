@@ -11,8 +11,10 @@ import { Clock, Console, Effect, Option } from "effect";
 
 import { MessagingWorker } from "#src/channels";
 
+/** Selects the background loops while keeping one worker endpoint and store owner. */
 export type WorkerMode = "all" | "tasks" | "gateway";
 
+/** Serves commands and runs the selected loops until shutdown closes their shared scope. */
 export const runWorker = (mode: WorkerMode) =>
   Effect.scoped(
     Effect.gen(function* () {

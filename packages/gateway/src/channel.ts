@@ -1,5 +1,6 @@
 import { Context, Data, Effect, Schema, Stream } from "effect";
 
+/** An adapter failure; uncertain means a remote action may already have taken effect. */
 export class ChannelError extends Data.TaggedError("ChannelError")<{
   readonly reason: "unavailable" | "permission" | "uncertain" | "configuration" | "overloaded";
   readonly message: string;
@@ -8,6 +9,7 @@ export class ChannelError extends Data.TaggedError("ChannelError")<{
 
 const ExternalId = Schema.NonEmptyString.check(Schema.isMaxLength(128));
 
+/** Adapter-normalized input with source IDs retained for authorization and deduplication. */
 export const IncomingMessage = Schema.Struct({
   messageId: ExternalId,
   scopeId: ExternalId,
@@ -20,12 +22,14 @@ export const IncomingMessage = Schema.Struct({
 
 export type IncomingMessage = typeof IncomingMessage.Type;
 
+/** The owner, remote scope, and parent channels allowed to submit requests. */
 export interface ChannelPolicy {
   readonly ownerId: string;
   readonly scopeId: string;
   readonly parentIds: ReadonlyArray<string>;
 }
 
+/** Remote messaging operations supplied by an adapter; the gateway owns queueing and inference. */
 export class MessagingChannel extends Context.Service<
   MessagingChannel,
   {
@@ -33,16 +37,20 @@ export class MessagingChannel extends Context.Service<
     readonly accountId: string;
     readonly policy: ChannelPolicy;
     readonly messages: Stream.Stream<IncomingMessage, ChannelError>;
+    /** Finds or creates the remote conversation for a source message. */
     readonly conversation: (message: IncomingMessage) => Effect.Effect<string, ChannelError>;
+    /** Rechecks current authorization and remote permissions before execution or delivery. */
     readonly checkAccess: (
       message: IncomingMessage,
       conversationId: string,
     ) => Effect.Effect<void, ChannelError>;
     readonly typing: (conversationId: string) => Effect.Effect<void, ChannelError>;
+    /** Updates a source message's progress indicator; the gateway treats failures as best effort. */
     readonly mark: (
       message: IncomingMessage,
       state: "working" | "completed" | "stopped",
     ) => Effect.Effect<void, ChannelError>;
+    /** Sends one text chunk with a stable nonce and returns its remote message ID. */
     readonly send: (
       conversationId: string,
       text: string,

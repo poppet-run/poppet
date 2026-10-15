@@ -1,5 +1,6 @@
 import { Data } from "effect";
 
+/** Distinguishes storage failures from invalid requests, missing records, and state conflicts. */
 export class StoreError extends Data.TaggedError("StoreError")<{
   readonly reason:
     | "storage"

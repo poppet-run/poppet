@@ -1,5 +1,6 @@
 import { Data } from "effect";
 
+/** A chat orchestration failure, including invalid history, tool restrictions, and run budgets. */
 export class AgentError extends Data.TaggedError("AgentError")<{
   readonly reason:
     | "invalid-request"

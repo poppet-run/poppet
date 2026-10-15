@@ -67,6 +67,7 @@ const gateway = Effect.gen(function* () {
   const mark = (message: IncomingMessage, state: "working" | "completed" | "stopped") =>
     channel.mark(message, state).pipe(Effect.catchTag("ChannelError", () => Effect.void));
 
+  /** Reconciles saved runs with the inbox and leaves interrupted sends uncertain. */
   const recover = Effect.gen(function* () {
     yield* gatewayStorage(() => repo.recoverDelivery(channel.id, account));
 
@@ -81,6 +82,7 @@ const gateway = Effect.gen(function* () {
     }
   });
 
+  /** Validates and deduplicates authorized input; status and cancellation bypass inference. */
   const accept = (input: IncomingMessage) =>
     Effect.gen(function* () {
       const message = yield* Schema.decodeUnknownEffect(IncomingMessage)(input).pipe(
@@ -131,6 +133,7 @@ const gateway = Effect.gen(function* () {
       yield* mark(message, "completed");
     });
 
+  /** Executes the next eligible queued request, retrying setup only before a run exists. */
   const processNext = Effect.gen(function* () {
     const entry = yield* gatewayStorage(() =>
       repo.next(channel.id, account, clock.currentTimeMillisUnsafe()),
@@ -265,6 +268,7 @@ const gateway = Effect.gen(function* () {
     return true;
   });
 
+  /** Sends the next saved reply chunk without automatically retrying an uncertain delivery. */
   const deliverNext = Effect.gen(function* () {
     const delivery = yield* gatewayStorage(() =>
       repo.nextDelivery(channel.id, account, clock.currentTimeMillisUnsafe()),
@@ -324,6 +328,7 @@ const gateway = Effect.gen(function* () {
     return { ...connection, ...(yield* gatewayStorage(() => repo.status())) };
   });
 
+  /** Recovers once, then receives input, runs inference, and delivers replies concurrently. */
   const run = Effect.gen(function* () {
     yield* recover;
     yield* Effect.all(
@@ -347,6 +352,7 @@ const gateway = Effect.gen(function* () {
   return { accept, processNext, deliverNext, recover, connectionStatus, status, run };
 });
 
+/** Coordinates authorized messaging input, saved agent runs, and durable reply delivery. */
 export class Gateway extends Context.Service<Gateway, Effect.Success<typeof gateway>>()(
   "poppet/Gateway",
 ) {}

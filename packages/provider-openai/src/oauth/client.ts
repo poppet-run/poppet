@@ -22,6 +22,7 @@ interface OAuthOperations {
   ) => Effect.Effect<void, ConnectionError>;
 }
 
+/** Discovers trusted OAuth endpoints, exchanges and revokes tokens, and verifies signed identity. */
 export class OAuthClient extends Context.Service<OAuthClient, OAuthOperations>()(
   "poppet/OAuthClient",
 ) {}

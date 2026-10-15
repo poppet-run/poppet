@@ -10,6 +10,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { StoreError, storageFailure } from "#src/errors";
 import { applyMigrations } from "#src/migrations";
 
+/** The scoped SQLite connection shared by storage services under one exclusive owner. */
 export class StoreDatabase extends Context.Service<
   StoreDatabase,
   { readonly database: Database; readonly path: string; readonly schemaVersion: number }
@@ -17,6 +18,7 @@ export class StoreDatabase extends Context.Service<
 
 const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 
+/** Protects, opens, and migrates local storage; releases the connection before its owner lock. */
 export const StoreDatabaseLive = Layer.effect(
   StoreDatabase,
   Effect.gen(function* () {

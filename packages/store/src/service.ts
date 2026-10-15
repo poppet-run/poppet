@@ -27,31 +27,43 @@ import {
 
 interface StoreOperations {
   readonly status: Effect.Effect<StoreStatus, StoreError>;
+  /** Creates a session with a fixed provider, model, and workload; optionally uses a supplied ID. */
   readonly createSession: (
     provider: ProviderId,
     model: string,
     workload?: Session["workload"],
     id?: string,
   ) => Effect.Effect<Session, StoreError>;
+  /** Returns null when the session does not exist. */
   readonly session: (id: string) => Effect.Effect<Session | null, StoreError>;
   readonly sessions: Effect.Effect<ReadonlyArray<Session>, StoreError>;
+  /** Reads messages in session order and rejects continuation belonging to another model. */
   readonly messages: (sessionId: string) => Effect.Effect<ReadonlyArray<StoredMessage>, StoreError>;
+  /** Appends the entire batch atomically; active sessions require their running run's ID. */
   readonly appendMessages: (batch: MessageBatch) => Effect.Effect<void, StoreError>;
+  /** Saves a pending run and its inputs together; rejects any other pending or running run. */
   readonly queueRun: (
     sessionId: string,
     input: ReadonlyArray<ModelMessage>,
     id?: string,
   ) => Effect.Effect<Run, StoreError>;
+  /** Transitions a pending run to running; already-started or terminal runs are rejected. */
   readonly startRun: (id: string) => Effect.Effect<Run, StoreError>;
+  /** Saves the terminal outcome and final answer together, settling any unfinished tools. */
   readonly finishRun: (id: string, outcome: RunOutcome) => Effect.Effect<Run, StoreError>;
+  /** Returns null when absent and rejects provider or model state inconsistent with the session. */
   readonly run: (id: string) => Effect.Effect<Run | null, StoreError>;
   readonly runs: (sessionId: string) => Effect.Effect<ReadonlyArray<Run>, StoreError>;
+  /** Saves a complete model tool request and its pending calls before execution begins. */
   readonly recordToolCalls: (
     runId: string,
     response: Completion,
   ) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;
+  /** Reads calls in execution order; the run must exist. */
   readonly toolCalls: (runId: string) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;
+  /** Marks a pending call as running before invoking the tool. */
   readonly startToolCall: (runId: string, callId: string) => Effect.Effect<void, StoreError>;
+  /** Saves the outcome and, on success, appends the tool reply in the same transaction. */
   readonly finishToolCall: (
     runId: string,
     callId: string,
@@ -59,6 +71,7 @@ interface StoreOperations {
   ) => Effect.Effect<void, StoreError>;
 }
 
+/** Persists conversation history and tracks run and tool execution through terminal outcomes. */
 export class Store extends Context.Service<Store, StoreOperations>()("poppet/Store") {}
 
 const sessionSql = `SELECT id, provider, model, workload, created_at AS createdAt, updated_at AS updatedAt FROM sessions`;
@@ -130,6 +143,7 @@ const continuationMatches = (
   continuation: Continuation,
 ) => continuation.provider === selection.provider && continuation.model === selection.model;
 
+// Invalid saved data is corruption; invalid caller input is handled separately by requestFailure.
 const readRecord = <A>(read: () => A): A => {
   try {
     return read();
@@ -154,6 +168,7 @@ const sessionFor = (database: Database, id: string) =>
     ),
   );
 
+// Decoding a row alone cannot check whether its model identity agrees with the session and result.
 const validateRunRecord = (database: Database, run: Run) => {
   const session = sessionFor(database, run.sessionId);
 
