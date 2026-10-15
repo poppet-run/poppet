@@ -53,12 +53,14 @@ describe("Discord adapter", () => {
 
     let created = false;
     let loseSend = false;
+    let botReacted = false;
+    let sourceAuthor = owner;
 
     const source = () => ({
       id: "400",
       channel_id: "300",
       guild_id: "500",
-      author: owner,
+      author: sourceAuthor,
       content: "<@100> Hello",
       mentions: [user],
       mention_roles: [],
@@ -66,6 +68,7 @@ describe("Discord adapter", () => {
       embeds: [],
       flags: created ? MessageFlags.HasThread : 0,
       type: 0,
+      reactions: [{ count: botReacted ? 2 : 1, me: botReacted, emoji: { id: null, name: "👀" } }],
     });
 
     const get = spyOn(client.rest, "get").mockImplementation(async (route) => {
@@ -79,6 +82,8 @@ describe("Discord adapter", () => {
         };
 
       if (route === "/channels/300") return parent;
+
+      if (route === "/channels/900") return { ...parent, id: "900" };
 
       if (route === "/channels/400") return thread;
 
@@ -113,6 +118,14 @@ describe("Discord adapter", () => {
       throw new Error(`Unexpected write: ${route}`);
     });
 
+    const put = spyOn(client.rest, "put").mockImplementation(async (route) => {
+      if (route.endsWith(`/${encodeURIComponent("👀")}/@me`)) botReacted = true;
+    });
+
+    const remove = spyOn(client.rest, "delete").mockImplementation(async () => {
+      botReacted = false;
+    });
+
     try {
       const guild = await client.guilds.fetch("500");
       await Effect.runPromise(
@@ -138,6 +151,15 @@ describe("Discord adapter", () => {
           yield* channel.checkAccess(incoming, "400");
           yield* channel.typing("400");
           expect(post).toHaveBeenCalledWith("/channels/400/typing");
+          yield* channel.mark(incoming, "working");
+          yield* channel.mark(incoming, "completed");
+          expect(put.mock.calls.map(([route]) => route)).toEqual([
+            `/channels/300/messages/400/reactions/${encodeURIComponent("👀")}/@me`,
+            `/channels/300/messages/400/reactions/${encodeURIComponent("✅")}/@me`,
+          ]);
+          expect(remove).toHaveBeenCalledWith(
+            `/channels/300/messages/400/reactions/${encodeURIComponent("👀")}/@me`,
+          );
           const fetched = yield* Effect.promise(() => client.channels.fetch("300"));
 
           if (fetched?.type !== ChannelType.GuildText) throw new Error("Missing parent");
@@ -152,6 +174,35 @@ describe("Discord adapter", () => {
 
           if (!threadChannel?.isThread()) throw new Error("Missing thread");
           const followup = yield* Effect.promise(() => threadChannel.messages.fetch("401"));
+
+          const threadMessage = {
+            ...incoming,
+            messageId: "401",
+            conversationId: "400",
+            mentioned: false,
+          };
+
+          yield* channel.mark(threadMessage, "working");
+          yield* channel.mark(threadMessage, "stopped");
+          expect(put.mock.calls.map(([route]) => route).slice(2)).toEqual([
+            `/channels/400/messages/401/reactions/${encodeURIComponent("👀")}/@me`,
+          ]);
+          expect(remove).toHaveBeenLastCalledWith(
+            `/channels/400/messages/401/reactions/${encodeURIComponent("👀")}/@me`,
+          );
+          // Another user's eyes reaction remains after the bot removes its own.
+          yield* channel.mark(threadMessage, "stopped");
+          expect(remove).toHaveBeenCalledTimes(2);
+          sourceAuthor = { ...owner, id: "999" };
+          expect(yield* channel.mark(incoming, "completed").pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "permission",
+          );
+          sourceAuthor = owner;
+          expect(
+            yield* channel.mark({ ...incoming, parentId: "900" }, "working").pipe(Effect.result),
+          ).toHaveProperty("failure.reason", "permission");
+          expect(put).toHaveBeenCalledTimes(3);
           client.emit(Events.MessageCreate, followup);
           expect(Option.getOrNull(yield* Stream.runHead(channel.messages))).toEqual({
             ...incoming,
@@ -202,6 +253,8 @@ describe("Discord adapter", () => {
       ready.mockRestore();
       get.mockRestore();
       post.mockRestore();
+      put.mockRestore();
+      remove.mockRestore();
     }
   });
 

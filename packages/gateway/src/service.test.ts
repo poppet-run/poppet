@@ -59,6 +59,7 @@ const fixture = async (
   const directory = await mkdtemp(join(tmpdir(), "poppet-gateway-"));
   const requests: ModelRequest[] = [];
   const sent: { destination: string; text: string; nonce: string }[] = [];
+  const marks: { messageId: string; state: string }[] = [];
 
   const channel = Layer.succeed(MessagingChannel, {
     id: "discord",
@@ -68,6 +69,10 @@ const fixture = async (
     conversation: (input) => Effect.succeed(input.conversationId ?? `thread-${input.messageId}`),
     checkAccess: () => Effect.void,
     typing: () => Effect.void,
+    mark: (input, state) =>
+      Effect.sync(() => {
+        marks.push({ messageId: input.messageId, state });
+      }),
     send: (destination, text, nonce) =>
       Effect.sync(() => {
         sent.push({ destination, text, nonce });
@@ -133,6 +138,7 @@ const fixture = async (
 
   return {
     sent,
+    marks,
     requests,
     run: <A, E>(
       program: Effect.Effect<A, E, Gateway | Store | StoreDatabase | GatewayRepository | Agent>,
@@ -187,6 +193,7 @@ describe.concurrent("messaging gateway", () => {
             yield* Deferred.await(started);
             yield* TestClock.adjust("0 millis");
             expect(attempts).toEqual(["thread-first"]);
+            expect(state.marks).toEqual([{ messageId: "first", state: "working" }]);
             yield* TestClock.adjust("16 seconds");
             expect(attempts).toEqual(["thread-first", "thread-first", "thread-first"]);
 
@@ -194,6 +201,10 @@ describe.concurrent("messaging gateway", () => {
               yield* gateway.accept(message("cancel", "thread-first", "/cancel"));
             else yield* Deferred.succeed(release, undefined);
             yield* Fiber.join(running);
+            expect(state.marks.filter((entry) => entry.messageId === "first")).toEqual([
+              { messageId: "first", state: "working" },
+              { messageId: "first", state: outcome === "completed" ? "completed" : "stopped" },
+            ]);
             yield* TestClock.adjust("16 seconds");
             expect(attempts).toHaveLength(3);
             yield* gateway.deliverNext;
@@ -212,6 +223,28 @@ describe.concurrent("messaging gateway", () => {
       }
     },
   );
+
+  test("reaction failures do not fail or repeat model work or reply delivery", async () => {
+    const state = await fixture({
+      mark: () => Effect.fail(new ChannelError({ reason: "permission", message: "Cannot react" })),
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.accept(message("first"));
+          yield* gateway.processNext;
+          yield* gateway.deliverNext;
+          expect(yield* gateway.status).toMatchObject({ failedRequests: 0, pendingDelivery: 0 });
+        }),
+      );
+      expect(state.requests).toHaveLength(1);
+      expect(state.sent.map((entry) => entry.text)).toEqual(["Answer"]);
+    } finally {
+      await state.close();
+    }
+  });
 
   test("reports failed inference in the thread without publishing partial text or retrying", async () => {
     const state = await fixture({}, () =>
@@ -324,6 +357,7 @@ describe.concurrent("messaging gateway", () => {
             yield* gateway.accept(input);
           expect(yield* (yield* Store).sessions).toHaveLength(0);
           expect(yield* gateway.status).toMatchObject({ queued: 0 });
+          expect(state.marks).toEqual([]);
           yield* gateway.accept(message("first"));
           yield* gateway.accept(message("first"));
           expect(yield* gateway.processNext).toBe(true);
@@ -347,6 +381,10 @@ describe.concurrent("messaging gateway", () => {
         }),
       );
       expect(state.requests).toHaveLength(4);
+      expect(state.marks.filter((entry) => entry.messageId === "first")).toEqual([
+        { messageId: "first", state: "working" },
+        { messageId: "first", state: "completed" },
+      ]);
       expect(state.requests[0]?.sessionId).toBe(state.requests[3]?.sessionId);
       expect(state.requests[2]?.sessionId).not.toBe(state.requests[0]?.sessionId);
       expect(

@@ -39,6 +39,10 @@ export class MessagingChannel extends Context.Service<
       conversationId: string,
     ) => Effect.Effect<void, ChannelError>;
     readonly typing: (conversationId: string) => Effect.Effect<void, ChannelError>;
+    readonly mark: (
+      message: IncomingMessage,
+      state: "working" | "completed" | "stopped",
+    ) => Effect.Effect<void, ChannelError>;
     readonly send: (
       conversationId: string,
       text: string,

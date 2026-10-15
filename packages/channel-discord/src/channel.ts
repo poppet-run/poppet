@@ -195,6 +195,49 @@ export const discordChannelLayer = (
           dropped,
         })),
         checkAccess,
+        mark: (message, state) =>
+          Effect.tryPromise({
+            try: async () => {
+              requireReady();
+
+              const channel = await client.channels.fetch(
+                message.conversationId ?? message.parentId,
+              );
+
+              if (
+                (channel?.type !== ChannelType.GuildText && !channel?.isThread()) ||
+                channel.guildId !== settings.guildId ||
+                !settings.channelIds.includes(
+                  channel.isThread() ? (channel.parentId ?? "") : channel.id,
+                )
+              )
+                throw new ChannelError({
+                  reason: "permission",
+                  message: "Cannot mark this message.",
+                });
+
+              const source = await channel.messages.fetch({
+                message: message.messageId,
+                force: true,
+              });
+
+              if (source.author.id !== settings.ownerId || source.webhookId !== null)
+                throw new ChannelError({
+                  reason: "permission",
+                  message: "Cannot mark this message.",
+                });
+
+              if (state === "working") {
+                await source.react("👀");
+              } else {
+                if (state === "completed") await source.react("✅");
+                const eyes = source.reactions.resolve("👀");
+
+                if (eyes?.me) await eyes.users.remove(settings.botId);
+              }
+            },
+            catch: discordFailure,
+          }),
         typing: (conversationId) =>
           Effect.tryPromise({
             try: async () => {
