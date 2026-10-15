@@ -341,7 +341,7 @@ describe.concurrent("messaging gateway", () => {
           ).toHaveLength(1);
         }),
       );
-      expect(state.requests).toHaveLength(3);
+      expect(state.requests).toHaveLength(4);
     } finally {
       await state.close();
     }
@@ -658,6 +658,243 @@ describe.concurrent("messaging gateway", () => {
         }),
       );
       expect(state.requests).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+});
+
+describe("managed conversation names", () => {
+  test.each([
+    "generated",
+    "manual",
+    "external-edit",
+    "permission",
+    "rate-limit",
+    "uncertain",
+    "existing-thread",
+    "unproven-creation",
+  ])("handles %s names after answer delivery without repeating inference", async (mode) => {
+    let current = "First question";
+    const renames: string[] = [];
+    let titleRequests = 0;
+
+    const naming: NonNullable<MessagingChannel["Service"]["naming"]> = {
+      sanitize: (title) => title,
+      changes: Stream.never,
+      conversation: (input, title) =>
+        Effect.succeed({
+          id: `thread-${input.messageId}`,
+          managedName: mode === "unproven-creation" ? null : title,
+        }),
+      current: () => Effect.succeed(current),
+      rename: (_input, _id, expected, title) =>
+        Effect.suspend(() => {
+          if (current !== expected) return Effect.succeed(null);
+          renames.push(title);
+
+          if (mode === "permission" || mode === "rate-limit")
+            return Effect.fail(
+              new ChannelError({
+                reason: mode === "permission" ? "permission" : "unavailable",
+                message: "Cannot rename",
+                retryAfterMs: 60000,
+              }),
+            );
+          current = title;
+
+          return mode === "uncertain"
+            ? Effect.fail(new ChannelError({ reason: "uncertain", message: "Lost reply" }))
+            : Effect.succeed(current);
+        }),
+    };
+
+    const state = await fixture({ naming }, (request) => {
+      if (request.settings.toolChoice === "none") {
+        titleRequests++;
+        expect(state.sent).toHaveLength(1);
+
+        return response("Generated conversation title");
+      }
+
+      return response();
+    });
+
+    try {
+      const savedId = await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const store = yield* Store;
+          const repo = yield* GatewayRepository;
+          yield* gateway.accept(
+            message("title", mode === "existing-thread" ? "existing" : null, "First question"),
+          );
+          yield* gateway.processNext;
+          yield* gateway.nameNext;
+          expect(titleRequests).toBe(0);
+          const session = (yield* store.sessions)[0];
+
+          if (!session) throw new Error("Missing session");
+          expect(session.title).toBe("First question");
+          yield* gateway.deliverNext;
+
+          if (mode === "manual") yield* store.renameSession(session.id, "My manual title");
+
+          if (mode === "external-edit") current = "User's thread name";
+          yield* gateway.nameNext;
+          yield* gateway.nameNext;
+          expect((yield* store.runs(session.id))[0]?.status).toBe("completed");
+          expect(yield* store.messages(session.id)).toHaveLength(2);
+          expect((yield* store.session(session.id))?.title).toBe(
+            mode === "manual" ? "My manual title" : "Generated conversation title",
+          );
+
+          if (["external-edit", "permission", "rate-limit"].includes(mode)) {
+            expect(repo.namedBinding("discord", "bot", "thread-title")?.namingDisabled).toBe(true);
+          }
+
+          return session.id;
+        }),
+      );
+
+      // Reopen the store and gateway. Neither naming nor uncertain renames repeat.
+      await state.run(
+        Effect.gen(function* () {
+          yield* (yield* Gateway).nameNext;
+          expect((yield* (yield* Store).session(savedId))?.titleAttempted).toBe(mode !== "manual");
+        }),
+      );
+      expect(titleRequests).toBe(mode === "manual" ? 0 : 1);
+      expect(renames).toEqual(
+        ["external-edit", "existing-thread", "unproven-creation"].includes(mode)
+          ? []
+          : [mode === "manual" ? "My manual title" : "Generated conversation title"],
+      );
+      expect(state.sent).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("a recognized external edit disables synchronization even if the user later restores the old name", async () => {
+    let current = "Original";
+    const renames: string[] = [];
+    const started = Deferred.makeUnsafe<void>();
+    const release = Deferred.makeUnsafe<void>();
+
+    const state = await fixture(
+      {
+        naming: {
+          sanitize: (title) => title,
+          changes: Stream.never,
+          conversation: () => Effect.succeed({ id: "managed", managedName: "Original" }),
+          current: () => Effect.succeed(current),
+          rename: (_message, _id, _expected, title) =>
+            Effect.sync(() => {
+              renames.push(title);
+
+              return title;
+            }),
+        },
+      },
+      (request) =>
+        request.settings.toolChoice === "none"
+          ? Stream.fromEffect(
+              Deferred.succeed(started, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.as({
+                  type: "completed" as const,
+                  response: {
+                    output: [{ type: "text" as const, text: "Late generated name" }],
+                    continuation: {
+                      version: 1 as const,
+                      provider: "test-provider",
+                      model: "test-model",
+                      data: {},
+                    },
+                    finishReason: "stop" as const,
+                    usage: null,
+                  },
+                }),
+              ),
+            )
+          : response(),
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.accept(message("original", null, "Original"));
+          yield* gateway.processNext;
+          yield* gateway.deliverNext;
+          const naming = yield* gateway.nameNext.pipe(Effect.forkChild);
+          yield* Deferred.await(started);
+          current = "Edited";
+          yield* gateway.externalNameChange("managed");
+          current = "Original";
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(naming);
+          yield* gateway.nameNext;
+          expect(
+            (yield* GatewayRepository).namedBinding("discord", "bot", "managed")?.namingDisabled,
+          ).toBe(true);
+          expect(renames).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("reconciles a pending rename after restart without issuing it again", async () => {
+    let current = "Original";
+    const renames: string[] = [];
+
+    const state = await fixture({
+      naming: {
+        sanitize: (title) => title,
+        changes: Stream.never,
+        conversation: () => Effect.succeed({ id: "managed", managedName: "Original" }),
+        current: () => Effect.succeed(current),
+        rename: (_message, _id, _expected, title) =>
+          Effect.sync(() => {
+            renames.push(title);
+
+            return title;
+          }),
+      },
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.accept(message("original", null, "Original"));
+          yield* gateway.processNext;
+          yield* gateway.deliverNext;
+          const session = (yield* (yield* Store).sessions)[0];
+
+          if (!session) throw new Error("Missing session");
+          yield* (yield* Store).renameSession(session.id, "Pending title");
+          (yield* GatewayRepository).namePending("discord", "bot", "managed", "Pending title");
+          current = "Pending title";
+        }),
+      );
+      await state.run(
+        Effect.gen(function* () {
+          yield* (yield* Gateway).nameNext;
+          expect(
+            (yield* GatewayRepository).namedBinding("discord", "bot", "managed"),
+          ).toMatchObject({
+            managedName: "Pending title",
+            pendingName: null,
+            syncedTitle: "Pending title",
+            namingDisabled: false,
+          });
+          expect(renames).toEqual([]);
+        }),
+      );
     } finally {
       await state.close();
     }

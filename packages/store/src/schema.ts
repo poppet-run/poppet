@@ -7,6 +7,16 @@ export const Id = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1
 /** A provider's model identifier without leading or trailing whitespace. */
 export const ModelId = Schema.NonEmptyString.check(Schema.isTrimmed());
 
+/** A sanitized single-line title of at most 80 Unicode code points. */
+export const SessionTitle = Schema.NonEmptyString.check(
+  Schema.makeFilter(
+    (value) =>
+      [...value].length <= 80 &&
+      value === value.trim() &&
+      !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value),
+  ),
+);
+
 /** A saved conversation whose provider, model, and workload stay fixed across runs. */
 export const Session = Schema.Struct({
   id: Id,
@@ -15,6 +25,10 @@ export const Session = Schema.Struct({
   workload: ModelRequest.fields.workload,
   createdAt: Schema.Natural,
   updatedAt: Schema.Natural,
+  title: Schema.NullOr(SessionTitle),
+  titleSource: Schema.NullOr(Schema.Literals(["fallback", "generated", "manual", "task"])),
+  titleAttempted: Schema.Boolean,
+  titleUsage: Completion.fields.usage,
 });
 
 /** A message ordered within a session; runId is null for history saved outside a run. */

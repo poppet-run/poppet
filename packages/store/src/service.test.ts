@@ -208,7 +208,7 @@ describe("conversation store", () => {
               { role: "assistant", output: response.output, continuation: response.continuation },
             ]);
             expect(yield* store.status).toMatchObject({
-              schemaVersion: 7,
+              schemaVersion: 8,
               sessions: 1,
               messages: 4,
               runs: 1,
@@ -405,7 +405,7 @@ describe("conversation store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 7,
+        schemaVersion: 8,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));
@@ -413,7 +413,7 @@ describe("conversation store", () => {
     }
   });
 
-  test.each([1, 2, 3, 4, 5])(
+  test.each([1, 2, 3, 4, 5, 6, 7])(
     "upgrades schema %s while retaining session history and existing or default workloads",
     async (version) => {
       const fixtureStore = await fixture();
@@ -449,9 +449,16 @@ describe("conversation store", () => {
         await fixtureStore.run(
           Store.use((store) =>
             Effect.gen(function* () {
-              expect((yield* store.status).schemaVersion).toBe(7);
+              expect((yield* store.status).schemaVersion).toBe(8);
               expect((yield* store.messages("old-session"))[0]?.message).toEqual(user);
-              expect((yield* store.session("old-session"))?.workload).toBe(workload);
+              expect(yield* store.session("old-session")).toMatchObject({
+                workload,
+                title: null,
+                titleSource: null,
+                titleAttempted: false,
+                titleUsage: null,
+              });
+              expect(yield* store.claimTitle("old-session")).toBeNull();
               expect(yield* store.run("old-run")).toMatchObject({
                 status: "interrupted",
                 workload,

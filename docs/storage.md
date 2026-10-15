@@ -21,7 +21,13 @@ bun run start store status
 ## Schema and saved records
 
 Migration 4 adds durable tool calls and their execution states. Migration 5 adds
-explicitly saved facts in `memories`.
+explicitly saved facts in `memories`. Migration 8 adds session titles, their
+source, a durable automatic-attempt claim, and separate title-request usage.
+Existing sessions keep null titles; there is no backfill or inference on old
+history. Manual titles take precedence over automatic results, and metadata
+updates leave session activity timestamps unchanged. Gateway bindings also retain
+creation provenance, confirmed and pending remote names, the last title considered
+for synchronization, and whether external edits or failures disabled naming.
 
 `@poppet/store` provides a scoped Effect `Store` service backed by
 [Bun SQLite](https://bun.sh/docs/runtime/sqlite). The initial migrations create

@@ -64,7 +64,7 @@ const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatWriter
 
     const command = request.command;
 
-    if (command.action === "show" || command.action === "sessions")
+    if (command.action === "show" || command.action === "sessions" || command.action === "rename")
       return yield* inspectChat(command).pipe(Effect.flatMap((text) => write(`${text}\n`)));
 
     return yield* sendChat(command, write, announce);

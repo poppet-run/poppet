@@ -118,6 +118,17 @@ describe("Discord adapter", () => {
       throw new Error(`Unexpected write: ${route}`);
     });
 
+    let loseRename = false;
+
+    const patch = spyOn(client.rest, "patch").mockImplementation(async (route) => {
+      if (route !== "/channels/400") throw new Error(`Unexpected rename: ${route}`);
+      thread.name = "😀".repeat(50);
+
+      if (loseRename) throw new Error("Lost rename acknowledgement");
+
+      return thread;
+    });
+
     const put = spyOn(client.rest, "put").mockImplementation(async (route) => {
       if (route.endsWith(`/${encodeURIComponent("👀")}/@me`)) botReacted = true;
     });
@@ -148,6 +159,43 @@ describe("Discord adapter", () => {
             "unavailable",
           );
           expect(yield* channel.conversation(incoming)).toBe("400");
+          const naming = channel.naming;
+
+          if (!naming) throw new Error("Missing naming capability");
+          // A recovered thread owned by another user is never managed.
+          expect(yield* naming.conversation(incoming, "Hello")).toEqual({
+            id: "400",
+            managedName: null,
+          });
+          thread.owner_id = "100";
+          client.channels.cache.delete("400");
+          expect(yield* naming.conversation(incoming, "Hello")).toEqual({
+            id: "400",
+            managedName: "Hello",
+          });
+          // Recovering creation retains the intended original name, not a later user edit.
+          expect(yield* naming.current(incoming, "400")).toBe("Renamed thread");
+          expect(yield* naming.rename(incoming, "400", "Hello", "Generated")).toBeNull();
+          expect(patch).not.toHaveBeenCalled();
+          thread.name = "Hello";
+          expect(yield* naming.rename(incoming, "400", "Hello", "😀".repeat(80))).toBe(
+            "😀".repeat(50),
+          );
+          expect(patch).toHaveBeenCalledWith(
+            "/channels/400",
+            expect.objectContaining({ body: expect.objectContaining({ name: "😀".repeat(50) }) }),
+          );
+          thread.name = "Hello";
+          loseRename = true;
+          expect(
+            yield* naming.rename(incoming, "400", "Hello", "😀".repeat(80)).pipe(Effect.result),
+          ).toHaveProperty("failure.reason", "uncertain");
+          expect(yield* naming.current(incoming, "400")).toBe("😀".repeat(50));
+          thread.thread_metadata.locked = true;
+          expect(
+            yield* naming.rename(incoming, "400", "😀".repeat(50), "Blocked").pipe(Effect.result),
+          ).toHaveProperty("failure.reason", "permission");
+          thread.thread_metadata.locked = false;
           yield* channel.checkAccess(incoming, "400");
           yield* channel.typing("400");
           expect(post).toHaveBeenCalledWith("/channels/400/typing");
@@ -253,6 +301,7 @@ describe("Discord adapter", () => {
       ready.mockRestore();
       get.mockRestore();
       post.mockRestore();
+      patch.mockRestore();
       put.mockRestore();
       remove.mockRestore();
     }

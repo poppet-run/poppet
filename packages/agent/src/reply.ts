@@ -29,7 +29,11 @@ const outputLimit = () =>
   });
 
 // The final response must agree with the selected model and text already shown to the consumer.
-const validateCompletion = (response: Completion | null, run: Run, streamed: string) => {
+const validateCompletion = (
+  response: Completion | null,
+  run: Pick<Run, "provider" | "model">,
+  streamed: string,
+) => {
   if (response === null) throw protocolFailure();
 
   const hasCalls = response.output.some((part) => part.type === "tool-call");
@@ -55,7 +59,7 @@ const validateCompletion = (response: Completion | null, run: Run, streamed: str
 export const streamReply = (
   model: ModelOperations,
   request: ModelRequest,
-  run: Run,
+  run: Pick<Run, "provider" | "model">,
 ): Stream.Stream<ModelEvent, AgentError | ProviderError> =>
   Stream.suspend(() => {
     let completed: Completion | null = null;

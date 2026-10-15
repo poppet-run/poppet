@@ -19,6 +19,7 @@ import {
   Run,
   RunOutcome,
   Session,
+  SessionTitle,
   StoredMessage,
   ToolCall,
   ToolOutcome,
@@ -33,7 +34,17 @@ interface StoreOperations {
     model: string,
     workload?: Session["workload"],
     id?: string,
+    taskTitle?: string,
   ) => Effect.Effect<Session, StoreError>;
+  /** Manual metadata changes never reorder history; manual names win over in-flight generation. */
+  readonly renameSession: (id: string, title: string) => Effect.Effect<Session, StoreError>;
+  /** Claims at most one optional naming request after a successful exchange. */
+  readonly claimTitle: (id: string) => Effect.Effect<Session | null, StoreError>;
+  readonly finishTitle: (
+    id: string,
+    title: string | null,
+    usage: Completion["usage"],
+  ) => Effect.Effect<void, StoreError>;
   /** Returns null when the session does not exist. */
   readonly session: (id: string) => Effect.Effect<Session | null, StoreError>;
   readonly sessions: Effect.Effect<ReadonlyArray<Session>, StoreError>;
@@ -46,6 +57,7 @@ interface StoreOperations {
     sessionId: string,
     input: ReadonlyArray<ModelMessage>,
     id?: string,
+    fallbackTitle?: string,
   ) => Effect.Effect<Run, StoreError>;
   /** Transitions a pending run to running; already-started or terminal runs are rejected. */
   readonly startRun: (id: string) => Effect.Effect<Run, StoreError>;
@@ -74,7 +86,14 @@ interface StoreOperations {
 /** Persists conversation history and tracks run and tool execution through terminal outcomes. */
 export class Store extends Context.Service<Store, StoreOperations>()("poppet/Store") {}
 
-const sessionSql = `SELECT id, provider, model, workload, created_at AS createdAt, updated_at AS updatedAt FROM sessions`;
+const sessionSql = `SELECT id, provider, model, workload, created_at AS createdAt, updated_at AS updatedAt,
+  title, title_source AS titleSource, title_attempted AS titleAttempted, title_usage AS titleUsage FROM sessions`;
+
+const SessionRecord = Schema.Struct({
+  ...Session.fields,
+  titleAttempted: Schema.BooleanFromBit,
+  titleUsage: Schema.NullOr(Schema.fromJsonString(Completion.fields.usage)),
+});
 
 const runSql = `SELECT id, session_id AS sessionId, provider, model, workload, status, created_at AS createdAt,
   started_at AS startedAt, finished_at AS finishedAt, result, failure_reason AS failureReason FROM runs`;
@@ -163,7 +182,7 @@ const requestFailure = (cause: unknown) =>
 
 const sessionFor = (database: Database, id: string) =>
   readRecord(() =>
-    Schema.decodeUnknownSync(Schema.NullOr(Session))(
+    Schema.decodeUnknownSync(Schema.NullOr(SessionRecord))(
       database.query(`${sessionSql} WHERE id = ?`).get(id),
     ),
   );
@@ -297,22 +316,43 @@ export const StoreLive = Layer.effect(
       model: string,
       workload: Session["workload"] = "assistant",
       suppliedId?: string,
+      taskTitle?: string,
     ) =>
       atTime((at) => {
         const selectedProvider = Schema.decodeUnknownSync(ProviderId)(provider);
         const selectedModel = Schema.decodeUnknownSync(ModelId)(model);
         const selectedWorkload = Schema.decodeUnknownSync(Session.fields.workload)(workload);
         const id = Schema.decodeUnknownSync(Id)(suppliedId ?? randomUUID());
+
+        const title =
+          taskTitle === undefined
+            ? "New conversation"
+            : Schema.decodeUnknownSync(SessionTitle)(taskTitle);
+
         database
-          .query(
-            "INSERT INTO sessions (id, provider, model, created_at, updated_at, workload) VALUES (?, ?, ?, ?, ?, ?)",
-          )
-          .run(id, selectedProvider, selectedModel, at, at, selectedWorkload);
+          .query(`INSERT INTO sessions (id, provider, model, created_at, updated_at, workload, title, title_source, title_attempted)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(
+            id,
+            selectedProvider,
+            selectedModel,
+            at,
+            at,
+            selectedWorkload,
+            title,
+            taskTitle === undefined ? "fallback" : "task",
+            taskTitle === undefined ? 0 : 1,
+          );
 
         return requireSession(database, id);
       });
 
-    const queueRun = (sessionId: string, input: ReadonlyArray<ModelMessage>, suppliedId?: string) =>
+    const queueRun = (
+      sessionId: string,
+      input: ReadonlyArray<ModelMessage>,
+      suppliedId?: string,
+      fallbackTitle?: string,
+    ) =>
       atTime((at) =>
         database
           .transaction(() => {
@@ -336,6 +376,12 @@ export const StoreLive = Layer.effect(
                 `INSERT INTO runs (id, session_id, provider, model, workload, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
               )
               .run(runId, id, session.provider, session.model, session.workload, createdAt);
+
+            if (fallbackTitle !== undefined)
+              database
+                .query(`UPDATE sessions SET title = ?, title_source = 'fallback'
+                WHERE id = ? AND title_source = 'fallback' AND NOT EXISTS (SELECT 1 FROM messages WHERE session_id = ?)`)
+                .run(Schema.decodeUnknownSync(SessionTitle)(fallbackTitle), id, id);
             append(database, session, runId, messages, createdAt);
 
             return requireRun(database, runId);
@@ -606,6 +652,48 @@ export const StoreLive = Layer.effect(
 
           return toolCallsFor(database, runId);
         }),
+      renameSession: (id, title) =>
+        atTime(() => {
+          requireSession(database, Schema.decodeUnknownSync(Id)(id));
+          database
+            .query("UPDATE sessions SET title = ?, title_source = 'manual' WHERE id = ?")
+            .run(Schema.decodeUnknownSync(SessionTitle)(title), id);
+
+          return requireSession(database, id);
+        }),
+      claimTitle: (id) =>
+        atTime(() =>
+          database
+            .transaction(() => {
+              requireSession(database, Schema.decodeUnknownSync(Id)(id));
+
+              const changed = database
+                .query(`UPDATE sessions SET title_attempted = 1 WHERE id = ?
+          AND title_source = 'fallback' AND title_attempted = 0
+          AND EXISTS (SELECT 1 FROM runs WHERE session_id = ? AND status = 'completed')`)
+                .run(id, id);
+
+              return changed.changes === 1 ? requireSession(database, id) : null;
+            })
+            .immediate(),
+        ),
+      finishTitle: (id, title, usage) =>
+        atTime(() => {
+          requireSession(database, Schema.decodeUnknownSync(Id)(id));
+          const decoded = title === null ? null : Schema.decodeUnknownSync(SessionTitle)(title);
+
+          const savedUsage =
+            usage === null
+              ? null
+              : Schema.encodeSync(Schema.fromJsonString(Completion.fields.usage))(usage);
+
+          database
+            .query(`UPDATE sessions SET title_usage = ?,
+          title = CASE WHEN title_source = 'fallback' AND ? IS NOT NULL THEN ? ELSE title END,
+          title_source = CASE WHEN title_source = 'fallback' AND ? IS NOT NULL THEN 'generated' ELSE title_source END
+          WHERE id = ? AND title_attempted = 1`)
+            .run(savedUsage, decoded, decoded, decoded, id);
+        }),
       createSession,
       queueRun,
       startRun,
@@ -619,7 +707,7 @@ export const StoreLive = Layer.effect(
       sessions: Effect.try({
         try: () =>
           readRecord(() =>
-            Schema.decodeUnknownSync(Schema.Array(Session))(
+            Schema.decodeUnknownSync(Schema.Array(SessionRecord))(
               database.query(`${sessionSql} ORDER BY created_at, id`).all(),
             ),
           ),

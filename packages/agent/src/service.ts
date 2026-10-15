@@ -1,10 +1,22 @@
 import { ProviderError, type ModelOperations, type ProviderId } from "@poppet/provider";
 import { Store, StoreError, type Run, type RunOutcome } from "@poppet/store";
-import { Cause, Context, Effect, Exit, Layer, Option, Semaphore, Stream, type Scope } from "effect";
+import {
+  Cause,
+  Console,
+  Context,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Semaphore,
+  Stream,
+  type Scope,
+} from "effect";
 
 import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
 import { memoryPrompt } from "#src/memory";
+import { generateTitle, sessionTitle } from "#src/title";
 
 /** Resolves registered models through the host while the request's resource scope stays open. */
 export class ModelResolver extends Context.Service<
@@ -30,6 +42,8 @@ export type ChatFailure = AgentError | ProviderError | StoreError;
 export class Agent extends Context.Service<
   Agent,
   {
+    /** Best-effort optional naming after the answer has been delivered. */
+    readonly nameSession: (sessionId: string) => Effect.Effect<void>;
     /** Streams a reply into an existing session; execution starts when consumed. */
     readonly send: (
       sessionId: string,
@@ -100,6 +114,7 @@ export const AgentLive = Layer.effect(
                   sessionId,
                   [{ role: "user", text }],
                   options.runId,
+                  sessionTitle(text),
                 );
 
                 active = pending;
@@ -190,6 +205,39 @@ export const AgentLive = Layer.effect(
         );
       });
 
-    return { send };
+    const nameSession = (sessionId: string) =>
+      Effect.gen(function* () {
+        const session = yield* store.claimTitle(sessionId);
+
+        if (session === null) return;
+
+        const original = (yield* store.messages(sessionId)).find(
+          (entry) => entry.message.role === "user",
+        );
+
+        if (original?.message.role !== "user") return;
+        const prompt = original.message.text;
+
+        const result = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const model = yield* resolver.resolve(session.provider, session.model);
+
+            return yield* generateTitle(model, session, prompt);
+          }),
+        ).pipe(Effect.timeout("10 seconds"));
+
+        yield* store.finishTitle(session.id, result.title, result.usage);
+      }).pipe(
+        requests.withPermit,
+        Effect.catchCause((cause) =>
+          Cause.hasInterrupts(cause)
+            ? Effect.void
+            : Console.error(
+                "Optional session naming failed; the saved answer and fallback title are unchanged.",
+              ),
+        ),
+      );
+
+    return { send, nameSession };
   }),
 );

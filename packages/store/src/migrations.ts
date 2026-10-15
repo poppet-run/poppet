@@ -157,6 +157,21 @@ export const migrations: ReadonlyArray<Migration> = [
     ) STRICT;
   `,
   },
+  {
+    version: 8,
+    name: "session-titles",
+    sql: `
+    ALTER TABLE sessions ADD COLUMN title TEXT;
+    ALTER TABLE sessions ADD COLUMN title_source TEXT CHECK (title_source IN ('fallback', 'generated', 'manual', 'task'));
+    ALTER TABLE sessions ADD COLUMN title_attempted INTEGER NOT NULL DEFAULT 0 CHECK (title_attempted IN (0, 1));
+    ALTER TABLE sessions ADD COLUMN title_usage TEXT;
+    ALTER TABLE gateway_bindings ADD COLUMN managed_name TEXT;
+    ALTER TABLE gateway_bindings ADD COLUMN pending_name TEXT;
+    ALTER TABLE gateway_bindings ADD COLUMN synced_title TEXT;
+    ALTER TABLE gateway_bindings ADD COLUMN naming_disabled INTEGER NOT NULL DEFAULT 0 CHECK (naming_disabled IN (0, 1));
+    ALTER TABLE gateway_bindings ADD COLUMN creation_message_id TEXT;
+    `,
+  },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

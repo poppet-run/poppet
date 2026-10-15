@@ -15,7 +15,7 @@ export const commandArgs = (
     offset = 2;
   } else if (args[0] === "chat" && args[1] === "new") {
     offset = args[2] === "--coding" ? 3 : 2;
-  } else if (args[0] === "chat" && args[1] === "send") {
+  } else if (args[0] === "chat" && ["send", "rename"].includes(args[1] ?? "")) {
     offset = 3;
   } else if (args[0] === "memory" && ["remember", "replace"].includes(args[1] ?? "")) {
     offset = 3;

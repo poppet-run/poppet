@@ -221,7 +221,7 @@ export const makeCLI = (
     }).pipe(Effect.provide(runtime.config));
 
   const runChat = (command: ChatCommand) => {
-    if (command.action === "show" || command.action === "sessions")
+    if (command.action === "show" || command.action === "sessions" || command.action === "rename")
       return throughWorker(
         { kind: "chat", command },
         inspectChat(command).pipe(
@@ -332,6 +332,14 @@ export const makeCLI = (
         },
         ({ id, text }) => runChat({ action: "send", id, text }),
       ).pipe(Command.withDescription("Continue a saved session")),
+      Command.make(
+        "rename",
+        {
+          id: Argument.String("session").pipe(Argument.withSchema(Session.fields.id)),
+          text: textArgument("title").pipe(Argument.withSchema(MessageText)),
+        },
+        ({ id, text }) => runChat({ action: "rename", id, text }),
+      ).pipe(Command.withDescription("Rename a saved session")),
       Command.make("sessions", {}, () => runChat({ action: "sessions" })).pipe(
         Command.withDescription("List sessions"),
       ),
