@@ -39,7 +39,7 @@ interface MemoryFixtureState {
 const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Memory["Service"]) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-memory-agent-"));
   const profile = join(directory, "profile.md");
-  const soul = join(directory, "SOUL.md");
+  const soul = join(directory, "soul.md");
   const requests: ModelRequest[] = [];
 
   const state: MemoryFixtureState = {
@@ -371,7 +371,7 @@ describe.concurrent("explicit memory in chat", () => {
     { content: "😀".repeat(17), expected: "memory-limit" },
     { content: Buffer.from([0xff]), expected: "memory-storage" },
   ])(
-    "rejects an invalid SOUL.md with $expected before resolving the model",
+    "rejects an invalid soul.md with $expected before resolving the model",
     async ({ content, expected }) => {
       const saved = await fixture({ soulBytes: 64 });
 

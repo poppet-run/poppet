@@ -168,7 +168,7 @@ export const LocalMemoryLive = Layer.effect(
             onExcessProperty: "error",
           })(limits).pipe(Effect.mapError(requestFailure));
 
-          const soul = yield* readContext("SOUL.md", budget.soulBytes, "POPPET_SOUL_BYTES");
+          const soul = yield* readContext("soul.md", budget.soulBytes, "POPPET_SOUL_BYTES");
 
           const profile = yield* readContext(
             "profile.md",
