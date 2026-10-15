@@ -137,7 +137,7 @@ describe("CLI", () => {
       expect(missing.stderr).not.toContain("Could not read or update");
       const invalid = await invoke(["tasks", "show", "bad/id"], environment);
       expect(invalid.exitCode).toBe(1);
-      expect(invalid.stderr).toContain("Invalid task or provider ID");
+      expect(invalid.stderr).toContain("argument <task>");
       expect(await readdir(directory)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -419,13 +419,13 @@ describe("CLI", () => {
 
     try {
       const cases = [
-        { args: ["list", "extra"], message: "Use memory list" },
-        { args: ["remember", "bad key", "Value"], message: "Memory keys must" },
-        { args: ["remember", "key"], message: "Memory values must be nonempty" },
-        { args: ["replace", "key", " "], message: "no surrounding whitespace" },
+        { args: ["list", "extra"], message: "Unexpected positional argument" },
+        { args: ["remember", "bad key", "Value"], message: "argument <key>" },
+        { args: ["remember", "key"], message: "value" },
+        { args: ["replace", "key", " "], message: "no leading or trailing whitespace" },
         { args: ["remember", "key", "😀".repeat(1025)], message: "4096 UTF-8 bytes" },
-        { args: ["forget", "key", "extra"], message: "Use memory list" },
-        { args: ["unknown"], message: "Use memory list" },
+        { args: ["forget", "key", "extra"], message: "Unexpected positional argument" },
+        { args: ["unknown"], message: "Unknown subcommand" },
       ];
 
       for (const { args, message } of cases) {
@@ -433,7 +433,6 @@ describe("CLI", () => {
         const result = await invoke(["memory", ...args], { POPPET_DATA_DIR: directory });
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain(message);
-        expect(result.stderr).not.toContain("Unknown command");
       }
 
       expect(await readdir(directory)).toEqual([]);
@@ -664,8 +663,154 @@ describe("CLI", () => {
     const result = await invoke(["--help"], { POPPET_DATA_DIR: "" });
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("Usage: bun run start");
+    expect(result.stdout).toContain("bun run start <subcommand>");
     expect(result.stderr).toBe("");
+  });
+
+  test("root and command help never load configuration or create application files", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-cli-help-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "invalid/provider" };
+
+    const paths = [
+      "config",
+      "store status",
+      "provider models",
+      "provider verify",
+      "auth login",
+      "auth status",
+      "auth models",
+      "auth verify",
+      "auth logout",
+      "chat new",
+      "chat send",
+      "chat sessions",
+      "chat show",
+      "memory list",
+      "memory remember",
+      "memory replace",
+      "memory forget",
+      "tasks add",
+      "tasks list",
+      "tasks show",
+      "tasks pause",
+      "tasks resume",
+      "tasks cancel",
+      "tasks retry",
+      "tasks clear",
+      "tasks providers",
+      "tasks resume-provider",
+      "tasks status",
+      "tasks work",
+      "gateway discord",
+      "gateway discord setup",
+      "gateway work",
+      "gateway status",
+      "worker run",
+      "worker install",
+      "worker start",
+      "worker stop",
+      "worker status",
+      "worker logs",
+      "worker uninstall",
+    ];
+
+    try {
+      for (const args of [[], ["-h"], ...paths.map((path) => path.split(" ").concat("--help"))]) {
+        // eslint-disable-next-line no-await-in-loop -- Each call temporarily changes process.env.
+        const result = await invoke(args, environment);
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr).toBe("");
+        expect(result.stdout).toContain("USAGE");
+        expect(result.stdout).toContain("bun run start");
+      }
+
+      const taskHelp = await invoke(["tasks", "add", "--help"], environment);
+      expect(taskHelp.stdout).toContain("--cron");
+      expect(taskHelp.stdout).toContain("--tz");
+      expect(taskHelp.stdout).toContain("EXAMPLES");
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects conflicting schedules, repeated flags and malformed worker commands before opening storage", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-cli-flags-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+    const at = "2099-10-15T09:00:00Z";
+
+    const commands = [
+      ["tasks", "add", "Later", "--at", at, "--cron", "0 9 * * *", "--tz", "UTC", "Hello"],
+      ["tasks", "add", "Later", "--cron", "0 9 * * *", "Hello"],
+      ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],
+      ["tasks", "add", "Later", "--at", at, "--at", at, "Hello"],
+      ["auth", "status", "--provider", "openrouter", "--provider", "opencode-go"],
+      ["auth", "login", "--consent", "--consent"],
+      ["worker", "start", "extra"],
+      ["worker", "install", "--unknown"],
+      ["worker", "unknown"],
+    ];
+
+    try {
+      for (const args of commands) {
+        // eslint-disable-next-line no-await-in-loop -- Each call temporarily changes process.env.
+        const result = await invoke(args, environment);
+        expect({ args, exitCode: result.exitCode }).toEqual({ args, exitCode: 1 });
+        expect(result.stderr).not.toBe("");
+      }
+
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("preserves free-form memory values and task prompts containing flag-like text", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-cli-text-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+
+    try {
+      const remembered = await invoke(
+        ["memory", "remember", "flags", "--verbose", "--help", "--", "-h"],
+        environment,
+      );
+
+      expect(remembered.exitCode).toBe(0);
+      expect(JSON.parse(remembered.stdout).value).toBe("--verbose --help -- -h");
+
+      const replaced = await invoke(
+        ["memory", "replace", "flags", "Use", "--coding", "literally"],
+        environment,
+      );
+
+      expect(replaced.exitCode).toBe(0);
+      expect(JSON.parse(replaced.stdout).value).toBe("Use --coding literally");
+
+      const added = await invoke(
+        [
+          "tasks",
+          "add",
+          "Later",
+          "--at",
+          "2099-10-15T09:00:00Z",
+          "--coding",
+          "Explain",
+          "--coding",
+          "--help",
+          "--",
+          "-h",
+        ],
+        environment,
+      );
+
+      expect(added.exitCode).toBe(0);
+      expect(JSON.parse(added.stdout)).toMatchObject({
+        workload: "coding",
+        prompt: "Explain --coding --help -- -h",
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   test("config prints settings supplied by the environment", async () => {
@@ -731,7 +876,7 @@ describe("CLI", () => {
       expect(await Bun.file(join(directory, "auth/connection.json")).exists()).toBe(false);
       const invalid = await invoke(["auth", "login", "--unknown"], environment);
       expect(invalid.exitCode).toBe(1);
-      expect(invalid.stderr).toContain("Unknown command");
+      expect(invalid.stderr).toContain("Unrecognized flag: --unknown");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

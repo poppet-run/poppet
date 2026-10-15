@@ -9,7 +9,7 @@ export type ChatCommand =
   | { readonly action: "sessions" }
   | { readonly action: "show"; readonly id: string };
 
-const MessageText = Schema.NonEmptyString.check(
+export const MessageText = Schema.NonEmptyString.check(
   Schema.makeFilter((text) => text.trim().length > 0 || "Enter a nonempty message."),
 );
 
@@ -29,28 +29,6 @@ export const ChatRequest = Schema.Union([
 export type ChatRequest = typeof ChatRequest.Type;
 
 type ChatSubmission = Extract<ChatRequest, { action: "new" | "send" }>;
-
-export const parseChatCommand = (args: ReadonlyArray<string>): ChatCommand | null => {
-  if (args[0] === "sessions" && args.length === 1) return { action: "sessions" };
-
-  if (args[0] === "show" && args.length === 2 && Schema.is(Session.fields.id)(args[1]))
-    return { action: "show", id: args[1] };
-
-  if (args[0] === "send" && Schema.is(Session.fields.id)(args[1])) {
-    const text = args.slice(2).join(" ");
-
-    return text.trim() ? { action: "send", id: args[1], text } : null;
-  }
-
-  if (args[0] === "new") {
-    const coding = args[1] === "--coding";
-    const text = args.slice(coding ? 2 : 1).join(" ");
-
-    return text.trim() ? { action: "new", coding, text } : null;
-  }
-
-  return null;
-};
 
 export type ChatWriter = (text: string) => Effect.Effect<void, AgentError>;
 
