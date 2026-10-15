@@ -24,11 +24,16 @@ export type MemoryFact = typeof MemoryFact.Type;
 
 const Bytes = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65536 }));
 
-export const SnapshotLimits = Schema.Struct({ profileBytes: Bytes, factsBytes: Bytes });
+export const SnapshotLimits = Schema.Struct({
+  soulBytes: Bytes,
+  profileBytes: Bytes,
+  factsBytes: Bytes,
+});
 
 export type SnapshotLimits = typeof SnapshotLimits.Type;
 
 export const MemorySnapshot = Schema.Struct({
+  soul: Schema.String,
   profile: Schema.String,
   facts: Schema.Array(Schema.Struct({ key: MemoryKey, value: MemoryValue })),
 });

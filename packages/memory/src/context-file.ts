@@ -1,6 +1,7 @@
-/* eslint-disable no-await-in-loop -- A bounded profile read must handle short filesystem reads sequentially. */
+/* eslint-disable no-await-in-loop -- A bounded file read must handle short filesystem reads sequentially. */
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
+import { basename } from "node:path";
 
 import { Schema } from "effect";
 
@@ -14,7 +15,7 @@ export const memoryLimit = (part: string, setting: string) =>
     message: `The ${part} exceeds ${setting}. Shorten it or increase the budget.`,
   });
 
-export const readProfile = async (path: string, maximum: number) => {
+export const readContextFile = async (path: string, maximum: number, setting: string) => {
   const file = await open(
     path,
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
@@ -28,9 +29,9 @@ export const readProfile = async (path: string, maximum: number) => {
   try {
     const metadata = await file.stat();
 
-    if (!metadata.isFile()) throw new Error("Profile must be a regular file.");
+    if (!metadata.isFile()) throw new Error("Context must be a regular file.");
 
-    if (metadata.size > maximum) throw memoryLimit("profile", "POPPET_PROFILE_BYTES");
+    if (metadata.size > maximum) throw memoryLimit(basename(path), setting);
     const bytes = Buffer.alloc(maximum + 1);
     let length = 0;
 
@@ -41,12 +42,12 @@ export const readProfile = async (path: string, maximum: number) => {
       length += bytesRead;
     }
 
-    if (length > maximum) throw memoryLimit("profile", "POPPET_PROFILE_BYTES");
-    const profile = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length));
+    if (length > maximum) throw memoryLimit(basename(path), setting);
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length));
 
-    if (profile.includes("\0")) throw new Error("Profile must be UTF-8 text.");
+    if (text.includes("\0")) throw new Error("Context must be UTF-8 text.");
 
-    return profile;
+    return text;
   } finally {
     await file.close();
   }

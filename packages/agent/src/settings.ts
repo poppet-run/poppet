@@ -7,6 +7,7 @@ export interface ChatPolicy {
   readonly modelTurns: number;
   readonly toolCalls: number;
   readonly toolBytes: number;
+  readonly soulBytes: number;
   readonly profileBytes: number;
   readonly factsBytes: number;
 }
@@ -22,6 +23,7 @@ export const defaultPolicy: ChatPolicy = {
   modelTurns: 8,
   toolCalls: 16,
   toolBytes: 16384,
+  soulBytes: 8192,
   profileBytes: 8192,
   factsBytes: 8192,
 };
@@ -56,6 +58,10 @@ export const ChatSettingsLive = Layer.effect(
       "POPPET_TOOL_BYTES",
     ).pipe(Config.withDefault(defaultPolicy.toolBytes));
 
+    const soulBytes = yield* Config.schema(bounded(65536), "POPPET_SOUL_BYTES").pipe(
+      Config.withDefault(defaultPolicy.soulBytes),
+    );
+
     const profileBytes = yield* Config.schema(bounded(65536), "POPPET_PROFILE_BYTES").pipe(
       Config.withDefault(defaultPolicy.profileBytes),
     );
@@ -71,6 +77,7 @@ export const ChatSettingsLive = Layer.effect(
       modelTurns,
       toolCalls,
       toolBytes,
+      soulBytes,
       profileBytes,
       factsBytes,
     };
