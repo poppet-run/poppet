@@ -63,6 +63,10 @@ const gateway = Effect.gen(function* () {
   const finish = (id: number, text: string, state = "completed") =>
     gatewayStorage(() => repo.complete(id, chunks(text, channel.textLimit), state));
 
+  // shortcut: Reactions are best effort; add durable reconciliation if stale markers after crashes matter.
+  const mark = (message: IncomingMessage, state: "working" | "completed" | "stopped") =>
+    channel.mark(message, state).pipe(Effect.catchTag("ChannelError", () => Effect.void));
+
   const recover = Effect.gen(function* () {
     yield* gatewayStorage(() => repo.recoverDelivery(channel.id, account));
 
@@ -70,7 +74,10 @@ const gateway = Effect.gen(function* () {
       const run = yield* store.run(entry.runId);
 
       if (run === null) yield* gatewayStorage(() => repo.state(entry.id, "queued"));
-      else yield* finish(entry.id, answer(run));
+      else {
+        yield* finish(entry.id, answer(run));
+        yield* mark(entry.message, run.status === "completed" ? "completed" : "stopped");
+      }
     }
   });
 
@@ -103,6 +110,8 @@ const gateway = Effect.gen(function* () {
 
       if (conversation === null || session === null) return;
 
+      yield* mark(message, "working");
+
       if (message.text === "/cancel") {
         yield* gatewayStorage(() => repo.cancel(channel.id, account, conversation));
 
@@ -118,6 +127,8 @@ const gateway = Effect.gen(function* () {
         const latest = latestId ? yield* store.run(latestId) : null;
         yield* finish(entry.id, `Session: ${session}\nLatest run: ${latest?.status ?? "none"}`);
       }
+
+      yield* mark(message, "completed");
     });
 
   const processNext = Effect.gen(function* () {
@@ -166,6 +177,7 @@ const gateway = Effect.gen(function* () {
       if (active !== null)
         active.entry = { ...entry, conversationId: conversation, sessionId: session.id };
       yield* gatewayStorage(() => repo.state(entry.id, "executing"));
+      yield* mark(entry.message, "working");
       yield* Effect.scoped(
         Effect.gen(function* () {
           // Discord typing expires after ten seconds; progress must never block inference.
@@ -182,11 +194,17 @@ const gateway = Effect.gen(function* () {
       );
       const run = yield* store.run(entry.runId);
 
-      if (run !== null) yield* finish(entry.id, answer(run));
+      if (run !== null) {
+        yield* finish(entry.id, answer(run));
+        yield* mark(entry.message, run.status === "completed" ? "completed" : "stopped");
+      }
     }).pipe(
       Effect.onExit((exit) =>
         Effect.gen(function* () {
-          if (Exit.isSuccess(exit) || Cause.hasInterrupts(exit.cause)) return;
+          if (Exit.isSuccess(exit)) return;
+          yield* mark(entry.message, "stopped");
+
+          if (Cause.hasInterrupts(exit.cause)) return;
           const error = Cause.findErrorOption(exit.cause);
 
           if (

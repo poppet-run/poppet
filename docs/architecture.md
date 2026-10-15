@@ -605,7 +605,7 @@ scheduling imports concrete messaging adapters.
 The shared contract carries the adapter and bot account identity, external
 message and conversation IDs, sender ID, text, and reply destination. Keep
 platform IDs as opaque strings. Adapters expose scoped incoming events and text
-delivery and typing operations; add other capabilities only when implemented. Messaging is
+delivery, typing, and message-status operations; add other capabilities only when implemented. Messaging is
 independent of inference providers, so a channel can use any configured provider
 that supports the session's workload. Call the typed agent interface directly
 and consume completed runs rather than parsing CLI stdout or stderr.
@@ -654,7 +654,11 @@ to the configured guilds and channels, match mentions by bot ID rather than
 display name, and ignore bot and webhook messages. Send completed text replies,
 split to Discord's limits, with automatic mentions disabled. Refresh Discord's
 typing indicator while the agent works; stop on completion, failure, or
-cancellation, and keep indicator failures separate from request execution. Progressive edits,
+cancellation, and keep indicator failures separate from request execution.
+Mark the original message with 👀 while processing and replace it with ✅ after
+a successful run. Failures and cancellation clear the bot's 👀 without marking
+success. Reactions are best effort and do not change durable execution or delivery;
+crashes and network errors may leave stale markers. Progressive edits,
 attachments, voice, DMs, and forum-specific behavior are deferred.
 See Discord's [thread permissions](https://docs.discord.com/developers/topics/threads#permissions)
 and [message content rules](https://docs.discord.com/developers/events/gateway#message-content-intent).

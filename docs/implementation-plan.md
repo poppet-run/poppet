@@ -512,7 +512,10 @@ data, logs, and model inputs. Persist non-secret settings for worker startup.
 Send only completed text answers, split to platform limits with automatic
 mentions disabled. Refresh the typing indicator during model and tool work,
 stopping on completion, failure, or cancellation. Indicator failures do not
-interrupt requests. Defer DMs, attachments, voice, progressive editing, and
+interrupt requests. The original message gets 👀 during processing and ✅ after
+a successful run; failure or cancellation removes the bot's 👀. Reaction errors
+do not interrupt requests, and reactions are not durably reconciled after a crash.
+Defer DMs, attachments, voice, progressive editing, and
 forum-specific handling.
 
 Add migrations and a gateway repository on the shared database for bindings,

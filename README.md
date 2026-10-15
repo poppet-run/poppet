@@ -100,7 +100,7 @@ session listing and inspection work independently of these budgets.
 Create a bot in the [Discord Developer Portal](https://discord.com/developers/applications).
 Enable its Message Content intent and install it in your server with the bot
 scope. In the intended parent text channel, give it View Channel, Read Message
-History, Create Public Threads, and Send Messages in Threads permissions. It
+History, Create Public Threads, Send Messages in Threads, and Add Reactions permissions. It
 does not need Administrator. Use Discord's Developer Mode to copy the bot user,
 your user, server, and parent channel IDs.
 
@@ -137,6 +137,11 @@ The bot shows Discord's typing indicator while working, including during tool
 calls. It refreshes every eight seconds and stops refreshing when the request
 finishes, fails, or is cancelled. Discord clears it after a reply or within ten
 seconds of the last refresh. Indicator failures do not interrupt the request.
+
+Poppet also reacts to the original message with 👀 when processing starts, then
+replaces it with ✅ after a successful run. Failed or cancelled requests clear
+the bot's 👀 without adding ✅. These markers are best effort; missing reaction
+permissions do not stop chat, and a crash or network error can leave a stale marker.
 
 In an attached thread, `@Poppet /status` reports its session and latest run;
 `@Poppet /cancel` interrupts its active request and cancels its queued requests.
