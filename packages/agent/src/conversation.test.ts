@@ -123,7 +123,7 @@ const fixture = async (
 const failure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.match({ onFailure: (error) => error, onSuccess: () => null }));
 
-describe("notes conversation", () => {
+describe.concurrent("notes conversation", () => {
   test("saves the Acorn note through Responses with strict schemas and an unreserved namespace", async () => {
     const WireTools = Schema.Array(
       Schema.Struct({

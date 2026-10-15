@@ -2,12 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { ProviderEnvironment } from "@poppet/provider";
 import { Effect, Layer, Redacted } from "effect";
 
-import { ApiKeyStore, ApiKeyStoreLive } from "#src/api-keys";
+import { ApiKeyStore, ApiKeyStoreLive, loadApiKey } from "#src/api-keys";
 
 const harness = async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-api-keys-"));
@@ -44,37 +43,29 @@ describe("API-key storage", () => {
     try {
       await store.run((keys) => keys.write("test-provider", Redacted.make("router-key")));
 
-      const program = `
-        import { loadApiKey } from './src/api-keys.ts';
-        import { Effect, Redacted } from 'effect';
-        import { ProviderEnvironment } from '@poppet/provider';
-        const result = await Effect.runPromise(loadApiKey('test-provider', 'TEST_PROVIDER_KEY').pipe(Effect.provideService(ProviderEnvironment, {applicationName: 'Test', dataDirectory: process.env.POPPET_DATA_DIR}), Effect.match({
-          onSuccess: key => ({ source: Redacted.value(key) === 'router-key' ? 'stored' : 'environment' }),
-          onFailure: error => ({ reason: error.reason })
-        })));
-        console.log(JSON.stringify(result));
-      `;
+      const previous = process.env.TEST_PROVIDER_KEY;
 
-      const load = async (environment: Record<string, string>) => {
-        const child = Bun.spawn([process.execPath, "-e", program], {
-          cwd: fileURLToPath(new URL("..", import.meta.url)),
-          env: { PATH: process.env.PATH ?? "", POPPET_DATA_DIR: store.directory, ...environment },
-          stdout: "pipe",
-          stderr: "pipe",
-        });
+      const load = () =>
+        Effect.runPromise(
+          loadApiKey("test-provider", "TEST_PROVIDER_KEY").pipe(
+            Effect.provideService(ProviderEnvironment, {
+              applicationName: "Test",
+              dataDirectory: store.directory,
+            }),
+          ),
+        );
 
-        const output = await new Response(child.stdout).text();
-        expect(await child.exited).toBe(0);
-        expect(output).not.toContain("router-key");
-
-        return JSON.parse(output);
-      };
-
-      expect(await load({})).toEqual({ source: "stored" });
-      expect(await load({ TEST_PROVIDER_KEY: "environment-key" })).toEqual({
-        source: "environment",
-      });
-      expect(await load({ TEST_PROVIDER_KEY: "" })).toEqual({ reason: "authentication" });
+      try {
+        delete process.env.TEST_PROVIDER_KEY;
+        expect(Redacted.value(await load())).toBe("router-key");
+        process.env.TEST_PROVIDER_KEY = "environment-key";
+        expect(Redacted.value(await load())).toBe("environment-key");
+        process.env.TEST_PROVIDER_KEY = "";
+        await expect(load()).rejects.toMatchObject({ reason: "authentication" });
+      } finally {
+        if (previous === undefined) delete process.env.TEST_PROVIDER_KEY;
+        else process.env.TEST_PROVIDER_KEY = previous;
+      }
     } finally {
       await store.close();
     }

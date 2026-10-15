@@ -1,0 +1,101 @@
+import { expect, test } from "bun:test";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const invokeProcess = async (
+  args: ReadonlyArray<string>,
+  environment: Record<string, string> = {},
+  input: string | null = null,
+) => {
+  const subprocess = Bun.spawn([process.execPath, "run", "--silent", "start", ...args], {
+    cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+    env: {
+      PATH: process.env.PATH ?? "",
+      ...environment,
+    },
+    stdin: input === null ? "ignore" : new TextEncoder().encode(input),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(subprocess.stdout).text(),
+    new Response(subprocess.stderr).text(),
+    subprocess.exited,
+  ]);
+
+  return { stdout, stderr, exitCode };
+};
+
+test.concurrent("invalid configuration and commands exit unsuccessfully", async () => {
+  const invalidConfig = await invokeProcess(["config"], { POPPET_DATA_DIR: "" });
+  const invalidCommand = await invokeProcess(["config", "unexpected-argument"]);
+
+  expect(invalidConfig.exitCode).toBe(1);
+  expect(invalidConfig.stdout).toBe("");
+  expect(invalidConfig.stderr).toContain("POPPET_DATA_DIR");
+  expect(invalidCommand.exitCode).toBe(1);
+  expect(invalidCommand.stdout).toBe("");
+  expect(invalidCommand.stderr).toContain("Unknown command");
+});
+
+test.concurrent("root start resolves relative configuration paths from the repository directory", async () => {
+  const result = await invokeProcess(["config"], {
+    POPPET_DATA_DIR: "relative-data",
+    POPPET_NOTES_DIR: "relative-notes",
+  });
+
+  const directory = fileURLToPath(new URL("../../..", import.meta.url));
+
+  expect(result.exitCode).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({
+    dataDirectory: resolve(directory, "relative-data"),
+    notesDirectory: resolve(directory, "relative-notes"),
+  });
+});
+
+test.concurrent.each(["openrouter", "opencode-go"])(
+  "%s reads stdin without printing the key and rejects empty input",
+  async (provider) => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-stdin-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: provider };
+
+    try {
+      const empty = await invokeProcess(["auth", "login", "--key-stdin"], environment, "\n");
+      expect(empty.exitCode).toBe(1);
+      expect(await readdir(directory)).toEqual([]);
+
+      const saved = await invokeProcess(
+        ["auth", "login", "--key-stdin"],
+        environment,
+        "stdin-test-secret\n",
+      );
+
+      expect(saved.exitCode).toBe(0);
+      expect(saved.stdout + saved.stderr).not.toContain("stdin-test-secret");
+      expect(JSON.parse(await Bun.file(join(directory, `auth/${provider}.json`)).text()).key).toBe(
+        "stdin-test-secret",
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test.concurrent("unattended key input fails without creating credentials", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-unattended-"));
+
+  try {
+    const result = await invokeProcess(["auth", "login", "openrouter"], {
+      POPPET_DATA_DIR: directory,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("interactive terminal");
+    expect(await readdir(directory)).toEqual([]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

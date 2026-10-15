@@ -1,35 +1,55 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const invoke = async (
-  args: ReadonlyArray<string>,
-  environment: Record<string, string> = {},
-  input: string | null = null,
-) => {
-  const subprocess = Bun.spawn([process.execPath, "run", "--silent", "start", ...args], {
-    cwd: fileURLToPath(new URL("../../..", import.meta.url)),
-    env: {
-      PATH: process.env.PATH ?? "",
-      ...environment,
+import { Console, Effect } from "effect";
+
+import { makeCLI } from "#src/cli";
+import { providers } from "#src/providers";
+
+const invoke = async (args: ReadonlyArray<string>, environment: Record<string, string> = {}) => {
+  const previous = process.env;
+  process.env = { PATH: previous.PATH ?? "", ...environment };
+  let stdout = "";
+  const errors: string[] = [];
+
+  const output: Console.Console = {
+    ...console,
+    log: (...values) => {
+      stdout += `${values.join(" ")}\n`;
     },
-    stdin: input === null ? "ignore" : new TextEncoder().encode(input),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+    error: (...values) => errors.push(values.join(" ")),
+  };
 
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(subprocess.stdout).text(),
-    new Response(subprocess.stderr).text(),
-    subprocess.exited,
-  ]);
+  const run = makeCLI(providers, (text) =>
+    Effect.sync(() => {
+      stdout += text;
+    }),
+  );
 
-  return { stdout, stderr, exitCode };
+  try {
+    const exitCode = await Effect.runPromise(
+      run(args).pipe(
+        Effect.provideService(Console.Console, output),
+        Effect.match({
+          onSuccess: () => 0,
+          onFailure: (error) => {
+            errors.push(error.message);
+
+            return 1;
+          },
+        }),
+      ),
+    );
+
+    return { stdout, stderr: errors.join("\n"), exitCode };
+  } finally {
+    process.env = previous;
+  }
 };
 
-// Multi-command flows include repeated Bun startup; allow slower CI runners to finish.
 describe("CLI", () => {
   test("rejects missing prompts and invalid task IDs as argument errors before opening the store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-invalid-"));
@@ -280,7 +300,7 @@ describe("CLI", () => {
     }
   }, 15_000);
 
-  test("manages explicit facts across CLI restarts without a provider connection or model", async () => {
+  test("manages explicit facts across CLI invocations without a provider connection or model", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-memory-cli-"));
     const environment = { POPPET_DATA_DIR: directory };
 
@@ -341,14 +361,14 @@ describe("CLI", () => {
         { args: ["unknown"], message: "Use memory list" },
       ];
 
-      await Promise.all(
-        cases.map(async ({ args, message }) => {
-          const result = await invoke(["memory", ...args], { POPPET_DATA_DIR: directory });
-          expect(result.exitCode).toBe(1);
-          expect(result.stderr).toContain(message);
-          expect(result.stderr).not.toContain("Unknown command");
-        }),
-      );
+      for (const { args, message } of cases) {
+        // eslint-disable-next-line no-await-in-loop -- Invocations temporarily replace process.env.
+        const result = await invoke(["memory", ...args], { POPPET_DATA_DIR: directory });
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain(message);
+        expect(result.stderr).not.toContain("Unknown command");
+      }
+
       expect(await readdir(directory)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -443,13 +463,16 @@ describe("CLI", () => {
     const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "opencode-go" };
 
     try {
-      const router = await invoke(
-        ["auth", "login", "openrouter", "--key-stdin"],
-        environment,
-        "router-test-secret\n",
-      );
+      const router = await invoke(["auth", "login", "openrouter"], {
+        ...environment,
+        POPPET_OPENROUTER_API_KEY: "router-test-secret",
+      });
 
-      const go = await invoke(["auth", "login", "--key-stdin"], environment, "go-test-secret\n");
+      const go = await invoke(["auth", "login"], {
+        ...environment,
+        POPPET_OPENCODE_GO_API_KEY: "go-test-secret",
+      });
+
       expect(router.exitCode).toBe(0);
       expect(go.exitCode).toBe(0);
       expect(router.stdout).toContain("openrouter");
@@ -541,7 +564,7 @@ describe("CLI", () => {
     }
   });
 
-  test("rejects bad auth options and unattended or empty key input before creating credentials", async () => {
+  test("rejects bad auth options before creating credentials", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-invalid-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "openrouter" };
 
@@ -553,14 +576,17 @@ describe("CLI", () => {
         ["auth", "login", "openrouter", "--consent"],
         ["auth", "login", "openai-chatgpt", "--key-stdin"],
         ["auth", "status", "--key-stdin"],
-        ["auth", "login", "openrouter"],
         ["auth", "verify", "--provider", "openrouter"],
       ];
 
-      const results = await Promise.all(commands.map((command) => invoke(command, environment)));
+      const results = [];
+
+      for (const command of commands) {
+        // eslint-disable-next-line no-await-in-loop -- Invocations temporarily replace process.env.
+        results.push(await invoke(command, environment));
+      }
+
       expect(results.every((result) => result.exitCode === 1)).toBe(true);
-      const empty = await invoke(["auth", "login", "openrouter", "--key-stdin"], environment, "\n");
-      expect(empty.exitCode).toBe(1);
       expect(await readdir(directory)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -591,18 +617,6 @@ describe("CLI", () => {
     });
   });
 
-  test("invalid configuration and commands exit unsuccessfully", async () => {
-    const invalidConfig = await invoke(["config"], { POPPET_DATA_DIR: "" });
-    const invalidCommand = await invoke(["config", "unexpected-argument"]);
-
-    expect(invalidConfig.exitCode).toBe(1);
-    expect(invalidConfig.stdout).toBe("");
-    expect(invalidConfig.stderr).toContain("POPPET_DATA_DIR");
-    expect(invalidCommand.exitCode).toBe(1);
-    expect(invalidCommand.stdout).toBe("");
-    expect(invalidCommand.stderr).toContain("Unknown command");
-  });
-
   test.each(["openai-chatgpt", "opencode-go", "openrouter"])(
     "%s configuration hides secrets and requires a model before opening credentials",
     async (provider) => {
@@ -630,21 +644,6 @@ describe("CLI", () => {
       }
     },
   );
-
-  test("root start resolves relative configuration paths from the repository directory", async () => {
-    const result = await invoke(["config"], {
-      POPPET_DATA_DIR: "relative-data",
-      POPPET_NOTES_DIR: "relative-notes",
-    });
-
-    const directory = fileURLToPath(new URL("../../..", import.meta.url));
-
-    expect(result.exitCode).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      dataDirectory: resolve(directory, "relative-data"),
-      notesDirectory: resolve(directory, "relative-notes"),
-    });
-  });
 
   test("shows disconnected auth status and requires sign-in before verification", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-test-"));

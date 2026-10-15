@@ -111,7 +111,7 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Mem
 const send = (id: string) =>
   Agent.use((agent) => Stream.runDrain(agent.send(id, "How should you answer?")));
 
-describe("explicit memory in chat", () => {
+describe.concurrent("explicit memory in chat", () => {
   test("uses an injected memory implementation without reading the local profile or facts", async () => {
     const snapshots: SnapshotLimits[] = [];
 

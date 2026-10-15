@@ -87,7 +87,7 @@ const fixture = async (resolve: ModelResolver["Service"]["resolve"]) => {
 const failure = <A, E, R>(program: Effect.Effect<A, E, R>) =>
   program.pipe(Effect.match({ onSuccess: () => null, onFailure: (error) => error }));
 
-describe("persisted agent", () => {
+describe.concurrent("persisted agent", () => {
   test("streams and resumes after reopening with pinned identity, workload and opaque continuation", async () => {
     const requests: ModelRequest[] = [];
     const events: ChatEvent[] = [];

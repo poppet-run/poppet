@@ -136,7 +136,7 @@ const fixture = async (stream: ModelOperations["stream"]) => {
   };
 };
 
-describe("task worker", () => {
+describe.concurrent("task worker", () => {
   test("records an expired deadline as interrupted in both the occurrence and its run", async () => {
     const started = await Effect.runPromise(Deferred.make<void>());
 
@@ -502,6 +502,7 @@ describe("task worker", () => {
     try {
       await state.run(
         Effect.gen(function* () {
+          yield* TestClock.setTime(Date.now());
           const repo = yield* TaskRepository;
           const store = yield* Store;
           const job = repo.add(state.task, Date.now());
@@ -533,6 +534,7 @@ describe("task worker", () => {
           hang = false;
           const added = yield* remoteTaskCommand(path, { action: "add", task: state.task });
           expect(added).not.toBeNull();
+          yield* TestClock.adjust("1 second");
           yield* Deferred.await(finished);
           yield* Effect.yieldNow;
           expect(yield* remoteTaskCommand(path, { action: "list" })).not.toBeNull();
@@ -545,7 +547,7 @@ describe("task worker", () => {
           ).toHaveLength(1);
           expect(state.lines).toContainEqual(expect.stringContaining(`task=${job.id} paused`));
           expect(state.lines.at(-1)).toContain("Task worker stopped.");
-        }),
+        }).pipe(Effect.provide(TestClock.layer())),
       );
       expect(await Bun.file(taskSocketPath(state.directory)).exists()).toBe(false);
       expect(await Bun.file(join(state.directory, "store/owner.lock")).exists()).toBe(false);

@@ -64,7 +64,7 @@ const reject = <A>(operation: Effect.Effect<A, StoreError>, reason: StoreError["
     }),
   );
 
-describe("conversation store", () => {
+describe.concurrent("conversation store", () => {
   test.each(["pending", "running"])(
     "recovers abandoned %s tool calls without replaying them",
     async (state) => {

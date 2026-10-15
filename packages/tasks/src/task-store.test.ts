@@ -56,7 +56,7 @@ const fixture = async () => {
   };
 };
 
-describe("task schedules", () => {
+describe.concurrent("task schedules", () => {
   test("status reports reconnect and quota actions without exposing failure messages or prompts", async () => {
     const state = await fixture();
 

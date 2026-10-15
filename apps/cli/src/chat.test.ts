@@ -13,8 +13,9 @@ import {
   type ModelRequest,
   type ProviderRegistration,
 } from "@poppet/provider";
-import { remoteTaskCommand, taskSocketPath } from "@poppet/tasks";
-import { Console, Effect, Fiber, Layer, Stream } from "effect";
+import { taskSocketPath } from "@poppet/tasks";
+import { Console, Effect, Fiber, Layer, ManagedRuntime, Stream } from "effect";
+import { TestClock } from "effect/testing";
 
 import { makeCLI } from "#src/cli";
 
@@ -52,6 +53,8 @@ const fixture = async () => {
   const lines: string[] = [];
   const errors: string[] = [];
   const chunks: string[] = [];
+  const clock = ManagedRuntime.make(TestClock.layer());
+  await clock.runPromise(TestClock.setTime(Date.now()));
 
   const state = {
     open: false,
@@ -197,22 +200,29 @@ const fixture = async () => {
     errors,
     chunks,
     state,
+    clock,
     program,
     invoke: (args: ReadonlyArray<string>) => Effect.runPromise(program(args)),
     startWorker: async () => {
-      const worker = Effect.runFork(program(["tasks", "work"]));
-      await Effect.runPromise(
-        Effect.gen(function* () {
-          while (
-            (yield* remoteTaskCommand(taskSocketPath(directory), { action: "status" })) === null
-          )
-            yield* Effect.sleep("5 millis");
-        }).pipe(Effect.timeout("5 seconds")),
-      );
+      const worker = clock.runFork(program(["tasks", "work"]));
+
+      try {
+        await Effect.runPromise(
+          Effect.gen(function* () {
+            while (!lines.some((line) => line.includes("Task worker running.")))
+              yield* Effect.sleep("5 millis");
+          }).pipe(Effect.timeout("5 seconds")),
+        );
+      } catch (error) {
+        await Effect.runPromise(Fiber.interrupt(worker));
+        throw error;
+      }
 
       return worker;
     },
     close: async () => {
+      await clock.dispose();
+
       for (const [key, value] of previous) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
@@ -489,6 +499,7 @@ describe("chat CLI", () => {
       );
       expect(chat.state.peak).toBe(1);
       chat.state.hold = false;
+      await chat.clock.runPromise(TestClock.adjust("1 second"));
       await Effect.runPromise(Fiber.join(second));
       await Effect.runPromise(
         Effect.gen(function* () {

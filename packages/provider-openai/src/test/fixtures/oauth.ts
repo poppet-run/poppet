@@ -5,8 +5,11 @@ import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
 import type { Controls } from "#src/test/fixtures/controls";
 
+// Signing keys are immutable; each provider still owns its request and token state.
+const signingKeys = generateKeyPair("RS256");
+
 export const makeOAuthProvider = async (controls: Controls) => {
-  const keys = await generateKeyPair("RS256");
+  const keys = await signingKeys;
   const publicKey = { ...(await exportJWK(keys.publicKey)), kid: "test-key", alg: "RS256" };
 
   const authorizations: URL[] = [];
