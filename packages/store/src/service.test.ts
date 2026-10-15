@@ -208,7 +208,7 @@ describe("conversation store", () => {
               { role: "assistant", output: response.output, continuation: response.continuation },
             ]);
             expect(yield* store.status).toMatchObject({
-              schemaVersion: 6,
+              schemaVersion: 7,
               sessions: 1,
               messages: 4,
               runs: 1,
@@ -405,7 +405,7 @@ describe("conversation store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 6,
+        schemaVersion: 7,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));
@@ -451,7 +451,7 @@ describe("conversation store", () => {
         await fixtureStore.run(
           Store.use((store) =>
             Effect.gen(function* () {
-              expect((yield* store.status).schemaVersion).toBe(6);
+              expect((yield* store.status).schemaVersion).toBe(7);
               expect((yield* store.messages("old-session"))[0]?.message).toEqual(user);
               expect((yield* store.session("old-session"))?.workload).toBe(workload);
               expect(yield* store.run("old-run")).toMatchObject({

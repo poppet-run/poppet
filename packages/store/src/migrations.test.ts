@@ -10,7 +10,7 @@ describe("store migrations", () => {
     database.run("INSERT INTO sessions VALUES ('saved', 'openrouter', 'model', 1, 1)");
 
     const broken = {
-      version: 7,
+      version: migrations.length + 1,
       name: "broken",
       sql: "CREATE TABLE partial (id INTEGER); invalid SQL;",
     };
@@ -28,8 +28,8 @@ describe("store migrations", () => {
         .all(),
     ).toEqual([]);
     expect(database.query("SELECT id FROM sessions").get()).toEqual({ id: "saved" });
-    expect(applyMigrations(database)).toBe(6);
-    expect(applyMigrations(database)).toBe(6);
+    expect(applyMigrations(database)).toBe(migrations.length);
+    expect(applyMigrations(database)).toBe(migrations.length);
   });
 
   test.each(["future-version", "changed-checksum", "missing-ledger"])(
