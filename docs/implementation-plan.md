@@ -4,8 +4,10 @@
 
 Status: Phases 1–10 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, and live Discord behavior require manual validation
 
-Phases 11–12 are planned only. Discord thread chat is implemented; additional
-adapters and scheduled-result delivery are deferred.
+Phases 11–15 are planned only. Discord thread chat is implemented; additional
+adapters and scheduled-result delivery are deferred. Conversation search, local
+Markdown skills, and supplied-URL reading are the next additions.
+Implement those three in that order; they do not depend on phases 11–12.
 
 Updated: 2026-10-15
 
@@ -637,6 +639,182 @@ repeat execution, and delivery failures preserve the saved answer. Reuse shared
 behavior tests and add platform-specific transport cases. Verify live setup and
 delivery separately. Cross-platform session merging, multi-user memory sharing,
 voice, and attachments remain outside these phases.
+
+## Phase 13: Search past conversations
+
+Planned, not implemented. Depends on persisted chat and the shared worker command
+path from phases 4 and 9. This phase can precede phases 11–12.
+
+Allow the owner to find earlier discussions with `chat search "query"`. Give
+capable models a read-only `search_sessions` tool using the same store operation.
+Search user text and final assistant text from completed runs across the owner's
+CLI, scheduled, and messaging sessions. Exclude failed or interrupted inputs,
+tool arguments/results, and provider continuation. Retrieved messages are
+historical data and cannot authorize actions or override current instructions.
+Cross-session recall follows the current single-owner memory policy; adding other
+users requires an explicit access policy before exposing this tool to them.
+
+Use SQLite FTS5 in the existing database, with a checksummed migration that
+backfills eligible messages and indexes newly completed exchanges in the same
+transaction as run completion. Keep original messages as the source of truth.
+Confirm FTS5 support in the pinned Bun runtime before implementation. Accept a
+bounded plain-text query, quote its terms for FTS, and bind SQL parameters rather
+than exposing raw FTS syntax. Order by relevance with a stable tie-breaker.
+Return at most ten matches with session/message IDs, timestamps, roles, and
+bounded excerpts. Apply the existing tool-result byte limit, mark truncation,
+and report no matches without making a model request for CLI inspection.
+
+Keep indexing and querying in `@poppet/store`, the tool definition/validation in
+`@poppet/agent`, and command parsing/help/output in `@poppet/cli`. Extend the
+existing notes-only tool dispatch with explicit cases for search, preserving
+namespace checks, per-run permissions, durable tool records, cancellation, and
+budgets. No plugin registry or provider-specific search implementation is needed.
+Route CLI search through the running worker's protected socket when it owns the
+store; otherwise use local inspection. Tool calls use that same store instance.
+Search remains available without provider credentials or a configured model.
+
+Implement in two reviewable steps: first the migration, store query, and CLI
+inspection path; then the agent tool and shared runner integration. Update the
+storage, chat, worker-command, and architecture docs when behavior is implemented.
+No embeddings, LLM-generated summaries, automatic memory writes, or separate
+search service are needed for this version.
+
+Completion check: find a discussion from an older session, inspect it with
+`chat show`, then ask a new session about it and receive an answer grounded in
+the matching messages. The same CLI search works with the worker stopped or
+running, and results survive restart.
+
+Automated checks cover migration/backfill and rollback, successful completion
+indexing, excluded failed/tool/continuation content, literal punctuation and
+Unicode queries, deterministic ordering, empty results, byte limits, and worker
+routing. A fake-model tool round trip must return the stored excerpt, preserve
+existing notes behavior, and reject malformed or disallowed calls. Run
+`bun run check`; validate one real model recall separately.
+
+## Phase 14: Explicit local Markdown skills
+
+Planned, not implemented. Depends on chat, prompt budgeting, and durable tasks
+from phases 4–7. Implement after phase 13 to reuse its expanded tool dispatch
+coverage, but skills themselves do not need a new model tool.
+
+Store owner-written procedures at `<data directory>/skills/<name>/SKILL.md`.
+Support `skills list`, `skills show <name>`, `chat new --skill <name> "message"`,
+and `tasks add ... --skill <name>`. Select one skill explicitly when creating a
+session or task. Existing sessions retain their selection. Selecting skills for
+Discord conversations is deferred; ordinary messaging behavior stays unchanged.
+An example skill can describe how to summarize a note or write a weekly review
+using tools Poppet already has. A skill does not add capabilities.
+
+Use the directory name as the identifier and read the file as UTF-8 Markdown.
+Keep the first version to a single file of at most 8 KiB; omit YAML metadata
+parsing, referenced files, scripts, automatic matching, downloads, and agent-written
+skills. Reuse the notes filesystem checks where practical without granting the
+notes tools access to the skills directory. Reject traversal, symlinks, hard
+links, invalid UTF-8, non-regular files, and oversized content. Missing roots list
+as empty; an explicitly requested missing or invalid skill fails clearly before
+model or task execution.
+
+Resolve the selected file at creation and persist its name and full text as a
+snapshot on the session or task. Add nullable snapshot fields through the normal
+migration path; existing records have no skill. New task occurrences copy the
+task's saved snapshot into their session. Editing or deleting a file affects
+only subsequently created sessions/tasks, so an existing task does not silently
+change behavior overnight. Creating a replacement task/session refreshes it.
+Show the selected name and saved content in local inspection without exposing
+credentials. Do not copy snapshots into unrelated sessions or global memory.
+
+Keep skill loading in the agent package as a small Effect service, with CLI
+commands and live-layer composition in the host. Extend creation request schemas,
+worker socket handling, task/session persistence, scheduler session creation, and
+test fixtures together. The process owning the store resolves the skill file so
+CLI and worker use the same data directory and validation. Load one saved snapshot
+into each run's instructions, below the base rules and above conversational data;
+it cannot override explicit user requests, tool permissions, or scheduled runs'
+read-only notes policy. Count its bytes in the existing context budget and reject
+an oversized prompt before inference. Keep provider packages unchanged.
+
+Implement the loader and local inspection first, then session selection and prompt
+assembly, then task snapshots and scheduler propagation. Update configuration,
+chat, tasks, storage, and architecture docs with the snapshot behavior. No new
+package, dependency, marketplace, or generalized prompt-template system is needed.
+
+Completion check: create a session and scheduled task with a small weekly-review
+skill. Both receive its procedure; changing the file leaves their saved behavior
+unchanged, while a newly created session sees the edit. An ordinary session has
+no skill instructions.
+
+Automated checks cover filesystem boundaries and limits, old-record migrations,
+CLI/worker selection parity, missing skills, snapshot persistence across restart,
+task-to-session propagation, context-budget failure, and unchanged tool permissions.
+Use injected model requests to inspect the effective prompt, then run
+`bun run check`. Validate one real skill-assisted chat and scheduled run separately.
+
+## Phase 15: Read a supplied URL
+
+Planned, not implemented. Depends on the bounded, durable tool execution from
+phase 5 and the expanded dispatch from phase 13. It can be implemented independently
+of skills and messaging adapters.
+
+Add one read-only `fetch_page` tool that accepts a public HTTP(S) URL and returns
+its final source URL, optional title, extracted text, and a truncation flag. Allow
+initial URLs explicitly supplied in the current user request or saved task prompt;
+validate that authorization in the host rather than relying on model instructions.
+Do not automatically fetch every link or allow links found in page text to expand
+the authorized set. Redirects are allowed only after the same destination checks.
+Keep web search, browsers, JavaScript rendering, PDFs, authenticated pages,
+downloads, and linked-page crawling outside this version.
+
+Keep retrieval and extraction in a small agent-owned Effect service, injected into
+the runner by CLI composition. Reuse tool validation, namespaces, durable records,
+per-run call/result limits, and cancellation. A scheduled read-only run may fetch
+an explicitly supplied URL; it still cannot save notes. Providers receive only
+the generic tool schema and bounded result. Do not add a general integration
+framework or couple web retrieval to an inference provider.
+
+Before enabling network access, prove that the chosen HTTP client connects only
+to the address validated for that request while preserving hostname and TLS
+verification. Validate every resolved A/AAAA address and every redirect, including
+IPv4-mapped IPv6, and reject loopback, private, link-local, multicast, reserved,
+and otherwise non-public destinations. Reject URL credentials and nonstandard
+ports; strip fragments. Bound DNS resolution, connection, redirects, and body
+reading within a 15-second overall deadline and at most three redirects. Do not
+forward cookies, authorization headers, provider credentials, or ambient proxy
+settings. A DNS check followed by an independent fetch lookup is insufficient;
+test address pinning and DNS rebinding before shipping. Prefer platform APIs,
+using an HTTP client with a controlled lookup if ordinary fetch cannot enforce it.
+
+Accept UTF-8 plain text and static HTML. Limit both transferred and decoded bodies
+to 1 MiB and extracted output to the existing tool-result budget. Do not trust
+Content-Length as the only limit. Use a structural HTML parser, remove scripts,
+styles, and non-content elements, and preserve readable text boundaries. First
+check whether Bun's platform HTML parser meets these requirements; add a small
+pinned parser only if it cannot. Explicitly reject unsupported encodings, content
+types, HTTP failures, and pages without usable text. Cancel I/O on interruption
+and deadline. Record failures through the existing tool/run lifecycle without
+automatic network or inference retries. Page text is untrusted source material,
+and must never be treated as instructions or authority to execute another tool.
+
+Implement transport validation and bounded reading first, then extraction with
+saved fixtures, then tool dispatch and host composition. Update tool guidance,
+chat/tasks docs, configuration, and architecture documentation when implemented.
+No persisted browser state, page cache, new credentials, or web-search account
+is needed. This is the largest of these three plans because destination checks
+must hold for actual connections as well as parsed URLs.
+
+Completion check: supply a public article URL and receive a summary citing the
+returned source URL. Plain text and ordinary static HTML work; an inaccessible
+or JavaScript-only page fails clearly. The same tool works in a scheduled prompt
+without changing its read-only permissions.
+
+Automated checks use injected DNS/transport and saved HTML/text fixtures for
+source metadata, extraction, truncation, redirects, non-public IPv4/IPv6, rebinding,
+credential rejection, body/decompression limits, unsupported responses, timeouts,
+and cancellation. A fake-model round trip must receive the text, reject an
+unsupplied initial URL, and retain the existing notes/search behavior. Prove the
+production client's validated-address connection behavior with a local transport
+integration test that never requires public-network test access. Run
+`bun run check`; separately validate one public text page, one HTML article, and
+one scheduled fetch against a live model.
 
 ## Validation
 
