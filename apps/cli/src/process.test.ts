@@ -109,13 +109,21 @@ test.concurrent("Discord setup saves protected settings and status never prints 
     const invalid = await invokeProcess(args, environment, "\n");
     expect(invalid.exitCode).toBe(1);
     expect(await readdir(directory)).toEqual([]);
+    const oversized = await invokeProcess(args, environment, "x".repeat(8195));
+    expect(oversized.exitCode).toBe(1);
+    expect(await readdir(directory)).toEqual([]);
+    expect(oversized.stdout + oversized.stderr).not.toContain("x".repeat(64));
     const saved = await invokeProcess(args, environment, "discord-test-secret\n");
     expect(saved.exitCode).toBe(0);
     expect(saved.stdout + saved.stderr).not.toContain("discord-test-secret");
     expect((await stat(join(directory, "channels/discord.json"))).mode & 0o777).toBe(0o600);
     const status = await invokeProcess(["gateway", "status"], environment);
     expect(status.exitCode).toBe(0);
-    expect(JSON.parse(status.stdout)).toMatchObject({ running: false, enabled: true });
+    expect(JSON.parse(status.stdout)).toMatchObject({
+      running: false,
+      enabled: true,
+      channels: [{ id: "discord", enabled: true }],
+    });
     expect(status.stdout + status.stderr).not.toContain("discord-test-secret");
   } finally {
     await rm(directory, { recursive: true, force: true });

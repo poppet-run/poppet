@@ -6,6 +6,13 @@ import { join } from "node:path";
 
 import { AgentError } from "@poppet/agent";
 import {
+  ChannelEnvironment,
+  ChannelError,
+  MessagingChannel,
+  type ChannelRegistration,
+  type IncomingMessage,
+} from "@poppet/gateway";
+import {
   Provider,
   ProviderConnection,
   invalidRequest,
@@ -14,7 +21,7 @@ import {
   type ProviderRegistration,
 } from "@poppet/provider";
 import { workerSocketPath } from "@poppet/worker";
-import { Console, Effect, Fiber, Layer, ManagedRuntime, Stream } from "effect";
+import { Console, Effect, Fiber, Layer, ManagedRuntime, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { makeCLI } from "#src/cli";
@@ -31,7 +38,7 @@ const description: ModelDescription = {
   },
 };
 
-const fixture = async () => {
+const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-chat-cli-"));
 
   const environment = {
@@ -191,6 +198,8 @@ const fixture = async () => {
     makeCLI(
       [unused, registration],
       write,
+      undefined,
+      registeredChannels,
     )(args).pipe(Effect.provideService(Console.Console, output));
 
   return {
@@ -234,7 +243,165 @@ const fixture = async () => {
   };
 };
 
+const exampleChannel = (id: string) => {
+  const incoming = Effect.runSync(Queue.make<IncomingMessage>());
+  const sent: string[] = [];
+  const state = { configured: false, built: 0, closed: 0, directory: "", sent };
+
+  const registration: ChannelRegistration = {
+    id,
+    name: id,
+    setupHelp: "setup",
+    setup: (args) =>
+      Effect.gen(function* () {
+        expect(args).toEqual(["setup"]);
+        state.directory = (yield* ChannelEnvironment).dataDirectory;
+        state.configured = true;
+
+        return `${id} configured`;
+      }),
+    load: Effect.gen(function* () {
+      const environment = yield* ChannelEnvironment;
+
+      if (!state.configured) return null;
+      expect(environment.dataDirectory).toBe(state.directory);
+
+      return Layer.effect(
+        MessagingChannel,
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            state.built++;
+
+            return {
+              id,
+              accountId: "bot",
+              policy: { ownerId: "owner", scopeId: "guild", parentIds: ["parent"] },
+              messages: Stream.fromQueue(incoming),
+              conversation: (message) => Effect.succeed(message.conversationId ?? "thread"),
+              checkAccess: () => Effect.void,
+              typing: () => Effect.void,
+              mark: () => Effect.void,
+              send: (_conversation, text) =>
+                Effect.sync(() => {
+                  state.sent.push(text);
+
+                  return "sent";
+                }),
+              status: Effect.succeed({ connected: true }),
+              textLimit: 2000,
+            } satisfies MessagingChannel["Service"];
+          }),
+          () =>
+            Effect.sync(() => {
+              state.closed++;
+            }),
+        ),
+      );
+    }),
+  };
+
+  return { registration, state, incoming };
+};
+
 describe("chat CLI", () => {
+  test("registered channels supply help, setup, lazy startup, isolated sessions and status through the shared host", async () => {
+    const first = exampleChannel("example-channel");
+    const second = exampleChannel("other-channel");
+
+    const broken: ChannelRegistration = {
+      id: "broken-channel",
+      name: "Broken channel",
+      setupHelp: "setup",
+      setup: () =>
+        Effect.fail(
+          new ChannelError({ reason: "configuration", message: "Invalid channel settings" }),
+        ),
+      load: Effect.fail(
+        new ChannelError({ reason: "configuration", message: "Invalid channel settings" }),
+      ),
+    };
+
+    const chat = await fixture([first.registration, second.registration, broken]);
+    let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
+
+    try {
+      await chat.invoke(["--help"]);
+      expect(chat.lines.at(-1)).toContain("gateway example-channel setup");
+      expect(chat.lines.at(-1)).not.toContain("gateway discord");
+      await expect(chat.invoke(["gateway", "missing-channel", "setup"])).rejects.toHaveProperty(
+        "reason",
+        "configuration",
+      );
+      await chat.invoke(["gateway", "status"]);
+      expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ running: false, enabled: false });
+
+      await Promise.all(
+        [first, second].map((channel) =>
+          chat.invoke(["gateway", channel.registration.id, "setup"]),
+        ),
+      );
+      await chat.invoke(["gateway", "status"]);
+      expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ running: false, enabled: true });
+      expect([first.state.built, second.state.built]).toEqual([0, 0]);
+      worker = await chat.startWorker("gateway");
+      expect([first.state.built, second.state.built]).toEqual([1, 1]);
+
+      await Promise.all(
+        [first, second].map((channel) =>
+          chat.clock.runPromise(
+            Queue.offer(channel.incoming, {
+              messageId: "same-message",
+              scopeId: "guild",
+              parentId: "parent",
+              conversationId: "thread",
+              senderId: "owner",
+              text: channel.registration.id,
+              mentioned: false,
+            }),
+          ),
+        ),
+      );
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          while (first.state.sent.length + second.state.sent.length < 2) {
+            yield* Effect.promise(() => chat.clock.runPromise(TestClock.adjust("1 second")));
+            yield* Effect.sleep("5 millis");
+          }
+        }).pipe(Effect.timeout("5 seconds")),
+      );
+      expect(first.state.sent).toEqual(["Answer"]);
+      expect(second.state.sent).toEqual(["Answer"]);
+      expect(chat.requests.map((request) => request.messages.at(-1))).toEqual(
+        expect.arrayContaining([
+          { role: "user", text: "example-channel" },
+          { role: "user", text: "other-channel" },
+        ]),
+      );
+      expect(new Set(chat.requests.map((request) => request.sessionId)).size).toBe(2);
+      expect(chat.state.peak).toBe(1);
+      chat.chunks.length = 0;
+      await chat.invoke(["gateway", "status"]);
+      expect(JSON.parse(chat.chunks.join(""))).toMatchObject({
+        running: true,
+        enabled: true,
+        queued: 0,
+        executing: 0,
+        pendingDelivery: 0,
+        channels: [
+          { id: "example-channel", enabled: true, connected: true },
+          { id: "other-channel", enabled: true, connected: true },
+          { id: "broken-channel", enabled: false, error: "Invalid channel settings" },
+        ],
+      });
+      await Effect.runPromise(Fiber.interrupt(worker));
+      worker = undefined;
+      expect([first.state.closed, second.state.closed]).toEqual([1, 1]);
+    } finally {
+      if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+      await chat.close();
+    }
+  });
+
   test.each(["all", "tasks", "gateway"] as const)(
     "%s worker mode starts only selected services and keeps shared commands available",
     async (mode) => {
@@ -269,9 +436,15 @@ describe("chat CLI", () => {
           enabled: false,
         });
 
-        if (mode === "tasks") expect(gateway.error).toBeUndefined();
+        if (mode === "tasks") expect(gateway.channels).toEqual([]);
         else
-          expect(gateway.error).toBe("Invalid Discord settings. Run gateway discord setup again.");
+          expect(gateway.channels).toMatchObject([
+            {
+              id: "discord",
+              enabled: false,
+              error: "Invalid Discord settings. Run gateway discord setup again.",
+            },
+          ]);
         await chat.clock.runPromise(TestClock.adjust("61 seconds"));
 
         if (mode === "gateway") {

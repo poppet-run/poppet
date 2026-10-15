@@ -150,7 +150,11 @@ other users, bots, and webhooks. DMs, forums, attachments, voice, and streaming
 message edits are not supported in this phase.
 
 Use `bun run start gateway status` for connection state, rejected/dropped event
-counts while running, and persisted queue/delivery counts. Completed answers
+counts while running, and persisted queue/delivery counts. Each registration has
+an entry in `channels`, including its ID, display name, enabled state, connection
+metadata, or configuration error. Persisted queue/delivery totals remain at the
+top level and are counted once across channels. When stopped, status inspects
+settings without opening messaging connections. Completed answers
 are saved before sending; a delivery retry never repeats model or tool work.
 Uncertain sends are recorded without automatic resending, since Discord may
 already have posted them. Use the session ID and `chat show <session>` to inspect
@@ -724,6 +728,29 @@ SIGTERM cleanup. Actual login startup, physical sleep/wake, and live provider
 execution remain manual checks. Other platforms can use `worker run` in the
 foreground; background installation currently supports macOS only.
 
+## Adding a channel
+
+Channels follow the provider registration pattern. Implement `ChannelRegistration`
+from `@poppet/gateway` in the channel package, then add its registration to
+`apps/cli/src/channel-registry.ts` and its workspace dependency to the CLI.
+The registration supplies its ID, display name, setup usage, setup operation, and
+lazy configuration loader. The CLI generates setup help and dispatches
+`gateway <id> setup ...` through that registration.
+Lint restricts concrete channel imports to registration modules.
+
+The host supplies `ChannelEnvironment` with the data directory and `ChannelInput`
+with bounded, redacted secret input. The package owns argument validation,
+credential storage, setup messages, and connection construction. `load` returns
+`null` when unconfigured or a scoped `MessagingChannel` layer when configured;
+loading settings must not connect to the platform. Use a lightweight registration
+entry point and import heavy SDK code only when its layer is built.
+
+The messaging host builds a gateway per configured registration, sharing the
+existing store and serialized agent. Configuration errors appear per channel and
+do not prevent other configured channels from running. All resources close with
+the worker. The existing Discord setup syntax and `channels/discord.json` file
+remain compatible. Telegram and WhatsApp implementations remain deferred.
+
 ## Adding a provider
 
 Each provider exports a `ProviderRegistration` from its own workspace package.
@@ -754,6 +781,8 @@ apps/
       chat.ts             Chat commands, streaming output, session inspection
       runtime.ts          Generic selection and host configuration layers
       providers.ts        Provider registrations; first entry is the default
+      channel-registry.ts Channel registrations
+      channels.ts         Generic channel setup, loading, and status
       tasks.ts            Task argument parsing
       worker.ts           Worker argument parsing, launch settings, and platform selection
       worker-commands.ts  Interactive command transport and host request handling

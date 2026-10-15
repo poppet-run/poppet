@@ -73,13 +73,18 @@ export default defineConfig({
                 message:
                   "Use the shared provider interface. Concrete providers may only be imported by the registration list.",
               },
+              {
+                group: ["@poppet/channel-*", "@poppet/channel-*/**"],
+                message:
+                  "Use the shared channel interface. Concrete channels may only be imported by the registration list.",
+              },
             ],
           },
         ],
       },
     },
     {
-      files: ["apps/cli/src/providers.ts"],
+      files: ["apps/cli/src/providers.ts", "apps/cli/src/channel-registry.ts"],
       rules: { "no-restricted-imports": "off" },
     },
     {

@@ -635,6 +635,27 @@ independent of inference providers, so a channel can use any configured provider
 that supports the session's workload. Call the typed agent interface directly
 and consume completed runs rather than parsing CLI stdout or stderr.
 
+`ChannelRegistration` in `@poppet/gateway` defines identity, setup help, setup,
+and lazy loading. The CLI registry is `apps/cli/src/channel-registry.ts`; it is the
+only CLI module importing a concrete channel package. The generic host generates
+help, dispatches setup, and composes each configured channel with its own gateway
+instance. Gateways share the store, repository, and agent permit. A fresh gateway
+layer per registration keeps message streams, authorization, and sessions isolated.
+
+The host provides only `ChannelEnvironment.dataDirectory` and bounded secret input
+through `ChannelInput`. Adapters own argument schemas, credential handling,
+setup messages, and platform loading. Configuration inspection returns either no
+configured layer or a layer that connects only when built. Discord exposes a
+lightweight `@poppet/channel-discord/registration` entry and loads its SDK lazily.
+Existing setup commands and settings files are unchanged.
+
+`gateway status` reports connection state and configuration errors in a `channels`
+array, with enabled state and persisted queue/delivery totals at the top level.
+Totals are read once from the shared repository. Configuration failures remain
+isolated to their registration, and stopped status does not build connections.
+Tests append fake registrations and exercise setup, help, simultaneous message
+handling, separate sessions, shared serialization, status, and resource cleanup.
+
 Channel packages own protected credential storage, separate from model-provider
 credentials, notes, and memory. Reuse compatible protection and locking helpers
 without treating a Discord bot token as a model-provider connection. Tokens stay

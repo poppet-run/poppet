@@ -314,10 +314,14 @@ const gateway = Effect.gen(function* () {
     return true;
   });
 
-  const status = Effect.gen(function* () {
-    const connection = yield* channel.status;
+  const connectionStatus = channel.status.pipe(
+    Effect.map((connection) => ({ ...connection, rejected })),
+  );
 
-    return { ...connection, ...(yield* gatewayStorage(() => repo.status())), rejected };
+  const status = Effect.gen(function* () {
+    const connection = yield* connectionStatus;
+
+    return { ...connection, ...(yield* gatewayStorage(() => repo.status())) };
   });
 
   const run = Effect.gen(function* () {
@@ -340,7 +344,7 @@ const gateway = Effect.gen(function* () {
     );
   });
 
-  return { accept, processNext, deliverNext, recover, status, run };
+  return { accept, processNext, deliverNext, recover, connectionStatus, status, run };
 });
 
 export class Gateway extends Context.Service<Gateway, Effect.Success<typeof gateway>>()(
