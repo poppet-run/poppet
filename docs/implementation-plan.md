@@ -4,10 +4,11 @@
 
 Status: Phases 1–10 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, and live Discord behavior require manual validation
 
-Phases 11–15 are planned only. Discord thread chat is implemented; additional
-adapters and scheduled-result delivery are deferred. Conversation search, local
-Markdown skills, and supplied-URL reading are the next additions.
-Implement those three in that order; they do not depend on phases 11–12.
+Phases 11–16 are planned only. Discord thread chat is implemented; additional
+adapters and scheduled-result delivery are deferred. Implement session and Discord
+thread naming from phase 16 before conversation search from phase 13, then local
+Markdown skills and supplied-URL reading from phases 14–15. Those additions do not
+depend on scheduled-result delivery or additional messaging adapters.
 
 Updated: 2026-10-15
 
@@ -661,8 +662,9 @@ Confirm FTS5 support in the pinned Bun runtime before implementation. Accept a
 bounded plain-text query, quote its terms for FTS, and bind SQL parameters rather
 than exposing raw FTS syntax. Order by relevance with a stable tie-breaker.
 Return at most ten matches with session/message IDs, timestamps, roles, and
-bounded excerpts. Apply the existing tool-result byte limit, mark truncation,
-and report no matches without making a model request for CLI inspection.
+bounded excerpts. Include saved session titles from phase 16 alongside the IDs.
+Apply the existing tool-result byte limit, mark truncation, and report no matches
+without making a model request for CLI inspection.
 
 Keep indexing and querying in `@poppet/store`, the tool definition/validation in
 `@poppet/agent`, and command parsing/help/output in `@poppet/cli`. Extend the
@@ -815,6 +817,116 @@ production client's validated-address connection behavior with a local transport
 integration test that never requires public-network test access. Run
 `bun run check`; separately validate one public text page, one HTML article, and
 one scheduled fetch against a live model.
+
+## Phase 16: Session titles and Discord thread names
+
+Planned, not implemented. Depends on persisted chat and worker execution from
+phases 4 and 9; Discord naming also depends on phase 10. Implement before phase 13
+so conversation search can display readable titles. Phase numbers retain their
+existing references rather than prescribing implementation order.
+
+Give each new session a readable title based on its initial prompt. Save a
+single-line fallback immediately when the first user input is durably accepted,
+before inference. Normalize whitespace, remove control characters, and truncate
+at a Unicode-safe word boundary to at most 80 characters. Empty results use
+`New conversation`. Titles are display metadata; IDs remain the stable command,
+conversation-binding, and foreign-key identifiers. Duplicate titles are allowed.
+Show titles in `chat sessions`, `chat show`, gateway status replies for a bound
+session, and the planned conversation-search results.
+
+After the first successful exchange, make at most one bounded, tool-free model
+request to replace the fallback with a descriptive title of roughly 3–7 words.
+Use the session's existing provider/model/workload through the generic model
+interface; no separate title provider, model setting, or provider-specific logic.
+Supply only a bounded excerpt of the original user prompt, before skill, memory,
+or channel instructions are added. Treat it as data to name, with no authority
+to execute instructions. Request plain text with a small output budget where
+supported, validate and sanitize the response with the same 80-character limit,
+and keep the fallback for empty, invalid, failed, or interrupted output. Use a
+separate request with no conversation continuation, tools, or transcript writes.
+
+Persist the title, its source, and whether automatic generation has been attempted.
+Claim that attempt atomically before sending the request, so a restart cannot
+repeat a possibly completed naming request. Failed main exchanges leave the
+fallback and remain eligible after a later successful exchange. Once claimed,
+title-generation failure is not retried automatically. Save generated titles only
+if the session still has its fallback and no manual rename has intervened.
+Add `chat rename <session> "title"` through both local and worker command paths;
+a manual title wins over automatic work, including an in-flight request.
+
+Complete and save the user's answer before generating its title. In messaging,
+deliver the answer before starting optional naming work. Use the existing
+serialized model access and a ten-second title-request deadline within the
+owning process's scope. One-shot CLI execution prints the answer first, then
+finishes the bounded naming attempt before exiting; this can extend exit time
+and consumes additional provider usage. Worker shutdown and Ctrl-C may cancel
+naming without changing a completed chat run. No detached process or persistent
+background naming queue is needed. Keep naming failure separate from the main
+run's status, provider pause state, and answer-delivery records. Record title
+request usage separately from chat usage, marking missing usage as unknown.
+
+Scheduled occurrence sessions use the task's existing name, shortened by the same
+rules, and skip title inference. Existing sessions remain unnamed after migration
+and display their IDs until manually renamed; do not run a bulk naming job or
+change saved history. Title metadata updates must not change message ordering or
+make an old conversation appear newly active.
+
+For new Discord threads created by Poppet, replace the current fixed `Poppet`
+name with the same fallback derived from the initiating message. When the session
+receives a generated or manually assigned title, attempt to update its managed
+thread too. Keep ownership and last confirmed bot-applied names in durable gateway
+binding metadata, including enough creation provenance to recover a lost
+acknowledgement of thread creation. A thread found during recovery is not automatically
+managed merely because Poppet attaches to it. Never rename an unrelated existing
+thread or a thread whose creation ownership cannot be established.
+
+Before renaming, recheck authorization and fetch the current thread. If its name
+differs from the last confirmed bot-applied name, treat it as a user override and
+stop automatic synchronization. Recognized external name changes also disable
+management; do not overwrite a user name when a delayed title result arrives.
+Uncertain rename acknowledgements must be reconciled with the current name rather
+than blindly retried. The session's local title stays independent when thread
+management stops or an update fails. Missing permissions, rate limits, locked or
+deleted threads, disconnects, and uncertain updates never fail the chat or repeat
+model/tool work. Keep any transport retries bounded and inside the naming scope;
+no perpetual rename reconciliation loop is needed.
+
+Keep title metadata and atomic updates in `@poppet/store`, prompt-derived fallback
+and model naming in `@poppet/agent`, and command parsing/help/live composition in
+`@poppet/cli`. Extend the gateway/channel contract only with the conversation-name
+capability and metadata needed by this feature. The gateway coordinates session
+and managed-conversation titles; `@poppet/channel-discord` owns Discord name
+sanitization, limits, permissions, API calls, and error classification. Other
+adapters can omit renaming without blocking chat. Inference-provider packages
+remain unchanged. Update session creation callers, store/schema migrations,
+worker socket requests, gateway bindings, adapter fixtures, and inspection output
+together; no new dependency is required.
+
+Implement in three reviewable steps: first persisted fallback/manual titles and
+all session creation paths; then optional model-generated titles with scoped
+execution and usage accounting; then managed Discord thread naming and recovery.
+Update chat, storage, tasks, Discord, worker, and architecture documentation when
+implemented. No automatic retitling on later messages, title-based session lookup,
+retroactive thread renaming, or separate naming service is needed.
+
+Completion check: a CLI session immediately has a fallback and gains a concise
+title after its first successful exchange. Manual names survive later turns and
+restart. A Discord mention creates a named thread and, after the answer is sent,
+updates it to the generated title. Editing the thread name while naming is in
+flight preserves the user's edit. An attached pre-existing thread keeps its name.
+A failed naming request or forbidden Discord rename still leaves a successful,
+inspectable answer and usable fallback title.
+
+Automated checks cover old-record migrations, Unicode/control-character handling,
+empty and long prompts, duplicate titles, all session creation paths, task-name
+reuse, local/worker command parity, restart and atomic attempt claiming, manual
+rename races, bounded model requests, isolated continuation and usage, cancellation,
+and unchanged completed-run outcomes. Fake-channel tests cover thread creation
+and lost acknowledgements, management provenance, user edits before an update,
+permission/rate-limit failures, uncertain rename reconciliation, and independent
+behavior when an adapter has no naming capability. Run `bun run check`. Separately
+validate live title inference and Discord creation/renaming in the private test
+channel, including manual edits and the platform's non-atomic rename race.
 
 ## Validation
 
