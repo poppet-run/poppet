@@ -31,6 +31,7 @@ interface StoreOperations {
     provider: ProviderId,
     model: string,
     workload?: Session["workload"],
+    id?: string,
   ) => Effect.Effect<Session, StoreError>;
   readonly session: (id: string) => Effect.Effect<Session | null, StoreError>;
   readonly sessions: Effect.Effect<ReadonlyArray<Session>, StoreError>;
@@ -39,6 +40,7 @@ interface StoreOperations {
   readonly queueRun: (
     sessionId: string,
     input: ReadonlyArray<ModelMessage>,
+    id?: string,
   ) => Effect.Effect<Run, StoreError>;
   readonly startRun: (id: string) => Effect.Effect<Run, StoreError>;
   readonly finishRun: (id: string, outcome: RunOutcome) => Effect.Effect<Run, StoreError>;
@@ -279,12 +281,13 @@ export const StoreLive = Layer.effect(
       provider: ProviderId,
       model: string,
       workload: Session["workload"] = "assistant",
+      suppliedId?: string,
     ) =>
       atTime((at) => {
         const selectedProvider = Schema.decodeUnknownSync(ProviderId)(provider);
         const selectedModel = Schema.decodeUnknownSync(ModelId)(model);
         const selectedWorkload = Schema.decodeUnknownSync(Session.fields.workload)(workload);
-        const id = randomUUID();
+        const id = Schema.decodeUnknownSync(Id)(suppliedId ?? randomUUID());
         database
           .query(
             "INSERT INTO sessions (id, provider, model, created_at, updated_at, workload) VALUES (?, ?, ?, ?, ?, ?)",
@@ -294,7 +297,7 @@ export const StoreLive = Layer.effect(
         return requireSession(database, id);
       });
 
-    const queueRun = (sessionId: string, input: ReadonlyArray<ModelMessage>) =>
+    const queueRun = (sessionId: string, input: ReadonlyArray<ModelMessage>, suppliedId?: string) =>
       atTime((at) =>
         database
           .transaction(() => {
@@ -311,7 +314,7 @@ export const StoreLive = Layer.effect(
                 reason: "conflict",
                 message: "Another run is pending or running.",
               });
-            const runId = randomUUID();
+            const runId = Schema.decodeUnknownSync(Id)(suppliedId ?? randomUUID());
             const createdAt = Math.max(at, session.createdAt);
             database
               .query(

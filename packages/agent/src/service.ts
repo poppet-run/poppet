@@ -30,7 +30,7 @@ export class Agent extends Context.Service<
     readonly send: (
       sessionId: string,
       text: string,
-      options?: { readonly readOnlyNotes: boolean },
+      options?: { readonly readOnlyNotes?: boolean; readonly runId?: string },
     ) => Stream.Stream<ChatEvent, ChatFailure>;
   }
 >()("poppet/Agent") {}
@@ -66,7 +66,7 @@ export const AgentLive = Layer.effect(
     const send = (
       sessionId: string,
       text: string,
-      options = { readOnlyNotes: false },
+      options: { readonly readOnlyNotes?: boolean; readonly runId?: string } = {},
     ): Stream.Stream<ChatEvent, ChatFailure> =>
       Stream.suspend(() => {
         let active: Run | null = null;
@@ -90,7 +90,12 @@ export const AgentLive = Layer.effect(
 
             const run = yield* Effect.uninterruptible(
               Effect.gen(function* () {
-                const pending = yield* store.queueRun(sessionId, [{ role: "user", text }]);
+                const pending = yield* store.queueRun(
+                  sessionId,
+                  [{ role: "user", text }],
+                  options.runId,
+                );
+
                 active = pending;
                 const running = yield* store.startRun(pending.id);
                 active = running;
@@ -118,7 +123,15 @@ export const AgentLive = Layer.effect(
                 const history = yield* store.messages(sessionId);
                 const runs = yield* store.runs(sessionId);
 
-                return converse(run, model, text, history, runs, prompt, options.readOnlyNotes);
+                return converse(
+                  run,
+                  model,
+                  text,
+                  history,
+                  runs,
+                  prompt,
+                  options.readOnlyNotes ?? false,
+                );
               }),
             ).pipe(
               Stream.mapEffect((event) => {
