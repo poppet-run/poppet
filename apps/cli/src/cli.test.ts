@@ -195,7 +195,7 @@ describe("CLI", () => {
 
     try {
       const ready = await worker.stdout.getReader().read();
-      expect(new TextDecoder().decode(ready.value)).toContain("Task worker running");
+      expect(new TextDecoder().decode(ready.value)).toContain("Worker running.");
       expect(
         (
           await invoke(
@@ -311,7 +311,7 @@ describe("CLI", () => {
 
     try {
       const ready = await worker.stdout.getReader().read();
-      expect(new TextDecoder().decode(ready.value)).toContain("Task worker running");
+      expect(new TextDecoder().decode(ready.value)).toContain("Worker running.");
       const second = await invoke(["tasks", "work"], environment);
       expect(second.exitCode).toBe(1);
       expect(second.stderr).toContain("Another Poppet store may be open");

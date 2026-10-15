@@ -1,7 +1,7 @@
 import { Agent, type AgentError } from "@poppet/agent";
 import { Memory } from "@poppet/memory";
 import { Store } from "@poppet/store";
-import { WorkerRequests, TaskError, requestWorker } from "@poppet/tasks";
+import { WorkerRequests, WorkerRequestError, requestWorker } from "@poppet/worker";
 import {
   Cause,
   Console,
@@ -42,7 +42,9 @@ const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatWriter
       const messaging = yield* Effect.serviceOption(MessagingWorker);
       const status = Option.isSome(messaging) ? yield* messaging.value.status : { enabled: false };
 
-      return yield* write(`${JSON.stringify({ running: true, ...status }, null, 2)}\n`);
+      return yield* write(
+        `${JSON.stringify({ running: Option.isSome(messaging), ...status }, null, 2)}\n`,
+      );
     }
 
     if (request.kind === "memory")
@@ -134,7 +136,7 @@ export const WorkerRequestsLive = Layer.effect(
 );
 
 const lostResponse = () =>
-  new TaskError({
+  new WorkerRequestError({
     message:
       "Lost the worker response. The command was not retried; inspect the saved session or memory before trying again.",
   });
@@ -151,7 +153,7 @@ export const remoteWorkerCommand = (path: string, command: WorkerCommand, write:
       const response = yield* Effect.tryPromise({
         try: (signal) =>
           requestWorker(path, "/commands", command, AbortSignal.any([signal, controller.signal])),
-        catch: (cause) => (cause instanceof TaskError ? cause : lostResponse()),
+        catch: (cause) => (cause instanceof WorkerRequestError ? cause : lostResponse()),
       });
 
       if (response === null) return false;
@@ -162,7 +164,7 @@ export const remoteWorkerCommand = (path: string, command: WorkerCommand, write:
         response.headers.get("content-type") !== "application/x-ndjson"
       )
         return yield* Effect.fail(
-          new TaskError({
+          new WorkerRequestError({
             message:
               "The worker rejected this command. Check its arguments; if the worker is outdated, restart it to load the current code. The command was not retried.",
           }),
@@ -179,11 +181,11 @@ export const remoteWorkerCommand = (path: string, command: WorkerCommand, write:
             Effect.mapError(lostResponse),
           ),
         ),
-        Stream.runForEach((frame): Effect.Effect<void, TaskError | AgentError> => {
+        Stream.runForEach((frame): Effect.Effect<void, WorkerRequestError | AgentError> => {
           if (done) return Effect.fail(lostResponse());
 
           if (frame.type === "failed")
-            return Effect.fail(new TaskError({ message: frame.message }));
+            return Effect.fail(new WorkerRequestError({ message: frame.message }));
 
           if (frame.type === "done")
             return Effect.sync(() => {

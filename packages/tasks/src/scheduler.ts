@@ -18,8 +18,13 @@ import {
 } from "effect";
 
 import { executeTaskCommand, taskOperation } from "#src/commands";
-import { type Occurrence, type ProviderPause, type Task, type TaskError } from "#src/task-schema";
-import { serveTasks, taskSocketPath } from "#src/task-socket";
+import {
+  type Occurrence,
+  type ProviderPause,
+  type Task,
+  type TaskError,
+  type TaskCommand,
+} from "#src/task-schema";
 import { TaskRepository, type TaskStore } from "#src/task-store";
 
 // The host supplies provider status without making task scheduling depend on concrete adapters.
@@ -163,154 +168,166 @@ interface ActiveOccurrence {
   readonly fiber: Fiber.Fiber<void, TaskError | StoreError>;
 }
 
-export const runTaskWorker = Effect.scoped(
-  Effect.gen(function* () {
-    const config = yield* AppConfig;
-    const store = yield* Store;
-    const repo = yield* TaskRepository;
-    const clock = yield* Clock.Clock;
-    const output = yield* Console.Console;
-    const wake = yield* Queue.make<void>({ capacity: 1, strategy: "dropping" });
-    const commands = yield* Semaphore.make(1);
-    let active: ActiveOccurrence | null = null;
-    const startedAt = clock.currentTimeMillisUnsafe();
-    const connections = yield* Effect.serviceOption(WorkerConnections);
+export const makeTaskWorker = Effect.gen(function* () {
+  const config = yield* AppConfig;
+  const store = yield* Store;
+  const agent = yield* Agent;
+  const repo = yield* TaskRepository;
+  const clock = yield* Clock.Clock;
+  const output = yield* Console.Console;
+  const wake = yield* Queue.make<void>({ capacity: 1, strategy: "dropping" });
+  const commands = yield* Semaphore.make(1);
+  let active: ActiveOccurrence | null = null;
+  const startedAt = clock.currentTimeMillisUnsafe();
+  const connections = yield* Effect.serviceOption(WorkerConnections);
 
-    yield* reconcileTasks(repo, clock.currentTimeMillisUnsafe(), true);
-    const pauses = yield* taskOperation(() => repo.providers());
-    yield* Effect.forEach(
-      pauses.filter(
-        (pause) => pause.resumeAt === null || pause.resumeAt > clock.currentTimeMillisUnsafe(),
-      ),
-      (pause) => logProviderPause(clock.currentTimeMillisUnsafe(), pause),
-    );
-    yield* serveTasks(taskSocketPath(config.dataDirectory), (command) =>
-      Effect.gen(function* () {
-        const now = clock.currentTimeMillisUnsafe();
+  yield* reconcileTasks(repo, clock.currentTimeMillisUnsafe(), true);
+  const pauses = yield* taskOperation(() => repo.providers());
+  yield* Effect.forEach(
+    pauses.filter(
+      (pause) => pause.resumeAt === null || pause.resumeAt > clock.currentTimeMillisUnsafe(),
+    ),
+    (pause) => logProviderPause(clock.currentTimeMillisUnsafe(), pause),
+  );
 
-        if (command.action === "status") {
-          const overview = yield* taskOperation(() => repo.status());
+  const handle = (command: TaskCommand) =>
+    Effect.gen(function* () {
+      const now = clock.currentTimeMillisUnsafe();
 
-          const ids = [...new Set([config.provider, ...overview.providers])];
+      if (command.action === "status") {
+        const overview = yield* taskOperation(() => repo.status());
 
-          return {
-            ...overview,
-            running: true,
-            pid: process.pid,
-            startedAt,
-            activeOccurrence: active?.id ?? null,
-            connections: Option.isSome(connections)
-              ? yield* Effect.forEach(ids, (id) => connections.value.status(id))
-              : [],
-          };
-        }
+        const ids = [...new Set([config.provider, ...overview.providers])];
 
-        if (command.action === "clear")
-          return yield* Effect.uninterruptible(
-            Effect.gen(function* () {
-              if (active !== null) yield* Fiber.interrupt(active.fiber);
-              const result = yield* executeTaskCommand(repo, store, command, now);
-              yield* workerLog(clock.currentTimeMillisUnsafe(), "All tasks cleared.");
+        return {
+          ...overview,
+          running: true,
+          pid: process.pid,
+          startedAt,
+          activeOccurrence: active?.id ?? null,
+          connections: Option.isSome(connections)
+            ? yield* Effect.forEach(ids, (id) => connections.value.status(id))
+            : [],
+        };
+      }
 
-              return result;
-            }),
-          );
-
-        const pending =
-          command.action === "pause"
-            ? yield* taskOperation(() =>
-                repo.occurrences(command.id).filter((item) => item.status === "pending"),
-              )
-            : [];
-
-        const result = yield* executeTaskCommand(repo, store, command, now);
-
-        if (command.action === "cancel" && active?.id === command.id)
-          yield* Fiber.interrupt(active.fiber);
-
-        if (command.action === "pause" || command.action === "resume") {
-          const job = yield* taskOperation(() => repo.task(command.id));
-          yield* workerLog(
-            now,
-            `Task ${JSON.stringify(job.name)} task=${job.id} ${command.action === "pause" ? "paused" : "resumed"}`,
-          );
-          yield* Effect.forEach(pending, (item) =>
-            workerLog(now, `${occurrenceLabel(job.name, item.id)} cancelled reason=task-paused`),
-          );
-        }
-
-        if (command.action === "retry" || command.action === "cancel") {
-          const item = yield* taskOperation(() => repo.occurrence(command.id));
-          const job = yield* taskOperation(() => repo.task(item.jobId));
-          yield* workerLog(
-            now,
-            `${occurrenceLabel(job.name, item.id)} ${command.action === "retry" ? "queued for retry" : "cancelled"}`,
-          );
-        }
-
-        if (command.action === "resume-provider")
-          yield* workerLog(now, `Provider ${command.provider} resumed by request`);
-
-        yield* Queue.offer(wake, undefined);
-
-        return result;
-      }).pipe(commands.withPermit, Effect.provideService(Console.Console, output)),
-    );
-    yield* workerLog(
-      clock.currentTimeMillisUnsafe(),
-      "Task worker running. Use tasks commands in another terminal; Ctrl-C stops the worker.",
-    );
-
-    const timer = Effect.gen(function* () {
-      yield* reconcileTasks(repo, clock.currentTimeMillisUnsafe());
-      yield* Queue.offer(wake, undefined);
-      yield* Effect.sleep("1 second");
-    }).pipe(Effect.forever);
-
-    const worker = Effect.gen(function* () {
-      yield* Queue.take(wake);
-
-      // Claim and fork without an interruption gap that could strand a running occurrence.
-      // Share command ownership while claiming so clear cannot race a new active run.
-      const current = yield* commands.withPermit(
-        Effect.uninterruptibleMask((restore) =>
+      if (command.action === "clear")
+        return yield* Effect.uninterruptible(
           Effect.gen(function* () {
-            const claimed = yield* taskOperation(() => repo.claim(clock.currentTimeMillisUnsafe()));
+            if (active !== null) yield* Fiber.interrupt(active.fiber);
+            const result = yield* executeTaskCommand(repo, store, command, now);
+            yield* workerLog(clock.currentTimeMillisUnsafe(), "All tasks cleared.");
 
-            if (claimed === null) return null;
-
-            const fiber = yield* restore(
-              executeOccurrence(repo, claimed.occurrence, claimed.task),
-            ).pipe(Effect.forkChild);
-
-            const running = { id: claimed.occurrence.id, fiber };
-            active = running;
-
-            return running;
+            return result;
           }),
-        ),
-      );
+        );
 
-      if (current === null) return;
+      const pending =
+        command.action === "pause"
+          ? yield* taskOperation(() =>
+              repo.occurrences(command.id).filter((item) => item.status === "pending"),
+            )
+          : [];
 
-      const exit = yield* Fiber.await(current.fiber).pipe(
-        Effect.ensuring(
-          Effect.sync(() => {
-            active = null;
-          }),
-        ),
-      );
+      const result = yield* executeTaskCommand(repo, store, command, now);
 
-      // Explicitly cancelling a child occurrence should leave the worker available.
-      if (Exit.isFailure(exit) && !Cause.hasInterrupts(exit.cause)) yield* exit;
+      if (command.action === "cancel" && active?.id === command.id)
+        yield* Fiber.interrupt(active.fiber);
+
+      if (command.action === "pause" || command.action === "resume") {
+        const job = yield* taskOperation(() => repo.task(command.id));
+        yield* workerLog(
+          now,
+          `Task ${JSON.stringify(job.name)} task=${job.id} ${command.action === "pause" ? "paused" : "resumed"}`,
+        );
+        yield* Effect.forEach(pending, (item) =>
+          workerLog(now, `${occurrenceLabel(job.name, item.id)} cancelled reason=task-paused`),
+        );
+      }
+
+      if (command.action === "retry" || command.action === "cancel") {
+        const item = yield* taskOperation(() => repo.occurrence(command.id));
+        const job = yield* taskOperation(() => repo.task(item.jobId));
+        yield* workerLog(
+          now,
+          `${occurrenceLabel(job.name, item.id)} ${command.action === "retry" ? "queued for retry" : "cancelled"}`,
+        );
+      }
+
+      if (command.action === "resume-provider")
+        yield* workerLog(now, `Provider ${command.provider} resumed by request`);
+
       yield* Queue.offer(wake, undefined);
-    }).pipe(Effect.forever);
 
-    // Failure in either loop stops its sibling and closes the protected listener.
-    yield* Effect.all([timer, worker], { concurrency: 2, discard: true });
-  }),
-).pipe(
-  Effect.onExit(() =>
-    Clock.currentTimeMillis.pipe(Effect.flatMap((now) => workerLog(now, "Task worker stopped."))),
-  ),
-);
+      return result;
+    }).pipe(commands.withPermit, Effect.provideService(Console.Console, output));
+
+  const run = Effect.scoped(
+    Effect.gen(function* () {
+      yield* workerLog(
+        clock.currentTimeMillisUnsafe(),
+        "Task worker running. Use tasks commands in another terminal; Ctrl-C stops the worker.",
+      );
+
+      const timer = Effect.gen(function* () {
+        yield* reconcileTasks(repo, clock.currentTimeMillisUnsafe());
+        yield* Queue.offer(wake, undefined);
+        yield* Effect.sleep("1 second");
+      }).pipe(Effect.forever);
+
+      const worker = Effect.gen(function* () {
+        yield* Queue.take(wake);
+
+        // Claim and fork without an interruption gap that could strand a running occurrence.
+        // Share command ownership while claiming so clear cannot race a new active run.
+        const current = yield* commands.withPermit(
+          Effect.uninterruptibleMask((restore) =>
+            Effect.gen(function* () {
+              const claimed = yield* taskOperation(() =>
+                repo.claim(clock.currentTimeMillisUnsafe()),
+              );
+
+              if (claimed === null) return null;
+
+              const fiber = yield* restore(
+                executeOccurrence(repo, claimed.occurrence, claimed.task),
+              ).pipe(Effect.forkChild);
+
+              const running = { id: claimed.occurrence.id, fiber };
+              active = running;
+
+              return running;
+            }),
+          ),
+        );
+
+        if (current === null) return;
+
+        const exit = yield* Fiber.await(current.fiber).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              active = null;
+            }),
+          ),
+        );
+
+        // Explicitly cancelling a child occurrence should leave the worker available.
+        if (Exit.isFailure(exit) && !Cause.hasInterrupts(exit.cause)) yield* exit;
+        yield* Queue.offer(wake, undefined);
+      }).pipe(Effect.forever);
+
+      // Failure in either loop stops its sibling; the host owns the listener.
+      yield* Effect.all([timer, worker], { concurrency: 2, discard: true });
+    }),
+  ).pipe(
+    Effect.onExit(() =>
+      Clock.currentTimeMillis.pipe(Effect.flatMap((now) => workerLog(now, "Task worker stopped."))),
+    ),
+    Effect.provideService(Store, store),
+    Effect.provideService(Agent, agent),
+    Effect.provideService(Clock.Clock, clock),
+    Effect.provideService(Console.Console, output),
+  );
+
+  return { run, handle };
+});

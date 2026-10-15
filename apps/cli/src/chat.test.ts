@@ -13,7 +13,7 @@ import {
   type ModelRequest,
   type ProviderRegistration,
 } from "@poppet/provider";
-import { taskSocketPath } from "@poppet/tasks";
+import { workerSocketPath } from "@poppet/worker";
 import { Console, Effect, Fiber, Layer, ManagedRuntime, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
@@ -203,13 +203,14 @@ const fixture = async () => {
     clock,
     program,
     invoke: (args: ReadonlyArray<string>) => Effect.runPromise(program(args)),
-    startWorker: async () => {
-      const worker = clock.runFork(program(["tasks", "work"]));
+    startWorker: async (mode: "all" | "tasks" | "gateway" = "all") => {
+      const args = mode === "all" ? ["worker", "run"] : [mode, "work"];
+      const worker = clock.runFork(program(args));
 
       try {
         await Effect.runPromise(
           Effect.gen(function* () {
-            while (!lines.some((line) => line.includes("Task worker running.")))
+            while (!lines.some((line) => line.includes("Worker running.")))
               yield* Effect.sleep("5 millis");
           }).pipe(Effect.timeout("5 seconds")),
         );
@@ -234,6 +235,76 @@ const fixture = async () => {
 };
 
 describe("chat CLI", () => {
+  test.each(["all", "tasks", "gateway"] as const)(
+    "%s worker mode starts only selected services and keeps shared commands available",
+    async (mode) => {
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
+
+      try {
+        await mkdir(join(chat.directory, "channels"), { mode: 0o700 });
+        await writeFile(join(chat.directory, "channels/discord.json"), "invalid settings", {
+          mode: 0o600,
+        });
+        await chat.invoke([
+          "tasks",
+          "add",
+          "Due",
+          "--at",
+          new Date(Date.now() + 60_000).toISOString(),
+          "Summarize",
+        ]);
+        const task = JSON.parse(chat.lines.at(-1)!);
+        worker = await chat.startWorker(mode);
+        await chat.invoke(["tasks", "status"]);
+        expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
+          running: true,
+          services: { tasks: mode !== "gateway", gateway: mode !== "tasks" },
+        });
+        chat.chunks.length = 0;
+        await chat.invoke(["gateway", "status"]);
+        const gateway = JSON.parse(chat.chunks.join(""));
+        expect(gateway).toMatchObject({
+          running: mode !== "tasks",
+          enabled: false,
+        });
+
+        if (mode === "tasks") expect(gateway.error).toBeUndefined();
+        else
+          expect(gateway.error).toBe("Invalid Discord settings. Run gateway discord setup again.");
+        await chat.clock.runPromise(TestClock.adjust("61 seconds"));
+
+        if (mode === "gateway") {
+          expect(chat.requests).toHaveLength(0);
+          await chat.invoke(["tasks", "show", task.id]);
+          expect(JSON.parse(chat.lines.at(-1)!).occurrences).toEqual([]);
+        } else {
+          await Effect.runPromise(
+            Effect.gen(function* () {
+              while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
+            }).pipe(Effect.timeout("5 seconds")),
+          );
+          expect(chat.requests).toHaveLength(1);
+        }
+
+        const count = chat.requests.length;
+        await chat.invoke(["chat", "new", "Hello from CLI"]);
+        expect(chat.requests).toHaveLength(count + 1);
+        expect(chat.state.peak).toBe(1);
+        await expect(
+          chat.invoke([mode === "gateway" ? "tasks" : "gateway", "work"]),
+        ).rejects.toHaveProperty("reason", "busy");
+        await Effect.runPromise(Fiber.interrupt(worker));
+        worker = undefined;
+        expect(await Bun.file(workerSocketPath(chat.directory)).exists()).toBe(false);
+        await chat.invoke(["store", "status"]);
+      } finally {
+        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
   test("the worker accepts chats within a larger context budget and explains oversized requests", async () => {
     const chat = await fixture();
     process.env.POPPET_CONTEXT_BYTES = "1048576";
@@ -263,7 +334,7 @@ describe("chat CLI", () => {
   test("an incomplete request body cannot keep the worker or its storage open during shutdown", async () => {
     const chat = await fixture();
     const worker = await chat.startWorker();
-    const socket = createConnection(taskSocketPath(chat.directory));
+    const socket = createConnection(workerSocketPath(chat.directory));
 
     try {
       await new Promise<void>((resolve, reject) => {
@@ -296,7 +367,7 @@ describe("chat CLI", () => {
     const chat = await fixture();
     const directory = join(chat.directory, "store");
     await mkdir(directory, { mode: 0o700 });
-    const path = taskSocketPath(chat.directory);
+    const path = workerSocketPath(chat.directory);
     let delivered = 0;
     let reply = "";
     let contentType = "application/x-ndjson";
@@ -324,7 +395,7 @@ describe("chat CLI", () => {
         // eslint-disable-next-line no-await-in-loop
         await expect(
           chat.invoke(["memory", "remember", "project", "Acorn"]),
-        ).rejects.toHaveProperty("_tag", "TaskError");
+        ).rejects.toHaveProperty("_tag", "WorkerRequestError");
       }
 
       reply = "Not found";
@@ -377,7 +448,7 @@ describe("chat CLI", () => {
           { kind: "unknown" },
         ].map((command) =>
           fetch("http://localhost/commands", {
-            unix: taskSocketPath(chat.directory),
+            unix: workerSocketPath(chat.directory),
             method: "POST",
             body: JSON.stringify(command),
           }),

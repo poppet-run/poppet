@@ -21,8 +21,8 @@ test("builds an absolute CLI launch description without including shell credenti
     expect(launch.executable).toBe(process.execPath);
     expect(launch.arguments).toEqual([
       fileURLToPath(new URL("./main.ts", import.meta.url)),
-      "tasks",
-      "work",
+      "worker",
+      "run",
     ]);
     expect(launch.workingDirectory).toBe(process.cwd());
     expect(launch.environment.get("POPPET_MODEL")).toBe("selected-model");
