@@ -413,7 +413,7 @@ Completion check: a daily summary runs unattended while the machine is awake,
 survives restarts, and leaves inspectable results, skipped occurrences, or failures.
 
 Implemented with macOS `worker install/start/stop/status/logs/uninstall` commands
-and the existing `@poppet/tasks` runner. Shared launch data lives in
+and the neutral `worker run` host. Shared launch data lives in
 `@poppet/platform`; LaunchAgent control lives in `@poppet/platform-macos`.
 The CLI supplies paths and ordinary settings and selects the platform.
 The LaunchAgent saves absolute runtime
@@ -446,10 +446,10 @@ protected worker socket. Retain direct execution when the worker is stopped.
 Share one model runner between interactive and scheduled requests, and preserve
 streamed output, cancellation, saved provider/model selection, and tool permissions.
 
-Implemented with a host-supplied `WorkerRequests` service. The task package owns
+Implemented with a host-supplied `WorkerRequests` service. `@poppet/worker` owns
 the listener and socket protection; the CLI owns interactive command validation,
-execution, and terminal output. No additional server, workspace, dependency, or
-migration is introduced. The agent holds a single scoped permit across each
+execution, terminal output, and service composition. The neutral host retains one
+listener and the existing socket path; no store migration is needed for the split. The agent holds a single scoped permit across each
 request stream, including persistence and provider cleanup. Queued requests can
 be cancelled before they start.
 
@@ -482,7 +482,7 @@ Implemented with automated checks. Depends on phase 9. See the
 `@poppet/gateway` owns authorization, persisted conversation bindings, incoming
 message deduplication, and reply delivery. `@poppet/channel-discord` owns
 Discord transport and credentials through pinned discord.js 14.27.0. The CLI registers and composes them inside
-the existing worker, sharing its store and agent instance. Keep Discord details
+a neutral worker host, sharing its store and agent instance. Keep Discord details
 out of task scheduling, the agent, and inference-provider packages.
 
 Implement these conversation rules first:
@@ -566,6 +566,16 @@ Known safe failures use bounded backoff and Discord's rate-limit delay; lost
 send acknowledgements remain uncertain for manual inspection. Live Discord
 setup, visibility, intent/permission failures, and reconnect behavior remain
 unverified. See the [setup and manual path](../README.md#discord-thread-chat).
+
+The neutral worker host supports `worker run` for both services, `tasks work` for
+scheduling only, and `gateway work` for messaging only. Scheduling exposes commands
+and a run loop without owning the socket. Task commands remain usable when only
+the gateway runs, while due occurrences remain untouched until scheduling starts.
+Task-only mode does not build messaging settings or the Discord adapter. One
+store lock and agent permit cover every mode. Automated tests cover service
+selection, shared CLI access, socket cleanup, and ownership across modes. New
+LaunchAgents run `worker run`; existing `tasks work` installations need one
+uninstall/install to update their saved arguments. Native startup remains manual.
 
 ## Phase 11: Scheduled results in messaging conversations
 

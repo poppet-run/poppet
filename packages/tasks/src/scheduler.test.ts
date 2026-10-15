@@ -20,14 +20,27 @@ import {
   type Output,
 } from "@poppet/provider";
 import { Store, StoreDatabase, StoreLive } from "@poppet/store";
+import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { Clock, Console, Deferred, Effect, Fiber, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { executeTaskCommand } from "#src/commands";
-import { executeOccurrence, reconcileTasks, runTaskWorker } from "#src/scheduler";
+import { executeOccurrence, reconcileTasks, makeTaskWorker } from "#src/scheduler";
 import { TaskError, type NewTask } from "#src/task-schema";
-import { remoteTaskCommand, taskSocketPath } from "#src/task-socket";
+import { remoteTaskCommand, taskResponse } from "#src/task-socket";
 import { TaskRepository, TaskRepositoryLive } from "#src/task-store";
+
+// Exercise scheduler controls through the same neutral transport as the host.
+const runTaskWorker = Effect.scoped(
+  Effect.gen(function* () {
+    const config = yield* AppConfig;
+    const tasks = yield* makeTaskWorker;
+    yield* serveWorker(workerSocketPath(config.dataDirectory), (_request, body) =>
+      taskResponse(body, tasks.handle),
+    );
+    yield* tasks.run;
+  }),
+);
 
 const response = (output: ReadonlyArray<Output>) =>
   Stream.make({
@@ -200,7 +213,7 @@ describe.concurrent("task worker", () => {
           const pending = repo.add(state.task, Date.now());
           repo.reconcile(Date.now());
           expect(repo.occurrences(pending.id)[0]?.status).toBe("pending");
-          const path = taskSocketPath(state.directory);
+          const path = workerSocketPath(state.directory);
           const result = yield* remoteTaskCommand(path, { action: "clear" });
 
           expect(result?.value).toEqual({ cleared: 2 });
@@ -516,7 +529,7 @@ describe.concurrent("task worker", () => {
           const job = repo.add(state.task, Date.now());
           const worker = yield* Effect.forkChild(runTaskWorker);
           yield* Effect.raceFirst(Deferred.await(started), Fiber.join(worker));
-          const path = taskSocketPath(state.directory);
+          const path = workerSocketPath(state.directory);
           const mode = yield* Effect.promise(() => stat(path));
           expect(mode.mode & 0o777).toBe(0o600);
           const listing = yield* remoteTaskCommand(path, { action: "list" });
@@ -557,7 +570,7 @@ describe.concurrent("task worker", () => {
           expect(state.lines.at(-1)).toContain("Task worker stopped.");
         }).pipe(Effect.provide(TestClock.layer())),
       );
-      expect(await Bun.file(taskSocketPath(state.directory)).exists()).toBe(false);
+      expect(await Bun.file(workerSocketPath(state.directory)).exists()).toBe(false);
       expect(await Bun.file(join(state.directory, "store/owner.lock")).exists()).toBe(false);
     } finally {
       await state.close();

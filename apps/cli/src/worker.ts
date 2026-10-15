@@ -12,13 +12,13 @@ export const parseWorkerCommand = (args: ReadonlyArray<string>) =>
         Effect.mapError(
           () =>
             new WorkerError({
-              message: "Use worker install, start, stop, status, logs, or uninstall.",
+              message: "Use worker run, install, start, stop, status, logs, or uninstall.",
             }),
         ),
       )
     : Effect.fail(
         new WorkerError({
-          message: "Use worker install, start, stop, status, logs, or uninstall.",
+          message: "Use worker run, install, start, stop, status, logs, or uninstall.",
         }),
       );
 
@@ -52,7 +52,7 @@ export const workerLaunch = (config: Settings): WorkerLaunch => {
   return {
     dataDirectory: config.dataDirectory,
     executable: process.execPath,
-    arguments: [fileURLToPath(new URL("./main.ts", import.meta.url)), "tasks", "work"],
+    arguments: [fileURLToPath(new URL("./main.ts", import.meta.url)), "worker", "run"],
     workingDirectory: process.cwd(),
     environment,
   };
@@ -64,6 +64,6 @@ export const manageWorker = (action: WorkerAction, config: Settings) =>
     : Effect.fail(
         new WorkerError({
           message:
-            "Background worker management currently supports macOS. Use tasks work and tasks status on other platforms.",
+            "Background worker management currently supports macOS. Use worker run and tasks status on other platforms.",
         }),
       );

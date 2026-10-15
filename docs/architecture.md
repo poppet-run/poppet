@@ -28,7 +28,7 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Workspaces
 
-The Bun monorepo has sixteen private workspaces:
+The Bun monorepo has seventeen private workspaces:
 
 | Workspace                     | Responsibility                                                              | Workspace dependencies                                         |
 | ----------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -40,7 +40,8 @@ The Bun monorepo has sixteen private workspaces:
 | `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots            | Config and store for the local implementation                  |
 | `@poppet/platform`            | Worker actions, errors, and a host-supplied launch description              | None                                                           |
 | `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                | Platform contract                                              |
-| `@poppet/tasks`               | Scheduling, task persistence, recovery, worker, and local commands          | Config, agent, store, provider contract                        |
+| `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                   | Config, agent, store, worker transport, provider contract      |
+| `@poppet/worker`              | Protected local command transport and request lifecycle                     | Effect                                                         |
 | `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery    | Agent, config, store, provider contract                        |
 | `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings | Gateway contract, credentials                                  |
 | `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts   | None                                                           |
@@ -53,7 +54,7 @@ The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
 `packages/provider-openrouter`, `packages/provider-protocol`, `packages/credentials`,
 `packages/store`, `packages/agent`, `packages/memory`, `packages/tasks`,
-`packages/platform`, `packages/platform-macos`, `packages/gateway`, and
+`packages/platform`, `packages/platform-macos`, `packages/worker`, `packages/gateway`, and
 `packages/channel-discord`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
@@ -82,8 +83,9 @@ Shared provider types live in `packages/provider/src`, and Go routing lives in
 Persisted chat lives in `packages/agent/src`. Notes tools and their sequential model loop are implemented in that workspace.
 The memory contract and local implementation live in `packages/memory/src`.
 The agent formats memory snapshots into model instructions. Task scheduling, persistence,
-recovery, command execution, and the protected worker socket live in `packages/tasks/src`.
-The CLI keeps task argument parsing, JSON presentation, and live layer composition.
+recovery, and task command execution live in `packages/tasks/src`. The protected
+worker transport lives in `packages/worker/src`. The CLI keeps task argument
+parsing, JSON presentation, and neutral worker startup in `worker-host.ts`.
 Task tables remain in the shared store migrations.
 
 | Module                  | Responsibility                                                              | Dependencies                                      |
@@ -492,8 +494,8 @@ The future chat runner will consume the shared `Model` service.
 
 SQLite owns durable records. An Effect queue can wake a worker, but it does not
 replace persisted pending runs or task occurrences. A single owner executes runs
-and refreshes credentials. The foreground `tasks work` owner uses the store lock
-and a protected Unix socket for task commands while its runner is active.
+and refreshes credentials. The neutral worker host uses the store lock and a
+protected Unix socket for commands while its selected services are active.
 
 Store normalized model messages, tool requests, tool results, versioned provider
 continuation data, and each run's provider/model selection. Trimming context must
@@ -520,7 +522,7 @@ encoding, bounded subprocesses, and log reading. It depends on the platform
 contract and Effect, and does not import task scheduling or CLI configuration.
 Only the macOS implementation is currently provided.
 
-`KeepAlive` lets launchd restart the existing `tasks work` process, with a
+`KeepAlive` lets launchd restart the combined `worker run` process, with a
 30-second throttle. Removing the registration sends SIGTERM; Effect finalizers
 interrupt work and release resources. Mutating control operations finish under
 an uninterruptible region, and launchctl subprocesses are killed after 35 seconds
@@ -553,9 +555,32 @@ not replay every missed recurrence. Expiry, quota pauses, and explicit retry rul
 remain in the task package. Native startup and physical sleep/wake need manual
 validation in addition to injected lifecycle and clock tests.
 
+## Worker host
+
+`apps/cli/src/worker-host.ts` owns one scoped runtime and protected listener.
+`worker run` starts scheduling and messaging together, `tasks work` starts only
+scheduling, and `gateway work` starts only messaging. Each uses the same store,
+agent, memory, provider resolver, and command functions. The store lock prevents
+starting another mode against that data directory. No separate processes or
+cross-process model coordination are introduced.
+
+`makeTaskWorker` exposes scheduling and task commands without opening a socket.
+The host routes task commands to that service while scheduling is active and to
+local task operations otherwise. Gateway-only mode can inspect or configure tasks
+without reconciling due occurrences or running scheduled inference. Task-only
+mode never builds the messaging layer. Status includes the selected services.
+Fatal service failures stop the host and its siblings before storage is released.
+
+`@poppet/worker` owns request protection, body limits, deadlines, disconnect and
+shutdown handling. The endpoint retains `store/tasks.sock` so existing clients
+can still reach the single store owner. The task package retains only task RPC
+validation and response formatting. New macOS installations launch `worker run`;
+older installations need uninstall/install once to replace their saved `tasks work`
+command. Restart alone continues using the saved launch arguments.
+
 ## Interactive worker commands
 
-The existing task socket also accepts host-provided interactive requests.
+The neutral host's protected socket accepts interactive requests.
 `WorkerRequests` lets the CLI supply `/commands` without importing CLI command
 schemas or memory behavior into the task package. The host validates chat,
 memory, and store-status payloads and uses the same command functions as direct
@@ -586,7 +611,7 @@ record schema or migration changes are needed.
 
 Discord thread chat is implemented after interactive worker support. Telegram
 and WhatsApp adapters remain planned. The gateway runs
-inside the existing background worker and shares its store, memory, model
+inside the neutral worker host, with scheduling optional, and shares its store, memory, model
 resolver, and serialized `Agent` instance with CLI and scheduled requests. The
 CLI composes these scoped services and preserves existing worker commands and
 local IPC. No second process acquires SQLite, and messaging connections do not

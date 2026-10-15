@@ -28,7 +28,7 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`,
 `@poppet/store`, `@poppet/agent`, `@poppet/memory`, `@poppet/tasks`,
-`@poppet/platform`, `@poppet/platform-macos`, `@poppet/gateway`, and
+`@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`, and
 `@poppet/channel-discord`.
 Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
@@ -115,7 +115,7 @@ stdin. The token is never accepted as an argument. For fish:
 read --silent --prompt-str 'Discord bot token: ' discord_token
 printf '%s\n' $discord_token | bun run start gateway discord setup <bot-id> <your-user-id> <server-id> <parent-channel-id> --key-stdin
 set -e discord_token
-bun run start tasks work
+bun run start gateway work
 ```
 
 Replace the angle-bracket placeholders with Discord IDs before running the
@@ -584,14 +584,27 @@ work before clearing and continues serving commands. Saved chat sessions and run
 notes, facts, credentials, and provider quota pauses are retained. The command
 returns the number of tasks removed, and repeating it on an empty list is safe.
 
-`@poppet/tasks` owns scheduling, task persistence, recovery, and the worker socket.
-The CLI parses arguments, prints results, and composes the live layers.
+`@poppet/tasks` owns scheduling, task persistence, recovery, and task commands.
+`@poppet/worker` owns the protected command transport. The CLI's neutral worker
+host owns startup, shared runtime composition, and service shutdown.
 
-`tasks work` owns SQLite and serves task, chat, memory, and store-status commands
+Choose one foreground mode for a data directory:
+
+```fish
+bun run start worker run    # Scheduling and messaging
+bun run start tasks work    # Scheduling only
+bun run start gateway work  # Messaging only
+```
+
+All three modes own one SQLite connection and serve task, chat, memory, and store-status commands
 through `store/tasks.sock`, protected by the `0700` store directory and `0600`
 socket. Commands use the worker when it is running and execute locally when it
 is stopped. Inspecting saved data needs no model or provider credentials.
-Interactive and scheduled model requests share one runner. Chat streams to the
+Task commands remain available in gateway-only mode, but no scheduled work is
+executed. Task-only mode does not initialize the Discord adapter. `tasks status`
+reports the host's selected services; `gateway status` reports whether messaging
+is running. Only one mode can own a data directory at a time.
+Interactive, scheduled, and messaging model requests share one runner. Chat streams to the
 invoking terminal; Ctrl-C cancels that request and leaves the worker running.
 Stopping the worker interrupts active requests and releases the socket and owner lock. After a crash,
 a new owner automatically reclaims storage from a dead process; unfinished work
@@ -604,7 +617,7 @@ recovery restores a quota pause from an unfinished occurrence's saved run.
 ## Background worker
 
 On macOS, stop any foreground worker, then install a user LaunchAgent to start
-the existing task worker at login and keep it running while you are logged in:
+the combined `worker run` host at login and keep it running while you are logged in:
 
 ```fish
 bun run start worker install
@@ -617,6 +630,11 @@ entry point, current working directory, validated configuration paths, and any
 explicit chat budgets. Keep that checkout and Bun executable in place. To change
 saved settings or move the checkout, uninstall and install again. Each data
 directory has its own launch agent. Manage it with the same `POPPET_DATA_DIR`.
+
+If an existing installation launches `tasks work`, use `worker uninstall` followed
+by `worker install` once to update it to `worker run`. Saved data and credentials
+are retained. Restarting that old installation alone keeps its saved command and
+now runs scheduling only.
 
 API keys are excluded from the launch agent's environment. Save them first with
 `auth login openrouter` or `auth login opencode-go`; ChatGPT uses its existing
@@ -703,7 +721,7 @@ Use `worker start` instead of `install` if it is already installed. Repeat with 
 sleep/wake cycle, then stop/start the worker and confirm a completed occurrence
 does not run again. Automated tests simulate clock jumps, crash recovery, and
 SIGTERM cleanup. Actual login startup, physical sleep/wake, and live provider
-execution remain manual checks. Other platforms can use `tasks work` in the
+execution remain manual checks. Other platforms can use `worker run` in the
 foreground; background installation currently supports macOS only.
 
 ## Adding a provider
@@ -768,7 +786,9 @@ packages/
     src/commands.ts       Task operations and result inspection
     src/task-store.ts     Durable scheduling and occurrence transitions
     src/task-schema.ts    Typed commands, cron expressions, and timestamps
-    src/task-socket.ts    Protected local commands for the worker
+    src/task-socket.ts    Task command client and JSON responses
+  worker/                 @poppet/worker
+    src/socket.ts         Protected command transport and request ownership
   platform/               @poppet/platform
     src/index.ts          Worker actions, errors, and launch description
   platform-macos/         @poppet/platform-macos

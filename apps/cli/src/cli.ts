@@ -14,24 +14,18 @@ import {
 } from "@poppet/provider";
 import { Store, type StoreError } from "@poppet/store";
 import {
-  runTaskWorker,
   WorkerConnections,
   remoteTaskCommand,
-  taskSocketPath,
   executeLocalTaskCommand,
   type TaskError,
   readLocalTaskStatus,
 } from "@poppet/tasks";
+import { workerSocketPath, WorkerRequestError } from "@poppet/worker";
 import { Console, Data, Effect, Layer, type Config } from "effect";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
 import { parseAuthCommand, type AuthCommand } from "#src/auth-command";
-import {
-  MessagingWorker,
-  MessagingWorkerLive,
-  setupDiscord,
-  stoppedMessagingStatus,
-} from "#src/channels";
+import { MessagingWorkerLive, setupDiscord, stoppedMessagingStatus } from "#src/channels";
 import {
   inspectChat,
   parseChatCommand,
@@ -46,6 +40,7 @@ import { findProvider, runtimeLayers } from "#src/runtime";
 import { parseTaskCommand } from "#src/tasks";
 import { manageWorker, parseWorkerCommand } from "#src/worker";
 import { remoteWorkerCommand, WorkerRequestsLive, type WorkerCommand } from "#src/worker-commands";
+import { runWorker, type WorkerMode } from "#src/worker-host";
 
 class UsageError extends Data.TaggedError("UsageError")<{
   readonly message: string;
@@ -78,10 +73,12 @@ Commands:
   tasks providers          Show provider quota pauses and temporary backoff
   tasks resume-provider <provider> Allow scheduled requests again
   tasks status             Show task counts, recent outcomes, and worker status
-  tasks work               Run the foreground task worker
+  tasks work               Run scheduling only in the foreground
   gateway discord setup <bot-id> <owner-id> <guild-id> <channel-id>... --key-stdin
                            Save protected Discord settings; restart the worker to apply
+  gateway work             Run messaging only in the foreground
   gateway status           Show messaging connection, queue, and delivery status
+  worker run               Run scheduling and messaging in one foreground worker
   worker install           Install and start the macOS login worker
   worker start             Start an installed worker
   worker stop              Stop it until the next login or explicit start
@@ -117,12 +114,23 @@ export const makeCLI = (
 ) => {
   const runtime = runtimeLayers(registered);
 
+  const startWorker = (mode: WorkerMode) =>
+    runWorker(mode).pipe(
+      Effect.provide(
+        WorkerRequestsLive.pipe(
+          Layer.provideMerge(mode === "tasks" ? Layer.empty : MessagingWorkerLive),
+          Layer.provideMerge(runtime.tasks),
+          Layer.provideMerge(runtime.chat),
+        ),
+      ),
+    );
+
   const throughWorker = <E>(command: WorkerCommand, local: Effect.Effect<void, E>) =>
     Effect.gen(function* () {
       const config = yield* AppConfig;
 
       const handled = yield* remoteWorkerCommand(
-        taskSocketPath(config.dataDirectory),
+        workerSocketPath(config.dataDirectory),
         command,
         write,
       );
@@ -190,6 +198,7 @@ export const makeCLI = (
     | AgentError
     | TaskError
     | WorkerError
+    | WorkerRequestError
     | ChannelError
   > => {
     // Help works before configuration or credential storage is opened.
@@ -230,6 +239,11 @@ export const makeCLI = (
       if (command !== null) return runAuth(command).pipe(Effect.provide(runtime.config));
     }
 
+    if (args.length === 2 && args[1] === "work" && args[0] === "gateway")
+      return startWorker("gateway");
+
+    if (args.length === 2 && args[0] === "worker" && args[1] === "run") return startWorker("all");
+
     if (args[0] === "gateway") {
       if (args[1] === "discord")
         return setupDiscord(args.slice(2)).pipe(Effect.provide(runtime.config));
@@ -268,7 +282,7 @@ export const makeCLI = (
 
         if (action !== "status") return yield* Console.log(managed);
 
-        const reply = yield* remoteTaskCommand(taskSocketPath(config.dataDirectory), {
+        const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), {
           action: "status",
         });
 
@@ -306,23 +320,12 @@ export const makeCLI = (
     }
 
     if (args[0] === "tasks") {
-      if (args.length === 2 && args[1] === "work")
-        return Effect.all([runTaskWorker, MessagingWorker.use((service) => service.run)], {
-          concurrency: 2,
-          discard: true,
-        }).pipe(
-          Effect.provide(
-            Layer.merge(
-              WorkerRequestsLive.pipe(Layer.provideMerge(MessagingWorkerLive)),
-              runtime.tasks,
-            ).pipe(Layer.provideMerge(runtime.chat)),
-          ),
-        );
+      if (args.length === 2 && args[1] === "work") return startWorker("tasks");
 
       return Effect.gen(function* () {
         const command = yield* parseTaskCommand(args.slice(1));
         const config = yield* AppConfig;
-        const reply = yield* remoteTaskCommand(taskSocketPath(config.dataDirectory), command);
+        const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), command);
 
         if (reply !== null) return yield* Console.log(JSON.stringify(reply.value, null, 2));
 

@@ -31,6 +31,7 @@
         "@poppet/provider-openrouter": "workspace:*",
         "@poppet/store": "workspace:*",
         "@poppet/tasks": "workspace:*",
+        "@poppet/worker": "workspace:*",
         "effect": "4.0.4",
       },
     },
@@ -184,10 +185,18 @@
         "@poppet/config": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/store": "workspace:*",
+        "@poppet/worker": "workspace:*",
         "effect": "4.0.4",
       },
       "devDependencies": {
         "@poppet/memory": "workspace:*",
+      },
+    },
+    "packages/worker": {
+      "name": "@poppet/worker",
+      "version": "0.0.0",
+      "dependencies": {
+        "effect": "4.0.4",
       },
     },
   },
@@ -317,6 +326,8 @@
     "@poppet/store": ["@poppet/store@workspace:packages/store"],
 
     "@poppet/tasks": ["@poppet/tasks@workspace:packages/tasks"],
+
+    "@poppet/worker": ["@poppet/worker@workspace:packages/worker"],
 
     "@sapphire/async-queue": ["@sapphire/async-queue@1.5.5", "", {}, "sha512-cvGzxbba6sav2zZkH8GPf2oGk9yYoD5qrNWdu9fRehifgnFZJMV+nuy2nON2roRO4yQQ+v7MK/Pktl/HgfsUXg=="],
 
