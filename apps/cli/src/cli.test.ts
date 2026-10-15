@@ -10,8 +10,11 @@ import { makeCLI } from "#src/cli";
 import { providers } from "#src/providers";
 
 const invoke = async (args: ReadonlyArray<string>, environment: Record<string, string> = {}) => {
-  const previous = process.env;
-  process.env = { PATH: previous.PATH ?? "", ...environment };
+  const previous = { ...process.env };
+
+  // Bun's import.meta.env retains this object, so update it without replacing it.
+  for (const key of Object.keys(process.env)) delete process.env[key];
+  Object.assign(process.env, { PATH: previous.PATH ?? "", ...environment });
   let stdout = "";
   const errors: string[] = [];
 
@@ -46,11 +49,58 @@ const invoke = async (args: ReadonlyArray<string>, environment: Record<string, s
 
     return { stdout, stderr: errors.join("\n"), exitCode };
   } finally {
-    process.env = previous;
+    for (const key of Object.keys(process.env)) delete process.env[key];
+    Object.assign(process.env, previous);
   }
 };
 
 describe("CLI", () => {
+  test("isolates command configuration from the shell and restores the original environment", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-cli-env-"));
+
+    const inherited = {
+      POPPET_PROVIDER: "openai-chatgpt",
+      POPPET_MODEL: "inherited-model",
+      POPPET_APP_NAME: "Inherited app",
+      POPPET_DATA_DIR: join(directory, "inherited"),
+    };
+
+    const original = process.env;
+    const previous = new Map(Object.keys(inherited).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, inherited);
+
+    try {
+      const configured = await invoke(["config"], {
+        POPPET_PROVIDER: "openrouter",
+        POPPET_DATA_DIR: directory,
+      });
+
+      expect(configured.exitCode).toBe(0);
+      expect(JSON.parse(configured.stdout)).toMatchObject({
+        applicationName: "Poppet",
+        provider: "openrouter",
+        model: null,
+        dataDirectory: directory,
+      });
+      const defaults = await invoke(["config"], { POPPET_DATA_DIR: directory });
+      expect(JSON.parse(defaults.stdout)).toMatchObject({
+        provider: "openai-chatgpt",
+        model: null,
+      });
+      expect(process.env).toBe(original);
+
+      for (const [key, value] of Object.entries(inherited)) expect(process.env[key]).toBe(value);
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      for (const [key, value] of previous) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("rejects missing prompts and invalid task IDs as argument errors before opening the store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-invalid-"));
 
