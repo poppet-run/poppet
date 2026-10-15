@@ -28,7 +28,7 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Workspaces
 
-The Bun monorepo has fourteen private workspaces:
+The Bun monorepo has sixteen private workspaces:
 
 | Workspace                     | Responsibility                                                              | Workspace dependencies                                         |
 | ----------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -41,6 +41,8 @@ The Bun monorepo has fourteen private workspaces:
 | `@poppet/platform`            | Worker actions, errors, and a host-supplied launch description              | None                                                           |
 | `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                | Platform contract                                              |
 | `@poppet/tasks`               | Scheduling, task persistence, recovery, worker, and local commands          | Config, agent, store, provider contract                        |
+| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery    | Agent, config, store, provider contract                        |
+| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings | Gateway contract, credentials                                  |
 | `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts   | None                                                           |
 | `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming         | Provider contract                                              |
 | `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, credentials, protocol adapters              |
@@ -51,7 +53,8 @@ The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
 `packages/provider-openrouter`, `packages/provider-protocol`, `packages/credentials`,
 `packages/store`, `packages/agent`, `packages/memory`, `packages/tasks`,
-`packages/platform`, and `packages/platform-macos`.
+`packages/platform`, `packages/platform-macos`, `packages/gateway`, and
+`packages/channel-discord`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
@@ -579,10 +582,10 @@ commands are never replayed after a transport error, malformed frame, or missing
 completion. Older workers must be restarted to expose the new endpoint. No saved
 record schema or migration changes are needed.
 
-## Messaging gateway: planned
+## Messaging gateway
 
-Messaging is planned after interactive worker support. Discord threads are the
-first interface; Telegram and WhatsApp adapters follow later. The gateway runs
+Discord thread chat is implemented after interactive worker support. Telegram
+and WhatsApp adapters remain planned. The gateway runs
 inside the existing background worker and shares its store, memory, model
 resolver, and serialized `Agent` instance with CLI and scheduled requests. The
 CLI composes these scoped services and preserves existing worker commands and
@@ -591,7 +594,7 @@ expose the local command socket to the network.
 
 ### Package boundaries
 
-The proposed `@poppet/gateway` package owns validated incoming messages,
+The `@poppet/gateway` package owns validated incoming messages,
 authorization, conversation-to-session mapping, durable message acceptance, and
 reply delivery. `@poppet/channel-discord` owns Discord credentials, Gateway
 connections, event decoding, mentions, thread operations, formatting, and rate
@@ -602,7 +605,7 @@ scheduling imports concrete messaging adapters.
 The shared contract carries the adapter and bot account identity, external
 message and conversation IDs, sender ID, text, and reply destination. Keep
 platform IDs as opaque strings. Adapters expose scoped incoming events and text
-delivery operations; add other capabilities only when implemented. Messaging is
+delivery and typing operations; add other capabilities only when implemented. Messaging is
 independent of inference providers, so a channel can use any configured provider
 that supports the session's workload. Call the typed agent interface directly
 and consume completed runs rather than parsing CLI stdout or stderr.
@@ -613,6 +616,14 @@ without treating a Discord bot token as a model-provider connection. Tokens stay
 out of logs, command output, launch arguments, and LaunchAgent environment data.
 Persist non-secret channel settings so the installed worker can load them.
 
+Discord settings and a redacted token share the protected
+`channels/discord.json` file, separate from inference credentials. Setup reads
+the token through stdin and writes atomically under the shared ownership-lock
+helper. The worker loads this file at startup. discord.js 14.27.0 owns Gateway
+heartbeats, reconnect/resume, and Discord API encoding. Ambiguous REST failures
+are not automatically retried by the SDK. Adapter failures stay in connection
+status, leaving the local CLI and scheduler available.
+
 ### Discord threads as sessions
 
 The first adapter supports text conversations in explicitly configured guilds
@@ -621,11 +632,11 @@ is:
 
 1. An actual mention of the bot ID in an allowed channel starts a thread from
    that message. Its text becomes the first input in a new Poppet session.
-2. A mention inside an existing allowed thread attaches a session to that thread
-   if needed. It never creates a nested thread or imports unrelated history.
-3. Once attached, subsequent messages from the allowed user in that thread
-   continue the same session without another mention. Messages in allowed parent
-   channels and unattached threads require an explicit mention to start a session.
+2. A message from the allowed user inside any allowed thread attaches a session
+   if needed, without requiring a mention. It never creates a nested thread or
+   imports unrelated history.
+3. Subsequent messages in that thread continue the same session. Only messages
+   in parent channels require an explicit mention to start a session.
 4. Replies remain in the thread. A different thread starts a separate session;
    an existing binding retains its saved provider, model, and workload.
 
@@ -641,7 +652,9 @@ the Message Content intent for follow-ups without mentions, validate the require
 channel/thread permissions, and report missing access clearly. Restrict startup
 to the configured guilds and channels, match mentions by bot ID rather than
 display name, and ignore bot and webhook messages. Send completed text replies,
-split to Discord's limits, with automatic mentions disabled. Progressive edits,
+split to Discord's limits, with automatic mentions disabled. Refresh Discord's
+typing indicator while the agent works; stop on completion, failure, or
+cancellation, and keep indicator failures separate from request execution. Progressive edits,
 attachments, voice, DMs, and forum-specific behavior are deferred.
 See Discord's [thread permissions](https://docs.discord.com/developers/topics/threads#permissions)
 and [message content rules](https://docs.discord.com/developers/events/gateway#message-content-intent).
@@ -686,6 +699,24 @@ pending delivery records. Isolate adapter reconnect failures so CLI access and
 scheduled work remain available; storage failures still stop unsafe execution.
 Status exposes connection state, pending work, and failed or uncertain delivery
 without logging chat content or secrets.
+
+Migration 7 implements bindings, inbox records, and ordered reply chunks. The
+gateway reserves a run ID before execution and supplies it to `Agent.send` and
+the store. Stable session IDs recover a crash between session creation and
+thread binding. Recovery inspects the saved run before deciding whether an
+accepted input never started or already completed/interrupted. The worker has
+one sequential messaging processor and an independent reply-delivery loop; the
+agent's existing permit still serializes all model work across messaging, CLI,
+and scheduled requests. Pending inputs are capped at 64 per bot account.
+
+Discord's Gateway has no application-level acknowledgement tied to SQLite.
+Incoming events use a bounded in-memory queue before acceptance, with dropped
+and rejected counts in local status. Session history and accepted inputs survive
+restart; delivery of events lost before acceptance or after an unrecoverable
+disconnect is not guaranteed. `gateway status` reports persisted pending, failed,
+and uncertain delivery counts even when the worker is stopped. Thread-scoped
+`@Poppet /status` and `@Poppet /cancel` are text controls rather than registered
+slash commands. Live Discord checks remain manual.
 
 ### Later messaging support
 

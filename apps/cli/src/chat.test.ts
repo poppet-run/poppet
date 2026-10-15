@@ -356,6 +356,11 @@ describe("chat CLI", () => {
     };
 
     try {
+      expect(JSON.parse(await readOutput(["gateway", "status"]))).toMatchObject({
+        running: true,
+        enabled: false,
+      });
+
       const invalid = await Promise.all(
         [
           { kind: "memory", command: { action: "remember", key: "../bad", value: "Acorn" } },

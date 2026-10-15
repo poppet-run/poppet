@@ -1,5 +1,6 @@
 import type { AgentError } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
+import type { ChannelError } from "@poppet/gateway";
 import type { MemoryError } from "@poppet/memory";
 import { WorkerError } from "@poppet/platform";
 import {
@@ -25,6 +26,12 @@ import { Console, Data, Effect, Layer, type Config } from "effect";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
 import { parseAuthCommand, type AuthCommand } from "#src/auth-command";
+import {
+  MessagingWorker,
+  MessagingWorkerLive,
+  setupDiscord,
+  stoppedMessagingStatus,
+} from "#src/channels";
 import {
   inspectChat,
   parseChatCommand,
@@ -72,6 +79,9 @@ Commands:
   tasks resume-provider <provider> Allow scheduled requests again
   tasks status             Show task counts, recent outcomes, and worker status
   tasks work               Run the foreground task worker
+  gateway discord setup <bot-id> <owner-id> <guild-id> <channel-id>... --key-stdin
+                           Save protected Discord settings; restart the worker to apply
+  gateway status           Show messaging connection, queue, and delivery status
   worker install           Install and start the macOS login worker
   worker start             Start an installed worker
   worker stop              Stop it until the next login or explicit start
@@ -180,6 +190,7 @@ export const makeCLI = (
     | AgentError
     | TaskError
     | WorkerError
+    | ChannelError
   > => {
     // Help works before configuration or credential storage is opened.
     if (args.length === 0 || (args.length === 1 && (args[0] === "--help" || args[0] === "-h")))
@@ -217,6 +228,20 @@ export const makeCLI = (
       const command = parseAuthCommand(args.slice(1));
 
       if (command !== null) return runAuth(command).pipe(Effect.provide(runtime.config));
+    }
+
+    if (args[0] === "gateway") {
+      if (args[1] === "discord")
+        return setupDiscord(args.slice(2)).pipe(Effect.provide(runtime.config));
+
+      if (args.length === 2 && args[1] === "status")
+        return throughWorker(
+          { kind: "gateway" },
+          stoppedMessagingStatus.pipe(
+            Effect.flatMap((status) => Console.log(JSON.stringify(status, null, 2))),
+            Effect.provide(runtime.messagingStatus),
+          ),
+        );
     }
 
     if (args[0] === "memory") {
@@ -282,9 +307,15 @@ export const makeCLI = (
 
     if (args[0] === "tasks") {
       if (args.length === 2 && args[1] === "work")
-        return runTaskWorker.pipe(
+        return Effect.all([runTaskWorker, MessagingWorker.use((service) => service.run)], {
+          concurrency: 2,
+          discard: true,
+        }).pipe(
           Effect.provide(
-            Layer.merge(WorkerRequestsLive.pipe(Layer.provideMerge(runtime.chat)), runtime.tasks),
+            Layer.merge(
+              WorkerRequestsLive.pipe(Layer.provideMerge(MessagingWorkerLive)),
+              runtime.tasks,
+            ).pipe(Layer.provideMerge(runtime.chat)),
           ),
         );
 
