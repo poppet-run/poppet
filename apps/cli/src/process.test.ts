@@ -29,6 +29,7 @@ const invokeProcess = async (
   return { stdout, stderr, exitCode };
 };
 
+// Two CLI startups need headroom while subprocess tests compete for CPU in CI.
 test.concurrent("invalid configuration and commands exit unsuccessfully", async () => {
   const invalidConfig = await invokeProcess(["config"], { POPPET_DATA_DIR: "" });
   const invalidCommand = await invokeProcess(["config", "unexpected-argument"]);
@@ -39,7 +40,7 @@ test.concurrent("invalid configuration and commands exit unsuccessfully", async 
   expect(invalidCommand.exitCode).toBe(1);
   expect(invalidCommand.stdout).toContain("bun run start config");
   expect(invalidCommand.stderr).toContain("Unexpected positional argument");
-});
+}, 15_000);
 
 test.concurrent("the CLI resolves relative configuration paths from the repository directory", async () => {
   const result = await invokeProcess(["config"], {
@@ -82,6 +83,7 @@ test.concurrent.each(["openrouter", "opencode-go"])(
       await rm(directory, { recursive: true, force: true });
     }
   },
+  15_000,
 );
 
 test.concurrent("unattended key input fails without creating credentials", async () => {
@@ -138,4 +140,4 @@ test.concurrent("Discord setup saves protected settings and status never prints 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-});
+}, 15_000);
