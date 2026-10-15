@@ -15,12 +15,14 @@ import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive } from "@poppet/memory";
 import { ProviderError, type ModelOperations, type ModelRequest } from "@poppet/provider";
 import { Store, StoreDatabase, StoreLive } from "@poppet/store";
-import { Deferred, Effect, Fiber, Layer, Queue, Stream } from "effect";
+import { Console, Deferred, Effect, Fiber, Layer, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { ChannelError, MessagingChannel, type IncomingMessage } from "#src/channel";
 import { GatewayRepository, GatewayRepositoryLive } from "#src/repository";
 import { Gateway, GatewayLive } from "#src/service";
+
+const quietConsole: Console.Console = { ...console, log: () => undefined, error: () => undefined };
 
 const message = (
   messageId: string,
@@ -142,7 +144,14 @@ const fixture = async (
     requests,
     run: <A, E>(
       program: Effect.Effect<A, E, Gateway | Store | StoreDatabase | GatewayRepository | Agent>,
-    ) => Effect.runPromise(program.pipe(Effect.provide(layer), Effect.provide(TestClock.layer()))),
+    ) =>
+      Effect.runPromise(
+        program.pipe(
+          Effect.provide(layer),
+          Effect.provide(TestClock.layer()),
+          Effect.provideService(Console.Console, quietConsole),
+        ),
+      ),
     close: () => rm(directory, { recursive: true, force: true }),
   };
 };
