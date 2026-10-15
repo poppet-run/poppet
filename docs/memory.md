@@ -34,8 +34,8 @@ regular UTF-8 files; profile symlinks are rejected.
 
 ## Personality and tone
 
-Edit `<POPPET_DATA_DIR>/SOUL.md` to set Poppet's personality, tone, and communication
-style. With the default data directory, this is `~/.config/poppet/SOUL.md`.
+Edit `<POPPET_DATA_DIR>/soul.md` to set Poppet's personality, tone, and communication
+style. With the default data directory, this is `~/.config/poppet/soul.md`.
 For example:
 
 ```markdown
@@ -43,9 +43,9 @@ Be warm, direct, and concise. Use dry humor sparingly.
 Disagree when there is a good reason, and admit uncertainty plainly.
 ```
 
-`SOUL.md` describes how Poppet speaks; `profile.md` describes you. Personality
+`soul.md` describes how Poppet speaks; `profile.md` describes you. Personality
 preferences do not authorize tool execution or override Poppet's tool and file
-access rules. A missing, empty, or whitespace-only `SOUL.md` keeps the default
+access rules. A missing, empty, or whitespace-only `soul.md` keeps the default
 personality. The file is never created automatically and follows the same UTF-8
 and regular-file requirements as `profile.md`.
 

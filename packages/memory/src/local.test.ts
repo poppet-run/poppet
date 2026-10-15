@@ -142,7 +142,7 @@ describe.concurrent("local memory", () => {
   });
 
   test.each([
-    ...["profile.md", "SOUL.md"].flatMap((file) => [
+    ...["profile.md", "soul.md"].flatMap((file) => [
       { file, kind: "file bytes", reason: "limit" } as const,
       { file, kind: "invalid UTF-8", reason: "storage" } as const,
       { file, kind: "NUL", reason: "storage" } as const,

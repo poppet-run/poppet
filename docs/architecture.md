@@ -438,7 +438,7 @@ inspection. An uncertain write requires checking the file before an explicit ret
 `@poppet/memory` owns the `Memory` service, fact and snapshot schemas, and
 `MemoryError`. Its operations are `snapshot`, `list`, `remember`, `replace`, and
 `forget`. `LocalMemoryLive` implements these operations using the existing
-`memories` table and editable `<data directory>/profile.md` and `SOUL.md` files.
+`memories` table and editable `<data directory>/profile.md` and `soul.md` files.
 It retains up to 128 facts of at most 4096 UTF-8 bytes each.
 
 The store owns database acquisition and migration 5. `StoreLive` also exposes the
@@ -456,7 +456,7 @@ Context files are optional, bounded, and reject non-regular files, symlinks, inv
 UTF-8, and NUL bytes. All three budgets default to 8 KiB; exceeding them fails before
 model-provider resolution. Empty memory preserves the base instructions.
 
-`SOUL.md` is included as personality and tone guidance, subject to the base tool
+`soul.md` is included as personality and tone guidance, subject to the base tool
 and file access rules. Missing, empty, or whitespace-only personality files preserve
 the default personality. The profile and keyed values are serialized into the
 prompt as personal context. Metadata such as source runs and timestamps stays in

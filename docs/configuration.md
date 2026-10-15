@@ -15,7 +15,7 @@
 | `POPPET_MODEL_TURNS`   | `8`                      | Maximum model requests per run; range `1–32`                                                     |
 | `POPPET_TOOL_CALLS`    | `16`                     | Maximum tool calls per run; range `1–64`                                                         |
 | `POPPET_TOOL_BYTES`    | `16384`                  | Maximum UTF-8 bytes per serialized tool result; range `1024–65536`                               |
-| `POPPET_SOUL_BYTES`    | `8192`                   | Maximum UTF-8 bytes in `SOUL.md`; range `1–65536`                                                |
+| `POPPET_SOUL_BYTES`    | `8192`                   | Maximum UTF-8 bytes in `soul.md`; range `1–65536`                                                |
 | `POPPET_PROFILE_BYTES` | `8192`                   | Maximum UTF-8 bytes in `profile.md`; range `1–65536`                                             |
 | `POPPET_FACTS_BYTES`   | `8192`                   | Maximum UTF-8 bytes of serialized saved facts sent to the model; range `1–65536`                 |
 
