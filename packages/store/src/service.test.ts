@@ -64,7 +64,8 @@ const reject = <A>(operation: Effect.Effect<A, StoreError>, reason: StoreError["
     }),
   );
 
-describe.concurrent("conversation store", () => {
+// Durable SQLite writes run sequentially to avoid disk contention on CI runners.
+describe("conversation store", () => {
   test.each(["pending", "running"])(
     "recovers abandoned %s tool calls without replaying them",
     async (state) => {
