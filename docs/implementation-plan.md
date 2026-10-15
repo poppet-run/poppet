@@ -2,15 +2,15 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–10 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, and live Discord behavior require manual validation
+Status: Phases 1–10 and 16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, and live Discord behavior require manual validation
 
-Phases 11–16 are planned only. Discord thread chat is implemented; additional
-adapters and scheduled-result delivery are deferred. Implement session and Discord
-thread naming from phase 16 before conversation search from phase 13, then local
+Phases 11–15 are planned only. Discord thread chat and phase 16 naming are
+implemented; additional adapters and scheduled-result delivery are deferred.
+Implement conversation search from phase 13 next, then local
 Markdown skills and supplied-URL reading from phases 14–15. Those additions do not
 depend on scheduled-result delivery or additional messaging adapters.
 
-Updated: 2026-10-15
+Updated: 2026-10-16
 
 One user, one active ChatGPT account, a configured provider/model, a local
 TypeScript application, SQLite, explicit memory, and locally scheduled tasks.
@@ -820,8 +820,10 @@ one scheduled fetch against a live model.
 
 ## Phase 16: Session titles and Discord thread names
 
-Planned, not implemented. Depends on persisted chat and worker execution from
-phases 4 and 9; Discord naming also depends on phase 10. Implement before phase 13
+Implemented with automated checks. Live title inference and private-channel
+Discord creation, renaming, and manual-edit races remain manual checks. Depends
+on persisted chat and worker execution from phases 4 and 9; Discord naming also
+depends on phase 10. Implemented before phase 13
 so conversation search can display readable titles. Phase numbers retain their
 existing references rather than prescribing implementation order.
 

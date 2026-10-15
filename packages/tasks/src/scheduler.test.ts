@@ -347,6 +347,17 @@ describe.concurrent("task worker", () => {
           repo.reconcile(Date.now());
           const active = repo.claim(Date.now())!;
           yield* executeOccurrence(repo, active.occurrence, active.task);
+          const titled = (yield* (yield* Store).sessions)[0];
+          expect(titled).toMatchObject({
+            title: "Summary",
+            titleSource: "task",
+            titleAttempted: true,
+            titleUsage: null,
+          });
+
+          if (!titled) throw new Error("Missing task session");
+          yield* (yield* Agent).nameSession(titled.id);
+
           yield* memory.replace("style", "Detailed");
           const second = repo.add(state.task, Date.now());
           repo.reconcile(Date.now());

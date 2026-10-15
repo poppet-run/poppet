@@ -33,6 +33,18 @@ const discordFailure = (cause: unknown, sending = false) =>
           cause instanceof RateLimitError ? Math.max(cause.retryAfter, cause.timeToReset) : 0,
       });
 
+// Discord counts UTF-16 code units; never cut an astral character to meet its 100-unit limit.
+const threadName = (title: string) => {
+  let name = "";
+
+  for (const character of title) {
+    if (name.length + character.length > 100) break;
+    name += character;
+  }
+
+  return name || "New conversation";
+};
+
 export const discordChannelLayer = (
   settings: DiscordSettings,
   createClient = () =>
@@ -51,6 +63,7 @@ export const discordChannelLayer = (
     MessagingChannel,
     Effect.gen(function* () {
       const messages = yield* Queue.make<IncomingMessage>({ capacity: 64, strategy: "dropping" });
+      const nameChanges = yield* Queue.make<string>({ capacity: 64, strategy: "dropping" });
       let connectionError: string | null = null;
       let dropped = 0;
 
@@ -114,6 +127,9 @@ export const discordChannelLayer = (
       };
 
       client.on(Events.MessageCreate, incoming);
+      client.on(Events.ThreadUpdate, (before, after) => {
+        if (before.name !== after.name) Queue.offerUnsafe(nameChanges, after.id);
+      });
       client.on(Events.Error, () => {
         connectionError = "Discord connection failed. Check credentials and intents.";
       });
@@ -173,6 +189,66 @@ export const discordChannelLayer = (
                 reason: "permission",
                 message: "Discord thread access is missing or the thread is locked.",
               });
+          },
+          catch: discordFailure,
+        }).pipe(Effect.tapError(reportError));
+
+      const conversation = (message: IncomingMessage, title: string) =>
+        Effect.tryPromise({
+          try: async () => {
+            requireReady();
+
+            if (message.conversationId !== null)
+              return { id: message.conversationId, managedName: null };
+            const parent = await client.channels.fetch(message.parentId, { force: true });
+
+            if (
+              parent?.type !== ChannelType.GuildText ||
+              parent.guildId !== settings.guildId ||
+              !settings.channelIds.includes(parent.id) ||
+              !parent
+                .permissionsFor(settings.botId)
+                ?.has([
+                  PermissionFlagsBits.ViewChannel,
+                  PermissionFlagsBits.ReadMessageHistory,
+                  PermissionFlagsBits.CreatePublicThreads,
+                ])
+            )
+              throw new ChannelError({
+                reason: "permission",
+                message: "Discord needs permission to create and read threads.",
+              });
+
+            const source = await parent.messages.fetch({
+              message: message.messageId,
+              force: true,
+            });
+
+            if (source.author.id !== settings.ownerId || source.webhookId !== null)
+              throw new ChannelError({
+                reason: "permission",
+                message: "Cannot create a thread for this message.",
+              });
+
+            // Discord assigns the source message's ID to its thread, so this recovers lost create replies.
+            const thread = source.hasThread
+              ? await client.channels.fetch(source.id, { force: true })
+              : await source.startThread({ name: threadName(title), autoArchiveDuration: 1440 });
+
+            if (!thread?.isThread())
+              throw new ChannelError({
+                reason: "unavailable",
+                message: "Cannot find the Discord thread.",
+              });
+
+            // Source ID plus bot ownership proves creation even after a lost acknowledgement.
+            return {
+              id: thread.id,
+              managedName:
+                thread.ownerId === settings.botId && thread.id === source.id
+                  ? threadName(title)
+                  : null,
+            };
           },
           catch: discordFailure,
         }).pipe(Effect.tapError(reportError));
@@ -249,50 +325,53 @@ export const discordChannelLayer = (
             catch: discordFailure,
           }),
         conversation: (message) =>
-          Effect.tryPromise({
-            try: async () => {
-              requireReady();
+          conversation(message, "New conversation").pipe(Effect.map((result) => result.id)),
+        naming: {
+          sanitize: threadName,
+          conversation,
+          changes: Stream.fromQueue(nameChanges),
+          current: (message, id) =>
+            checkAccess(message, id).pipe(
+              Effect.andThen(
+                Effect.tryPromise({
+                  try: async () => {
+                    const thread = await client.channels.fetch(id, { force: true });
 
-              if (message.conversationId !== null) return message.conversationId;
-              const parent = await client.channels.fetch(message.parentId, { force: true });
+                    if (!thread?.isThread())
+                      throw new ChannelError({
+                        reason: "permission",
+                        message: "Discord thread no longer exists.",
+                      });
 
-              if (
-                parent?.type !== ChannelType.GuildText ||
-                parent.guildId !== settings.guildId ||
-                !settings.channelIds.includes(parent.id) ||
-                !parent
-                  .permissionsFor(settings.botId)
-                  ?.has([
-                    PermissionFlagsBits.ViewChannel,
-                    PermissionFlagsBits.ReadMessageHistory,
-                    PermissionFlagsBits.CreatePublicThreads,
-                  ])
-              )
-                throw new ChannelError({
-                  reason: "permission",
-                  message: "Discord needs permission to create and read threads.",
-                });
+                    return thread.name;
+                  },
+                  catch: discordFailure,
+                }),
+              ),
+            ),
+          rename: (message, id, expected, title) =>
+            checkAccess(message, id).pipe(
+              Effect.andThen(
+                Effect.tryPromise({
+                  try: async () => {
+                    requireReady();
+                    const thread = await client.channels.fetch(id, { force: true });
 
-              const source = await parent.messages.fetch({
-                message: message.messageId,
-                force: true,
-              });
+                    if (!thread?.isThread() || thread.ownerId !== settings.botId || thread.locked)
+                      throw new ChannelError({
+                        reason: "permission",
+                        message: "Cannot rename this Discord thread.",
+                      });
 
-              // Discord assigns the source message's ID to its thread, so this recovers lost create replies.
-              const thread = source.hasThread
-                ? await client.channels.fetch(source.id, { force: true })
-                : await source.startThread({ name: "Poppet", autoArchiveDuration: 1440 });
+                    if (thread.name !== expected) return null;
 
-              if (!thread?.isThread())
-                throw new ChannelError({
-                  reason: "unavailable",
-                  message: "Cannot find the Discord thread.",
-                });
-
-              return thread.id;
-            },
-            catch: discordFailure,
-          }).pipe(Effect.tapError(reportError)),
+                    return (await thread.setName(threadName(title))).name;
+                  },
+                  catch: (cause) => discordFailure(cause, true),
+                }),
+              ),
+            ),
+        },
         send: (conversationId, text, nonce) =>
           Effect.tryPromise({
             try: async () => {

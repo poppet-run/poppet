@@ -1,4 +1,4 @@
-import { Agent, AgentError } from "@poppet/agent";
+import { Agent, AgentError, sessionTitle } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { ProviderError } from "@poppet/provider";
 import { Store, type StoreError } from "@poppet/store";
@@ -85,8 +85,16 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) 
         clock.currentTimeMillisUnsafe(),
         `${occurrenceLabel(job.name, item.id)} started provider=${job.provider}`,
       );
+
       // Link the fresh session before requests begin, so crash recovery can inspect it.
-      const session = yield* store.createSession(job.provider, job.model, job.workload);
+      const session = yield* store.createSession(
+        job.provider,
+        job.model,
+        job.workload,
+        undefined,
+        sessionTitle(job.name),
+      );
+
       yield* taskOperation(() => repo.link(item.id, session.id, null));
       yield* Stream.runForEach(
         agent.send(session.id, job.prompt, { readOnlyNotes: true }),

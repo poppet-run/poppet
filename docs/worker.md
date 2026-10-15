@@ -150,3 +150,15 @@ does not run again. Automated tests simulate clock jumps, crash recovery, and
 SIGTERM cleanup. Actual login startup, physical sleep/wake, and live provider
 execution remain manual checks. Other platforms can use `worker run` in the
 foreground; background installation currently supports macOS only.
+
+## Optional naming work
+
+Chat rename commands use the same local-or-worker routing as chat inspection.
+After printing an interactive answer, the worker finishes the optional bounded
+title request before completing that command response. The gateway starts naming
+only after the answer's delivery chunks are confirmed sent. Naming shares the
+agent's serialized model access with chat and scheduled runs. Shutdown can cancel
+naming without changing the completed chat run, delivery state, or provider pause
+state. Durable attempt claims prevent a restart from repeating title inference.
+Managed thread synchronization considers each title once, with a one-time fetch
+to reconcile an uncertain update rather than a persistent retry queue.

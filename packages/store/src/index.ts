@@ -6,6 +6,7 @@ export { StoreDatabase, StoreDatabaseLive } from "#src/database";
 
 export {
   Session,
+  SessionTitle,
   StoredMessage,
   Run,
   RunStatus,

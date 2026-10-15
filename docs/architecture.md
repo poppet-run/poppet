@@ -810,3 +810,31 @@ References: [Effect installation](https://effect.website/docs/v4/getting-started
 [services](https://effect.website/docs/v4/requirements-management/services),
 [configuration](https://effect.website/docs/v4/configuration), and
 [process runtime](https://effect.website/docs/v4/platform/runtime).
+
+## Session and conversation naming
+
+`@poppet/store` owns title metadata and atomic attempt claims. Migration 8 leaves
+existing sessions unnamed. New sessions begin with a fallback; accepting their
+first user input replaces it with a normalized prompt title in the same durable
+transaction. Scheduled sessions instead save the task name at creation. Manual
+renames and generated results update metadata without changing activity ordering.
+Generated results replace only fallback titles, so an in-flight request cannot
+overwrite a manual rename. Usage is stored separately from conversation runs.
+
+`@poppet/agent` owns fallback normalization and a tool-free naming request using
+the session's pinned selection. It reads only the first original user prompt,
+limits the excerpt to 2048 Unicode characters, bounds title output to 1024 UTF-8
+bytes, and applies a ten-second deadline. The request has no shared prompt data,
+conversation continuation, tools, transcript writes, or automatic retries. A
+persisted claim precedes model resolution. The host prints or delivers the saved
+answer before asking the agent to name the session. Both paths use the existing
+model-access permit and owning process scope.
+
+The gateway's optional channel naming capability returns creation ownership,
+reads current names, and conditionally renames managed conversations. Bindings
+retain source-message provenance, the last confirmed name, pending update, and
+last title considered. The gateway considers only successfully delivered answers
+for optional inference. External edits disable synchronization, and uncertain
+acknowledgements are reconciled without a second remote mutation. The Discord
+adapter owns SDK calls, permissions, platform name limits, and error mapping;
+other adapters can omit the capability. Inference-provider packages are unchanged.

@@ -1,4 +1,4 @@
-import { Agent, AgentError } from "@poppet/agent";
+import { Agent, AgentError, sessionTitle } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { Session, Store } from "@poppet/store";
 import { Console, Effect, Schema, Stream } from "effect";
@@ -7,6 +7,7 @@ import { Console, Effect, Schema, Stream } from "effect";
 export type ChatCommand =
   | { readonly action: "new"; readonly text: string; readonly coding: boolean }
   | { readonly action: "send"; readonly id: string; readonly text: string }
+  | { readonly action: "rename"; readonly id: string; readonly text: string }
   | { readonly action: "sessions" }
   | { readonly action: "show"; readonly id: string };
 
@@ -25,6 +26,7 @@ export const ChatRequest = Schema.Union([
     workload: Session.fields.workload,
   }),
   Schema.Struct({ action: Schema.Literal("send"), id: Session.fields.id, text: MessageText }),
+  Schema.Struct({ action: Schema.Literal("rename"), id: Session.fields.id, text: MessageText }),
   Schema.Struct({ action: Schema.Literal("show"), id: Session.fields.id }),
   Schema.Struct({ action: Schema.Literal("sessions") }),
 ]);
@@ -52,9 +54,18 @@ export const writeChatText: ChatWriter = (text) =>
     );
   });
 
-export const inspectChat = (command: Extract<ChatCommand, { action: "show" | "sessions" }>) =>
+export const inspectChat = (
+  command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" }>,
+) =>
   Effect.gen(function* () {
     const store = yield* Store;
+
+    if (command.action === "rename")
+      return JSON.stringify(
+        yield* store.renameSession(command.id, sessionTitle(command.text)),
+        null,
+        2,
+      );
 
     if (command.action === "sessions") return JSON.stringify(yield* store.sessions, null, 2);
     const session = yield* store.session(command.id);
@@ -151,4 +162,5 @@ export const sendChat = (
       return Effect.void;
     });
     yield* write("\n");
+    yield* agent.nameSession(sessionId);
   });

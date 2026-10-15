@@ -85,3 +85,9 @@ notes, facts, credentials, and provider quota pauses are retained. The command
 returns the number of tasks removed, and repeating it on an empty list is safe.
 
 See [worker modes](worker.md#foreground-modes) to run scheduling with messaging, and [task architecture](architecture.md#unattended-operation) for package ownership and execution contracts.
+
+## Occurrence session titles
+
+Each occurrence uses the task name as its session title, shortened to the same
+80-character limit as chat titles. Scheduled runs skip title inference and have
+no extra naming usage. The task prompt and read-only notes policy stay the same.

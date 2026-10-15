@@ -33,7 +33,14 @@ export type Delivery = typeof Delivery.Type;
 const inboxSql = `SELECT id, adapter, account, payload AS message, conversation_id AS conversationId,
   session_id AS sessionId, run_id AS runId, state, attempts FROM gateway_inbox`;
 
-const Binding = Schema.Struct({ sessionId: Schema.String });
+const Binding = Schema.Struct({
+  sessionId: Schema.String,
+  managedName: Schema.NullOr(Schema.String),
+  syncedTitle: Schema.NullOr(Schema.String),
+  pendingName: Schema.NullOr(Schema.String),
+  namingDisabled: Schema.BooleanFromBit,
+  creationMessageId: Schema.NullOr(Schema.String),
+});
 
 export const gatewayStorage = <A>(operation: () => A) =>
   Effect.try({
@@ -51,7 +58,7 @@ const repository = Effect.gen(function* () {
     Schema.decodeUnknownSync(Inbox)(database.query(`${inboxSql} WHERE id = ?`).get(id));
 
   const binding = (adapter: string, account: string, scope: string, conversation: string) =>
-    Schema.decodeUnknownSync(Schema.NullOr(Binding))(
+    Schema.decodeUnknownSync(Schema.NullOr(Schema.Struct({ sessionId: Schema.String })))(
       database
         .query(
           `SELECT session_id AS sessionId FROM gateway_bindings WHERE adapter = ? AND account = ? AND scope_id = ? AND conversation_id = ?`,
@@ -59,7 +66,65 @@ const repository = Effect.gen(function* () {
         .get(adapter, account, scope, conversation),
     )?.sessionId ?? null;
 
+  const namedBinding = (adapter: string, account: string, conversation: string) =>
+    Schema.decodeUnknownSync(Schema.NullOr(Binding))(
+      database
+        .query(`SELECT session_id AS sessionId,
+      managed_name AS managedName, synced_title AS syncedTitle, pending_name AS pendingName, naming_disabled AS namingDisabled,
+      creation_message_id AS creationMessageId FROM gateway_bindings WHERE adapter = ? AND account = ? AND conversation_id = ?`)
+        .get(adapter, account, conversation),
+    );
+
   return {
+    namedBinding,
+    namingEntry: (adapter: string, account: string, conversation: string) =>
+      Schema.decodeUnknownSync(Schema.NullOr(Inbox))(
+        database
+          .query(
+            `${inboxSql} WHERE adapter = ? AND account = ? AND conversation_id = ? AND session_id IS NOT NULL ORDER BY id LIMIT 1`,
+          )
+          .get(adapter, account, conversation),
+      ),
+    nameAttempted: (adapter: string, account: string, conversation: string, title: string | null) =>
+      database
+        .query(
+          "UPDATE gateway_bindings SET synced_title = ? WHERE adapter = ? AND account = ? AND conversation_id = ?",
+        )
+        .run(title, adapter, account, conversation),
+    namePending: (adapter: string, account: string, conversation: string, name: string) =>
+      database
+        .query(
+          "UPDATE gateway_bindings SET pending_name = ? WHERE adapter = ? AND account = ? AND conversation_id = ? AND naming_disabled = 0",
+        )
+        .run(name, adapter, account, conversation).changes === 1,
+    nameConfirmed: (adapter: string, account: string, conversation: string, name: string) =>
+      database
+        .query(
+          "UPDATE gateway_bindings SET managed_name = ?, pending_name = NULL WHERE adapter = ? AND account = ? AND conversation_id = ? AND naming_disabled = 0",
+        )
+        .run(name, adapter, account, conversation),
+    disableNaming: (adapter: string, account: string, conversation: string) =>
+      database
+        .query(
+          "UPDATE gateway_bindings SET naming_disabled = 1, pending_name = NULL WHERE adapter = ? AND account = ? AND conversation_id = ?",
+        )
+        .run(adapter, account, conversation),
+    namingEntries: (adapter: string, account: string) =>
+      Schema.decodeUnknownSync(Schema.Array(Inbox))(
+        database
+          .query(`${inboxSql} WHERE adapter = ? AND account = ?
+        AND session_id IS NOT NULL AND state = 'completed'
+        AND id = (SELECT MIN(first.id) FROM gateway_inbox first WHERE first.session_id = gateway_inbox.session_id AND first.state = 'completed' AND EXISTS (SELECT 1 FROM runs r WHERE r.id = first.run_id AND r.status = 'completed'))
+        AND EXISTS (SELECT 1 FROM runs r WHERE r.id = gateway_inbox.run_id AND r.status = 'completed')
+        AND EXISTS (SELECT 1 FROM gateway_deliveries d WHERE d.inbox_id = gateway_inbox.id)
+        AND NOT EXISTS (SELECT 1 FROM gateway_deliveries d WHERE d.inbox_id = gateway_inbox.id AND d.state != 'sent')
+        AND (EXISTS (SELECT 1 FROM sessions s WHERE s.id = gateway_inbox.session_id AND s.title_source = 'fallback' AND s.title_attempted = 0)
+          OR EXISTS (SELECT 1 FROM gateway_bindings b JOIN sessions s ON s.id = b.session_id
+            WHERE b.session_id = gateway_inbox.session_id AND b.managed_name IS NOT NULL AND b.naming_disabled = 0
+              AND (b.pending_name IS NOT NULL OR b.synced_title IS NOT s.title)))
+        ORDER BY id`)
+          .all(adapter, account),
+      ),
     item,
     binding,
     accept: (adapter: string, account: string, message: IncomingMessage) =>
@@ -130,14 +195,27 @@ const repository = Effect.gen(function* () {
           )
           .all(adapter, account),
       ),
-    attach: (id: number, conversation: string, session: string) =>
+    attach: (
+      id: number,
+      conversation: string,
+      session: string,
+      managedName: string | null = null,
+    ) =>
       database
         .transaction(() => {
           const entry = item(id);
           database
-            .query(`INSERT INTO gateway_bindings (adapter, account, scope_id, conversation_id, session_id)
-        VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`)
-            .run(entry.adapter, entry.account, entry.message.scopeId, conversation, session);
+            .query(`INSERT INTO gateway_bindings (adapter, account, scope_id, conversation_id, session_id, managed_name, creation_message_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`)
+            .run(
+              entry.adapter,
+              entry.account,
+              entry.message.scopeId,
+              conversation,
+              session,
+              managedName,
+              managedName === null ? null : entry.message.messageId,
+            );
 
           if (
             binding(entry.adapter, entry.account, entry.message.scopeId, conversation) !== session

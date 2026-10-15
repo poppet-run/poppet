@@ -58,5 +58,28 @@ export class MessagingChannel extends Context.Service<
     ) => Effect.Effect<string, ChannelError>;
     readonly status: Effect.Effect<Schema.JsonObject>;
     readonly textLimit: number;
+    /** Optional naming for conversations whose creation ownership the adapter can prove. */
+    readonly naming?: {
+      readonly sanitize: (title: string) => string;
+      readonly conversation: (
+        message: IncomingMessage,
+        title: string,
+      ) => Effect.Effect<
+        { readonly id: string; readonly managedName: string | null },
+        ChannelError
+      >;
+      readonly current: (
+        message: IncomingMessage,
+        id: string,
+      ) => Effect.Effect<string, ChannelError>;
+      /** Rechecks access and the expected name immediately before the remote update. */
+      readonly rename: (
+        message: IncomingMessage,
+        id: string,
+        expected: string,
+        title: string,
+      ) => Effect.Effect<string | null, ChannelError>;
+      readonly changes: Stream.Stream<string>;
+    };
   }
 >()("poppet/MessagingChannel") {}

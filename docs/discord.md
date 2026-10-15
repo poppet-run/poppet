@@ -81,3 +81,27 @@ Automated tests use injected Discord events and API responses. Live bot setup,
 permissions, reconnection, and model inference still need manual validation.
 
 See [worker modes](worker.md#foreground-modes) to run messaging with scheduling or install the combined macOS worker.
+
+## Thread names
+
+New threads use a fallback derived from the initiating message. After the answer
+has been delivered, Poppet may generate a concise session title and synchronize
+it to the managed thread. `chat rename` also updates a managed thread while the
+gateway is running. `/status` includes the local session title.
+
+Poppet manages names only when source-message identity and bot ownership prove
+that it created the thread. This also allows recovery after a lost creation
+acknowledgement. Attached existing threads keep their names. Before each rename,
+the adapter checks current access and compares the remote name with the last
+confirmed bot-applied name. A recognized external edit disables synchronization,
+even if the user later restores the old name. Discord names also respect its
+100 UTF-16-unit limit without splitting a Unicode character.
+
+The saved answer is delivered before optional model naming starts. Naming and
+remote updates have separate bounded scopes. Failed permissions, rate limits,
+disconnects, or deleted/locked threads leave chat results intact. A lost rename
+acknowledgement is checked against the current name, without resending the rename.
+Failures can stop synchronization while the local session title stays usable.
+Discord has no atomic compare-and-rename operation, so a user edit between the
+last fetch and update can still race the bot. Live creation, renaming, and that
+race require validation in the private test channel.

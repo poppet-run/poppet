@@ -27,6 +27,30 @@ Each invocation sends one message. `chat sessions` lists saved sessions;
 and usage as JSON. Opaque provider continuation is retained privately in SQLite
 and omitted from this display. Inspection needs no selected model or login.
 
+## Session titles
+
+New sessions save a title from their initial prompt before inference. Poppet
+normalizes whitespace and controls and limits titles to 80 Unicode characters.
+After the first successful answer is printed, it attempts one optional title
+request through the saved provider, model, and workload. The request uses only a
+bounded excerpt of the original prompt, with no tools, memory, or conversation
+continuation. It has a ten-second deadline and can extend CLI exit time and use
+additional provider quota. Failure or cancellation leaves the answer completed
+and keeps the fallback title. It is not retried automatically.
+
+`chat sessions` and `chat show` include the title, its source, whether naming was
+attempted, and separate `titleUsage`. A null usage value means unknown. Chat run
+usage excludes naming. Old sessions remain unnamed and retain their IDs.
+Titles can repeat; commands always use session IDs.
+
+```fish
+bun run start chat rename $session_id "Weekly project review"
+```
+
+Manual names survive restart and win over an in-flight title request. Renaming
+needs no model or credentials and works through the worker when it owns storage.
+Title changes do not change activity timestamps or saved message order.
+
 ## Provider and model selection
 
 New sessions use `POPPET_PROVIDER` and the required `POPPET_MODEL`. Existing

@@ -13,7 +13,7 @@ import {
   type ModelRequest,
 } from "@poppet/provider";
 import { Store, StoreLive } from "@poppet/store";
-import { Deferred, Effect, Fiber, Layer, Stream } from "effect";
+import { Deferred, Effect, Fiber, Layer, Match, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { AgentError } from "#src/errors";
@@ -462,6 +462,259 @@ describe.concurrent("persisted agent", () => {
           expect((yield* store.runs(session.id))[0]?.status).toBe("interrupted");
           expect((yield* store.messages(session.id)).length).toBe(1);
         }).pipe(Effect.provide(TestClock.layer())),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+});
+
+describe("session naming", () => {
+  test("claims once across restart and isolates title input, continuation, tools and usage", async () => {
+    const requests: ModelRequest[] = [];
+
+    const state = await fixture(() =>
+      Effect.succeed({
+        description,
+        stream: (request) => {
+          requests.push(request);
+
+          return Stream.make({
+            type: "completed" as const,
+            response:
+              request.settings.toolChoice === "none"
+                ? response("A concise conversation title")
+                : response(),
+          });
+        },
+      }),
+    );
+
+    try {
+      const id = await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const agent = yield* Agent;
+
+          const session = yield* store.createSession(
+            description.provider,
+            description.id,
+            "coding",
+          );
+
+          yield* Stream.runDrain(agent.send(session.id, "First\n  question\u0000 with 😀"));
+          expect(yield* store.session(session.id)).toMatchObject({
+            title: "First question with 😀",
+            titleSource: "fallback",
+            titleAttempted: false,
+          });
+          const before = yield* store.session(session.id);
+          yield* agent.nameSession(session.id);
+          yield* agent.nameSession(session.id);
+          expect(yield* store.session(session.id)).toMatchObject({
+            title: "A concise conversation title",
+            titleSource: "generated",
+            titleAttempted: true,
+            titleUsage: { inputTokens: 3, outputTokens: 2 },
+            updatedAt: before?.updatedAt,
+          });
+          expect(yield* store.messages(session.id)).toHaveLength(2);
+          expect((yield* store.runs(session.id))[0]?.result?.usage).toEqual({
+            inputTokens: 3,
+            outputTokens: 2,
+          });
+
+          return session.id;
+        }),
+      );
+
+      await state.run(Agent.use((agent) => agent.nameSession(id)));
+      expect(requests).toHaveLength(2);
+      expect(requests[1]).toMatchObject({
+        sessionId: id,
+        workload: "coding",
+        tools: [],
+        settings: { maxOutputTokens: 128, toolChoice: "none" },
+        messages: [{ role: "user", text: JSON.stringify("First\n  question\u0000 with 😀") }],
+      });
+      expect(requests[1]?.instructions).not.toContain("profile");
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("a manual title wins while generation is in flight", async () => {
+    const started = Deferred.makeUnsafe<void>();
+    const release = Deferred.makeUnsafe<void>();
+
+    const state = await fixture(() =>
+      Effect.succeed({
+        description,
+        stream: (request) =>
+          request.settings.toolChoice === "none"
+            ? Stream.fromEffect(
+                Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Deferred.await(release)),
+                  Effect.as({
+                    type: "completed" as const,
+                    response: response("Late generated title"),
+                  }),
+                ),
+              )
+            : Stream.make({ type: "completed" as const, response: response() }),
+      }),
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const agent = yield* Agent;
+          const session = yield* store.createSession(description.provider, description.id);
+          yield* Stream.runDrain(agent.send(session.id, "Original title"));
+          const fiber = yield* agent.nameSession(session.id).pipe(Effect.forkChild);
+          yield* Deferred.await(started);
+          yield* store.renameSession(session.id, "My chosen title");
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(fiber);
+          expect(yield* store.session(session.id)).toMatchObject({
+            title: "My chosen title",
+            titleSource: "manual",
+            titleAttempted: true,
+            titleUsage: { inputTokens: 3, outputTokens: 2 },
+          });
+          expect((yield* store.runs(session.id))[0]?.status).toBe("completed");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each(["empty", "invalid", "oversized", "deadline", "cancelled"])(
+    "keeps the successful answer and fallback after %s naming, without retry",
+    async (mode) => {
+      let names = 0;
+      const started = Deferred.makeUnsafe<void>();
+
+      const state = await fixture(() =>
+        Effect.succeed({
+          description,
+          stream: (request) => {
+            if (request.settings.toolChoice !== "none")
+              return Stream.make({ type: "completed" as const, response: response() });
+            names++;
+
+            if (mode === "deadline" || mode === "cancelled")
+              return Stream.fromEffect(
+                Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+              );
+
+            return Stream.make({
+              type: "completed" as const,
+              response: response(
+                Match.value(mode).pipe(
+                  Match.when("empty", () => "\u0000\n  "),
+                  Match.when("oversized", () => "x".repeat(1025)),
+                  Match.orElse(() => "Refused"),
+                ),
+              ),
+            }).pipe(
+              mode === "invalid"
+                ? Stream.concat(
+                    Stream.fail(
+                      new ProviderError({
+                        provider: description.provider,
+                        reason: "temporary",
+                        message: "Late failure",
+                      }),
+                    ),
+                  )
+                : (stream) => stream,
+            );
+          },
+        }),
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const agent = yield* Agent;
+            const session = yield* store.createSession(description.provider, description.id);
+            yield* Stream.runDrain(agent.send(session.id, "Keep this fallback"));
+
+            if (mode === "deadline" || mode === "cancelled") {
+              const fiber = yield* agent.nameSession(session.id).pipe(Effect.forkChild);
+              yield* Deferred.await(started);
+
+              if (mode === "deadline") {
+                yield* TestClock.adjust("10 seconds");
+                yield* Fiber.join(fiber);
+              } else yield* Fiber.interrupt(fiber);
+            } else yield* agent.nameSession(session.id);
+            yield* agent.nameSession(session.id);
+            expect(yield* store.session(session.id)).toMatchObject({
+              title: "Keep this fallback",
+              titleSource: "fallback",
+              titleAttempted: true,
+            });
+            expect((yield* store.runs(session.id))[0]).toMatchObject({
+              status: "completed",
+              result: response(),
+            });
+          }).pipe(Effect.provide(TestClock.layer())),
+        );
+        expect(names).toBe(1);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("failed exchanges remain eligible and naming always uses the first original prompt", async () => {
+    let fail = true;
+    const requests: ModelRequest[] = [];
+
+    const state = await fixture(() =>
+      Effect.succeed({
+        description,
+        stream: (request) => {
+          requests.push(request);
+
+          if (fail)
+            return Stream.fail(
+              new ProviderError({
+                provider: description.provider,
+                reason: "temporary",
+                message: "Try later",
+              }),
+            );
+
+          return Stream.make({
+            type: "completed" as const,
+            response: response("Recovered conversation"),
+          });
+        },
+      }),
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const agent = yield* Agent;
+          const session = yield* store.createSession(description.provider, description.id);
+          yield* Stream.runDrain(agent.send(session.id, "Original prompt")).pipe(Effect.ignore);
+          yield* agent.nameSession(session.id);
+          expect((yield* store.session(session.id))?.titleAttempted).toBe(false);
+          fail = false;
+          yield* Stream.runDrain(agent.send(session.id, "Retry prompt"));
+          yield* agent.nameSession(session.id);
+          expect(requests.at(-1)?.messages).toEqual([
+            { role: "user", text: JSON.stringify("Original prompt") },
+          ]);
+        }),
       );
     } finally {
       await state.close();

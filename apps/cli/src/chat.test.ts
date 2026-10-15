@@ -57,6 +57,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
   const previous = new Map(Object.keys(environment).map((key) => [key, process.env[key]]));
   Object.assign(process.env, environment);
   const requests: ModelRequest[] = [];
+  const titleRequests: ModelRequest[] = [];
   const lines: string[] = [];
   const errors: string[] = [];
   const chunks: string[] = [];
@@ -91,6 +92,25 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                     ? { ...description, capabilities: { ...description.capabilities, tools: true } }
                     : description,
                   stream: (request: ModelRequest) => {
+                    if (request.settings.toolChoice === "none") {
+                      titleRequests.push(request);
+
+                      return Stream.make({
+                        type: "completed" as const,
+                        response: {
+                          output: [{ type: "text" as const, text: "A saved conversation title" }],
+                          continuation: {
+                            version: 1 as const,
+                            provider: description.provider,
+                            model: description.id,
+                            data: {},
+                          },
+                          finishReason: "stop" as const,
+                          usage: { inputTokens: 10, outputTokens: 5 },
+                        },
+                      });
+                    }
+
                     const completed = Stream.fromEffect(
                       Effect.gen(function* () {
                         expect(state.open).toBe(true);
@@ -205,6 +225,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
   return {
     directory,
     requests,
+    titleRequests,
     lines,
     errors,
     chunks,
@@ -905,6 +926,41 @@ describe("chat CLI", () => {
       expect(chat.requests).toHaveLength(0);
       expect(chat.state.built).toBe(0);
     } finally {
+      await chat.close();
+    }
+  });
+
+  test("generates one title after the answer and supports local and worker manual renames", async () => {
+    const chat = await fixture();
+    let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
+
+    try {
+      await chat.invoke(["chat", "new", "An original conversation prompt"]);
+      const id = chat.errors[0]!.slice("Session: ".length);
+      expect(chat.chunks.join("")).toBe("Answer\n");
+      expect(chat.titleRequests).toHaveLength(1);
+      await chat.invoke(["chat", "show", id]);
+      const saved = JSON.parse(chat.lines.at(-1)!);
+      expect(saved.session).toMatchObject({
+        title: "A saved conversation title",
+        titleSource: "generated",
+        titleAttempted: true,
+        titleUsage: { inputTokens: 10, outputTokens: 5 },
+      });
+      expect(saved.runs).toHaveLength(1);
+      expect(saved.messages).toHaveLength(2);
+      const built = chat.state.built;
+      await chat.invoke(["chat", "rename", id, "Local", "--literal", "title"]);
+      expect(JSON.parse(chat.lines.at(-1)!).title).toBe("Local --literal title");
+      worker = await chat.startWorker();
+      await chat.invoke(["chat", "rename", id, "My worker title"]);
+      await chat.invoke(["chat", "send", id, "Continue"]);
+      await chat.invoke(["chat", "show", id]);
+      expect(chat.chunks.join("")).toContain('"title": "My worker title"');
+      expect(chat.titleRequests).toHaveLength(1);
+      expect(chat.state.built).toBe(built + 1);
+    } finally {
+      if (worker) await Effect.runPromise(Fiber.interrupt(worker));
       await chat.close();
     }
   });
