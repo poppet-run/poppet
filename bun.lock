@@ -63,6 +63,20 @@
         "effect": "4.0.4",
       },
     },
+    "packages/gateway": {
+      "name": "@poppet/gateway",
+      "version": "0.0.0",
+      "dependencies": {
+        "@poppet/agent": "workspace:*",
+        "@poppet/config": "workspace:*",
+        "@poppet/provider": "workspace:*",
+        "@poppet/store": "workspace:*",
+        "effect": "4.0.4",
+      },
+      "devDependencies": {
+        "@poppet/memory": "workspace:*",
+      },
+    },
     "packages/memory": {
       "name": "@poppet/memory",
       "version": "0.0.0",
@@ -255,6 +269,8 @@
     "@poppet/config": ["@poppet/config@workspace:packages/config"],
 
     "@poppet/credentials": ["@poppet/credentials@workspace:packages/credentials"],
+
+    "@poppet/gateway": ["@poppet/gateway@workspace:packages/gateway"],
 
     "@poppet/memory": ["@poppet/memory@workspace:packages/memory"],
 
