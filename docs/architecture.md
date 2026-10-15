@@ -579,6 +579,131 @@ commands are never replayed after a transport error, malformed frame, or missing
 completion. Older workers must be restarted to expose the new endpoint. No saved
 record schema or migration changes are needed.
 
+## Messaging gateway: planned
+
+Messaging is planned after interactive worker support. Discord threads are the
+first interface; Telegram and WhatsApp adapters follow later. The gateway runs
+inside the existing background worker and shares its store, memory, model
+resolver, and serialized `Agent` instance with CLI and scheduled requests. The
+CLI composes these scoped services and preserves existing worker commands and
+local IPC. No second process acquires SQLite, and messaging connections do not
+expose the local command socket to the network.
+
+### Package boundaries
+
+The proposed `@poppet/gateway` package owns validated incoming messages,
+authorization, conversation-to-session mapping, durable message acceptance, and
+reply delivery. `@poppet/channel-discord` owns Discord credentials, Gateway
+connections, event decoding, mentions, thread operations, formatting, and rate
+limits. Later channel packages implement the same small contract. The CLI owns
+adapter registration and live layer composition; neither the agent nor task
+scheduling imports concrete messaging adapters.
+
+The shared contract carries the adapter and bot account identity, external
+message and conversation IDs, sender ID, text, and reply destination. Keep
+platform IDs as opaque strings. Adapters expose scoped incoming events and text
+delivery operations; add other capabilities only when implemented. Messaging is
+independent of inference providers, so a channel can use any configured provider
+that supports the session's workload. Call the typed agent interface directly
+and consume completed runs rather than parsing CLI stdout or stderr.
+
+Channel packages own protected credential storage, separate from model-provider
+credentials, notes, and memory. Reuse compatible protection and locking helpers
+without treating a Discord bot token as a model-provider connection. Tokens stay
+out of logs, command output, launch arguments, and LaunchAgent environment data.
+Persist non-secret channel settings so the installed worker can load them.
+
+### Discord threads as sessions
+
+The first adapter supports text conversations in explicitly configured guilds
+and parent text channels, restricted to one configured Discord user ID. The flow
+is:
+
+1. An actual mention of the bot ID in an allowed channel starts a thread from
+   that message. Its text becomes the first input in a new Poppet session.
+2. A mention inside an existing allowed thread attaches a session to that thread
+   if needed. It never creates a nested thread or imports unrelated history.
+3. Once attached, subsequent messages from the allowed user in that thread
+   continue the same session without another mention. Messages in allowed parent
+   channels and unattached threads require an explicit mention to start a session.
+4. Replies remain in the thread. A different thread starts a separate session;
+   an existing binding retains its saved provider, model, and workload.
+
+Persist a unique binding from adapter, bot account, guild, and thread IDs to the
+Poppet session ID. Keep the initiating message ID for thread-creation recovery.
+Renaming or archiving a thread does not reset its session. If Discord no longer
+permits access or delivery, preserve the local history and report the failure
+locally instead of sending the answer to another channel. A new thread is the
+normal way to start a fresh conversation.
+
+Use an outbound Discord Gateway connection; no public webhook is needed. Enable
+the Message Content intent for follow-ups without mentions, validate the required
+channel/thread permissions, and report missing access clearly. Restrict startup
+to the configured guilds and channels, match mentions by bot ID rather than
+display name, and ignore bot and webhook messages. Send completed text replies,
+split to Discord's limits, with automatic mentions disabled. Progressive edits,
+attachments, voice, DMs, and forum-specific behavior are deferred.
+See Discord's [thread permissions](https://docs.discord.com/developers/topics/threads#permissions)
+and [message content rules](https://docs.discord.com/developers/events/gateway#message-content-intent).
+
+Authorization applies to every incoming message and control command before
+creating a session or invoking the model. A status or cancel command is scoped to
+the current thread's session and the allowed user. Keep personal memory and notes
+available only in channels the owner has explicitly chosen for that context.
+Threads inherit parent-channel visibility: sender authorization does not make
+replies private. Start in an owner-controlled private channel. Supporting other
+users or shared channels requires an explicit memory and tool-access policy;
+separate sessions alone do not isolate the current shared profile, facts, or notes.
+
+### Acceptance, execution, and delivery
+
+Add numbered store migrations for conversation bindings, accepted message IDs,
+and delivery records. The gateway owns their repository through the shared
+`StoreDatabase`; the store retains database ownership and migration history.
+Deduplicate by adapter, bot account, and external message ID. Persist accepted
+work before advancing a transport cursor or acknowledging receipt where the
+platform provides such a mechanism. Bound pending work and reject overload
+clearly. Preserve message order within each conversation through the existing
+serialized runner.
+
+Link accepted inputs to their session and run durably before execution can
+produce side effects. Reconnects must not create duplicate threads, sessions, or
+runs. Recover thread creation by inspecting the initiating message's thread;
+uncertain external operations require reconciliation, not blind replay. Queued
+inputs that have not started may resume after restart. Runs that started and
+were interrupted retain the store's existing no-replay rule and require an
+explicit new request. Cancellation interrupts only the owned queued or active
+request and releases its runner permit.
+
+Save completed answers before delivery. Record destination, run, chunk order,
+delivery state, and returned platform message IDs so reply failures never rerun
+inference or tools. Honor rate limits and retry known safe failures with bounded
+backoff. A lost send acknowledgement may mean Discord already posted the reply;
+record uncertain delivery for reconciliation rather than claiming exactly-once
+external delivery or blindly resending it. Channel disconnects do not cancel
+already accepted agent work. Worker shutdown finalizes active runs and preserves
+pending delivery records. Isolate adapter reconnect failures so CLI access and
+scheduled work remain available; storage failures still stop unsafe execution.
+Status exposes connection state, pending work, and failed or uncertain delivery
+without logging chat content or secrets.
+
+### Later messaging support
+
+After Discord thread chat, allow scheduled results to target an explicitly
+configured, authorized conversation. Persist the destination with the occurrence
+and deliver its saved completed result independently of inference. Revalidate
+destination authorization before sending. Do not infer a recipient from whichever
+thread was used most recently.
+
+Add Telegram next with bot-token authentication and long polling, retaining the
+same authorization, session-binding, deduplication, and delivery rules. WhatsApp
+follows a separate choice between a QR-linked WhatsApp Web adapter and the
+official Business Cloud API. The former carries unofficial-client account and
+protocol-compatibility risks; the latter needs business setup, a public signed
+webhook, and handling for outbound conversation-window/template restrictions.
+Verify current platform requirements when implementing each adapter. Neither
+later adapter is required to complete Discord support.
+
 ## Dependencies
 
 The foundation uses Effect 4.0.4, its Bun platform adapter, TypeScript 7.0.2,

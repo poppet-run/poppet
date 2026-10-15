@@ -2,6 +2,8 @@
 
 Status: Phases 1–9 implemented with automated checks; macOS login startup, physical sleep/wake, and live unattended inference require manual validation
 
+Phases 10–12 are planned only. Messaging gateway support is not implemented.
+
 Updated: 2026-10-15
 
 One user, one active ChatGPT account, a configured provider/model, a local
@@ -9,21 +11,27 @@ TypeScript application, SQLite, explicit memory, and locally scheduled tasks.
 Start with a CLI calling the runner directly. Introduce a background service
 when scheduling requires it.
 
+Extend that worker with messaging support after phase 9. Start with Discord
+mentions and one saved session per thread, then add scheduled-result delivery
+and other messaging adapters.
+
 Subscription access remains the first functional milestone. Verify the documented
 route against the user's account before building the agent around it.
 [OpenAI integration guide](https://developers.openai.com/cookbook/articles/sign-in-with-chatgpt)
 
 ## Dependency order
 
-| Dependency                          | Purpose                                                                                | Introduce                 |
-| ----------------------------------- | -------------------------------------------------------------------------------------- | ------------------------- |
-| Bun, TypeScript, Bun types          | Runtime, strict type checking, SQLite, tests                                           | Foundation                |
-| Effect and its Bun platform adapter | Configuration, schemas, services, cancellation, resource scopes, retries               | Foundation                |
-| Oxfmt and Oxlint                    | Formatting and lint checks                                                             | Foundation                |
-| OpenAI client                       | Streamed Responses API access                                                          | Subscription verification |
-| jose                                | JWT/JWKS identity validation for the documented OAuth flow                             | Subscription verification |
-| Additional provider clients         | Supported OpenCode Go protocols; select and pin clients when implementing each adapter | Provider interface        |
-| Occurrence calculator               | Timezone-aware recurring occurrences; assess Effect Cron before adding another package | Scheduled tasks           |
+| Dependency                          | Purpose                                                                                                                | Introduce                 |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| Bun, TypeScript, Bun types          | Runtime, strict type checking, SQLite, tests                                                                           | Foundation                |
+| Effect and its Bun platform adapter | Configuration, schemas, services, cancellation, resource scopes, retries                                               | Foundation                |
+| Oxfmt and Oxlint                    | Formatting and lint checks                                                                                             | Foundation                |
+| OpenAI client                       | Streamed Responses API access                                                                                          | Subscription verification |
+| jose                                | JWT/JWKS identity validation for the documented OAuth flow                                                             | Subscription verification |
+| Additional provider clients         | Supported OpenCode Go protocols; select and pin clients when implementing each adapter                                 | Provider interface        |
+| Occurrence calculator               | Timezone-aware recurring occurrences; assess Effect Cron before adding another package                                 | Scheduled tasks           |
+| Discord client                      | Gateway lifecycle, thread operations, and rate limits; select a Bun-compatible client and pin it during implementation | Discord gateway           |
+| Other messaging clients             | Assess each platform's HTTP API or client when its adapter is implemented                                              | Later messaging adapters  |
 
 Pin dependencies as they are introduced. See [architecture.md](architecture.md)
 for Effect service boundaries and execution rules.
@@ -464,6 +472,117 @@ Automated socket tests cover these flows with injected providers, queued chat an
 scheduled execution, native transport cancellation, shutdown cleanup, invalid
 requests, and safe local fallback after stop. Live provider inference remains a
 manual check.
+
+## Phase 10: Messaging gateway with Discord thread sessions
+
+Planned, not implemented. Depends on phase 9. See the planned
+[messaging gateway architecture](architecture.md#messaging-gateway-planned).
+
+Add `@poppet/gateway` for authorization, persisted conversation bindings, incoming
+message deduplication, and reply delivery. Add `@poppet/channel-discord` for
+Discord transport and credentials. The CLI registers and composes them inside
+the existing worker, sharing its store and agent instance. Keep Discord details
+out of task scheduling, the agent, and inference-provider packages.
+
+Implement these conversation rules first:
+
+- A mention of the actual bot ID in an explicitly allowed guild/text channel
+  creates a thread from that message and starts a Poppet session with its text.
+- A mention in an existing allowed thread attaches or resumes that thread's
+  session. Do not create nested threads or import its earlier unrelated messages.
+- Follow-up text from the allowed user continues an attached thread's session
+  without another mention. Each thread has one durable binding, and new threads
+  start separate sessions. Existing sessions retain provider/model/workload.
+- Replies stay in the thread. Renames, archives, and worker restarts preserve
+  the binding; inaccessible or deleted threads never cause delivery elsewhere.
+
+Restrict the first version to one configured user ID and explicit guild/parent
+channel allowlists. Check authorization for every message and command before
+creating records or invoking the model; ignore bots and webhooks. Use the
+Discord Gateway with Message Content intent and validate thread permissions.
+Support thread-scoped status and cancellation for the allowed user. Use private
+owner-controlled channels initially because replies can contain personal memory
+and notes. Broader users or shared channels require a separate context-access
+policy before enabling them.
+
+Keep bot tokens in protected channel storage and out of launchd environment
+data, logs, and model inputs. Persist non-secret settings for worker startup.
+Send only completed text answers, split to platform limits with automatic
+mentions disabled. Defer DMs, attachments, voice, progressive editing, and
+forum-specific handling.
+
+Add migrations and a gateway repository on the shared database for bindings,
+accepted external message IDs, run links, and delivery records. Persist accepted
+inputs before transport acknowledgement where supported, bound pending work,
+and preserve conversation order. Make message-to-run ownership durable before
+side effects. Reconcile uncertain thread creation using the initiating message.
+Restart may resume inputs that never started; interrupted started runs retain
+the existing no-replay policy. Delivery failures retry or reconcile the saved
+answer, never inference or tools. Record uncertain sends explicitly because a
+lost acknowledgement cannot prove that Discord did not post the reply.
+
+Scope gateway resources to worker shutdown and keep adapter reconnect failures
+from stopping CLI or scheduled work. Extend local status with connection state,
+queue counts, and failed or uncertain deliveries without exposing message text.
+
+Completion check: mention the bot, receive a threaded answer, continue without a
+mention, restart the worker, and continue the same session. A second thread must
+have independent history. Verify attachment to an existing thread, renamed and
+archived threads, missing permissions, and no fallback to another destination.
+
+Automated tests use injected Discord events/API responses, fake model providers,
+temporary SQLite, and a controllable clock. Cover unauthorized messages causing
+no sessions or runs, duplicate events creating one thread/session/run, message
+ordering, concurrent CLI/scheduled work, cancellation, reconnect, restart before
+and after execution starts, rate limits, failed and uncertain chunk delivery,
+secret exclusion, and shutdown. Run `bun run check`. Separately validate bot
+setup, intent/permission errors, real mentions, thread visibility, follow-ups,
+and reconnection in a private Discord test channel. Fake transport tests do not
+establish live Discord or model access.
+
+## Phase 11: Scheduled results in messaging conversations
+
+Planned, not implemented. Depends on phase 10.
+
+Allow a scheduled task to select an explicit authorized Discord thread as its
+delivery destination. Snapshot the destination with each occurrence, recheck
+authorization before delivery, and route the saved completed result through the
+gateway's delivery records. Do not select the last active conversation implicitly
+or rerun a task because its reply failed. Preserve scheduling and read-only tool
+rules. Keep delivery status separate from occurrence execution status.
+
+Completion check: a scheduled task posts its completed result to the configured
+thread. Restart or delivery retry preserves that destination and does not repeat
+inference. Tests cover changed configuration, revoked access, deleted threads,
+rate limits, uncertain delivery, and tasks without a messaging destination.
+Validate one live scheduled delivery separately in the private test channel.
+
+## Phase 12: Additional messaging adapters
+
+Planned, not implemented. Depends on phase 10; scheduled delivery also requires
+phase 11. Implement adapters separately so Discord remains independently usable.
+
+Add Telegram first with a bot token and long polling, using the existing gateway
+contract for authorization, conversation bindings, acceptance, and delivery.
+Persist polling progress only after durable acceptance. Test duplicate updates,
+restart recovery, identity isolation between adapters/accounts, cancellation,
+message limits, and safe delivery handling before a live owner-only chat check.
+
+Add WhatsApp later, after choosing the account model. A QR-linked WhatsApp Web
+adapter supports personal-account use but carries unofficial-client account and
+protocol-compatibility risks. The official Business Cloud API requires business
+setup, a public webhook with signature verification, and current rules for
+conversation windows and approved outbound templates. Confirm those rules and
+runtime compatibility before selecting dependencies; neither route is silently
+substituted for the other. Reuse gateway behavior while keeping pairing,
+credentials, transport, formatting, and platform rules in its adapter package.
+
+Completion check for each adapter: authorized text chat resumes its own session
+after restart, rejected senders cause no agent work, duplicate events do not
+repeat execution, and delivery failures preserve the saved answer. Reuse shared
+behavior tests and add platform-specific transport cases. Verify live setup and
+delivery separately. Cross-platform session merging, multi-user memory sharing,
+voice, and attachments remain outside these phases.
 
 ## Validation
 
