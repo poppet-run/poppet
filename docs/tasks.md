@@ -1,0 +1,87 @@
+# Scheduled tasks
+
+[Documentation index](index.md)
+
+## Create and inspect tasks
+
+Select a provider and model as for chat, and sign in before running a task.
+Tasks save that selection when added. The worker uses each saved selection even
+if its environment selects a different model later.
+
+For a quick test, create a note in `POPPET_NOTES_DIR`, then schedule its summary
+one minute from now:
+
+```fish
+set when (bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
+bun run start tasks add summary --at $when "Read project.md and summarize it"
+bun run start tasks work
+```
+
+The worker prints timestamped lifecycle messages for starts, completed or failed
+runs, interruptions, cancellation, skipped intervals, and task/provider pauses and
+resumes. Occurrence messages include the task name and occurrence ID. Failures use
+reason codes; prompts, note contents, and model answers stay in saved results.
+An idle worker does not print polling messages.
+
+Leave the worker running. In another terminal using the same `POPPET_DATA_DIR`:
+
+```fish
+bun run start tasks list
+bun run start tasks show <task-id>
+bun run start tasks pause <task-id>
+bun run start tasks resume <task-id>
+```
+
+## Recurring schedules
+
+Use a five-field cron expression and explicit timezone for a recurring task:
+
+```fish
+bun run start tasks add daily-summary --cron "0 9 * * *" --tz Europe/London "Summarize my notes"
+```
+
+One-off timestamps require `Z` or an explicit UTC offset. Cron schedules retain
+local wall time across timezone changes. A missing local time during spring DST
+shifts forward; a repeated time during autumn DST runs once. The database stores
+times as UTC milliseconds. `show` includes final answers, run/session IDs, failures,
+and skipped intervals. Each occurrence has a fresh session, current profile and
+facts, and only `read_note` and `search_notes`. A returned `save_note` call is rejected.
+Use `--coding` before the prompt only for coding work that the chosen provider accepts.
+
+## Missed work, pauses, and retries
+
+The worker executes one occurrence at a time. Recurring times missed while stopped
+are skipped. An overdue one-off runs once. A recurring task keeps at most one pending
+or running occurrence; additional due times are recorded as skipped intervals.
+Pending recurring summaries expire after 24 hours. One-off work never expires.
+Pausing cancels pending work and keeps previous results. An active run needs an
+explicit cancellation:
+
+```fish
+bun run start tasks cancel <occurrence-id>
+bun run start tasks retry <occurrence-id>
+bun run start tasks providers
+bun run start tasks resume-provider openai-chatgpt
+```
+
+Quota failures pause scheduled requests for that provider until `resume-provider`.
+Temporary and rate-limit failures delay subsequent work by 30 seconds, doubling
+after further failures up to five minutes. A failed occurrence is never retried
+automatically. `retry` creates a fresh session for an unsuccessful occurrence;
+earlier runs remain available through chat inspection. Resume a paused task before
+retrying it. A cancelled one-off needs `retry`, since it has no future occurrences.
+
+## Clear tasks
+
+To remove every task and its occurrence/skip history:
+
+```fish
+bun run start tasks clear
+```
+
+This works with the worker running or stopped. A running worker interrupts active
+work before clearing and continues serving commands. Saved chat sessions and runs,
+notes, facts, credentials, and provider quota pauses are retained. The command
+returns the number of tasks removed, and repeating it on an empty list is safe.
+
+See [worker modes](worker.md#foreground-modes) to run scheduling with messaging, and [task architecture](architecture.md#unattended-operation) for package ownership and execution contracts.

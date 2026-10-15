@@ -1,5 +1,7 @@
 # Poppet architecture
 
+[Documentation index](index.md)
+
 Start with one local process invoked by the CLI. Add a background worker when
 scheduled tasks need one. The first chat flow calls the runner directly.
 

@@ -1,5 +1,7 @@
 # Poppet implementation plan
 
+[Documentation index](index.md)
+
 Status: Phases 1–10 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, and live Discord behavior require manual validation
 
 Phases 11–12 are planned only. Discord thread chat is implemented; additional
@@ -565,7 +567,7 @@ can require resending. Accepted inputs and completed answers survive restarts.
 Known safe failures use bounded backoff and Discord's rate-limit delay; lost
 send acknowledgements remain uncertain for manual inspection. Live Discord
 setup, visibility, intent/permission failures, and reconnect behavior remain
-unverified. See the [setup and manual path](../README.md#discord-thread-chat).
+unverified. See the [setup and manual path](discord.md).
 
 Channel setup and loading now use `ChannelRegistration` from `@poppet/gateway`,
 following provider registrations. Each package owns setup validation, credential
