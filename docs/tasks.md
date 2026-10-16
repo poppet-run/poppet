@@ -47,7 +47,7 @@ waiting and destination validation. An expired lookup cannot save a task afterwa
 
 `gateway work` can validate new destinations but does not execute scheduled work;
 `tasks work` executes tasks but does not deliver their results. The combined
-worker runs both. Tasks without `--discord-thread` keep their results local.
+worker runs both. Tasks without a messaging destination keep their results local.
 
 Each occurrence saves its destination independently of later task or channel
 configuration. The worker rechecks the saved bot account, owner, server, allowed
@@ -72,7 +72,15 @@ Configure [Telegram](telegram.md), run the combined worker, and pass
 `--telegram-chat <owner-id>` before the prompt. Only the configured owner's private
 chat is supported. It uses the same destination snapshots, authorization rechecks,
 and delivery inspection as Discord. Choose one destination per task;
-`--telegram-chat` and `--discord-thread` cannot be combined.
+`--telegram-chat`, `--whatsapp-chat`, and `--discord-thread` cannot be combined.
+
+## Deliver results to WhatsApp
+
+Configure and pair [WhatsApp](whatsapp.md), run the combined worker, and pass
+`--whatsapp-chat <owner-phone>` before the prompt. Use the configured owner's
+international phone digits without `+`. The adapter validates the connected
+account and private chat, then uses the same saved destination and delivery queue.
+Ambiguous sends remain uncertain without automatic replay.
 
 ## Select a skill
 

@@ -475,7 +475,23 @@ describe("chat CLI", () => {
       ),
     };
 
-    const chat = await fixture([first.registration, second.registration, broken]);
+    const buildFailure: ChannelRegistration = {
+      ...broken,
+      id: "build-failure",
+      load: Effect.succeed(
+        Layer.effect(
+          MessagingChannel,
+          Effect.fail(
+            new ChannelError({
+              reason: "configuration",
+              message: "Credential storage unavailable",
+            }),
+          ),
+        ),
+      ),
+    };
+
+    const chat = await fixture([first.registration, second.registration, broken, buildFailure]);
     let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
 
     try {
@@ -486,7 +502,7 @@ describe("chat CLI", () => {
         message: expect.stringContaining('Unknown subcommand "missing-channel"'),
       });
       await chat.invoke(["gateway", "status"]);
-      expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ running: false, enabled: false });
+      expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ running: false, enabled: true });
 
       await Promise.all(
         [first, second].map((channel) =>
@@ -544,6 +560,7 @@ describe("chat CLI", () => {
           { id: "example-channel", enabled: true, connected: true },
           { id: "other-channel", enabled: true, connected: true },
           { id: "broken-channel", enabled: false, error: "Invalid channel settings" },
+          { id: "build-failure", enabled: false, error: "Credential storage unavailable" },
         ],
       });
       await Effect.runPromise(Fiber.interrupt(worker));
@@ -598,6 +615,7 @@ describe("chat CLI", () => {
               error: "Invalid Discord settings. Run gateway discord setup again.",
             },
             { id: "telegram", enabled: false },
+            { id: "whatsapp", enabled: false },
           ]);
         await chat.clock.runPromise(TestClock.adjust("61 seconds"));
 

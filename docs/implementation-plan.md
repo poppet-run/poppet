@@ -2,10 +2,9 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–11 and 13–16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, and live Telegram behavior require manual validation
+Status: Phases 1–16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, and live WhatsApp behavior require manual validation
 
-Phase 12's Telegram adapter is implemented with automated checks. WhatsApp
-remains planned. Discord thread chat, scheduled-result delivery, conversation
+Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
 implemented.
 
@@ -633,7 +632,7 @@ Validate one live scheduled delivery separately in the private test channel.
 
 ## Phase 12: Additional messaging adapters
 
-Telegram is implemented with automated checks; WhatsApp remains planned.
+Telegram and QR-linked personal-account WhatsApp are implemented with automated checks.
 Depends on phase 10; scheduled delivery also requires phase 11. Adapters remain
 separate so Discord is independently usable.
 
@@ -658,20 +657,30 @@ account/adapter isolation, a full inbox, cancellation, text bounds, safe deliver
 setup and status redaction, and scheduled destination selection. A live owner-only
 chat and scheduled delivery remain manual checks.
 
-Add Telegram first with a bot token and long polling, using the existing gateway
-contract for authorization, conversation bindings, acceptance, and delivery.
-Persist polling progress only after durable acceptance. Test duplicate updates,
-restart recovery, identity isolation between adapters/accounts, cancellation,
-message limits, and safe delivery handling before a live owner-only chat check.
+The chosen WhatsApp account model is a QR-linked personal account, using pinned
+Baileys 7.0.0-rc14 under Bun 1.4.3. The unofficial client carries account-restriction
+and protocol-compatibility risks; the Business Cloud API is outside this adapter.
+`gateway whatsapp setup <account-phone> <owner-phone>` saves protected settings;
+foreground-only `gateway whatsapp pair` links the account. Its scoped client owns
+socket cleanup, identity checks, reconnects, and a separate protected SQLite key
+store with atomic key batches. Unlinking clears session keys and stops the worker
+adapter until paired again. Credential failures are isolated from other channels.
 
-Add WhatsApp later, after choosing the account model. A QR-linked WhatsApp Web
-adapter supports personal-account use but carries unofficial-client account and
-protocol-compatibility risks. The official Business Cloud API requires business
-setup, a public webhook with signature verification, and current rules for
-conversation windows and approved outbound templates. Confirm those rules and
-runtime compatibility before selecting dependencies; neither route is silently
-substituted for the other. Reuse gateway behavior while keeping pairing,
-credentials, transport, formatting, and platform rules in its adapter package.
+WhatsApp accepts owner-only private text, including chat with yourself. Persisted
+outgoing identities suppress assistant echoes across lost acknowledgements and
+restart. `tasks add --whatsapp-chat <owner-phone>` selects scheduled delivery through
+the shared resolver. SDK receipts precede gateway acceptance, so bounded receive
+buffering cannot guarantee recovery of pre-acceptance events after overload or a
+crash. Accepted input and saved replies use existing gateway durability. SDK send
+retries are disabled; ambiguous outcomes remain uncertain without automatic replay.
+
+Automated WhatsApp checks cover binary key persistence and rollback, protected
+storage, pairing reconnect/account mismatch/cleanup, owner and LID filtering,
+self-chat echo suppression after restart, receive bounds, connection failures,
+safe sends, offline setup, and scheduled flag validation. Imports, crypto,
+auth serialization, protobuf, and QR rendering passed an isolated Bun smoke check.
+Live pairing, protocol compatibility, owner chat, cancellation, and scheduled phone
+delivery remain manual checks in the [WhatsApp guide](whatsapp.md#manual-validation).
 
 Completion check for each adapter: authorized text chat resumes its own session
 after restart, rejected senders cause no agent work, duplicate events do not

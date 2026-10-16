@@ -88,9 +88,21 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
           // Each adapter needs its own gateway; the agent and store remain shared.
           const context = yield* Layer.build(
             GatewayLive.pipe(Layer.provide(loaded.success), Layer.fresh),
-          );
+          ).pipe(Effect.result);
 
-          const gateway = Context.get(context, Gateway);
+          if (Result.isFailure(context))
+            return {
+              resolveDestination: null,
+              run: Effect.never,
+              status: Effect.succeed({
+                id: entry.id,
+                name: entry.name,
+                enabled: false,
+                error: context.failure.message,
+              }),
+            };
+
+          const gateway = Context.get(context.success, Gateway);
 
           return {
             resolveDestination: gateway.resolveDestination,

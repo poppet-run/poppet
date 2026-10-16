@@ -78,7 +78,7 @@ The messaging worker checks the destination before saving. Each occurrence keeps
 its bot, owner, and chat snapshot. Results use the shared durable delivery queue
 and remain separate from the private chat's conversation history. `tasks show`
 includes the snapshot and delivery states. Choose one destination per task;
-`--telegram-chat` and `--discord-thread` cannot be combined.
+`--telegram-chat`, `--whatsapp-chat`, and `--discord-thread` cannot be combined.
 
 ## Manual validation
 

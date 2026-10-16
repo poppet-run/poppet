@@ -17,6 +17,7 @@ Start with [getting started](getting-started.md) to install dependencies, connec
 - [Worker](worker.md): foreground modes, macOS login startup, lifecycle, and logs.
 - [Discord](discord.md): bot setup, thread sessions, permissions, and delivery.
 - [Telegram](telegram.md): owner-only private chat, bot setup, polling, and delivery.
+- [WhatsApp](whatsapp.md): QR-linked personal accounts, owner-only text, and delivery limits.
 
 ## Providers
 
