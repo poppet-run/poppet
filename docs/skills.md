@@ -48,4 +48,36 @@ changes; ordinary chat needs an explicit request in the current user message. Au
 
 Skills are single files. Poppet does not parse YAML metadata, follow references,
 run scripts, download skills, choose them automatically, or let the agent write
-them. Selecting skills for Discord conversations is deferred.
+them.
+
+## Messaging sessions
+
+In an authorized Discord thread, Telegram private chat, or WhatsApp private chat,
+send a text command with a prompt:
+
+```text
+/new --skill weekly-review Review my Acorn project
+```
+
+In a Discord parent channel, mention the bot before the command. It creates a
+thread as usual. The worker loads the local file using the same validation as the
+CLI, saves a snapshot, and starts a fresh session. Ordinary follow-ups continue
+that session and its saved skill across restart, even if the file changes or is
+deleted. `/status` includes the current skill name.
+
+Use `/new <message>` to start a fresh session without a skill. Both commands
+replace only the conversation's active session binding; previous sessions,
+history, and results remain available through `chat sessions` and `chat show`.
+The new session uses the worker's configured provider/model. Commands run in
+conversation order and do not cancel active work; use `/cancel` first if needed.
+Duplicate delivery of the same command cannot create another session or run.
+
+Missing prompts, invalid names, and unavailable or invalid skill files receive
+an error reply without inference or changing the active session. Use `skills list`
+and `skills show` locally to inspect available procedures. The command prefix is
+removed from the prompt sent to the model and from generated titles. Skills keep
+the existing prompt budgets and tool permissions. Scheduled-result delivery does
+not change the messaging session or its selected skill.
+
+Restart an existing worker after updating. Live selection and follow-up behavior
+on each messaging platform remain manual validation.

@@ -781,8 +781,15 @@ No new package or dependency was added.
 Store owner-written procedures at `<data directory>/skills/<name>/SKILL.md`.
 Support `skills list`, `skills show <name>`, `chat new --skill <name> "message"`,
 and `tasks add ... --skill <name>`. Select one skill explicitly when creating a
-session or task. Existing sessions retain their selection. Selecting skills for
-Discord conversations is deferred; ordinary messaging behavior stays unchanged.
+session or task. Existing sessions retain their selection. Messaging supports
+`/new --skill <name> <message>` in Discord, Telegram, and WhatsApp, and
+`/new <message>` to start without a skill. These queued commands create a fresh
+session, snapshot the worker's local skill, and replace the conversation binding
+while retaining prior sessions and history. `/status` reports the selected name.
+Validation failures leave the binding unchanged and do not invoke a model.
+Automated checks cover snapshot retention across restart and file changes,
+deduplication, cancellation, recovery before binding, and delayed naming work.
+Live messaging skill selection remains manual validation.
 An example skill can describe how to summarize a note or write a weekly review
 using tools Poppet already has. A skill does not add capabilities.
 
