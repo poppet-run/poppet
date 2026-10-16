@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 
 import { MessagingChannel } from "@poppet/gateway";
-import { ChannelType, Client, Events, MessageFlags } from "discord.js";
+import { ChannelType, Client, Events, MessageFlags, Options, RateLimitError } from "discord.js";
 import { Effect, Option, Redacted, Stream } from "effect";
 
 import { discordChannelLayer } from "#src/channel";
@@ -21,7 +21,11 @@ const settings = {
 
 describe("Discord adapter", () => {
   test("uses Discord message/thread objects, recovers thread creation, filters events and suppresses reply mentions", async () => {
-    const client = new Client({ intents: [] });
+    const client = new Client({
+      intents: [],
+      makeCache: Options.cacheWithLimits({ MessageManager: 0 }),
+    });
+
     const login = spyOn(client, "login").mockResolvedValue("logged-in");
     const destroyed = spyOn(client, "destroy").mockResolvedValue();
     const ready = spyOn(client, "isReady").mockReturnValue(true);
@@ -54,6 +58,8 @@ describe("Discord adapter", () => {
     let created = false;
     let loseSend = false;
     let botReacted = false;
+    let reportReactions = true;
+    let limitRemoval = true;
     let sourceAuthor = owner;
 
     const source = () => ({
@@ -68,7 +74,9 @@ describe("Discord adapter", () => {
       embeds: [],
       flags: created ? MessageFlags.HasThread : 0,
       type: 0,
-      reactions: [{ count: botReacted ? 2 : 1, me: botReacted, emoji: { id: null, name: "👀" } }],
+      reactions: reportReactions
+        ? [{ count: botReacted ? 2 : 1, me: botReacted, emoji: { id: null, name: "👀" } }]
+        : [],
     });
 
     const get = spyOn(client.rest, "get").mockImplementation(async (route) => {
@@ -133,7 +141,27 @@ describe("Discord adapter", () => {
       if (route.endsWith(`/${encodeURIComponent("👀")}/@me`)) botReacted = true;
     });
 
-    const remove = spyOn(client.rest, "delete").mockImplementation(async () => {
+    const remove = spyOn(client.rest, "delete").mockImplementation(async (route) => {
+      if (!route.endsWith(`/${encodeURIComponent("👀")}/@me`))
+        throw new Error(`Unexpected reaction removal: ${route}`);
+
+      if (limitRemoval) {
+        limitRemoval = false;
+        throw new RateLimitError({
+          timeToReset: 1,
+          retryAfter: 1,
+          limit: 1,
+          method: "DELETE",
+          hash: "reactions",
+          url: `https://discord.com/api/v10${route}`,
+          route,
+          majorParameter: "300",
+          global: false,
+          sublimitTimeout: 0,
+          scope: "shared",
+        });
+      }
+
       botReacted = false;
     });
 
@@ -200,9 +228,13 @@ describe("Discord adapter", () => {
           yield* channel.typing("400");
           expect(post).toHaveBeenCalledWith("/channels/400/typing");
           yield* channel.mark(incoming, "working");
+          reportReactions = false;
           yield* channel.mark(incoming, "completed");
+          reportReactions = true;
+          expect(botReacted).toBe(false);
           expect(put.mock.calls.map(([route]) => route)).toEqual([
             `/channels/300/messages/400/reactions/${encodeURIComponent("👀")}/@me`,
+            `/channels/300/messages/400/reactions/${encodeURIComponent("✅")}/@me`,
             `/channels/300/messages/400/reactions/${encodeURIComponent("✅")}/@me`,
           ]);
           expect(remove).toHaveBeenCalledWith(
@@ -232,7 +264,7 @@ describe("Discord adapter", () => {
 
           yield* channel.mark(threadMessage, "working");
           yield* channel.mark(threadMessage, "stopped");
-          expect(put.mock.calls.map(([route]) => route).slice(2)).toEqual([
+          expect(put.mock.calls.map(([route]) => route).slice(3)).toEqual([
             `/channels/400/messages/401/reactions/${encodeURIComponent("👀")}/@me`,
           ]);
           expect(remove).toHaveBeenLastCalledWith(
@@ -240,7 +272,7 @@ describe("Discord adapter", () => {
           );
           // Another user's eyes reaction remains after the bot removes its own.
           yield* channel.mark(threadMessage, "stopped");
-          expect(remove).toHaveBeenCalledTimes(2);
+          expect(remove).toHaveBeenCalledTimes(4);
           sourceAuthor = { ...owner, id: "999" };
           expect(yield* channel.mark(incoming, "completed").pipe(Effect.result)).toHaveProperty(
             "failure.reason",
@@ -250,7 +282,7 @@ describe("Discord adapter", () => {
           expect(
             yield* channel.mark({ ...incoming, parentId: "900" }, "working").pipe(Effect.result),
           ).toHaveProperty("failure.reason", "permission");
-          expect(put).toHaveBeenCalledTimes(3);
+          expect(put).toHaveBeenCalledTimes(4);
           client.emit(Events.MessageCreate, followup);
           expect(Option.getOrNull(yield* Stream.runHead(channel.messages))).toEqual({
             ...incoming,

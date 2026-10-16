@@ -157,6 +157,50 @@ const fixture = async (
 };
 
 describe.concurrent("messaging gateway", () => {
+  test.each(["completed", "setup-failed"])(
+    "marks the parent mention while thread setup is pending and settles it after %s",
+    async (outcome) => {
+      const started = Deferred.makeUnsafe<void>();
+      const release = Deferred.makeUnsafe<void>();
+
+      const state = await fixture({
+        conversation: () =>
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.andThen(
+              outcome === "completed"
+                ? Effect.succeed("thread-first")
+                : Effect.fail(
+                    new ChannelError({ reason: "permission", message: "Cannot create thread" }),
+                  ),
+            ),
+          ),
+      });
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            yield* gateway.accept(message("first"));
+            const running = yield* gateway.processNext.pipe(Effect.forkChild);
+            yield* Deferred.await(started);
+            expect(state.marks).toEqual([{ messageId: "first", state: "working" }]);
+            expect(state.requests).toHaveLength(0);
+            yield* Deferred.succeed(release, undefined);
+            yield* Fiber.join(running);
+            expect(state.marks).toEqual([
+              { messageId: "first", state: "working" },
+              { messageId: "first", state: outcome === "completed" ? "completed" : "stopped" },
+            ]);
+            expect(state.requests).toHaveLength(outcome === "completed" ? 1 : 0);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test.each(["completed", "failed", "cancelled"] as const)(
     "refreshes typing during work and stops when %s, even after indicator failure",
     async (outcome) => {

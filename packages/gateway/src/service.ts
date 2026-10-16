@@ -153,6 +153,8 @@ const gateway = Effect.gen(function* () {
     }
 
     const execute = Effect.gen(function* () {
+      yield* mark(entry.message, "working");
+
       const created =
         entry.conversationId !== null
           ? { id: entry.conversationId, managedName: null }
@@ -194,7 +196,6 @@ const gateway = Effect.gen(function* () {
       if (active !== null)
         active.entry = { ...entry, conversationId: conversation, sessionId: session.id };
       yield* gatewayStorage(() => repo.state(entry.id, "executing"));
-      yield* mark(entry.message, "working");
       yield* Effect.scoped(
         Effect.gen(function* () {
           // Discord typing expires after ten seconds; progress must never block inference.

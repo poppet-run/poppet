@@ -307,13 +307,25 @@ export const discordChannelLayer = (
                 await source.react("👀");
               } else {
                 if (state === "completed") await source.react("✅");
-                const eyes = source.reactions.resolve("👀");
-
-                if (eyes?.me) await eyes.users.remove(settings.botId);
+                // Remove only our reaction, even when fetched reaction metadata is stale.
+                await client.rest.delete(
+                  `/channels/${source.channelId}/messages/${source.id}/reactions/${encodeURIComponent("👀")}/@me`,
+                );
               }
             },
             catch: discordFailure,
-          }),
+          }).pipe(
+            Effect.retry({
+              times: 1,
+              while: (error) => {
+                const delay = error.retryAfterMs ?? 0;
+
+                return delay > 0 && delay <= 2000
+                  ? Effect.sleep(delay).pipe(Effect.as(true))
+                  : false;
+              },
+            }),
+          ),
         typing: (conversationId) =>
           Effect.tryPromise({
             try: async () => {
