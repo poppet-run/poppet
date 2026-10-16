@@ -88,7 +88,8 @@ Pass `--skill <name>` before the prompt to save a [local Markdown procedure](ski
 with a new task. Each occurrence copies the task's saved name and text into its
 fresh session. File edits and deletion do not change existing tasks, including
 explicit retries. Create a replacement task to use updated instructions.
-`tasks show` includes the snapshot. Scheduled note tools remain read-only.
+`tasks show` includes the snapshot. Scheduled tools remain read-only: neither note writes nor the memory tool is
+available, including when a selected skill requests changes.
 
 ## Recurring schedules
 

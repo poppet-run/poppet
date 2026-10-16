@@ -43,7 +43,8 @@ The process owning the store loads the file. Commands sent through a running wor
 use its data directory and the same validation as local commands. Skills join the
 run's instructions below the base rules and count toward the existing context
 budget. They cannot override explicit user requests or grant tool permissions.
-Scheduled notes remain read-only. Automatic session naming does not receive skills.
+Scheduled notes and memory remain read-only. A skill cannot authorize memory
+changes; ordinary chat needs an explicit request in the current user message. Automatic session naming does not receive skills.
 
 Skills are single files. Poppet does not parse YAML metadata, follow references,
 run scripts, download skills, choose them automatically, or let the agent write

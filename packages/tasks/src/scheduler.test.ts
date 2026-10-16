@@ -606,64 +606,72 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("rejects attempted note writes and permits only an explicit retry with a fresh session", async () => {
-    let write = true;
+  test.each(["note", "memory"])(
+    "rejects attempted %s writes and permits only an explicit retry with a fresh session",
+    async (kind) => {
+      let write = true;
 
-    const state = await fixture(() =>
-      write
-        ? response([
-            {
-              type: "tool-call",
-              namespace: "poppet_notes",
-              name: "save_note",
-              callId: "save",
-              arguments: '{"path":"project.md","text":"Changed"}',
-            },
-          ])
-        : final(),
-    );
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const repo = yield* TaskRepository;
-          const store = yield* Store;
-
-          const job = repo.add(state.task, Date.now(), {
-            name: "write",
-            content: "Save project.md even during scheduled runs",
-          });
-
-          repo.reconcile(Date.now());
-          const claimed = repo.claim(Date.now())!;
-          yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-          const failed = repo.occurrence(claimed.occurrence.id);
-
-          expect(state.requests[0]?.instructions).toContain(
-            "Save project.md even during scheduled runs",
-          );
-          expect(failed.status).toBe("failed");
-          expect((yield* store.run(failed.runId!))?.failureReason).toBe("agent:tool-permission");
-          repo.reconcile(Date.now());
-          expect(repo.claim(Date.now())).toBeNull();
-          write = false;
-          repo.retry(failed.id, Date.now());
-          const retry = repo.claim(Date.now())!;
-          yield* executeOccurrence(repo, retry.occurrence, retry.task);
-          const completed = repo.occurrences(job.id)[0]!;
-
-          expect(completed.status).toBe("completed");
-          expect(completed.sessionId).not.toBe(failed.sessionId);
-          expect((yield* store.run(failed.runId!))?.status).toBe("failed");
-        }),
+      const state = await fixture(() =>
+        write
+          ? response([
+              {
+                type: "tool-call",
+                namespace: kind === "memory" ? "poppet_memory" : "poppet_notes",
+                name: kind === "memory" ? "memory" : "save_note",
+                callId: "save",
+                arguments:
+                  kind === "memory"
+                    ? '{"action":"remember","key":"project.name","value":"Changed"}'
+                    : '{"path":"project.md","text":"Changed"}',
+              },
+            ])
+          : final(),
       );
-      expect(await readFile(join(state.notesDirectory, "project.md"), "utf8")).toBe(
-        "The project is Acorn.",
-      );
-    } finally {
-      await state.close();
-    }
-  });
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const repo = yield* TaskRepository;
+            const store = yield* Store;
+
+            const job = repo.add(state.task, Date.now(), {
+              name: "write",
+              content: "Save project.md even during scheduled runs",
+            });
+
+            repo.reconcile(Date.now());
+            const claimed = repo.claim(Date.now())!;
+            yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
+            const failed = repo.occurrence(claimed.occurrence.id);
+
+            expect(state.requests[0]?.instructions).toContain(
+              "Save project.md even during scheduled runs",
+            );
+            expect(state.requests[0]?.tools.some((tool) => tool.name === "memory")).toBe(false);
+            expect(yield* (yield* Memory).list).toEqual([]);
+            expect(failed.status).toBe("failed");
+            expect((yield* store.run(failed.runId!))?.failureReason).toBe("agent:tool-permission");
+            repo.reconcile(Date.now());
+            expect(repo.claim(Date.now())).toBeNull();
+            write = false;
+            repo.retry(failed.id, Date.now());
+            const retry = repo.claim(Date.now())!;
+            yield* executeOccurrence(repo, retry.occurrence, retry.task);
+            const completed = repo.occurrences(job.id)[0]!;
+
+            expect(completed.status).toBe("completed");
+            expect(completed.sessionId).not.toBe(failed.sessionId);
+            expect((yield* store.run(failed.runId!))?.status).toBe("failed");
+          }),
+        );
+        expect(await readFile(join(state.notesDirectory, "project.md"), "utf8")).toBe(
+          "The project is Acorn.",
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
   test("persists quota pauses across restart and retains failed one-offs until explicit retry", async () => {
     let quota = true;

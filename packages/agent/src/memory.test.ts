@@ -1,13 +1,25 @@
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
-import { Memory, MemoryError, LocalMemoryLive, type SnapshotLimits } from "@poppet/memory";
-import { type Completion, type ModelOperations, type ModelRequest } from "@poppet/provider";
+import {
+  Memory,
+  MemoryError,
+  LocalMemoryLive,
+  type SnapshotLimits,
+  type MemoryFact,
+} from "@poppet/memory";
+import {
+  type Completion,
+  type ModelOperations,
+  type ModelRequest,
+  type Output,
+} from "@poppet/provider";
 import { Store, StoreLive } from "@poppet/store";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Fiber, Layer, Stream } from "effect";
 
 import { instructions } from "#src/context";
 import { Notes } from "#src/notes";
@@ -112,6 +124,25 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Mem
     close: () => rm(directory, { recursive: true, force: true }),
   };
 };
+
+const memoryCall = (
+  action: "remember" | "replace" | "forget",
+  key: string,
+  value: string | null,
+  callId = "change",
+): Output => ({
+  type: "tool-call",
+  name: "memory",
+  namespace: "poppet_memory",
+  callId,
+  arguments: JSON.stringify({ action, key, value }),
+});
+
+const toolReply = (...calls: ReadonlyArray<Output>) =>
+  Stream.make({
+    type: "completed" as const,
+    response: { ...completion(), output: calls, finishReason: "tool-calls" as const },
+  });
 
 const send = (id: string) =>
   Agent.use((agent) => Stream.runDrain(agent.send(id, "How should you answer?")));
@@ -402,4 +433,287 @@ describe.concurrent("explicit memory in chat", () => {
       }
     },
   );
+
+  test("remembers, replaces and forgets across restart with provenance and fixed per-run snapshots", async () => {
+    const saved = await fixture();
+    let action: "remember" | "replace" | "forget" = "remember";
+    let value: string | null = "Keep answers concise";
+    saved.state.stream = (request) =>
+      request.messages.at(-1)?.role === "tool"
+        ? Stream.make({ type: "completed" as const, response: completion() })
+        : toolReply(memoryCall(action, "answer.style", value));
+
+    try {
+      const { id, firstRunId } = await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          yield* (yield* Memory).remember("unrelated", "Keep this fact");
+          const session = yield* store.createSession("test-provider", "test-model");
+          yield* Stream.runDrain(
+            (yield* Agent).send(session.id, "Remember that I prefer concise answers"),
+          );
+          const run = (yield* store.runs(session.id))[0]!;
+          expect(yield* (yield* Memory).list).toContainEqual(
+            expect.objectContaining({ key: "answer.style", value, sourceRunId: run.id }),
+          );
+          expect(yield* store.toolCalls(run.id)).toMatchObject([
+            {
+              name: "memory",
+              namespace: "poppet_memory",
+              status: "completed",
+              output: JSON.stringify({ action, key: "answer.style", changed: true }),
+            },
+          ]);
+
+          return { id: session.id, firstRunId: run.id };
+        }),
+      );
+
+      expect(saved.requests[1]!.instructions).toBe(saved.requests[0]!.instructions);
+      expect(saved.requests[0]!.instructions).toContain("Never infer or automatically save facts");
+      expect(saved.requests[1]!.messages.at(-1)).toMatchObject({
+        role: "tool",
+        output: expect.stringContaining('"changed":true'),
+      });
+      action = "replace";
+      value = "Explain the reasoning";
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          yield* Stream.runDrain(
+            (yield* Agent).send(id, "Replace my saved answer style with detailed reasoning"),
+          );
+          const runs = yield* store.runs(id);
+          expect(yield* (yield* Memory).list).toContainEqual(
+            expect.objectContaining({
+              key: "answer.style",
+              value,
+              sourceRunId: runs.find((run) => run.id !== firstRunId)!.id,
+            }),
+          );
+        }),
+      );
+      expect(saved.requests[2]!.instructions).toContain("Keep answers concise");
+      expect(saved.requests[3]!.instructions).toBe(saved.requests[2]!.instructions);
+      action = "forget";
+      value = null;
+      await saved.run(
+        Effect.gen(function* () {
+          yield* Stream.runDrain((yield* Agent).send(id, "Forget my saved answer style"));
+          expect((yield* (yield* Memory).list).map(({ key }) => key)).toEqual(["unrelated"]);
+        }),
+      );
+      expect(saved.requests[4]!.instructions).toContain("Explain the reasoning");
+      saved.state.stream = () =>
+        Stream.make({ type: "completed" as const, response: completion() });
+      await saved.run(send(id));
+      expect(saved.requests.at(-1)!.instructions).not.toContain('"key":"answer.style"');
+      await saved.run(
+        Effect.gen(function* () {
+          expect((yield* (yield* Memory).list).map(({ key }) => key)).toEqual(["unrelated"]);
+        }),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test("validates the entire batch before changing a fact", async () => {
+    const saved = await fixture();
+    saved.state.stream = () =>
+      toolReply(
+        memoryCall("remember", "preference", "Must not be saved", "first"),
+        memoryCall("forget", "other", "Not null", "invalid"),
+      );
+
+    try {
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("test-provider", "test-model");
+          const result = yield* send(session.id).pipe(Effect.result);
+          expect(result).toHaveProperty("failure.reason", "tool-arguments");
+          expect(yield* (yield* Memory).list).toEqual([]);
+          expect(
+            (yield* store.toolCalls((yield* store.runs(session.id))[0]!.id)).map(
+              (call) => call.status,
+            ),
+          ).toEqual(["interrupted", "interrupted"]);
+        }),
+      );
+      expect(saved.requests).toHaveLength(1);
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test.each(["remember", "replace"] as const)(
+    "rejects %s before exceeding the next snapshot budget",
+    async (action) => {
+      const saved = await fixture({ factsBytes: 64 });
+      saved.state.stream = () =>
+        toolReply(memoryCall(action, action === "replace" ? "keep" : "new", "x".repeat(100)));
+
+      try {
+        await saved.run(
+          Effect.gen(function* () {
+            const memory = yield* Memory;
+            yield* memory.remember("keep", "Original");
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            expect(yield* send(session.id).pipe(Effect.result)).toHaveProperty(
+              "failure.reason",
+              "memory-limit",
+            );
+            expect(yield* memory.list).toMatchObject([
+              { key: "keep", value: "Original", sourceRunId: null },
+            ]);
+            expect(
+              (yield* store.toolCalls((yield* store.runs(session.id))[0]!.id))[0]!.status,
+            ).toBe("failed");
+          }),
+        );
+        expect(saved.requests).toHaveLength(1);
+      } finally {
+        await saved.close();
+      }
+    },
+  );
+
+  test("rejects accidental overwrites and bounds acknowledgements for a maximum-size fact", async () => {
+    const saved = await fixture({ toolBytes: 1024 });
+    saved.state.stream = (request) =>
+      request.messages.at(-1)?.role === "tool"
+        ? Stream.make({ type: "completed" as const, response: completion() })
+        : toolReply(memoryCall("remember", "preference", "😀".repeat(1024)));
+
+    try {
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("test-provider", "test-model");
+          yield* send(session.id);
+          const first = (yield* store.toolCalls((yield* store.runs(session.id))[0]!.id))[0]!;
+          expect(Buffer.byteLength(first.output!, "utf8")).toBeLessThan(1024);
+          const initial = yield* (yield* Memory).list;
+          expect(yield* send(session.id).pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "tool-arguments",
+          );
+          expect(yield* (yield* Memory).list).toEqual(initial);
+          expect(
+            (yield* store.toolCalls(
+              (yield* store.runs(session.id)).find((run) => run.status === "failed")!.id,
+            ))[0]!.status,
+          ).toBe("failed");
+        }),
+      );
+      expect(saved.requests).toHaveLength(3);
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test.each(["write", "journal"])(
+    "preserves %s failure without retrying a memory change after restart",
+    async (stage) => {
+      const saved = await fixture();
+      saved.state.stream = () => toolReply(memoryCall("remember", "preference", "Saved once"));
+
+      try {
+        const id = await saved.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            using database = new Database(join(saved.directory, "store/poppet.sqlite"));
+            database.run(
+              stage === "write"
+                ? "CREATE TRIGGER reject_write BEFORE INSERT ON memories BEGIN SELECT RAISE(ABORT, 'private'); END"
+                : "CREATE TRIGGER reject_result BEFORE UPDATE ON tool_calls WHEN NEW.status = 'completed' BEGIN SELECT RAISE(ABORT, 'private'); END",
+            );
+            const result = yield* send(session.id).pipe(Effect.result);
+            expect(result).toHaveProperty(
+              "failure.reason",
+              stage === "write" ? "memory-storage" : "storage",
+            );
+            expect(JSON.stringify(result)).not.toContain("private");
+            const run = (yield* store.runs(session.id))[0]!;
+            expect((yield* store.toolCalls(run.id))[0]!.status).toBe("uncertain");
+            expect(yield* (yield* Memory).list).toHaveLength(stage === "write" ? 0 : 1);
+
+            return session.id;
+          }),
+        );
+
+        saved.state.stream = () =>
+          Stream.make({ type: "completed" as const, response: completion() });
+        await saved.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            yield* send(id);
+            const previous = (yield* store.runs(id)).find((run) => run.status === "failed")!;
+            expect((yield* store.toolCalls(previous.id))[0]!.status).toBe("uncertain");
+            expect(yield* (yield* Memory).list).toHaveLength(stage === "write" ? 0 : 1);
+          }),
+        );
+        expect(saved.requests).toHaveLength(2);
+      } finally {
+        await saved.close();
+      }
+    },
+  );
+
+  test("cancellation finishes an in-flight memory mutation and journals its result once", async () => {
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const facts: MemoryFact[] = [];
+
+    const injected: Memory["Service"] = {
+      snapshot: () => Effect.succeed({ soul: "", profile: "", facts: [] }),
+      list: Effect.sync(() => facts),
+      remember: (key, value, sourceRunId = null) =>
+        Effect.promise(async () => {
+          started.resolve();
+          await release.promise;
+          const fact = { key, value, sourceRunId, updatedAt: 0 };
+          facts.push(fact);
+
+          return fact;
+        }),
+      replace: () => Effect.die("Unexpected replace"),
+      forget: () => Effect.die("Unexpected forget"),
+    };
+
+    const saved = await fixture({}, injected);
+    saved.state.stream = () => toolReply(memoryCall("remember", "preference", "Saved once"));
+
+    try {
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("test-provider", "test-model");
+          const task = yield* Effect.forkChild(send(session.id));
+          yield* Effect.promise(() => started.promise);
+          const cancel = yield* Effect.forkChild(Fiber.interrupt(task));
+          yield* Effect.yieldNow;
+          const run = (yield* store.runs(session.id))[0]!;
+          expect((yield* store.toolCalls(run.id))[0]!.status).toBe("running");
+          release.resolve();
+          yield* Fiber.join(cancel);
+          expect((yield* store.runs(session.id))[0]!.status).toBe("interrupted");
+          expect((yield* store.toolCalls(run.id))[0]).toMatchObject({
+            status: "completed",
+            output: JSON.stringify({ action: "remember", key: "preference", changed: true }),
+          });
+          expect(facts).toEqual([
+            { key: "preference", value: "Saved once", sourceRunId: run.id, updatedAt: 0 },
+          ]);
+        }),
+      );
+      expect(saved.requests).toHaveLength(1);
+    } finally {
+      release.resolve();
+      await saved.close();
+    }
+  });
 });

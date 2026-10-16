@@ -129,8 +129,8 @@ const failure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 
 describe.concurrent("notes conversation", () => {
   test.each([false, true])(
-    "reads an explicitly supplied page with durable results, read-only notes: %s",
-    async (readOnlyNotes) => {
+    "reads an explicitly supplied page with durable results, read-only tools: %s",
+    async (readOnlyTools) => {
       const fetched: string[] = [];
       let turns = 0;
 
@@ -140,7 +140,7 @@ describe.concurrent("notes conversation", () => {
             expect(request.tools).toContainEqual(
               expect.objectContaining({ name: "fetch_page", namespace: "poppet_web" }),
             );
-            expect(request.tools.some((entry) => entry.name === "save_note")).toBe(!readOnlyNotes);
+            expect(request.tools.some((entry) => entry.name === "save_note")).toBe(!readOnlyTools);
 
             return completed([
               tool(
@@ -186,7 +186,7 @@ describe.concurrent("notes conversation", () => {
             const session = yield* store.createSession("test-provider", "test-model");
             yield* Stream.runDrain(
               (yield* Agent).send(session.id, "Summarize https://example.com/article", {
-                readOnlyNotes,
+                readOnlyTools,
               }),
             );
             const run = (yield* store.runs(session.id))[0]!;
@@ -339,8 +339,8 @@ describe.concurrent("notes conversation", () => {
   });
 
   test.each([false, true])(
-    "recalls completed conversations with durable search calls, read-only notes: %s",
-    async (readOnlyNotes) => {
+    "recalls completed conversations with durable search calls, read-only tools: %s",
+    async (readOnlyTools) => {
       let turn = 0;
 
       const state = await fixture(
@@ -349,7 +349,7 @@ describe.concurrent("notes conversation", () => {
             expect(request.tools).toContainEqual(
               expect.objectContaining({ name: "search_sessions", namespace: "poppet_history" }),
             );
-            expect(request.tools.some((entry) => entry.name === "save_note")).toBe(!readOnlyNotes);
+            expect(request.tools.some((entry) => entry.name === "save_note")).toBe(!readOnlyTools);
             expect(request.instructions).toContain("historical messages");
 
             return completed([
@@ -401,7 +401,7 @@ describe.concurrent("notes conversation", () => {
             yield* store.renameSession(earlier.id, "Earlier project");
             const session = yield* store.createSession("test-provider", "test-model");
             yield* Stream.runDrain(
-              (yield* Agent).send(session.id, "Recall my project", { readOnlyNotes }),
+              (yield* Agent).send(session.id, "Recall my project", { readOnlyTools }),
             );
             const run = (yield* store.runs(session.id))[0]!;
             expect(run.status).toBe("completed");
@@ -791,6 +791,7 @@ describe.concurrent("notes conversation", () => {
         "save_note",
         "search_sessions",
         "fetch_page",
+        "memory",
       ]);
       expect(state.requests[1]?.messages.at(-1)).toMatchObject({
         role: "tool",

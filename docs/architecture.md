@@ -103,7 +103,7 @@ Task tables remain in the shared store migrations.
 | `model/`                | Model service with SDK adapter, stream collector, and verification protocol | Authentication, OpenAI client                     |
 | `store/`                | Scoped SQLite ownership, migrations, sessions, messages, and runs           | Configuration, shared provider schemas            |
 | `agent/service.ts`      | Persisted chat, deadlines, cancellation, run finalization                   | Model resolver, store, conversation workflow      |
-| `agent/conversation.ts` | Sequential model/tool loop, permission checks, run budgets                  | Model, store, notes, pages, chat settings         |
+| `agent/conversation.ts` | Sequential model/tool loop, permission checks, run budgets                  | Model, store, notes, memory, pages, chat settings |
 | `agent/reply.ts`        | Validated stream completion and output limits                               | Shared model contract                             |
 | `agent/context.ts`      | Complete-exchange context assembly and size limits                          | Shared message and record types                   |
 | `agent/settings.ts`     | Validated context, history, and output budgets                              | Effect Config and Schema                          |
@@ -112,6 +112,7 @@ Task tables remain in the shared store migrations.
 | `agent/pages.ts`        | URL authorization, redirect policy, scoped page retrieval                   | Page transport, extraction, chat settings         |
 | `agent/page-network.ts` | Public-address validation, cancellable DNS, pinned HTTP(S), body limits     | Node DNS, HTTP(S), net, TLS, zlib                 |
 | `agent/page-text.ts`    | Static HTML/plain-text extraction and bounded JSON results                  | Bun HTMLRewriter, entities                        |
+| `agent/memory-tools.ts` | Memory tool schema, budget preflight, mutation dispatch, and provenance     | Memory service, chat settings                     |
 | `agent/memory.ts`       | Run-start snapshot loading and model instructions                           | Memory service, chat settings                     |
 | `memory/`               | Memory contract, local fact operations, bounded profile reads               | Effect; config and shared database for local I/O  |
 | `tasks/scheduler.ts`    | Persisted due occurrences and sequential worker                             | Store, agent, clock, occurrence calculator        |
@@ -551,9 +552,26 @@ the default personality. The profile and keyed values are serialized into the
 prompt as personal context. Metadata such as source runs and timestamps stays in
 the store. This prompt is
 kept throughout the tool loop and included in every context-size estimate. The
-next run reads fresh memory even when continuing an existing session. Neither
-notes tools nor chat can create or mutate facts. Forgetting affects future memory
+next run reads fresh memory even when continuing an existing session. Note tools cannot change facts. Tool-capable chat can use `poppet_memory.memory`
+for explicitly requested remember, replace, and forget operations. Forgetting affects future memory
 snapshots; it does not erase prior messages or notes.
+
+`agent/memory-tools.ts` validates the namespaced model arguments using the shared
+key/value schemas and dispatches through `Memory`. A fixed object schema requires
+`action`, `key`, and nullable `value`; the decoder checks their action-specific
+relationship and rejects extra properties, including forged provenance. The host
+supplies the active run ID for remember/replace, preflights the next fact snapshot,
+and returns a compact acknowledgement within the tool-result budget. Instructions
+require an explicit current-user request; semantic intent is interpreted by the
+model rather than a keyword scanner or an extra confirmation interface.
+
+The existing tool journal records memory calls before dispatch. A mutation and
+its durable result finish together under graceful cancellation. Storage uncertainty
+or failure to persist a committed result never causes automatic replay. A completed
+fact change survives a later run failure. `readOnlyTools` removes both memory and
+note writes from scheduled requests; fabricated calls fail the normal permission
+check before execution. This extends the existing policy without changing storage
+schemas, provider code, or the worker protocol.
 
 Prompt formatting and overall context limits stay in the agent. The CLI selects
 the local memory layer directly; an alternate implementation can supply `Memory`

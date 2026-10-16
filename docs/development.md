@@ -74,6 +74,7 @@ packages/
     src/reply.ts          Validated model stream completion
     src/notes.ts          Note schemas, bounded access, atomic writes
     src/memory.ts         Memory snapshots formatted into model instructions
+    src/memory-tools.ts   Validated memory changes with budget checks and source runs
     src/context.ts        Complete-exchange context assembly and limits
     src/settings.ts       Validated chat budgets
   config/                 @poppet/config

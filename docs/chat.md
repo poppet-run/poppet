@@ -75,6 +75,15 @@ use that snapshot even if the file changes or disappears. `chat show` includes
 the saved `skill`; ordinary sessions have `null`. Skill instructions count toward
 the context budget and keep the existing tool permissions. See [skills](skills.md).
 
+## Change saved memory
+
+Tool-capable models can remember, replace, or forget a saved fact when explicitly
+asked in the current message. For example, ask to remember `answer.style` as
+"Keep answers concise", then inspect it with `memory list`. Ordinary chat,
+the interactive prompt, and authorized messaging use the same memory tool.
+Scheduled runs cannot change memory. See [memory](memory.md#ask-the-model-to-change-a-fact)
+for provenance, limits, cancellation, and uncertain outcomes.
+
 ## Session titles
 
 New sessions save a title from their initial prompt before inference. Poppet
