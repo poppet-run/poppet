@@ -65,13 +65,14 @@ for provider-specific setup and logout behavior.
 
 ## Chat
 
-| Command                                          | Action                                                      |
-| ------------------------------------------------ | ----------------------------------------------------------- |
-| `chat new [--coding] [--skill <name>] <message>` | Start a session with the configured provider and model.     |
-| `chat send <session> <message>`                  | Continue a saved session.                                   |
-| `chat search <query>`                            | Search completed conversation text without inference.       |
-| `chat sessions`                                  | List saved sessions.                                        |
-| `chat show <session>`                            | Print saved messages, tool calls, and run outcomes as JSON. |
+| Command                                                  | Action                                                      |
+| -------------------------------------------------------- | ----------------------------------------------------------- |
+| `chat interactive [session] [--coding] [--skill <name>]` | Open a terminal prompt for a new or saved session.          |
+| `chat new [--coding] [--skill <name>] <message>`         | Start a session with the configured provider and model.     |
+| `chat send <session> <message>`                          | Continue a saved session.                                   |
+| `chat search <query>`                                    | Search completed conversation text without inference.       |
+| `chat sessions`                                          | List saved sessions.                                        |
+| `chat show <session>`                                    | Print saved messages, tool calls, and run outcomes as JSON. |
 
 See [chat](chat.md) for session selection, streaming, cancellation, and limits,
 and [notes](notes.md) for the tools available during a run.

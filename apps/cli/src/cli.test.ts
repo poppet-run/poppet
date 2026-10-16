@@ -778,6 +778,7 @@ describe("CLI", () => {
       "auth verify",
       "auth logout",
       "chat new",
+      "chat interactive",
       "chat send",
       "chat sessions",
       "chat search",

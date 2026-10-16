@@ -106,6 +106,7 @@ Chat, memory, session inspection, and `store status` work while it is running:
 ```fish
 bun run start memory remember project.name Acorn
 bun run start chat new "What is the project called?"
+bun run start chat interactive
 bun run start chat sessions
 bun run start chat search "project"
 bun run start memory list
@@ -156,6 +157,12 @@ foreground; background installation currently supports macOS only.
 ## Optional naming work
 
 Chat rename commands use the same local-or-worker routing as chat inspection.
+`chat interactive [session]` uses the same worker transport for each entered
+message. Waiting at the prompt does not hold storage. Session metadata is returned
+with the existing stderr announcement, so one-shot clients keep their output and
+interactive clients can retain the session after a failed turn. Restart the worker
+after updating to this version before starting a new interactive session.
+
 After printing an interactive answer, the worker finishes the optional bounded
 title request before completing that command response. The gateway starts naming
 only after the answer's delivery chunks are confirmed sent. Naming shares the
