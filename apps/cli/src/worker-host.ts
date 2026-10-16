@@ -1,3 +1,4 @@
+import { Skills } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { Store } from "@poppet/store";
 import {
@@ -22,7 +23,7 @@ export const runWorker = (mode: WorkerMode) =>
       const commands = yield* WorkerRequests;
       const tasks = mode === "gateway" ? null : yield* makeTaskWorker;
       const messaging = yield* Effect.serviceOption(MessagingWorker);
-      const services = yield* Effect.context<Store | TaskRepository>();
+      const services = yield* Effect.context<Store | TaskRepository | Skills>();
       const startedAt = yield* Clock.currentTimeMillis;
 
       yield* serveWorker(workerSocketPath(config.dataDirectory), (request, body) => {

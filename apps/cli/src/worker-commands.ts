@@ -1,4 +1,4 @@
-import { Agent, ChatSettings, type AgentError } from "@poppet/agent";
+import { Agent, ChatSettings, Skills, type AgentError } from "@poppet/agent";
 import { Memory } from "@poppet/memory";
 import { Store } from "@poppet/store";
 import { WorkerRequests, WorkerRequestError, requestWorker } from "@poppet/worker";
@@ -80,7 +80,7 @@ const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatWriter
 export const WorkerRequestsLive = Layer.effect(
   WorkerRequests,
   Effect.gen(function* () {
-    const services = yield* Effect.context<Agent | Store | Memory | ChatSettings>();
+    const services = yield* Effect.context<Agent | Store | Memory | ChatSettings | Skills>();
     const messaging = yield* Effect.serviceOption(MessagingWorker);
 
     const provided = Option.isSome(messaging)

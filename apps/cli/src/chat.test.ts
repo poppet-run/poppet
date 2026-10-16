@@ -325,6 +325,139 @@ const exampleChannel = (id: string) => {
 };
 
 describe("chat CLI", () => {
+  test.each([false, true])(
+    "saves explicit skill snapshots for chats and tasks with worker=%s",
+    async (remote) => {
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
+      const file = join(chat.directory, "skills", "weekly-review", "SKILL.md");
+
+      const inspect = async (args: ReadonlyArray<string>) => {
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        await chat.invoke(args);
+
+        return JSON.parse(chat.lines.at(-1) ?? chat.chunks.join(""));
+      };
+
+      try {
+        await mkdir(join(chat.directory, "skills", "weekly-review"), { recursive: true });
+        await writeFile(file, "Original weekly procedure");
+        await chat.invoke(["skills", "show", "weekly-review"]);
+        expect(chat.lines.at(-1)).toBe("Original weekly procedure");
+        expect(chat.state.built).toBe(0);
+
+        if (remote) worker = await chat.startWorker();
+        expect(await inspect(["skills", "list"])).toEqual(["weekly-review"]);
+
+        await chat.invoke([
+          "chat",
+          "new",
+          "--skill",
+          "weekly-review",
+          "--coding",
+          "Review",
+          "--literal",
+        ]);
+        const id = chat.errors.find((line) => line.startsWith("Session: "))!.slice(9);
+        expect(chat.requests[0]?.instructions).toContain("Original weekly procedure");
+        expect(chat.requests[0]?.messages.at(-1)).toEqual({
+          role: "user",
+          text: "Review --literal",
+        });
+        expect(chat.titleRequests[0]?.instructions).not.toContain("Original weekly procedure");
+        expect(await inspect(["chat", "show", id])).toMatchObject({
+          session: {
+            skill: { name: "weekly-review", content: "Original weekly procedure" },
+            workload: "coding",
+          },
+        });
+
+        const job = await inspect([
+          "tasks",
+          "add",
+          "Review",
+          "--skill=weekly-review",
+          "--at",
+          "2099-01-01T00:00:00Z",
+          "Review notes",
+        ]);
+
+        expect(job.skill).toEqual({ name: "weekly-review", content: "Original weekly procedure" });
+
+        await writeFile(file, "Edited weekly procedure");
+        await chat.invoke(["chat", "send", id, "Continue"]);
+        expect(chat.requests.at(-1)?.instructions).toContain("Original weekly procedure");
+        await chat.invoke(["chat", "new", "--coding", "--skill=weekly-review", "A fresh review"]);
+        expect(chat.requests.at(-1)?.instructions).toContain("Edited weekly procedure");
+        await rm(join(chat.directory, "skills"), { recursive: true });
+        await chat.invoke(["chat", "send", id, "Continue without the file"]);
+        expect(chat.requests.at(-1)?.instructions).toContain("Original weekly procedure");
+        expect(await inspect(["tasks", "show", job.id])).toMatchObject({
+          task: { skill: job.skill },
+        });
+
+        const count = chat.requests.length;
+        await expect(
+          chat.invoke(["chat", "new", "--skill", "missing", "Review"]),
+        ).rejects.toMatchObject({ message: expect.stringContaining("Skills must") });
+        await expect(
+          chat.invoke([
+            "tasks",
+            "add",
+            "Bad",
+            "--skill",
+            "missing",
+            "--at",
+            "2099-01-01T00:00:00Z",
+            "Review",
+          ]),
+        ).rejects.toMatchObject({ message: expect.stringContaining("Skills must") });
+        expect(chat.requests).toHaveLength(count);
+        expect(await inspect(["tasks", "list"])).toHaveLength(1);
+        expect(await inspect(["chat", "sessions"])).toHaveLength(2);
+        await chat.invoke(["chat", "new", "Ordinary session"]);
+        expect(chat.requests.at(-1)?.instructions).not.toContain("weekly procedure");
+
+        if (worker !== null) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+          worker = null;
+        }
+
+        expect(await inspect(["chat", "show", id])).toMatchObject({
+          session: { skill: { content: "Original weekly procedure" } },
+        });
+        expect(await inspect(["tasks", "show", job.id])).toMatchObject({
+          task: { skill: job.skill },
+        });
+      } finally {
+        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
+  test("counts the saved skill in the context budget before inference", async () => {
+    const chat = await fixture();
+
+    try {
+      await mkdir(join(chat.directory, "skills", "large"), { recursive: true });
+      await writeFile(join(chat.directory, "skills", "large", "SKILL.md"), "x".repeat(8192));
+      process.env.POPPET_CONTEXT_BYTES = "4096";
+      await expect(
+        chat.invoke(["chat", "new", "--skill", "large", "Review"]),
+      ).rejects.toMatchObject({ reason: "context-limit" });
+      expect(chat.requests).toHaveLength(0);
+      const id = chat.errors.find((line) => line.startsWith("Session: "))!.slice(9);
+      await chat.invoke(["chat", "show", id]);
+      expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
+        runs: [{ status: "failed", failureReason: "agent:context-limit" }],
+      });
+    } finally {
+      await chat.close();
+    }
+  });
+
   test("registered channels supply help, setup, lazy startup, isolated sessions and status through the shared host", async () => {
     const first = exampleChannel("example-channel");
     const second = exampleChannel("other-channel");

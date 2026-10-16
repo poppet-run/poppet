@@ -1,3 +1,4 @@
+import { Skills } from "@poppet/agent";
 import { Store } from "@poppet/store";
 import { Effect } from "effect";
 
@@ -41,10 +42,21 @@ export const executeTaskCommand = (
       };
     }
 
+    if (command.action === "add") {
+      const name = command.skill;
+
+      const skill =
+        name === undefined
+          ? null
+          : yield* Skills.use((skills) => skills.load(name)).pipe(
+              Effect.mapError((error) => new TaskError({ message: error.message })),
+            );
+
+      return yield* taskOperation(() => repo.add(command.task, now, skill));
+    }
+
     return yield* taskOperation(() => {
       switch (command.action) {
-        case "add":
-          return repo.add(command.task, now);
         case "list":
           return repo.list();
         case "status":

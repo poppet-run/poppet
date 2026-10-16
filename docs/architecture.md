@@ -105,6 +105,7 @@ Task tables remain in the shared store migrations.
 | `agent/reply.ts`        | Validated stream completion and output limits                               | Shared model contract                             |
 | `agent/context.ts`      | Complete-exchange context assembly and size limits                          | Shared message and record types                   |
 | `agent/settings.ts`     | Validated context, history, and output budgets                              | Effect Config and Schema                          |
+| `agent/skills.ts`       | Explicit local procedure loading with bounded filesystem access             | Config and shared snapshot schema                 |
 | `agent/notes.ts`        | Note schemas, bounded filesystem access, atomic replacement                 | Config, chat settings, scoped filesystem access   |
 | `agent/memory.ts`       | Run-start snapshot loading and model instructions                           | Memory service, chat settings                     |
 | `memory/`               | Memory contract, local fact operations, bounded profile reads               | Effect; config and shared database for local I/O  |
@@ -130,6 +131,22 @@ modules are implemented. `runtime.ts` builds only the registered provider select
 for an auth or inference command. Its store layer opens SQLite only for store
 and chat and memory commands. Chat, notes tools, and explicit memory are implemented;
 scheduling remains planned.
+
+## Explicit local skills
+
+`Skills` in the agent package loads one validated `SKILL.md` or lists local skill
+directories. The CLI composes `SkillsLive` with host configuration. It does not
+add a model tool or extend notes access. Creation requests carry only the selected
+name; the process owning the store resolves it, including worker chat and task
+commands. Missing or invalid selections fail before creating a session or task.
+
+The shared store schema defines the bounded name/content snapshot. Migration 10
+adds nullable snapshots to sessions and jobs. Task execution copies the saved
+snapshot into each occurrence session without filesystem access. The agent adds
+one saved snapshot to the run's instructions, below base rules, and the existing
+context budget accounts for its serialized bytes. Tool dispatch and scheduled
+read-only restrictions stay in the conversation workflow. Provider packages need
+no skill-specific behavior. See [skills](skills.md).
 
 ## Provider interface
 

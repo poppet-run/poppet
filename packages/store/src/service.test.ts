@@ -493,7 +493,7 @@ describe("conversation store", () => {
               { role: "assistant", output: response.output, continuation: response.continuation },
             ]);
             expect(yield* store.status).toMatchObject({
-              schemaVersion: 9,
+              schemaVersion: 10,
               sessions: 1,
               messages: 4,
               runs: 1,
@@ -690,7 +690,7 @@ describe("conversation store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 9,
+        schemaVersion: 10,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));
@@ -698,7 +698,7 @@ describe("conversation store", () => {
     }
   });
 
-  test.each([1, 2, 3, 4, 5, 6, 7, 8])(
+  test.each([1, 2, 3, 4, 5, 6, 7, 8, 9])(
     "upgrades schema %s while retaining session history and existing or default workloads",
     async (version) => {
       const fixtureStore = await fixture();
@@ -734,7 +734,7 @@ describe("conversation store", () => {
         await fixtureStore.run(
           Store.use((store) =>
             Effect.gen(function* () {
-              expect((yield* store.status).schemaVersion).toBe(9);
+              expect((yield* store.status).schemaVersion).toBe(10);
               expect((yield* store.messages("old-session"))[0]?.message).toEqual(user);
               expect(yield* store.session("old-session")).toMatchObject({
                 workload,
@@ -742,6 +742,7 @@ describe("conversation store", () => {
                 titleSource: null,
                 titleAttempted: false,
                 titleUsage: null,
+                skill: null,
               });
               expect(yield* store.claimTitle("old-session")).toBeNull();
               expect(yield* store.run("old-run")).toMatchObject({

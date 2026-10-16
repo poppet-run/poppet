@@ -38,6 +38,19 @@ export const SessionTitle = Schema.NonEmptyString.check(
   ),
 );
 
+/** An explicit directory identifier, never a filesystem path. */
+export const SkillName = Id;
+
+/** Owner-written procedure saved at creation, independent of later filesystem edits. */
+export const SkillSnapshot = Schema.Struct({
+  name: SkillName,
+  content: Schema.String.check(
+    Schema.makeFilter((text) => Buffer.byteLength(text) <= 8192 && !text.includes("\0")),
+  ),
+});
+
+export type SkillSnapshot = typeof SkillSnapshot.Type;
+
 /** A saved conversation whose provider, model, and workload stay fixed across runs. */
 export const Session = Schema.Struct({
   id: Id,
@@ -50,6 +63,7 @@ export const Session = Schema.Struct({
   titleSource: Schema.NullOr(Schema.Literals(["fallback", "generated", "manual", "task"])),
   titleAttempted: Schema.Boolean,
   titleUsage: Completion.fields.usage,
+  skill: Schema.NullOr(SkillSnapshot),
 });
 
 /** A message ordered within a session; runId is null for history saved outside a run. */

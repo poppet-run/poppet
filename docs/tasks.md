@@ -32,6 +32,14 @@ bun run start tasks pause <task-id>
 bun run start tasks resume <task-id>
 ```
 
+## Select a skill
+
+Pass `--skill <name>` before the prompt to save a [local Markdown procedure](skills.md)
+with a new task. Each occurrence copies the task's saved name and text into its
+fresh session. File edits and deletion do not change existing tasks, including
+explicit retries. Create a replacement task to use updated instructions.
+`tasks show` includes the snapshot. Scheduled note tools remain read-only.
+
 ## Recurring schedules
 
 Use a five-field cron expression and explicit timezone for a recurring task:

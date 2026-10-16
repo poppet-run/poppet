@@ -55,3 +55,11 @@ removes that provider's saved key. It leaves other providers connected and does
 not revoke the remote key or unset an environment override.
 
 See [OpenCode Go](providers/opencode-go.md) and [OpenRouter](providers/openrouter.md) for login and model-selection examples.
+
+## Skill files
+
+Skills use `<POPPET_DATA_DIR>/skills/<name>/SKILL.md`. There is no separate path
+setting. Each file is limited to 8192 UTF-8 bytes, and its saved text counts
+against `POPPET_CONTEXT_BYTES`. Skill inspection needs only configuration;
+new chats and tasks load skills in the process owning the store.
+See [skills](skills.md) for naming, selection, and snapshot behavior.

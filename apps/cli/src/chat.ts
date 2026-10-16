@@ -1,11 +1,16 @@
-import { Agent, AgentError, defaultPolicy, sessionTitle } from "@poppet/agent";
+import { Agent, AgentError, defaultPolicy, Skills, sessionTitle } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
-import { Session, SessionSearchQuery, Store } from "@poppet/store";
+import { Session, SessionSearchQuery, SkillName, Store } from "@poppet/store";
 import { Console, Effect, Schema, Stream } from "effect";
 
 /** Parsed chat actions before defaults are resolved into an executable request. */
 export type ChatCommand =
-  | { readonly action: "new"; readonly text: string; readonly coding: boolean }
+  | {
+      readonly action: "new";
+      readonly text: string;
+      readonly coding: boolean;
+      readonly skill?: string;
+    }
   | { readonly action: "send"; readonly id: string; readonly text: string }
   | { readonly action: "rename"; readonly id: string; readonly text: string }
   | { readonly action: "sessions" }
@@ -25,6 +30,7 @@ export const ChatRequest = Schema.Union([
     provider: Session.fields.provider,
     model: Session.fields.model,
     workload: Session.fields.workload,
+    skill: Schema.optionalKey(SkillName),
   }),
   Schema.Struct({ action: Schema.Literal("send"), id: Session.fields.id, text: MessageText }),
   Schema.Struct({ action: Schema.Literal("rename"), id: Session.fields.id, text: MessageText }),
@@ -136,13 +142,15 @@ export const prepareChat = (
         }),
       );
 
-    return {
+    const request: ChatSubmission = {
       action: "new",
       text: command.text,
       provider: config.provider,
       model,
       workload: command.coding ? "coding" : "assistant",
     };
+
+    return command.skill === undefined ? request : { ...request, skill: command.skill };
   });
 
 export const sendChat = (
@@ -153,9 +161,23 @@ export const sendChat = (
   Effect.gen(function* () {
     const store = yield* Store;
 
+    const selectedSkill = command.action === "new" ? command.skill : undefined;
+
+    const skill =
+      selectedSkill !== undefined
+        ? yield* Skills.use((skills) => skills.load(selectedSkill))
+        : null;
+
     const sessionId =
       command.action === "new"
-        ? (yield* store.createSession(command.provider, command.model, command.workload)).id
+        ? (yield* store.createSession(
+            command.provider,
+            command.model,
+            command.workload,
+            undefined,
+            undefined,
+            skill,
+          )).id
         : command.id;
 
     yield* announce(`Session: ${sessionId}`);

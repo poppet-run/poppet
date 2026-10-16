@@ -201,6 +201,14 @@ export const migrations: ReadonlyArray<Migration> = [
     END;
     `,
   },
+  {
+    version: 10,
+    name: "local-skill-snapshots",
+    sql: `
+    ALTER TABLE sessions ADD COLUMN skill TEXT CHECK (skill IS NULL OR json_valid(skill));
+    ALTER TABLE jobs ADD COLUMN skill TEXT CHECK (skill IS NULL OR json_valid(skill));
+    `,
+  },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

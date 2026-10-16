@@ -2,13 +2,13 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–10, 13, and 16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, and live Discord behavior require manual validation
+Status: Phases 1–10, 13–14, and 16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, and live Discord behavior require manual validation
 
-Phases 11–12 and 14–15 are planned only. Discord thread chat, conversation search,
-and phase 16 naming are implemented; additional adapters and scheduled-result
-delivery are deferred. Implement local Markdown skills from phase 14 next, then
-supplied-URL reading from phase 15. Neither depends on scheduled-result delivery
-or additional messaging adapters.
+Phases 11–12 and 15 are planned only. Discord thread chat, conversation search,
+local Markdown skills, and phase 16 naming are implemented; additional adapters
+and scheduled-result delivery are deferred. Implement supplied-URL reading from
+phase 15 next. It does not depend on scheduled-result delivery or additional
+messaging adapters.
 
 Updated: 2026-10-16
 
@@ -690,9 +690,19 @@ new session to recall it using search.
 
 ## Phase 14: Explicit local Markdown skills
 
-Planned, not implemented. Depends on chat, prompt budgeting, and durable tasks
-from phases 4–7. Implement after phase 13 to reuse its expanded tool dispatch
-coverage, but skills themselves do not need a new model tool.
+Implemented with automated checks. Live skill-assisted chat and a scheduled run
+remain manual validation. Depends on chat, prompt budgeting, and durable tasks
+from phases 4–7. Implemented after phase 13; skills do not add a model tool.
+
+The agent's `Skills` service loads bounded UTF-8 files with directory, symlink,
+hard-link, regular-file, and name validation. CLI inspection uses configuration
+only. Local and worker creation paths load the file in the process owning the
+store. Migration 10 persists nullable JSON snapshots on sessions and tasks;
+occurrences copy the task snapshot. Saved content joins the run's instructions
+and existing context budget without changing tool permissions. Automated checks
+cover invalid files, local/worker command parity, restart, edits and deletion,
+old-record migrations, task propagation, prompt budgets, and read-only scheduling.
+No new package or dependency was added.
 
 Store owner-written procedures at `<data directory>/skills/<name>/SKILL.md`.
 Support `skills list`, `skills show <name>`, `chat new --skill <name> "message"`,

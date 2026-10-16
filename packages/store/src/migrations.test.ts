@@ -34,6 +34,19 @@ describe("store migrations", () => {
     expect(applyMigrations(database)).toBe(migrations.length);
   });
 
+  test("upgrades existing sessions and tasks with no skill selected", () => {
+    using database = new Database(":memory:");
+    applyMigrations(database, migrations.slice(0, 9));
+    database.run(
+      "INSERT INTO sessions (id, provider, model, created_at, updated_at) VALUES ('saved', 'test', 'model', 1, 1)",
+    );
+    database.run(`INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, created_at)
+      VALUES ('job', 'Review', 'Review notes', 'test', 'model', 'assistant', '{"type":"once","at":1}', 1)`);
+    applyMigrations(database);
+    expect(database.query("SELECT skill FROM sessions").get()).toEqual({ skill: null });
+    expect(database.query("SELECT skill FROM jobs").get()).toEqual({ skill: null });
+  });
+
   test("backfills completed conversation text from schema 8 without indexing intermediate or failed content", () => {
     using database = new Database(":memory:");
     applyMigrations(database, migrations.slice(0, 8));

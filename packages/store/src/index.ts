@@ -7,6 +7,8 @@ export { StoreDatabase, StoreDatabaseLive } from "#src/database";
 export {
   Session,
   SessionTitle,
+  SkillName,
+  SkillSnapshot,
   SessionSearchQuery,
   SessionSearchMatch,
   type SessionSearchResult,
