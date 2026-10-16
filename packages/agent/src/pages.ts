@@ -37,15 +37,25 @@ export const suppliedPageURLs = (text: string) => {
   const urls = new Set<string>();
 
   for (const match of text.matchAll(/https?:\/\/[^\s<>"'`]+/giu)) {
-    let value = match[0].replace(/[.,;!?]+$/g, "");
+    const before = text[match.index - 1];
+    const after = text[match.index + match[0].length];
 
-    for (const [open, close] of [
-      ["(", ")"],
-      ["[", "]"],
-      ["{", "}"],
-    ] as const) {
-      while (value.endsWith(close) && value.split(close).length > value.split(open).length)
-        value = value.slice(0, -1);
+    const delimited =
+      (before === "<" && after === ">") || (before === after && /["'`]/.test(before ?? ""));
+
+    let value = match[0];
+
+    if (!delimited) {
+      value = value.replace(/[.,;!?]+$/g, "");
+
+      for (const [open, close] of [
+        ["(", ")"],
+        ["[", "]"],
+        ["{", "}"],
+      ] as const) {
+        while (value.endsWith(close) && value.split(close).length > value.split(open).length)
+          value = value.slice(0, -1);
+      }
     }
 
     try {
