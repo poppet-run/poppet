@@ -445,9 +445,17 @@ export const makeCLI = (
             Flag.atMost(1),
             Flag.map(([value]) => value),
           ),
+          telegramChat: Flag.String("telegram-chat").pipe(
+            Flag.withSchema(Schema.NonEmptyString.check(Schema.isPattern(/^[1-9][0-9]{0,15}$/))),
+            Flag.withDescription(
+              "Send each completed result to the configured owner's private Telegram chat",
+            ),
+            Flag.atMost(1),
+            Flag.map(([value]) => value),
+          ),
           prompt: textArgument("prompt"),
         },
-        ({ name, at, cron, tz, coding, prompt, skill, discordThread }) =>
+        ({ name, at, cron, tz, coding, prompt, skill, discordThread, telegramChat }) =>
           Effect.gen(function* () {
             const schedule = yield* taskOperation(() => {
               if (Option.isSome(at) && Option.isNone(cron) && Option.isNone(tz))
@@ -460,14 +468,19 @@ export const makeCLI = (
               });
             });
 
-            const command = yield* prepareTask(
-              name,
-              schedule,
-              coding,
-              prompt,
-              skill,
-              discordThread,
-            );
+            if (discordThread !== undefined && telegramChat !== undefined)
+              return yield* Effect.fail(
+                new TaskError({ message: "Choose only one messaging destination." }),
+              );
+
+            const delivery =
+              discordThread !== undefined
+                ? { adapter: "discord", conversationId: discordThread }
+                : telegramChat !== undefined
+                  ? { adapter: "telegram", conversationId: telegramChat }
+                  : undefined;
+
+            const command = yield* prepareTask(name, schedule, coding, prompt, skill, delivery);
 
             yield* runTasks(command);
           }).pipe(Effect.provide(runtime.config)),

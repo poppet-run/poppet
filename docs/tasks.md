@@ -66,6 +66,14 @@ Results are standalone posts. They do not change the destination's conversation
 history, session binding, or name. A stopped gateway resumes queued delivery when
 it starts again. Already queued replies remain queued if task history is cleared.
 
+## Deliver results to Telegram
+
+Configure [Telegram](telegram.md), run the combined worker, and pass
+`--telegram-chat <owner-id>` before the prompt. Only the configured owner's private
+chat is supported. It uses the same destination snapshots, authorization rechecks,
+and delivery inspection as Discord. Choose one destination per task;
+`--telegram-chat` and `--discord-thread` cannot be combined.
+
 ## Select a skill
 
 Pass `--skill <name>` before the prompt to save a [local Markdown procedure](skills.md)

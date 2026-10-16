@@ -597,6 +597,7 @@ describe("chat CLI", () => {
               enabled: false,
               error: "Invalid Discord settings. Run gateway discord setup again.",
             },
+            { id: "telegram", enabled: false },
           ]);
         await chat.clock.runPromise(TestClock.adjust("61 seconds"));
 

@@ -16,6 +16,7 @@ Start with [getting started](getting-started.md) to install dependencies, connec
 - [Scheduled tasks](tasks.md): one-off and recurring work, results, pauses, and retries.
 - [Worker](worker.md): foreground modes, macOS login startup, lifecycle, and logs.
 - [Discord](discord.md): bot setup, thread sessions, permissions, and delivery.
+- [Telegram](telegram.md): owner-only private chat, bot setup, polling, and delivery.
 
 ## Providers
 

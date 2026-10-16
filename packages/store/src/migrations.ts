@@ -219,6 +219,14 @@ export const migrations: ReadonlyArray<Migration> = [
     CREATE UNIQUE INDEX scheduled_gateway_result ON gateway_inbox (occurrence_id) WHERE occurrence_id IS NOT NULL;
     `,
   },
+  {
+    version: 12,
+    name: "messaging-poll-cursors",
+    sql: `CREATE TABLE gateway_cursors (
+      adapter TEXT NOT NULL, account TEXT NOT NULL, cursor TEXT NOT NULL,
+      PRIMARY KEY (adapter, account)
+    ) STRICT;`,
+  },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

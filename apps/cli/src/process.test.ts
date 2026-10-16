@@ -134,9 +134,42 @@ test.concurrent("Discord setup saves protected settings and status never prints 
     expect(JSON.parse(status.stdout)).toMatchObject({
       running: false,
       enabled: true,
-      channels: [{ id: "discord", enabled: true }],
+      channels: [
+        { id: "discord", enabled: true },
+        { id: "telegram", enabled: false },
+      ],
     });
     expect(status.stdout + status.stderr).not.toContain("discord-test-secret");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 15_000);
+
+test.concurrent("Telegram setup saves protected settings without connecting and status redacts its token", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-telegram-setup-"));
+  const environment = { POPPET_DATA_DIR: directory };
+
+  try {
+    const saved = await invokeProcess(
+      ["gateway", "telegram", "setup", "100", "200", "--key-stdin"],
+      environment,
+      "100:telegram-test-secret\n",
+    );
+
+    expect(saved.exitCode).toBe(0);
+    expect(saved.stdout + saved.stderr).not.toContain("telegram-test-secret");
+    expect((await stat(join(directory, "channels/telegram.json"))).mode & 0o777).toBe(0o600);
+    const status = await invokeProcess(["gateway", "status"], environment);
+    expect(status.exitCode).toBe(0);
+    expect(JSON.parse(status.stdout)).toMatchObject({
+      running: false,
+      enabled: true,
+      channels: [
+        { id: "discord", enabled: false },
+        { id: "telegram", enabled: true },
+      ],
+    });
+    expect(status.stdout + status.stderr).not.toContain("telegram-test-secret");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

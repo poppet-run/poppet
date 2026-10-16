@@ -76,6 +76,17 @@ const repository = Effect.gen(function* () {
     );
 
   return {
+    cursor: (adapter: string, account: string) =>
+      Schema.decodeUnknownSync(Schema.NullOr(Schema.Struct({ cursor: Schema.String })))(
+        database
+          .query("SELECT cursor FROM gateway_cursors WHERE adapter = ? AND account = ?")
+          .get(adapter, account),
+      )?.cursor ?? null,
+    checkpoint: (adapter: string, account: string, cursor: string) =>
+      database
+        .query(`INSERT INTO gateway_cursors (adapter, account, cursor) VALUES (?, ?, ?)
+      ON CONFLICT (adapter, account) DO UPDATE SET cursor = excluded.cursor`)
+        .run(adapter, account, cursor),
     rejectChangedAccounts: (adapter: string, account: string) =>
       database
         .query(`UPDATE gateway_deliveries

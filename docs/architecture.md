@@ -30,7 +30,7 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 ## Workspaces
 
-The Bun monorepo has seventeen private workspaces:
+The Bun monorepo uses private workspaces:
 
 | Workspace                     | Responsibility                                                              | Workspace dependencies                                         |
 | ----------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -44,8 +44,9 @@ The Bun monorepo has seventeen private workspaces:
 | `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                | Platform contract                                              |
 | `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                   | Config, agent, store, worker transport, provider contract      |
 | `@poppet/worker`              | Protected local command transport and request lifecycle                     | Effect                                                         |
-| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery    | Agent, config, store, provider contract                        |
-| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings | Gateway contract, credentials                                  |
+| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery    | Agent, config, credentials, store, provider contract           |
+| `@poppet/channel-telegram`    | Telegram private chat, HTTP transport, polling normalization, and settings  | Gateway contract                                               |
+| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings | Gateway contract                                               |
 | `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts   | None                                                           |
 | `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming         | Provider contract                                              |
 | `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, credentials, protocol adapters              |
@@ -702,8 +703,8 @@ record schema or migration changes are needed.
 
 ## Messaging gateway
 
-Discord thread chat is implemented after interactive worker support. Telegram
-and WhatsApp adapters remain planned. The gateway runs
+Discord thread chat and owner-only Telegram private chat are implemented.
+WhatsApp remains planned. The gateway runs
 inside the neutral worker host, with scheduling optional, and shares its store, memory, model
 resolver, and serialized `Agent` instance with CLI and scheduled requests. The
 CLI composes these scoped services and preserves existing worker commands and
@@ -871,22 +872,36 @@ and uncertain delivery counts even when the worker is stopped. Thread-scoped
 `@Poppet /status` and `@Poppet /cancel` are text controls rather than registered
 slash commands. Live Discord checks remain manual.
 
+### Telegram private chat and polling
+
+`@poppet/channel-telegram` implements the same channel contract using Bun HTTP
+and the Bot API. Bot identity is verified before polling or sending. Only the
+configured owner's ordinary private-chat text is normalized. Groups, channels,
+private topics, edits, attachments, and other users are ignored. Telegram uses
+its own adapter/account identities for inbox deduplication and session bindings.
+
+The optional `poll(cursor)` operation returns ordered updates and their next
+opaque cursors. An ignored update has a null message. The gateway accepts each
+message durably before checkpointing its cursor in `gateway_cursors`, keyed by
+adapter/account. It cannot acknowledge past overload or storage failure. A crash
+between inbox acceptance and cursor persistence can redeliver an update, which
+the existing inbox identity deduplicates. Requests abort with worker cancellation.
+
+Telegram settings use the shared protected channel-file helper and a separate
+`channels/telegram.json` schema. HTTP and decoding failures never expose a token
+from the API URL or remote diagnostics. Replies use plain text with previews
+disabled and conservative 4096-unit chunks. The transport does not retry sends;
+explicit rate-limit rejection permits the gateway's bounded retry, while network
+and server failures leave uncertain delivery records without automatic replay.
+`--telegram-chat` selects scheduled results through the existing resolver.
+
 ### Later messaging support
 
-After Discord thread chat, allow scheduled results to target an explicitly
-configured, authorized conversation. Persist the destination with the occurrence
-and deliver its saved completed result independently of inference. Revalidate
-destination authorization before sending. Do not infer a recipient from whichever
-thread was used most recently.
-
-Add Telegram next with bot-token authentication and long polling, retaining the
-same authorization, session-binding, deduplication, and delivery rules. WhatsApp
-follows a separate choice between a QR-linked WhatsApp Web adapter and the
-official Business Cloud API. The former carries unofficial-client account and
-protocol-compatibility risks; the latter needs business setup, a public signed
+WhatsApp follows a separate choice between a QR-linked WhatsApp Web adapter and
+the official Business Cloud API. The former carries unofficial-client account
+and protocol-compatibility risks; the latter needs business setup, a public signed
 webhook, and handling for outbound conversation-window/template restrictions.
-Verify current platform requirements when implementing each adapter. Neither
-later adapter is required to complete Discord support.
+Verify current platform requirements when implementing that adapter.
 
 ## Dependencies
 
