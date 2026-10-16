@@ -380,7 +380,7 @@ continuation together. The newest input must fit by itself or the run fails with
 tokens. Advertised model capacity further limits input and output. The UTF-8 size
 estimate is not an exact tokenizer, and trimming never changes stored history.
 
-Tool-capable models receive the three notes tools. The conversation workflow
+Tool-capable models receive the three notes tools and conversation search. The conversation workflow
 validates complete tool requests, records them, executes sequentially, and
 continues with the saved results. Models without tool support receive no tools.
 Text deltas stream immediately; terminal-only text or an unstreamed final suffix
@@ -432,6 +432,26 @@ Run failure/reopening interrupts pending calls and marks remaining running calls
 uncertain. Completed calls are immutable; terminal calls cannot restart. Calls
 and model requests are never replayed. `chat show` exposes the ledger for manual
 inspection. An uncertain write requires checking the file before an explicit retry.
+
+## Conversation search
+
+Migration 9 adds an FTS5 index of completed user messages and final assistant text.
+A shared SQL view defines eligibility for backfill and the run-completion trigger,
+which indexes new exchanges inside the completion transaction. Tool content,
+intermediate responses, failed/interrupted inputs, and continuation are excluded.
+Messages remain the source of truth; current titles join from sessions at query
+time. `Store.searchSessions` validates plain-text queries, quotes FTS terms, binds
+parameters, and bounds ranked excerpts and serialized results.
+
+`agent/search.ts` defines the read-only `poppet_history.search_sessions` schema.
+The conversation loop dispatches it explicitly alongside notes, using the same
+namespace/permission checks, durable tool lifecycle, and run budgets. Historical
+text is untrusted data, not permission to act. Scheduled runs may search without
+gaining note-write permission. The CLI uses the shared worker command schema and
+owning store connection, with local fallback only when the worker is unavailable.
+Search inspection needs neither provider credentials nor model inference. The
+existing single-owner policy governs recall across CLI, task, and messaging
+sessions; multiple users would need an explicit access policy.
 
 ## Explicit memory
 

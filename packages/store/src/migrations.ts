@@ -172,6 +172,35 @@ export const migrations: ReadonlyArray<Migration> = [
     ALTER TABLE gateway_bindings ADD COLUMN creation_message_id TEXT;
     `,
   },
+  {
+    version: 9,
+    name: "conversation-search",
+    sql: `
+    CREATE VIEW searchable_messages AS
+    SELECT m.id, m.run_id,
+      CASE json_extract(m.payload, '$.role')
+        WHEN 'user' THEN json_extract(m.payload, '$.text')
+        ELSE (SELECT group_concat(json_extract(part.value, '$.text'), char(10))
+          FROM json_each(m.payload, '$.output') AS part
+          WHERE json_extract(part.value, '$.type') = 'text')
+      END AS text
+    FROM messages AS m JOIN runs AS r ON r.id = m.run_id
+    WHERE r.status = 'completed' AND (
+      json_extract(m.payload, '$.role') = 'user' OR (
+        json_extract(m.payload, '$.role') = 'assistant' AND
+        m.position = (SELECT MAX(last.position) FROM messages AS last WHERE last.run_id = r.id)
+      )
+    );
+    CREATE VIRTUAL TABLE session_search USING fts5(text);
+    INSERT INTO session_search (rowid, text) SELECT id, text FROM searchable_messages WHERE text IS NOT NULL;
+    CREATE TRIGGER index_completed_run AFTER UPDATE OF status ON runs
+    WHEN NEW.status = 'completed' AND OLD.status != 'completed'
+    BEGIN
+      INSERT INTO session_search (rowid, text)
+        SELECT id, text FROM searchable_messages WHERE run_id = NEW.id AND text IS NOT NULL;
+    END;
+    `,
+  },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

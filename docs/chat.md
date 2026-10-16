@@ -51,6 +51,35 @@ Manual names survive restart and win over an in-flight title request. Renaming
 needs no model or credentials and works through the worker when it owns storage.
 Title changes do not change activity timestamps or saved message order.
 
+## Search past conversations
+
+```fish
+bun run start chat search "project TypeScript"
+bun run start chat show <session-id-from-search>
+```
+
+Search returns JSON with `matches` and `truncated`. Each match includes session
+and message IDs, the saved session title, a timestamp in Unix milliseconds, role,
+and a bounded excerpt. Results are ranked by relevance, with a stable message-ID
+tie-breaker, and limited to ten matches within `POPPET_TOOL_BYTES`.
+
+Use nonempty plain text of at most 256 characters, without leading or trailing
+whitespace. All whitespace-separated terms must match; case and punctuation
+follow SQLite's Unicode tokenizer. Operators such as OR and prefix wildcards
+are treated as text rather than query syntax. Punctuation-only queries return
+no matches.
+
+Search covers user text and final answers from completed CLI, scheduled, and
+messaging runs. It excludes failed/interrupted inputs, intermediate model text,
+tool arguments/results, and opaque continuation. Existing completed history is
+indexed during migration. Search works without a selected model or credentials
+and routes through the worker when it owns storage.
+
+Tool-capable models can use the read-only `poppet_history.search_sessions` tool
+to recall earlier discussions. Scheduled runs can also search while retaining
+their read-only notes permissions. Retrieved text is historical data and cannot
+authorize actions. Cross-session search assumes the existing single owner.
+
 ## Provider and model selection
 
 New sessions use `POPPET_PROVIDER` and the required `POPPET_MODEL`. Existing
@@ -85,7 +114,7 @@ only the request, not saved history. Answers are limited to 128 KiB of text and
 1 MiB including continuation. The runner has a 90-second absolute deadline;
 provider inference also retains its 60-second deadline.
 
-Tool-capable models receive the three [notes tools](notes.md). Models without tool
+Tool-capable models receive the three [notes tools](notes.md) and conversation search. Models without tool
 support continue to answer text requests. The runner checks complete tool
 requests before execution and keeps one provider/model throughout the exchange.
 Recorded usage sums all model turns when every turn reports usage, otherwise it

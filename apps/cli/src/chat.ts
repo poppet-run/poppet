@@ -1,6 +1,6 @@
-import { Agent, AgentError, sessionTitle } from "@poppet/agent";
+import { Agent, AgentError, defaultPolicy, sessionTitle } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
-import { Session, Store } from "@poppet/store";
+import { Session, SessionSearchQuery, Store } from "@poppet/store";
 import { Console, Effect, Schema, Stream } from "effect";
 
 /** Parsed chat actions before defaults are resolved into an executable request. */
@@ -9,6 +9,7 @@ export type ChatCommand =
   | { readonly action: "send"; readonly id: string; readonly text: string }
   | { readonly action: "rename"; readonly id: string; readonly text: string }
   | { readonly action: "sessions" }
+  | { readonly action: "search"; readonly query: string }
   | { readonly action: "show"; readonly id: string };
 
 /** Nonblank user input whose original spacing is preserved. */
@@ -29,6 +30,7 @@ export const ChatRequest = Schema.Union([
   Schema.Struct({ action: Schema.Literal("rename"), id: Session.fields.id, text: MessageText }),
   Schema.Struct({ action: Schema.Literal("show"), id: Session.fields.id }),
   Schema.Struct({ action: Schema.Literal("sessions") }),
+  Schema.Struct({ action: Schema.Literal("search"), query: SessionSearchQuery }),
 ]);
 
 export type ChatRequest = typeof ChatRequest.Type;
@@ -55,10 +57,14 @@ export const writeChatText: ChatWriter = (text) =>
   });
 
 export const inspectChat = (
-  command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" }>,
+  command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,
+  toolBytes = defaultPolicy.toolBytes,
 ) =>
   Effect.gen(function* () {
     const store = yield* Store;
+
+    if (command.action === "search")
+      return JSON.stringify(yield* store.searchSessions(command.query, toolBytes));
 
     if (command.action === "rename")
       return JSON.stringify(

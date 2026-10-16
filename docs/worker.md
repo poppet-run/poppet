@@ -107,13 +107,15 @@ Chat, memory, session inspection, and `store status` work while it is running:
 bun run start memory remember project.name Acorn
 bun run start chat new "What is the project called?"
 bun run start chat sessions
+bun run start chat search "project"
 bun run start memory list
 bun run start store status
 ```
 
 New chats use the invoking terminal's provider, model, and workload; continued
 chats use their saved selection. The worker's saved notes directory and budgets
-apply to remote requests. Memory changes are loaded on the next run. Chat output
+apply to remote requests, including conversation-search result limits. Search
+runs on the owning store connection and needs no provider request. Memory changes are loaded on the next run. Chat output
 and session IDs go to the client terminal and are excluded from worker logs.
 Request bodies have a 10-second read deadline and a 2 MiB transport limit,
 which leaves room for the supported 1 MiB serialized chat context and command

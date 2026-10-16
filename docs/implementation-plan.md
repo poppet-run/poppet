@@ -2,13 +2,13 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–10 and 16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, and live Discord behavior require manual validation
+Status: Phases 1–10, 13, and 16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, and live Discord behavior require manual validation
 
-Phases 11–15 are planned only. Discord thread chat and phase 16 naming are
-implemented; additional adapters and scheduled-result delivery are deferred.
-Implement conversation search from phase 13 next, then local
-Markdown skills and supplied-URL reading from phases 14–15. Those additions do not
-depend on scheduled-result delivery or additional messaging adapters.
+Phases 11–12 and 14–15 are planned only. Discord thread chat, conversation search,
+and phase 16 naming are implemented; additional adapters and scheduled-result
+delivery are deferred. Implement local Markdown skills from phase 14 next, then
+supplied-URL reading from phase 15. Neither depends on scheduled-result delivery
+or additional messaging adapters.
 
 Updated: 2026-10-16
 
@@ -643,55 +643,50 @@ voice, and attachments remain outside these phases.
 
 ## Phase 13: Search past conversations
 
-Planned, not implemented. Depends on persisted chat and the shared worker command
-path from phases 4 and 9. This phase can precede phases 11–12.
+Implemented with automated checks. Real-model conversation recall remains a
+manual check. Depends on persisted chat and the shared worker command path from
+phases 4 and 9; phase 16 supplies readable titles. Phases 11–12 remain independent.
 
-Allow the owner to find earlier discussions with `chat search "query"`. Give
-capable models a read-only `search_sessions` tool using the same store operation.
-Search user text and final assistant text from completed runs across the owner's
-CLI, scheduled, and messaging sessions. Exclude failed or interrupted inputs,
-tool arguments/results, and provider continuation. Retrieved messages are
-historical data and cannot authorize actions or override current instructions.
-Cross-session recall follows the current single-owner memory policy; adding other
-users requires an explicit access policy before exposing this tool to them.
+`chat search "query"` searches completed conversations without a model or provider
+credentials. Tool-capable models receive `poppet_history.search_sessions`, backed
+by the same store operation. Search includes user text and final assistant text
+from completed CLI, scheduled, and messaging runs. Failed/interrupted inputs,
+intermediate model responses, tool arguments/results, and provider continuation
+are excluded. Historical messages remain untrusted data and cannot authorize
+current actions. This uses the existing single-owner policy; adding users requires
+an explicit access policy before exposing cross-session search.
 
-Use SQLite FTS5 in the existing database, with a checksummed migration that
-backfills eligible messages and indexes newly completed exchanges in the same
-transaction as run completion. Keep original messages as the source of truth.
-Confirm FTS5 support in the pinned Bun runtime before implementation. Accept a
-bounded plain-text query, quote its terms for FTS, and bind SQL parameters rather
-than exposing raw FTS syntax. Order by relevance with a stable tie-breaker.
-Return at most ten matches with session/message IDs, timestamps, roles, and
-bounded excerpts. Include saved session titles from phase 16 alongside the IDs.
-Apply the existing tool-result byte limit, mark truncation, and report no matches
-without making a model request for CLI inspection.
+Migration 9 creates a SQLite FTS5 index and backfills eligible messages. A completion
+trigger indexes each successful exchange in the same transaction as its final
+message and run result; indexing failure rolls back completion. Original messages
+remain the source of truth. FTS5 support was confirmed in pinned Bun 1.4.3.
+Queries are trimmed, nonempty plain text of at most 256 characters, with quoted
+terms joined by AND and bound SQL parameters. FTS operators and wildcards are not
+exposed. SQLite's Unicode tokenizer handles case and punctuation.
 
-Keep indexing and querying in `@poppet/store`, the tool definition/validation in
-`@poppet/agent`, and command parsing/help/output in `@poppet/cli`. Extend the
-existing notes-only tool dispatch with explicit cases for search, preserving
-namespace checks, per-run permissions, durable tool records, cancellation, and
-budgets. No plugin registry or provider-specific search implementation is needed.
-Route CLI search through the running worker's protected socket when it owns the
-store; otherwise use local inspection. Tool calls use that same store instance.
-Search remains available without provider credentials or a configured model.
+Results use relevance order with message ID as the stable tie-breaker. JSON
+contains at most ten matches, each with session/message IDs, the current saved
+title, a Unix-millisecond timestamp, role, and a bounded excerpt. A `truncated`
+flag covers shortened excerpts or omitted matches. The serialized result respects
+`POPPET_TOOL_BYTES`. Empty results need no model request. `chat show <session>`
+provides the full saved exchange after a match.
 
-Implement in two reviewable steps: first the migration, store query, and CLI
-inspection path; then the agent tool and shared runner integration. Update the
-storage, chat, worker-command, and architecture docs when behavior is implemented.
-No embeddings, LLM-generated summaries, automatic memory writes, or separate
-search service are needed for this version.
+Indexing and querying stay in `@poppet/store`, tool schema/validation in
+`@poppet/agent`, and command parsing/output in `@poppet/cli`. Explicit dispatch
+preserves namespaces, permissions, durable call records, cancellation, and run
+budgets. Scheduled runs can search while retaining read-only notes permissions.
+CLI search uses the running worker's protected socket and its configured budget,
+or opens the store locally when no worker is available. No provider package,
+new dependency, embeddings, search service, summaries, or memory writes are added.
 
-Completion check: find a discussion from an older session, inspect it with
-`chat show`, then ask a new session about it and receive an answer grounded in
-the matching messages. The same CLI search works with the worker stopped or
-running, and results survive restart.
-
-Automated checks cover migration/backfill and rollback, successful completion
-indexing, excluded failed/tool/continuation content, literal punctuation and
-Unicode queries, deterministic ordering, empty results, byte limits, and worker
-routing. A fake-model tool round trip must return the stored excerpt, preserve
-existing notes behavior, and reject malformed or disallowed calls. Run
-`bun run check`; validate one real model recall separately.
+Automated checks cover migration/backfill and rollback, completion indexing and
+restart, excluded content, punctuation and Unicode queries, relevance and stable
+ordering, empty results, result/byte limits, local/worker parity, and invalid
+requests. A fake-model round trip verifies stored excerpts and durable calls,
+including scheduled permissions, while existing notes tests continue to pass.
+Run `bun run check`. Separately validate recall with a real model by finding an
+older discussion with `chat search`, inspecting it with `chat show`, and asking a
+new session to recall it using search.
 
 ## Phase 14: Explicit local Markdown skills
 

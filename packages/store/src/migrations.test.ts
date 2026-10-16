@@ -24,12 +24,67 @@ describe("store migrations", () => {
     ]);
     expect(
       database
-        .query("SELECT name FROM sqlite_master WHERE name IN ('partial', 'one_active_run')")
+        .query(
+          "SELECT name FROM sqlite_master WHERE name IN ('partial', 'one_active_run', 'session_search', 'searchable_messages', 'index_completed_run')",
+        )
         .all(),
     ).toEqual([]);
     expect(database.query("SELECT id FROM sessions").get()).toEqual({ id: "saved" });
     expect(applyMigrations(database)).toBe(migrations.length);
     expect(applyMigrations(database)).toBe(migrations.length);
+  });
+
+  test("backfills completed conversation text from schema 8 without indexing intermediate or failed content", () => {
+    using database = new Database(":memory:");
+    applyMigrations(database, migrations.slice(0, 8));
+    database.run(
+      "INSERT INTO sessions (id, provider, model, created_at, updated_at) VALUES ('saved', 'test', 'model', 1, 1)",
+    );
+    database.run(`INSERT INTO runs (id, session_id, provider, model, status, created_at, started_at, finished_at, result)
+      VALUES ('done', 'saved', 'test', 'model', 'completed', 1, 1, 1, '{}')`);
+    database.run(`INSERT INTO runs (id, session_id, provider, model, status, created_at, finished_at, failure_reason)
+      VALUES ('failed', 'saved', 'test', 'model', 'failed', 1, 1, 'test')`);
+
+    const messages = [
+      { role: "user", text: "backfilled question" },
+      {
+        role: "assistant",
+        output: [{ type: "text", text: "intermediate" }],
+        continuation: { secret: "continuation" },
+      },
+      { role: "tool", output: "tool output" },
+      {
+        role: "assistant",
+        output: [
+          { type: "text", text: "backfilled" },
+          { type: "text", text: "answer" },
+        ],
+        continuation: { secret: "continuation" },
+      },
+      { role: "user", text: "failed input" },
+    ];
+
+    for (const [position, message] of messages.entries())
+      database
+        .query(
+          "INSERT INTO messages (session_id, run_id, position, created_at, payload) VALUES ('saved', ?, ?, 1, ?)",
+        )
+        .run(position === 4 ? "failed" : "done", position, JSON.stringify(message));
+
+    applyMigrations(database);
+    expect(database.query("SELECT rowid, text FROM session_search ORDER BY rowid").all()).toEqual([
+      { rowid: 1, text: "backfilled question" },
+      { rowid: 4, text: "backfilled\nanswer" },
+    ]);
+    expect(
+      database
+        .query("SELECT rowid FROM session_search WHERE session_search MATCH ? ORDER BY rowid")
+        .all('"backfilled"'),
+    ).toEqual([{ rowid: 1 }, { rowid: 4 }]);
+    applyMigrations(database);
+    expect(database.query("SELECT count(*) AS count FROM session_search").get()).toEqual({
+      count: 2,
+    });
   });
 
   test.each(["future-version", "changed-checksum", "missing-ledger"])(

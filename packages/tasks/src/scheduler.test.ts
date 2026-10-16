@@ -380,7 +380,7 @@ describe.concurrent("task worker", () => {
           });
           expect(repo.occurrences(first.id)[0]?.sessionId).not.toBe(secondResult.sessionId);
           expect(state.requests.map((request) => request.tools.map((tool) => tool.name))).toEqual(
-            Array.from({ length: 4 }, () => ["read_note", "search_notes"]),
+            Array.from({ length: 4 }, () => ["read_note", "search_notes", "search_sessions"]),
           );
           expect(state.requests[0]?.instructions).toContain("Concise");
           expect(state.requests[2]?.instructions).toContain("Detailed");

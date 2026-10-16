@@ -1,4 +1,4 @@
-import { Agent, type AgentError } from "@poppet/agent";
+import { Agent, ChatSettings, type AgentError } from "@poppet/agent";
 import { Memory } from "@poppet/memory";
 import { Store } from "@poppet/store";
 import { WorkerRequests, WorkerRequestError, requestWorker } from "@poppet/worker";
@@ -64,8 +64,15 @@ const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatWriter
 
     const command = request.command;
 
-    if (command.action === "show" || command.action === "sessions" || command.action === "rename")
-      return yield* inspectChat(command).pipe(Effect.flatMap((text) => write(`${text}\n`)));
+    if (
+      command.action === "show" ||
+      command.action === "sessions" ||
+      command.action === "rename" ||
+      command.action === "search"
+    )
+      return yield* inspectChat(command, (yield* ChatSettings).toolBytes).pipe(
+        Effect.flatMap((text) => write(`${text}\n`)),
+      );
 
     return yield* sendChat(command, write, announce);
   });
@@ -73,7 +80,7 @@ const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatWriter
 export const WorkerRequestsLive = Layer.effect(
   WorkerRequests,
   Effect.gen(function* () {
-    const services = yield* Effect.context<Agent | Store | Memory>();
+    const services = yield* Effect.context<Agent | Store | Memory | ChatSettings>();
     const messaging = yield* Effect.serviceOption(MessagingWorker);
 
     const provided = Option.isSome(messaging)

@@ -1,4 +1,5 @@
 import { BunServices } from "@effect/platform-bun";
+import { ChatSettings, ChatSettingsLive } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
 import { MemoryKey, MemoryValue } from "@poppet/memory";
@@ -12,7 +13,7 @@ import {
   type ProviderRegistration,
   ProviderId,
 } from "@poppet/provider";
-import { Session, Store } from "@poppet/store";
+import { Session, SessionSearchQuery, Store } from "@poppet/store";
 import {
   WorkerConnections,
   remoteTaskCommand,
@@ -221,14 +222,28 @@ export const makeCLI = (
     }).pipe(Effect.provide(runtime.config));
 
   const runChat = (command: ChatCommand) => {
-    if (command.action === "show" || command.action === "sessions" || command.action === "rename")
+    if (
+      command.action === "show" ||
+      command.action === "sessions" ||
+      command.action === "rename" ||
+      command.action === "search"
+    ) {
+      const inspection =
+        command.action === "search"
+          ? ChatSettings.pipe(
+              Effect.flatMap(({ toolBytes }) => inspectChat(command, toolBytes)),
+              Effect.provide(ChatSettingsLive),
+            )
+          : inspectChat(command);
+
       return throughWorker(
         { kind: "chat", command },
-        inspectChat(command).pipe(
+        inspection.pipe(
           Effect.provide(runtime.store),
           Effect.flatMap((text) => Console.log(text)),
         ),
       );
+    }
 
     return prepareChat(command).pipe(
       Effect.flatMap((submission) =>
@@ -343,6 +358,11 @@ export const makeCLI = (
       Command.make("sessions", {}, () => runChat({ action: "sessions" })).pipe(
         Command.withDescription("List sessions"),
       ),
+      Command.make(
+        "search",
+        { query: textArgument("query").pipe(Argument.withSchema(SessionSearchQuery)) },
+        ({ query }) => runChat({ action: "search", query }),
+      ).pipe(Command.withDescription("Search completed conversations")),
       Command.make(
         "show",
         {

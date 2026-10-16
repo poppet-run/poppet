@@ -124,6 +124,89 @@ const failure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.match({ onFailure: (error) => error, onSuccess: () => null }));
 
 describe.concurrent("notes conversation", () => {
+  test.each([false, true])(
+    "recalls completed conversations with durable search calls, read-only notes: %s",
+    async (readOnlyNotes) => {
+      let turn = 0;
+
+      const state = await fixture(
+        (request) => {
+          if (++turn === 1) {
+            expect(request.tools).toContainEqual(
+              expect.objectContaining({ name: "search_sessions", namespace: "poppet_history" }),
+            );
+            expect(request.tools.some((entry) => entry.name === "save_note")).toBe(!readOnlyNotes);
+            expect(request.instructions).toContain("historical messages");
+
+            return completed([
+              tool("search_sessions", '{"query":"Acorn"}', "recall", "poppet_history"),
+            ]);
+          }
+
+          const result = request.messages.at(-1);
+          expect(result).toMatchObject({ role: "tool", callId: "recall" });
+
+          if (result?.role !== "tool") throw new Error("Expected search result");
+          expect(Buffer.byteLength(result.output)).toBeLessThanOrEqual(1024);
+          expect(JSON.parse(result.output)).toMatchObject({
+            matches: [
+              expect.objectContaining({
+                sessionId: "earlier",
+                title: "Earlier project",
+                role: "assistant",
+                excerpt: "Acorn uses TypeScript.",
+              }),
+            ],
+            truncated: false,
+          });
+          expect(result.output).not.toContain("signature");
+
+          return completed([{ type: "text", text: "Acorn uses TypeScript." }], turn);
+        },
+        { toolBytes: 1024 },
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+
+            const earlier = yield* store.createSession(
+              "test-provider",
+              "test-model",
+              "assistant",
+              "earlier",
+            );
+
+            const saved = yield* store.queueRun(earlier.id, [
+              { role: "user", text: "What is the project?" },
+            ]);
+
+            yield* store.startRun(saved.id);
+            yield* store.finishRun(saved.id, {
+              status: "completed",
+              response: response([{ type: "text", text: "Acorn uses TypeScript." }]),
+            });
+            yield* store.renameSession(earlier.id, "Earlier project");
+            const session = yield* store.createSession("test-provider", "test-model");
+            yield* Stream.runDrain(
+              (yield* Agent).send(session.id, "Recall my project", { readOnlyNotes }),
+            );
+            const run = (yield* store.runs(session.id))[0]!;
+            expect(run.status).toBe("completed");
+            expect(yield* store.toolCalls(run.id)).toMatchObject([
+              { name: "search_sessions", namespace: "poppet_history", status: "completed" },
+            ]);
+          }),
+        );
+        expect(state.requests).toHaveLength(2);
+        expect(await readdir(state.directory)).toEqual(["store"]);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test("saves the Acorn note through Responses with strict schemas and an unreserved namespace", async () => {
     const WireTools = Schema.Array(
       Schema.Struct({
@@ -495,6 +578,7 @@ describe.concurrent("notes conversation", () => {
         "read_note",
         "search_notes",
         "save_note",
+        "search_sessions",
       ]);
       expect(state.requests[1]?.messages.at(-1)).toMatchObject({
         role: "tool",
@@ -523,6 +607,26 @@ describe.concurrent("notes conversation", () => {
 
   test.each([
     { name: "unknown tool", call: tool("run_shell", "{}"), reason: "tool-permission" },
+    {
+      name: "search in a foreign namespace",
+      call: tool("search_sessions", '{"query":"Acorn"}'),
+      reason: "tool-permission",
+    },
+    {
+      name: "malformed search",
+      call: tool("search_sessions", "{", "search", "poppet_history"),
+      reason: "tool-arguments",
+    },
+    {
+      name: "empty search",
+      call: tool("search_sessions", '{"query":" "}', "search", "poppet_history"),
+      reason: "tool-arguments",
+    },
+    {
+      name: "extra search arguments",
+      call: tool("search_sessions", '{"query":"Acorn","other":true}', "search", "poppet_history"),
+      reason: "tool-arguments",
+    },
     {
       name: "foreign namespace",
       call: tool("read_note", '{"path":"a.md"}', "call", "system"),
