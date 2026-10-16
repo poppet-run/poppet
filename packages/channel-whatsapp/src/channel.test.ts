@@ -39,7 +39,6 @@ const fixture = async (configuration = settings, paired = true) => {
         Effect.gen(function* () {
           const auth = yield* openWhatsAppAuth(directory, () => undefined);
           auth.saveCreds({
-            registered: true,
             me: { id: `${configuration.accountPhone}:1@s.whatsapp.net` },
           });
         }),
