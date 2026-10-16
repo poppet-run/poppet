@@ -1,6 +1,6 @@
 import { Agent, ChatSettings, Skills, type AgentError } from "@poppet/agent";
 import { Memory } from "@poppet/memory";
-import { Store } from "@poppet/store";
+import { Session, Store } from "@poppet/store";
 import { WorkerRequests, WorkerRequestError, requestWorker } from "@poppet/worker";
 import {
   Cause,
@@ -16,7 +16,7 @@ import {
 } from "effect";
 
 import { MessagingWorker } from "#src/channels";
-import { ChatRequest, inspectChat, sendChat, type ChatWriter } from "#src/chat";
+import { ChatRequest, inspectChat, sendChat, type ChatWriter, type ChatAnnouncer } from "#src/chat";
 import { MemoryCommand, manageMemory } from "#src/memory";
 
 const WorkerCommand = Schema.Union([
@@ -30,14 +30,18 @@ const WorkerCommand = Schema.Union([
 export type WorkerCommand = typeof WorkerCommand.Type;
 
 const Frame = Schema.Union([
-  Schema.Struct({ type: Schema.Literals(["stdout", "stderr"]), text: Schema.String }),
+  Schema.Struct({
+    type: Schema.Literals(["stdout", "stderr"]),
+    text: Schema.String,
+    sessionId: Schema.optionalKey(Session.fields.id),
+  }),
   Schema.Struct({ type: Schema.Literal("done") }),
   Schema.Struct({ type: Schema.Literal("failed"), message: Schema.String }),
 ]);
 
 type Frame = typeof Frame.Type;
 
-const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatWriter) =>
+const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatAnnouncer) =>
   Effect.gen(function* () {
     if (request.kind === "gateway") {
       const messaging = yield* Effect.serviceOption(MessagingWorker);
@@ -104,7 +108,13 @@ export const WorkerRequestsLive = Layer.effect(
           yield* execute(
             command.value,
             (text) => Queue.offer(frames, { type: "stdout", text }).pipe(Effect.asVoid),
-            (text) => Queue.offer(frames, { type: "stderr", text }).pipe(Effect.asVoid),
+            (text, sessionId) =>
+              Queue.offer(
+                frames,
+                sessionId === undefined
+                  ? { type: "stderr", text }
+                  : { type: "stderr", text, sessionId },
+              ).pipe(Effect.asVoid),
           ).pipe(
             Effect.provide(provided),
             Effect.matchEffect({
@@ -153,7 +163,12 @@ const lostResponse = () =>
   });
 
 /** Streams worker output; only a terminal frame confirms completion, and lost replies are not replayed. */
-export const remoteWorkerCommand = (path: string, command: WorkerCommand, write: ChatWriter) =>
+export const remoteWorkerCommand = (
+  path: string,
+  command: WorkerCommand,
+  write: ChatWriter,
+  onSession: ChatWriter = () => Effect.void,
+) =>
   Effect.scoped(
     Effect.gen(function* () {
       const controller = yield* Effect.acquireRelease(
@@ -203,7 +218,11 @@ export const remoteWorkerCommand = (path: string, command: WorkerCommand, write:
               done = true;
             });
 
-          if (frame.type === "stderr") return Console.error(frame.text);
+          if (frame.type === "stderr")
+            return Effect.gen(function* () {
+              if (frame.sessionId !== undefined) yield* onSession(frame.sessionId);
+              yield* Console.error(frame.text);
+            });
 
           return write(frame.text);
         }),

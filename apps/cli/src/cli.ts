@@ -46,6 +46,7 @@ import {
   writeChatText,
   type ChatWriter,
 } from "#src/chat";
+import { interactiveChat, readChatLine } from "#src/chat-prompt";
 import { commandArgs } from "#src/command-args";
 import { manageMemory, type MemoryCommand } from "#src/memory";
 import { providers } from "#src/providers";
@@ -87,6 +88,7 @@ export const makeCLI = (
   write: ChatWriter = writeChatText,
   worker: typeof manageWorker = manageWorker,
   registeredChannels: ReadonlyArray<ChannelRegistration> = channels,
+  readLine = readChatLine,
 ) => {
   const runtime = runtimeLayers(registered);
   validateChannels(registeredChannels);
@@ -104,7 +106,11 @@ export const makeCLI = (
       ),
     );
 
-  const throughWorker = <E>(command: WorkerCommand, local: Effect.Effect<void, E>) =>
+  const throughWorker = <E>(
+    command: WorkerCommand,
+    local: Effect.Effect<void, E>,
+    onSession: ChatWriter = () => Effect.void,
+  ) =>
     Effect.gen(function* () {
       const config = yield* AppConfig;
 
@@ -112,6 +118,7 @@ export const makeCLI = (
         workerSocketPath(config.dataDirectory),
         command,
         write,
+        onSession,
       );
 
       if (!handled) yield* local;
@@ -228,7 +235,7 @@ export const makeCLI = (
       yield* Console.log(JSON.stringify(result, null, 2));
     }).pipe(Effect.provide(runtime.config));
 
-  const runChat = (command: ChatCommand) => {
+  const runChat = (command: ChatCommand, onSession: ChatWriter = () => Effect.void) => {
     if (
       command.action === "show" ||
       command.action === "sessions" ||
@@ -256,7 +263,13 @@ export const makeCLI = (
       Effect.flatMap((submission) =>
         throughWorker(
           { kind: "chat", command: submission },
-          sendChat(submission, write).pipe(Effect.provide(runtime.chat)),
+          sendChat(submission, write, (text, sessionId) =>
+            Effect.gen(function* () {
+              if (sessionId !== undefined) yield* onSession(sessionId);
+              yield* Console.error(text);
+            }),
+          ).pipe(Effect.provide(runtime.chat)),
+          onSession,
         ),
       ),
       Effect.provide(runtime.config),
@@ -338,6 +351,23 @@ export const makeCLI = (
   const chat = Command.make("chat").pipe(
     Command.withDescription("Chat with the configured provider and model"),
     Command.withSubcommands([
+      Command.make(
+        "interactive",
+        {
+          id: Argument.String("session").pipe(
+            Argument.withSchema(Session.fields.id),
+            Argument.optional,
+          ),
+          coding: codingFlag,
+          skill: skillFlag,
+        },
+        ({ id, coding, skill }) =>
+          interactiveChat(
+            { sessionId: Option.getOrUndefined(id), coding, skill },
+            runChat,
+            readLine,
+          ),
+      ).pipe(Command.withDescription("Open a terminal prompt for a new or saved session")),
       Command.make(
         "new",
         {

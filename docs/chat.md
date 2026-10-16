@@ -22,10 +22,47 @@ bun run start chat send $session_id "What should I build first?"
 bun run start chat show $session_id
 ```
 
-Each invocation sends one message. `chat sessions` lists saved sessions;
+`chat new` and `chat send` each submit one message. `chat sessions` lists saved sessions;
 `chat show` prints the session, ordered messages, run states, failures, output,
 and usage as JSON. Opaque provider continuation is retained privately in SQLite
 and omitted from this display. Inspection needs no selected model or login.
+
+## Interactive prompt
+
+Start a new session or resume one in a terminal:
+
+```fish
+bun run start chat interactive
+bun run start chat interactive $session_id
+```
+
+Enter one message at each `You>` prompt and wait for the answer before entering
+the next. Each turn uses the same saved session, provider, model, workload, and
+skill. Blank lines are ignored. `/exit`, Ctrl-D at an empty prompt, or Ctrl-C
+leaves the prompt. Ctrl-C during inference cancels the active request and exits;
+the interrupted run remains inspectable. Earlier completed answers remain saved.
+There is no automatic retry.
+
+For a new session, `--coding` and `--skill <name>` work as they do with `chat new`.
+Omit them when supplying a session ID, which retains its original selection.
+A session is created only when you submit its first nonblank message. Failed turns
+keep the acknowledged session so a fresh message can continue it. If the first
+worker response is lost before its session identity arrives, the prompt stops
+rather than creating another session. Inspect saved sessions before trying again.
+Restart an older worker if it does not return structured session metadata.
+
+The prompt uses the existing worker when one is running, and local execution
+otherwise. It opens storage for each request rather than holding it while waiting
+for input. Both stdin and stdout must be terminals; use the one-shot commands for
+scripts. This version accepts single-line messages, with native line editing,
+and does not save an input-history file or add a full-screen interface.
+
+Automated checks cover local and worker turns, saved selection and skill snapshots,
+failed-first-turn recovery, cancellation, and ambiguous worker replies. An isolated
+pseudo-terminal check with a fake provider covers two turns, line editing, Ctrl-D,
+and Ctrl-C while idle and during inference. Live provider behavior remains a manual
+check: exchange two messages, exit, resume the printed session ID, then interrupt
+one request and inspect it with `chat show`.
 
 ## Select a skill
 

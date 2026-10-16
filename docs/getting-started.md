@@ -53,14 +53,18 @@ bun run start chat new "Help me plan a small TypeScript project"
 bun run start chat sessions
 ```
 
-The answer streams to stdout; session and run IDs print to stderr. Each invocation
-sends one message. Copy the session ID to continue or inspect it:
+The answer streams to stdout; session and run IDs print to stderr. These one-shot
+commands send one message at a time. Copy the session ID to continue or inspect it:
 
 ```fish
 set session_id 'paste-session-id-here'
 bun run start chat send $session_id "What should I build first?"
 bun run start chat show $session_id
 ```
+
+For a terminal prompt, run `bun run start chat interactive`, or append a saved
+session ID to resume it. Enter one message per line and use `/exit` to leave.
+See the [interactive prompt guide](chat.md#interactive-prompt) for cancellation.
 
 These `set -lx` values apply within the current shell scope. New sessions use the
 configured provider and model; saved sessions retain their original selection.

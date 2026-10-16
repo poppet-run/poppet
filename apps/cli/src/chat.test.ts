@@ -24,6 +24,7 @@ import { workerSocketPath } from "@poppet/worker";
 import { Console, Effect, Fiber, Layer, ManagedRuntime, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
+import { readChatLine } from "#src/chat-prompt";
 import { makeCLI } from "#src/cli";
 
 const description: ModelDescription = {
@@ -70,6 +71,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     writeFails: false,
     useTools: false,
     hold: false,
+    failNext: false,
     active: 0,
     peak: 0,
   };
@@ -119,6 +121,14 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                         state.peak = Math.max(state.peak, state.active);
 
                         while (state.hold) yield* Effect.sleep("5 millis");
+
+                        if (state.failNext) {
+                          state.failNext = false;
+
+                          return yield* Effect.fail(
+                            invalidRequest(description.provider, "Fixture request failed"),
+                          );
+                        }
 
                         const save =
                           state.useTools &&
@@ -214,12 +224,13 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     },
   };
 
-  const program = (args: ReadonlyArray<string>) =>
+  const program = (args: ReadonlyArray<string>, read = readChatLine) =>
     makeCLI(
       [unused, registration],
       write,
       undefined,
       registeredChannels,
+      read,
     )(args).pipe(Effect.provideService(Console.Console, output));
 
   return {
@@ -325,9 +336,10 @@ const exampleChannel = (id: string) => {
 };
 
 describe("chat CLI", () => {
-  test.each([false, true])(
-    "saves explicit skill snapshots for chats and tasks with worker=%s",
-    async (remote) => {
+  test.each(["local", "worker"])(
+    "saves explicit skill snapshots for chats and tasks through %s execution",
+    async (mode) => {
+      const remote = mode === "worker";
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
       const file = join(chat.directory, "skills", "weekly-review", "SKILL.md");
@@ -432,6 +444,169 @@ describe("chat CLI", () => {
         });
       } finally {
         if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
+  test.each(["local", "worker"])(
+    "interactive chat keeps one saved skill and session through %s execution",
+    async (mode) => {
+      const remote = mode === "worker";
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
+
+      try {
+        await mkdir(join(chat.directory, "skills", "review"), { recursive: true });
+        await writeFile(
+          join(chat.directory, "skills/review/SKILL.md"),
+          "Give a short project review.",
+        );
+
+        if (remote) worker = await chat.startWorker();
+        const input = ["   ", "  First message  ", "Second --help", "/exit"];
+        await Effect.runPromise(
+          chat.program(
+            ["chat", "interactive", "--coding", "--skill", "review"],
+            Effect.sync(() => input.shift() ?? null),
+          ),
+        );
+        expect(chat.requests).toHaveLength(2);
+        expect(new Set(chat.requests.map((request) => request.sessionId)).size).toBe(1);
+        expect(chat.requests[1]!.messages).toEqual(
+          expect.arrayContaining([
+            { role: "user", text: "  First message  " },
+            { role: "user", text: "Second --help" },
+          ]),
+        );
+        const id = chat.requests[0]!.sessionId;
+
+        if (worker !== undefined) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+          worker = undefined;
+        }
+
+        delete process.env.POPPET_MODEL;
+        process.env.POPPET_PROVIDER = "unused-provider";
+        await rm(join(chat.directory, "skills"), { recursive: true });
+        const resumed = ["After restart", null];
+        await Effect.runPromise(
+          chat.program(
+            ["chat", "interactive", id],
+            Effect.sync(() => resumed.shift() ?? null),
+          ),
+        );
+        expect(chat.requests[2]!.sessionId).toBe(id);
+        expect(chat.requests[2]!.instructions).toContain("Give a short project review.");
+        await chat.invoke(["chat", "show", id]);
+        const saved = JSON.parse(chat.lines.at(-1)!);
+        expect(saved.session).toMatchObject({
+          provider: "chat-provider",
+          model: "chat-model",
+          workload: "coding",
+          skill: { name: "review" },
+        });
+        expect(saved.runs.map((run: { status: string }) => run.status)).toEqual([
+          "completed",
+          "completed",
+          "completed",
+        ]);
+      } finally {
+        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
+  test.each(["local", "worker"])(
+    "interactive chat retains its first failed session through %s execution",
+    async (mode) => {
+      const remote = mode === "worker";
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
+
+      try {
+        if (remote) worker = await chat.startWorker();
+        chat.state.failNext = true;
+        const input = ["First fails", "Next succeeds", "/exit"];
+        await Effect.runPromise(
+          chat.program(
+            ["chat", "interactive"],
+            Effect.sync(() => input.shift() ?? null),
+          ),
+        );
+        expect(chat.requests).toHaveLength(2);
+        expect(chat.requests[0]!.sessionId).toBe(chat.requests[1]!.sessionId);
+        expect(chat.requests[1]!.messages).not.toContainEqual({
+          role: "user",
+          text: "First fails",
+        });
+
+        if (worker !== undefined) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+          worker = undefined;
+        }
+
+        await chat.invoke(["chat", "show", chat.requests[0]!.sessionId]);
+        expect(
+          JSON.parse(chat.lines.at(-1)!).runs.map((run: { status: string }) => run.status),
+        ).toEqual(["failed", "completed"]);
+      } finally {
+        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
+  test.each(["local", "worker"])(
+    "interrupting interactive inference finalizes its run through %s execution",
+    async (mode) => {
+      const remote = mode === "worker";
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
+      let prompt: Fiber.Fiber<void, unknown> | undefined;
+
+      try {
+        if (remote) worker = await chat.startWorker();
+        chat.state.hold = true;
+        let reads = 0;
+        prompt = Effect.runFork(
+          chat.program(
+            ["chat", "interactive"],
+            Effect.sync(() => {
+              reads++;
+
+              return "Hold this request";
+            }),
+          ),
+        );
+        await Effect.runPromise(
+          Effect.gen(function* () {
+            while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
+          }).pipe(Effect.timeout("5 seconds")),
+        );
+        await Effect.runPromise(Fiber.interrupt(prompt));
+        prompt = undefined;
+        chat.state.hold = false;
+        // A remote disconnect closes the request scope asynchronously; wait for runner cleanup.
+        await Effect.runPromise(
+          Effect.gen(function* () {
+            while (chat.state.active > 0) yield* Effect.sleep("5 millis");
+          }).pipe(Effect.timeout("5 seconds")),
+        );
+        expect(reads).toBe(1);
+
+        if (worker !== undefined) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+          worker = undefined;
+        }
+
+        await chat.invoke(["chat", "show", chat.requests[0]!.sessionId]);
+        expect(JSON.parse(chat.lines.at(-1)!).runs).toMatchObject([{ status: "interrupted" }]);
+      } finally {
+        if (prompt !== undefined) await Effect.runPromise(Fiber.interrupt(prompt));
+
+        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
         await chat.close();
       }
     },

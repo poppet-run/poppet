@@ -236,7 +236,15 @@ temporary failures leave inspectable run states.
 
 Implemented `@poppet/agent` and `chat new [--coding] <message>`,
 `chat send <session> <message>`, `chat sessions`, and `chat show <session>`.
-Each invocation sends one message; an interactive prompt is deferred. Sessions
+One-shot commands send one message. `chat interactive [session] [--coding] [--skill <name>]`
+adds a terminal prompt for a new or resumed session. Blank lines do not create work,
+and `/exit`, Ctrl-D, or Ctrl-C leave the prompt. Active cancellation retains the
+existing interrupted-run behavior. Turns share the local/worker command path;
+structured worker session metadata preserves the identity even when the first
+turn fails. Unacknowledged outcomes stop without replay. Automated checks cover
+local/worker parity, selection and skill snapshots, failure recovery, cancellation,
+and redirected-input rejection. An isolated pseudo-terminal check verifies line
+editing and exit keys with a fake provider. Live provider use remains manual. Sessions
 pin provider, model, and workload. Migration 3 persists workload with an
 `assistant` default for existing sessions/runs. The host resolves providers
 inside the request scope so credential ownership survives through streaming.

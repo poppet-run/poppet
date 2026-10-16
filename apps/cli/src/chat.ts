@@ -46,6 +46,9 @@ type ChatSubmission = Extract<ChatRequest, { action: "new" | "send" }>;
 /** A streamed text sink that can report write failures to the active request. */
 export type ChatWriter = (text: string) => Effect.Effect<void, AgentError>;
 
+/** Session metadata accompanies its announcement without parsing terminal output. */
+export type ChatAnnouncer = (text: string, sessionId?: string) => Effect.Effect<void, AgentError>;
+
 export const writeChatText: ChatWriter = (text) =>
   Effect.callback<void, AgentError>((resume) => {
     process.stdout.write(text, (error) =>
@@ -156,7 +159,7 @@ export const prepareChat = (
 export const sendChat = (
   command: ChatSubmission,
   write: ChatWriter,
-  announce: ChatWriter = (text) => Console.error(text),
+  announce: ChatAnnouncer = (text) => Console.error(text),
 ) =>
   Effect.gen(function* () {
     const store = yield* Store;
@@ -176,7 +179,7 @@ export const sendChat = (
           })).id
         : command.id;
 
-    yield* announce(`Session: ${sessionId}`);
+    yield* announce(`Session: ${sessionId}`, sessionId);
     const agent = yield* Agent;
     yield* Stream.runForEach(agent.send(sessionId, command.text), (event) => {
       if (event.type === "started") return announce(`Run: ${event.run.id}`);

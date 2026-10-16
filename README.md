@@ -26,7 +26,9 @@ set -lx POPPET_MODEL 'replace-with-model-id'
 bun run start chat new "Help me plan a small TypeScript project"
 ```
 
-Chat consumes provider usage. OpenCode Go supports coding workloads only.
+Use `bun run start chat interactive` for a terminal prompt, or append a saved
+session ID to resume it. Chat consumes provider usage. OpenCode Go supports coding
+workloads only.
 See [getting started](docs/getting-started.md) for setup and session continuation,
 or choose another [provider](docs/index.md#providers).
 

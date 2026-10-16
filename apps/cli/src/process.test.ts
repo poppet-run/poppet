@@ -219,3 +219,21 @@ test.concurrent("WhatsApp setup stays offline and QR pairing rejects redirected 
     await rm(directory, { recursive: true, force: true });
   }
 }, 15_000);
+
+test.concurrent("interactive chat rejects redirected input without creating a session", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-interactive-input-"));
+
+  try {
+    const result = await invokeProcess(
+      ["chat", "interactive"],
+      { POPPET_DATA_DIR: directory },
+      "Never send this\n",
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Interactive chat requires a terminal");
+    expect(await readdir(directory)).toEqual([]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 15_000);
