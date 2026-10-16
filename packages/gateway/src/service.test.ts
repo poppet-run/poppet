@@ -11,11 +11,20 @@ import {
   ModelResolver,
   NotesLive,
   Pages,
+  Skills,
+  SkillsLive,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive } from "@poppet/memory";
 import { ProviderError, type ModelOperations, type ModelRequest } from "@poppet/provider";
-import { Store, StoreDatabase, StoreLive } from "@poppet/store";
+import { DeliveryDestination, Store, StoreDatabase, StoreLive } from "@poppet/store";
+import {
+  TaskRepository,
+  TaskRepositoryLive,
+  TaskDestinations,
+  executeTaskCommand,
+  executeOccurrence,
+} from "@poppet/tasks";
 import { Console, Deferred, Effect, Fiber, Layer, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
@@ -71,6 +80,7 @@ const fixture = async (
     messages: Stream.never,
     conversation: (input) => Effect.succeed(input.conversationId ?? `thread-${input.messageId}`),
     checkAccess: () => Effect.void,
+    destination: () => Effect.succeed("parent"),
     typing: () => Effect.void,
     mark: (input, state) =>
       Effect.sync(() => {
@@ -136,7 +146,13 @@ const fixture = async (
 
   const layer = GatewayLive.pipe(
     Layer.provideMerge(
-      Layer.mergeAll(channel, GatewayRepositoryLive.pipe(Layer.provideMerge(store)), agent),
+      Layer.mergeAll(
+        channel,
+        GatewayRepositoryLive.pipe(Layer.provideMerge(store)),
+        TaskRepositoryLive.pipe(Layer.provideMerge(store)),
+        SkillsLive.pipe(Layer.provide(config)),
+        agent,
+      ),
     ),
   );
 
@@ -145,7 +161,11 @@ const fixture = async (
     marks,
     requests,
     run: <A, E>(
-      program: Effect.Effect<A, E, Gateway | Store | StoreDatabase | GatewayRepository | Agent>,
+      program: Effect.Effect<
+        A,
+        E,
+        Gateway | Store | StoreDatabase | GatewayRepository | TaskRepository | Agent | Skills
+      >,
     ) =>
       Effect.runPromise(
         program.pipe(
@@ -158,7 +178,289 @@ const fixture = async (
   };
 };
 
+const scheduled = (destination: DeliveryDestination | null) =>
+  Effect.gen(function* () {
+    const repo = yield* TaskRepository;
+    repo.add(
+      {
+        name: "Summary",
+        prompt: "Summarize notes",
+        provider: "test-provider",
+        model: "test-model",
+        workload: "assistant",
+        schedule: { type: "once", at: 0 },
+      },
+      0,
+      null,
+      destination,
+    );
+    repo.reconcile(0);
+    const claimed = repo.claim(0)!;
+    yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
+
+    return repo.occurrence(claimed.occurrence.id);
+  });
+
 describe.concurrent("messaging gateway", () => {
+  test("delivers a saved occurrence after restart to its snapshot, without changing the thread session", async () => {
+    const state = await fixture();
+
+    try {
+      const occurrence = await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const destination = yield* gateway.resolveDestination("scheduled-thread");
+          const item = yield* scheduled(destination);
+          const { database } = yield* StoreDatabase;
+          // Later configuration and task edits cannot redirect this occurrence.
+          database.run("UPDATE jobs SET destination = ?", [
+            JSON.stringify({ ...destination, conversationId: "different-thread" }),
+          ]);
+
+          return item;
+        }),
+      );
+
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.recover;
+          expect(yield* gateway.deliverNext).toBe(true);
+          expect(yield* gateway.deliverNext).toBe(false);
+          expect((yield* TaskRepository).deliveries(occurrence.id)).toMatchObject([
+            { state: "sent", attempts: 0 },
+          ]);
+          expect((yield* TaskRepository).occurrence(occurrence.id).status).toBe("completed");
+          expect(
+            (yield* GatewayRepository).binding("discord", "bot", "guild", "scheduled-thread"),
+          ).toBeNull();
+        }),
+      );
+      expect(state.sent).toEqual([
+        { destination: "scheduled-thread", text: "Answer", nonce: expect.any(String) },
+      ]);
+      expect(state.requests).toHaveLength(1);
+      expect(state.requests[0]!.tools.some((tool) => tool.name === "save_note")).toBe(false);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each(["unavailable", "permission", "uncertain"] as const)(
+    "keeps scheduled %s delivery separate from execution across restart",
+    async (reason) => {
+      let attempts = 0;
+      const destinations: string[] = [];
+
+      const state = await fixture({
+        send: (destination) => {
+          destinations.push(destination);
+
+          return ++attempts === 1
+            ? Effect.fail(new ChannelError({ reason, message: "Send failed", retryAfterMs: 1000 }))
+            : Effect.succeed("sent");
+        },
+      });
+
+      try {
+        const occurrence = await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            const item = yield* scheduled(yield* gateway.resolveDestination("saved-thread"));
+            yield* gateway.deliverNext;
+            expect((yield* TaskRepository).occurrence(item.id).status).toBe("completed");
+
+            return item;
+          }),
+        );
+
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            yield* gateway.recover;
+            yield* TestClock.adjust("1 second");
+            expect(yield* gateway.deliverNext).toBe(reason === "unavailable");
+            expect((yield* TaskRepository).deliveries(occurrence.id)[0]?.state).toBe(
+              ({ unavailable: "sent", permission: "failed", uncertain: "uncertain" } as const)[
+                reason
+              ],
+            );
+            expect(yield* gateway.processNext).toBe(false);
+            const repo = yield* TaskRepository;
+            expect(() => repo.retry(occurrence.id, 0)).toThrow("Only unsuccessful occurrences");
+          }),
+        );
+        expect(state.requests).toHaveLength(1);
+        expect(destinations).toEqual(
+          reason === "unavailable" ? ["saved-thread", "saved-thread"] : ["saved-thread"],
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("a crash during a scheduled send leaves uncertainty and blocks later chunks after restart", async () => {
+    const sending = Deferred.makeUnsafe<void>();
+    let attempts = 0;
+
+    const state = await fixture({
+      textLimit: 4,
+      send: () => {
+        attempts++;
+
+        return Deferred.succeed(sending, undefined).pipe(Effect.andThen(Effect.never));
+      },
+    });
+
+    try {
+      const occurrence = await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const item = yield* scheduled(yield* gateway.resolveDestination("saved-thread"));
+          const fiber = yield* gateway.deliverNext.pipe(Effect.forkChild);
+          yield* Deferred.await(sending);
+          yield* Fiber.interrupt(fiber);
+          expect((yield* TaskRepository).deliveries(item.id).map((part) => part.state)).toEqual([
+            "sending",
+            "pending",
+          ]);
+
+          return item;
+        }),
+      );
+
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.recover;
+          expect(yield* gateway.deliverNext).toBe(false);
+          expect(
+            (yield* TaskRepository).deliveries(occurrence.id).map((part) => part.state),
+          ).toEqual(["uncertain", "pending"]);
+          expect((yield* TaskRepository).occurrence(occurrence.id).status).toBe("completed");
+        }),
+      );
+      expect(attempts).toBe(1);
+      expect(state.requests).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each(["owner", "guild", "parent", "account"])(
+    "rejects a scheduled result with changed %s authorization",
+    async (field) => {
+      const state = await fixture();
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            const original = yield* gateway.resolveDestination("saved-thread");
+
+            const destination = {
+              ...original,
+              ownerId: field === "owner" ? "other" : original.ownerId,
+              scopeId: field === "guild" ? "other" : original.scopeId,
+              parentId: field === "parent" ? "other" : original.parentId,
+              account: field === "account" ? "other" : original.account,
+            };
+
+            const item = yield* scheduled(destination);
+            expect(yield* gateway.deliverNext).toBe(false);
+            expect((yield* TaskRepository).deliveries(item.id)).toMatchObject([
+              { state: "failed" },
+            ]);
+          }),
+        );
+        expect(state.sent).toEqual([]);
+        expect(state.requests).toHaveLength(1);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("rechecks deleted or revoked threads immediately before delivery and leaves tasks without destinations local", async () => {
+    let allowed = true;
+
+    const state = await fixture({
+      checkAccess: () =>
+        allowed
+          ? Effect.void
+          : Effect.fail(new ChannelError({ reason: "permission", message: "Thread deleted" })),
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const destination = yield* gateway.resolveDestination("saved-thread");
+          const delivered = yield* scheduled(destination);
+          const local = yield* scheduled(null);
+          allowed = false;
+          yield* gateway.deliverNext;
+          expect((yield* TaskRepository).deliveries(delivered.id)).toMatchObject([
+            { state: "failed" },
+          ]);
+          expect((yield* TaskRepository).deliveries(local.id)).toEqual([]);
+          expect(yield* gateway.deliverNext).toBe(false);
+        }),
+      );
+      expect(state.sent).toEqual([]);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("validates explicit task destinations before saving and rejects an unauthorized parent", async () => {
+    let parent = "parent";
+    const state = await fixture({ destination: () => Effect.succeed(parent) });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const repo = yield* TaskRepository;
+          const store = yield* Store;
+
+          const command = {
+            action: "add" as const,
+            task: {
+              name: "Summary",
+              prompt: "Summarize",
+              provider: "test-provider",
+              model: "test-model",
+              workload: "assistant" as const,
+              schedule: { type: "once" as const, at: 0 },
+            },
+            delivery: { adapter: "discord", conversationId: "saved-thread" },
+          };
+
+          expect(
+            yield* executeTaskCommand(repo, store, command, 0).pipe(Effect.result),
+          ).toHaveProperty("failure.message", expect.stringContaining("Start worker"));
+          expect(repo.list()).toEqual([]);
+          const resolved = yield* gateway.resolveDestination("saved-thread");
+
+          const added = yield* executeTaskCommand(repo, store, command, 0).pipe(
+            Effect.provideService(TaskDestinations, { resolve: () => Effect.succeed(resolved) }),
+          );
+
+          expect(added).toHaveProperty("destination", resolved);
+          parent = "unauthorized";
+          expect(
+            yield* gateway.resolveDestination("saved-thread").pipe(Effect.result),
+          ).toHaveProperty("failure.reason", "permission");
+          expect(repo.list()).toHaveLength(1);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each(["completed", "setup-failed"])(
     "marks the parent mention while thread setup is pending and settles it after %s",
     async (outcome) => {

@@ -439,9 +439,15 @@ export const makeCLI = (
           ),
           coding: codingFlag,
           skill: skillFlag,
+          discordThread: Flag.String("discord-thread").pipe(
+            Flag.withSchema(Schema.NonEmptyString.check(Schema.isPattern(/^[0-9]{1,20}$/))),
+            Flag.withDescription("Send each completed result to this authorized Discord thread"),
+            Flag.atMost(1),
+            Flag.map(([value]) => value),
+          ),
           prompt: textArgument("prompt"),
         },
-        ({ name, at, cron, tz, coding, prompt, skill }) =>
+        ({ name, at, cron, tz, coding, prompt, skill, discordThread }) =>
           Effect.gen(function* () {
             const schedule = yield* taskOperation(() => {
               if (Option.isSome(at) && Option.isNone(cron) && Option.isNone(tz))
@@ -454,7 +460,15 @@ export const makeCLI = (
               });
             });
 
-            const command = yield* prepareTask(name, schedule, coding, prompt, skill);
+            const command = yield* prepareTask(
+              name,
+              schedule,
+              coding,
+              prompt,
+              skill,
+              discordThread,
+            );
+
             yield* runTasks(command);
           }).pipe(Effect.provide(runtime.config)),
       ).pipe(

@@ -5,6 +5,8 @@ import {
   executeLocalTaskCommand,
   makeTaskWorker,
   TaskRepository,
+  TaskDestinations,
+  TaskError,
   taskResponse,
 } from "@poppet/tasks";
 import { serveWorker, workerSocketPath, WorkerRequests } from "@poppet/worker";
@@ -45,7 +47,21 @@ export const runWorker = (mode: WorkerMode) =>
               startedAt,
               services: { tasks: tasks !== null, gateway: Option.isSome(messaging) },
             };
-          }),
+          }).pipe(
+            Effect.provideService(TaskDestinations, {
+              resolve: (adapter, conversationId) =>
+                Option.isSome(messaging)
+                  ? messaging.value
+                      .resolveDestination(adapter, conversationId)
+                      .pipe(Effect.mapError((error) => new TaskError({ message: error.message })))
+                  : Effect.fail(
+                      new TaskError({
+                        message:
+                          "Start worker run or gateway work before selecting a messaging destination.",
+                      }),
+                    ),
+            }),
+          ),
         );
       });
       yield* Console.log(

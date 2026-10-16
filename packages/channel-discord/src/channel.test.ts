@@ -224,6 +224,11 @@ describe("Discord adapter", () => {
             yield* naming.rename(incoming, "400", "😀".repeat(50), "Blocked").pipe(Effect.result),
           ).toHaveProperty("failure.reason", "permission");
           thread.thread_metadata.locked = false;
+          expect(yield* channel.destination!("400")).toBe("300");
+          expect(yield* channel.destination!("900").pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "permission",
+          );
           yield* channel.checkAccess(incoming, "400");
           yield* channel.typing("400");
           expect(post).toHaveBeenCalledWith("/channels/400/typing");

@@ -2,12 +2,11 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–10 and 13–16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, and live Discord behavior require manual validation
+Status: Phases 1–11 and 13–16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, and live scheduled-result delivery require manual validation
 
-Phases 11–12 are planned only. Discord thread chat, conversation search,
-local Markdown skills, supplied-URL reading, and phase 16 naming are implemented.
-Scheduled-result delivery in phase 11 is next; additional messaging adapters
-remain independent work in phase 12.
+Phase 12 remains planned. Discord thread chat, scheduled-result delivery,
+conversation search, local Markdown skills, supplied-URL reading, and phase 16
+naming are implemented. Additional messaging adapters are the remaining phase.
 
 Updated: 2026-10-16
 
@@ -598,7 +597,25 @@ uninstall/install to update their saved arguments. Native startup remains manual
 
 ## Phase 11: Scheduled results in messaging conversations
 
-Planned, not implemented. Depends on phase 10.
+Implemented with automated checks. Depends on phase 10.
+
+`tasks add --discord-thread <id>` resolves an existing thread through a running
+messaging worker and checks access before saving. Jobs and occurrences retain
+an explicit adapter, bot account, owner, server, parent channel, and thread
+snapshot. Existing tasks have no destination. Migration 11 adds these snapshots
+and an occurrence identity on gateway delivery records.
+
+The gateway reconciles completed occurrences into its existing ordered reply
+queue exactly once, including after restart. Each send rechecks current policy
+and thread permissions. Transient delivery failures use bounded backoff; uncertain
+sends are retained without automatic resending. Task inspection lists per-chunk
+delivery state separately from execution state. Scheduled results do not attach
+to or rename the destination's chat session.
+
+Automated checks cover destination selection through both worker command paths,
+schema upgrades, snapshots, recovery, changed authorization, revoked/deleted
+threads, rate limits, uncertain sends, and local-only tasks. Live scheduled
+delivery still needs validation in the private test channel.
 
 Allow a scheduled task to select an explicit authorized Discord thread as its
 delivery destination. Snapshot the destination with each occurrence, recheck

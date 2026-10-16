@@ -47,6 +47,21 @@ describe("store migrations", () => {
     expect(database.query("SELECT skill FROM jobs").get()).toEqual({ skill: null });
   });
 
+  test("upgrades existing tasks and occurrences without inventing destinations", () => {
+    using database = new Database(":memory:");
+    applyMigrations(database, migrations.slice(0, 10));
+    database.run(`INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, created_at)
+      VALUES ('job', 'Review', 'Review notes', 'test', 'model', 'assistant', '{"type":"once","at":1}', 1)`);
+    database.run(
+      "INSERT INTO job_occurrences (id, job_id, scheduled_at, status) VALUES ('occurrence', 'job', 1, 'pending')",
+    );
+    applyMigrations(database);
+    expect(database.query("SELECT destination FROM jobs").get()).toEqual({ destination: null });
+    expect(database.query("SELECT destination FROM job_occurrences").get()).toEqual({
+      destination: null,
+    });
+  });
+
   test("backfills completed conversation text from schema 8 without indexing intermediate or failed content", () => {
     using database = new Database(":memory:");
     applyMigrations(database, migrations.slice(0, 8));

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { StoreDatabase, StoreError } from "@poppet/store";
+import { DeliveryDestination, StoreDatabase, StoreError } from "@poppet/store";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { IncomingMessage, ChannelError } from "#src/channel";
@@ -76,6 +76,79 @@ const repository = Effect.gen(function* () {
     );
 
   return {
+    rejectChangedAccounts: (adapter: string, account: string) =>
+      database
+        .query(`UPDATE gateway_deliveries
+      SET state = 'failed' WHERE state = 'pending' AND inbox_id IN (
+        SELECT id FROM gateway_inbox WHERE adapter = ? AND account != ? AND occurrence_id IS NOT NULL
+      )`)
+        .run(adapter, account),
+    scheduled: (adapter: string) =>
+      Schema.decodeUnknownSync(
+        Schema.Array(
+          Schema.Struct({
+            id: Schema.String,
+            runId: Schema.String,
+            destination: Schema.fromJsonString(DeliveryDestination),
+          }),
+        ),
+      )(
+        database
+          .query(`SELECT o.id, o.run_id AS runId, o.destination FROM job_occurrences o
+      WHERE o.status = 'completed' AND o.run_id IS NOT NULL
+        AND json_extract(o.destination, '$.adapter') = ?
+        AND NOT EXISTS (SELECT 1 FROM gateway_inbox i WHERE i.occurrence_id = o.id)
+      ORDER BY o.scheduled_at, o.id LIMIT 64`)
+          .all(adapter),
+      ),
+    scheduleResult: (
+      id: string,
+      runId: string,
+      destination: DeliveryDestination,
+      chunks: ReadonlyArray<string>,
+      enabled: boolean,
+    ) =>
+      database
+        .transaction(() => {
+          const message: IncomingMessage = {
+            messageId: `task-${id}`,
+            senderId: destination.ownerId,
+            scopeId: destination.scopeId,
+            parentId: destination.parentId,
+            conversationId: destination.conversationId,
+            text: "",
+            mentioned: false,
+          };
+
+          const inserted = database
+            .query(`INSERT INTO gateway_inbox
+          (adapter, account, external_id, payload, conversation_id, run_id, state, occurrence_id)
+          VALUES (?, ?, ?, ?, ?, ?, 'completed', ?) ON CONFLICT DO NOTHING`)
+            .run(
+              destination.adapter,
+              destination.account,
+              message.messageId,
+              JSON.stringify(message),
+              destination.conversationId,
+              runId,
+              id,
+            );
+
+          if (!inserted.changes) return;
+
+          for (const [position, text] of chunks.entries())
+            database
+              .query(
+                "INSERT INTO gateway_deliveries (inbox_id, position, text, state) VALUES (?, ?, ?, ?)",
+              )
+              .run(
+                Number(inserted.lastInsertRowid),
+                position,
+                text,
+                enabled ? "pending" : "failed",
+              );
+        })
+        .immediate(),
     namedBinding,
     namingEntry: (adapter: string, account: string, conversation: string) =>
       Schema.decodeUnknownSync(Schema.NullOr(Inbox))(

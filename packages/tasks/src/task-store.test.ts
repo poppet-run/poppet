@@ -57,6 +57,47 @@ const fixture = async () => {
 };
 
 describe.concurrent("task schedules", () => {
+  test("keeps the queued destination on restart and explicit execution retry despite a changed task", async () => {
+    const state = await fixture();
+
+    const destination = {
+      adapter: "discord",
+      account: "bot",
+      ownerId: "owner",
+      scopeId: "guild",
+      parentId: "parent",
+      conversationId: "thread",
+    };
+
+    try {
+      const item = await state.run((repo, _store, database) =>
+        Effect.sync(() => {
+          const job = repo.add(once, start, null, destination);
+          repo.reconcile(start);
+          const queued = repo.occurrences(job.id)[0]!;
+          database.run("UPDATE jobs SET destination = ? WHERE id = ?", [
+            JSON.stringify({ ...destination, conversationId: "other-thread" }),
+            job.id,
+          ]);
+
+          return queued;
+        }),
+      );
+
+      await state.run((repo) =>
+        Effect.sync(() => {
+          repo.recover(start + 1);
+          expect(repo.occurrence(item.id).destination).toEqual(destination);
+          repo.claim(start + 1);
+          repo.finish(item.id, "failed", "test", start + 1);
+          expect(repo.retry(item.id, start + 2).destination).toEqual(destination);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("status reports reconnect and quota actions without exposing failure messages or prompts", async () => {
     const state = await fixture();
 

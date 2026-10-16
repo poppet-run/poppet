@@ -89,6 +89,7 @@
       },
       "devDependencies": {
         "@poppet/memory": "workspace:*",
+        "@poppet/tasks": "workspace:*",
       },
     },
     "packages/memory": {

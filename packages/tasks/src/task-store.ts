@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 
-import { StoreDatabase, SkillSnapshot } from "@poppet/store";
+import { DeliveryDestination, StoreDatabase, SkillSnapshot } from "@poppet/store";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import {
@@ -26,10 +26,10 @@ interface TaskSkip {
 export const recurringExpiry = 24 * 60 * 60 * 1000;
 
 const taskSql = `SELECT id, name, prompt, provider, model, workload, schedule,
-  skill, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
+  skill, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
 
 const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, status,
-  session_id AS sessionId, run_id AS runId, finished_at AS finishedAt, reason FROM job_occurrences`;
+  destination, session_id AS sessionId, run_id AS runId, finished_at AS finishedAt, reason FROM job_occurrences`;
 
 /** Builds synchronous task operations on the caller's owned database; failures are thrown. */
 export const makeTaskStore = (database: Database) => {
@@ -144,10 +144,15 @@ export const makeTaskStore = (database: Database) => {
             recordSkip(job, job.nextAt, startup ? "downtime" : "previous-occurrence-active");
           } else {
             using statement = database.prepare(
-              "INSERT INTO job_occurrences (id, job_id, scheduled_at, status) VALUES (?, ?, ?, 'pending') ON CONFLICT (job_id, scheduled_at) DO NOTHING",
+              "INSERT INTO job_occurrences (id, job_id, scheduled_at, status, destination) VALUES (?, ?, ?, 'pending', ?) ON CONFLICT (job_id, scheduled_at) DO NOTHING",
             );
 
-            statement.run(randomUUID(), job.id, job.nextAt);
+            statement.run(
+              randomUUID(),
+              job.id,
+              job.nextAt,
+              job.destination === null ? null : JSON.stringify(job.destination),
+            );
 
             // A delayed timer enqueues the earliest due occurrence and skips the rest.
             const following = nextOccurrence(job.schedule, job.nextAt);
@@ -167,7 +172,13 @@ export const makeTaskStore = (database: Database) => {
       })
       .immediate();
 
-  const add = (input: NewTask, now: number, skill: SkillSnapshot | null = null) => {
+  const add = (
+    input: NewTask,
+    now: number,
+    skill: SkillSnapshot | null = null,
+    destination: DeliveryDestination | null = null,
+  ) => {
+    if (destination !== null) Schema.decodeUnknownSync(DeliveryDestination)(destination);
     const valid = Schema.decodeUnknownSync(NewTask)(input);
 
     const nextAt =
@@ -176,7 +187,7 @@ export const makeTaskStore = (database: Database) => {
     const id = randomUUID();
 
     using statement = database.prepare(
-      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
 
     statement.run(
@@ -190,6 +201,7 @@ export const makeTaskStore = (database: Database) => {
       nextAt,
       now,
       skill === null ? null : Schema.encodeSync(Schema.fromJsonString(SkillSnapshot))(skill),
+      destination === null ? null : JSON.stringify(destination),
     );
 
     return task(id);
@@ -452,6 +464,23 @@ export const makeTaskStore = (database: Database) => {
     task,
     occurrence,
     occurrences,
+    deliveries: (id: string) =>
+      Schema.decodeUnknownSync(
+        Schema.Array(
+          Schema.Struct({
+            position: Schema.Natural,
+            state: Schema.Literals(["pending", "sending", "sent", "failed", "uncertain"]),
+            messageId: Schema.NullOr(Schema.String),
+            attempts: Schema.Natural,
+          }),
+        ),
+      )(
+        database
+          .query(`SELECT d.position, d.state, d.message_id AS messageId, d.attempts
+      FROM gateway_deliveries d JOIN gateway_inbox i ON i.id = d.inbox_id
+      WHERE i.occurrence_id = ? ORDER BY d.position`)
+          .all(id),
+      ),
     providers,
     skips,
     add,

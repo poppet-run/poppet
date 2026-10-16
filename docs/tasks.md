@@ -32,6 +32,37 @@ bun run start tasks pause <task-id>
 bun run start tasks resume <task-id>
 ```
 
+## Deliver results to Discord
+
+Configure [Discord](discord.md), start `bun run start worker run`, and copy an
+existing authorized thread's ID. Pass it before the task prompt:
+
+```fish
+bun run start tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --discord-thread <thread-id> "Summarize my notes"
+```
+
+A running messaging worker validates the thread before creating the task.
+`gateway work` can validate new destinations but does not execute scheduled work;
+`tasks work` executes tasks but does not deliver their results. The combined
+worker runs both. Tasks without `--discord-thread` keep their results local.
+
+Each occurrence saves its destination independently of later task or channel
+configuration. The worker rechecks the saved bot account, owner, server, allowed
+parent channel, and current thread permissions before sending. It never chooses
+the last active conversation or redirects a result to another thread.
+
+Only completed results enter the existing gateway delivery queue. `tasks show`
+includes the destination and a `delivery` array of chunk states, message IDs, and
+attempt counts. An empty array means no reply has been queued. Temporary failures
+retry with bounded backoff. Failed and uncertain sends remain inspectable;
+uncertain sends are not resent automatically. Inspect the saved output before
+manually reposting it. Delivery failures never change a completed occurrence or
+repeat inference, and `tasks retry` rejects completed occurrences.
+
+Results are standalone posts. They do not change the destination's conversation
+history, session binding, or name. A stopped gateway resumes queued delivery when
+it starts again. Already queued replies remain queued if task history is cleared.
+
 ## Select a skill
 
 Pass `--skill <name>` before the prompt to save a [local Markdown procedure](skills.md)

@@ -44,6 +44,16 @@ or interrupted. Successful completion writes its assistant message and result
 in one transaction. The store validates continuation identity on write and read.
 It permits one pending or running run across all sessions.
 
+## Scheduled delivery destinations
+
+Migration 11 adds nullable JSON `destination` columns to jobs and occurrences.
+Each occurrence copies the task's adapter, bot account, owner, server, parent
+channel, and thread IDs when queued. Existing records retain no destination.
+The gateway copies completed answers into its delivery queue using a unique
+`occurrence_id` on the inbox record, so recovery cannot enqueue the result twice.
+Delivery chunks retain their own state independently of task execution. Queued
+replies and their saved answers survive clearing task definitions and history.
+
 ## Skill snapshots
 
 Migration 10 adds nullable JSON `skill` columns to sessions and jobs. Each selected
