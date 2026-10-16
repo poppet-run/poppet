@@ -27,7 +27,7 @@ import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { Clock, Console, Deferred, Effect, Fiber, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
-import { executeTaskCommand } from "#src/commands";
+import { TaskDestinations, executeTaskCommand } from "#src/commands";
 import { executeOccurrence, reconcileTasks, makeTaskWorker } from "#src/scheduler";
 import { TaskError, type NewTask } from "#src/task-schema";
 import { remoteTaskCommand, taskResponse } from "#src/task-socket";
@@ -165,6 +165,85 @@ const fixture = async (
 };
 
 describe.concurrent("task worker", () => {
+  test("task creation expires before the transport deadline, including queue wait, without a late save", async () => {
+    const state = await fixture(final);
+    const blocked = Deferred.makeUnsafe<void>();
+    const release = Deferred.makeUnsafe<void>();
+    const validating = Deferred.makeUnsafe<void>();
+    const completed = Deferred.makeUnsafe<Response>();
+
+    const destination = {
+      adapter: "discord",
+      account: "bot",
+      ownerId: "owner",
+      scopeId: "guild",
+      parentId: "parent",
+      conversationId: "thread",
+    };
+
+    const command = {
+      action: "add" as const,
+      task: state.task,
+      delivery: { adapter: "discord", conversationId: "thread" },
+    };
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const tasks = yield* makeTaskWorker;
+
+          const first = yield* tasks
+            .handle({
+              ...command,
+              task: { ...state.task, name: "First" },
+            })
+            .pipe(
+              Effect.provideService(TaskDestinations, {
+                resolve: () =>
+                  Deferred.succeed(blocked, undefined).pipe(
+                    Effect.andThen(Deferred.await(release)),
+                    Effect.as(destination),
+                  ),
+              }),
+              Effect.forkChild,
+            );
+
+          yield* Deferred.await(blocked);
+
+          yield* taskResponse(command, tasks.handle).pipe(
+            Effect.provideService(TaskDestinations, {
+              resolve: () =>
+                Deferred.succeed(validating, undefined).pipe(
+                  Effect.andThen(Effect.sleep("6 seconds")),
+                  Effect.as(destination),
+                ),
+            }),
+            Effect.tap((reply) => Deferred.succeed(completed, reply)),
+            Effect.forkChild,
+          );
+
+          yield* TestClock.adjust("5 seconds");
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(first);
+          yield* Deferred.await(validating);
+          yield* TestClock.adjust("4 seconds");
+          expect(yield* Deferred.isDone(completed)).toBe(true);
+          const reply = yield* Deferred.await(completed);
+          expect(reply.status).toBe(400);
+          expect(yield* Effect.promise(() => reply.json())).toMatchObject({
+            ok: false,
+            message: expect.stringContaining("timed out"),
+          });
+          yield* TestClock.adjust("3 seconds");
+          expect(repo.list().map((task) => task.name)).toEqual(["First"]);
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("scheduled prompts authorize their saved URL while notes remain read-only", async () => {
     let turns = 0;
     const fetched: string[] = [];
