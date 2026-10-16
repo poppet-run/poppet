@@ -7,7 +7,6 @@ import { DisconnectReason, makeEventBuffer } from "baileys";
 import { Deferred, Effect, Result } from "effect";
 import { TestClock } from "effect/testing";
 
-import { openWhatsAppAuth } from "#src/auth";
 import { quietLogger, WhatsAppClient, WhatsAppClientLive, type SocketFactory } from "#src/client";
 
 const settings = { version: 1 as const, accountPhone: "447700900001", ownerPhone: "447700900002" };
@@ -25,7 +24,7 @@ describe.concurrent("WhatsApp foreground pairing", () => {
 
       const factory: SocketFactory = (config) => {
         if (events.length === 1 && outcome === "invalid-session")
-          expect(config.auth.creds.registered).toBe(false);
+          expect(config.auth.creds.me).toBeUndefined();
         const ev = makeEventBuffer(quietLogger);
         events.push(ev);
         Effect.runSync(Deferred.succeed(events.length === 1 ? first : second, undefined));
@@ -66,7 +65,6 @@ describe.concurrent("WhatsApp foreground pairing", () => {
 
             if (outcome === "cancelled") return;
             events[0]!.emit("creds.update", {
-              registered: true,
               me: { id: `${settings.accountPhone}:1@s.whatsapp.net` },
             });
             events[0]!.emit("connection.update", {
@@ -89,7 +87,6 @@ describe.concurrent("WhatsApp foreground pairing", () => {
 
             if (outcome === "invalid-session")
               events[1]!.emit("creds.update", {
-                registered: true,
                 me: { id: `${settings.accountPhone}:1@s.whatsapp.net` },
               });
             events[1]!.emit("connection.update", { connection: "open" });
@@ -100,16 +97,21 @@ describe.concurrent("WhatsApp foreground pairing", () => {
           }).pipe(Effect.provide(layer), Effect.provide(TestClock.layer())),
         );
         expect(closed).toBe(outcome === "cancelled" ? 1 : 2);
+        const paired = outcome === "paired" || outcome === "invalid-session";
+        const socketsBeforeRestart = events.length;
         await Effect.runPromise(
-          Effect.scoped(
-            Effect.gen(function* () {
-              const auth = yield* openWhatsAppAuth(directory, () => undefined);
-              expect(auth.state.creds.registered).toBe(
-                outcome === "paired" || outcome === "invalid-session",
-              );
-            }),
-          ),
+          Effect.gen(function* () {
+            const client = yield* WhatsAppClient;
+            yield* Effect.yieldNow;
+            expect(yield* client.status).toMatchObject({
+              connected: false,
+              needsPairing: !paired,
+              error: paired ? null : expect.any(String),
+            });
+            expect(events).toHaveLength(socketsBeforeRestart + (paired ? 1 : 0));
+          }).pipe(Effect.provide(WhatsAppClientLive(directory, settings, factory))),
         );
+        expect(closed).toBe(events.length);
       } finally {
         await rm(directory, { recursive: true, force: true });
       }

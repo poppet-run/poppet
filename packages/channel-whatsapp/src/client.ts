@@ -56,7 +56,8 @@ const makeWhatsAppClient = (
 
     let current: WhatsAppSocket | null = null;
     let connected = false;
-    let needsPairing = !auth.state.creds.registered;
+    // QR pairing saves the linked identity without setting the phone-code registration flag.
+    let needsPairing = !auth.state.creds.me?.id;
 
     let error: string | null = needsPairing
       ? "Run gateway whatsapp pair in an interactive terminal."
@@ -106,7 +107,7 @@ const makeWhatsAppClient = (
           yield* Effect.never;
         }
 
-        if (!auth.state.creds.registered && onQr === undefined) {
+        if (!auth.state.creds.me?.id && onQr === undefined) {
           needsPairing = true;
           yield* Effect.never;
         }
