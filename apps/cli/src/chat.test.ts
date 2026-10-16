@@ -548,9 +548,12 @@ describe("chat CLI", () => {
         }
 
         await chat.invoke(["chat", "show", chat.requests[0]!.sessionId]);
+        // The worker test clock can give both runs the same timestamp.
         expect(
-          JSON.parse(chat.lines.at(-1)!).runs.map((run: { status: string }) => run.status),
-        ).toEqual(["failed", "completed"]);
+          JSON.parse(chat.lines.at(-1)!)
+            .runs.map((run: { status: string }) => run.status)
+            .toSorted(),
+        ).toEqual(["completed", "failed"]);
       } finally {
         if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
         await chat.close();
