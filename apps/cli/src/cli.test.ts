@@ -498,6 +498,45 @@ describe("CLI", () => {
     }
   });
 
+  test("validates WhatsApp task phones and rejects conflicting destinations before saving", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-whatsapp-task-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+    const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z"];
+
+    try {
+      const invalid = await invoke(
+        [...command, "--whatsapp-chat", "+447700900002", "Summary"],
+        environment,
+      );
+
+      expect(invalid.exitCode).toBe(1);
+
+      for (const destination of ["--discord-thread=400", "--telegram-chat=200"]) {
+        // eslint-disable-next-line no-await-in-loop -- Invocations temporarily replace process.env.
+        const conflict = await invoke(
+          [...command, destination, "--whatsapp-chat=447700900002", "Summary"],
+          environment,
+        );
+
+        expect(conflict.exitCode).toBe(1);
+        expect(conflict.stderr).toContain("Choose only one messaging destination");
+      }
+
+      expect(await readdir(directory)).toEqual([]);
+
+      const rejected = await invoke(
+        [...command, "--whatsapp-chat", "447700900002", "Summary"],
+        environment,
+      );
+
+      expect(rejected.exitCode).toBe(1);
+      expect(rejected.stderr).toContain("Start worker run or gateway work");
+      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("opens and reopens the conversation store without authentication or model selection", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-store-cli-"));
 
@@ -763,6 +802,9 @@ describe("CLI", () => {
       "gateway discord setup",
       "gateway telegram",
       "gateway telegram setup",
+      "gateway whatsapp",
+      "gateway whatsapp setup",
+      "gateway whatsapp pair",
       "gateway work",
       "gateway status",
       "worker run",

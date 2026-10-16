@@ -137,6 +137,7 @@ test.concurrent("Discord setup saves protected settings and status never prints 
       channels: [
         { id: "discord", enabled: true },
         { id: "telegram", enabled: false },
+        { id: "whatsapp", enabled: false },
       ],
     });
     expect(status.stdout + status.stderr).not.toContain("discord-test-secret");
@@ -167,9 +168,53 @@ test.concurrent("Telegram setup saves protected settings without connecting and 
       channels: [
         { id: "discord", enabled: false },
         { id: "telegram", enabled: true },
+        { id: "whatsapp", enabled: false },
       ],
     });
     expect(status.stdout + status.stderr).not.toContain("telegram-test-secret");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 15_000);
+
+test.concurrent("WhatsApp setup stays offline and QR pairing rejects redirected output", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-whatsapp-setup-"));
+  const environment = { POPPET_DATA_DIR: directory };
+
+  try {
+    const invalid = await invokeProcess(
+      ["gateway", "whatsapp", "setup", "+447700900001", "447700900002"],
+      environment,
+    );
+
+    expect(invalid.exitCode).toBe(1);
+    expect(await readdir(directory)).toEqual([]);
+
+    const saved = await invokeProcess(
+      ["gateway", "whatsapp", "setup", "447700900001", "447700900002"],
+      environment,
+    );
+
+    expect(saved.exitCode).toBe(0);
+    expect((await stat(join(directory, "channels/whatsapp.json"))).mode & 0o777).toBe(0o600);
+    const status = await invokeProcess(["gateway", "status"], environment);
+    expect(status.exitCode).toBe(0);
+    expect(JSON.parse(status.stdout)).toMatchObject({
+      running: false,
+      enabled: true,
+      channels: [
+        { id: "discord", enabled: false },
+        { id: "telegram", enabled: false },
+        { id: "whatsapp", enabled: true },
+      ],
+    });
+    const pair = await invokeProcess(["gateway", "whatsapp", "pair"], environment);
+    expect(pair.exitCode).toBe(1);
+    expect(pair.stderr).toContain("requires an interactive terminal");
+    expect(await readdir(join(directory, "channels"))).toEqual([
+      "whatsapp.json",
+      "whatsapp.lock.sqlite",
+    ]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

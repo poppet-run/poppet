@@ -34,12 +34,20 @@ export const commandArgs = (
       const token = args[offset]!;
 
       if (
-        ["--at", "--cron", "--tz", "--skill", "--discord-thread", "--telegram-chat"].includes(token)
+        [
+          "--at",
+          "--cron",
+          "--tz",
+          "--skill",
+          "--discord-thread",
+          "--telegram-chat",
+          "--whatsapp-chat",
+        ].includes(token)
       )
         offset += 2;
       else if (
         token === "--coding" ||
-        /^--(?:at|cron|tz|skill|discord-thread|telegram-chat)=/.test(token)
+        /^--(?:at|cron|tz|skill|discord-thread|telegram-chat|whatsapp-chat)=/.test(token)
       )
         offset++;
       else break;

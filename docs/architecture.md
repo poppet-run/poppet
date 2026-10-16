@@ -32,26 +32,27 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 The Bun monorepo uses private workspaces:
 
-| Workspace                     | Responsibility                                                              | Workspace dependencies                                         |
-| ----------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition          | Config, agent, memory, tasks, store, platform, provider layers |
-| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states             | Config, memory, store, provider contract                       |
-| `@poppet/config`              | Validated settings and the `AppConfig` service                              | Provider contract                                              |
-| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                 | Provider contract                                              |
-| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle       | Config, credentials, provider contract                         |
-| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots            | Config and store for the local implementation                  |
-| `@poppet/platform`            | Worker actions, errors, and a host-supplied launch description              | None                                                           |
-| `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                | Platform contract                                              |
-| `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                   | Config, agent, store, worker transport, provider contract      |
-| `@poppet/worker`              | Protected local command transport and request lifecycle                     | Effect                                                         |
-| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery    | Agent, config, credentials, store, provider contract           |
-| `@poppet/channel-telegram`    | Telegram private chat, HTTP transport, polling normalization, and settings  | Gateway contract                                               |
-| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings | Gateway contract                                               |
-| `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts   | None                                                           |
-| `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming         | Provider contract                                              |
-| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing             | Provider contract, credentials, protocol adapters              |
-| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration            | Provider contract, credentials, protocol adapters              |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference | Provider contract, protocol adapters                           |
+| Workspace                     | Responsibility                                                                 | Workspace dependencies                                         |
+| ----------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition             | Config, agent, memory, tasks, store, platform, provider layers |
+| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                | Config, memory, store, provider contract                       |
+| `@poppet/config`              | Validated settings and the `AppConfig` service                                 | Provider contract                                              |
+| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                    | Provider contract                                              |
+| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle          | Config, credentials, provider contract                         |
+| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots               | Config and store for the local implementation                  |
+| `@poppet/platform`            | Worker actions, errors, and a host-supplied launch description                 | None                                                           |
+| `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                   | Platform contract                                              |
+| `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                      | Config, agent, store, worker transport, provider contract      |
+| `@poppet/worker`              | Protected local command transport and request lifecycle                        | Effect                                                         |
+| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery       | Agent, config, credentials, store, provider contract           |
+| `@poppet/channel-whatsapp`    | QR-linked personal chat, protected Signal keys, socket lifecycle, and settings | Gateway contract                                               |
+| `@poppet/channel-telegram`    | Telegram private chat, HTTP transport, polling normalization, and settings     | Gateway contract                                               |
+| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings    | Gateway contract                                               |
+| `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts      | None                                                           |
+| `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming            | Provider contract                                              |
+| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                | Provider contract, credentials, protocol adapters              |
+| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration               | Provider contract, credentials, protocol adapters              |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference    | Provider contract, protocol adapters                           |
 
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
@@ -703,8 +704,8 @@ record schema or migration changes are needed.
 
 ## Messaging gateway
 
-Discord thread chat and owner-only Telegram private chat are implemented.
-WhatsApp remains planned. The gateway runs
+Discord thread chat and owner-only Telegram and WhatsApp private chat are implemented.
+The gateway runs
 inside the neutral worker host, with scheduling optional, and shares its store, memory, model
 resolver, and serialized `Agent` instance with CLI and scheduled requests. The
 CLI composes these scoped services and preserves existing worker commands and
@@ -901,20 +902,39 @@ explicit rate-limit rejection permits the gateway's bounded retry, while network
 and server failures leave uncertain delivery records without automatic replay.
 `--telegram-chat` selects scheduled results through the existing resolver.
 
-### Later messaging support
+### WhatsApp personal-account chat
 
-WhatsApp follows a separate choice between a QR-linked WhatsApp Web adapter and
-the official Business Cloud API. The former carries unofficial-client account
-and protocol-compatibility risks; the latter needs business setup, a public signed
-webhook, and handling for outbound conversation-window/template restrictions.
-Verify current platform requirements when implementing that adapter.
+`@poppet/channel-whatsapp` owns QR pairing, the Baileys socket, and phone/LID
+normalization. The configured linked account and owner use canonical international
+phone digits in the gateway; JID/device formats stay inside the adapter. Only the
+owner's private text is accepted. Self-chat allows human outgoing messages while
+persisted assistant message IDs suppress echoes after restart or uncertain sends.
+
+`gateway whatsapp setup` saves configuration offline. `gateway whatsapp pair`
+requires a foreground TTY and is the only QR output path. The scoped
+`WhatsAppClient` service locks `channels/whatsapp-auth.sqlite`, stores SDK key
+batches transactionally, validates account identity on connection, and closes each
+socket before reconnecting. Its storage is separate from the transcript database;
+no shared-store migration is needed. Failed key persistence stops the adapter.
+A layer construction failure is reported per channel without stopping its peers.
+
+Automatic SDK message retries and full history synchronization are disabled.
+The SDK acknowledges events before the gateway can durably accept them, so a
+bounded receive buffer can lose pre-acceptance input after overload or a crash.
+Accepted inputs use the existing durable inbox and session bindings. Replies use
+stable saved IDs, plain text without previews, and uncertain outcomes without
+automatic replay. `--whatsapp-chat` uses the existing destination resolver and
+scheduled-result queue. See the [WhatsApp guide](whatsapp.md) for pairing and limits.
 
 ## Dependencies
 
 The foundation uses Effect 4.0.4, its Bun platform adapter, TypeScript 7.0.2,
 Oxfmt 0.73.0, Oxlint 1.88.0, and Bun 1.4.3 with matching Bun types. Bun checks types;
 TypeScript provides editor support. Versions are pinned and the lockfile is
-checked in. Effect provides Config and Schema, so a separate schema
+checked in. WhatsApp adds Baileys 7.0.0-rc14 and qrcode-terminal 0.12.0;
+imports, crypto initialization, auth serialization, protobuf, and QR rendering
+were checked under pinned Bun without connecting a live account. A narrow Bun patch
+removes private session objects from libsignal console output. Effect provides Config and Schema, so a separate schema
 library is unnecessary.
 
 Subscription verification adds OpenAI 7.32.0 for Responses streaming and jose

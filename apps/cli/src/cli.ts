@@ -453,9 +453,28 @@ export const makeCLI = (
             Flag.atMost(1),
             Flag.map(([value]) => value),
           ),
+          whatsappChat: Flag.String("whatsapp-chat").pipe(
+            Flag.withSchema(Schema.String.check(Schema.isPattern(/^[1-9]\d{6,14}$/))),
+            Flag.withDescription(
+              "Send each completed result to the configured WhatsApp owner phone",
+            ),
+            Flag.atMost(1),
+            Flag.map(([value]) => value),
+          ),
           prompt: textArgument("prompt"),
         },
-        ({ name, at, cron, tz, coding, prompt, skill, discordThread, telegramChat }) =>
+        ({
+          name,
+          at,
+          cron,
+          tz,
+          coding,
+          prompt,
+          skill,
+          discordThread,
+          telegramChat,
+          whatsappChat,
+        }) =>
           Effect.gen(function* () {
             const schedule = yield* taskOperation(() => {
               if (Option.isSome(at) && Option.isNone(cron) && Option.isNone(tz))
@@ -468,7 +487,10 @@ export const makeCLI = (
               });
             });
 
-            if (discordThread !== undefined && telegramChat !== undefined)
+            if (
+              [discordThread, telegramChat, whatsappChat].filter((value) => value !== undefined)
+                .length > 1
+            )
               return yield* Effect.fail(
                 new TaskError({ message: "Choose only one messaging destination." }),
               );
@@ -478,7 +500,9 @@ export const makeCLI = (
                 ? { adapter: "discord", conversationId: discordThread }
                 : telegramChat !== undefined
                   ? { adapter: "telegram", conversationId: telegramChat }
-                  : undefined;
+                  : whatsappChat !== undefined
+                    ? { adapter: "whatsapp", conversationId: whatsappChat }
+                    : undefined;
 
             const command = yield* prepareTask(name, schedule, coding, prompt, skill, delivery);
 
