@@ -67,25 +67,51 @@ const textPage = (body: Uint8Array, contentType: string | undefined) => {
     })
     .transform(source);
 
+  const parts: string[] = [];
   let text = "";
+  let preformatted = false;
+
+  const flush = () => {
+    const decoded = decodeHTML(text);
+    parts.push(
+      preformatted
+        ? decoded
+            .split("\u0001")
+            .filter((part) => part.length > 0)
+            .join("\n")
+        : decoded
+            .replace(/\s+/g, " ")
+            .split("\u0001")
+            .map((part) => part.trim())
+            .join("\n")
+            .replace(/\n+/g, "\n")
+            .trim(),
+    );
+    text = "";
+  };
 
   // Removed elements still emit text callbacks. Parse the cleaned document before collecting text.
   new HTMLRewriter()
+    .on("pre", {
+      element: (element) => {
+        flush();
+        preformatted = true;
+        element.onEndTag(() => {
+          flush();
+          preformatted = false;
+        });
+      },
+    })
     .onDocument({
       text: (chunk) => {
         text += chunk.text;
       },
     })
     .transform(cleaned);
+  flush();
 
   return {
-    text: decodeHTML(text)
-      .replace(/\s+/g, " ")
-      .split("\u0001")
-      .map((part) => part.trim())
-      .join("\n")
-      .replace(/\n+/g, "\n")
-      .trim(),
+    text: parts.filter((part) => part.length > 0).join("\n"),
     title: Array.from(decodeHTML(title).replace(/\s+/g, " ").trim()).slice(0, 256).join("") || null,
   };
 };
@@ -98,7 +124,7 @@ export const pageResult = (
 ) => {
   const page = textPage(body, contentType);
 
-  if (page.text.length === 0)
+  if (page.text.trim().length === 0)
     throw new AgentError({
       reason: "tool-network",
       message: "The page contains no usable static text. JavaScript rendering is unsupported.",

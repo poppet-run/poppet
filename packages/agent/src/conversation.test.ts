@@ -322,14 +322,9 @@ describe.concurrent("notes conversation", () => {
         Effect.gen(function* () {
           const store = yield* Store;
 
-          const session = yield* store.createSession(
-            "test-provider",
-            "test-model",
-            "assistant",
-            undefined,
-            undefined,
-            { name: "reader", content: "Read https://example.com/old" },
-          );
+          const skill = { name: "reader", content: "Read https://example.com/old" };
+          const session = yield* store.createSession("test-provider", "test-model", { skill });
+          expect(session.skill).toEqual(skill);
 
           const agent = yield* Agent;
           yield* Stream.runDrain(agent.send(session.id, "Remember https://example.com/old"));

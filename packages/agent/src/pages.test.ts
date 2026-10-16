@@ -80,6 +80,26 @@ describe.concurrent("supplied page reading", () => {
   });
 
   test.each([
+    { text: "Read <https://example.com/Yahoo!>", url: "https://example.com/Yahoo!" },
+    {
+      text: 'Read "https://example.com/report?token=abc;"',
+      url: "https://example.com/report?token=abc;",
+    },
+    { text: "Read `https://example.com/notes.`", url: "https://example.com/notes." },
+    { text: "Read 'https://example.com/ready?'", url: "https://example.com/ready?" },
+    { text: "Read [this](https://example.com/Yahoo!).", url: "https://example.com/Yahoo!" },
+    { text: "Read <https://example.com/path)>", url: "https://example.com/path)" },
+  ])("preserves punctuation in an explicitly delimited URL: $text", async ({ text, url }) => {
+    const urls = suppliedPageURLs(text);
+
+    expect([...urls]).toEqual([url]);
+    expect(await Effect.runPromise(decodeFetchPageCall(call(url), urls))).toEqual({
+      name: "fetch_page",
+      url,
+    });
+  });
+
+  test.each([
     "http://127.1",
     "http://2130706433/",
     "http://0x7f000001",
@@ -243,6 +263,26 @@ describe.concurrent("supplied page reading", () => {
     expect(result.truncated).toBe(false);
   });
 
+  test("preserves preformatted code whitespace while normalizing surrounding prose", async () => {
+    const html = `<p>Before   example.</p><pre><code>if ready:
+    deploy()
+
+log(&quot;done&quot;)
+	# keep  spacing</code></pre><p>After   example.</p>`;
+
+    const result = JSON.parse(
+      await Effect.runPromise(
+        fetch("https://example.com", {
+          request: () => Effect.succeed(response(html, "text/html")),
+        }),
+      ),
+    );
+
+    expect(result.text).toBe(
+      'Before example.\nif ready:\n    deploy()\n\nlog("done")\n\t# keep  spacing\nAfter example.',
+    );
+  });
+
   test("reads UTF-8 plain text and bounds serialized output including escaping and Unicode", async () => {
     const plain = await Bun.file(
       new URL("./test/fixtures/pages/plain.txt", import.meta.url),
@@ -277,6 +317,7 @@ describe.concurrent("supplied page reading", () => {
     response("No", "text/plain; charset=unknown"),
     { ...response(), body: new Uint8Array([0xff]) },
     response("<script>Only JS</script>", "text/html"),
+    response("<pre> \n </pre>", "text/html"),
     response('<meta charset="iso-8859-1"><p>Latin</p>', "text/html"),
     response(
       '<meta http-equiv="content-type" content="text/html; charset=windows-1252"><p>Latin</p>',
