@@ -42,6 +42,11 @@ attaches a session, and subsequent messages continue it. Each thread keeps its o
 across worker restarts, renames, and archiving. Start a new thread for a new
 session. Earlier messages in an existing thread are not imported.
 
+Use `@Poppet /new --skill weekly-review Review Acorn` to start a fresh session
+with a saved [local skill](skills.md#messaging-sessions), in a new thread or an
+existing one. `/new <message>` starts without a skill. Previous session history
+is retained; ordinary follow-ups keep the active session's skill snapshot.
+
 ## Progress and controls
 
 The bot shows Discord's typing indicator while working, including during tool
@@ -54,7 +59,7 @@ replaces it with ✅ after a successful run. Failed or cancelled requests clear
 the bot's 👀 without adding ✅. These markers are best effort; missing reaction
 permissions do not stop chat, and a crash or network error can leave a stale marker.
 
-In an attached thread, `@Poppet /status` reports its session and latest run;
+In an attached thread, `@Poppet /status` reports its session, selected skill, and latest run;
 `@Poppet /cancel` interrupts its active request and cancels its queued requests.
 These are text messages, not registered Discord slash commands. The bot ignores
 other users, bots, and webhooks. DMs, forums, attachments, voice, and streaming

@@ -46,10 +46,15 @@ invalid session once and request a fresh QR.
 
 ## Owner-only text chat
 
-The owner has one saved session per linked account and private chat, resumed after
+The owner has one active saved session per linked account and private chat, resumed after
 worker restart. Shared conversation bindings, inbox identities, cancellation, and
 reply delivery work as they do for the other adapters. `/status` reports the session
-and latest run; `/cancel` interrupts current work and cancels queued input.
+and latest run, including the selected skill; `/cancel` interrupts current work and cancels queued input.
+
+Send `/new --skill weekly-review Review Acorn` to start a fresh session with a
+saved [local skill](skills.md#messaging-sessions), or `/new <message>` to start
+without one. Previous sessions and history are retained. Ordinary follow-ups keep
+the active session's snapshot across restart and edits or deletion of the local file.
 
 Only ordinary private text from the configured owner is accepted. WhatsApp's LID
 addresses must resolve through the SDK's saved phone mapping; unresolved identities

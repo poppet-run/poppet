@@ -146,6 +146,18 @@ add a model tool or extend notes access. Creation requests carry only the select
 name; the process owning the store resolves it, including worker chat and task
 commands. Missing or invalid selections fail before creating a session or task.
 
+The gateway parses `/new --skill <name> <message>` and `/new <message>` after
+sender authorization. They use the durable request queue rather than the immediate
+status/cancel path. A valid command creates a fresh session with the worker's
+configured provider/model and optional skill snapshot, then atomically updates
+its conversation binding and inbox entry. Earlier sessions remain inspectable.
+The reserved inbox run ID makes new-session identity stable across a crash before
+binding, so recovery reuses a saved snapshot without rereading the file. Selection
+errors are delivered without changing the binding or invoking a model. The parsed
+prompt supplies inference and fallback titles; `/status` includes the skill name.
+Naming updates also check session identity so stale work cannot update a newer
+binding. Adapters and provider packages require no skill-specific changes.
+
 The shared store schema defines the bounded name/content snapshot. Migration 10
 adds nullable snapshots to sessions and jobs. Task execution copies the saved
 snapshot into each occurrence session without filesystem access. The agent adds
@@ -814,7 +826,8 @@ is:
 2. A message from the allowed user inside any allowed thread attaches a session
    if needed, without requiring a mention. It never creates a nested thread or
    imports unrelated history.
-3. Subsequent messages in that thread continue the same session. Only messages
+3. Subsequent messages in that thread continue the same session unless the owner
+   explicitly starts a fresh session with `/new`. Only messages
    in parent channels require an explicit mention to start a session.
 4. Replies remain in the thread. A different thread starts a separate session;
    an existing binding retains its saved provider, model, and workload.
@@ -824,7 +837,8 @@ Poppet session ID. Keep the initiating message ID for thread-creation recovery.
 Renaming or archiving a thread does not reset its session. If Discord no longer
 permits access or delivery, preserve the local history and report the failure
 locally instead of sending the answer to another channel. A new thread is the
-normal way to start a fresh conversation.
+normal way to start a fresh conversation; `/new` can replace the active binding
+without deleting earlier history.
 
 Use an outbound Discord Gateway connection; no public webhook is needed. Enable
 the Message Content intent for follow-ups without mentions, validate the required

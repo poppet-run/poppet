@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -157,6 +157,7 @@ const fixture = async (
   );
 
   return {
+    directory,
     sent,
     marks,
     requests,
@@ -202,6 +203,190 @@ const scheduled = (destination: DeliveryDestination | null) =>
   });
 
 describe.concurrent("messaging gateway", () => {
+  test.each(["discord", "telegram", "whatsapp"])(
+    "%s snapshots a selected skill, resumes it after restart, and starts an unskilled replacement",
+    async (adapter) => {
+      const state = await fixture({ id: adapter });
+      const path = join(state.directory, "skills/review/SKILL.md");
+      await mkdir(join(state.directory, "skills/review"), { recursive: true });
+      await writeFile(path, "Summarize progress using the saved review procedure.");
+
+      try {
+        const ids = await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            const repo = yield* GatewayRepository;
+            const store = yield* Store;
+            yield* gateway.accept(message("ordinary", "chat", "Original conversation"));
+            yield* gateway.processNext;
+            const original = repo.binding(adapter, "bot", "guild", "chat")!;
+            const selected = message("selected", "chat", "/new --skill review Review Acorn");
+            yield* gateway.accept(selected);
+            yield* gateway.accept(selected);
+            yield* gateway.processNext;
+            expect(yield* gateway.processNext).toBe(false);
+            const skilled = repo.binding(adapter, "bot", "guild", "chat")!;
+            expect(skilled).not.toBe(original);
+            expect(yield* store.session(skilled)).toMatchObject({
+              skill: {
+                name: "review",
+                content: "Summarize progress using the saved review procedure.",
+              },
+            });
+            expect((yield* store.messages(skilled)).map((entry) => entry.message)).toContainEqual({
+              role: "user",
+              text: "Review Acorn",
+            });
+            expect(yield* store.session(original)).toMatchObject({ skill: null });
+            yield* gateway.accept(message("status", "chat", "/status"));
+
+            while (yield* gateway.deliverNext) {
+              /* Drain the saved replies and status. */
+            }
+
+            return { original, skilled };
+          }),
+        );
+
+        expect(state.sent.at(-1)?.text).toContain("Skill: review");
+        await writeFile(path, "Edited procedure that existing sessions must not see.");
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            yield* gateway.recover;
+            yield* gateway.accept(message("follow-up", "chat", "Continue the review"));
+            yield* gateway.processNext;
+            expect((yield* GatewayRepository).binding(adapter, "bot", "guild", "chat")).toBe(
+              ids.skilled,
+            );
+            expect(state.requests.at(-1)?.instructions).toContain("saved review procedure");
+            expect(state.requests.at(-1)?.instructions).not.toContain("Edited procedure");
+          }),
+        );
+        await rm(path);
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            const store = yield* Store;
+            yield* gateway.accept(message("deleted-skill", "chat", "Continue again"));
+            yield* gateway.processNext;
+            expect(state.requests.at(-1)?.instructions).toContain("saved review procedure");
+            yield* gateway.accept(message("reset", "chat", "/new Start without a skill"));
+            yield* gateway.processNext;
+            const current = (yield* GatewayRepository).binding(adapter, "bot", "guild", "chat")!;
+            expect(current).not.toBe(ids.skilled);
+            expect(yield* store.session(current)).toMatchObject({ skill: null });
+            expect(state.requests.at(-1)?.instructions).not.toContain("saved review procedure");
+            expect(yield* store.sessions).toHaveLength(3);
+            expect(yield* store.messages(ids.original)).toHaveLength(2);
+            expect(yield* store.messages(ids.skilled)).toHaveLength(6);
+          }),
+        );
+        expect(state.requests).toHaveLength(5);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("invalid selection replies without changing the binding or invoking a model", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const repo = yield* GatewayRepository;
+          const store = yield* Store;
+          yield* gateway.accept(message("original", "chat"));
+          yield* gateway.processNext;
+          const original = repo.binding("discord", "bot", "guild", "chat");
+
+          for (const [index, text] of [
+            "/new",
+            "/new --skill",
+            "/new --skill review",
+            "/new --skill ../review prompt",
+            "/new --skill missing prompt",
+          ].entries()) {
+            yield* gateway.accept(message(`bad-${index}`, "chat", text));
+            yield* gateway.processNext;
+            expect(repo.binding("discord", "bot", "guild", "chat")).toBe(original);
+          }
+
+          yield* gateway.accept(message("unbound", null, "/new --skill missing prompt"));
+          yield* gateway.processNext;
+          expect(repo.binding("discord", "bot", "guild", "thread-unbound")).toBeNull();
+          expect(yield* store.sessions).toHaveLength(1);
+          expect(state.requests).toHaveLength(1);
+
+          while (yield* gateway.deliverNext) {
+            /* Drain validation replies. */
+          }
+        }),
+      );
+      expect(state.sent).toHaveLength(7);
+      expect(state.sent.filter((entry) => entry.text.startsWith("Use /new"))).toHaveLength(4);
+      expect(state.sent.at(-1)?.destination).toBe("thread-unbound");
+      expect(state.sent.at(-1)?.text).toContain("Could not load the selected skill");
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("recovers a selected session created before binding without reloading its skill", async () => {
+    const state = await fixture();
+    const path = join(state.directory, "skills/review/SKILL.md");
+    await mkdir(join(state.directory, "skills/review"), { recursive: true });
+    await writeFile(path, "Original saved procedure.");
+
+    try {
+      const selectedId = await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const { database } = yield* StoreDatabase;
+          yield* gateway.accept(message("original", "chat"));
+          yield* gateway.processNext;
+          const repo = yield* GatewayRepository;
+          const original = repo.binding("discord", "bot", "guild", "chat");
+          yield* gateway.accept(message("selected", "chat", "/new --skill review First request"));
+          database.run(
+            "CREATE TRIGGER fail_binding BEFORE INSERT ON gateway_bindings BEGIN SELECT RAISE(ABORT, 'test'); END",
+          );
+          expect(yield* gateway.processNext.pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "storage",
+          );
+          const sessions = yield* (yield* Store).sessions;
+          expect(sessions).toHaveLength(2);
+          expect(repo.binding("discord", "bot", "guild", "chat")).toBe(original);
+          // An abrupt process crash here leaves the input queued instead of running failure cleanup.
+          database.run("UPDATE gateway_inbox SET state = 'queued' WHERE external_id = 'selected'");
+
+          return sessions.find((session) => session.skill?.name === "review")!.id;
+        }),
+      );
+
+      await rm(path);
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          (yield* StoreDatabase).database.run("DROP TRIGGER fail_binding");
+          yield* gateway.recover;
+          yield* gateway.processNext;
+          expect((yield* GatewayRepository).binding("discord", "bot", "guild", "chat")).toBe(
+            selectedId,
+          );
+          expect(yield* (yield* Store).sessions).toHaveLength(2);
+          expect(state.requests).toHaveLength(2);
+          expect(state.requests[1]?.instructions).toContain("Original saved procedure.");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("polling records overload rejections and replies atomically before checkpointing", async () => {
     const offsets: (string | null)[] = [];
 
@@ -1168,7 +1353,7 @@ describe.concurrent("messaging gateway", () => {
           yield* gateway.accept(message("block", "thread-first", "Block"));
           const running = yield* gateway.processNext.pipe(Effect.forkChild);
           yield* Deferred.await(started);
-          yield* gateway.accept(message("queued", "thread-first", "Queued"));
+          yield* gateway.accept(message("queued", "thread-first", "/new --skill missing Queued"));
           yield* gateway.accept({ ...message("other", "other-thread"), mentioned: true });
           yield* gateway.accept(message("cancel", "thread-first", "/cancel"));
           yield* Fiber.join(running);
@@ -1187,6 +1372,7 @@ describe.concurrent("messaging gateway", () => {
             "completed",
             "interrupted",
           ]);
+          expect(yield* store.sessions).toHaveLength(2);
           yield* Stream.runDrain((yield* Agent).send(firstSession, "CLI follow-up"));
           expect(yield* gateway.status).toMatchObject({ queued: 0, executing: 0 });
         }),
@@ -1228,6 +1414,84 @@ describe.concurrent("messaging gateway", () => {
 });
 
 describe("managed conversation names", () => {
+  test("skips an old session's pending naming after its binding is replaced", async () => {
+    const started = Deferred.makeUnsafe<void>();
+    const release = Deferred.makeUnsafe<void>();
+    const renames: string[] = [];
+    let first = true;
+    let current = "Original";
+
+    const state = await fixture({
+      naming: {
+        sanitize: (title) => title,
+        changes: Stream.never,
+        conversation: (_input, title) => {
+          expect(title).toBe("Original");
+
+          return Effect.succeed({ id: "managed", managedName: title });
+        },
+        current: () =>
+          Effect.gen(function* () {
+            if (first) {
+              first = false;
+              yield* Deferred.succeed(started, undefined);
+              yield* Deferred.await(release);
+            }
+
+            return current;
+          }),
+        rename: (_input, _id, _expected, title) =>
+          Effect.sync(() => {
+            renames.push(title);
+            current = title;
+
+            return title;
+          }),
+      },
+    });
+
+    await mkdir(join(state.directory, "skills/review"), { recursive: true });
+    await writeFile(join(state.directory, "skills/review/SKILL.md"), "A review procedure.");
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const repo = yield* GatewayRepository;
+          const store = yield* Store;
+          yield* gateway.accept(message("original", null, "/new --skill review Original"));
+          yield* gateway.processNext;
+          yield* gateway.deliverNext;
+          const old = repo.binding("discord", "bot", "guild", "managed")!;
+          yield* store.renameSession(old, "Old delayed title");
+          const naming = yield* gateway.nameNext.pipe(Effect.forkChild);
+          yield* Deferred.await(started);
+          yield* gateway.accept(message("replacement", "managed", "/new New prompt"));
+          yield* gateway.processNext;
+          const replacement = repo.binding("discord", "bot", "guild", "managed")!;
+          yield* store.renameSession(replacement, "New title");
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(naming);
+          expect(renames).toEqual([]);
+          expect(repo.namedBinding("discord", "bot", "managed")).toMatchObject({
+            sessionId: replacement,
+            syncedTitle: null,
+            namingDisabled: false,
+          });
+          yield* gateway.deliverNext;
+          yield* gateway.nameNext;
+          expect(renames).toEqual(["New title"]);
+          expect(repo.namedBinding("discord", "bot", "managed")).toMatchObject({
+            managedName: "New title",
+            creationMessageId: "original",
+          });
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each([
     "generated",
     "manual",
@@ -1440,7 +1704,13 @@ describe("managed conversation names", () => {
 
           if (!session) throw new Error("Missing session");
           yield* (yield* Store).renameSession(session.id, "Pending title");
-          (yield* GatewayRepository).namePending("discord", "bot", "managed", "Pending title");
+          (yield* GatewayRepository).namePending(
+            "discord",
+            "bot",
+            "managed",
+            "Pending title",
+            session.id,
+          );
           current = "Pending title";
         }),
       );

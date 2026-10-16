@@ -30,11 +30,16 @@ channel status; it does not delete webhooks or discard pending updates.
 
 ## Conversations and controls
 
-The owner has one saved session per bot and private chat. It resumes after worker
+The owner has one active saved session per bot and private chat. It resumes after worker
 restart and retains its selected provider and model. Telegram and Discord have
 separate sessions even if external IDs happen to match.
 
-After the first exchange, `/status` reports the session and latest run. `/cancel`
+Send `/new --skill weekly-review Review Acorn` to start a fresh session with a
+saved [local skill](skills.md#messaging-sessions). `/new <message>` starts without
+a skill. Both retain previous sessions and history; ordinary follow-ups keep the
+active session's snapshot across restart and local file edits.
+
+After the first exchange, `/status` reports the session, skill, and latest run. `/cancel`
 interrupts active work and cancels queued input in this chat without waiting for
 inference. The adapter sends typing actions while processing and plain text
 replies, split at 4096 UTF-16 units without splitting a Unicode character.

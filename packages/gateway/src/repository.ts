@@ -169,30 +169,48 @@ const repository = Effect.gen(function* () {
           )
           .get(adapter, account, conversation),
       ),
-    nameAttempted: (adapter: string, account: string, conversation: string, title: string | null) =>
+    nameAttempted: (
+      adapter: string,
+      account: string,
+      conversation: string,
+      title: string | null,
+      session: string,
+    ) =>
       database
         .query(
-          "UPDATE gateway_bindings SET synced_title = ? WHERE adapter = ? AND account = ? AND conversation_id = ?",
+          "UPDATE gateway_bindings SET synced_title = ? WHERE adapter = ? AND account = ? AND conversation_id = ? AND session_id = ?",
         )
-        .run(title, adapter, account, conversation),
-    namePending: (adapter: string, account: string, conversation: string, name: string) =>
+        .run(title, adapter, account, conversation, session),
+    namePending: (
+      adapter: string,
+      account: string,
+      conversation: string,
+      name: string,
+      session: string,
+    ) =>
       database
         .query(
-          "UPDATE gateway_bindings SET pending_name = ? WHERE adapter = ? AND account = ? AND conversation_id = ? AND naming_disabled = 0",
+          "UPDATE gateway_bindings SET pending_name = ? WHERE adapter = ? AND account = ? AND conversation_id = ? AND naming_disabled = 0 AND session_id = ?",
         )
-        .run(name, adapter, account, conversation).changes === 1,
-    nameConfirmed: (adapter: string, account: string, conversation: string, name: string) =>
+        .run(name, adapter, account, conversation, session).changes === 1,
+    nameConfirmed: (
+      adapter: string,
+      account: string,
+      conversation: string,
+      name: string,
+      session: string,
+    ) =>
       database
         .query(
-          "UPDATE gateway_bindings SET managed_name = ?, pending_name = NULL WHERE adapter = ? AND account = ? AND conversation_id = ? AND naming_disabled = 0",
+          "UPDATE gateway_bindings SET managed_name = ?, pending_name = NULL WHERE adapter = ? AND account = ? AND conversation_id = ? AND naming_disabled = 0 AND session_id = ?",
         )
-        .run(name, adapter, account, conversation),
-    disableNaming: (adapter: string, account: string, conversation: string) =>
+        .run(name, adapter, account, conversation, session),
+    disableNaming: (adapter: string, account: string, conversation: string, session: string) =>
       database
         .query(
-          "UPDATE gateway_bindings SET naming_disabled = 1, pending_name = NULL WHERE adapter = ? AND account = ? AND conversation_id = ?",
+          "UPDATE gateway_bindings SET naming_disabled = 1, pending_name = NULL WHERE adapter = ? AND account = ? AND conversation_id = ? AND session_id = ?",
         )
-        .run(adapter, account, conversation),
+        .run(adapter, account, conversation, session),
     namingEntries: (adapter: string, account: string) =>
       Schema.decodeUnknownSync(Schema.Array(Inbox))(
         database
@@ -300,6 +318,7 @@ const repository = Effect.gen(function* () {
       conversation: string,
       session: string,
       managedName: string | null = null,
+      replace = false,
     ) =>
       database
         .transaction(() => {
@@ -317,6 +336,20 @@ const repository = Effect.gen(function* () {
               managedName === null ? null : entry.message.messageId,
             );
 
+          // Keep thread ownership and user naming overrides when replacing its session.
+          if (replace)
+            database
+              .query(`UPDATE gateway_bindings SET session_id = ?, synced_title = NULL
+                WHERE adapter = ? AND account = ? AND scope_id = ? AND conversation_id = ? AND session_id != ?`)
+              .run(
+                session,
+                entry.adapter,
+                entry.account,
+                entry.message.scopeId,
+                conversation,
+                session,
+              );
+
           if (
             binding(entry.adapter, entry.account, entry.message.scopeId, conversation) !== session
           )
@@ -326,6 +359,10 @@ const repository = Effect.gen(function* () {
             .run(conversation, session, id);
         })
         .immediate(),
+    address: (id: number, conversation: string) =>
+      database
+        .query("UPDATE gateway_inbox SET conversation_id = ? WHERE id = ?")
+        .run(conversation, id),
     state: (id: number, state: string) =>
       database.query("UPDATE gateway_inbox SET state = ? WHERE id = ?").run(state, id),
     cancel: (adapter: string, account: string, conversation: string) =>
