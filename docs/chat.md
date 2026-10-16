@@ -27,6 +27,17 @@ Each invocation sends one message. `chat sessions` lists saved sessions;
 and usage as JSON. Opaque provider continuation is retained privately in SQLite
 and omitted from this display. Inspection needs no selected model or login.
 
+## Select a skill
+
+```fish
+bun run start chat new --skill weekly-review "Review my Acorn project"
+```
+
+The session saves the skill's name and text when created. Later turns and restarts
+use that snapshot even if the file changes or disappears. `chat show` includes
+the saved `skill`; ordinary sessions have `null`. Skill instructions count toward
+the context budget and keep the existing tool permissions. See [skills](skills.md).
+
 ## Session titles
 
 New sessions save a title from their initial prompt before inference. Poppet

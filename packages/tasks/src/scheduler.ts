@@ -1,4 +1,4 @@
-import { Agent, AgentError, sessionTitle } from "@poppet/agent";
+import { Agent, AgentError, Skills, sessionTitle } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { ProviderError } from "@poppet/provider";
 import { Store, type StoreError } from "@poppet/store";
@@ -93,6 +93,7 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) 
         job.workload,
         undefined,
         sessionTitle(job.name),
+        job.skill,
       );
 
       yield* taskOperation(() => repo.link(item.id, session.id, null));
@@ -181,6 +182,7 @@ interface ActiveOccurrence {
 /** Recovers task state and builds serialized command handling plus the scheduling loop. */
 export const makeTaskWorker = Effect.gen(function* () {
   const config = yield* AppConfig;
+  const skills = yield* Skills;
   const store = yield* Store;
   const agent = yield* Agent;
   const repo = yield* TaskRepository;
@@ -271,7 +273,11 @@ export const makeTaskWorker = Effect.gen(function* () {
       yield* Queue.offer(wake, undefined);
 
       return result;
-    }).pipe(commands.withPermit, Effect.provideService(Console.Console, output));
+    }).pipe(
+      commands.withPermit,
+      Effect.provideService(Console.Console, output),
+      Effect.provideService(Skills, skills),
+    );
 
   const run = Effect.scoped(
     Effect.gen(function* () {

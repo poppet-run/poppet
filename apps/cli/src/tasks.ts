@@ -8,7 +8,13 @@ import {
 } from "@poppet/tasks";
 import { Effect, Schema } from "effect";
 
-export const prepareTask = (name: string, schedule: Schedule, coding: boolean, prompt: string) =>
+export const prepareTask = (
+  name: string,
+  schedule: Schedule,
+  coding: boolean,
+  prompt: string,
+  skill?: string,
+) =>
   Effect.gen(function* () {
     yield* taskOperation(() => nextOccurrence(schedule, Date.now()));
     const config = yield* AppConfig;
@@ -18,7 +24,7 @@ export const prepareTask = (name: string, schedule: Schedule, coding: boolean, p
         new TaskError({ message: "Set POPPET_MODEL before adding a task." }),
       );
 
-    return yield* Schema.decodeUnknownEffect(TaskCommand)({
+    const command = {
       action: "add",
       task: {
         name,
@@ -28,7 +34,11 @@ export const prepareTask = (name: string, schedule: Schedule, coding: boolean, p
         model: config.model,
         workload: coding ? "coding" : "assistant",
       },
-    }).pipe(
+    };
+
+    return yield* Schema.decodeUnknownEffect(TaskCommand)(
+      skill === undefined ? command : { ...command, skill },
+    ).pipe(
       Effect.mapError(
         () =>
           new TaskError({

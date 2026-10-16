@@ -65,16 +65,26 @@ for provider-specific setup and logout behavior.
 
 ## Chat
 
-| Command                         | Action                                                      |
-| ------------------------------- | ----------------------------------------------------------- |
-| `chat new [--coding] <message>` | Start a session with the configured provider and model.     |
-| `chat send <session> <message>` | Continue a saved session.                                   |
-| `chat search <query>`           | Search completed conversation text without inference.       |
-| `chat sessions`                 | List saved sessions.                                        |
-| `chat show <session>`           | Print saved messages, tool calls, and run outcomes as JSON. |
+| Command                                          | Action                                                      |
+| ------------------------------------------------ | ----------------------------------------------------------- |
+| `chat new [--coding] [--skill <name>] <message>` | Start a session with the configured provider and model.     |
+| `chat send <session> <message>`                  | Continue a saved session.                                   |
+| `chat search <query>`                            | Search completed conversation text without inference.       |
+| `chat sessions`                                  | List saved sessions.                                        |
+| `chat show <session>`                            | Print saved messages, tool calls, and run outcomes as JSON. |
 
 See [chat](chat.md) for session selection, streaming, cancellation, and limits,
 and [notes](notes.md) for the tools available during a run.
+
+## Skills
+
+| Command              | Action                                                     |
+| -------------------- | ---------------------------------------------------------- |
+| `skills list`        | List local skill directories without opening the database. |
+| `skills show <name>` | Read and validate a local SKILL.md file.                   |
+
+Use `--skill <name>` before a new chat message or task prompt to save the current
+procedure with that session or task. See [skills](skills.md) for examples and limits.
 
 ## Memory
 
@@ -89,21 +99,21 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 
 ## Scheduled tasks
 
-| Command                                                                    | Action                                                       |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `tasks add <name> --at <timestamp> [--coding] <prompt>`                    | Schedule a one-off request.                                  |
-| `tasks add <name> --cron <expression> --tz <timezone> [--coding] <prompt>` | Schedule recurring work.                                     |
-| `tasks list`                                                               | List saved tasks.                                            |
-| `tasks show <task>`                                                        | Show occurrences, results, and skipped intervals.            |
-| `tasks pause <task>`                                                       | Pause scheduling and cancel pending work.                    |
-| `tasks resume <task>`                                                      | Resume future occurrences.                                   |
-| `tasks cancel <occurrence>`                                                | Cancel pending or active work.                               |
-| `tasks retry <occurrence>`                                                 | Explicitly retry an unsuccessful occurrence.                 |
-| `tasks clear`                                                              | Interrupt active work and remove all tasks and task history. |
-| `tasks providers`                                                          | Show provider quota pauses and temporary backoff.            |
-| `tasks resume-provider <provider>`                                         | Allow scheduled requests for a provider again.               |
-| `tasks status`                                                             | Show task counts, recent outcomes, and worker status.        |
-| `tasks work`                                                               | Run scheduling only in the foreground.                       |
+| Command                                                                                     | Action                                                       |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `tasks add <name> --at <timestamp> [--coding] [--skill <name>] <prompt>`                    | Schedule a one-off request.                                  |
+| `tasks add <name> --cron <expression> --tz <timezone> [--coding] [--skill <name>] <prompt>` | Schedule recurring work.                                     |
+| `tasks list`                                                                                | List saved tasks.                                            |
+| `tasks show <task>`                                                                         | Show occurrences, results, and skipped intervals.            |
+| `tasks pause <task>`                                                                        | Pause scheduling and cancel pending work.                    |
+| `tasks resume <task>`                                                                       | Resume future occurrences.                                   |
+| `tasks cancel <occurrence>`                                                                 | Cancel pending or active work.                               |
+| `tasks retry <occurrence>`                                                                  | Explicitly retry an unsuccessful occurrence.                 |
+| `tasks clear`                                                                               | Interrupt active work and remove all tasks and task history. |
+| `tasks providers`                                                                           | Show provider quota pauses and temporary backoff.            |
+| `tasks resume-provider <provider>`                                                          | Allow scheduled requests for a provider again.               |
+| `tasks status`                                                                              | Show task counts, recent outcomes, and worker status.        |
+| `tasks work`                                                                                | Run scheduling only in the foreground.                       |
 
 See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what
 `clear` deletes or retains. Tasks execute while a worker with scheduling enabled

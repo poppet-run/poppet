@@ -44,6 +44,14 @@ or interrupted. Successful completion writes its assistant message and result
 in one transaction. The store validates continuation identity on write and read.
 It permits one pending or running run across all sessions.
 
+## Skill snapshots
+
+Migration 10 adds nullable JSON `skill` columns to sessions and jobs. Each selected
+skill saves its validated `name` and full `content` at creation. Existing records
+have no skill. Task occurrences copy their task's snapshot into the new session;
+no later run rereads the skill file. Inspection exposes snapshots without provider
+continuation or credentials. See [skills](skills.md).
+
 ## Conversation search index
 
 Migration 9 creates an FTS5 index and backfills completed user messages and final

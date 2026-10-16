@@ -1,5 +1,5 @@
 import { BunServices } from "@effect/platform-bun";
-import { ChatSettings, ChatSettingsLive } from "@poppet/agent";
+import { ChatSettings, ChatSettingsLive, Skills } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
 import { MemoryKey, MemoryValue } from "@poppet/memory";
@@ -13,7 +13,7 @@ import {
   type ProviderRegistration,
   ProviderId,
 } from "@poppet/provider";
-import { Session, SessionSearchQuery, Store } from "@poppet/store";
+import { Session, SessionSearchQuery, SkillName, Store } from "@poppet/store";
 import {
   WorkerConnections,
   remoteTaskCommand,
@@ -69,6 +69,13 @@ const codingFlag = Flag.Boolean("coding").pipe(
   Flag.withDescription("Use the coding workload"),
   Flag.atMost(1),
   Flag.map(([value = false]) => value),
+);
+
+const skillFlag = Flag.String("skill").pipe(
+  Flag.withSchema(SkillName),
+  Flag.withDescription("Select a local Markdown skill and save its current text"),
+  Flag.atMost(1),
+  Flag.map(([value]) => value),
 );
 
 const showConfig = Effect.gen(function* () {
@@ -335,9 +342,14 @@ export const makeCLI = (
         "new",
         {
           coding: codingFlag,
+          skill: skillFlag,
           text: textArgument("message").pipe(Argument.withSchema(MessageText)),
         },
-        ({ coding, text }) => runChat({ action: "new", coding, text }),
+        ({ coding, text, skill }) => {
+          const command: ChatCommand = { action: "new", coding, text };
+
+          return runChat(skill === undefined ? command : { ...command, skill });
+        },
       ).pipe(Command.withDescription("Start a session")),
       Command.make(
         "send",
@@ -426,9 +438,10 @@ export const makeCLI = (
             Flag.map(([value]) => Option.fromUndefinedOr(value)),
           ),
           coding: codingFlag,
+          skill: skillFlag,
           prompt: textArgument("prompt"),
         },
-        ({ name, at, cron, tz, coding, prompt }) =>
+        ({ name, at, cron, tz, coding, prompt, skill }) =>
           Effect.gen(function* () {
             const schedule = yield* taskOperation(() => {
               if (Option.isSome(at) && Option.isNone(cron) && Option.isNone(tz))
@@ -441,7 +454,7 @@ export const makeCLI = (
               });
             });
 
-            const command = yield* prepareTask(name, schedule, coding, prompt);
+            const command = yield* prepareTask(name, schedule, coding, prompt, skill);
             yield* runTasks(command);
           }).pipe(Effect.provide(runtime.config)),
       ).pipe(
@@ -597,6 +610,26 @@ export const makeCLI = (
               );
             }).pipe(Effect.provide(runtime.model)),
           ).pipe(Command.withDescription("Verify the configured model with a local tool")),
+        ]),
+      ),
+      Command.make("skills").pipe(
+        Command.withDescription("Inspect local Markdown skills"),
+        Command.withSubcommands([
+          Command.make("list", {}, () =>
+            Skills.use((skills) => skills.list).pipe(
+              Effect.flatMap((names) => Console.log(JSON.stringify(names, null, 2))),
+              Effect.provide(runtime.skills),
+            ),
+          ),
+          Command.make(
+            "show",
+            { name: Argument.String("name").pipe(Argument.withSchema(SkillName)) },
+            ({ name }) =>
+              Skills.use((skills) => skills.load(name)).pipe(
+                Effect.flatMap((skill) => Console.log(skill.content)),
+                Effect.provide(runtime.skills),
+              ),
+          ),
         ]),
       ),
       chat,

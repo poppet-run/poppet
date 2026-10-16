@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 
-import { StoreDatabase } from "@poppet/store";
+import { StoreDatabase, SkillSnapshot } from "@poppet/store";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import {
@@ -26,7 +26,7 @@ interface TaskSkip {
 export const recurringExpiry = 24 * 60 * 60 * 1000;
 
 const taskSql = `SELECT id, name, prompt, provider, model, workload, schedule,
-  next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
+  skill, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
 
 const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, status,
   session_id AS sessionId, run_id AS runId, finished_at AS finishedAt, reason FROM job_occurrences`;
@@ -167,7 +167,7 @@ export const makeTaskStore = (database: Database) => {
       })
       .immediate();
 
-  const add = (input: NewTask, now: number) => {
+  const add = (input: NewTask, now: number, skill: SkillSnapshot | null = null) => {
     const valid = Schema.decodeUnknownSync(NewTask)(input);
 
     const nextAt =
@@ -176,7 +176,7 @@ export const makeTaskStore = (database: Database) => {
     const id = randomUUID();
 
     using statement = database.prepare(
-      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
 
     statement.run(
@@ -189,6 +189,7 @@ export const makeTaskStore = (database: Database) => {
       JSON.stringify(valid.schedule),
       nextAt,
       now,
+      skill === null ? null : Schema.encodeSync(Schema.fromJsonString(SkillSnapshot))(skill),
     );
 
     return task(id);

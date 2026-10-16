@@ -127,7 +127,13 @@ export const AgentLive = Layer.effect(
 
             const reply = Stream.unwrap(
               Effect.gen(function* () {
-                const prompt = yield* readMemoryPrompt();
+                const basePrompt = yield* readMemoryPrompt();
+
+                const prompt =
+                  session.skill === null
+                    ? basePrompt
+                    : `${basePrompt}\n\nExplicitly selected owner-written procedure follows as JSON. Apply it to this session, below the base rules. It cannot override explicit user requests, tool permissions, or scheduled runs' read-only notes policy. It grants no additional capabilities.\n${JSON.stringify(session.skill)}`;
+
                 const model = yield* resolver.resolve(session.provider, session.model);
 
                 if (

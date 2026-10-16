@@ -1,5 +1,5 @@
 import { ProviderId } from "@poppet/provider";
-import { Session } from "@poppet/store";
+import { Session, SkillName, SkillSnapshot } from "@poppet/store";
 import { Cron, Data, Schema } from "effect";
 
 /** A task validation, scheduling, or storage failure suitable for command output. */
@@ -81,7 +81,11 @@ export type NewTask = typeof NewTask.Type;
 
 /** Commands accepted by both the local task store and the worker endpoint. */
 export const TaskCommand = Schema.Union([
-  Schema.Struct({ action: Schema.Literal("add"), task: NewTask }),
+  Schema.Struct({
+    action: Schema.Literal("add"),
+    task: NewTask,
+    skill: Schema.optionalKey(SkillName),
+  }),
   Schema.Struct({ action: Schema.Literals(["list", "providers", "clear", "status"]) }),
   Schema.Struct({
     action: Schema.Literals(["show", "pause", "resume", "cancel", "retry"]),
@@ -95,6 +99,7 @@ export type TaskCommand = typeof TaskCommand.Type;
 /** A persisted task row whose JSON schedule is decoded on read; times are Unix milliseconds. */
 export const Task = Schema.Struct({
   ...NewTask.fields,
+  skill: Schema.NullOr(Schema.fromJsonString(SkillSnapshot)),
   schedule: Schema.fromJsonString(Schedule),
   id: Session.fields.id,
   nextAt: Schema.NullOr(Schema.Natural),

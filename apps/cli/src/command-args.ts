@@ -14,7 +14,15 @@ export const commandArgs = (
     if (args.includes("--help") || args.includes("-h")) return args;
     offset = 2;
   } else if (args[0] === "chat" && args[1] === "new") {
-    offset = args[2] === "--coding" ? 3 : 2;
+    offset = 2;
+
+    while (offset < args.length) {
+      const token = args[offset]!;
+
+      if (token === "--skill") offset += 2;
+      else if (token === "--coding" || token.startsWith("--skill=")) offset++;
+      else break;
+    }
   } else if (args[0] === "chat" && ["send", "rename"].includes(args[1] ?? "")) {
     offset = 3;
   } else if (args[0] === "memory" && ["remember", "replace"].includes(args[1] ?? "")) {
@@ -25,8 +33,8 @@ export const commandArgs = (
     while (offset < args.length) {
       const token = args[offset]!;
 
-      if (["--at", "--cron", "--tz"].includes(token)) offset += 2;
-      else if (token === "--coding" || /^--(?:at|cron|tz)=/.test(token)) offset++;
+      if (["--at", "--cron", "--tz", "--skill"].includes(token)) offset += 2;
+      else if (token === "--coding" || /^--(?:at|cron|tz|skill)=/.test(token)) offset++;
       else break;
     }
   } else return args;

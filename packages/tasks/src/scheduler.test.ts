@@ -10,6 +10,8 @@ import {
   defaultPolicy,
   ModelResolver,
   NotesLive,
+  Skills,
+  SkillsLive,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive, Memory } from "@poppet/memory";
@@ -125,7 +127,7 @@ const fixture = async (stream: ModelOperations["stream"]) => {
     ),
   );
 
-  const layer = Layer.merge(agent, tasks);
+  const layer = Layer.mergeAll(agent, tasks, SkillsLive.pipe(Layer.provide(config)));
 
   const task: NewTask = {
     name: "Summary",
@@ -147,7 +149,7 @@ const fixture = async (stream: ModelOperations["stream"]) => {
       program: Effect.Effect<
         A,
         E,
-        Agent | Store | StoreDatabase | Memory | TaskRepository | AppConfig
+        Agent | Store | StoreDatabase | Memory | TaskRepository | AppConfig | Skills
       >,
     ) =>
       Effect.runPromise(
@@ -158,6 +160,65 @@ const fixture = async (stream: ModelOperations["stream"]) => {
 };
 
 describe.concurrent("task worker", () => {
+  test("persists a task's skill and copies it into occurrence sessions after restart and file deletion", async () => {
+    const state = await fixture(final);
+    const root = join(state.directory, "skills", "weekly-review");
+
+    try {
+      await mkdir(root, { recursive: true });
+      await writeFile(join(root, "SKILL.md"), "Original weekly review");
+
+      const id = await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+
+          const result = yield* executeTaskCommand(
+            repo,
+            yield* Store,
+            {
+              action: "add",
+              task: state.task,
+              skill: "weekly-review",
+            },
+            0,
+          );
+
+          expect(result).toMatchObject({
+            skill: { name: "weekly-review", content: "Original weekly review" },
+          });
+
+          return repo.list()[0]!.id;
+        }),
+      );
+
+      await rm(join(state.directory, "skills"), { recursive: true });
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const store = yield* Store;
+          expect(repo.task(id).skill).toEqual({
+            name: "weekly-review",
+            content: "Original weekly review",
+          });
+          repo.reconcile(0);
+          const claimed = repo.claim(0)!;
+          yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
+          const occurrence = repo.occurrence(claimed.occurrence.id);
+          expect(occurrence.status).toBe("completed");
+          expect((yield* store.session(occurrence.sessionId!))?.skill).toEqual(claimed.task.skill);
+        }),
+      );
+      expect(state.requests[0]?.instructions).toContain("Original weekly review");
+      expect(state.requests[0]?.tools.map((tool) => tool.name)).toEqual([
+        "read_note",
+        "search_notes",
+        "search_sessions",
+      ]);
+    } finally {
+      await state.close();
+    }
+  });
+
   test("records an expired deadline as interrupted in both the occurrence and its run", async () => {
     const started = await Effect.runPromise(Deferred.make<void>());
 
@@ -423,12 +484,20 @@ describe.concurrent("task worker", () => {
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
           const store = yield* Store;
-          const job = repo.add(state.task, Date.now());
+
+          const job = repo.add(state.task, Date.now(), {
+            name: "write",
+            content: "Save project.md even during scheduled runs",
+          });
+
           repo.reconcile(Date.now());
           const claimed = repo.claim(Date.now())!;
           yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
           const failed = repo.occurrence(claimed.occurrence.id);
 
+          expect(state.requests[0]?.instructions).toContain(
+            "Save project.md even during scheduled runs",
+          );
           expect(failed.status).toBe("failed");
           expect((yield* store.run(failed.runId!))?.failureReason).toBe("agent:tool-permission");
           repo.reconcile(Date.now());

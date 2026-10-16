@@ -20,6 +20,7 @@ import {
   RunOutcome,
   Session,
   SessionTitle,
+  SkillSnapshot,
   SessionSearchMatch,
   SessionSearchQuery,
   type SessionSearchResult,
@@ -38,6 +39,7 @@ interface StoreOperations {
     workload?: Session["workload"],
     id?: string,
     taskTitle?: string,
+    skill?: SkillSnapshot | null,
   ) => Effect.Effect<Session, StoreError>;
   /** Manual metadata changes never reorder history; manual names win over in-flight generation. */
   readonly renameSession: (id: string, title: string) => Effect.Effect<Session, StoreError>;
@@ -95,11 +97,12 @@ interface StoreOperations {
 export class Store extends Context.Service<Store, StoreOperations>()("poppet/Store") {}
 
 const sessionSql = `SELECT id, provider, model, workload, created_at AS createdAt, updated_at AS updatedAt,
-  title, title_source AS titleSource, title_attempted AS titleAttempted, title_usage AS titleUsage FROM sessions`;
+  title, title_source AS titleSource, title_attempted AS titleAttempted, title_usage AS titleUsage, skill FROM sessions`;
 
 const SessionRecord = Schema.Struct({
   ...Session.fields,
   titleAttempted: Schema.BooleanFromBit,
+  skill: Schema.NullOr(Schema.fromJsonString(SkillSnapshot)),
   titleUsage: Schema.NullOr(Schema.fromJsonString(Completion.fields.usage)),
 });
 
@@ -325,6 +328,7 @@ export const StoreLive = Layer.effect(
       workload: Session["workload"] = "assistant",
       suppliedId?: string,
       taskTitle?: string,
+      skill: SkillSnapshot | null = null,
     ) =>
       atTime((at) => {
         const selectedProvider = Schema.decodeUnknownSync(ProviderId)(provider);
@@ -338,8 +342,8 @@ export const StoreLive = Layer.effect(
             : Schema.decodeUnknownSync(SessionTitle)(taskTitle);
 
         database
-          .query(`INSERT INTO sessions (id, provider, model, created_at, updated_at, workload, title, title_source, title_attempted)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .query(`INSERT INTO sessions (id, provider, model, created_at, updated_at, workload, title, title_source, title_attempted, skill)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(
             id,
             selectedProvider,
@@ -350,6 +354,7 @@ export const StoreLive = Layer.effect(
             title,
             taskTitle === undefined ? "fallback" : "task",
             taskTitle === undefined ? 0 : 1,
+            skill === null ? null : Schema.encodeSync(Schema.fromJsonString(SkillSnapshot))(skill),
           );
 
         return requireSession(database, id);
