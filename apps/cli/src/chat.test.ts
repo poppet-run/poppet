@@ -70,6 +70,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     built: 0,
     writeFails: false,
     useTools: false,
+    memoryChange: false,
     hold: false,
     failNext: false,
     active: 0,
@@ -142,9 +143,13 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                                   {
                                     type: "tool-call" as const,
                                     callId: "save",
-                                    name: "save_note",
-                                    namespace: "poppet_notes",
-                                    arguments: '{"path":"summary.md","content":"A saved summary"}',
+                                    name: state.memoryChange ? "memory" : "save_note",
+                                    namespace: state.memoryChange
+                                      ? "poppet_memory"
+                                      : "poppet_notes",
+                                    arguments: state.memoryChange
+                                      ? '{"action":"remember","key":"answer.style","value":"Keep answers concise"}'
+                                      : '{"path":"summary.md","content":"A saved summary"}',
                                   },
                                 ]
                               : [{ type: "text" as const, text: "Answer" }],
@@ -1168,6 +1173,54 @@ describe("chat CLI", () => {
       await saved.close();
     }
   });
+
+  test.each(["local", "worker"])(
+    "model memory changes share the CLI store through %s execution",
+    async (mode) => {
+      const chat = await fixture();
+      const remote = mode === "worker";
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
+
+      const inspect = async (args: string[]) => {
+        chat.chunks.length = 0;
+        await chat.invoke(args);
+
+        return JSON.parse(remote ? chat.chunks.join("") : chat.lines.at(-1)!);
+      };
+
+      try {
+        chat.state.useTools = true;
+        chat.state.memoryChange = true;
+
+        if (remote) worker = await chat.startWorker();
+        await chat.invoke(["chat", "new", "Remember that I prefer concise answers"]);
+
+        const session = chat.errors
+          .find((line) => line.startsWith("Session: "))!
+          .slice("Session: ".length);
+
+        const saved = await inspect(["chat", "show", session]);
+        expect(saved.toolCalls).toMatchObject([
+          { name: "memory", namespace: "poppet_memory", status: "completed" },
+        ]);
+        expect(await inspect(["memory", "list"])).toEqual([
+          expect.objectContaining({
+            key: "answer.style",
+            value: "Keep answers concise",
+            sourceRunId: saved.runs[0].id,
+          }),
+        ]);
+        chat.state.useTools = false;
+        await chat.invoke(["chat", "new", "How should you answer?"]);
+        expect(chat.requests.at(-1)!.instructions).toContain(
+          '"key":"answer.style","value":"Keep answers concise"',
+        );
+      } finally {
+        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
 
   test("saves a requested note through chat and exposes tool execution in session inspection", async () => {
     const chat = await fixture();

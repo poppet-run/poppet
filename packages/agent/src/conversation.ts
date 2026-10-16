@@ -1,3 +1,4 @@
+import { Memory } from "@poppet/memory";
 import type {
   Completion,
   Message,
@@ -10,6 +11,12 @@ import { Effect, Match, Stream } from "effect";
 
 import { assembleContext, byteSize, outputBudget } from "#src/context";
 import { AgentError } from "#src/errors";
+import {
+  memoryTool,
+  decodeMemoryCall,
+  executeMemoryCall,
+  type MemoryCall,
+} from "#src/memory-tools";
 import { Notes, decodeNoteCall, noteTools, type NoteCall } from "#src/notes";
 import {
   Pages,
@@ -26,13 +33,14 @@ import { ChatSettings } from "#src/settings";
 export const conversation = Effect.gen(function* () {
   const store = yield* Store;
   const notes = yield* Notes;
+  const memory = yield* Memory;
   const pages = yield* Pages;
   const policy = yield* ChatSettings;
 
   const executeTool = (
     run: Run,
     callId: string,
-    call: NoteCall | SessionSearchCall | FetchPageCall,
+    call: NoteCall | SessionSearchCall | FetchPageCall | MemoryCall,
   ) => {
     const operation = Effect.gen(function* () {
       yield* store.startToolCall(run.id, callId);
@@ -44,6 +52,9 @@ export const conversation = Effect.gen(function* () {
             .pipe(Effect.map((value) => JSON.stringify(value))),
         ),
         Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
+        Match.when({ name: "memory" }, (plan) =>
+          executeMemoryCall(memory, plan, run.id, policy.factsBytes),
+        ),
         Match.orElse((plan) => notes.execute(plan)),
       );
 
@@ -51,7 +62,11 @@ export const conversation = Effect.gen(function* () {
         Effect.catch((error) =>
           Effect.gen(function* () {
             yield* store.finishToolCall(run.id, callId, {
-              status: call.name === "save_note" ? "uncertain" : "failed",
+              status:
+                call.name === "save_note" ||
+                (call.name === "memory" && error.reason === "memory-storage")
+                  ? "uncertain"
+                  : "failed",
               reason: `${error instanceof AgentError ? "agent" : "store"}:${error.reason}`,
             });
 
@@ -66,7 +81,9 @@ export const conversation = Effect.gen(function* () {
     });
 
     // Keep an atomic write and its durable result together on graceful cancellation.
-    return call.name === "save_note" ? Effect.uninterruptible(operation) : operation;
+    return call.name === "save_note" || call.name === "memory"
+      ? Effect.uninterruptible(operation)
+      : operation;
   };
 
   return (
@@ -76,12 +93,12 @@ export const conversation = Effect.gen(function* () {
     history: ReadonlyArray<StoredMessage>,
     runs: ReadonlyArray<Run>,
     prompt: string,
-    readOnlyNotes: boolean,
+    readOnlyTools: boolean,
   ) =>
     Stream.suspend(() => {
       const tools = model.description.capabilities.tools
-        ? [...noteTools, sessionSearchTool, fetchPageTool].filter(
-            (tool) => !readOnlyNotes || tool.name !== "save_note",
+        ? [...noteTools, sessionSearchTool, fetchPageTool, memoryTool].filter(
+            (tool) => !readOnlyTools || (tool.name !== "save_note" && tool.name !== "memory"),
           )
         : [];
 
@@ -186,13 +203,13 @@ export const conversation = Effect.gen(function* () {
                         }),
                       );
 
-                    // Validate the whole batch before any call can change notes.
+                    // Validate the whole batch before any call can change notes or memory.
                     const planned = yield* Effect.forEach(
                       calls,
                       (
                         call,
                       ): Effect.Effect<
-                        NoteCall | SessionSearchCall | FetchPageCall,
+                        NoteCall | SessionSearchCall | FetchPageCall | MemoryCall,
                         AgentError
                       > => {
                         if (
@@ -209,6 +226,7 @@ export const conversation = Effect.gen(function* () {
 
                         return Match.value(call).pipe(
                           Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
+                          Match.when({ name: "memory" }, decodeMemoryCall),
                           Match.when({ name: "fetch_page" }, (plan) =>
                             decodeFetchPageCall(plan, allowedURLs),
                           ),

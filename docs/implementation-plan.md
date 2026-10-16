@@ -323,8 +323,8 @@ remembering, replacing, and forgetting facts. Load an editable `profile.md` and
 bounded saved facts at the start of each run. Facts have stable keys, values,
 source runs when applicable, and update times.
 
-Save facts only when explicitly requested. Start with CLI management. Add a
-model-callable memory tool later if chat usage establishes a need for it.
+Save facts only when explicitly requested. CLI management and the model-callable
+`poppet_memory.memory` tool are implemented.
 
 Completion check: save a preference, use it in a fresh session, update it, and
 forget it across restarts. This completes the first personal-assistant milestone.
@@ -343,8 +343,22 @@ counts toward the overall context budget. Resuming reloads current memory.
 
 Tests cover CLI restarts, new and resumed chat context, replacement and deletion,
 source runs, migration from schemas 1–4, limits, malformed profiles, and fixed
-snapshots during tool execution. Chat does not save facts automatically; a callable
-memory tool remains deferred. Live model use of memory remains a manual check.
+snapshots during tool execution. Chat does not automatically extract facts. The
+model-callable tool handles explicit remember/replace/forget requests through the
+same memory service, validates key/value arguments, preflights the next fact
+budget, and records the active source run for saved/replaced facts. Current facts
+are already in the prompt, so no model listing action is needed. Context files,
+history, retrieved content, and skills cannot grant permission to change memory.
+Scheduled runs use `readOnlyTools` and cannot write notes or memory.
+
+Memory calls use the existing durable tool journal. Started mutations finish their
+result on graceful cancellation; uncertain writes and committed changes whose
+results were not persisted are never automatically replayed. Completed changes
+remain even if the run later fails. Automated checks cover local/worker parity,
+provenance, restart, schema and byte limits, whole-batch validation, scheduled-run
+restrictions, cancellation, and failed writes/results. No dependency or store
+migration was added. Live model intent handling and memory changes remain manual
+checks in the [memory guide](memory.md#ask-the-model-to-change-a-fact).
 
 Memory now lives in `@poppet/memory` behind a small `Memory` service. The CLI wires
 `LocalMemoryLive` to the store's shared scoped database. Fact operations and profile

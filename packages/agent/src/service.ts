@@ -44,11 +44,11 @@ export class Agent extends Context.Service<
   {
     /** Best-effort optional naming after the answer has been delivered. */
     readonly nameSession: (sessionId: string) => Effect.Effect<void>;
-    /** Streams a reply into an existing session; execution starts when consumed. */
+    /** Streams a reply when consumed; readOnlyTools excludes note and memory writes. */
     readonly send: (
       sessionId: string,
       text: string,
-      options?: { readonly readOnlyNotes?: boolean; readonly runId?: string },
+      options?: { readonly readOnlyTools?: boolean; readonly runId?: string },
     ) => Stream.Stream<ChatEvent, ChatFailure>;
   }
 >()("poppet/Agent") {}
@@ -85,7 +85,7 @@ export const AgentLive = Layer.effect(
     const send = (
       sessionId: string,
       text: string,
-      options: { readonly readOnlyNotes?: boolean; readonly runId?: string } = {},
+      options: { readonly readOnlyTools?: boolean; readonly runId?: string } = {},
     ): Stream.Stream<ChatEvent, ChatFailure> =>
       Stream.suspend(() => {
         let active: Run | null = null;
@@ -157,7 +157,7 @@ export const AgentLive = Layer.effect(
                   history,
                   runs,
                   prompt,
-                  options.readOnlyNotes ?? false,
+                  options.readOnlyTools ?? false,
                 );
               }),
             ).pipe(

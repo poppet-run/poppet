@@ -25,6 +25,57 @@ have no surrounding whitespace, and fit in 4096 UTF-8 bytes. The store holds up 
 128 facts. Listing includes keys, values, update times, and source run IDs when
 available; CLI-created facts have no source run.
 
+## Ask the model to change a fact
+
+Tool-capable models can call `poppet_memory.memory` during ordinary chat,
+including the interactive prompt and authorized messaging conversations. Restart
+an existing worker after updating so its agent advertises the new tool:
+
+```fish
+bun run start chat new "Remember that I prefer concise answers, under answer.style"
+bun run start chat send $session_id "Replace answer.style with Explain the reasoning"
+bun run start chat send $session_id "Forget the saved fact answer.style"
+bun run start memory list
+```
+
+Use the session ID printed by the first command. The model is instructed to change
+memory only on an explicit request in the current user message. It must not infer
+facts to save or treat profile, personality, skills, retrieved content, history, or
+tool results as permission. Runtime checks validate the arguments and allowed tools;
+the model interprets the user's intent, as it does for requested note writes.
+
+The tool has three actions, `remember`, `replace`, and `forget`. It takes `action`,
+`key`, and `value`; forgetting requires a JSON `null` value. Existing keys are never
+implicitly overwritten. Facts are already supplied in context, so the tool does not
+need a listing action. Models without tool support can still use supplied facts;
+manage their facts with the CLI commands above.
+
+The tool uses the same `Memory` service and local database as the CLI. Remembering
+and replacing set `sourceRunId` to the active run, which the model cannot supply or
+forge. The agent checks the next fact snapshot against `POPPET_FACTS_BYTES` before
+writing and returns a small acknowledgement instead of repeating the value. The
+current run's prompt stays fixed; the tool result confirms the change and the next
+run loads it into its snapshot. Independently issued CLI changes retain their
+existing budget and snapshot behavior.
+
+Every request and outcome is kept in the tool journal visible through `chat show`.
+Graceful cancellation lets a started mutation finish and record its result. A
+storage error or a committed change whose result cannot be saved remains uncertain
+and is never automatically replayed. Completed memory changes persist even if a
+later tool or model turn fails. Inspect `memory list` and `chat show` before retrying.
+Forgetting removes the fact, but does not redact earlier messages or tool records.
+The tool does not edit `profile.md`, `soul.md`, notes, or credential files.
+
+Scheduled runs retain their starting fact snapshot but have no memory-writing
+tool, even when a task or selected skill asks for changes. The shared
+`readOnlyTools` policy also excludes note writes.
+
+Automated checks cover local/worker chat, mutation provenance, restart, argument
+validation, byte limits, protected scheduled runs, cancellation, and storage/journal
+failures. Live model intent handling and the three memory actions remain manual
+checks. Ask for one fact to be remembered, continue and replace it, then forget it;
+inspect `memory list` and `chat show` after each step, including from a fresh chat.
+
 ## Profile
 
 Edit `<POPPET_DATA_DIR>/profile.md` for your name, background, and preferences.
@@ -56,8 +107,9 @@ that snapshot across its model/tool turns. New sessions and resumed sessions pic
 up changes on their next run, including scheduled tasks and messaging. Memory is
 shared across sessions and providers in the same data directory. Facts are included
 in key order as personal context, with no
-provenance metadata sent to the model. Chat has no memory-writing tool and does
-not infer or automatically save facts from conversations.
+provenance metadata sent to the model. The memory tool is reserved for explicit
+changes requested by the current user; Poppet does not automatically extract facts
+from conversations.
 
 ## Limits and deletion
 
