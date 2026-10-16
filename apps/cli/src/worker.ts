@@ -37,7 +37,7 @@ export const workerLaunch = (config: Settings): WorkerLaunch => {
   return {
     dataDirectory: config.dataDirectory,
     executable: process.execPath,
-    arguments: [fileURLToPath(new URL("./main.ts", import.meta.url)), "worker", "run"],
+    arguments: [fileURLToPath(new URL("./worker-background.ts", import.meta.url)), "worker", "run"],
     workingDirectory: process.cwd(),
     environment,
   };

@@ -94,24 +94,53 @@ export const manageWorker = (
       const paths = workerPaths(launch, home);
 
       if (action === "logs") {
-        // shortcut: log retention is manual; add rotation when long-lived installs need automatic cleanup.
-        if ((await fileInfo(paths.log)) === null) return "No worker logs yet.";
-        const handle = await open(paths.log, constants.O_RDONLY | constants.O_NOFOLLOW);
+        const chunks: Buffer[] = [];
+        const seen = new Set<string>();
+        let remaining = 65_536;
+        let truncated = false;
 
-        try {
-          const { size } = await handle.stat();
-          const start = Math.max(0, size - 65_536);
-          const buffer = Buffer.alloc(Math.min(size, 65_536));
-          const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
-          const text = buffer.subarray(0, bytesRead).toString("utf8");
+        // Read newest first because each file consumes the remaining shared byte budget.
+        /* eslint-disable no-await-in-loop */
+        for (const path of [paths.log, `${paths.log}.1`, `${paths.log}.2`, `${paths.log}.3`]) {
+          if (remaining === 0) break;
 
-          return (
-            (start > 0 ? text.slice(text.indexOf("\n") + 1) : text).trimEnd() ||
-            "No worker logs yet."
-          );
-        } finally {
-          await handle.close();
+          const handle = await open(
+            path,
+            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+          ).catch((cause: unknown) => {
+            if (Schema.is(MissingFile)(cause)) return null;
+            throw cause;
+          });
+
+          if (handle === null) continue;
+
+          try {
+            const info = await handle.stat();
+
+            if (!info.isFile() || info.nlink !== 1)
+              throw new WorkerError({ message: "Expected a regular worker log without links." });
+            const identity = `${info.dev}:${info.ino}`;
+
+            // Rotation may move a file between opens; include each inode only once.
+            if (seen.has(identity)) continue;
+            seen.add(identity);
+            const start = Math.max(0, info.size - remaining);
+            const buffer = Buffer.alloc(Math.min(info.size, remaining));
+            const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
+            chunks.unshift(buffer.subarray(0, bytesRead));
+            remaining -= bytesRead;
+            truncated = start > 0;
+          } finally {
+            await handle.close();
+          }
         }
+        /* eslint-enable no-await-in-loop */
+
+        const text = Buffer.concat(chunks).toString("utf8");
+
+        return (
+          (truncated ? text.slice(text.indexOf("\n") + 1) : text).trimEnd() || "No worker logs yet."
+        );
       }
 
       const domain = `gui/${process.getuid?.()}`;

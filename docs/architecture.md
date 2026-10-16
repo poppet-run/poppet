@@ -635,7 +635,17 @@ encoding, bounded subprocesses, and log reading. It depends on the platform
 contract and Effect, and does not import task scheduling or CLI configuration.
 Only the macOS implementation is currently provided.
 
-`KeepAlive` lets launchd restart the combined `worker run` process, with a
+The installed CLI entry point is `worker-background.ts`. This process boundary
+holds a separate log ownership lock and launches `main.ts worker run` with piped
+stdout/stderr. `worker-log.ts` serializes writes and rotates at 5 MiB with three
+archives, closing each file before renaming it. Foreground workers still write
+to the terminal. The launcher forwards SIGINT/SIGTERM, drains both streams, and
+preserves the child exit code. It stops the child on logging failure and allows
+25 seconds for graceful shutdown before killing it. Existing installations need
+uninstall/install to select this entry point. Log inspection shares one 64 KiB
+budget across current and archived files without following links.
+
+`KeepAlive` lets launchd restart the launcher and combined `worker run` process, with a
 30-second throttle. Removing the registration sends SIGTERM; Effect finalizers
 interrupt work and release resources. Mutating control operations finish under
 an uninterruptible region, and launchctl subprocesses are killed after 35 seconds

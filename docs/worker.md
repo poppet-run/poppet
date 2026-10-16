@@ -57,6 +57,11 @@ API keys are excluded from the launch agent's environment. Save them first with
 protected sign-in storage. The worker refreshes credentials through the same
 provider code as chat. Installation does not verify live inference.
 
+New installations use a background launcher to capture and rotate the worker's
+stdout and stderr. Existing installations need `worker uninstall` followed by
+`worker install` once to select this launcher. Saved data, credentials, and logs
+are retained. Foreground commands continue writing to the terminal.
+
 ## Status and logs
 
 `worker status` reports whether the launch agent is installed and loaded, whether
@@ -79,8 +84,19 @@ bun run start tasks show <task-id>
 
 Lifecycle logs go to `<data directory>/logs/worker.log`, with `0700` directory and
 `0600` file permissions. They exclude prompts, notes, model output, and tokens.
-`worker logs` prints at most the last 64 KiB. Log rotation is not implemented;
-remove or truncate old logs while the worker is stopped if needed.
+The background launcher limits each new log file to 5 MiB and retains three
+archives, `worker.log.1` through `worker.log.3`, newest first. It appends after
+restart and rotates between writes, including when a single output chunk exceeds
+the file limit. An existing oversized log is archived intact on the next write
+and expires through the same retention policy. Archives have `0600` permissions;
+symlinks, hard links, and non-regular log files are rejected.
+
+`worker logs` prints at most the last 64 KiB across the current file and archives,
+joining bytes across rotation boundaries. Reading logs does not rotate them.
+The launcher forwards shutdown signals, waits for the worker to exit, and drains
+its output before closing the log. A worker that does not exit within 25 seconds
+is killed to stay within launchd's exit deadline. A logging failure stops the
+worker rather than allowing it to run without captured diagnostics.
 
 ## Stop, start, and uninstall
 
@@ -153,6 +169,11 @@ does not run again. Automated tests simulate clock jumps, crash recovery, and
 SIGTERM cleanup. Actual login startup, physical sleep/wake, and live provider
 execution remain manual checks. Other platforms can use `worker run` in the
 foreground; background installation currently supports macOS only.
+
+Rotation tests exercise retention, restart, stdout/stderr capture, log inspection,
+and shutdown with isolated files and subprocesses. After reinstalling a real
+LaunchAgent, check `worker status` and `worker logs`, then stop/start it and confirm
+new log entries append. Native launchd behavior remains a manual check.
 
 ## Optional naming work
 
