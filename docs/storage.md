@@ -44,6 +44,21 @@ or interrupted. Successful completion writes its assistant message and result
 in one transaction. The store validates continuation identity on write and read.
 It permits one pending or running run across all sessions.
 
+## Conversation search index
+
+Migration 9 creates an FTS5 index and backfills completed user messages and final
+assistant text. Intermediate responses, tool data, failed/interrupted inputs,
+and provider continuation are excluded. A trigger on successful run completion
+updates the index in the same transaction as the final message and run result.
+Indexing failures roll back completion. Messages remain the source of truth;
+titles are read from sessions at query time so manual renames appear immediately.
+
+`Store.searchSessions` accepts a bounded plain-text query and a serialized JSON
+byte budget. It quotes and binds FTS terms, returns at most ten relevance-ranked
+matches with stable message-ID ordering for ties, and bounds excerpts and output.
+The CLI and agent tool use this same operation on the owning store connection.
+See [conversation search](chat.md#search-past-conversations).
+
 ## Permissions and recovery
 
 The store directory uses `0700` permissions; the database and WAL sidecars use

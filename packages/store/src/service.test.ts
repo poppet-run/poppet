@@ -66,6 +66,225 @@ const reject = <A>(operation: Effect.Effect<A, StoreError>, reason: StoreError["
 
 // Durable SQLite writes run sequentially to avoid disk contention on CI runners.
 describe("conversation store", () => {
+  test("indexes only completed user text and final answers, retaining titles and results across restart", async () => {
+    const saved = await fixture();
+
+    try {
+      const savedSession = await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("new-provider", "selected-model");
+
+          const run = yield* store.queueRun(session.id, [
+            { role: "user", text: "Orchard café 東京" },
+          ]);
+
+          yield* store.startRun(run.id);
+          expect((yield* store.searchSessions("Orchard", 16384)).matches).toEqual([]);
+          yield* store.recordToolCalls(run.id, {
+            ...responseFor("new-provider"),
+            output: [
+              { type: "text", text: "intermediateonly" },
+              {
+                type: "tool-call",
+                callId: "read",
+                name: "read_note",
+                namespace: "poppet_notes",
+                arguments: '{"path":"argumentonly.md"}',
+              },
+            ],
+            finishReason: "tool-calls",
+          });
+          yield* store.startToolCall(run.id, "read");
+          yield* store.finishToolCall(run.id, "read", { status: "completed", output: "toolonly" });
+          yield* store.finishRun(run.id, {
+            status: "completed",
+            response: {
+              ...responseFor("new-provider"),
+              output: [
+                { type: "text", text: "Final résumé" },
+                { type: "text", text: "Orchard answer" },
+              ],
+            },
+          });
+          yield* store.renameSession(session.id, "The orchard");
+          const matches = yield* store.searchSessions("Orchard", 16384);
+          expect(matches).toMatchObject({
+            truncated: false,
+            matches: [
+              {
+                sessionId: session.id,
+                title: "The orchard",
+                role: "user",
+                excerpt: "Orchard café 東京",
+              },
+              {
+                sessionId: session.id,
+                title: "The orchard",
+                role: "assistant",
+                excerpt: "Final résumé\nOrchard answer",
+              },
+            ],
+          });
+          expect(
+            matches.matches.every(
+              (entry) => entry.messageId > 0 && entry.createdAt >= session.createdAt,
+            ),
+          ).toBe(true);
+
+          for (const query of [
+            "intermediateonly",
+            "argumentonly",
+            "toolonly",
+            "provider-continuation",
+            "preserve",
+          ]) {
+            expect((yield* store.searchSessions(query, 16384)).matches).toEqual([]);
+          }
+
+          const failed = yield* store.queueRun(session.id, [{ role: "user", text: "failedonly" }]);
+          yield* store.finishRun(failed.id, { status: "failed", reason: "test" });
+
+          const interrupted = yield* store.queueRun(session.id, [
+            { role: "user", text: "interruptedonly" },
+          ]);
+
+          yield* store.finishRun(interrupted.id, { status: "interrupted", reason: "test" });
+          yield* store.appendMessages({
+            sessionId: session.id,
+            runId: null,
+            messages: [{ role: "user", text: "unownedonly" }],
+          });
+
+          for (const query of ["failedonly", "interruptedonly", "unownedonly"]) {
+            expect((yield* store.searchSessions(query, 16384)).matches).toEqual([]);
+          }
+
+          return session;
+        }),
+      );
+
+      await saved.run(
+        Store.use((store) =>
+          Effect.gen(function* () {
+            const result = yield* store.searchSessions("東京", 16384);
+            expect(result.matches).toMatchObject([
+              { sessionId: savedSession.id, title: "The orchard", role: "user" },
+            ]);
+            expect((yield* store.searchSessions("résumé", 16384)).matches).toHaveLength(1);
+          }),
+        ),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test("treats queries as plain text and bounds ranked results, UTF-8 excerpts and serialized bytes", async () => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Store.use((store) =>
+          Effect.gen(function* () {
+            const session = yield* store.createSession("new-provider", "selected-model");
+
+            const complete = (text: string) =>
+              Effect.gen(function* () {
+                const run = yield* store.queueRun(session.id, [{ role: "user", text }]);
+                yield* store.startRun(run.id);
+                yield* store.finishRun(run.id, {
+                  status: "completed",
+                  response: responseFor("new-provider", "Final"),
+                });
+              });
+
+            yield* complete('alpha OR beta café 東京 C++ foo-bar quote"word');
+
+            for (const query of ["alpha OR beta", "C++", "foo-bar", 'quote"word', "café", "東京"]) {
+              expect((yield* store.searchSessions(query, 16384)).matches).toHaveLength(1);
+            }
+
+            for (const query of [
+              "alpha OR absent",
+              '" OR * - :',
+              "...",
+              "missing",
+              "text:alpha",
+              "alph*",
+            ]) {
+              const result = yield* store.searchSessions(query, 16384);
+              expect(result.matches).toEqual([]);
+            }
+
+            for (const query of ["", " ", " leading", "x".repeat(257)]) {
+              yield* reject(store.searchSessions(query, 16384), "invalid-request");
+            }
+
+            for (let index = 0; index < 12; index++) yield* complete("equalrank");
+            const first = yield* store.searchSessions("equalrank", 16384);
+            expect(first.matches).toHaveLength(10);
+            expect(first.truncated).toBe(true);
+            expect(first.matches.map((match) => match.messageId)).toEqual(
+              first.matches.map((match) => match.messageId).toSorted((a, b) => a - b),
+            );
+            expect(yield* store.searchSessions("equalrank", 16384)).toEqual(first);
+            yield* complete("needle " + "🙂".repeat(5000));
+            const bounded = yield* store.searchSessions("needle", 1024);
+            expect(bounded.matches).toHaveLength(1);
+            expect(bounded.truncated).toBe(true);
+            expect(Buffer.byteLength(JSON.stringify(bounded))).toBeLessThanOrEqual(1024);
+            expect(bounded.matches[0]?.excerpt).not.toContain("\ufffd");
+            yield* complete("nebula " + "padding ".repeat(100));
+            yield* complete("nebula");
+            expect(
+              (yield* store.searchSessions("nebula", 16384)).matches.map((match) => match.excerpt),
+            ).toMatchObject(["nebula", expect.any(String)]);
+          }),
+        ),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test("an indexing failure rolls back the completed run and final message", async () => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Store.use((store) =>
+          Effect.gen(function* () {
+            const session = yield* store.createSession("new-provider", "selected-model");
+            const run = yield* store.queueRun(session.id, [{ role: "user", text: "recoverable" }]);
+            yield* store.startRun(run.id);
+            using injected = new Database(saved.path);
+            injected.run("DROP TABLE session_search");
+            yield* reject(
+              store.finishRun(run.id, {
+                status: "completed",
+                response: responseFor("new-provider"),
+              }),
+              "storage",
+            );
+            expect((yield* store.run(run.id))?.status).toBe("running");
+            expect((yield* store.messages(session.id)).map((entry) => entry.message.role)).toEqual([
+              "user",
+            ]);
+            injected.run("CREATE VIRTUAL TABLE session_search USING fts5(text)");
+            yield* store.finishRun(run.id, {
+              status: "completed",
+              response: responseFor("new-provider"),
+            });
+            expect((yield* store.searchSessions("recoverable", 16384)).matches).toHaveLength(1);
+          }),
+        ),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
   test.each(["pending", "running"])(
     "recovers abandoned %s tool calls without replaying them",
     async (state) => {
@@ -208,7 +427,7 @@ describe("conversation store", () => {
               { role: "assistant", output: response.output, continuation: response.continuation },
             ]);
             expect(yield* store.status).toMatchObject({
-              schemaVersion: 8,
+              schemaVersion: 9,
               sessions: 1,
               messages: 4,
               runs: 1,
@@ -405,7 +624,7 @@ describe("conversation store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 8,
+        schemaVersion: 9,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));
@@ -413,7 +632,7 @@ describe("conversation store", () => {
     }
   });
 
-  test.each([1, 2, 3, 4, 5, 6, 7])(
+  test.each([1, 2, 3, 4, 5, 6, 7, 8])(
     "upgrades schema %s while retaining session history and existing or default workloads",
     async (version) => {
       const fixtureStore = await fixture();
@@ -449,7 +668,7 @@ describe("conversation store", () => {
         await fixtureStore.run(
           Store.use((store) =>
             Effect.gen(function* () {
-              expect((yield* store.status).schemaVersion).toBe(8);
+              expect((yield* store.status).schemaVersion).toBe(9);
               expect((yield* store.messages("old-session"))[0]?.message).toEqual(user);
               expect(yield* store.session("old-session")).toMatchObject({
                 workload,

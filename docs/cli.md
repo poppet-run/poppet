@@ -69,6 +69,7 @@ for provider-specific setup and logout behavior.
 | ------------------------------- | ----------------------------------------------------------- |
 | `chat new [--coding] <message>` | Start a session with the configured provider and model.     |
 | `chat send <session> <message>` | Continue a saved session.                                   |
+| `chat search <query>`           | Search completed conversation text without inference.       |
 | `chat sessions`                 | List saved sessions.                                        |
 | `chat show <session>`           | Print saved messages, tool calls, and run outcomes as JSON. |
 

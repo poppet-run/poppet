@@ -331,6 +331,9 @@ describe("CLI", () => {
         { key: "project", value: "Acorn" },
       ]);
       expect(JSON.parse((await invoke(["chat", "sessions"], environment)).stdout)).toEqual([]);
+      const search = await invoke(["chat", "search", "Acorn"], environment);
+      expect(search.exitCode).toBe(0);
+      expect(JSON.parse(search.stdout)).toEqual({ matches: [], truncated: false });
       expect(JSON.parse((await invoke(["store", "status"], environment)).stdout)).toMatchObject({
         sessions: 0,
       });
@@ -460,7 +463,7 @@ describe("CLI", () => {
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
         path: join(directory, "store/poppet.sqlite"),
-        schemaVersion: 8,
+        schemaVersion: 9,
         sessions: 0,
         messages: 0,
         runs: 0,
@@ -684,6 +687,7 @@ describe("CLI", () => {
       "chat new",
       "chat send",
       "chat sessions",
+      "chat search",
       "chat show",
       "memory list",
       "memory remember",

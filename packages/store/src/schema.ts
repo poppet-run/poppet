@@ -7,6 +7,27 @@ export const Id = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1
 /** A provider's model identifier without leading or trailing whitespace. */
 export const ModelId = Schema.NonEmptyString.check(Schema.isTrimmed());
 
+/** Plain text, never raw FTS syntax; punctuation-only queries return no matches. */
+export const SessionSearchQuery = Schema.NonEmptyString.check(
+  Schema.isTrimmed(),
+  Schema.isMaxLength(256),
+);
+
+/** A bounded excerpt from an eligible message, with stable IDs for inspecting its session. */
+export const SessionSearchMatch = Schema.Struct({
+  sessionId: Id,
+  messageId: Schema.Int.check(Schema.isGreaterThan(0)),
+  title: Schema.NullOr(Schema.String),
+  createdAt: Schema.Natural,
+  role: Schema.Literals(["user", "assistant"]),
+  excerpt: Schema.String,
+});
+
+export interface SessionSearchResult {
+  readonly matches: ReadonlyArray<typeof SessionSearchMatch.Type>;
+  readonly truncated: boolean;
+}
+
 /** A sanitized single-line title of at most 80 Unicode code points. */
 export const SessionTitle = Schema.NonEmptyString.check(
   Schema.makeFilter(

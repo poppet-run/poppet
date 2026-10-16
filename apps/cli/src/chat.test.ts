@@ -638,6 +638,7 @@ describe("chat CLI", () => {
               workload: "assistant",
             },
           },
+          { kind: "chat", command: { action: "search", query: " " } },
           { kind: "unknown" },
         ].map((command) =>
           fetch("http://localhost/commands", {
@@ -648,7 +649,7 @@ describe("chat CLI", () => {
         ),
       );
 
-      expect(invalid.map((response) => response.status)).toEqual([400, 400, 400]);
+      expect(invalid.map((response) => response.status)).toEqual([400, 400, 400, 400]);
       expect(
         JSON.parse(await readOutput(["memory", "remember", "project", "Acorn"])),
       ).toMatchObject({ key: "project", value: "Acorn" });
@@ -666,6 +667,19 @@ describe("chat CLI", () => {
       });
       expect(chat.chunks.join("")).not.toContain("secretOpaqueState");
       expect(JSON.parse(await readOutput(["chat", "sessions"]))).toHaveLength(1);
+      const inferenceCount = chat.requests.length;
+      const search = JSON.parse(await readOutput(["chat", "search", "summary"]));
+      expect(search).toMatchObject({
+        matches: [
+          expect.objectContaining({ sessionId: session, role: "user", excerpt: "Save a summary" }),
+        ],
+        truncated: false,
+      });
+      expect(chat.requests).toHaveLength(inferenceCount);
+      expect(JSON.parse(await readOutput(["chat", "search", "secretOpaqueState"]))).toEqual({
+        matches: [],
+        truncated: false,
+      });
       expect(JSON.parse(await readOutput(["store", "status"]))).toMatchObject({ sessions: 1 });
 
       await readOutput(["memory", "replace", "project", "Birch"]);
@@ -684,6 +698,8 @@ describe("chat CLI", () => {
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
         runs: [{ status: "completed" }, { status: "completed" }],
       });
+      await chat.invoke(["chat", "search", "summary"]);
+      expect(JSON.parse(chat.lines.at(-1)!)).toEqual(search);
       await chat.invoke(["memory", "list"]);
       expect(chat.lines.at(-1)).toBe("[]");
     } finally {

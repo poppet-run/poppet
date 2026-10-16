@@ -12,6 +12,7 @@ import { assembleContext, byteSize, outputBudget } from "#src/context";
 import { AgentError } from "#src/errors";
 import { Notes, decodeNoteCall, noteTools, type NoteCall } from "#src/notes";
 import { maxTextBytes, streamReply } from "#src/reply";
+import { decodeSessionSearchCall, sessionSearchTool, type SessionSearchCall } from "#src/search";
 import { ChatSettings } from "#src/settings";
 
 /** Builds the bounded model/tool loop; the caller owns the run's final outcome. */
@@ -20,16 +21,23 @@ export const conversation = Effect.gen(function* () {
   const notes = yield* Notes;
   const policy = yield* ChatSettings;
 
-  const executeTool = (run: Run, callId: string, call: NoteCall) => {
+  const executeTool = (run: Run, callId: string, call: NoteCall | SessionSearchCall) => {
     const operation = Effect.gen(function* () {
       yield* store.startToolCall(run.id, callId);
 
-      const output = yield* notes.execute(call).pipe(
-        Effect.catchTag("AgentError", (error) =>
+      const result: Effect.Effect<string, AgentError | StoreError> =
+        call.name === "search_sessions"
+          ? store
+              .searchSessions(call.query, policy.toolBytes)
+              .pipe(Effect.map((value) => JSON.stringify(value)))
+          : notes.execute(call);
+
+      const output = yield* result.pipe(
+        Effect.catch((error) =>
           Effect.gen(function* () {
             yield* store.finishToolCall(run.id, callId, {
               status: call.name === "save_note" ? "uncertain" : "failed",
-              reason: `agent:${error.reason}`,
+              reason: `${error instanceof AgentError ? "agent" : "store"}:${error.reason}`,
             });
 
             return yield* Effect.fail(error);
@@ -57,7 +65,9 @@ export const conversation = Effect.gen(function* () {
   ) =>
     Stream.suspend(() => {
       const tools = model.description.capabilities.tools
-        ? noteTools.filter((tool) => !readOnlyNotes || tool.name !== "save_note")
+        ? [...noteTools, sessionSearchTool].filter(
+            (tool) => !readOnlyNotes || tool.name !== "save_note",
+          )
         : [];
 
       const current: Message[] = [{ role: "user", text }];
@@ -161,21 +171,26 @@ export const conversation = Effect.gen(function* () {
                       );
 
                     // Validate the whole batch before any call can change notes.
-                    const planned = yield* Effect.forEach(calls, (call) => {
-                      if (
-                        !tools.some(
-                          (tool) => tool.name === call.name && tool.namespace === call.namespace,
+                    const planned = yield* Effect.forEach(
+                      calls,
+                      (call): Effect.Effect<NoteCall | SessionSearchCall, AgentError> => {
+                        if (
+                          !tools.some(
+                            (tool) => tool.name === call.name && tool.namespace === call.namespace,
+                          )
                         )
-                      )
-                        return Effect.fail(
-                          new AgentError({
-                            reason: "tool-permission",
-                            message: "The requested tool is not allowed in this run.",
-                          }),
-                        );
+                          return Effect.fail(
+                            new AgentError({
+                              reason: "tool-permission",
+                              message: "The requested tool is not allowed in this run.",
+                            }),
+                          );
 
-                      return decodeNoteCall(call);
-                    });
+                        return call.name === "search_sessions"
+                          ? decodeSessionSearchCall(call)
+                          : decodeNoteCall(call);
+                      },
+                    );
 
                     current.push({
                       role: "assistant",

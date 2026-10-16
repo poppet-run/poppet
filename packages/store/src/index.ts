@@ -7,6 +7,9 @@ export { StoreDatabase, StoreDatabaseLive } from "#src/database";
 export {
   Session,
   SessionTitle,
+  SessionSearchQuery,
+  SessionSearchMatch,
+  type SessionSearchResult,
   StoredMessage,
   Run,
   RunStatus,

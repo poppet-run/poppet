@@ -20,6 +20,9 @@ import {
   RunOutcome,
   Session,
   SessionTitle,
+  SessionSearchMatch,
+  SessionSearchQuery,
+  type SessionSearchResult,
   StoredMessage,
   ToolCall,
   ToolOutcome,
@@ -48,6 +51,11 @@ interface StoreOperations {
   /** Returns null when the session does not exist. */
   readonly session: (id: string) => Effect.Effect<Session | null, StoreError>;
   readonly sessions: Effect.Effect<ReadonlyArray<Session>, StoreError>;
+  /** Searches completed user/final-answer text within the caller's JSON byte budget. */
+  readonly searchSessions: (
+    query: string,
+    maxBytes: number,
+  ) => Effect.Effect<SessionSearchResult, StoreError>;
   /** Reads messages in session order and rejects continuation belonging to another model. */
   readonly messages: (sessionId: string) => Effect.Effect<ReadonlyArray<StoredMessage>, StoreError>;
   /** Appends the entire batch atomically; active sessions require their running run's ID. */
@@ -699,6 +707,66 @@ export const StoreLive = Layer.effect(
       startRun,
       finishRun,
       appendMessages,
+      searchSessions: (query, maxBytes) =>
+        Effect.try({
+          try: () => {
+            const text = Schema.decodeUnknownSync(SessionSearchQuery)(query);
+            Schema.decodeUnknownSync(
+              Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 })),
+            )(maxBytes);
+            const terms = text.split(/\s+/u).map((term) => `"${term.replaceAll('"', '""')}"`);
+
+            if (!/[\p{L}\p{N}]/u.test(text)) return { matches: [], truncated: false };
+
+            const rows = readRecord(() =>
+              Schema.decodeUnknownSync(
+                Schema.Array(
+                  Schema.Struct({
+                    ...SessionSearchMatch.fields,
+                    textLength: Schema.Natural,
+                  }),
+                ),
+              )(
+                database
+                  .query(`SELECT m.session_id AS sessionId, m.id AS messageId,
+                  s.title, m.created_at AS createdAt, json_extract(m.payload, '$.role') AS role,
+                  snippet(session_search, 0, '', '', '', 48) AS excerpt,
+                  length(session_search.text) AS textLength
+                  FROM session_search JOIN messages AS m ON m.id = session_search.rowid
+                  JOIN sessions AS s ON s.id = m.session_id
+                  WHERE session_search MATCH ?
+                  ORDER BY rank, m.id LIMIT 11`)
+                  .all(terms.join(" AND ")),
+              ),
+            );
+
+            const matches: Array<typeof SessionSearchMatch.Type> = [];
+            let truncated = rows.length > 10;
+
+            for (const { textLength, ...row } of rows.slice(0, 10)) {
+              const characters = [...row.excerpt];
+              truncated ||= characters.length > 1000 || characters.length < textLength;
+              let excerpt = characters.slice(0, 1000).join("");
+              let match = { ...row, excerpt };
+
+              while (
+                Buffer.byteLength(
+                  JSON.stringify({ matches: [...matches, match], truncated: true }),
+                ) > maxBytes
+              ) {
+                if (excerpt.length === 0) return { matches, truncated: true };
+                excerpt = [...excerpt].slice(0, Math.floor([...excerpt].length / 2)).join("");
+                match = { ...row, excerpt };
+                truncated = true;
+              }
+
+              matches.push(match);
+            }
+
+            return { matches, truncated };
+          },
+          catch: requestFailure,
+        }),
       session: (id) =>
         Effect.try({
           try: () => sessionFor(database, Schema.decodeUnknownSync(Id)(id)),
