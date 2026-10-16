@@ -42,6 +42,9 @@ bun run start tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --di
 ```
 
 A running messaging worker validates the thread before creating the task.
+Creation through the worker must finish within eight seconds, including queue
+waiting and destination validation. An expired lookup cannot save a task afterward.
+
 `gateway work` can validate new destinations but does not execute scheduled work;
 `tasks work` executes tasks but does not deliver their results. The combined
 worker runs both. Tasks without `--discord-thread` keep their results local.

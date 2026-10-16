@@ -46,7 +46,12 @@ export const taskResponse = <E extends { readonly message: string }>(
 
     if (Option.isNone(command))
       return Response.json({ ok: false, message: "Invalid task command." }, { status: 400 });
-    const exit = yield* Effect.exit(handle(command.value));
+    const operation = handle(command.value);
+
+    // Leave time to report failure before the ten-second transport deadline.
+    const exit = yield* Effect.exit(
+      command.value.action === "add" ? operation.pipe(Effect.timeout("8 seconds")) : operation,
+    );
 
     if (Exit.isSuccess(exit)) return Response.json({ ok: true, value: exit.value });
     const failure = Cause.findErrorOption(exit.cause);
