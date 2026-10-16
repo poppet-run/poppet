@@ -87,14 +87,11 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) 
       );
 
       // Link the fresh session before requests begin, so crash recovery can inspect it.
-      const session = yield* store.createSession(
-        job.provider,
-        job.model,
-        job.workload,
-        undefined,
-        sessionTitle(job.name),
-        job.skill,
-      );
+      const session = yield* store.createSession(job.provider, job.model, {
+        workload: job.workload,
+        taskTitle: sessionTitle(job.name),
+        skill: job.skill,
+      });
 
       yield* taskOperation(() => repo.link(item.id, session.id, null));
       yield* Stream.runForEach(

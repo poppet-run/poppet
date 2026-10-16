@@ -171,12 +171,9 @@ describe.concurrent("notes conversation", () => {
           Effect.gen(function* () {
             const store = yield* Store;
 
-            const earlier = yield* store.createSession(
-              "test-provider",
-              "test-model",
-              "assistant",
-              "earlier",
-            );
+            const earlier = yield* store.createSession("test-provider", "test-model", {
+              id: "earlier",
+            });
 
             const saved = yield* store.queueRun(earlier.id, [
               { role: "user", text: "What is the project?" },

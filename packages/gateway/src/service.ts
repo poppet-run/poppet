@@ -186,7 +186,7 @@ const gateway = Effect.gen(function* () {
               message: "Select a model before starting messaging chat.",
             }),
           );
-        session = yield* store.createSession(config.provider, config.model, "assistant", id);
+        session = yield* store.createSession(config.provider, config.model, { id });
       }
 
       yield* gatewayStorage(() =>
