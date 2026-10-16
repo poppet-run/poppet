@@ -66,8 +66,8 @@ tie-breaker, and limited to ten matches within `POPPET_TOOL_BYTES`.
 Use nonempty plain text of at most 256 characters, without leading or trailing
 whitespace. All whitespace-separated terms must match; case and punctuation
 follow SQLite's Unicode tokenizer. Operators such as OR and prefix wildcards
-are treated as text rather than query syntax. Punctuation-only queries return
-no matches.
+are treated as text rather than query syntax. Punctuation-only terms are ignored;
+queries containing only punctuation return no matches.
 
 Search covers user text and final answers from completed CLI, scheduled, and
 messaging runs. It excludes failed/interrupted inputs, intermediate model text,
