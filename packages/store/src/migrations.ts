@@ -209,6 +209,16 @@ export const migrations: ReadonlyArray<Migration> = [
     ALTER TABLE jobs ADD COLUMN skill TEXT CHECK (skill IS NULL OR json_valid(skill));
     `,
   },
+  {
+    version: 11,
+    name: "scheduled-result-delivery",
+    sql: `
+    ALTER TABLE jobs ADD COLUMN destination TEXT CHECK (destination IS NULL OR json_valid(destination));
+    ALTER TABLE job_occurrences ADD COLUMN destination TEXT CHECK (destination IS NULL OR json_valid(destination));
+    ALTER TABLE gateway_inbox ADD COLUMN occurrence_id TEXT;
+    CREATE UNIQUE INDEX scheduled_gateway_result ON gateway_inbox (occurrence_id) WHERE occurrence_id IS NOT NULL;
+    `,
+  },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

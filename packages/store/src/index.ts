@@ -5,6 +5,7 @@ export { StoreError } from "#src/errors";
 export { StoreDatabase, StoreDatabaseLive } from "#src/database";
 
 export {
+  DeliveryDestination,
   Session,
   SessionTitle,
   SkillName,

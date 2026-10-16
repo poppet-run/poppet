@@ -1,5 +1,5 @@
 import { ProviderId } from "@poppet/provider";
-import { Session, SkillName, SkillSnapshot } from "@poppet/store";
+import { DeliveryDestination, Session, SkillName, SkillSnapshot } from "@poppet/store";
 import { Cron, Data, Schema } from "effect";
 
 /** A task validation, scheduling, or storage failure suitable for command output. */
@@ -85,6 +85,12 @@ export const TaskCommand = Schema.Union([
     action: Schema.Literal("add"),
     task: NewTask,
     skill: Schema.optionalKey(SkillName),
+    delivery: Schema.optionalKey(
+      Schema.Struct({
+        adapter: DeliveryDestination.fields.adapter,
+        conversationId: DeliveryDestination.fields.conversationId,
+      }),
+    ),
   }),
   Schema.Struct({ action: Schema.Literals(["list", "providers", "clear", "status"]) }),
   Schema.Struct({
@@ -99,6 +105,7 @@ export type TaskCommand = typeof TaskCommand.Type;
 /** A persisted task row whose JSON schedule is decoded on read; times are Unix milliseconds. */
 export const Task = Schema.Struct({
   ...NewTask.fields,
+  destination: Schema.NullOr(Schema.fromJsonString(DeliveryDestination)),
   skill: Schema.NullOr(Schema.fromJsonString(SkillSnapshot)),
   schedule: Schema.fromJsonString(Schedule),
   id: Session.fields.id,
@@ -113,6 +120,7 @@ export type Task = typeof Task.Type;
 export const Occurrence = Schema.Struct({
   id: Session.fields.id,
   jobId: Session.fields.id,
+  destination: Schema.NullOr(Schema.fromJsonString(DeliveryDestination)),
   scheduledAt: Schema.Natural,
   status: Schema.Literals([
     "pending",

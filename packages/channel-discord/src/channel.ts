@@ -271,6 +271,22 @@ export const discordChannelLayer = (
           dropped,
         })),
         checkAccess,
+        destination: (conversationId) =>
+          Effect.tryPromise({
+            try: async () => {
+              requireReady();
+              const thread = await client.channels.fetch(conversationId, { force: true });
+
+              if (!thread?.isThread() || thread.guildId !== settings.guildId || !thread.parentId)
+                throw new ChannelError({
+                  reason: "permission",
+                  message: "Choose an existing thread in the configured Discord server.",
+                });
+
+              return thread.parentId;
+            },
+            catch: discordFailure,
+          }),
         mark: (message, state) =>
           Effect.tryPromise({
             try: async () => {

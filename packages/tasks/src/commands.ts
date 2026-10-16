@@ -1,9 +1,20 @@
 import { Skills } from "@poppet/agent";
-import { Store } from "@poppet/store";
-import { Effect } from "effect";
+import { DeliveryDestination, Store } from "@poppet/store";
+import { Context, Effect, Option } from "effect";
 
 import { TaskCommand, TaskError } from "#src/task-schema";
 import { TaskRepository, type TaskStore } from "#src/task-store";
+
+/** Host resolves an explicit remote conversation without coupling tasks to an adapter. */
+export class TaskDestinations extends Context.Service<
+  TaskDestinations,
+  {
+    readonly resolve: (
+      adapter: string,
+      conversationId: string,
+    ) => Effect.Effect<DeliveryDestination, TaskError>;
+  }
+>()("poppet/TaskDestinations") {}
 
 export const taskOperation = <A>(operation: () => A): Effect.Effect<A, TaskError> =>
   Effect.try({
@@ -26,13 +37,17 @@ export const executeTaskCommand = (
       const occurrences = yield* taskOperation(() => repo.occurrences(job.id));
 
       const results = yield* Effect.forEach(occurrences, (item) =>
-        (item.runId === null ? Effect.succeed(null) : store.run(item.runId)).pipe(
-          Effect.map((run) => ({
+        Effect.gen(function* () {
+          const run = item.runId === null ? null : yield* store.run(item.runId);
+          const delivery = yield* taskOperation(() => repo.deliveries(item.id));
+
+          return {
             ...item,
+            delivery,
             output: run?.result?.output ?? null,
             failureReason: run?.failureReason ?? null,
-          })),
-        ),
+          };
+        }),
       );
 
       return {
@@ -52,7 +67,21 @@ export const executeTaskCommand = (
               Effect.mapError((error) => new TaskError({ message: error.message })),
             );
 
-      return yield* taskOperation(() => repo.add(command.task, now, skill));
+      const resolver = yield* Effect.serviceOption(TaskDestinations);
+
+      if (command.delivery && Option.isNone(resolver))
+        return yield* Effect.fail(
+          new TaskError({
+            message: "Start worker run or gateway work before selecting a messaging destination.",
+          }),
+        );
+
+      const destination =
+        command.delivery && Option.isSome(resolver)
+          ? yield* resolver.value.resolve(command.delivery.adapter, command.delivery.conversationId)
+          : null;
+
+      return yield* taskOperation(() => repo.add(command.task, now, skill, destination));
     }
 
     return yield* taskOperation(() => {

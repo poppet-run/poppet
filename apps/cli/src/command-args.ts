@@ -33,8 +33,9 @@ export const commandArgs = (
     while (offset < args.length) {
       const token = args[offset]!;
 
-      if (["--at", "--cron", "--tz", "--skill"].includes(token)) offset += 2;
-      else if (token === "--coding" || /^--(?:at|cron|tz|skill)=/.test(token)) offset++;
+      if (["--at", "--cron", "--tz", "--skill", "--discord-thread"].includes(token)) offset += 2;
+      else if (token === "--coding" || /^--(?:at|cron|tz|skill|discord-thread)=/.test(token))
+        offset++;
       else break;
     }
   } else return args;

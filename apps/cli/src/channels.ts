@@ -10,13 +10,17 @@ import {
   GatewayRepository,
   GatewayRepositoryLive,
 } from "@poppet/gateway";
-import { StoreError } from "@poppet/store";
+import { DeliveryDestination, StoreError } from "@poppet/store";
 import { Console, Context, Effect, Layer, Redacted, Result, Schema } from "effect";
 
 /** Runs configured messaging gateways and combines their connection and delivery status. */
 export class MessagingWorker extends Context.Service<
   MessagingWorker,
   {
+    readonly resolveDestination: (
+      adapter: string,
+      conversationId: string,
+    ) => Effect.Effect<DeliveryDestination, ChannelError>;
     readonly run: Effect.Effect<void, ChatFailure | ChannelError>;
     readonly status: Effect.Effect<Schema.JsonObject, StoreError | ChannelError>;
   }
@@ -64,6 +68,7 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
         Effect.gen(function* () {
           if (Result.isFailure(loaded))
             return {
+              resolveDestination: null,
               run: Effect.never,
               status: Effect.succeed({
                 id: entry.id,
@@ -75,6 +80,7 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
 
           if (loaded.success === null)
             return {
+              resolveDestination: null,
               run: Effect.never,
               status: Effect.succeed({ id: entry.id, name: entry.name, enabled: false }),
             };
@@ -87,6 +93,7 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
           const gateway = Context.get(context, Gateway);
 
           return {
+            resolveDestination: gateway.resolveDestination,
             run: gateway.run,
             status: gateway.connectionStatus.pipe(
               Effect.map((status) => ({
@@ -101,6 +108,20 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
       );
 
       return {
+        resolveDestination: (adapter, conversationId) => {
+          const index = configured.findIndex(({ entry }) => entry.id === adapter);
+          const resolve = workers[index]?.resolveDestination;
+
+          return resolve
+            ? resolve(conversationId)
+            : Effect.fail(
+                new ChannelError({
+                  reason: "configuration",
+                  message:
+                    "Configure and enable the messaging adapter before selecting a destination.",
+                }),
+              );
+        },
         run:
           workers.length === 0
             ? Effect.never

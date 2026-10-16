@@ -12,8 +12,14 @@ export {
 
 export { TaskRepository, TaskRepositoryLive } from "#src/task-store";
 
-export { executeLocalTaskCommand, readLocalTaskStatus, taskOperation } from "#src/commands";
+export {
+  TaskDestinations,
+  executeTaskCommand,
+  executeLocalTaskCommand,
+  readLocalTaskStatus,
+  taskOperation,
+} from "#src/commands";
 
-export { makeTaskWorker, WorkerConnections } from "#src/scheduler";
+export { executeOccurrence, makeTaskWorker, WorkerConnections } from "#src/scheduler";
 
 export { remoteTaskCommand, taskResponse } from "#src/task-socket";

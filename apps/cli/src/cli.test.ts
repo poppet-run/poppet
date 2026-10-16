@@ -444,6 +444,32 @@ describe("CLI", () => {
     }
   });
 
+  test("parses an explicit Discord task destination and requires a messaging worker to validate it", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-task-destination-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+    const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z", "--discord-thread"];
+
+    try {
+      const invalid = await invoke([...command, "invalid", "Summarize notes"], environment);
+      expect(invalid.exitCode).toBe(1);
+      expect(await readdir(directory)).toEqual([]);
+      const rejected = await invoke([...command, "400", "Summarize notes"], environment);
+      expect(rejected.exitCode).toBe(1);
+      expect(rejected.stderr).toContain("Start worker run or gateway work");
+      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
+
+      const local = await invoke(
+        ["tasks", "add", "Local", "--at", "2099-10-15T09:00:00Z", "Summarize notes"],
+        environment,
+      );
+
+      expect(local.exitCode).toBe(0);
+      expect(JSON.parse(local.stdout).destination).toBeNull();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("opens and reopens the conversation store without authentication or model selection", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-store-cli-"));
 
@@ -463,7 +489,7 @@ describe("CLI", () => {
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
         path: join(directory, "store/poppet.sqlite"),
-        schemaVersion: 10,
+        schemaVersion: 11,
         sessions: 0,
         messages: 0,
         runs: 0,

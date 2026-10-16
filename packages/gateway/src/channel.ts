@@ -44,6 +44,8 @@ export class MessagingChannel extends Context.Service<
       message: IncomingMessage,
       conversationId: string,
     ) => Effect.Effect<void, ChannelError>;
+    /** Resolves an existing destination's parent; the gateway rechecks its policy and access. */
+    readonly destination?: (conversationId: string) => Effect.Effect<string, ChannelError>;
     readonly typing: (conversationId: string) => Effect.Effect<void, ChannelError>;
     /** Updates a source message's progress indicator; the gateway treats failures as best effort. */
     readonly mark: (

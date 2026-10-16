@@ -133,7 +133,7 @@ Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
 modules are implemented. `runtime.ts` builds only the registered provider selected
 for an auth or inference command. Its store layer opens SQLite only for store
 and chat and memory commands. Chat, notes tools, and explicit memory are implemented;
-scheduling remains planned.
+scheduled tasks and messaging delivery are implemented.
 
 ## Explicit local skills
 
@@ -709,6 +709,16 @@ resolver, and serialized `Agent` instance with CLI and scheduled requests. The
 CLI composes these scoped services and preserves existing worker commands and
 local IPC. No second process acquires SQLite, and messaging connections do not
 expose the local command socket to the network.
+
+Scheduled task delivery uses the same durable reply queue. The host supplies
+`TaskDestinations` to resolve explicit conversation selections through enabled
+gateways. Each task and occurrence saves a `DeliveryDestination` containing the
+adapter, account, owner, scope, parent, and conversation identity. The gateway
+reconciles completed occurrences into completed inbox entries without creating
+bindings or model requests. A unique occurrence index makes this idempotent;
+queue insertion and chunk creation commit together. The normal delivery loop
+rechecks current policy and adapter permissions and preserves bounded retries
+and uncertain-send handling. Delivery status never changes execution status.
 
 ### Package boundaries
 

@@ -72,8 +72,10 @@ are saved before sending; a delivery retry never repeats model or tool work.
 Uncertain sends are recorded without automatic resending, since Discord may
 already have posted them. Use the session ID and `chat show <session>` to inspect
 the saved answer before manually reposting it. No reply is redirected to another
-channel when a thread becomes inaccessible. Telegram, WhatsApp, and scheduled
-result delivery remain planned work.
+channel when a thread becomes inaccessible. [Scheduled tasks](tasks.md#deliver-results-to-discord) can select an explicit
+thread with `--discord-thread`. Use the combined worker to execute and deliver
+them. Scheduled results use the same queue and do not alter thread sessions.
+Telegram and WhatsApp remain planned work.
 
 ## Validation
 

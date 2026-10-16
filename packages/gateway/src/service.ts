@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { Agent, sessionTitle, type ChatFailure } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
-import { Store, StoreError, type Run } from "@poppet/store";
+import { DeliveryDestination, Store, StoreError, type Run } from "@poppet/store";
 import {
   Cause,
   Clock,
@@ -60,6 +60,84 @@ const gateway = Effect.gen(function* () {
     message.senderId === channel.policy.ownerId &&
     message.scopeId === channel.policy.scopeId &&
     channel.policy.parentIds.includes(message.parentId);
+
+  const resolveDestination = (conversationId: string) =>
+    Effect.gen(function* () {
+      if (!channel.destination)
+        return yield* Effect.fail(
+          new ChannelError({
+            reason: "configuration",
+            message: "This adapter does not support scheduled destinations.",
+          }),
+        );
+      const parentId = yield* channel.destination(conversationId);
+
+      const destination = yield* Schema.decodeUnknownEffect(DeliveryDestination)({
+        adapter: channel.id,
+        account,
+        ownerId: channel.policy.ownerId,
+        scopeId: channel.policy.scopeId,
+        parentId,
+        conversationId,
+      }).pipe(
+        Effect.mapError(
+          () =>
+            new ChannelError({
+              reason: "configuration",
+              message: "Invalid messaging destination.",
+            }),
+        ),
+      );
+
+      const message: IncomingMessage = {
+        messageId: "scheduled-destination",
+        senderId: destination.ownerId,
+        scopeId: destination.scopeId,
+        parentId,
+        conversationId,
+        text: "",
+        mentioned: false,
+      };
+
+      if (!authorized(message))
+        return yield* Effect.fail(
+          new ChannelError({
+            reason: "permission",
+            message: "The destination is outside the authorized messaging channels.",
+          }),
+        );
+      yield* channel.checkAccess(message, conversationId);
+
+      return destination;
+    });
+
+  // Reconcile saved results rather than rerun inference after a crash or failed send.
+  const scheduleResults = Effect.gen(function* () {
+    yield* gatewayStorage(() => repo.rejectChangedAccounts(channel.id, account));
+
+    for (const item of yield* gatewayStorage(() => repo.scheduled(channel.id))) {
+      const run = yield* store.run(item.runId);
+
+      if (run?.status !== "completed") continue;
+      const destination = item.destination;
+
+      const enabled =
+        destination.account === account &&
+        destination.ownerId === channel.policy.ownerId &&
+        destination.scopeId === channel.policy.scopeId &&
+        channel.policy.parentIds.includes(destination.parentId);
+
+      yield* gatewayStorage(() =>
+        repo.scheduleResult(
+          item.id,
+          item.runId,
+          destination,
+          chunks(answer(run), channel.textLimit),
+          enabled,
+        ),
+      );
+    }
+  });
 
   const finish = (id: number, text: string, state = "completed") =>
     gatewayStorage(() => repo.complete(id, chunks(text, channel.textLimit), state));
@@ -285,6 +363,8 @@ const gateway = Effect.gen(function* () {
 
   /** Sends the next saved reply chunk without automatically retrying an uncertain delivery. */
   const deliverNext = Effect.gen(function* () {
+    yield* scheduleResults;
+
     const delivery = yield* gatewayStorage(() =>
       repo.nextDelivery(channel.id, account, clock.currentTimeMillisUnsafe()),
     );
@@ -476,6 +556,7 @@ const gateway = Effect.gen(function* () {
   });
 
   return {
+    resolveDestination,
     accept,
     processNext,
     deliverNext,
