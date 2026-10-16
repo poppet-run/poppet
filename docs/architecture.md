@@ -880,12 +880,18 @@ configured owner's ordinary private-chat text is normalized. Groups, channels,
 private topics, edits, attachments, and other users are ignored. Telegram uses
 its own adapter/account identities for inbox deduplication and session bindings.
 
+Telegram requests up to ten updates per poll under a two MiB response limit.
+At inference queue capacity, the gateway saves excess polled requests as failed
+with a queue-full reply in the same transaction. This keeps controls reachable
+without acknowledging unrecorded input or creating more inference work.
+
 The optional `poll(cursor)` operation returns ordered updates and their next
 opaque cursors. An ignored update has a null message. The gateway accepts each
 message durably before checkpointing its cursor in `gateway_cursors`, keyed by
-adapter/account. It cannot acknowledge past overload or storage failure. A crash
-between inbox acceptance and cursor persistence can redeliver an update, which
-the existing inbox identity deduplicates. Requests abort with worker cancellation.
+adapter/account. It cannot acknowledge an update before its acceptance or
+rejection commits. A crash between inbox acceptance and cursor persistence can
+redeliver an update, which the existing inbox identity deduplicates. Requests
+abort with worker cancellation.
 
 Telegram settings use the shared protected channel-file helper and a separate
 `channels/telegram.json` schema. HTTP and decoding failures never expose a token

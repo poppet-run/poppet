@@ -53,6 +53,14 @@ const gateway = Effect.gen(function* () {
   const config = yield* AppConfig;
   const clock = yield* Clock.Clock;
   const account = channel.accountId;
+
+  const overloadReply = channel.poll
+    ? chunks(
+        "Messaging queue is full. This request was not queued. Try again later.",
+        channel.textLimit,
+      )
+    : undefined;
+
   let active: { entry: Inbox; fiber: Fiber.Fiber<void, ChatFailure | ChannelError> } | null = null;
   let rejected = 0;
 
@@ -181,7 +189,10 @@ const gateway = Effect.gen(function* () {
             );
 
       if (conversation === null && !message.mentioned) return;
-      const entry = yield* gatewayStorage(() => repo.accept(channel.id, account, message));
+
+      const entry = yield* gatewayStorage(() =>
+        repo.accept(channel.id, account, message, overloadReply),
+      );
 
       if (entry === null) return;
 

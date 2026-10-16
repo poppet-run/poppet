@@ -202,7 +202,7 @@ const scheduled = (destination: DeliveryDestination | null) =>
   });
 
 describe.concurrent("messaging gateway", () => {
-  test("polling checkpoints only durable acceptance and resumes a full inbox without losing input", async () => {
+  test("polling records overload rejections and replies atomically before checkpointing", async () => {
     const offsets: (string | null)[] = [];
 
     const state = await fixture({
@@ -222,29 +222,46 @@ describe.concurrent("messaging gateway", () => {
       await state.run(
         Effect.gen(function* () {
           const gateway = yield* Gateway;
+          const { database } = yield* StoreDatabase;
+          database.run(
+            "CREATE TRIGGER reject_reply BEFORE INSERT ON gateway_deliveries BEGIN SELECT RAISE(ABORT, 'test'); END",
+          );
           expect(yield* gateway.pollOnce.pipe(Effect.result)).toHaveProperty(
             "failure.reason",
-            "overloaded",
+            "storage",
           );
           const repo = yield* GatewayRepository;
           expect(repo.cursor("telegram", "bot")).toBe("64");
           expect(repo.cursor("discord", "bot")).toBeNull();
           expect(repo.cursor("telegram", "another-bot")).toBeNull();
-          expect(yield* gateway.status).toMatchObject({ queued: 64 });
+          expect(
+            database.query("SELECT id FROM gateway_inbox WHERE external_id = '64'").get(),
+          ).toBeNull();
+          expect(yield* gateway.status).toMatchObject({ queued: 64, failedRequests: 0 });
         }),
       );
       await state.run(
         Effect.gen(function* () {
+          (yield* StoreDatabase).database.run("DROP TRIGGER reject_reply");
           const gateway = yield* Gateway;
           yield* gateway.recover;
-          yield* gateway.processNext;
+          yield* gateway.pollOnce;
           yield* gateway.pollOnce;
           expect((yield* GatewayRepository).cursor("telegram", "bot")).toBe("65");
-          expect(yield* gateway.status).toMatchObject({ queued: 64 });
+          expect(yield* gateway.status).toMatchObject({
+            queued: 64,
+            failedRequests: 1,
+            pendingDelivery: 1,
+          });
+          expect(yield* gateway.deliverNext).toBe(true);
+          expect(yield* gateway.deliverNext).toBe(false);
         }),
       );
-      expect(offsets).toEqual([null, "64"]);
-      expect(state.requests).toHaveLength(1);
+      expect(offsets).toEqual([null, "64", "65"]);
+      expect(state.requests).toEqual([]);
+      expect(state.sent).toMatchObject([
+        { destination: "private-chat", text: expect.stringContaining("not queued") },
+      ]);
     } finally {
       await state.close();
     }
@@ -342,7 +359,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("polled cancellation bypasses active inference and checkpoints without starting another run", async () => {
+  test("polled cancellation bypasses a full inbox without starting another run", async () => {
     const started = Deferred.makeUnsafe<void>();
     let cancel = false;
 
@@ -350,16 +367,14 @@ describe.concurrent("messaging gateway", () => {
       {
         id: "telegram",
         poll: () =>
-          Effect.succeed([
-            {
-              cursor: cancel ? "3" : "2",
-              message: message(
-                cancel ? "cancel" : "hold",
-                "private-chat",
-                cancel ? "/cancel" : "Hold",
-              ),
-            },
-          ]),
+          Effect.succeed(
+            cancel
+              ? [
+                  { cursor: "3", message: message("overflow", "private-chat", "Next") },
+                  { cursor: "4", message: message("cancel", "private-chat", "/cancel") },
+                ]
+              : [{ cursor: "2", message: message("hold", "private-chat", "Hold") }],
+          ),
       },
       () =>
         Stream.fromEffect(Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))),
@@ -372,11 +387,22 @@ describe.concurrent("messaging gateway", () => {
           yield* gateway.pollOnce;
           const processing = yield* gateway.processNext.pipe(Effect.forkChild);
           yield* Deferred.await(started);
+
+          for (let index = 0; index < 63; index++)
+            yield* gateway.accept(message(`queued-${index}`, "private-chat"));
           cancel = true;
           yield* gateway.pollOnce;
           yield* Fiber.join(processing);
-          expect((yield* GatewayRepository).cursor("telegram", "bot")).toBe("3");
-          expect(yield* gateway.status).toMatchObject({ queued: 0, executing: 0 });
+          expect((yield* GatewayRepository).cursor("telegram", "bot")).toBe("4");
+          expect(yield* gateway.status).toMatchObject({
+            queued: 0,
+            executing: 0,
+            failedRequests: 1,
+            pendingDelivery: 2,
+          });
+          yield* gateway.pollOnce;
+          expect(yield* gateway.processNext).toBe(false);
+          expect(yield* gateway.status).toMatchObject({ pendingDelivery: 2 });
           const store = yield* Store;
           const session = (yield* store.sessions)[0]!;
           expect((yield* store.runs(session.id)).map((run) => run.status)).toEqual(["interrupted"]);

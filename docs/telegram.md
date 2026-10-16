@@ -49,8 +49,12 @@ voice, reactions, and Telegram chat renaming are outside this adapter's scope.
 The adapter uses the [Telegram Bot API](https://core.telegram.org/bots/api#getupdates)
 with long polling. Each accepted input commits to the gateway inbox before its
 next polling offset is saved. Deliberately ignored updates also advance the
-offset. A full inbox leaves the offset before the unaccepted update and retries
-later. Offsets are stored separately for every adapter and bot account. A crash
+offset. Polls request up to ten updates to keep batches within the two MiB response
+limit. When the 64-request inbox is full, excess requests are saved as rejected
+with a queue-full reply before advancing the offset. Retry those requests later;
+`/status` and `/cancel` remain reachable while the inbox is full.
+
+Offsets are stored separately for every adapter and bot account. A crash
 between acceptance and offset persistence can redeliver an update; inbox
 identities prevent repeating model or tool work.
 

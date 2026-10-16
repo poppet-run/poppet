@@ -116,7 +116,7 @@ export const telegramChannelLayer = (settings: TelegramSettings, http: HttpFetch
 
             const updates = yield* request(
               "getUpdates",
-              { offset, timeout: 25, limit: 100, allowed_updates: ["message"] },
+              { offset, timeout: 25, limit: 10, allowed_updates: ["message"] },
               Updates,
               false,
               35000,
