@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -84,6 +84,41 @@ test("reports launch failure without discarding the installed configuration", as
       Effect.runPromise(manageWorker("install", launch, home, async () => 113)),
     ).rejects.toMatchObject({ message: expect.stringContaining("bootstrap failed") });
     expect(await Bun.file(workerPaths(launch, home).plist).exists()).toBe(true);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("reads recent logs across rotation boundaries within one 64 KiB budget", async () => {
+  const home = await mkdtemp(join(tmpdir(), "poppet-launchd-logs-"));
+
+  const launch = {
+    dataDirectory: home,
+    executable: process.execPath,
+    arguments: [],
+    workingDirectory: home,
+    environment: new Map<string, string>(),
+  };
+
+  const paths = workerPaths(launch, home);
+
+  try {
+    await mkdir(paths.logs, { mode: 0o700 });
+    await writeFile(
+      `${paths.log}.1`,
+      "old partial line" + "x".repeat(65_536) + "\narchived line\n",
+    );
+    await writeFile(paths.log, "current line\n");
+    expect(await Effect.runPromise(manageWorker("logs", launch, home))).toBe(
+      "archived line\ncurrent line",
+    );
+    await writeFile(paths.log, "");
+    expect(await Effect.runPromise(manageWorker("logs", launch, home))).toBe("archived line");
+    await writeFile(`${paths.log}.1`, "prefix of ");
+    await writeFile(paths.log, "one line\n");
+    expect(await Effect.runPromise(manageWorker("logs", launch, home))).toBe("prefix of one line");
+    await symlink(paths.log, `${paths.log}.2`);
+    await expect(Effect.runPromise(manageWorker("logs", launch, home))).rejects.toThrow();
   } finally {
     await rm(home, { recursive: true, force: true });
   }

@@ -66,6 +66,8 @@ apps/
       channels.ts         Generic channel setup, loading, and status
       tasks.ts            Task argument parsing
       worker.ts           Worker argument parsing, launch settings, and platform selection
+      worker-background.ts Background launcher, output capture, and shutdown forwarding
+      worker-log.ts       Protected file writes and bounded archive retention
       worker-commands.ts  Interactive command transport and host request handling
 packages/
   agent/                  @poppet/agent

@@ -452,7 +452,11 @@ assigned to saved tasks.
 `tasks status` and `worker status` expose scheduling counts, active work, recent
 outcomes, provider pauses, and safe local connection metadata with recovery
 actions. Full results remain available through `tasks show`. Logs are protected
-and bounded on read; rotation is deferred. Shared SQLite ownership locks recover
+and bounded on read. A background launcher captures stdout/stderr and rotates
+at 5 MiB, retaining three archives. It forwards shutdown and drains output before
+exiting; existing LaunchAgents need reinstalling to select it. Automated checks
+cover retention, restart, log-path validation, combined log reads, and child
+shutdown. Native launchd validation remains manual. Shared SQLite ownership locks recover
 dead processes automatically without replaying unfinished requests. Unknown
 legacy PID markers still need manual inspection. Saved record schemas and
 migration 6 remain unchanged.
