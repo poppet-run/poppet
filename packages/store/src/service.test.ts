@@ -239,17 +239,73 @@ describe("conversation store", () => {
               first.matches.map((match) => match.messageId).toSorted((a, b) => a - b),
             );
             expect(yield* store.searchSessions("equalrank", 16384)).toEqual(first);
+            const small = yield* store.searchSessions("equalrank", 1024);
+            expect(small.truncated).toBe(true);
+            expect(small.matches.length).toBeGreaterThan(0);
+            expect(small.matches.every((match) => match.excerpt.includes("equalrank"))).toBe(true);
+            expect(Buffer.byteLength(JSON.stringify(small))).toBeLessThanOrEqual(1024);
             yield* complete("needle " + "🙂".repeat(5000));
             const bounded = yield* store.searchSessions("needle", 1024);
             expect(bounded.matches).toHaveLength(1);
             expect(bounded.truncated).toBe(true);
             expect(Buffer.byteLength(JSON.stringify(bounded))).toBeLessThanOrEqual(1024);
+            expect(bounded.matches[0]?.excerpt).toContain("needle");
             expect(bounded.matches[0]?.excerpt).not.toContain("\ufffd");
             yield* complete("nebula " + "padding ".repeat(100));
             yield* complete("nebula");
             expect(
               (yield* store.searchSessions("nebula", 16384)).matches.map((match) => match.excerpt),
             ).toMatchObject(["nebula", expect.any(String)]);
+          }),
+        ),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test.each([
+    {
+      text: "https://example.test/" + "x".repeat(1200) + " timeout",
+      query: "timeout",
+      maxBytes: 16384,
+    },
+    {
+      text: "implementation ".repeat(47) + "cobalt",
+      query: "cobalt",
+      maxBytes: 1024,
+    },
+    {
+      text: "🙂".repeat(1200) + " CAFÉ " + "padding ".repeat(30),
+      query: "cafe",
+      matched: "CAFÉ",
+      maxBytes: 1024,
+    },
+  ])("keeps matching text in shortened excerpts within $maxBytes bytes", async (input) => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Store.use((store) =>
+          Effect.gen(function* () {
+            const session = yield* store.createSession("new-provider", "selected-model");
+            yield* store.renameSession(session.id, "設".repeat(80));
+            const run = yield* store.queueRun(session.id, [{ role: "user", text: input.text }]);
+            yield* store.startRun(run.id);
+            yield* store.finishRun(run.id, {
+              status: "completed",
+              response: responseFor("new-provider"),
+            });
+
+            const result = yield* store.searchSessions(input.query, input.maxBytes);
+            expect(result.matches).toHaveLength(1);
+            const excerpt = result.matches[0]!.excerpt;
+            expect(excerpt).toContain(input.matched ?? input.query);
+            expect(input.text).toContain(excerpt);
+            expect([...excerpt].length).toBeLessThanOrEqual(1000);
+            expect(excerpt).not.toContain("\ufffd");
+            expect(result.truncated).toBe(true);
+            expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(input.maxBytes);
           }),
         ),
       );
