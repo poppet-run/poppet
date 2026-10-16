@@ -60,8 +60,8 @@ bun run start chat show <session-id-from-search>
 
 Search returns JSON with `matches` and `truncated`. Each match includes session
 and message IDs, the saved session title, a timestamp in Unix milliseconds, role,
-and a bounded excerpt. Results are ranked by relevance, with a stable message-ID
-tie-breaker, and limited to ten matches within `POPPET_TOOL_BYTES`.
+and a bounded excerpt around matching text. Results are ranked by relevance, with
+a stable message-ID tie-breaker, and limited to ten matches within `POPPET_TOOL_BYTES`.
 
 Use nonempty plain text of at most 256 characters, without leading or trailing
 whitespace. All whitespace-separated terms must match; case and punctuation

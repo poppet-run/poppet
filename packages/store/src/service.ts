@@ -722,6 +722,9 @@ export const StoreLive = Layer.effect(
 
             if (terms.length === 0) return { matches: [], truncated: false };
 
+            // Use a fresh marker so stored text cannot be mistaken for a match boundary.
+            const marker = randomUUID();
+
             const rows = readRecord(() =>
               Schema.decodeUnknownSync(
                 Schema.Array(
@@ -734,13 +737,13 @@ export const StoreLive = Layer.effect(
                 database
                   .query(`SELECT m.session_id AS sessionId, m.id AS messageId,
                   s.title, m.created_at AS createdAt, json_extract(m.payload, '$.role') AS role,
-                  snippet(session_search, 0, '', '', '', 48) AS excerpt,
+                  snippet(session_search, 0, ?, ?, '', 48) AS excerpt,
                   length(session_search.text) AS textLength
                   FROM session_search JOIN messages AS m ON m.id = session_search.rowid
                   JOIN sessions AS s ON s.id = m.session_id
                   WHERE session_search MATCH ?
                   ORDER BY rank, m.id LIMIT 11`)
-                  .all(terms.join(" AND ")),
+                  .all(marker, marker, terms.join(" AND ")),
               ),
             );
 
@@ -748,19 +751,37 @@ export const StoreLive = Layer.effect(
             let truncated = rows.length > 10;
 
             for (const { textLength, ...row } of rows.slice(0, 10)) {
-              const characters = [...row.excerpt];
+              const [before = "", hit = ""] = row.excerpt.split(marker);
+              const characters = [...row.excerpt.replaceAll(marker, "")];
+              const offset = [...before].length;
+              const hitLength = [...hit].length;
               truncated ||= characters.length > 1000 || characters.length < textLength;
-              let excerpt = characters.slice(0, 1000).join("");
-              let match = { ...row, excerpt };
+              let length = Math.min(1000, characters.length);
+
+              if (hitLength > length) continue;
+
+              const excerpt = () => {
+                const start = Math.max(
+                  0,
+                  Math.min(
+                    offset - Math.floor((length - hitLength) / 2),
+                    characters.length - length,
+                  ),
+                );
+
+                return characters.slice(start, start + length).join("");
+              };
+
+              let match = { ...row, excerpt: excerpt() };
 
               while (
                 Buffer.byteLength(
                   JSON.stringify({ matches: [...matches, match], truncated: true }),
                 ) > maxBytes
               ) {
-                if (excerpt.length === 0) return { matches, truncated: true };
-                excerpt = [...excerpt].slice(0, Math.floor([...excerpt].length / 2)).join("");
-                match = { ...row, excerpt };
+                if (length === hitLength) return { matches, truncated: true };
+                length = Math.max(hitLength, Math.floor(length / 2));
+                match = { ...row, excerpt: excerpt() };
                 truncated = true;
               }
 
