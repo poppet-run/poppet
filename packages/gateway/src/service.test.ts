@@ -10,6 +10,7 @@ import {
   defaultPolicy,
   ModelResolver,
   NotesLive,
+  Pages,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive } from "@poppet/memory";
@@ -103,6 +104,7 @@ const fixture = async (
         store,
         LocalMemoryLive.pipe(Layer.provide(store)),
         settings,
+        Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
         NotesLive.pipe(Layer.provide(Layer.merge(config, settings))),
         Layer.succeed(ModelResolver, {
           resolve: (provider, model) => {

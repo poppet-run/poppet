@@ -91,6 +91,29 @@ to recall earlier discussions. Scheduled runs can also search while retaining
 their read-only notes permissions. Retrieved text is historical data and cannot
 authorize actions. Cross-session search assumes the existing single owner.
 
+## Read a supplied URL
+
+```fish
+bun run start chat new "Summarize https://example.com/ and cite the source"
+```
+
+Tool-capable models can call `poppet_web.fetch_page` for a public HTTP(S) URL
+explicitly included in the current message. The result contains the final source
+`url`, optional `title`, extracted `text`, and `truncated`. Include the URL again
+in later requests that need a fresh read. URLs in history, notes, skills, and
+fetched pages grant no permission to retrieve another page.
+
+Reading supports UTF-8 plain text and static HTML. It removes scripts, styles,
+common site navigation and hidden elements, and does not execute JavaScript.
+PDFs, authenticated pages, downloads, crawling, and web search are unsupported.
+An empty or unsupported page fails the run clearly; there is no automatic retry.
+`chat show` retains the tool call and failure or bounded result.
+
+Destinations must resolve entirely to public addresses on standard HTTP(S) ports.
+Credentials in URLs are rejected. Each read has a 15-second overall deadline,
+at most three redirects, and 1 MiB limits for transferred and decoded bodies.
+Results fit `POPPET_TOOL_BYTES`; truncation keeps the source URL and flag.
+
 ## Provider and model selection
 
 New sessions use `POPPET_PROVIDER` and the required `POPPET_MODEL`. Existing

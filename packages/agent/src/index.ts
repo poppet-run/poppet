@@ -9,3 +9,7 @@ export { Notes, NotesLive } from "#src/notes";
 export { ChatSettings, ChatSettingsLive, defaultPolicy, type ChatPolicy } from "#src/settings";
 
 export { sessionTitle } from "#src/title";
+
+export { Pages, PagesLive } from "#src/pages";
+
+export { PageTransportLive } from "#src/page-network";

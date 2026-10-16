@@ -1,4 +1,12 @@
-import { AgentLive, ChatSettingsLive, ModelResolver, NotesLive, SkillsLive } from "@poppet/agent";
+import {
+  AgentLive,
+  ChatSettingsLive,
+  ModelResolver,
+  NotesLive,
+  PageTransportLive,
+  PagesLive,
+  SkillsLive,
+} from "@poppet/agent";
 import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import { GatewayRepositoryLive } from "@poppet/gateway";
 import { LocalMemoryLive } from "@poppet/memory";
@@ -204,6 +212,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
         resolver,
         ChatSettingsLive,
         connections,
+        PagesLive.pipe(Layer.provide(Layer.merge(PageTransportLive, ChatSettingsLive))),
         NotesLive.pipe(Layer.provide(Layer.merge(config, ChatSettingsLive))),
       ),
     ),

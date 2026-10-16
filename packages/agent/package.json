@@ -19,7 +19,8 @@
     "@poppet/memory": "workspace:*",
     "@poppet/provider": "workspace:*",
     "@poppet/store": "workspace:*",
-    "effect": "4.0.4"
+    "effect": "4.0.4",
+    "entities": "8.1.0"
   },
   "devDependencies": {
     "@poppet/provider-protocol": "workspace:*",

@@ -1,0 +1,4 @@
+A plain UTF-8 page.
+
+Acorn grows into an oak. 🌳
+Literal text keeps &amp; unchanged.

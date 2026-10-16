@@ -63,3 +63,11 @@ setting. Each file is limited to 8192 UTF-8 bytes, and its saved text counts
 against `POPPET_CONTEXT_BYTES`. Skill inspection needs only configuration;
 new chats and tasks load skills in the process owning the store.
 See [skills](skills.md) for naming, selection, and snapshot behavior.
+
+## Page reading
+
+`poppet_web.fetch_page` uses the existing model-turn, tool-call, context, and
+`POPPET_TOOL_BYTES` budgets. Its 15-second overall deadline, three-redirect limit,
+and 1 MiB transferred/decoded body limits are fixed. HTTP(S) uses standard ports
+and direct connections; ambient proxy settings and provider credentials are not
+forwarded. TLS certificate and source-hostname checks remain enabled.

@@ -18,6 +18,7 @@ import { TestClock } from "effect/testing";
 
 import { AgentError } from "#src/errors";
 import { Notes } from "#src/notes";
+import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver, type ChatEvent } from "#src/service";
 import { ChatSettings, defaultPolicy } from "#src/settings";
 
@@ -65,6 +66,7 @@ const fixture = async (resolve: ModelResolver["Service"]["resolve"]) => {
       Layer.mergeAll(
         store,
         LocalMemoryLive.pipe(Layer.provide(store)),
+        Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
         Layer.succeed(Notes, {
           execute: () =>
             Effect.fail(
