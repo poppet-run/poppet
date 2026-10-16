@@ -2,13 +2,12 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–10, 13–14, and 16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, and live Discord behavior require manual validation
+Status: Phases 1–10 and 13–16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, and live Discord behavior require manual validation
 
-Phases 11–12 and 15 are planned only. Discord thread chat, conversation search,
-local Markdown skills, and phase 16 naming are implemented; additional adapters
-and scheduled-result delivery are deferred. Implement supplied-URL reading from
-phase 15 next. It does not depend on scheduled-result delivery or additional
-messaging adapters.
+Phases 11–12 are planned only. Discord thread chat, conversation search,
+local Markdown skills, supplied-URL reading, and phase 16 naming are implemented.
+Scheduled-result delivery in phase 11 is next; additional messaging adapters
+remain independent work in phase 12.
 
 Updated: 2026-10-16
 
@@ -758,70 +757,51 @@ Use injected model requests to inspect the effective prompt, then run
 
 ## Phase 15: Read a supplied URL
 
-Planned, not implemented. Depends on the bounded, durable tool execution from
-phase 5 and the expanded dispatch from phase 13. It can be implemented independently
-of skills and messaging adapters.
+Implemented with automated checks. Depends on the bounded, durable tool execution
+from phase 5 and the expanded dispatch from phase 13. Independent of additional
+messaging adapters and scheduled-result delivery.
 
-Add one read-only `fetch_page` tool that accepts a public HTTP(S) URL and returns
-its final source URL, optional title, extracted text, and a truncation flag. Allow
-initial URLs explicitly supplied in the current user request or saved task prompt;
-validate that authorization in the host rather than relying on model instructions.
-Do not automatically fetch every link or allow links found in page text to expand
-the authorized set. Redirects are allowed only after the same destination checks.
-Keep web search, browsers, JavaScript rendering, PDFs, authenticated pages,
-downloads, and linked-page crawling outside this version.
+`poppet_web.fetch_page` reads public HTTP(S) URLs explicitly supplied in the current
+user message or saved task prompt. The host validates the initial URL against
+that request's canonical URL set before executing any tool in the batch. History,
+skills, notes, and fetched-page links cannot grant access. Redirect destinations
+receive the same URL, DNS, and public-address checks.
 
-Keep retrieval and extraction in a small agent-owned Effect service, injected into
-the runner by CLI composition. Reuse tool validation, namespaces, durable records,
-per-run call/result limits, and cancellation. A scheduled read-only run may fetch
-an explicitly supplied URL; it still cannot save notes. Providers receive only
-the generic tool schema and bounded result. Do not add a general integration
-framework or couple web retrieval to an inference provider.
+The agent-owned `Pages` service uses an injected DNS/HTTP transport composed by the
+CLI. The client connects directly to the validated literal IP while preserving
+source Host, SNI, and TLS certificate/hostname verification. Every A/AAAA answer
+must be public. Mapped IPv4, private, loopback, link-local, reserved, multicast,
+translation/transition IPv6, credentials in URLs, and nonstandard ports are
+rejected. Fresh connections avoid pooled sockets and ambient proxies. No cookies,
+authorization headers, or provider credentials are sent.
 
-Before enabling network access, prove that the chosen HTTP client connects only
-to the address validated for that request while preserving hostname and TLS
-verification. Validate every resolved A/AAAA address and every redirect, including
-IPv4-mapped IPv6, and reject loopback, private, link-local, multicast, reserved,
-and otherwise non-public destinations. Reject URL credentials and nonstandard
-ports; strip fragments. Bound DNS resolution, connection, redirects, and body
-reading within a 15-second overall deadline and at most three redirects. Do not
-forward cookies, authorization headers, provider credentials, or ambient proxy
-settings. A DNS check followed by an independent fetch lookup is insufficient;
-test address pinning and DNS rebinding before shipping. Prefer platform APIs,
-using an HTTP client with a controlled lookup if ordinary fetch cannot enforce it.
+Each read has a 15-second overall deadline, at most three redirects, and independent
+1 MiB wire and decoded-body limits. gzip, deflate, and Brotli decoding is bounded.
+Cancellation stops DNS and HTTP I/O. Unsupported types/encodings, invalid UTF-8,
+HTTP failures, incomplete bodies, and pages without text fail without retry.
 
-Accept UTF-8 plain text and static HTML. Limit both transferred and decoded bodies
-to 1 MiB and extracted output to the existing tool-result budget. Do not trust
-Content-Length as the only limit. Use a structural HTML parser, remove scripts,
-styles, and non-content elements, and preserve readable text boundaries. First
-check whether Bun's platform HTML parser meets these requirements; add a small
-pinned parser only if it cannot. Explicitly reject unsupported encodings, content
-types, HTTP failures, and pages without usable text. Cancel I/O on interruption
-and deadline. Record failures through the existing tool/run lifecycle without
-automatic network or inference retries. Page text is untrusted source material,
-and must never be treated as instructions or authority to execute another tool.
+Bun HTMLRewriter structurally removes scripts, styles, navigation, hidden elements,
+and other non-content material. A small pinned entity decoder complements the
+native parser. Plain text and static HTML return final source `url`, nullable
+`title`, extracted `text`, and `truncated` within the existing tool-result budget.
+Tools retain durable records, namespaces, permission checks, and run budgets.
+Scheduled runs may read their supplied URLs and still cannot save notes.
 
-Implement transport validation and bounded reading first, then extraction with
-saved fixtures, then tool dispatch and host composition. Update tool guidance,
-chat/tasks docs, configuration, and architecture documentation when implemented.
-No persisted browser state, page cache, new credentials, or web-search account
-is needed. This is the largest of these three plans because destination checks
-must hold for actual connections as well as parsed URLs.
+Automated checks cover URL authorization, mixed public/private DNS, rebinding,
+redirect checks/limits, structural extraction, entities, Unicode and truncation,
+body/decompression limits, unsupported responses, deadlines, cancellation, durable
+results and failures, and a scheduled fake-model round trip. Production-client
+loopback tests prove literal-address pinning, Host/SNI, TLS identity and trust,
+proxy isolation, and cancellation without public-network test access. Run
+`bun run check`. Live production retrieval passed on 2026-10-16 for example.com
+HTML and RFC 9110 UTF-8 text, including bounded truncation of the latter. Live
+model-assisted HTML/text summaries and a scheduled fetch remain manual validation.
 
-Completion check: supply a public article URL and receive a summary citing the
-returned source URL. Plain text and ordinary static HTML work; an inaccessible
-or JavaScript-only page fails clearly. The same tool works in a scheduled prompt
-without changing its read-only permissions.
-
-Automated checks use injected DNS/transport and saved HTML/text fixtures for
-source metadata, extraction, truncation, redirects, non-public IPv4/IPv6, rebinding,
-credential rejection, body/decompression limits, unsupported responses, timeouts,
-and cancellation. A fake-model round trip must receive the text, reject an
-unsupplied initial URL, and retain the existing notes/search behavior. Prove the
-production client's validated-address connection behavior with a local transport
-integration test that never requires public-network test access. Run
-`bun run check`; separately validate one public text page, one HTML article, and
-one scheduled fetch against a live model.
+See [chat](chat.md#read-a-supplied-url), [tasks](tasks.md#read-a-supplied-url),
+[configuration](configuration.md#page-reading), and the
+[architecture](architecture.md#supplied-page-reading) for the implementation.
+Web search, browsers, JavaScript rendering, PDFs, authenticated pages, downloads,
+linked-page crawling, persistent browser state, and caching remain outside scope.
 
 ## Phase 16: Session titles and Discord thread names
 

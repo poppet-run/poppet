@@ -101,12 +101,15 @@ Task tables remain in the shared store migrations.
 | `model/`                | Model service with SDK adapter, stream collector, and verification protocol | Authentication, OpenAI client                     |
 | `store/`                | Scoped SQLite ownership, migrations, sessions, messages, and runs           | Configuration, shared provider schemas            |
 | `agent/service.ts`      | Persisted chat, deadlines, cancellation, run finalization                   | Model resolver, store, conversation workflow      |
-| `agent/conversation.ts` | Sequential model/tool loop, permission checks, run budgets                  | Model, store, notes, chat settings                |
+| `agent/conversation.ts` | Sequential model/tool loop, permission checks, run budgets                  | Model, store, notes, pages, chat settings         |
 | `agent/reply.ts`        | Validated stream completion and output limits                               | Shared model contract                             |
 | `agent/context.ts`      | Complete-exchange context assembly and size limits                          | Shared message and record types                   |
 | `agent/settings.ts`     | Validated context, history, and output budgets                              | Effect Config and Schema                          |
 | `agent/skills.ts`       | Explicit local procedure loading with bounded filesystem access             | Config and shared snapshot schema                 |
 | `agent/notes.ts`        | Note schemas, bounded filesystem access, atomic replacement                 | Config, chat settings, scoped filesystem access   |
+| `agent/pages.ts`        | URL authorization, redirect policy, scoped page retrieval                   | Page transport, extraction, chat settings         |
+| `agent/page-network.ts` | Public-address validation, cancellable DNS, pinned HTTP(S), body limits     | Node DNS, HTTP(S), net, TLS, zlib                 |
+| `agent/page-text.ts`    | Static HTML/plain-text extraction and bounded JSON results                  | Bun HTMLRewriter, entities                        |
 | `agent/memory.ts`       | Run-start snapshot loading and model instructions                           | Memory service, chat settings                     |
 | `memory/`               | Memory contract, local fact operations, bounded profile reads               | Effect; config and shared database for local I/O  |
 | `tasks/scheduler.ts`    | Persisted due occurrences and sequential worker                             | Store, agent, clock, occurrence calculator        |
@@ -397,7 +400,7 @@ continuation together. The newest input must fit by itself or the run fails with
 tokens. Advertised model capacity further limits input and output. The UTF-8 size
 estimate is not an exact tokenizer, and trimming never changes stored history.
 
-Tool-capable models receive the three notes tools and conversation search. The conversation workflow
+Tool-capable models receive the three notes tools, conversation search, and supplied-URL reading. The conversation workflow
 validates complete tool requests, records them, executes sequentially, and
 continues with the saved results. Models without tool support receive no tools.
 Text deltas stream immediately; terminal-only text or an unstreamed final suffix
@@ -417,7 +420,7 @@ separate content budgets.
 
 ## Notes and tool execution
 
-`conversation.ts` captures the store, notes service, and chat budgets. It keeps
+`conversation.ts` captures the store, notes and pages services, and chat budgets. It keeps
 one model instance throughout each run. `reply.ts` forwards text but emits a
 completion only after clean source termination and validates continuation,
 finish reason, output limits, and agreement with streamed text. Complete tool
@@ -449,6 +452,53 @@ Run failure/reopening interrupts pending calls and marks remaining running calls
 uncertain. Completed calls are immutable; terminal calls cannot restart. Calls
 and model requests are never replayed. `chat show` exposes the ledger for manual
 inspection. An uncertain write requires checking the file before an explicit retry.
+
+## Supplied page reading
+
+`agent/pages.ts` defines `poppet_web.fetch_page` and the injected `Pages` service.
+The CLI composes it with `PageTransportLive` and chat settings for local, worker,
+and scheduled runs. Providers see only the generic tool definition and result.
+No store migration or new configuration is needed.
+
+The host extracts canonical HTTP(S) URLs solely from the current user message or
+saved scheduled prompt. Whole-batch validation checks the requested initial URL
+against that set before any tool executes. History, skills, notes, and page links
+cannot expand it. Page text remains untrusted source material, and guidance asks
+the model to cite the returned final source URL.
+
+Every initial/redirect URL rejects userinfo and nonstandard ports, strips its
+fragment, resolves A and AAAA records, and rejects the entire answer if any address
+is non-public. The IP policy conservatively excludes special-purpose ranges,
+including mapped IPv4, translation and transition IPv6, and documentation ranges.
+The policy follows the [IANA IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry/)
+and [IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry/) registries.
+The HTTP(S) client connects to the selected literal IP, so no second hostname lookup
+can rebind the connection. The original hostname supplies Host, SNI, and certificate
+identity checks. Fresh connections ignore ambient proxies and send no cookies,
+authorization headers, or provider credentials. Redirects are followed explicitly
+and checked afresh, with at most three per read.
+
+One Effect deadline covers DNS, connections, redirects, body reads, and extraction
+within 15 seconds. Interruption cancels DNS queries and closes active HTTP I/O.
+The transport bounds actual transferred bytes to 1 MiB before gzip, deflate, or
+Brotli decoding, which independently caps decoded output at 1 MiB. Incomplete bodies,
+unsupported compression, HTTP failures, invalid UTF-8, and unsupported MIME types
+or charset declarations fail the existing durable tool/run lifecycle without retry.
+
+Bun's native HTMLRewriter removes non-content elements and adds text boundaries.
+A second parse collects the cleaned document because removal still emits text
+callbacks. The pinned `entities` decoder handles character references, which the
+native parser leaves escaped. UTF-8 plain text retains literal character escapes.
+Results include source URL, nullable title, text, and an explicit truncation flag,
+all within the existing serialized tool-result budget. There is no browser,
+JavaScript execution, PDF support, crawling, page cache, or general integration
+framework.
+
+Offline checks inject DNS/transport and static fixtures. Loopback integration
+checks use the production HTTP(S) client to prove literal-address connections,
+source Host/SNI and TLS identity, proxy isolation, wire/decompression limits, and
+cancellation. Fake-model and scheduler checks cover authorization, durable results,
+failure without replay, and unchanged read-only notes permissions.
 
 ## Conversation search
 

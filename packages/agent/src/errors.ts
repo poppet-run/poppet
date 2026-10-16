@@ -11,6 +11,7 @@ export class AgentError extends Data.TaggedError("AgentError")<{
     | "interrupted"
     | "tool-arguments"
     | "tool-permission"
+    | "tool-network"
     | "tool-storage"
     | "tool-limit"
     | "budget"

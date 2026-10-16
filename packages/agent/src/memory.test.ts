@@ -11,6 +11,7 @@ import { Effect, Layer, Stream } from "effect";
 
 import { instructions } from "#src/context";
 import { Notes } from "#src/notes";
+import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
 
@@ -86,6 +87,7 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Mem
         store,
         memory,
         Layer.succeed(ChatSettings, { ...defaultPolicy, ...overrides }),
+        Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
         Layer.succeed(Notes, { execute: () => Effect.succeed("Note contents") }),
         Layer.succeed(ModelResolver, {
           resolve: () =>

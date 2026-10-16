@@ -6,11 +6,18 @@ import type {
   ProviderError,
 } from "@poppet/provider";
 import { Store, type Run, type StoreError, type StoredMessage } from "@poppet/store";
-import { Effect, Stream } from "effect";
+import { Effect, Match, Stream } from "effect";
 
 import { assembleContext, byteSize, outputBudget } from "#src/context";
 import { AgentError } from "#src/errors";
 import { Notes, decodeNoteCall, noteTools, type NoteCall } from "#src/notes";
+import {
+  Pages,
+  decodeFetchPageCall,
+  fetchPageTool,
+  suppliedPageURLs,
+  type FetchPageCall,
+} from "#src/pages";
 import { maxTextBytes, streamReply } from "#src/reply";
 import { decodeSessionSearchCall, sessionSearchTool, type SessionSearchCall } from "#src/search";
 import { ChatSettings } from "#src/settings";
@@ -19,18 +26,26 @@ import { ChatSettings } from "#src/settings";
 export const conversation = Effect.gen(function* () {
   const store = yield* Store;
   const notes = yield* Notes;
+  const pages = yield* Pages;
   const policy = yield* ChatSettings;
 
-  const executeTool = (run: Run, callId: string, call: NoteCall | SessionSearchCall) => {
+  const executeTool = (
+    run: Run,
+    callId: string,
+    call: NoteCall | SessionSearchCall | FetchPageCall,
+  ) => {
     const operation = Effect.gen(function* () {
       yield* store.startToolCall(run.id, callId);
 
-      const result: Effect.Effect<string, AgentError | StoreError> =
-        call.name === "search_sessions"
-          ? store
-              .searchSessions(call.query, policy.toolBytes)
-              .pipe(Effect.map((value) => JSON.stringify(value)))
-          : notes.execute(call);
+      const result: Effect.Effect<string, AgentError | StoreError> = Match.value(call).pipe(
+        Match.when({ name: "search_sessions" }, (plan) =>
+          store
+            .searchSessions(plan.query, policy.toolBytes)
+            .pipe(Effect.map((value) => JSON.stringify(value))),
+        ),
+        Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
+        Match.orElse((plan) => notes.execute(plan)),
+      );
 
       const output = yield* result.pipe(
         Effect.catch((error) =>
@@ -65,11 +80,12 @@ export const conversation = Effect.gen(function* () {
   ) =>
     Stream.suspend(() => {
       const tools = model.description.capabilities.tools
-        ? [...noteTools, sessionSearchTool].filter(
+        ? [...noteTools, sessionSearchTool, fetchPageTool].filter(
             (tool) => !readOnlyNotes || tool.name !== "save_note",
           )
         : [];
 
+      const allowedURLs = suppliedPageURLs(text);
       const current: Message[] = [{ role: "user", text }];
       let turns = 0;
       let callsUsed = 0;
@@ -173,7 +189,12 @@ export const conversation = Effect.gen(function* () {
                     // Validate the whole batch before any call can change notes.
                     const planned = yield* Effect.forEach(
                       calls,
-                      (call): Effect.Effect<NoteCall | SessionSearchCall, AgentError> => {
+                      (
+                        call,
+                      ): Effect.Effect<
+                        NoteCall | SessionSearchCall | FetchPageCall,
+                        AgentError
+                      > => {
                         if (
                           !tools.some(
                             (tool) => tool.name === call.name && tool.namespace === call.namespace,
@@ -186,9 +207,13 @@ export const conversation = Effect.gen(function* () {
                             }),
                           );
 
-                        return call.name === "search_sessions"
-                          ? decodeSessionSearchCall(call)
-                          : decodeNoteCall(call);
+                        return Match.value(call).pipe(
+                          Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
+                          Match.when({ name: "fetch_page" }, (plan) =>
+                            decodeFetchPageCall(plan, allowedURLs),
+                          ),
+                          Match.orElse(decodeNoteCall),
+                        );
                       },
                     );
 

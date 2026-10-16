@@ -56,6 +56,19 @@ and skipped intervals. Each occurrence has a fresh session, current profile and
 facts, and only `read_note` and `search_notes`. A returned `save_note` call is rejected.
 Use `--coding` before the prompt only for coding work that the chosen provider accepts.
 
+## Read a supplied URL
+
+A saved task prompt can explicitly supply a public URL for `poppet_web.fetch_page`:
+
+```fish
+bun run start tasks add page-summary --cron "0 9 * * *" --tz Europe/London "Summarize https://example.com/ and cite the source"
+```
+
+Each occurrence may read that URL through the same bounded [page reader](chat.md#read-a-supplied-url)
+as chat. URLs mentioned only by a skill, note, prior conversation, or fetched page
+are not authorized. The task retains read-only notes permissions. No page cache,
+search account, or additional credentials are needed.
+
 ## Missed work, pauses, and retries
 
 The worker executes one occurrence at a time. Recurring times missed while stopped

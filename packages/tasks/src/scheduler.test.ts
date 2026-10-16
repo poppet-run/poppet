@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   Agent,
   AgentLive,
+  Pages,
   ChatSettings,
   defaultPolicy,
   ModelResolver,
@@ -64,7 +65,10 @@ const response = (output: ReadonlyArray<Output>) =>
 
 const final = () => response([{ type: "text", text: "Acorn summary" }]);
 
-const fixture = async (stream: ModelOperations["stream"]) => {
+const fixture = async (
+  stream: ModelOperations["stream"],
+  pages: Pages["Service"] = { fetch: () => Effect.die("Unexpected page fetch") },
+) => {
   const directory = await mkdtemp(join(tmpdir(), "p7-"));
   const notesDirectory = join(directory, "notes");
   await mkdir(notesDirectory);
@@ -121,6 +125,7 @@ const fixture = async (stream: ModelOperations["stream"]) => {
         store,
         memory,
         settings,
+        Layer.succeed(Pages, pages),
         NotesLive.pipe(Layer.provide(Layer.merge(config, settings))),
         Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),
       ),
@@ -160,6 +165,60 @@ const fixture = async (stream: ModelOperations["stream"]) => {
 };
 
 describe.concurrent("task worker", () => {
+  test("scheduled prompts authorize their saved URL while notes remain read-only", async () => {
+    let turns = 0;
+    const fetched: string[] = [];
+
+    const state = await fixture(
+      (request) => {
+        expect(request.tools.some((tool) => tool.name === "save_note")).toBe(false);
+
+        if (++turns === 1)
+          return response([
+            {
+              type: "tool-call",
+              callId: "page",
+              namespace: "poppet_web",
+              name: "fetch_page",
+              arguments: '{"url":"https://example.com/article"}',
+            },
+          ]);
+        expect(request.messages.at(-1)).toMatchObject({
+          role: "tool",
+          callId: "page",
+          output: expect.stringContaining("Article text"),
+        });
+
+        return final();
+      },
+      {
+        fetch: (url) =>
+          Effect.sync(() => {
+            fetched.push(url);
+
+            return JSON.stringify({ url, title: null, text: "Article text", truncated: false });
+          }),
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          repo.add({ ...state.task, prompt: "Summarize https://example.com/article" }, 0);
+          repo.reconcile(0);
+          const claimed = repo.claim(0)!;
+          yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
+          expect(repo.occurrence(claimed.occurrence.id).status).toBe("completed");
+        }),
+      );
+      expect(fetched).toEqual(["https://example.com/article"]);
+      expect(state.requests).toHaveLength(2);
+    } finally {
+      await state.close();
+    }
+  });
+
   test("persists a task's skill and copies it into occurrence sessions after restart and file deletion", async () => {
     const state = await fixture(final);
     const root = join(state.directory, "skills", "weekly-review");
@@ -213,6 +272,7 @@ describe.concurrent("task worker", () => {
         "read_note",
         "search_notes",
         "search_sessions",
+        "fetch_page",
       ]);
     } finally {
       await state.close();
@@ -441,7 +501,12 @@ describe.concurrent("task worker", () => {
           });
           expect(repo.occurrences(first.id)[0]?.sessionId).not.toBe(secondResult.sessionId);
           expect(state.requests.map((request) => request.tools.map((tool) => tool.name))).toEqual(
-            Array.from({ length: 4 }, () => ["read_note", "search_notes", "search_sessions"]),
+            Array.from({ length: 4 }, () => [
+              "read_note",
+              "search_notes",
+              "search_sessions",
+              "fetch_page",
+            ]),
           );
           expect(state.requests[0]?.instructions).toContain("Concise");
           expect(state.requests[2]?.instructions).toContain("Detailed");
