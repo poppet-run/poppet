@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { MessagingChannel } from "@poppet/gateway";
+import { MessagingChannel, type PolledMessage } from "@poppet/gateway";
 import { Deferred, Effect, Fiber, Match, Redacted, Schema } from "effect";
 
 import type { HttpFetch } from "#src/api";
@@ -107,8 +107,8 @@ describe.concurrent("Telegram adapter", () => {
     expect(
       state.calls.filter((call) => call.method === "getUpdates").map((call) => call.body),
     ).toEqual([
-      { offset: 0, timeout: 25, limit: 100, allowed_updates: ["message"] },
-      { offset: 9, timeout: 25, limit: 100, allowed_updates: ["message"] },
+      { offset: 0, timeout: 25, limit: 10, allowed_updates: ["message"] },
+      { offset: 9, timeout: 25, limit: 10, allowed_updates: ["message"] },
     ]);
   });
 
@@ -248,6 +248,54 @@ describe.concurrent("Telegram adapter", () => {
           "unavailable",
         );
       }).pipe(Effect.provide(state.layer)),
+    );
+  });
+
+  test("drains a backlog of long replies within the response byte limit without losing updates", async () => {
+    const text = "界".repeat(4096);
+    const original = { ...incoming(999, text).message, date: 1792187999 };
+
+    const updates = Array.from({ length: 100 }, (_, index) => ({
+      ...incoming(index + 1, text),
+      message: {
+        ...incoming(index + 1, text).message,
+        message_id: index + 1000,
+        date: 1792188000,
+        reply_to_message: original,
+      },
+    }));
+
+    expect(Buffer.byteLength(JSON.stringify({ ok: true, result: updates }))).toBeGreaterThan(
+      2 * 1024 * 1024,
+    );
+
+    const http: HttpFetch = async (url, init) => {
+      if (url.endsWith("getMe"))
+        return Response.json({ ok: true, result: { id: 100, is_bot: true } });
+      const { offset, limit } = JSON.parse(String(init.body));
+
+      return Response.json({
+        ok: true,
+        result: updates.filter((update) => update.update_id >= offset).slice(0, limit),
+      });
+    };
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const channel = yield* MessagingChannel;
+        let cursor: string | null = null;
+        const accepted: string[] = [];
+
+        while (accepted.length < updates.length) {
+          const batch: ReadonlyArray<PolledMessage> = yield* channel.poll!(cursor);
+          expect(batch.length).toBeGreaterThan(0);
+          accepted.push(...batch.flatMap((item) => (item.message ? [item.message.messageId] : [])));
+          cursor = batch.at(-1)!.cursor;
+        }
+
+        expect(accepted).toEqual(updates.map((update) => String(update.update_id)));
+        expect(cursor).toBe("101");
+      }).pipe(Effect.provide(telegramChannelLayer(settings, http))),
     );
   });
 

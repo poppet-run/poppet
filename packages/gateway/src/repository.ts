@@ -211,7 +211,12 @@ const repository = Effect.gen(function* () {
       ),
     item,
     binding,
-    accept: (adapter: string, account: string, message: IncomingMessage) =>
+    accept: (
+      adapter: string,
+      account: string,
+      message: IncomingMessage,
+      overloadReply?: ReadonlyArray<string>,
+    ) =>
       database
         .transaction(() => {
           if (
@@ -231,7 +236,10 @@ const repository = Effect.gen(function* () {
               .get(adapter, account),
           );
 
-          if (counts.count >= 64 && message.text !== "/status" && message.text !== "/cancel")
+          const control = message.text === "/status" || message.text === "/cancel";
+          const overloaded = counts.count >= 64 && !control;
+
+          if (overloaded && overloadReply === undefined)
             throw new ChannelError({
               reason: "overloaded",
               message: "Messaging queue is full. Try again later.",
@@ -247,8 +255,16 @@ const repository = Effect.gen(function* () {
               JSON.stringify(message),
               message.conversationId,
               randomUUID(),
-              message.text === "/status" || message.text === "/cancel" ? "cancelled" : "queued",
+              overloaded ? "failed" : control ? "cancelled" : "queued",
             );
+
+          // Save rejection and reply together before polling advances its cursor.
+          if (overloaded && overloadReply !== undefined)
+            for (const [position, text] of overloadReply.entries())
+              database
+                .query(`INSERT INTO gateway_deliveries (inbox_id, position, text, state)
+                VALUES (?, ?, ?, 'pending')`)
+                .run(Number(result.lastInsertRowid), position, text);
 
           return item(Number(result.lastInsertRowid));
         })

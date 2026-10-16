@@ -646,9 +646,11 @@ selects scheduled delivery through the existing destination resolver.
 
 The gateway's optional polling operation checkpoints each update only after
 acceptance or deliberate rejection. Migration 12 stores cursors by adapter and
-bot account. Overload preserves unaccepted updates; restart deduplicates any
-input committed before its cursor. Reply attempts distinguish explicit rejection
-from uncertain outcomes. Shared protected settings helpers retain Discord's
+bot account. Overload saves rejected input and its queue-full reply atomically,
+so polling can reach controls without exceeding the inference queue limit.
+Polling batches contain at most ten updates within a two MiB response cap.
+Restart deduplicates any input committed before its cursor. Reply attempts
+distinguish explicit rejection from uncertain outcomes. Shared protected settings helpers retain Discord's
 existing file format and security checks.
 
 Automated checks cover owner/private-chat restrictions, replay and restart,
