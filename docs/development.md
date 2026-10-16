@@ -17,8 +17,8 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`,
 `@poppet/store`, `@poppet/agent`, `@poppet/memory`, `@poppet/tasks`,
-`@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`, and
-`@poppet/channel-discord`.
+`@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`,
+`@poppet/channel-discord`, and `@poppet/channel-telegram`.
 Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
 
@@ -185,7 +185,16 @@ The messaging host builds a gateway per configured registration, sharing the
 existing store and serialized agent. Configuration errors appear per channel and
 do not prevent other configured channels from running. All resources close with
 the worker. The existing Discord setup syntax and `channels/discord.json` file
-remain compatible. Telegram and WhatsApp implementations remain deferred.
+remain compatible. Telegram adds a lightweight HTTP adapter for owner-only private
+chat; WhatsApp remains deferred. Shared `loadChannelSettings` and
+`saveChannelSettings` preserve bounded reads, ownership checks, atomic replacement,
+and protected file modes while adapters own their schemas.
+
+A channel can supply `poll(cursor)` instead of an event stream. Each returned item
+has the next opaque cursor and either a normalized message or `null` for an
+ignored update. The gateway accepts items in order and persists each cursor only
+after acceptance or deliberate rejection. Errors leave the current item
+unacknowledged. Keep platform offset arithmetic and filtering inside the adapter.
 
 See [messaging package boundaries](architecture.md#package-boundaries) for the channel contract.
 
@@ -199,7 +208,7 @@ evidence; Go and OpenRouter inference have not been verified against live accoun
 
 The [notes guide](notes.md#saved-outcomes-and-recovery) and
 [storage guide](storage.md#permissions-and-recovery) describe local recovery checks.
-Live chat, ChatGPT token renewal, Discord setup and reconnection, and macOS login
+Live chat, ChatGPT token renewal, Discord and Telegram setup and reconnection, and macOS login
 startup and physical sleep/wake remain separate manual checks. Follow the
 [Discord guide](discord.md) and [worker manual validation](worker.md#manual-validation)
 for those paths. The [implementation plan](implementation-plan.md) records

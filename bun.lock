@@ -19,6 +19,7 @@
         "@effect/platform-bun": "4.0.4",
         "@poppet/agent": "workspace:*",
         "@poppet/channel-discord": "workspace:*",
+        "@poppet/channel-telegram": "workspace:*",
         "@poppet/config": "workspace:*",
         "@poppet/credentials": "workspace:*",
         "@poppet/gateway": "workspace:*",
@@ -55,9 +56,16 @@
       "name": "@poppet/channel-discord",
       "version": "0.0.0",
       "dependencies": {
-        "@poppet/credentials": "workspace:*",
         "@poppet/gateway": "workspace:*",
         "discord.js": "14.27.0",
+        "effect": "4.0.4",
+      },
+    },
+    "packages/channel-telegram": {
+      "name": "@poppet/channel-telegram",
+      "version": "0.0.0",
+      "dependencies": {
+        "@poppet/gateway": "workspace:*",
         "effect": "4.0.4",
       },
     },
@@ -83,6 +91,7 @@
       "dependencies": {
         "@poppet/agent": "workspace:*",
         "@poppet/config": "workspace:*",
+        "@poppet/credentials": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/store": "workspace:*",
         "effect": "4.0.4",
@@ -300,6 +309,8 @@
     "@poppet/agent": ["@poppet/agent@workspace:packages/agent"],
 
     "@poppet/channel-discord": ["@poppet/channel-discord@workspace:packages/channel-discord"],
+
+    "@poppet/channel-telegram": ["@poppet/channel-telegram@workspace:packages/channel-telegram"],
 
     "@poppet/cli": ["@poppet/cli@workspace:apps/cli"],
 

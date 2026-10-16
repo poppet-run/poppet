@@ -470,6 +470,34 @@ describe("CLI", () => {
     }
   });
 
+  test("Telegram task destinations require a messaging worker and cannot be combined with Discord", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-telegram-task-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+    const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z"];
+
+    try {
+      const conflict = await invoke(
+        [...command, "--discord-thread", "400", "--telegram-chat", "200", "Summarize notes"],
+        environment,
+      );
+
+      expect(conflict.exitCode).toBe(1);
+      expect(conflict.stderr).toContain("Choose only one messaging destination");
+      expect(await readdir(directory)).toEqual([]);
+
+      const rejected = await invoke(
+        [...command, "--telegram-chat=200", "Summarize notes"],
+        environment,
+      );
+
+      expect(rejected.exitCode).toBe(1);
+      expect(rejected.stderr).toContain("Start worker run or gateway work");
+      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("opens and reopens the conversation store without authentication or model selection", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-store-cli-"));
 
@@ -489,7 +517,7 @@ describe("CLI", () => {
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
         path: join(directory, "store/poppet.sqlite"),
-        schemaVersion: 11,
+        schemaVersion: 12,
         sessions: 0,
         messages: 0,
         runs: 0,
@@ -733,6 +761,8 @@ describe("CLI", () => {
       "tasks work",
       "gateway discord",
       "gateway discord setup",
+      "gateway telegram",
+      "gateway telegram setup",
       "gateway work",
       "gateway status",
       "worker run",

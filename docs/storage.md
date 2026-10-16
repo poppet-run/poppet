@@ -54,6 +54,14 @@ The gateway copies completed answers into its delivery queue using a unique
 Delivery chunks retain their own state independently of task execution. Queued
 replies and their saved answers survive clearing task definitions and history.
 
+## Messaging polling progress
+
+Migration 12 adds `gateway_cursors`, keyed by adapter and bot account. Polling
+updates commit to the inbox before advancing their cursor. Rejected input can
+advance deliberately; overload or storage failure preserves the previous cursor.
+Inbox deduplication covers a crash between those commits. Message bindings,
+acceptance identities, and polling offsets stay separate across adapters/accounts.
+
 ## Skill snapshots
 
 Migration 10 adds nullable JSON `skill` columns to sessions and jobs. Each selected

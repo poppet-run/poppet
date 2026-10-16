@@ -202,22 +202,120 @@ const scheduled = (destination: DeliveryDestination | null) =>
   });
 
 describe.concurrent("messaging gateway", () => {
-  test("delivers a saved occurrence after restart to its snapshot, without changing the thread session", async () => {
-    const state = await fixture();
+  test("polling checkpoints only durable acceptance and resumes a full inbox without losing input", async () => {
+    const offsets: (string | null)[] = [];
+
+    const state = await fixture({
+      id: "telegram",
+      poll: (cursor) =>
+        Effect.sync(() => {
+          offsets.push(cursor);
+
+          return Array.from({ length: 65 }, (_, index) => ({
+            cursor: String(index + 1),
+            message: message(String(index), "private-chat"),
+          })).slice(Number(cursor ?? 0));
+        }),
+    });
 
     try {
-      const occurrence = await state.run(
+      await state.run(
         Effect.gen(function* () {
           const gateway = yield* Gateway;
-          const destination = yield* gateway.resolveDestination("scheduled-thread");
-          const item = yield* scheduled(destination);
-          const { database } = yield* StoreDatabase;
-          // Later configuration and task edits cannot redirect this occurrence.
-          database.run("UPDATE jobs SET destination = ?", [
-            JSON.stringify({ ...destination, conversationId: "different-thread" }),
-          ]);
+          expect(yield* gateway.pollOnce.pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "overloaded",
+          );
+          const repo = yield* GatewayRepository;
+          expect(repo.cursor("telegram", "bot")).toBe("64");
+          expect(repo.cursor("discord", "bot")).toBeNull();
+          expect(repo.cursor("telegram", "another-bot")).toBeNull();
+          expect(yield* gateway.status).toMatchObject({ queued: 64 });
+        }),
+      );
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.recover;
+          yield* gateway.processNext;
+          yield* gateway.pollOnce;
+          expect((yield* GatewayRepository).cursor("telegram", "bot")).toBe("65");
+          expect(yield* gateway.status).toMatchObject({ queued: 64 });
+        }),
+      );
+      expect(offsets).toEqual([null, "64"]);
+      expect(state.requests).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
 
-          return item;
+  test("a failed cursor commit replays the accepted update without repeating model work", async () => {
+    const state = await fixture({
+      id: "telegram",
+      poll: () => Effect.succeed([{ cursor: "2", message: message("first", "private-chat") }]),
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const { database } = yield* StoreDatabase;
+          database.run(
+            "CREATE TRIGGER reject_cursor BEFORE INSERT ON gateway_cursors BEGIN SELECT RAISE(ABORT, 'test'); END",
+          );
+          const gateway = yield* Gateway;
+          expect(yield* gateway.pollOnce.pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "storage",
+          );
+          expect((yield* GatewayRepository).cursor("telegram", "bot")).toBeNull();
+          expect(yield* gateway.status).toMatchObject({ queued: 1 });
+        }),
+      );
+      await state.run(
+        Effect.gen(function* () {
+          (yield* StoreDatabase).database.run("DROP TRIGGER reject_cursor");
+          const gateway = yield* Gateway;
+          yield* gateway.recover;
+          yield* gateway.pollOnce;
+          yield* gateway.processNext;
+          expect((yield* GatewayRepository).cursor("telegram", "bot")).toBe("2");
+          expect(yield* gateway.processNext).toBe(false);
+        }),
+      );
+      expect(state.requests).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("replayed polling updates deduplicate after acceptance, and conversation bindings survive restart", async () => {
+    const state = await fixture({
+      id: "telegram",
+      poll: (cursor) =>
+        Effect.succeed(
+          cursor === null
+            ? [
+                { cursor: "2", message: message("first", "private-chat") },
+                { cursor: "3", message: null },
+              ]
+            : [{ cursor: "4", message: message("second", "private-chat", "Continue") }],
+        ),
+    });
+
+    try {
+      const session = await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          // Simulate death after inbox commit but before advancing the polling cursor.
+          yield* gateway.accept(message("first", "private-chat"));
+          yield* gateway.pollOnce;
+          yield* gateway.processNext;
+          yield* gateway.deliverNext;
+          const repo = yield* GatewayRepository;
+          expect(repo.cursor("telegram", "bot")).toBe("3");
+
+          return repo.binding("telegram", "bot", "guild", "private-chat");
         }),
       );
 
@@ -225,26 +323,117 @@ describe.concurrent("messaging gateway", () => {
         Effect.gen(function* () {
           const gateway = yield* Gateway;
           yield* gateway.recover;
-          expect(yield* gateway.deliverNext).toBe(true);
-          expect(yield* gateway.deliverNext).toBe(false);
-          expect((yield* TaskRepository).deliveries(occurrence.id)).toMatchObject([
-            { state: "sent", attempts: 0 },
-          ]);
-          expect((yield* TaskRepository).occurrence(occurrence.id).status).toBe("completed");
-          expect(
-            (yield* GatewayRepository).binding("discord", "bot", "guild", "scheduled-thread"),
-          ).toBeNull();
+          yield* gateway.pollOnce;
+          yield* gateway.processNext;
+          yield* gateway.deliverNext;
+          const repo = yield* GatewayRepository;
+          expect(repo.binding("telegram", "bot", "guild", "private-chat")).toBe(session);
+          expect(repo.binding("telegram", "other-bot", "guild", "private-chat")).toBeNull();
+          expect(repo.binding("discord", "bot", "guild", "private-chat")).toBeNull();
+          const store = yield* Store;
+          expect(yield* store.sessions).toHaveLength(1);
+          expect(yield* store.runs(session!)).toHaveLength(2);
         }),
       );
-      expect(state.sent).toEqual([
-        { destination: "scheduled-thread", text: "Answer", nonce: expect.any(String) },
-      ]);
-      expect(state.requests).toHaveLength(1);
-      expect(state.requests[0]!.tools.some((tool) => tool.name === "save_note")).toBe(false);
+      expect(state.requests).toHaveLength(2);
+      expect(state.sent.map((item) => item.destination)).toEqual(["private-chat", "private-chat"]);
     } finally {
       await state.close();
     }
   });
+
+  test("polled cancellation bypasses active inference and checkpoints without starting another run", async () => {
+    const started = Deferred.makeUnsafe<void>();
+    let cancel = false;
+
+    const state = await fixture(
+      {
+        id: "telegram",
+        poll: () =>
+          Effect.succeed([
+            {
+              cursor: cancel ? "3" : "2",
+              message: message(
+                cancel ? "cancel" : "hold",
+                "private-chat",
+                cancel ? "/cancel" : "Hold",
+              ),
+            },
+          ]),
+      },
+      () =>
+        Stream.fromEffect(Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))),
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.pollOnce;
+          const processing = yield* gateway.processNext.pipe(Effect.forkChild);
+          yield* Deferred.await(started);
+          cancel = true;
+          yield* gateway.pollOnce;
+          yield* Fiber.join(processing);
+          expect((yield* GatewayRepository).cursor("telegram", "bot")).toBe("3");
+          expect(yield* gateway.status).toMatchObject({ queued: 0, executing: 0 });
+          const store = yield* Store;
+          const session = (yield* store.sessions)[0]!;
+          expect((yield* store.runs(session.id)).map((run) => run.status)).toEqual(["interrupted"]);
+        }),
+      );
+      expect(state.requests).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each(["discord", "telegram"])(
+    "%s delivers a saved occurrence after restart to its snapshot, without changing the chat session",
+    async (adapter) => {
+      const state = await fixture({ id: adapter });
+
+      try {
+        const occurrence = await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            const destination = yield* gateway.resolveDestination("scheduled-thread");
+            const item = yield* scheduled(destination);
+            const { database } = yield* StoreDatabase;
+            // Later configuration and task edits cannot redirect this occurrence.
+            database.run("UPDATE jobs SET destination = ?", [
+              JSON.stringify({ ...destination, conversationId: "different-thread" }),
+            ]);
+
+            return item;
+          }),
+        );
+
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            yield* gateway.recover;
+            expect(yield* gateway.deliverNext).toBe(true);
+            expect(yield* gateway.deliverNext).toBe(false);
+            expect((yield* TaskRepository).deliveries(occurrence.id)).toMatchObject([
+              { state: "sent", attempts: 0 },
+            ]);
+            expect((yield* TaskRepository).occurrence(occurrence.id).status).toBe("completed");
+            expect(
+              (yield* GatewayRepository).binding(adapter, "bot", "guild", "scheduled-thread"),
+            ).toBeNull();
+          }),
+        );
+        expect(state.sent).toEqual([
+          { destination: "scheduled-thread", text: "Answer", nonce: expect.any(String) },
+        ]);
+        expect(state.requests).toHaveLength(1);
+        expect(state.requests[0]!.tools.some((tool) => tool.name === "save_note")).toBe(false);
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
   test.each(["unavailable", "permission", "uncertain"] as const)(
     "keeps scheduled %s delivery separate from execution across restart",

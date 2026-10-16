@@ -14,7 +14,7 @@ export const prepareTask = (
   coding: boolean,
   prompt: string,
   skill?: string,
-  discordThread?: string,
+  delivery?: { readonly adapter: string; readonly conversationId: string },
 ) =>
   Effect.gen(function* () {
     yield* taskOperation(() => nextOccurrence(schedule, Date.now()));
@@ -37,13 +37,7 @@ export const prepareTask = (
       },
     };
 
-    const selected =
-      discordThread === undefined
-        ? command
-        : {
-            ...command,
-            delivery: { adapter: "discord", conversationId: discordThread },
-          };
+    const selected = delivery === undefined ? command : { ...command, delivery };
 
     return yield* Schema.decodeUnknownEffect(TaskCommand)(
       skill === undefined ? selected : { ...selected, skill },

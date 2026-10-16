@@ -530,20 +530,40 @@ const gateway = Effect.gen(function* () {
     return { ...connection, ...(yield* gatewayStorage(() => repo.status())) };
   });
 
+  const pollOnce = Effect.gen(function* () {
+    if (!channel.poll) return;
+    const cursor = yield* gatewayStorage(() => repo.cursor(channel.id, account));
+    const updates = yield* channel.poll(cursor);
+
+    for (const update of updates) {
+      if (update.message !== null) yield* accept(update.message);
+      // A crash before this write safely redelivers an already deduplicated inbox entry.
+      yield* gatewayStorage(() => repo.checkpoint(channel.id, account, update.cursor));
+    }
+  });
+
   /** Recovers once, then receives input, runs inference, and delivers replies concurrently. */
   const run = Effect.gen(function* () {
     yield* recover;
     yield* Effect.all(
       [
-        Stream.runForEach(channel.messages, (message) =>
-          accept(message).pipe(
-            Effect.catchTag("ChannelError", (error) =>
-              Effect.sync(() => {
-                rejected++;
-              }).pipe(Effect.andThen(Console.error(error.message))),
+        channel.poll
+          ? pollOnce.pipe(
+              Effect.catchTag("ChannelError", (error) =>
+                Effect.sleep(Math.max(1000, error.retryAfterMs ?? 1000)),
+              ),
+              Effect.andThen(Effect.sleep("100 millis")),
+              Effect.forever,
+            )
+          : Stream.runForEach(channel.messages, (message) =>
+              accept(message).pipe(
+                Effect.catchTag("ChannelError", (error) =>
+                  Effect.sync(() => {
+                    rejected++;
+                  }).pipe(Effect.andThen(Console.error(error.message))),
+                ),
+              ),
             ),
-          ),
-        ),
         processNext.pipe(Effect.andThen(Effect.sleep("100 millis")), Effect.forever),
         deliverNext.pipe(Effect.andThen(Effect.sleep("250 millis")), Effect.forever),
         nameNext.pipe(Effect.andThen(Effect.sleep("1 second")), Effect.forever),
@@ -557,6 +577,7 @@ const gateway = Effect.gen(function* () {
 
   return {
     resolveDestination,
+    pollOnce,
     accept,
     processNext,
     deliverNext,

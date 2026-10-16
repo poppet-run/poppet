@@ -2,11 +2,12 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–11 and 13–16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, and live scheduled-result delivery require manual validation
+Status: Phases 1–11 and 13–16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, and live Telegram behavior require manual validation
 
-Phase 12 remains planned. Discord thread chat, scheduled-result delivery,
-conversation search, local Markdown skills, supplied-URL reading, and phase 16
-naming are implemented. Additional messaging adapters are the remaining phase.
+Phase 12's Telegram adapter is implemented with automated checks. WhatsApp
+remains planned. Discord thread chat, scheduled-result delivery, conversation
+search, local Markdown skills, supplied-URL reading, and phase 16 naming are
+implemented.
 
 Updated: 2026-10-16
 
@@ -632,8 +633,28 @@ Validate one live scheduled delivery separately in the private test channel.
 
 ## Phase 12: Additional messaging adapters
 
-Planned, not implemented. Depends on phase 10; scheduled delivery also requires
-phase 11. Implement adapters separately so Discord remains independently usable.
+Telegram is implemented with automated checks; WhatsApp remains planned.
+Depends on phase 10; scheduled delivery also requires phase 11. Adapters remain
+separate so Discord is independently usable.
+
+`@poppet/channel-telegram` uses Bun HTTP and the Bot API for owner-only private
+text chat with bot-token authentication and long polling. It verifies bot identity,
+filters unsupported input, and implements the gateway's access, typing, and safe
+reply-delivery contract. `gateway telegram setup <bot-id> <owner-id> --key-stdin`
+saves protected settings without connecting. `tasks add --telegram-chat <owner-id>`
+selects scheduled delivery through the existing destination resolver.
+
+The gateway's optional polling operation checkpoints each update only after
+acceptance or deliberate rejection. Migration 12 stores cursors by adapter and
+bot account. Overload preserves unaccepted updates; restart deduplicates any
+input committed before its cursor. Reply attempts distinguish explicit rejection
+from uncertain outcomes. Shared protected settings helpers retain Discord's
+existing file format and security checks.
+
+Automated checks cover owner/private-chat restrictions, replay and restart,
+account/adapter isolation, a full inbox, cancellation, text bounds, safe delivery,
+setup and status redaction, and scheduled destination selection. A live owner-only
+chat and scheduled delivery remain manual checks.
 
 Add Telegram first with a bot token and long polling, using the existing gateway
 contract for authorization, conversation bindings, acceptance, and delivery.
