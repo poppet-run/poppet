@@ -199,15 +199,25 @@ describe("conversation store", () => {
                 });
               });
 
-            yield* complete('alpha OR beta café 東京 C++ foo-bar quote"word');
+            yield* complete('alpha & beta OR café 東京 C++ foo-bar quote"word');
 
-            for (const query of ["alpha OR beta", "C++", "foo-bar", 'quote"word', "café", "東京"]) {
+            for (const query of [
+              "alpha OR beta",
+              "alpha & beta",
+              "alpha / beta",
+              '" OR * - :',
+              "C++",
+              "foo-bar",
+              'quote"word',
+              "café",
+              "東京",
+            ]) {
               expect((yield* store.searchSessions(query, 16384)).matches).toHaveLength(1);
             }
 
             for (const query of [
               "alpha OR absent",
-              '" OR * - :',
+              '& / " * - :',
               "...",
               "missing",
               "text:alpha",

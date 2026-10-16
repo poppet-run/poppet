@@ -714,9 +714,13 @@ export const StoreLive = Layer.effect(
             Schema.decodeUnknownSync(
               Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 })),
             )(maxBytes);
-            const terms = text.split(/\s+/u).map((term) => `"${term.replaceAll('"', '""')}"`);
 
-            if (!/[\p{L}\p{N}]/u.test(text)) return { matches: [], truncated: false };
+            const terms = text
+              .split(/\s+/u)
+              .filter((term) => /[\p{L}\p{N}]/u.test(term))
+              .map((term) => `"${term.replaceAll('"', '""')}"`);
+
+            if (terms.length === 0) return { matches: [], truncated: false };
 
             const rows = readRecord(() =>
               Schema.decodeUnknownSync(
