@@ -170,14 +170,10 @@ export const sendChat = (
 
     const sessionId =
       command.action === "new"
-        ? (yield* store.createSession(
-            command.provider,
-            command.model,
-            command.workload,
-            undefined,
-            undefined,
+        ? (yield* store.createSession(command.provider, command.model, {
+            workload: command.workload,
             skill,
-          )).id
+          })).id
         : command.id;
 
     yield* announce(`Session: ${sessionId}`);

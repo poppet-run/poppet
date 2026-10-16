@@ -36,10 +36,12 @@ interface StoreOperations {
   readonly createSession: (
     provider: ProviderId,
     model: string,
-    workload?: Session["workload"],
-    id?: string,
-    taskTitle?: string,
-    skill?: SkillSnapshot | null,
+    options?: {
+      readonly workload?: Session["workload"];
+      readonly id?: string;
+      readonly taskTitle?: string;
+      readonly skill?: SkillSnapshot | null;
+    },
   ) => Effect.Effect<Session, StoreError>;
   /** Manual metadata changes never reorder history; manual names win over in-flight generation. */
   readonly renameSession: (id: string, title: string) => Effect.Effect<Session, StoreError>;
@@ -322,13 +324,10 @@ export const StoreLive = Layer.effect(
         .immediate(),
     );
 
-    const createSession = (
-      provider: ProviderId,
-      model: string,
-      workload: Session["workload"] = "assistant",
-      suppliedId?: string,
-      taskTitle?: string,
-      skill: SkillSnapshot | null = null,
+    const createSession: StoreOperations["createSession"] = (
+      provider,
+      model,
+      { workload = "assistant", id: suppliedId, taskTitle, skill = null } = {},
     ) =>
       atTime((at) => {
         const selectedProvider = Schema.decodeUnknownSync(ProviderId)(provider);

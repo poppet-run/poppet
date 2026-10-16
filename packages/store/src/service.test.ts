@@ -451,7 +451,11 @@ describe("conversation store", () => {
         const saved = await fixtureStore.run(
           Effect.gen(function* () {
             const store = yield* Store;
-            const session = yield* store.createSession(provider, "selected-model", "coding");
+
+            const session = yield* store.createSession(provider, "selected-model", {
+              workload: "coding",
+            });
+
             const pending = yield* store.queueRun(session.id, [user]);
             expect(pending).toMatchObject({
               status: "pending",

@@ -114,7 +114,11 @@ describe.concurrent("persisted agent", () => {
       const savedSession = await state.run(
         Effect.gen(function* () {
           const store = yield* Store;
-          const session = yield* store.createSession("test-provider", "test-model", "coding");
+
+          const session = yield* store.createSession("test-provider", "test-model", {
+            workload: "coding",
+          });
+
           yield* Stream.runForEach((yield* Agent).send(session.id, "First"), (event) =>
             Effect.sync(() => events.push(event)),
           );
@@ -496,11 +500,9 @@ describe("session naming", () => {
           const store = yield* Store;
           const agent = yield* Agent;
 
-          const session = yield* store.createSession(
-            description.provider,
-            description.id,
-            "coding",
-          );
+          const session = yield* store.createSession(description.provider, description.id, {
+            workload: "coding",
+          });
 
           yield* Stream.runDrain(agent.send(session.id, "First\n  question\u0000 with 😀"));
           expect(yield* store.session(session.id)).toMatchObject({
