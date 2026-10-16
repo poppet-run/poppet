@@ -40,7 +40,7 @@ The [documentation index](docs/index.md) links to all guides and references.
 - [Command line](docs/cli.md)
 - [Notes](docs/notes.md) and [memory](docs/memory.md)
 - [Scheduled tasks](docs/tasks.md) and [worker](docs/worker.md)
-- [Discord](docs/discord.md), [Telegram](docs/telegram.md), and [WhatsApp](docs/whatsapp.md)
+- [Discord](docs/gateways/discord.md), [Telegram](docs/gateways/telegram.md), and [WhatsApp](docs/gateways/whatsapp.md)
 - [Development](docs/development.md)
 
 ## Licence

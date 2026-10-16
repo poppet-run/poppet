@@ -1,6 +1,6 @@
 # WhatsApp
 
-[Documentation index](index.md)
+[Documentation index](../index.md)
 
 ## Account setup and pairing
 
@@ -52,7 +52,7 @@ reply delivery work as they do for the other adapters. `/status` reports the ses
 and latest run, including the selected skill; `/cancel` interrupts current work and cancels queued input.
 
 Send `/new --skill weekly-review Review Acorn` to start a fresh session with a
-saved [local skill](skills.md#messaging-sessions), or `/new <message>` to start
+saved [local skill](../skills.md#messaging-sessions), or `/new <message>` to start
 without one. Previous sessions and history are retained. Ordinary follow-ups keep
 the active session's snapshot across restart and edits or deletion of the local file.
 

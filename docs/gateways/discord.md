@@ -1,6 +1,6 @@
 # Discord
 
-[Documentation index](index.md)
+[Documentation index](../index.md)
 
 ## Bot setup
 
@@ -43,7 +43,7 @@ across worker restarts, renames, and archiving. Start a new thread for a new
 session. Earlier messages in an existing thread are not imported.
 
 Use `@Poppet /new --skill weekly-review Review Acorn` to start a fresh session
-with a saved [local skill](skills.md#messaging-sessions), in a new thread or an
+with a saved [local skill](../skills.md#messaging-sessions), in a new thread or an
 existing one. `/new <message>` starts without a skill. Previous session history
 is retained; ordinary follow-ups keep the active session's skill snapshot.
 
@@ -77,7 +77,7 @@ are saved before sending; a delivery retry never repeats model or tool work.
 Uncertain sends are recorded without automatic resending, since Discord may
 already have posted them. Use the session ID and `chat show <session>` to inspect
 the saved answer before manually reposting it. No reply is redirected to another
-channel when a thread becomes inaccessible. [Scheduled tasks](tasks.md#deliver-results-to-discord) can select an explicit
+channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#deliver-results-to-discord) can select an explicit
 thread with `--discord-thread`. Use the combined worker to execute and deliver
 them. Scheduled results use the same queue and do not alter thread sessions.
 [Telegram private chat](telegram.md) is also supported. WhatsApp remains planned.
@@ -87,7 +87,7 @@ them. Scheduled results use the same queue and do not alter thread sessions.
 Automated tests use injected Discord events and API responses. Live bot setup,
 permissions, reconnection, and model inference still need manual validation.
 
-See [worker modes](worker.md#foreground-modes) to run messaging with scheduling or install the combined macOS worker.
+See [worker modes](../worker.md#foreground-modes) to run messaging with scheduling or install the combined macOS worker.
 
 ## Thread names
 

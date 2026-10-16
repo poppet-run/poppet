@@ -966,7 +966,7 @@ bounded receive buffer can lose pre-acceptance input after overload or a crash.
 Accepted inputs use the existing durable inbox and session bindings. Replies use
 stable saved IDs, plain text without previews, and uncertain outcomes without
 automatic replay. `--whatsapp-chat` uses the existing destination resolver and
-scheduled-result queue. See the [WhatsApp guide](whatsapp.md) for pairing and limits.
+scheduled-result queue. See the [WhatsApp guide](gateways/whatsapp.md) for pairing and limits.
 
 ## Dependencies
 

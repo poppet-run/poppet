@@ -15,9 +15,12 @@ Start with [getting started](getting-started.md) to install dependencies, connec
 - [Storage](storage.md): the local database, permissions, ownership, and recovery.
 - [Scheduled tasks](tasks.md): one-off and recurring work, results, pauses, and retries.
 - [Worker](worker.md): foreground modes, macOS login startup, lifecycle, and logs.
-- [Discord](discord.md): bot setup, thread sessions, permissions, and delivery.
-- [Telegram](telegram.md): owner-only private chat, bot setup, polling, and delivery.
-- [WhatsApp](whatsapp.md): QR-linked personal accounts, owner-only text, and delivery limits.
+
+## Gateways
+
+- [Discord](gateways/discord.md): bot setup, thread sessions, permissions, and delivery.
+- [Telegram](gateways/telegram.md): owner-only private chat, bot setup, polling, and delivery.
+- [WhatsApp](gateways/whatsapp.md): QR-linked personal accounts, owner-only text, and delivery limits.
 
 ## Providers
 

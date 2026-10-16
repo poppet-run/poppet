@@ -34,7 +34,7 @@ bun run start tasks resume <task-id>
 
 ## Deliver results to Discord
 
-Configure [Discord](discord.md), start `bun run start worker run`, and copy an
+Configure [Discord](gateways/discord.md), start `bun run start worker run`, and copy an
 existing authorized thread's ID. Pass it before the task prompt:
 
 ```fish
@@ -68,7 +68,7 @@ it starts again. Already queued replies remain queued if task history is cleared
 
 ## Deliver results to Telegram
 
-Configure [Telegram](telegram.md), run the combined worker, and pass
+Configure [Telegram](gateways/telegram.md), run the combined worker, and pass
 `--telegram-chat <owner-id>` before the prompt. Only the configured owner's private
 chat is supported. It uses the same destination snapshots, authorization rechecks,
 and delivery inspection as Discord. Choose one destination per task;
@@ -76,7 +76,7 @@ and delivery inspection as Discord. Choose one destination per task;
 
 ## Deliver results to WhatsApp
 
-Configure and pair [WhatsApp](whatsapp.md), run the combined worker, and pass
+Configure and pair [WhatsApp](gateways/whatsapp.md), run the combined worker, and pass
 `--whatsapp-chat <owner-phone>` before the prompt. Use the configured owner's
 international phone digits without `+`. The adapter validates the connected
 account and private chat, then uses the same saved destination and delivery queue.

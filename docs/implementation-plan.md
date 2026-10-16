@@ -594,7 +594,7 @@ can require resending. Accepted inputs and completed answers survive restarts.
 Known safe failures use bounded backoff and Discord's rate-limit delay; lost
 send acknowledgements remain uncertain for manual inspection. Live Discord
 setup, visibility, intent/permission failures, and reconnect behavior remain
-unverified. See the [setup and manual path](discord.md).
+unverified. See the [setup and manual path](gateways/discord.md).
 
 Channel setup and loading now use `ChannelRegistration` from `@poppet/gateway`,
 following provider registrations. Each package owns setup validation, credential
@@ -706,7 +706,7 @@ self-chat echo suppression after restart, receive bounds, connection failures,
 safe sends, offline setup, and scheduled flag validation. Imports, crypto,
 auth serialization, protobuf, and QR rendering passed an isolated Bun smoke check.
 Live pairing, protocol compatibility, owner chat, cancellation, and scheduled phone
-delivery remain manual checks in the [WhatsApp guide](whatsapp.md#manual-validation).
+delivery remain manual checks in the [WhatsApp guide](gateways/whatsapp.md#manual-validation).
 
 Completion check for each adapter: authorized text chat resumes its own session
 after restart, rejected senders cause no agent work, duplicate events do not

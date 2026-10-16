@@ -131,7 +131,7 @@ is running. Choose at most one messaging destination flag.
 | `gateway work`                                                                            | Run messaging only in the foreground.                                   |
 | `gateway status`                                                                          | Show connection, queue, and delivery status.                            |
 
-See [Discord](discord.md), [Telegram](telegram.md), and [WhatsApp](whatsapp.md) for setup, conversation behavior,
+See [Discord](gateways/discord.md), [Telegram](gateways/telegram.md), and [WhatsApp](gateways/whatsapp.md) for setup, conversation behavior,
 controls, and uncertain deliveries. The bot token is never accepted as a command-line argument.
 
 ## Worker

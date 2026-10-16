@@ -219,6 +219,6 @@ The [notes guide](notes.md#saved-outcomes-and-recovery) and
 [storage guide](storage.md#permissions-and-recovery) describe local recovery checks.
 Live chat, ChatGPT token renewal, Discord, Telegram, and WhatsApp setup and reconnection, and macOS login
 startup and physical sleep/wake remain separate manual checks. Follow the
-[Discord guide](discord.md) and [worker manual validation](worker.md#manual-validation)
+[Discord guide](gateways/discord.md) and [worker manual validation](worker.md#manual-validation)
 for those paths. The [implementation plan](implementation-plan.md) records
 phase-specific validation and remaining work.

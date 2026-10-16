@@ -1,6 +1,6 @@
 # Telegram
 
-[Documentation index](index.md)
+[Documentation index](../index.md)
 
 ## Bot setup
 
@@ -35,7 +35,7 @@ restart and retains its selected provider and model. Telegram and Discord have
 separate sessions even if external IDs happen to match.
 
 Send `/new --skill weekly-review Review Acorn` to start a fresh session with a
-saved [local skill](skills.md#messaging-sessions). `/new <message>` starts without
+saved [local skill](../skills.md#messaging-sessions). `/new <message>` starts without
 a skill. Both retain previous sessions and history; ordinary follow-ups keep the
 active session's snapshot across restart and local file edits.
 
