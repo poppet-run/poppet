@@ -256,5 +256,3 @@ export const openWhatsAppAuth = (dataDirectory: string, onFailure: () => void) =
         operation(() => database.query("SELECT id FROM outgoing WHERE id = ?").get(id) !== null),
     };
   });
-
-export type WhatsAppAuth = Effect.Success<ReturnType<typeof openWhatsAppAuth>>;
