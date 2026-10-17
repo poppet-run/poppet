@@ -112,3 +112,11 @@ Failures can stop synchronization while the local session title stays usable.
 Discord has no atomic compare-and-rename operation, so a user edit between the
 last fetch and update can still race the bot. Live creation, renaming, and that
 race require validation in the private test channel.
+
+## Schedule through chat
+
+With a tool-capable model, ask to create, inspect, pause, or resume a task in this
+authorized conversation. Request delivery here to save this conversation as the
+result destination after an access check. The model cannot select another chat
+or identity. See [task management](../tasks.md#manage-tasks-through-chat) for time,
+receipt, and recovery behavior. Scheduled runs cannot manage other tasks.

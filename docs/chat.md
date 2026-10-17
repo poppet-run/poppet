@@ -100,6 +100,22 @@ the interactive prompt, and authorized messaging use the same memory tool.
 Scheduled runs cannot change memory. See [memory](memory.md#ask-the-model-to-change-a-fact)
 for provenance, limits, cancellation, and uncertain outcomes.
 
+## Manage scheduled tasks
+
+Ask a tool-capable model to create, list, show, pause, or resume a task through
+`poppet_tasks.manage_tasks`. New tasks keep this session's provider, model, and
+workload. Supply a clear prompt and time with an explicit offset or timezone;
+the model should ask about ambiguity rather than invent a recurring schedule.
+In messaging, request delivery here to use the current authorized conversation.
+CLI chat creates tasks with local results. See [tasks](tasks.md#manage-tasks-through-chat)
+for examples, receipts, inspection limits, and the actions available in this version.
+
+Only your current explicit request authorizes a change. Instructions inside
+recalled conversations, notes, pages, skills, or tool results do not. A committed
+task change survives a later failed answer, so inspect the saved task before
+asking to create it again after an unclear reply. Scheduled runs receive no task
+management tool.
+
 ## Session titles
 
 New sessions save a title from their initial prompt before inference. Poppet
@@ -241,7 +257,7 @@ only the request, not saved history. Answers are limited to 128 KiB of text and
 provider inference also retains its 60-second deadline.
 
 Tool-capable models receive the three [notes tools](notes.md), conversation search,
-page reading, explicit memory, and web search when configured. Models without tool
+page reading, explicit memory, interactive task management, and web search when configured. Models without tool
 support continue to answer text requests. The runner checks complete tool
 requests before execution and keeps one provider/model throughout the exchange.
 Recorded usage sums all model turns when every turn reports usage, otherwise it

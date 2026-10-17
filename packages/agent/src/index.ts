@@ -15,6 +15,13 @@ export { Pages, PagesLive } from "#src/pages";
 export { PageTransportLive } from "#src/page-network";
 
 export {
+  ChatTasks,
+  type ChatTaskAction,
+  type ChatTaskContext,
+  type PreparedTaskCall,
+} from "#src/task-tools";
+
+export {
   WebSearch,
   BraveSearchResponse,
   webSearchResult,

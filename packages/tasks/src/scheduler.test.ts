@@ -29,6 +29,7 @@ import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { Clock, Console, Deferred, Effect, Fiber, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
+import { ChatTasksLive } from "#src/chat-tools";
 import { TaskDestinations, executeTaskCommand } from "#src/commands";
 import { executeOccurrence, reconcileTasks, makeTaskWorker } from "#src/scheduler";
 import { TaskError, type NewTask } from "#src/task-schema";
@@ -121,6 +122,7 @@ const fixture = async (
   const memory = LocalMemoryLive.pipe(Layer.provideMerge(store));
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
   const settings = Layer.succeed(ChatSettings, defaultPolicy);
+  const skills = SkillsLive.pipe(Layer.provide(config));
 
   const agent = AgentLive.pipe(
     Layer.provideMerge(
@@ -128,6 +130,7 @@ const fixture = async (
         store,
         memory,
         settings,
+        ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
         Layer.succeed(WebSearch, webSearch),
         Layer.succeed(Pages, pages),
         NotesLive.pipe(Layer.provide(Layer.merge(config, settings))),
@@ -136,7 +139,7 @@ const fixture = async (
     ),
   );
 
-  const layer = Layer.mergeAll(agent, tasks, SkillsLive.pipe(Layer.provide(config)));
+  const layer = Layer.mergeAll(agent, tasks, skills);
 
   const task: NewTask = {
     name: "Summary",
@@ -169,6 +172,118 @@ const fixture = async (
 };
 
 describe.concurrent("task worker", () => {
+  test("chat can pause a task while its running occurrence waits for the shared agent", async () => {
+    const entered = await Effect.runPromise(Deferred.make<void>());
+    const release = await Effect.runPromise(Deferred.make<void>());
+    let jobId = "";
+
+    const state = await fixture((request) => {
+      if (
+        request.messages[0]?.role !== "user" ||
+        request.messages[0].text !== "Pause the scheduled task" ||
+        request.messages.some((message) => message.role === "tool")
+      )
+        return final();
+
+      return Stream.fromEffect(
+        Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))),
+      ).pipe(
+        Stream.flatMap(() =>
+          response([
+            {
+              type: "tool-call",
+              callId: "pause",
+              namespace: "poppet_tasks",
+              name: "manage_tasks",
+              arguments: JSON.stringify({
+                action: "pause",
+                id: jobId,
+                name: null,
+                prompt: null,
+                schedule: null,
+                delivery: null,
+                skill: null,
+                after: null,
+              }),
+            },
+          ]),
+        ),
+      );
+    });
+
+    try {
+      await state.run(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const repo = yield* TaskRepository;
+            const worker = yield* makeTaskWorker;
+            jobId = repo.add(state.task, 0).id;
+            repo.reconcile(0);
+            const session = yield* (yield* Store).createSession("test-provider", "test-model");
+
+            const interactive = yield* Stream.runDrain(
+              (yield* Agent).send(session.id, "Pause the scheduled task"),
+            ).pipe(Effect.forkChild);
+
+            yield* Deferred.await(entered);
+            const background = yield* worker.run.pipe(Effect.forkChild);
+
+            while (repo.occurrences(jobId)[0]?.status !== "running")
+              yield* Effect.sleep("1 millis");
+            yield* Deferred.succeed(release, undefined);
+            yield* Fiber.join(interactive);
+
+            while (repo.occurrences(jobId)[0]?.status !== "completed")
+              yield* Effect.sleep("1 millis");
+            expect(repo.task(jobId).paused).toBe(1);
+            yield* Fiber.interrupt(background);
+          }),
+        ).pipe(Effect.timeout("3 seconds")),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each(["create", "list", "show", "pause", "resume"])(
+    "scheduled runs reject fabricated task %s calls",
+    async (action) => {
+      const state = await fixture((request) => {
+        expect(request.tools.some((tool) => tool.name === "manage_tasks")).toBe(false);
+
+        return response([
+          {
+            type: "tool-call",
+            callId: "task",
+            name: "manage_tasks",
+            namespace: "poppet_tasks",
+            arguments: JSON.stringify({ action }),
+          },
+        ]);
+      });
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const repo = yield* TaskRepository;
+            repo.add(state.task, 0);
+            repo.reconcile(0);
+            const claimed = repo.claim(0)!;
+            yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
+            expect(repo.list()).toHaveLength(1);
+            expect(repo.occurrence(claimed.occurrence.id)).toMatchObject({ status: "failed" });
+            expect(
+              (yield* (yield* Store).run(repo.occurrence(claimed.occurrence.id).runId!))
+                ?.failureReason,
+            ).toBe("agent:tool-permission");
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test("task creation expires before the transport deadline, including queue wait, without a late save", async () => {
     const state = await fixture(final);
     const blocked = Deferred.makeUnsafe<void>();

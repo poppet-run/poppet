@@ -46,6 +46,14 @@ It permits one pending or running run across all sessions.
 
 ## Scheduled delivery destinations
 
+Migration 13 adds nullable `source_run_id` and `source_call_id` columns to jobs,
+with a unique source-call index. Existing tasks retain no tool origin. Chat task
+mutations and their completed tool result/message commit in one shared-database
+transaction. Failure to save the receipt rolls back the task change. Repeating a
+completed call returns its original saved receipt, and a later model failure does
+not undo a committed task. This reuses the tool journal without introducing
+automatic execution replay.
+
 Migration 11 adds nullable JSON `destination` columns to jobs and occurrences.
 Each occurrence copies the task's adapter, bot account, owner, server, parent
 channel, and thread IDs when queued. Existing records retain no destination.

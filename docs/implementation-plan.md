@@ -2,14 +2,13 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–17 implemented with automated checks; phases 18–19 planned. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, and live scheduled research delivery require manual validation
+Status: Phases 1–18 implemented with automated checks; phase 19 planned. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
 implemented.
 
-The next planned additions are [task management through chat](#phase-18-task-management-through-chat) and
-[deeper conversation recall](#phase-19-deeper-conversation-recall).
+The next planned addition is [deeper conversation recall](#phase-19-deeper-conversation-recall).
 
 Updated: 2026-10-17
 
@@ -1068,91 +1067,72 @@ citations, using the setup in [configuration](configuration.md#web-search).
 
 ## Phase 18: Task management through chat
 
-Planned. Depends on durable scheduling, worker commands, and destination validation
-from phases 7–12. Can ship independently of web search and deeper recall.
+Implemented with automated checks. Live chat creation, inspection, pause/resume,
+and a delivered occurrence remain manual validation. Depends on durable tasks,
+worker commands, and destination validation from phases 7–12. Independent of
+web search and deeper conversation recall.
 
-Add `poppet_tasks.manage_tasks` with `create`, `list`, `show`, `pause`, and `resume`
-actions for tool-capable interactive CLI and authorized messaging chats. Reuse
-the existing task commands and scheduler instead of introducing another queue or
-schedule format. Omit this tool from scheduled runs and reject fabricated calls
-before execution, so unattended work cannot create or change tasks. No task
-editing, deletion, clear-all, immediate execution, retry, provider-resume, or
-active-run cancellation is exposed through this first version. Existing CLI
-commands remain available.
+`poppet_tasks.manage_tasks` supports `create`, `list`, `show`, `pause`, and `resume`
+in tool-capable interactive CLI and authorized messaging chat. It reuses the
+existing repository and scheduler. Scheduled runs do not receive the tool and
+fabricated calls are rejected before execution, including read actions. Editing,
+deleting, clearing, running immediately, retrying, provider resumption, and
+active-run cancellation remain outside this tool; existing CLI commands retain
+those functions.
 
-Only the owner's current explicit request authorizes a task mutation. Describe
-that restriction in the tool and base instructions; historical conversations,
-skills, notes, pages, and tool results cannot request task creation or changes.
-Derive interactive/scheduled origin, owner identity, session selection, and current
-messaging destination from trusted host context, never model-supplied authority
-fields. Keep the existing single-owner access policy. Do not infer authorization
-from a keyword match or add a separate model-based permission classifier.
+Only the owner's current explicit request authorizes a mutation. Tool and base
+instructions reject authorization from history, skills, notes, pages, and tool
+results, and require clarification of ambiguous identity, prompt, time, or
+timezone. Trusted host context supplies interactive/scheduled origin, the current
+run's provider/model/workload, and any current-conversation resolver. The model
+cannot supply owner/account IDs, arbitrary channel IDs, or inference selection.
+No keyword classifier, additional permission model, or confirmation flow was added.
 
-Creation saves an explicit task name, self-contained prompt, and either a one-off
-timestamp with an offset or a five-field cron expression with an IANA timezone.
-Use the current session's provider, model, and workload; do not let the tool choose
-different inference credentials or silently change an existing task's selection.
-Use existing skill loading and snapshots only when a skill is explicitly selected.
-Tasks still run in fresh sessions with no implicit copy of the current chat.
-Resolve relative times against the host's current time; ask an ordinary follow-up
-when the intended time, timezone, prompt, or task identity is unclear. Require a
-future one-off time and validate recurring schedules with the existing calculator.
-Do not invent a recurring default for an ambiguous reminder request.
+Creation saves a self-contained prompt, explicit name, future offset-qualified
+one-off timestamp or five-field cron with an explicit timezone, and an optional
+explicitly selected skill snapshot. The host clock supplies current UTC time for
+relative dates. The existing parser and occurrence calculator validate schedules.
+Occurrences start in fresh sessions with no implicit copy of the creating chat.
+Local results are available everywhere; `here` is available only when a gateway
+supplies the current authorized destination. The gateway rechecks owner/access
+and stores the existing destination snapshot. Future delivery retains the usual
+rechecks and durable queue.
 
-Allow local results, or delivery to the current authorized messaging conversation
-when requested. The model selects only `local` or `here`; the host resolves `here`
-through the existing destination validator and stores the normal destination
-snapshot. CLI chat cannot use `here`. Do not accept arbitrary channel IDs, change
-an existing destination, or choose the last active conversation. Later occurrences
-retain the existing authorization rechecks and delivery lifecycle.
+List returns bounded task summaries with a stable ID cursor. Show returns the
+saved prompt, selection, schedule, destination, skill name, and bounded recent
+occurrence status. Inspection fits `POPPET_TOOL_BYTES` and flags omitted/shortened
+content without returning full answers or unbounded history. Pause and resume
+use stable task IDs and retain existing behavior: pending work is cancelled,
+active work continues, and missed recurring times are not replayed. Mutation
+receipts identify the task, saved state, timezone-qualified schedule, next time,
+and destination. Success is claimed only after a durable receipt.
 
-List returns bounded task summaries with IDs, names, schedules, and pause state,
-with a stable continuation cursor when more tasks remain. Show returns one task's
-saved prompt, selection, schedule, destination, and bounded recent occurrence
-status. Both respect `POPPET_TOOL_BYTES` and flag omitted or shortened content.
-Do not dump unbounded occurrence history or answers into context. Pause and resume
-require a stable task ID obtained from the user or inspection; ask when names
-match several tasks.
-Preserve existing pause behavior: pending work is cancelled, active work is not
-interrupted, and resume does not replay missed recurring occurrences. Mutation
-receipts report the task ID, saved state, explicit timezone and next occurrence
-where applicable, and delivery destination. Claim success only after commitment.
+`@poppet/agent` defines strict arguments and the narrow `ChatTasks` capability;
+`@poppet/tasks` implements preparation, repository operations, bounded inspection,
+and recovery. The CLI composes it for local and worker execution, and the gateway
+supplies current-conversation provenance directly to the run. Preparation of the
+whole batch finishes before any tool executes. No agent-to-tasks import cycle,
+loopback worker request, or reacquisition of the active agent permit is needed.
+Task tools share the repository command lock with worker commands and occurrence
+claiming. The existing timer picks up new work.
 
-Keep task mutations and their durable tool receipts atomic in the shared database.
-Use the originating run/call identity to deduplicate creation, so recovery cannot
-create a second job after losing an acknowledgement. Existing tasks migrate with
-no originating tool call. A committed change survives later inference failure;
-failed or interrupted replies never trigger automatic replay. Preserve inspectable
-uncertain outcomes rather than guessing whether a task changed. Reuse existing
-gateway inbound deduplication and tool-call records rather than a new retry system.
+`Store.commitToolCall` commits a synchronous task operation and its tool
+receipt/message in one shared SQLite transaction. Receipt failure rolls back
+the task. Migration 13 adds nullable creating run/call provenance and a unique
+index; existing tasks retain no tool origin. A repeated completed call returns
+its original saved receipt. Changes survive later inference failure or interrupted
+answers, and uncertain storage outcomes remain inspectable without automatic
+replay. No new dependency or scheduling system was added.
 
-Define a narrow task capability in `@poppet/agent` and supply its implementation
-from the host using `@poppet/tasks`. The tasks package already depends on agent
-skills, so the agent must not import the tasks package. Keep command validation,
-mutation, recovery, and scheduler wake-up behavior in the tasks package. Execute
-inside the owning process without sending a loopback request through its own
-worker queue or reacquiring the active agent permit. Preserve existing scheduler
-command serialization and cancellation around the short mutation transaction.
-
-Extend agent run context, CLI/local and worker composition, gateway request
-provenance, tool schemas/dispatch, task persistence/migrations, and fixtures
-together. Provider packages and channel transports remain generic. Update chat,
-tasks, gateway, worker, storage, and architecture documentation when implemented.
-
-Completion check: ask from Telegram or a Discord thread for a summary every Friday
-at an explicit local time, delivered here. Inspect the saved task, pause it, and
-resume it through chat. It runs through the existing scheduler and delivery queue,
-while a scheduled prompt asking to create another task is rejected.
-
-Automated checks cover local/worker and messaging parity, trusted provenance,
-scheduled exclusion and forged calls, invalid/ambiguous times and task IDs,
-DST behavior through the existing calculator, destination authorization, bounded
-inspection, atomic mutation receipts, duplicate creation after acknowledgement
-loss, restart, cancellation, and committed changes surviving later model failure.
-Exercise chat mutations while the scheduler is waiting for the shared agent to
-catch permit or queue deadlocks. Reuse existing scheduler/delivery behavior tests.
-Run `bun run check`; separately validate live chat creation, inspection, pause,
-resume, and one delivered occurrence.
+Automated checks cover argument/authority-field rejection, old-record migration,
+local/worker parity, skill snapshots and missing skills, invalid/past times,
+existing DST calculator behavior, bounded/cursor-based inspection, destination
+revocation, scheduled rejection of all actions, atomic rollback, duplicate-call
+recovery after restart, cancellation during destination lookup, and changes
+surviving later model failure. A shared-agent test pauses a task while its running
+occurrence waits for that agent, without deadlock or interrupting the occurrence.
+Run `bun run check`. Separately validate live chat task creation, inspection,
+pause/resume, and one delivered occurrence using the [task guide](tasks.md#manage-tasks-through-chat).
 
 ## Phase 19: Deeper conversation recall
 

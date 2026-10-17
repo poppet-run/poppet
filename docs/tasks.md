@@ -32,6 +32,48 @@ bun run start tasks pause <task-id>
 bun run start tasks resume <task-id>
 ```
 
+## Manage tasks through chat
+
+Tool-capable models can create, list, inspect, pause, and resume tasks when you
+explicitly ask in CLI chat or an authorized messaging conversation. For example:
+
+```text
+Every Friday at 09:00 Europe/London, summarize my project notes and deliver the result here.
+List my scheduled tasks.
+Show task <task-id>.
+Pause task <task-id>.
+Resume task <task-id>.
+```
+
+The `poppet_tasks.manage_tasks` tool uses the existing scheduler. New tasks retain
+the current session's provider, model, and workload, with a self-contained prompt
+and an optional explicitly selected skill snapshot. They start fresh occurrence
+sessions. The agent receives the current UTC time for relative dates and should
+ask when the intended time, timezone, prompt, or task is unclear. One-off times
+must be in the future and include a UTC offset; recurring schedules require an
+explicit timezone. A receipt reports the saved ID, schedule, state, next time,
+and destination.
+
+"Here" means the current authorized messaging conversation. The gateway rechecks
+access before saving its normal destination snapshot; future delivery retains
+the existing authorization checks. CLI chat supports local results only. Use
+the existing CLI destination flags to select another authorized conversation.
+The model cannot supply an arbitrary destination, account, owner, or provider.
+
+Inspection uses bounded pages and flags shortened prompts or omitted occurrence
+status. Use stable task IDs to pause or resume; duplicate names need clarification.
+Pause cancels pending work and leaves active work running. Resume does not replay
+missed recurring occurrences. These actions do not edit or delete tasks, retry
+occurrences, cancel active runs, or change provider pauses; the CLI commands
+remain available for those operations.
+
+Task changes and their durable tool receipts commit together. A saved change
+survives a later model failure or interrupted answer. Inspect `tasks list`,
+`tasks show`, or the run's tool records in `chat show` before requesting a new
+creation after an unclear result. Completed calls are not replayed. Scheduled
+runs cannot use this tool, including its read actions. Historical conversations,
+skills, notes, pages, and tool results cannot authorize task changes.
+
 ## Deliver results to Discord
 
 Configure [Discord](gateways/discord.md), start `bun run start worker run`, and copy an

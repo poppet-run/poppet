@@ -6,8 +6,14 @@ import type {
   ModelOperations,
   ProviderError,
 } from "@poppet/provider";
-import { Store, type Run, type StoreError, type StoredMessage } from "@poppet/store";
-import { Effect, Match, Stream } from "effect";
+import {
+  Store,
+  StoreError,
+  type Run,
+  type StoredMessage,
+  type DeliveryDestination,
+} from "@poppet/store";
+import { Clock, Effect, Match, Option, Stream } from "effect";
 
 import { assembleContext, byteSize, outputBudget } from "#src/context";
 import { AgentError } from "#src/errors";
@@ -28,6 +34,7 @@ import {
 import { maxTextBytes, streamReply } from "#src/reply";
 import { decodeSessionSearchCall, sessionSearchTool, type SessionSearchCall } from "#src/search";
 import { ChatSettings } from "#src/settings";
+import { ChatTasks, decodeTaskCall, taskTool, type PreparedTaskCall } from "#src/task-tools";
 import { WebSearch, decodeWebSearchCall, webSearchTool, type WebSearchCall } from "#src/web-search";
 
 type ConversationEvent = ModelEvent | { readonly type: "reasoning-end" };
@@ -40,11 +47,19 @@ export const conversation = Effect.gen(function* () {
   const pages = yield* Pages;
   const webSearch = yield* WebSearch;
   const policy = yield* ChatSettings;
+  const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
+  const clock = yield* Clock.Clock;
 
   const executeTool = (
     run: Run,
     callId: string,
-    call: NoteCall | SessionSearchCall | FetchPageCall | MemoryCall | WebSearchCall,
+    call:
+      | NoteCall
+      | SessionSearchCall
+      | FetchPageCall
+      | MemoryCall
+      | WebSearchCall
+      | PreparedTaskCall,
   ) => {
     const operation = Effect.gen(function* () {
       yield* store.startToolCall(run.id, callId);
@@ -57,6 +72,7 @@ export const conversation = Effect.gen(function* () {
             .pipe(Effect.map((value) => JSON.stringify(value))),
         ),
         Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
+        Match.when({ name: "manage_tasks" }, (plan) => plan.execute),
         Match.when({ name: "search_web" }, (plan) =>
           webSearch.search === null
             ? Effect.fail(
@@ -85,6 +101,9 @@ export const conversation = Effect.gen(function* () {
             .finishToolCall(run.id, callId, {
               status:
                 call.name === "save_note" ||
+                (call.name === "manage_tasks" &&
+                  error instanceof StoreError &&
+                  error.reason === "storage") ||
                 (call.name === "memory" && error.reason === "memory-storage")
                   ? "uncertain"
                   : "failed",
@@ -94,7 +113,8 @@ export const conversation = Effect.gen(function* () {
         ),
       );
 
-      yield* store.finishToolCall(run.id, callId, { status: "completed", output });
+      if (call.name !== "manage_tasks")
+        yield* store.finishToolCall(run.id, callId, { status: "completed", output });
 
       return { output, urls };
     });
@@ -113,6 +133,7 @@ export const conversation = Effect.gen(function* () {
     runs: ReadonlyArray<Run>,
     prompt: string,
     readOnlyTools: boolean,
+    here: Effect.Effect<DeliveryDestination, AgentError> | null = null,
   ) =>
     Stream.suspend(() => {
       const tools = model.description.capabilities.tools
@@ -122,12 +143,19 @@ export const conversation = Effect.gen(function* () {
             fetchPageTool,
             memoryTool,
             ...(webSearch.search === null ? [] : [webSearchTool]),
+            ...(tasks === null || readOnlyTools ? [] : [taskTool]),
           ].filter(
             (tool) => !readOnlyTools || (tool.name !== "save_note" && tool.name !== "memory"),
           )
         : [];
 
       const allowedURLs = suppliedPageURLs(text);
+
+      const instructions =
+        tasks !== null && !readOnlyTools
+          ? `${prompt}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
+          : prompt;
+
       const current: Message[] = [{ role: "user", text }];
       let turns = 0;
       let callsUsed = 0;
@@ -148,7 +176,15 @@ export const conversation = Effect.gen(function* () {
 
             const messages = yield* Effect.try({
               try: () =>
-                assembleContext(history, runs, current, model.description, policy, tools, prompt),
+                assembleContext(
+                  history,
+                  runs,
+                  current,
+                  model.description,
+                  policy,
+                  tools,
+                  instructions,
+                ),
               catch: (cause) =>
                 cause instanceof AgentError
                   ? cause
@@ -169,7 +205,7 @@ export const conversation = Effect.gen(function* () {
               {
                 sessionId: run.sessionId,
                 workload: run.workload,
-                instructions: prompt,
+                instructions,
                 messages,
                 tools,
                 settings: policy.logReasoning ? { ...settings, reasoningSummary: true } : settings,
@@ -262,6 +298,18 @@ export const conversation = Effect.gen(function* () {
                           Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
                           Match.when({ name: "memory" }, decodeMemoryCall),
                           Match.when({ name: "search_web" }, decodeWebSearchCall),
+                          Match.when({ name: "manage_tasks" }, (taskCall) =>
+                            decodeTaskCall(taskCall).pipe(
+                              Effect.flatMap((action) =>
+                                tasks!.prepare(action, {
+                                  origin: readOnlyTools ? "scheduled" : "interactive",
+                                  runId: run.id,
+                                  callId: taskCall.callId,
+                                  here,
+                                }),
+                              ),
+                            ),
+                          ),
                           Match.when({ name: "fetch_page" }, (pageCall) =>
                             decodeFetchPageCall(pageCall, allowedURLs),
                           ),

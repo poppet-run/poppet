@@ -99,6 +99,14 @@ queue without adding the result to the private chat's history. `tasks show` expo
 its delivery state. Choose one destination per task; WhatsApp, Telegram, and
 Discord destination flags cannot be combined.
 
+## Schedule through chat
+
+With a tool-capable model, ask to create, inspect, pause, or resume a task in this
+authorized conversation. Request delivery here to save this conversation as the
+result destination after an access check. The model cannot select another chat
+or identity. See [task management](../tasks.md#manage-tasks-through-chat) for time,
+receipt, and recovery behavior. Scheduled runs cannot manage other tasks.
+
 ## Manual validation
 
 Automated checks use injected sockets and temporary databases. Live QR pairing,

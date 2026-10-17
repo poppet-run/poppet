@@ -21,7 +21,7 @@ import {
   type ProviderError,
 } from "@poppet/provider";
 import { StoreLive } from "@poppet/store";
-import { TaskRepositoryLive, WorkerConnections } from "@poppet/tasks";
+import { ChatTasksLive, TaskRepositoryLive, WorkerConnections } from "@poppet/tasks";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { createConnectionStatus } from "#src/connection-status";
@@ -158,6 +158,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   const searchCredentials = ApiKeyStoreLive.pipe(Layer.provide(environment), Layer.provide(config));
   const webSearch = WebSearchLive.pipe(Layer.provide([config, chatSettings, searchCredentials]));
   const notes = NotesLive.pipe(Layer.provide([config, chatSettings]));
+  const chatTasks = ChatTasksLive.pipe(Layer.provide([tasks, store, skills, chatSettings]));
 
   const chat = AgentLive.pipe(
     Layer.provideMerge([
@@ -170,6 +171,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
       pages,
       notes,
       webSearch,
+      chatTasks,
     ]),
     Layer.provideMerge(config),
   );

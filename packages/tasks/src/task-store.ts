@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 
 import { DeliveryDestination, StoreDatabase, SkillSnapshot } from "@poppet/store";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 
 import {
   NewTask,
@@ -33,6 +33,8 @@ const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, 
 
 /** Builds synchronous task operations on the caller's owned database; failures are thrown. */
 export const makeTaskStore = (database: Database) => {
+  const commandLock = Semaphore.makeUnsafe(1);
+
   const list = () => {
     using statement = database.prepare(`${taskSql} ORDER BY created_at, id`);
 
@@ -58,12 +60,12 @@ export const makeTaskStore = (database: Database) => {
     return Schema.decodeUnknownSync(Occurrence)(row);
   };
 
-  const occurrences = (jobId: string) => {
+  const occurrences = (jobId: string, limit = -1) => {
     using statement = database.prepare(
-      `${occurrenceSql} WHERE job_id = ? ORDER BY scheduled_at DESC, id`,
+      `${occurrenceSql} WHERE job_id = ? ORDER BY scheduled_at DESC, id LIMIT ?`,
     );
 
-    return Schema.decodeUnknownSync(Schema.Array(Occurrence))(statement.all(jobId));
+    return Schema.decodeUnknownSync(Schema.Array(Occurrence))(statement.all(jobId, limit));
   };
 
   const providers = () => {
@@ -177,7 +179,20 @@ export const makeTaskStore = (database: Database) => {
     now: number,
     skill: SkillSnapshot | null = null,
     destination: DeliveryDestination | null = null,
+    source?: { readonly runId: string; readonly callId: string },
   ) => {
+    if (source) {
+      const existing = Schema.decodeUnknownSync(
+        Schema.NullOr(Schema.Struct({ id: Task.fields.id })),
+      )(
+        database
+          .query("SELECT id FROM jobs WHERE source_run_id = ? AND source_call_id = ?")
+          .get(source.runId, source.callId),
+      );
+
+      if (existing !== null) return task(existing.id);
+    }
+
     if (destination !== null) Schema.decodeUnknownSync(DeliveryDestination)(destination);
     const valid = Schema.decodeUnknownSync(NewTask)(input);
 
@@ -187,7 +202,7 @@ export const makeTaskStore = (database: Database) => {
     const id = randomUUID();
 
     using statement = database.prepare(
-      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
 
     statement.run(
@@ -202,6 +217,8 @@ export const makeTaskStore = (database: Database) => {
       now,
       skill === null ? null : Schema.encodeSync(Schema.fromJsonString(SkillSnapshot))(skill),
       destination === null ? null : JSON.stringify(destination),
+      source?.runId ?? null,
+      source?.callId ?? null,
     );
 
     return task(id);
@@ -459,7 +476,15 @@ export const makeTaskStore = (database: Database) => {
   };
 
   return {
+    commandLock,
     list,
+    listPage: (after: string | null) => {
+      if (after !== null) task(after);
+
+      return Schema.decodeUnknownSync(Schema.Array(Task))(
+        database.query(`${taskSql} WHERE id > ? ORDER BY id LIMIT 11`).all(after ?? ""),
+      );
+    },
     status,
     task,
     occurrence,

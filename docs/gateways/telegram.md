@@ -85,6 +85,14 @@ and remain separate from the private chat's conversation history. `tasks show`
 includes the snapshot and delivery states. Choose one destination per task;
 `--telegram-chat`, `--whatsapp-chat`, and `--discord-thread` cannot be combined.
 
+## Schedule through chat
+
+With a tool-capable model, ask to create, inspect, pause, or resume a task in this
+authorized conversation. Request delivery here to save this conversation as the
+result destination after an access check. The model cannot select another chat
+or identity. See [task management](../tasks.md#manage-tasks-through-chat) for time,
+receipt, and recovery behavior. Scheduled runs cannot manage other tasks.
+
 ## Manual validation
 
 Automated tests use injected HTTP replies and temporary SQLite databases. Live

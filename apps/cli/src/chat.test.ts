@@ -69,12 +69,15 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
   const clock = ManagedRuntime.make(TestClock.layer());
   await clock.runPromise(TestClock.setTime(Date.now()));
 
+  // SAFETY: these mutable fixture controls accept only the declared action literals and string IDs.
   const state = {
     open: false,
     built: 0,
     writeFails: false,
     useTools: false,
     memoryChange: false,
+    taskAction: null as "create" | "list" | "show" | "pause" | "resume" | null,
+    taskId: null as string | null,
     hold: false,
     failNext: false,
     active: 0,
@@ -140,12 +143,42 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                           state.useTools &&
                           !request.messages.some((message) => message.role === "tool");
 
+                        const taskCall =
+                          state.taskAction === null
+                            ? null
+                            : {
+                                type: "tool-call" as const,
+                                callId: "task",
+                                name: "manage_tasks",
+                                namespace: "poppet_tasks",
+                                arguments: JSON.stringify({
+                                  action: state.taskAction,
+                                  id:
+                                    state.taskAction === "create" || state.taskAction === "list"
+                                      ? null
+                                      : state.taskId,
+                                  name: state.taskAction === "create" ? "Chat summary" : null,
+                                  prompt:
+                                    state.taskAction === "create" ? "Summarize the notes" : null,
+                                  schedule:
+                                    state.taskAction === "create"
+                                      ? {
+                                          type: "once",
+                                          at: new Date(Date.now() + 3600000).toISOString(),
+                                        }
+                                      : null,
+                                  delivery: state.taskAction === "create" ? "local" : null,
+                                  skill: null,
+                                  after: null,
+                                }),
+                              };
+
                         return {
                           type: "completed" as const,
                           response: {
                             output: save
                               ? [
-                                  {
+                                  taskCall ?? {
                                     type: "tool-call" as const,
                                     callId: "save",
                                     name: state.memoryChange ? "memory" : "save_note",
@@ -353,6 +386,52 @@ const exampleChannel = (id: string) => {
 };
 
 describe("chat CLI", () => {
+  test.each(["local", "worker"])(
+    "manages tasks through %s chat using the current selection",
+    async (mode) => {
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
+      chat.state.useTools = true;
+      chat.state.taskAction = "create";
+
+      try {
+        if (mode === "worker") worker = await chat.startWorker();
+        await chat.invoke(["chat", "new", "Create a local summary task"]);
+        await chat.invoke(["tasks", "list"]);
+        const task = JSON.parse(chat.lines.at(-1)!)[0];
+        expect(task).toMatchObject({
+          name: "Chat summary",
+          prompt: "Summarize the notes",
+          provider: description.provider,
+          model: description.id,
+          workload: "assistant",
+          destination: null,
+        });
+        chat.state.taskId = task.id;
+
+        for (const action of ["show", "pause", "resume", "list"] as const) {
+          chat.state.taskAction = action;
+          // Each chat observes the state committed by the preceding action.
+          // eslint-disable-next-line no-await-in-loop
+          await chat.invoke(["chat", "new", `${action} the saved task`]);
+          expect(chat.requests.at(-1)?.tools).toContainEqual(
+            expect.objectContaining({ name: "manage_tasks", namespace: "poppet_tasks" }),
+          );
+          expect(chat.requests.at(-1)?.messages.at(-1)).toMatchObject({
+            role: "tool",
+            callId: "task",
+          });
+        }
+
+        await chat.invoke(["tasks", "show", task.id]);
+        expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ task: { id: task.id, paused: 0 } });
+      } finally {
+        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
   test.each([
     { mode: "local", enabled: false },
     { mode: "local", enabled: true },

@@ -1,5 +1,11 @@
 import { ProviderError, type ModelOperations, type ProviderId } from "@poppet/provider";
-import { Store, StoreError, type Run, type RunOutcome } from "@poppet/store";
+import {
+  Store,
+  StoreError,
+  type Run,
+  type RunOutcome,
+  type DeliveryDestination,
+} from "@poppet/store";
 import {
   Cause,
   Console,
@@ -46,7 +52,7 @@ export class Agent extends Context.Service<
   {
     /** Best-effort optional naming after the answer has been delivered. */
     readonly nameSession: (sessionId: string) => Effect.Effect<void>;
-    /** Streams a reply when consumed; readOnlyTools excludes note and memory writes. */
+    /** Streams a reply; readOnlyTools excludes note/memory writes and task management. */
     readonly send: (
       sessionId: string,
       text: string,
@@ -54,6 +60,8 @@ export class Agent extends Context.Service<
         readonly readOnlyTools?: boolean;
         readonly runId?: string;
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
+        /** Host-only validation of this run's authorized messaging conversation. */
+        readonly taskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
       },
     ) => Stream.Stream<ChatEvent, ChatFailure>;
   }
@@ -94,6 +102,7 @@ export const AgentLive = Layer.effect(
         readonly readOnlyTools?: boolean;
         readonly runId?: string;
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
+        readonly taskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
       } = {},
     ): Stream.Stream<ChatEvent, ChatFailure> =>
       Stream.suspend(() => {
@@ -190,6 +199,7 @@ export const AgentLive = Layer.effect(
                   runs,
                   prompt,
                   options.readOnlyTools ?? false,
+                  options.taskDestination ?? null,
                 );
               }),
             ).pipe(

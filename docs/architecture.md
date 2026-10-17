@@ -553,6 +553,45 @@ notes and memory. Tests cover the request boundary, setup, failure/cancellation,
 limits, grant lifetime, and scheduled execution. Live search-to-page inference
 and scheduled messaging delivery remain separate manual checks.
 
+## Chat task management
+
+`agent/task-tools.ts` defines `poppet_tasks.manage_tasks`, strict model arguments,
+and the narrow `ChatTasks` capability. The host supplies `ChatTasksLive` from `tasks/chat-tools.ts` to
+the agent using the existing repository, store, skills, clock, and result budget.
+The agent does not import `@poppet/tasks`, which already depends on agent skills.
+Provider packages and channel transports remain unchanged.
+
+Only interactive runs advertise the tool. All model calls, including task
+preparation, pass whole-batch validation before any tool executes. Preparation
+checks action-specific fields, existing IDs, schedules, future one-off times,
+selected skill files, and current-conversation delivery authorization. The current
+run supplies provider, model, and workload. Gateway code supplies an effect that
+rechecks the accepted owner and resolves only the current conversation; model
+arguments cannot supply identities, destinations, or permission flags. The host
+clock supplies a current UTC timestamp to help resolve relative dates. Current
+explicit user intent remains an instruction requirement, without a keyword or
+model-based permission classifier.
+
+The task service recovers state when built under the new store owner, before
+agent or scheduler work starts. Its repository command lock is also used by
+worker commands and occurrence claiming. Chat executes directly in that process
+and never reacquires the agent permit or calls its own worker socket. The existing
+timer reconciles new work. Pause and resume retain repository semantics.
+
+`Store.commitToolCall` runs the synchronous task operation and completion of its
+tool journal/message in one SQLite transaction. A receipt failure rolls back the
+mutation. Migration 13 records a unique creating run/call pair on jobs; completed
+calls return their saved receipt without executing again. Committed changes
+survive later inference failure, and uncertain storage outcomes remain inspectable
+without automatic replay. List uses bounded ID-cursor queries; show limits recent
+occurrences and shortens prompts within the serialized tool budget. No model
+answers or unbounded occurrence history are returned by inspection.
+
+Automated checks cover source-call recovery, atomic rollback, local/worker parity,
+destination revocation, scheduled rejection of every action, result limits, and
+an interactive pause while a scheduled occurrence waits for the agent. Live
+chat creation, pause/resume, and delivered occurrence checks remain separate.
+
 ## Conversation search
 
 Migration 9 adds an FTS5 index of completed user messages and final assistant text.

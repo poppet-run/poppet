@@ -134,6 +134,13 @@ loaded worker does not interrupt an active request.
 
 ## Interactive commands
 
+Chat can [manage scheduled tasks](tasks.md#manage-tasks-through-chat) through the
+same worker and task repository. Task tools execute in the owning process and
+share the scheduler's command lock; they do not submit another chat or a loopback
+worker request. A running occurrence waiting for the shared agent does not block
+interactive task changes. The existing reconciliation timer picks up new work.
+Task changes are durable even when their final chat reply fails.
+
 Chat, memory, session inspection, and `store status` work while it is running:
 
 ```fish

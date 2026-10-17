@@ -4,6 +4,18 @@ import { describe, expect, test } from "bun:test";
 import { applyMigrations, migrations } from "#src/migrations";
 
 describe("store migrations", () => {
+  test("retains existing tasks with no chat-tool provenance when upgrading schema 12", () => {
+    using database = new Database(":memory:");
+    applyMigrations(database, migrations.slice(0, 12));
+    database.run(
+      `INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at) VALUES ('saved', 'Summary', 'Saved prompt', 'test', 'model', 'assistant', '{"type":"once","at":1000}', 1000, 0)`,
+    );
+    applyMigrations(database);
+    expect(
+      database.query("SELECT id, prompt, source_run_id, source_call_id FROM jobs").get(),
+    ).toEqual({ id: "saved", prompt: "Saved prompt", source_run_id: null, source_call_id: null });
+  });
+
   test("rolls back every pending migration and ledger entry on a later failure", () => {
     using database = new Database(":memory:");
     applyMigrations(database, migrations.slice(0, 1));

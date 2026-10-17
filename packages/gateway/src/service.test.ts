@@ -20,6 +20,7 @@ import { LocalMemoryLive } from "@poppet/memory";
 import { ProviderError, type ModelOperations, type ModelRequest } from "@poppet/provider";
 import { DeliveryDestination, Store, StoreDatabase, StoreLive } from "@poppet/store";
 import {
+  ChatTasksLive,
   TaskRepository,
   TaskRepositoryLive,
   TaskDestinations,
@@ -68,6 +69,7 @@ const response = (text = "Answer") =>
 const fixture = async (
   overrides: Partial<MessagingChannel["Service"]> = {},
   stream: ModelOperations["stream"] = () => response(),
+  tools = false,
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-gateway-"));
   const requests: ModelRequest[] = [];
@@ -108,6 +110,8 @@ const fixture = async (
 
   const store = StoreLive.pipe(Layer.provideMerge(config));
   const settings = Layer.succeed(ChatSettings, defaultPolicy);
+  const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
+  const skills = SkillsLive.pipe(Layer.provide(config));
 
   const agent = AgentLive.pipe(
     Layer.provideMerge(
@@ -115,6 +119,7 @@ const fixture = async (
         store,
         LocalMemoryLive.pipe(Layer.provide(store)),
         settings,
+        ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
         Layer.succeed(WebSearch, { search: null }),
         Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
         NotesLive.pipe(Layer.provide(Layer.merge(config, settings))),
@@ -128,7 +133,7 @@ const fixture = async (
                 id: model,
                 name: "Test",
                 capabilities: {
-                  tools: false,
+                  tools,
                   generationSettings: [],
                   contextWindow: null,
                   maxOutputTokens: null,
@@ -151,8 +156,8 @@ const fixture = async (
       Layer.mergeAll(
         channel,
         GatewayRepositoryLive.pipe(Layer.provideMerge(store)),
-        TaskRepositoryLive.pipe(Layer.provideMerge(store)),
-        SkillsLive.pipe(Layer.provide(config)),
+        tasks,
+        skills,
         agent,
       ),
     ),
@@ -205,6 +210,92 @@ const scheduled = (destination: DeliveryDestination | null) =>
   });
 
 describe.concurrent("messaging gateway", () => {
+  test.each([false, true])(
+    "chat task delivery uses the current checked conversation, revoked: %s",
+    async (revoked) => {
+      let denied = false;
+      let calls = 0;
+
+      const state = await fixture(
+        {
+          checkAccess: () =>
+            denied
+              ? Effect.fail(new ChannelError({ reason: "permission", message: "Access revoked" }))
+              : Effect.void,
+        },
+        () => {
+          if (++calls > 1) return response("Task saved");
+          denied = revoked;
+
+          return Stream.make({
+            type: "completed" as const,
+            response: {
+              output: [
+                {
+                  type: "tool-call" as const,
+                  callId: "create",
+                  name: "manage_tasks",
+                  namespace: "poppet_tasks",
+                  arguments: JSON.stringify({
+                    action: "create",
+                    id: null,
+                    name: "Weekly review",
+                    prompt: "Summarize the notes",
+                    schedule: { type: "cron", expression: "0 9 * * 5", timezone: "Europe/London" },
+                    delivery: "here",
+                    skill: null,
+                    after: null,
+                  }),
+                },
+              ],
+              finishReason: "tool-calls" as const,
+              usage: null,
+              continuation: {
+                version: 1 as const,
+                provider: "test-provider",
+                model: "test-model",
+                data: {},
+              },
+            },
+          });
+        },
+        true,
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            yield* gateway.accept(
+              message("schedule", null, "Create a weekly review and deliver it here"),
+            );
+            yield* gateway.processNext;
+            const tasks = (yield* TaskRepository).list();
+
+            if (revoked) expect(tasks).toEqual([]);
+            else
+              expect(tasks[0]).toMatchObject({
+                name: "Weekly review",
+                provider: "test-provider",
+                model: "test-model",
+                destination: {
+                  adapter: "discord",
+                  account: "bot",
+                  ownerId: "owner",
+                  scopeId: "guild",
+                  parentId: "parent",
+                  conversationId: "thread-schedule",
+                },
+              });
+          }),
+        );
+        expect(calls).toBe(revoked ? 1 : 2);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test("snapshots a selected skill, resumes it after restart, and starts an unskilled replacement", async () => {
     const adapter = "test-channel";
     const state = await fixture({ id: adapter });

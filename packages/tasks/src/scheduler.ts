@@ -13,7 +13,6 @@ import {
   Fiber,
   Option,
   Queue,
-  Semaphore,
   Stream,
 } from "effect";
 
@@ -184,7 +183,7 @@ export const makeTaskWorker = Effect.gen(function* () {
   const clock = yield* Clock.Clock;
   const output = yield* Console.Console;
   const wake = yield* Queue.make<void>({ capacity: 1, strategy: "dropping" });
-  const commands = yield* Semaphore.make(1);
+  const commands = repo.commandLock;
   let active: ActiveOccurrence | null = null;
   const startedAt = clock.currentTimeMillisUnsafe();
   const connections = Option.getOrNull(yield* Effect.serviceOption(WorkerConnections));

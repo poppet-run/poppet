@@ -23,3 +23,5 @@ export {
 export { executeOccurrence, makeTaskWorker, WorkerConnections } from "#src/scheduler";
 
 export { remoteTaskCommand, taskResponse } from "#src/task-socket";
+
+export { ChatTasksLive } from "#src/chat-tools";

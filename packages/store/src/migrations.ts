@@ -227,6 +227,15 @@ export const migrations: ReadonlyArray<Migration> = [
       PRIMARY KEY (adapter, account)
     ) STRICT;`,
   },
+  {
+    version: 13,
+    name: "chat-task-provenance",
+    sql: `
+    ALTER TABLE jobs ADD COLUMN source_run_id TEXT REFERENCES runs (id);
+    ALTER TABLE jobs ADD COLUMN source_call_id TEXT CHECK ((source_run_id IS NULL) = (source_call_id IS NULL));
+    CREATE UNIQUE INDEX task_source_call ON jobs (source_run_id, source_call_id) WHERE source_run_id IS NOT NULL;
+    `,
+  },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

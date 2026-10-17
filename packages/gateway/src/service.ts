@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Agent, Skills, sessionTitle, type ChatFailure } from "@poppet/agent";
+import { Agent, AgentError, Skills, sessionTitle, type ChatFailure } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { DeliveryDestination, Store, StoreError, type Run } from "@poppet/store";
 import {
@@ -342,7 +342,27 @@ const gateway = Effect.gen(function* () {
             Effect.forever,
             Effect.forkScoped,
           );
-          yield* Stream.runDrain(agent.send(session.id, prompt, { runId: entry.runId }));
+          yield* Stream.runDrain(
+            agent.send(session.id, prompt, {
+              runId: entry.runId,
+              taskDestination: Effect.gen(function* () {
+                if (!authorized(entry.message))
+                  return yield* Effect.fail(
+                    new AgentError({
+                      reason: "tool-permission",
+                      message: "The current messaging owner is no longer authorized.",
+                    }),
+                  );
+
+                return yield* resolveDestination(conversation).pipe(
+                  Effect.mapError(
+                    (error) =>
+                      new AgentError({ reason: "tool-permission", message: error.message }),
+                  ),
+                );
+              }),
+            }),
+          );
         }),
       );
       const run = yield* store.run(entry.runId);

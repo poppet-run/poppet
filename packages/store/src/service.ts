@@ -92,6 +92,12 @@ interface StoreOperations {
     callId: string,
     outcome: ToolOutcome,
   ) => Effect.Effect<void, StoreError>;
+  /** Commits a synchronous local mutation and its receipt together; completed calls return their saved receipt. */
+  readonly commitToolCall: (
+    runId: string,
+    callId: string,
+    operation: () => string,
+  ) => Effect.Effect<string, StoreError>;
 }
 
 /** Persists conversation history and tracks run and tool execution through terminal outcomes. */
@@ -593,45 +599,65 @@ export const StoreLive = Layer.effect(
           .immediate(),
       );
 
+    const finishTool = (runId: string, callId: string, outcome: ToolOutcome, at: number) => {
+      const { run, call } = activeTool(database, runId, callId);
+
+      const decoded = Schema.decodeUnknownSync(ToolOutcome, { onExcessProperty: "error" })(outcome);
+
+      const finishedAt = Math.max(at, call.startedAt ?? call.createdAt);
+
+      if (decoded.status === "completed") {
+        if (call.status !== "running")
+          throw new StoreError({
+            reason: "conflict",
+            message: "Only a started tool call can complete.",
+          });
+        append(
+          database,
+          requireSession(database, run.sessionId),
+          runId,
+          [{ role: "tool", callId, output: decoded.output }],
+          finishedAt,
+        );
+      }
+
+      using statement = database.prepare(
+        "UPDATE tool_calls SET status = ?, finished_at = ?, output = ?, failure_reason = ? WHERE run_id = ? AND call_id = ?",
+      );
+
+      statement.run(
+        decoded.status,
+        finishedAt,
+        decoded.status === "completed" ? decoded.output : null,
+        decoded.status === "completed" ? null : decoded.reason,
+        runId,
+        callId,
+      );
+    };
+
     const finishToolCall = (runId: string, callId: string, outcome: ToolOutcome) =>
+      atTime((at) =>
+        database.transaction(() => finishTool(runId, callId, outcome, at)).immediate(),
+      );
+
+    const commitToolCall: StoreOperations["commitToolCall"] = (runId, callId, operation) =>
       atTime((at) =>
         database
           .transaction(() => {
-            const { run, call } = activeTool(database, runId, callId);
+            const saved = toolCallsFor(database, runId).find((call) => call.callId === callId);
 
-            const decoded = Schema.decodeUnknownSync(ToolOutcome, { onExcessProperty: "error" })(
-              outcome,
-            );
+            if (saved?.status === "completed") return saved.output!;
+            const { call } = activeTool(database, runId, callId);
 
-            const finishedAt = Math.max(at, call.startedAt ?? call.createdAt);
+            if (call.status !== "running")
+              throw new StoreError({
+                reason: "conflict",
+                message: "Only a started tool call can commit a mutation.",
+              });
+            const output = operation();
+            finishTool(runId, callId, { status: "completed", output }, at);
 
-            if (decoded.status === "completed") {
-              if (call.status !== "running")
-                throw new StoreError({
-                  reason: "conflict",
-                  message: "Only a started tool call can complete.",
-                });
-              append(
-                database,
-                requireSession(database, run.sessionId),
-                runId,
-                [{ role: "tool", callId, output: decoded.output }],
-                finishedAt,
-              );
-            }
-
-            using statement = database.prepare(
-              "UPDATE tool_calls SET status = ?, finished_at = ?, output = ?, failure_reason = ? WHERE run_id = ? AND call_id = ?",
-            );
-
-            statement.run(
-              decoded.status,
-              finishedAt,
-              decoded.status === "completed" ? decoded.output : null,
-              decoded.status === "completed" ? null : decoded.reason,
-              runId,
-              callId,
-            );
+            return output;
           })
           .immediate(),
       );
@@ -640,6 +666,7 @@ export const StoreLive = Layer.effect(
       recordToolCalls,
       startToolCall,
       finishToolCall,
+      commitToolCall,
       toolCalls: (runId) =>
         atTime(() => {
           requireRun(database, Schema.decodeUnknownSync(Id)(runId));

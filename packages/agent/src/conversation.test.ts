@@ -23,6 +23,7 @@ import { Notes, NotesLive } from "#src/notes";
 import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
+import { ChatTasks } from "#src/task-tools";
 import { WebSearch, webSearchResult } from "#src/web-search";
 
 const tool = (
@@ -61,6 +62,7 @@ const fixture = async (
   injectedNotes?: Notes["Service"],
   injectedPages?: Pages["Service"],
   webSearch: WebSearch["Service"] = { search: null },
+  chatTasks?: ChatTasks["Service"],
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-tools-"));
   const notesDirectory = join(directory, "notes");
@@ -110,6 +112,7 @@ const fixture = async (
         notes,
         settings,
         Layer.succeed(WebSearch, webSearch),
+        chatTasks === undefined ? Layer.empty : Layer.succeed(ChatTasks, chatTasks),
         Layer.succeed(Pages, injectedPages ?? { fetch: () => Effect.die("Unexpected page fetch") }),
         Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),
       ),
@@ -131,6 +134,56 @@ const failure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.match({ onFailure: (error) => error, onSuccess: () => null }));
 
 describe.concurrent("notes conversation", () => {
+  test("task preflight validates the whole batch before an earlier note can change", async () => {
+    const state = await fixture(
+      () =>
+        completed([
+          tool("save_note", '{"path":"must-not-exist.md","content":"changed"}'),
+          tool(
+            "manage_tasks",
+            JSON.stringify({
+              action: "create",
+              id: null,
+              name: "Task",
+              prompt: "Task prompt",
+              schedule: { type: "cron", expression: "bad cron", timezone: "UTC" },
+              delivery: "local",
+              skill: null,
+              after: null,
+            }),
+            "task",
+            "poppet_tasks",
+          ),
+        ]),
+      {},
+      undefined,
+      undefined,
+      undefined,
+      {
+        prepare: () =>
+          Effect.fail(
+            new AgentError({ reason: "tool-arguments", message: "Invalid cron expression" }),
+          ),
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const session = yield* (yield* Store).createSession("test-provider", "test-model");
+          expect(
+            yield* failure(
+              Stream.runDrain((yield* Agent).send(session.id, "Save a note and schedule a task")),
+            ),
+          ).toMatchObject({ reason: "tool-arguments" });
+        }),
+      );
+      expect(await readdir(state.directory)).not.toContain("notes");
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each([false, true])(
     "omitted search sources grant no page access, omitted by budget: %s",
     async (budget) => {
