@@ -73,60 +73,63 @@ export const taskTool: Tool = {
   ),
 };
 
-export const decodeTaskCall = (call: Extract<Output, { type: "tool-call" }>) =>
-  Schema.decodeUnknownEffect(Schema.fromJsonString(Arguments), { onExcessProperty: "error" })(
-    call.arguments,
-  ).pipe(
-    Effect.mapError(
-      () =>
-        new AgentError({
-          reason: "tool-arguments",
-          message: "Invalid arguments for poppet_tasks.manage_tasks.",
-        }),
-    ),
-    Effect.flatMap((args): Effect.Effect<ChatTaskAction, AgentError> => {
-      const empty =
-        args.name === null &&
-        args.prompt === null &&
-        args.schedule === null &&
-        args.delivery === null &&
-        args.skill === null;
+export const decodeTaskCall = (
+  call: Extract<Output, { type: "tool-call" }>,
+): Effect.Effect<ChatTaskAction, AgentError> =>
+  Effect.gen(function* () {
+    const args = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Arguments), {
+      onExcessProperty: "error",
+    })(call.arguments).pipe(
+      Effect.mapError(
+        () =>
+          new AgentError({
+            reason: "tool-arguments",
+            message: "Invalid arguments for poppet_tasks.manage_tasks.",
+          }),
+      ),
+    );
 
-      if (
-        args.action === "create" &&
-        args.id === null &&
-        args.after === null &&
-        args.name !== null &&
-        args.prompt !== null &&
-        args.schedule !== null &&
-        args.delivery !== null
-      )
-        return Effect.succeed({
-          action: "create",
-          name: args.name,
-          prompt: args.prompt,
-          schedule: args.schedule,
-          delivery: args.delivery,
-          skill: args.skill,
-        });
+    const empty =
+      args.name === null &&
+      args.prompt === null &&
+      args.schedule === null &&
+      args.delivery === null &&
+      args.skill === null;
 
-      if (args.action === "list" && empty && args.id === null)
-        return Effect.succeed({ action: "list", after: args.after });
+    if (
+      args.action === "create" &&
+      args.id === null &&
+      args.after === null &&
+      args.name !== null &&
+      args.prompt !== null &&
+      args.schedule !== null &&
+      args.delivery !== null
+    )
+      return {
+        action: "create",
+        name: args.name,
+        prompt: args.prompt,
+        schedule: args.schedule,
+        delivery: args.delivery,
+        skill: args.skill,
+      };
 
-      if (
-        (args.action === "show" || args.action === "pause" || args.action === "resume") &&
-        empty &&
-        args.id !== null &&
-        args.after === null
-      )
-        return Effect.succeed({ action: args.action, id: args.id });
+    if (args.action === "list" && empty && args.id === null)
+      return { action: "list", after: args.after };
 
-      return Effect.fail(
-        new AgentError({
-          reason: "tool-arguments",
-          message:
-            "Use only the fields required by the selected task action; set the others to null.",
-        }),
-      );
-    }),
-  );
+    if (
+      (args.action === "show" || args.action === "pause" || args.action === "resume") &&
+      empty &&
+      args.id !== null &&
+      args.after === null
+    )
+      return { action: args.action, id: args.id };
+
+    return yield* Effect.fail(
+      new AgentError({
+        reason: "tool-arguments",
+        message:
+          "Use only the fields required by the selected task action; set the others to null.",
+      }),
+    );
+  });
