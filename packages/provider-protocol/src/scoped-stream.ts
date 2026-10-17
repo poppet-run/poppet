@@ -32,15 +32,11 @@ export const modelStream = (
 
       let expired = false;
 
-      yield* Effect.sleep("60 seconds").pipe(
-        Effect.andThen(
-          Effect.sync(() => {
-            expired = true;
-            controller.abort();
-          }),
-        ),
-        Effect.forkScoped,
-      );
+      yield* Effect.gen(function* () {
+        yield* Effect.sleep("60 seconds");
+        expired = true;
+        controller.abort();
+      }).pipe(Effect.forkScoped);
 
       const iterable = yield* open(decoded, controller.signal).pipe(
         Effect.mapError((error) =>
