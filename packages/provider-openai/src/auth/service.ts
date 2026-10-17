@@ -54,10 +54,7 @@ export const ChatGPTAuthLive = Layer.effect(
         if (connection?.credentials?.refreshToken && connection.clientId) {
           revoked = yield* oauth
             .revoke(connection.credentials.refreshToken, connection.clientId)
-            .pipe(
-              Effect.as(true),
-              Effect.catch(() => Effect.succeed(false)),
-            );
+            .pipe(Effect.isSuccess);
         }
 
         return revoked;

@@ -100,16 +100,17 @@ export const makeOpenCodeProvider = (
       .map((model) => Schema.decodeUnknownSync(ModelDescription)(model))
       .toArray();
   }).pipe(
-    Effect.timeout("30 seconds"),
-    Effect.catchTag("TimeoutError", () =>
-      Effect.fail(
-        new ProviderError({
-          provider: "opencode-go",
-          reason: "temporary",
-          message: "OpenCode Go model discovery timed out.",
-        }),
-      ),
-    ),
+    Effect.timeoutOrElse({
+      duration: "30 seconds",
+      orElse: () =>
+        Effect.fail(
+          new ProviderError({
+            provider: "opencode-go",
+            reason: "temporary",
+            message: "OpenCode Go model discovery timed out.",
+          }),
+        ),
+    }),
   );
 
   const resolve = (modelId: string) =>

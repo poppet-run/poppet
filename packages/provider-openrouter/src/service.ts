@@ -116,16 +116,17 @@ export const makeOpenRouterProvider = (
       Effect.map((value) => value.data.filter(supportsText)),
     );
   }).pipe(
-    Effect.timeout("30 seconds"),
-    Effect.catchTag("TimeoutError", () =>
-      Effect.fail(
-        new ProviderError({
-          provider: "openrouter",
-          reason: "temporary",
-          message: "OpenRouter model discovery timed out.",
-        }),
-      ),
-    ),
+    Effect.timeoutOrElse({
+      duration: "30 seconds",
+      orElse: () =>
+        Effect.fail(
+          new ProviderError({
+            provider: "openrouter",
+            reason: "temporary",
+            message: "OpenRouter model discovery timed out.",
+          }),
+        ),
+    }),
   );
 
   return {
