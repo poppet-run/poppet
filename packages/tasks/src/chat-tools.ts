@@ -135,15 +135,16 @@ export const ChatTasksLive = Layer.effect(
                   }),
                 );
               destination = yield* context.here.pipe(
-                Effect.timeout("8 seconds"),
-                Effect.mapError((error) =>
-                  error instanceof AgentError
-                    ? error
-                    : new AgentError({
+                Effect.timeoutOrElse({
+                  duration: "8 seconds",
+                  orElse: () =>
+                    Effect.fail(
+                      new AgentError({
                         reason: "tool-permission",
                         message: "Current-conversation validation timed out.",
                       }),
-                ),
+                    ),
+                }),
               );
             }
           } else {

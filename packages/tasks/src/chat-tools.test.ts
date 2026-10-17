@@ -278,6 +278,42 @@ describe("chat task operations", () => {
     }
   });
 
+  test("the destination deadline cancels lookup before creating a task", async () => {
+    const state = await fixture();
+    const action: ChatTaskAction = { ...create, delivery: "here" };
+    let cancelled = false;
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const { context } = yield* recorded(action);
+
+          const here = Effect.never.pipe(
+            Effect.onInterrupt(() =>
+              Effect.sync(() => {
+                cancelled = true;
+              }),
+            ),
+          );
+
+          const fiber = yield* (yield* ChatTasks)
+            .prepare(action, { ...context, here })
+            .pipe(Effect.forkChild);
+
+          yield* TestClock.adjust("8 seconds");
+          expect(yield* Fiber.join(fiber).pipe(Effect.flip)).toMatchObject({
+            reason: "tool-permission",
+            message: "Current-conversation validation timed out.",
+          });
+          expect(cancelled).toBe(true);
+          expect((yield* TaskRepository).list()).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("pages task inspection within the byte budget and truncates long prompts", async () => {
     const state = await fixture(1024);
 
