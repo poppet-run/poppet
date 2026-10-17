@@ -76,11 +76,7 @@ export const loginWorkflow = Effect.gen(function* () {
           }),
         );
 
-      const credentials = credentialsFor(
-        tokens,
-        yield* DateTime.nowAsDate.pipe(Effect.map((date) => date.getTime())),
-        null,
-      );
+      const credentials = credentialsFor(tokens, (yield* DateTime.nowAsDate).getTime(), null);
 
       if (
         credentials?.scopes.includes(planScope) &&
