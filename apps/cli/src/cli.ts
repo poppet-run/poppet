@@ -686,7 +686,7 @@ export const makeCLI = (
     Command.withDescription(`Poppet\n\nProviders:\n${providerHelp}`),
     Command.withSubcommands([
       Command.make("config", {}, () =>
-        showConfig.pipe(Effect.provide(Layer.merge(runtime.config, runtime.chatSettings))),
+        showConfig.pipe(Effect.provide([runtime.config, runtime.chatSettings])),
       ).pipe(Command.withDescription("Show validated configuration")),
       Command.make("store").pipe(
         Command.withDescription("Inspect the conversation store"),

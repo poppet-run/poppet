@@ -216,11 +216,7 @@ export const loadApiKey = (provider: ProviderId, environment: string) =>
 
     if (Option.isSome(configured)) return configured.value;
 
-    const saved = yield* Effect.gen(function* () {
-      const store = yield* ApiKeyStore;
-
-      return yield* store.read(provider);
-    }).pipe(
+    const saved = yield* ApiKeyStore.use((store) => store.read(provider)).pipe(
       Effect.provide(ApiKeyStoreLive),
       Effect.mapError((error) => (error instanceof ProviderError ? error : storageError(provider))),
     );

@@ -187,10 +187,8 @@ const inference = Layer.effect(
 
 export const OpenCodeGoLive = Layer.effect(
   ProviderConnection,
-  Effect.gen(function* () {
-    return yield* makeApiKeyConnection(yield* Provider, apiKeyEnvironment);
-  }),
-).pipe(Layer.provideMerge(Layer.mergeAll(inference, ApiKeyStoreLive)));
+  Provider.use((provider) => makeApiKeyConnection(provider, apiKeyEnvironment)),
+).pipe(Layer.provideMerge([inference, ApiKeyStoreLive]));
 
 export const openCodeGo: ProviderRegistration = {
   id: "opencode-go",

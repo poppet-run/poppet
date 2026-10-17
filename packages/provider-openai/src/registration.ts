@@ -8,9 +8,7 @@ import { ChatGPTModel, ChatGPTModelLive, ChatGPTProviderLive } from "#src/model/
 import { OAuthClientLive } from "#src/oauth/client";
 import { BrowserSignInLive } from "#src/sign-in/service";
 
-const storage = CredentialStoreLive.pipe(
-  Layer.provideMerge(Layer.mergeAll(OAuthClientLive, BrowserSignInLive)),
-);
+const storage = CredentialStoreLive.pipe(Layer.provideMerge([OAuthClientLive, BrowserSignInLive]));
 
 const authentication = ChatGPTAuthLive.pipe(Layer.provideMerge(storage));
 
