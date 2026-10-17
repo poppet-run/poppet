@@ -105,7 +105,9 @@ set -lx POPPET_LOG_REASONING true
 bun run start chat new "Review my notes"
 ```
 
-`Thinking` entries include the session and run IDs. Reasoning is buffered until
+Interactive chat streams readable reasoning under a `Thinking:` heading as
+chunks arrive. Worker logs and one-shot CLI diagnostics use `Thinking` entries
+with session and run IDs. These diagnostic entries are buffered until
 a newline, a 2048-character chunk, or the next answer/completion event; pending
 text is flushed if the run fails or is interrupted. Reasoning has a separate
 128 KiB limit per run. Answer stdout and messaging replies contain only answer

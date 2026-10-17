@@ -43,6 +43,22 @@ leaves the prompt. Ctrl-C during inference cancels the active request and exits;
 the interrupted run remains inspectable. Earlier completed answers remain saved.
 There is no automatic retry.
 
+An animated `Thinking...` indicator stays on its own line below streamed
+reasoning until the answer starts. In terminals supporting 256 colours, a soft
+cyan highlight sweeps across the text. `NO_COLOR` and terminals with fewer colours
+use cycling dots instead. It clears before answers or errors appear
+and also clears on cancellation. The indicator works with reasoning logging
+disabled and is omitted when stderr is redirected or the terminal is `dumb`.
+
+With `chat.logReasoning` enabled, provider reasoning streams under a `Thinking:`
+heading before the answer. Thinking uses muted cyan in colour-enabled terminals;
+the answer uses the normal terminal colour. `NO_COLOR` disables the styling.
+Text appears as chunks arrive, with normal newlines and no diagnostic timestamps
+or IDs. OpenAI Responses reasoning sections are separated by blank lines.
+The background worker still writes its structured reasoning log entries.
+Providers may return no readable reasoning for a turn; in that case no heading
+is printed.
+
 For a new session, `--coding` and `--skill <name>` work as they do with `chat new`.
 Omit them when supplying a session ID, which retains its original selection.
 A session is created only when you submit its first nonblank message. Failed turns

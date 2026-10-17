@@ -56,6 +56,7 @@ const toolRequest: ModelRequest = {
 type Mode =
   | "trailing-usage"
   | "normal"
+  | "reasoning-parts"
   | "text"
   | "truncated"
   | "malformed"
@@ -112,7 +113,10 @@ const fixture = (
     const challenge = serialized.match(/challenge ([a-f0-9]+)/)?.[1] ?? "";
     const proof = serialized.match(/poppet_verified_[a-f0-9]+/)?.[0];
     const text = proof ?? "Hello world";
-    const toolTurn = mode !== "text" && mode !== "stall" && proof === undefined;
+
+    const toolTurn =
+      mode !== "text" && mode !== "reasoning-parts" && mode !== "stall" && proof === undefined;
+
     const args = mode === "bad-arguments" ? "{" : JSON.stringify({ challenge });
     const events: Schema.JsonObject[] = [];
 
@@ -172,8 +176,24 @@ const fixture = (
         output[1] = call;
       }
 
-      if (toolTurn)
-        events.push({ type: "response.reasoning_summary_text.delta", delta: "Plan first" });
+      if (mode === "reasoning-parts")
+        for (const part of [
+          { item_id: "reason-1", summary_index: 0, delta: "**Checking " },
+          { item_id: "reason-1", summary_index: 0, delta: "27-unit feasibility**" },
+          { item_id: "reason-1", summary_index: 1, delta: "" },
+          { item_id: "reason-1", summary_index: 1, delta: "**Finding a stronger bound**" },
+          { item_id: "reason-1", summary_index: 1, delta: "\nAlready on another line." },
+          { item_id: "reason-2", summary_index: 0, delta: "**Validating " },
+          { item_id: "reason-2", summary_index: 0, delta: "a 28-unit schedule**" },
+        ])
+          events.push({ type: "response.reasoning_summary_text.delta", ...part });
+      else if (toolTurn)
+        events.push({
+          type: "response.reasoning_summary_text.delta",
+          item_id: "reason-1",
+          summary_index: 0,
+          delta: "Plan first",
+        });
 
       if (!toolTurn) events.push({ type: "response.output_text.delta", delta: "Hello " });
 
@@ -335,7 +355,7 @@ const fixture = (
 
 for (const adapter of cases) {
   describe(adapter.name, () => {
-    if (adapter.protocol === "responses")
+    if (adapter.protocol === "responses") {
       test.each([false, true])(
         "requests and streams reasoning summaries only when enabled=%s",
         async (enabled) => {
@@ -357,6 +377,33 @@ for (const adapter of cases) {
           expect(events.at(-1)?.type).toBe("completed");
         },
       );
+
+      test("separates reasoning sections while preserving chunks within each section", async () => {
+        const harness = fixture(adapter, "reasoning-parts");
+
+        const events = await Effect.runPromise(
+          Stream.runCollect(
+            harness.model.stream({ ...request, settings: { reasoningSummary: true } }),
+          ),
+        );
+
+        expect(
+          events
+            .filter((event) => event.type === "reasoning-delta")
+            .map((event) => event.text)
+            .join(""),
+        ).toBe(
+          "**Checking 27-unit feasibility**\n\n**Finding a stronger bound**\nAlready on another line.\n\n**Validating a 28-unit schedule**",
+        );
+        expect(events.filter((event) => event.type === "text-delta")).toEqual([
+          { type: "text-delta", text: "Hello " },
+        ]);
+        expect(events.at(-1)).toMatchObject({
+          type: "completed",
+          response: { output: [{ type: "text", text: "Hello world" }] },
+        });
+      });
+    }
 
     test("completes the shared tool exchange and preserves reasoning and session identity", async () => {
       const harness = fixture(adapter);

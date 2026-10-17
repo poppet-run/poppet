@@ -126,6 +126,12 @@ describe.concurrent("persisted agent", () => {
             expect(diagnostics.map((event) => event.text)).toEqual(logs);
             expect(
               events
+                .filter((event) => event.type === "reasoning-delta")
+                .map((event) => event.text)
+                .join(""),
+            ).toBe(enabled ? thinking : "");
+            expect(
+              events
                 .filter((event) => event.type === "text-delta")
                 .map((event) => event.text)
                 .join(""),

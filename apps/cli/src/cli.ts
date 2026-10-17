@@ -44,9 +44,11 @@ import {
   prepareChat,
   sendChat,
   writeChatText,
+  writeChatThinking,
   type ChatWriter,
+  type ChatReasoningWriter,
 } from "#src/chat";
-import { interactiveChat, readChatLine } from "#src/chat-prompt";
+import { interactiveChat, interactiveChatOutput, readChatLine } from "#src/chat-prompt";
 import { commandArgs } from "#src/command-args";
 import { manageMemory, type MemoryCommand } from "#src/memory";
 import { providers } from "#src/providers";
@@ -95,6 +97,7 @@ export const makeCLI = (
   worker: typeof manageWorker = manageWorker,
   registeredChannels: ReadonlyArray<ChannelRegistration> = channels,
   readLine = readChatLine,
+  writeThinking: ChatWriter = writeChatThinking,
 ) => {
   const runtime = runtimeLayers(registered);
   validateChannels(registeredChannels);
@@ -116,6 +119,11 @@ export const makeCLI = (
     command: WorkerCommand,
     local: Effect.Effect<void, E>,
     onSession: ChatWriter = () => Effect.void,
+    output?: {
+      readonly answer: ChatWriter;
+      readonly reasoning: ChatReasoningWriter;
+      readonly announce: ChatWriter;
+    },
   ) =>
     Effect.gen(function* () {
       const config = yield* AppConfig;
@@ -123,8 +131,10 @@ export const makeCLI = (
       const handled = yield* remoteWorkerCommand(
         workerSocketPath(config.dataDirectory),
         command,
-        write,
+        output?.answer ?? write,
         onSession,
+        output?.reasoning,
+        output?.announce,
       );
 
       if (!handled) yield* local;
@@ -250,7 +260,11 @@ export const makeCLI = (
       yield* Console.log(JSON.stringify(result, null, 2));
     }).pipe(Effect.provide(runtime.config));
 
-  const runChat = (command: ChatCommand, onSession: ChatWriter = () => Effect.void) => {
+  const runChat = (
+    command: ChatCommand,
+    onSession: ChatWriter = () => Effect.void,
+    interactive = false,
+  ) => {
     if (
       command.action === "show" ||
       command.action === "sessions" ||
@@ -274,20 +288,27 @@ export const makeCLI = (
       );
     }
 
-    return prepareChat(command).pipe(
-      Effect.flatMap((submission) =>
-        throughWorker(
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const output = interactive ? yield* interactiveChatOutput(write, writeThinking) : undefined;
+        const submission = yield* prepareChat(command);
+
+        yield* throughWorker(
           { kind: "chat", command: submission },
-          sendChat(submission, write, (text, sessionId) =>
-            Effect.gen(function* () {
-              if (sessionId !== undefined) yield* onSession(sessionId);
-              yield* Console.error(text);
-            }),
+          sendChat(
+            submission,
+            output?.answer ?? write,
+            (text, sessionId) =>
+              Effect.gen(function* () {
+                if (sessionId !== undefined) yield* onSession(sessionId);
+                yield* output?.announce(text) ?? Console.error(text);
+              }),
+            output === undefined ? {} : { write: output.reasoning, log: () => Effect.void },
           ).pipe(Effect.provide(runtime.chat)),
           onSession,
-        ),
-      ),
-      Effect.provide(runtime.config),
+          output,
+        );
+      }).pipe(Effect.provide(runtime.config)),
     );
   };
 
@@ -379,7 +400,7 @@ export const makeCLI = (
         ({ id, coding, skill }) =>
           interactiveChat(
             { sessionId: Option.getOrUndefined(id), coding, skill },
-            runChat,
+            (command, onSession) => runChat(command, onSession, true),
             readLine,
           ),
       ).pipe(Command.withDescription("Open a terminal prompt for a new or saved session")),

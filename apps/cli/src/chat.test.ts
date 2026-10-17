@@ -64,6 +64,8 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
   const lines: string[] = [];
   const errors: string[] = [];
   const chunks: string[] = [];
+  const thinkingChunks: string[] = [];
+  const outputEvents: string[] = [];
   const clock = ManagedRuntime.make(TestClock.layer());
   await clock.runPromise(TestClock.setTime(Date.now()));
 
@@ -225,6 +227,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
       ? Effect.fail(new AgentError({ reason: "interrupted", message: "Output closed" }))
       : Effect.sync(() => {
           chunks.push(text);
+          outputEvents.push(`answer:${text}`);
         });
 
   const output: Console.Console = {
@@ -238,12 +241,11 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
   };
 
   const program = (args: ReadonlyArray<string>, read = readChatLine, consoleOutput = output) =>
-    makeCLI(
-      [unused, registration],
-      write,
-      undefined,
-      registeredChannels,
-      read,
+    makeCLI([unused, registration], write, undefined, registeredChannels, read, (text) =>
+      Effect.sync(() => {
+        thinkingChunks.push(text);
+        outputEvents.push(`thinking:${text}`);
+      }),
     )(args).pipe(Effect.provideService(Console.Console, consoleOutput));
 
   return {
@@ -253,6 +255,8 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     lines,
     errors,
     chunks,
+    thinkingChunks,
+    outputEvents,
     state,
     clock,
     program,
@@ -349,6 +353,133 @@ const exampleChannel = (id: string) => {
 };
 
 describe("chat CLI", () => {
+  test.each([
+    { mode: "local", enabled: false },
+    { mode: "local", enabled: true },
+    { mode: "worker", enabled: false },
+    { mode: "worker", enabled: true },
+  ])(
+    "streams readable interactive thinking through $mode when enabled=$enabled",
+    async ({ mode, enabled }) => {
+      const chat = await fixture();
+      const workerLogs: string[] = [];
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
+      process.env.POPPET_LOG_REASONING = String(enabled);
+      chat.state.reasoning = "Checking the notes.";
+
+      try {
+        if (mode === "worker")
+          worker = await chat.startWorker("all", {
+            ...console,
+            log: (...values) => {
+              chat.lines.push(values.join(" "));
+            },
+            error: (...values) => {
+              workerLogs.push(values.join(" "));
+            },
+          });
+
+        const input = ["First", "Second", "/exit"];
+        await Effect.runPromise(
+          chat.program(
+            ["chat", "interactive"],
+            Effect.sync(() => input.shift() ?? null),
+          ),
+        );
+
+        expect(chat.chunks.join("")).toBe("Answer\nAnswer\n");
+        expect(chat.thinkingChunks).toEqual(
+          enabled
+            ? [
+                "Thinking:\n",
+                chat.state.reasoning,
+                "\n\n",
+                "Thinking:\n",
+                chat.state.reasoning,
+                "\n\n",
+              ]
+            : [],
+        );
+        expect(chat.errors.some((line) => line.includes("Thinking session="))).toBe(false);
+        expect(workerLogs.filter((line) => line.includes("Thinking session="))).toHaveLength(
+          mode === "worker" && enabled ? 2 : 0,
+        );
+
+        if (enabled)
+          expect(chat.outputEvents.indexOf(`thinking:${chat.state.reasoning}`)).toBeLessThan(
+            chat.outputEvents.indexOf("answer:An"),
+          );
+      } finally {
+        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
+  test.each(["local", "worker"])(
+    "separates interactive thinking around tools through %s execution",
+    async (mode) => {
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
+      process.env.POPPET_LOG_REASONING = "true";
+      chat.state.reasoning = "Checking the notes.";
+      chat.state.useTools = true;
+
+      try {
+        if (mode === "worker") worker = await chat.startWorker();
+        const input = ["First", "/exit"];
+        await Effect.runPromise(
+          chat.program(
+            ["chat", "interactive"],
+            Effect.sync(() => input.shift() ?? null),
+          ),
+        );
+        expect(chat.requests).toHaveLength(2);
+        expect(chat.thinkingChunks).toEqual([
+          "Thinking:\n",
+          chat.state.reasoning,
+          "\n\n",
+          "Thinking:\n",
+          chat.state.reasoning,
+          "\n\n",
+        ]);
+        expect(chat.chunks.join("")).toBe("Answer\n");
+      } finally {
+        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
+  test.each(["local", "worker"])(
+    "closes interactive thinking after a failed %s turn",
+    async (mode) => {
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
+      process.env.POPPET_LOG_REASONING = "true";
+      chat.state.reasoning = "Checking before failure.";
+      chat.state.useTools = true;
+      chat.state.failNext = true;
+
+      try {
+        if (mode === "worker") worker = await chat.startWorker();
+        const input = ["First", "/exit"];
+        await Effect.runPromise(
+          chat.program(
+            ["chat", "interactive"],
+            Effect.sync(() => input.shift() ?? null),
+          ),
+        );
+        expect(chat.thinkingChunks).toEqual(["Thinking:\n", chat.state.reasoning, "\n\n"]);
+        expect(chat.chunks).toEqual([]);
+        expect(chat.errors).toContain("\nFixture request failed");
+      } finally {
+        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
   test.each(["local", "worker"])(
     "uses one opt-in setting for %s reasoning output and worker logs",
     async (mode) => {

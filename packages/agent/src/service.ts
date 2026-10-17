@@ -29,10 +29,12 @@ export class ModelResolver extends Context.Service<
   }
 >()("poppet/ModelResolver") {}
 
-/** Run lifecycle events, answer text, and locally logged reasoning diagnostics. */
+/** Run lifecycle events, streamed text, and locally logged reasoning diagnostics. */
 export type ChatEvent =
   | { readonly type: "started"; readonly run: Run }
   | { readonly type: "text-delta"; readonly text: string }
+  | { readonly type: "reasoning-delta"; readonly text: string }
+  | { readonly type: "reasoning-end" }
   | { readonly type: "reasoning"; readonly text: string }
   | { readonly type: "completed"; readonly run: Run };
 
@@ -49,7 +51,11 @@ export class Agent extends Context.Service<
     readonly send: (
       sessionId: string,
       text: string,
-      options?: { readonly readOnlyTools?: boolean; readonly runId?: string },
+      options?: {
+        readonly readOnlyTools?: boolean;
+        readonly runId?: string;
+        readonly reasoningLog?: (line: string) => Effect.Effect<void>;
+      },
     ) => Stream.Stream<ChatEvent, ChatFailure>;
   }
 >()("poppet/Agent") {}
@@ -86,7 +92,11 @@ export const AgentLive = Layer.effect(
     const send = (
       sessionId: string,
       text: string,
-      options: { readonly readOnlyTools?: boolean; readonly runId?: string } = {},
+      options: {
+        readonly readOnlyTools?: boolean;
+        readonly runId?: string;
+        readonly reasoningLog?: (line: string) => Effect.Effect<void>;
+      } = {},
     ): Stream.Stream<ChatEvent, ChatFailure> =>
       Stream.suspend(() => {
         let active: Run | null = null;
@@ -147,7 +157,7 @@ export const AgentLive = Layer.effect(
                   reasoning = reasoning.slice(length);
                   const line = `[${new Date().toISOString()}] Thinking session=${sessionId} run=${run.id} ${JSON.stringify(chunk)}`;
 
-                  yield* Console.error(line);
+                  yield* options.reasoningLog?.(line) ?? Console.error(line);
                   events.push({ type: "reasoning", text: line });
                 }
 
@@ -195,10 +205,16 @@ export const AgentLive = Layer.effect(
                   if (event.type === "reasoning-delta") {
                     reasoning += event.text;
 
-                    return yield* flushReasoning();
+                    const diagnostics = yield* flushReasoning();
+
+                    return [...diagnostics, event];
                   }
 
-                  if (event.type === "reasoning-end") return yield* flushReasoning(true);
+                  if (event.type === "reasoning-end") {
+                    const diagnostics = yield* flushReasoning(true);
+
+                    return [...diagnostics, event];
+                  }
 
                   const diagnostics = yield* flushReasoning(true);
 
