@@ -197,25 +197,27 @@ export const makeTaskWorker = Effect.gen(function* () {
     (pause) => logProviderPause(clock.currentTimeMillisUnsafe(), pause),
   );
 
+  const readStatus = Effect.gen(function* () {
+    const overview = yield* taskOperation(() => repo.status());
+
+    const ids = [...new Set([config.provider, ...overview.providers])];
+
+    return {
+      ...overview,
+      running: true,
+      pid: process.pid,
+      startedAt,
+      activeOccurrence: active?.id ?? null,
+      connections:
+        connections !== null ? yield* Effect.forEach(ids, (id) => connections.status(id)) : [],
+    };
+  });
+
   const handle = (command: TaskCommand) =>
     Effect.gen(function* () {
       const now = clock.currentTimeMillisUnsafe();
 
-      if (command.action === "status") {
-        const overview = yield* taskOperation(() => repo.status());
-
-        const ids = [...new Set([config.provider, ...overview.providers])];
-
-        return {
-          ...overview,
-          running: true,
-          pid: process.pid,
-          startedAt,
-          activeOccurrence: active?.id ?? null,
-          connections:
-            connections !== null ? yield* Effect.forEach(ids, (id) => connections.status(id)) : [],
-        };
-      }
+      if (command.action === "status") return yield* readStatus;
 
       if (command.action === "clear")
         return yield* Effect.uninterruptible(

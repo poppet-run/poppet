@@ -131,7 +131,7 @@ export const WorkerRequestsLive = Layer.effect(
 
           const reasoning: ChatReasoning = streamReasoning
             ? {
-                log: (text) => Console.error(text),
+                log: Console.error,
                 write: emitFrame,
               }
             : { log: logReasoning };
@@ -202,7 +202,7 @@ export const remoteWorkerCommand = (
   write: ChatWriter,
   onSession: ChatWriter = () => Effect.void,
   writeReasoning?: ChatReasoningWriter,
-  announce: ChatWriter = (text) => Console.error(text),
+  announce: ChatWriter = Console.error,
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
