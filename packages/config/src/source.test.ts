@@ -140,6 +140,7 @@ describe("configuration sources", () => {
     ["unknown chat setting", '{"chat":{"outputToken":1024}}'],
     ["data directory in file", '{"dataDirectory":"elsewhere"}'],
     ["wrong value type", '{"chat":{"outputTokens":"1024"}}'],
+    ["wrong reasoning flag type", '{"chat":{"logReasoning":"true"}}'],
     ["empty setting", '{"model":""}'],
     ["null setting", '{"model":null}'],
     ["non-object settings", "[]"],

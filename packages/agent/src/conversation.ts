@@ -29,6 +29,8 @@ import { maxTextBytes, streamReply } from "#src/reply";
 import { decodeSessionSearchCall, sessionSearchTool, type SessionSearchCall } from "#src/search";
 import { ChatSettings } from "#src/settings";
 
+type ConversationEvent = ModelEvent | { readonly type: "reasoning-end" };
+
 /** Builds the bounded model/tool loop; the caller owns the run's final outcome. */
 export const conversation = Effect.gen(function* () {
   const store = yield* Store;
@@ -107,9 +109,10 @@ export const conversation = Effect.gen(function* () {
       let turns = 0;
       let callsUsed = 0;
       let outputBytes = 0;
+      let reasoningBytes = 0;
       let usage: Completion["usage"] = { inputTokens: 0, outputTokens: 0 };
 
-      const turn = (): Stream.Stream<ModelEvent, AgentError | ProviderError | StoreError> =>
+      const turn = (): Stream.Stream<ConversationEvent, AgentError | ProviderError | StoreError> =>
         Stream.unwrap(
           Effect.gen(function* () {
             if (++turns > policy.modelTurns)
@@ -146,11 +149,25 @@ export const conversation = Effect.gen(function* () {
                 instructions: prompt,
                 messages,
                 tools,
-                settings,
+                settings: policy.logReasoning ? { ...settings, reasoningSummary: true } : settings,
               },
               run,
             ).pipe(
               Stream.flatMap((event) => {
+                if (event.type === "reasoning-delta") {
+                  reasoningBytes += byteSize(event.text);
+
+                  if (reasoningBytes > maxTextBytes)
+                    return Stream.fail(
+                      new AgentError({
+                        reason: "output-limit",
+                        message: "The run exceeded the reasoning size limit.",
+                      }),
+                    );
+
+                  return policy.logReasoning ? Stream.make(event) : Stream.empty;
+                }
+
                 if (event.type === "text-delta") {
                   outputBytes += byteSize(event.text);
 
@@ -183,7 +200,7 @@ export const conversation = Effect.gen(function* () {
                     response: { ...response, usage },
                   });
 
-                return Stream.unwrap(
+                const followup = Stream.unwrap(
                   Effect.gen(function* () {
                     yield* store.recordToolCalls(run.id, response);
 
@@ -259,6 +276,8 @@ export const conversation = Effect.gen(function* () {
                     return turn();
                   }),
                 );
+
+                return Stream.concat(Stream.make({ type: "reasoning-end" as const }), followup);
               }),
             );
           }),

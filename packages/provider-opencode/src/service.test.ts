@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { completeModel, verifyModel, type ModelRequest } from "@poppet/provider";
-import { Effect, Redacted, Schema } from "effect";
+import { Effect, Redacted, Schema, Stream } from "effect";
 
 import { makeOpenCodeProvider, type HttpFetch } from "#src/service";
 
@@ -119,6 +119,38 @@ const fixture = (catalogIds = ["gpt-6-luna", "glm-5.3", "minimax-m3"]) => {
 };
 
 describe("OpenCode Go", () => {
+  test.each([false, true])("streams reasoning_content only when enabled=%s", async (enabled) => {
+    const harness = fixture();
+    const model = await Effect.runPromise(harness.provider.resolve("glm-5.3"));
+
+    const events = await Effect.runPromise(
+      Stream.runCollect(
+        model.stream({
+          ...request,
+          settings: { reasoningSummary: enabled },
+          tools: [
+            {
+              name: "get_verification_token",
+              namespace: "poppet_verification",
+              description: "Test tool",
+              parameters: { type: "object" },
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(events.filter((event) => event.type === "reasoning-delta")).toEqual(
+      enabled ? [{ type: "reasoning-delta", text: "go-reasoning" }] : [],
+    );
+    expect(events.at(-1)).toMatchObject({
+      type: "completed",
+      response: {
+        continuation: { data: { reasoningContent: "go-reasoning" } },
+      },
+    });
+  });
+
   test("discovers only the tested model/protocol set without reading a key", async () => {
     const harness = fixture();
     const models = await Effect.runPromise(harness.provider.models);

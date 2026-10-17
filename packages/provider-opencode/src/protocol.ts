@@ -34,7 +34,10 @@ export const goOptions: ChatOptions = {
         return restored;
       },
       append: (delta) => {
-        reasoning += Schema.decodeUnknownSync(Delta)(delta).reasoning_content ?? "";
+        const text = Schema.decodeUnknownSync(Delta)(delta).reasoning_content ?? "";
+        reasoning += text;
+
+        return text;
       },
       save: () => ({
         protocol: "chat-completions",

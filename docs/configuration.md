@@ -49,6 +49,7 @@ channel settings stay in their existing protected stores.
 | `POPPET_NOTES_DIR`     | `notesDirectory`    | `<data directory>/notes` | Notes tools' permitted directory                                                            |
 | `POPPET_PROVIDER`      | `provider`          | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`                                            |
 | `POPPET_MODEL`         | `model`             | Unset                    | Model ID for verification and new sessions and tasks                                        |
+| `POPPET_LOG_REASONING` | `chat.logReasoning` | `false`                  | Log readable provider reasoning to CLI stderr and worker logs                               |
 | `POPPET_CONTEXT_BYTES` | `chat.contextBytes` | `65536`                  | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576` |
 | `POPPET_HISTORY_TURNS` | `chat.historyTurns` | `20`                     | Previous complete exchanges sent to the model; maximum `100`                                |
 | `POPPET_OUTPUT_TOKENS` | `chat.outputTokens` | `2048`                   | Requested output limit when supported, capped by model metadata; maximum `32768`            |
@@ -70,7 +71,7 @@ bun run start config
 Empty or invalid environment values fail instead of falling back to the file.
 
 The `config` command prints the invoking process's effective application settings,
-all chat limits under `chat`, the config file's `path` and `exists` status under
+all chat settings under `chat`, the config file's `path` and `exists` status under
 `configFile`, and the names of ordinary settings supplied through the environment
 under `environmentOverrides`. It does not inspect a running worker's settings,
 create directories, open a database, or contact a provider. Credentials and secret
@@ -79,6 +80,43 @@ environment variables never appear in this output.
 Chat budgets must be positive integers within the limits above. Their ranges are
 validated for `config`, chat execution, worker startup, and conversation search.
 Session listing and inspection work independently of out-of-range budgets.
+
+## Reasoning logs
+
+Set `chat.logReasoning` to `true` in `config.json` to show provider reasoning in
+the CLI and write it to the background worker's existing
+`<data directory>/logs/worker.log`. It defaults to `false`. The same setting
+covers chat requests, scheduled tasks, and messaging runs. Restart the worker
+after changing the file; a CLI environment override does not change a running
+worker's configuration.
+
+```json
+{
+  "chat": {
+    "logReasoning": true
+  }
+}
+```
+
+For a temporary local override in fish:
+
+```fish
+set -lx POPPET_LOG_REASONING true
+bun run start chat new "Review my notes"
+```
+
+`Thinking` entries include the session and run IDs. Reasoning is buffered until
+a newline, a 2048-character chunk, or the next answer/completion event; pending
+text is flushed if the run fails or is interrupted. Reasoning has a separate
+128 KiB limit per run. Answer stdout and messaging replies contain only answer
+text. Logs may repeat private prompt or tool content and use the worker's
+existing protected files and rotation.
+
+Only readable text returned by the provider is logged. OpenAI Responses models
+are asked for reasoning summaries; OpenRouter and OpenCode expose their returned
+reasoning text or summaries. Availability depends on the model and provider.
+Encrypted reasoning and continuation metadata are excluded. This setting does
+not select a reasoning effort or token budget.
 
 ## API keys
 

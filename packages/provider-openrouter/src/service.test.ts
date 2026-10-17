@@ -260,6 +260,63 @@ describe("OpenRouter", () => {
     expect(harness.requests).toHaveLength(0);
   });
 
+  test.each([false, true])(
+    "streams readable reasoning once, excluding encrypted details, when enabled=%s",
+    async (enabled) => {
+      const harness = fixture(undefined, () =>
+        sse([
+          {
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  reasoning: "First ",
+                  reasoning_content: "First ",
+                  reasoning_details: details.slice(0, 1),
+                },
+                finish_reason: null,
+              },
+            ],
+          },
+          {
+            choices: [
+              { index: 0, delta: { reasoning_details: details.slice(1) }, finish_reason: null },
+            ],
+          },
+          {
+            choices: [
+              {
+                index: 0,
+                delta: { reasoning: " fallback", content: "Answer" },
+                finish_reason: "stop",
+              },
+            ],
+          },
+        ]),
+      );
+
+      const model = await Effect.runPromise(harness.provider.resolve("vendor/model"));
+
+      const events = await Effect.runPromise(
+        Stream.runCollect(model.stream({ ...request, settings: { reasoningSummary: enabled } })),
+      );
+
+      expect(
+        events
+          .filter((event) => event.type === "reasoning-delta")
+          .map((event) => event.text)
+          .join(""),
+      ).toBe(enabled ? "First secondsummary fallback" : "");
+      expect(events.at(-1)).toMatchObject({
+        type: "completed",
+        response: {
+          output: [{ type: "text", text: "Answer" }],
+          continuation: { data: { reasoningDetails: details } },
+        },
+      });
+    },
+  );
+
   test("preserves the complete reasoning sequence through a tool round trip and keeps routing explicit", async () => {
     const harness = fixture();
     const model = await Effect.runPromise(harness.provider.resolve("vendor/model"));

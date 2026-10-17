@@ -160,6 +160,7 @@ export const sendChat = (
   command: ChatSubmission,
   write: ChatWriter,
   announce: ChatAnnouncer = (text) => Console.error(text),
+  relayReasoning: ChatAnnouncer = () => Effect.void,
 ) =>
   Effect.gen(function* () {
     const store = yield* Store;
@@ -185,6 +186,9 @@ export const sendChat = (
       if (event.type === "started") return announce(`Run: ${event.run.id}`);
 
       if (event.type === "text-delta") return write(event.text);
+
+      // The agent logs locally; worker clients also receive the diagnostic over stderr frames.
+      if (event.type === "reasoning") return relayReasoning(event.text);
 
       return Effect.void;
     });

@@ -70,7 +70,8 @@ export interface ChatContinuation {
     data: Schema.JsonObject,
     message: ChatCompletionAssistantMessageParam,
   ) => ChatCompletionAssistantMessageParam;
-  readonly append: (delta: Schema.JsonObject) => void;
+  /** Retains continuation state and optionally returns its readable reasoning delta. */
+  readonly append: (delta: Schema.JsonObject) => string | void;
   readonly save: () => Schema.JsonObject;
 }
 
@@ -275,12 +276,15 @@ export const chatCompletionsModel = (
                     );
                   }
 
+                  const reasoning = continuation.append(choice.delta);
+
+                  if (decoded.settings.reasoningSummary && reasoning)
+                    yield { type: "reasoning-delta", text: reasoning };
+
                   if (choice.delta.content) {
                     text += choice.delta.content;
                     yield { type: "text-delta", text: choice.delta.content };
                   }
-
-                  continuation.append(choice.delta);
 
                   for (const part of choice.delta.tool_calls ?? []) {
                     let call = calls.get(part.index);

@@ -26,6 +26,7 @@ import { TestClock } from "effect/testing";
 
 import { readChatLine } from "#src/chat-prompt";
 import { makeCLI } from "#src/cli";
+import { openWorkerLog } from "#src/worker-log";
 
 const description: ModelDescription = {
   provider: "chat-provider",
@@ -53,6 +54,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     POPPET_MODEL_TURNS: "8",
     POPPET_TOOL_CALLS: "16",
     POPPET_TOOL_BYTES: "16384",
+    POPPET_LOG_REASONING: "false",
   };
 
   const previous = new Map(Object.keys(environment).map((key) => [key, process.env[key]]));
@@ -75,6 +77,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     failNext: false,
     active: 0,
     peak: 0,
+    reasoning: "",
   };
 
   const provider = Layer.effect(
@@ -172,12 +175,17 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                       ),
                     );
 
-                    return state.useTools
+                    const reply = state.useTools
                       ? completed
                       : Stream.concat(
                           Stream.make({ type: "text-delta" as const, text: "An" }),
                           completed,
                         );
+
+                    return Stream.concat(
+                      Stream.make({ type: "reasoning-delta" as const, text: state.reasoning }),
+                      reply,
+                    );
                   },
                 }),
         };
@@ -229,14 +237,14 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     },
   };
 
-  const program = (args: ReadonlyArray<string>, read = readChatLine) =>
+  const program = (args: ReadonlyArray<string>, read = readChatLine, consoleOutput = output) =>
     makeCLI(
       [unused, registration],
       write,
       undefined,
       registeredChannels,
       read,
-    )(args).pipe(Effect.provideService(Console.Console, output));
+    )(args).pipe(Effect.provideService(Console.Console, consoleOutput));
 
   return {
     directory,
@@ -249,9 +257,9 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     clock,
     program,
     invoke: (args: ReadonlyArray<string>) => Effect.runPromise(program(args)),
-    startWorker: async (mode: "all" | "tasks" | "gateway" = "all") => {
+    startWorker: async (mode: "all" | "tasks" | "gateway" = "all", consoleOutput = output) => {
       const args = mode === "all" ? ["worker", "run"] : [mode, "work"];
-      const worker = clock.runFork(program(args));
+      const worker = clock.runFork(program(args, readChatLine, consoleOutput));
 
       try {
         await Effect.runPromise(
@@ -341,6 +349,85 @@ const exampleChannel = (id: string) => {
 };
 
 describe("chat CLI", () => {
+  test.each(["local", "worker"])(
+    "uses one opt-in setting for %s reasoning output and worker logs",
+    async (mode) => {
+      const chat = await fixture();
+      const log = openWorkerLog(join(chat.directory, "logs"));
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
+      delete process.env.POPPET_LOG_REASONING;
+
+      try {
+        await writeFile(
+          join(chat.directory, "config.json"),
+          JSON.stringify({ chat: { logReasoning: true } }),
+        );
+        chat.state.reasoning = "Check the notes before answering.";
+        chat.state.useTools = true;
+
+        if (mode === "worker")
+          worker = await chat.startWorker("all", {
+            ...console,
+            log: (...values) => {
+              chat.lines.push(values.join(" "));
+            },
+            error: (...values) => {
+              log.write(Buffer.from(`${values.join(" ")}\n`));
+            },
+          });
+
+        await chat.invoke(["chat", "new", "Hello"]);
+        expect(chat.chunks.join("")).toBe("Answer\n");
+        const reasoning = chat.errors.filter((line) => line.includes("Thinking session="));
+        expect(reasoning).toHaveLength(2);
+        expect(reasoning[0]).toContain(`session=${chat.requests[0]?.sessionId} run=`);
+        expect(reasoning[0]).toContain(chat.state.reasoning);
+        expect(reasoning[0]).not.toContain("retain privately");
+        expect(chat.requests).toHaveLength(2);
+        expect(chat.requests.every((request) => request.settings.reasoningSummary)).toBe(true);
+
+        chat.state.reasoning = "Thinking before a failure";
+        chat.state.failNext = true;
+        await expect(
+          chat.invoke(["chat", "send", chat.requests[0]!.sessionId, "Again"]),
+        ).rejects.toMatchObject({ message: "Fixture request failed" });
+        const diagnostics = chat.errors.filter((line) => line.includes("Thinking session="));
+        expect(diagnostics).toHaveLength(3);
+        expect(diagnostics.at(-1)).toContain(chat.state.reasoning);
+
+        if (mode === "worker")
+          expect(await readFile(join(chat.directory, "logs/worker.log"), "utf8")).toBe(
+            `${diagnostics.join("\n")}\n`,
+          );
+        await chat.invoke(["chat", "show", chat.requests[0]!.sessionId]);
+        expect(chat.chunks.join("")).not.toContain(chat.state.reasoning);
+      } finally {
+        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        log.close();
+        await chat.close();
+      }
+    },
+  );
+
+  test("environment overrides the file reasoning setting and invalid values fail configuration", async () => {
+    const chat = await fixture();
+
+    try {
+      await writeFile(
+        join(chat.directory, "config.json"),
+        JSON.stringify({ chat: { logReasoning: true } }),
+      );
+      chat.state.reasoning = "Private thinking";
+      await chat.invoke(["chat", "new", "Hello"]);
+      expect(chat.errors.some((line) => line.includes("Thinking session="))).toBe(false);
+      expect(chat.requests[0]?.settings.reasoningSummary).toBeUndefined();
+      process.env.POPPET_LOG_REASONING = "invalid";
+      await expect(chat.invoke(["config"])).rejects.toHaveProperty("_tag", "ConfigError");
+    } finally {
+      await chat.close();
+    }
+  });
+
   test.each(["local", "worker"])(
     "uses file selection, notes paths, and chat budgets during %s execution",
     async (mode) => {

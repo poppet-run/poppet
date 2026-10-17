@@ -1,7 +1,8 @@
 import { Config, Context, Effect, Layer, Schema } from "effect";
 
-/** Per-run limits for context, model turns, tool execution, and memory loaded into the prompt. */
+/** Per-run reasoning logging and limits for context, tools, and memory loaded into the prompt. */
 export interface ChatPolicy {
+  readonly logReasoning: boolean;
   readonly contextBytes: number;
   readonly historyTurns: number;
   readonly outputTokens: number;
@@ -19,6 +20,7 @@ export class ChatSettings extends Context.Service<ChatSettings, ChatPolicy>()(
 ) {}
 
 export const defaultPolicy: ChatPolicy = {
+  logReasoning: false,
   contextBytes: 65536,
   historyTurns: 20,
   outputTokens: 2048,
@@ -35,6 +37,10 @@ const bounded = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum
 export const ChatSettingsLive = Layer.effect(
   ChatSettings,
   Effect.gen(function* () {
+    const logReasoning = yield* Config.Boolean("POPPET_LOG_REASONING").pipe(
+      Config.withDefault(defaultPolicy.logReasoning),
+    );
+
     const contextBytes = yield* Config.schema(bounded(1048576), "POPPET_CONTEXT_BYTES").pipe(
       Config.withDefault(defaultPolicy.contextBytes),
     );
@@ -73,6 +79,7 @@ export const ChatSettingsLive = Layer.effect(
     );
 
     return {
+      logReasoning,
       contextBytes,
       historyTurns,
       outputTokens,
