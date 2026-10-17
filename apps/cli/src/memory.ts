@@ -26,12 +26,7 @@ export const manageMemory = (command: MemoryCommand) =>
       return `Forgot ${command.key}.`;
     }
 
-    const operation =
-      command.action === "remember"
-        ? memory.remember(command.key, command.value)
-        : memory.replace(command.key, command.value);
-
-    const fact = yield* operation;
+    const fact = yield* memory[command.action](command.key, command.value);
 
     return JSON.stringify(fact, null, 2);
   });
