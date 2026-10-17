@@ -47,7 +47,7 @@ export const loadChannelSettings = (dataDirectory: string, adapter: string) =>
 
     if (directory === null) return null;
 
-    const contents = yield* Effect.tryPromise({
+    return yield* Effect.tryPromise({
       try: async () => {
         const handle = await open(
           join(directory, `${adapter}.json`),
@@ -78,8 +78,6 @@ export const loadChannelSettings = (dataDirectory: string, adapter: string) =>
       },
       catch: settingsError,
     });
-
-    return contents;
   });
 
 /** Atomically replaces one adapter file under its existing owner lock. */
