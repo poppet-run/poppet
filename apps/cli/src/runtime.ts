@@ -101,7 +101,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
 
   const store = StoreLive.pipe(Layer.provide(config));
 
-  const memory = LocalMemoryLive.pipe(Layer.provide(Layer.merge(store, config)));
+  const memory = LocalMemoryLive.pipe(Layer.provide([store, config]));
   const skills = SkillsLive.pipe(Layer.provide(config));
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store), Layer.provideMerge(skills));
 
@@ -204,19 +204,11 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     }),
   ).pipe(Layer.provide(config));
 
+  const pages = PagesLive.pipe(Layer.provide([PageTransportLive, chatSettings]));
+  const notes = NotesLive.pipe(Layer.provide([config, chatSettings]));
+
   const chat = AgentLive.pipe(
-    Layer.provideMerge(
-      Layer.mergeAll(
-        store,
-        skills,
-        memory,
-        resolver,
-        chatSettings,
-        connections,
-        PagesLive.pipe(Layer.provide(Layer.merge(PageTransportLive, chatSettings))),
-        NotesLive.pipe(Layer.provide(Layer.merge(config, chatSettings))),
-      ),
-    ),
+    Layer.provideMerge([store, skills, memory, resolver, chatSettings, connections, pages, notes]),
     Layer.provideMerge(config),
   );
 
