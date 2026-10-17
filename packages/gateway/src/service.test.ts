@@ -420,7 +420,10 @@ describe.concurrent("messaging gateway", () => {
           expect(
             database.query("SELECT id FROM gateway_inbox WHERE external_id = '64'").get(),
           ).toBeNull();
-          expect(yield* gateway.status).toMatchObject({ queued: 64, failedRequests: 0 });
+          expect((yield* GatewayRepository).status()).toMatchObject({
+            queued: 64,
+            failedRequests: 0,
+          });
         }),
       );
       await state.run(
@@ -431,7 +434,7 @@ describe.concurrent("messaging gateway", () => {
           yield* gateway.pollOnce;
           yield* gateway.pollOnce;
           expect((yield* GatewayRepository).cursor("telegram", "bot")).toBe("65");
-          expect(yield* gateway.status).toMatchObject({
+          expect((yield* GatewayRepository).status()).toMatchObject({
             queued: 64,
             failedRequests: 1,
             pendingDelivery: 1,
@@ -469,7 +472,7 @@ describe.concurrent("messaging gateway", () => {
             "storage",
           );
           expect((yield* GatewayRepository).cursor("telegram", "bot")).toBeNull();
-          expect(yield* gateway.status).toMatchObject({ queued: 1 });
+          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 1 });
         }),
       );
       await state.run(
@@ -577,7 +580,7 @@ describe.concurrent("messaging gateway", () => {
           yield* gateway.pollOnce;
           yield* Fiber.join(processing);
           expect((yield* GatewayRepository).cursor("telegram", "bot")).toBe("4");
-          expect(yield* gateway.status).toMatchObject({
+          expect((yield* GatewayRepository).status()).toMatchObject({
             queued: 0,
             executing: 0,
             failedRequests: 1,
@@ -585,7 +588,7 @@ describe.concurrent("messaging gateway", () => {
           });
           yield* gateway.pollOnce;
           expect(yield* gateway.processNext).toBe(false);
-          expect(yield* gateway.status).toMatchObject({ pendingDelivery: 2 });
+          expect((yield* GatewayRepository).status()).toMatchObject({ pendingDelivery: 2 });
           const store = yield* Store;
           const session = (yield* store.sessions)[0]!;
           expect((yield* store.runs(session.id)).map((run) => run.status)).toEqual(["interrupted"]);
@@ -989,7 +992,10 @@ describe.concurrent("messaging gateway", () => {
           yield* gateway.accept(message("first"));
           yield* gateway.processNext;
           yield* gateway.deliverNext;
-          expect(yield* gateway.status).toMatchObject({ failedRequests: 0, pendingDelivery: 0 });
+          expect((yield* GatewayRepository).status()).toMatchObject({
+            failedRequests: 0,
+            pendingDelivery: 0,
+          });
         }),
       );
       expect(state.requests).toHaveLength(1);
@@ -1020,7 +1026,10 @@ describe.concurrent("messaging gateway", () => {
           yield* gateway.accept(message("first"));
           yield* gateway.processNext;
           yield* gateway.deliverNext;
-          expect(yield* gateway.status).toMatchObject({ failedRequests: 1, executing: 0 });
+          expect((yield* GatewayRepository).status()).toMatchObject({
+            failedRequests: 1,
+            executing: 0,
+          });
         }),
       );
       expect(state.requests).toHaveLength(1);
@@ -1067,7 +1076,7 @@ describe.concurrent("messaging gateway", () => {
           yield* Queue.offer(incoming, message("queued", "thread-first", "After shutdown"));
           yield* TestClock.adjust("1 second");
           yield* Fiber.interrupt(worker);
-          expect(yield* gateway.status).toMatchObject({ queued: 1, executing: 1 });
+          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 1, executing: 1 });
         }),
       );
       await state.run(
@@ -1075,7 +1084,7 @@ describe.concurrent("messaging gateway", () => {
           const gateway = yield* Gateway;
           yield* gateway.recover;
           yield* gateway.processNext;
-          expect(yield* gateway.status).toMatchObject({ queued: 0, executing: 0 });
+          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 0, executing: 0 });
           const session = (yield* Store).sessions;
           const saved = (yield* session)[0];
 
@@ -1109,7 +1118,7 @@ describe.concurrent("messaging gateway", () => {
           ])
             yield* gateway.accept(input);
           expect(yield* (yield* Store).sessions).toHaveLength(0);
-          expect(yield* gateway.status).toMatchObject({ queued: 0 });
+          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 0 });
           expect(state.marks).toEqual([]);
           yield* gateway.accept(message("first"));
           yield* gateway.accept(message("first"));
@@ -1205,7 +1214,7 @@ describe.concurrent("messaging gateway", () => {
           yield* gateway.recover;
           expect(yield* gateway.processNext).toBe(false);
           yield* gateway.deliverNext;
-          expect(yield* gateway.status).toMatchObject({ queued: 0, executing: 0 });
+          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 0, executing: 0 });
         }),
       );
       expect(state.requests).toHaveLength(1);
@@ -1274,7 +1283,7 @@ describe.concurrent("messaging gateway", () => {
             expect(yield* gateway.deliverNext).toBe(false);
             yield* TestClock.adjust("60 seconds");
             expect(yield* gateway.deliverNext).toBe(reason === "unavailable");
-            expect(yield* gateway.status).toMatchObject({
+            expect((yield* GatewayRepository).status()).toMatchObject({
               failedDelivery: reason === "permission" ? 1 : 0,
               uncertainDelivery: reason === "uncertain" ? 1 : 0,
             });
@@ -1370,7 +1379,7 @@ describe.concurrent("messaging gateway", () => {
           ]);
           expect(yield* store.sessions).toHaveLength(2);
           yield* Stream.runDrain((yield* Agent).send(firstSession, "CLI follow-up"));
-          expect(yield* gateway.status).toMatchObject({ queued: 0, executing: 0 });
+          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 0, executing: 0 });
         }),
       );
       expect(state.requests).toHaveLength(4);
@@ -1398,7 +1407,7 @@ describe.concurrent("messaging gateway", () => {
 
           expect(result).toHaveProperty("failure.reason", "overloaded");
           yield* gateway.accept(message("cancel", "thread-first", "/cancel"));
-          expect(yield* gateway.status).toMatchObject({ queued: 0 });
+          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 0 });
           expect(yield* gateway.processNext).toBe(false);
         }),
       );
