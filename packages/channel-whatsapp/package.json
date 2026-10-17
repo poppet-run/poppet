@@ -8,8 +8,6 @@
     "#src/*": "./src/*.ts"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./settings": "./src/settings.ts",
     "./registration": "./src/registration.ts"
   },
   "scripts": {
