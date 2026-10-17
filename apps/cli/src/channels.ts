@@ -39,17 +39,15 @@ export const validateChannels = (registered: ReadonlyArray<ChannelRegistration>)
 };
 
 const loadChannels = (registered: ReadonlyArray<ChannelRegistration>) =>
-  Effect.gen(function* () {
-    const config = yield* AppConfig;
-
-    return yield* Effect.forEach(registered, (entry) =>
+  AppConfig.use(({ dataDirectory }) =>
+    Effect.forEach(registered, (entry) =>
       entry.load.pipe(
-        Effect.provideService(ChannelEnvironment, { dataDirectory: config.dataDirectory }),
+        Effect.provideService(ChannelEnvironment, { dataDirectory }),
         Effect.result,
         Effect.map((loaded) => ({ entry, loaded })),
       ),
-    );
-  });
+    ),
+  );
 
 const counts = (repo: GatewayRepository["Service"]) =>
   Effect.try({
@@ -122,10 +120,10 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
         run:
           workers.length === 0
             ? Effect.never
-            : Effect.all(
-                workers.map((worker) => worker.run),
-                { concurrency: "unbounded", discard: true },
-              ),
+            : Effect.forEach(workers, (worker) => worker.run, {
+                concurrency: "unbounded",
+                discard: true,
+              }),
         status: Effect.gen(function* () {
           const channels = yield* Effect.forEach(workers, (worker) => worker.status);
 
