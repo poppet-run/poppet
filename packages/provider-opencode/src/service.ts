@@ -114,7 +114,9 @@ export const makeOpenCodeProvider = (
 
   const resolve = (modelId: string) =>
     Effect.gen(function* () {
-      if (!supportedModels.some((model) => model.id === modelId))
+      const supported = supportedModels.find((model) => model.id === modelId);
+
+      if (!supported)
         return yield* Effect.fail(
           invalidRequest(
             "opencode-go",
@@ -149,8 +151,7 @@ export const makeOpenCodeProvider = (
       );
 
       const model =
-        supportedModels.find((candidate) => candidate.id === description.id)?.protocol ===
-        "responses"
+        supported.protocol === "responses"
           ? responsesModel(description, client, { headers: sessionHeaders })
           : chatCompletionsModel(description, client, "max_tokens", goOptions);
 
