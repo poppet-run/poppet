@@ -41,11 +41,23 @@ bun run start worker status
 bun run start worker logs
 ```
 
+Save persistent provider, model, notes-directory, and chat-limit settings in
+`<data directory>/config.json` before installing. See [configuration](configuration.md).
+Shell overrides apply to foreground commands and workers; installation does not
+save them for the background worker.
+
 Installation starts it immediately. It records the absolute Bun executable, CLI
-entry point, current working directory, validated configuration paths, and any
-explicit chat budgets. Keep that checkout and Bun executable in place. To change
-saved settings or move the checkout, uninstall and install again. Each data
-directory has its own launch agent. Manage it with the same `POPPET_DATA_DIR`.
+entry point, current working directory, and `POPPET_DATA_DIR`. The worker reads
+`config.json` on startup. After editing settings, use `worker stop` followed by
+`worker start`. Keep the checkout and Bun executable in place; moving either
+requires uninstalling and installing again. Each data directory has its own
+launch agent. Manage it with the same `POPPET_DATA_DIR`.
+
+Older installations saved ordinary settings and budget overrides in their
+LaunchAgent environment. Move the settings you want to keep into `config.json`,
+then run `worker uninstall` followed by `worker install` once to remove those
+saved overrides. Otherwise, they continue to take precedence over the file.
+Saved data and credentials are retained.
 
 If an existing installation launches `tasks work`, use `worker uninstall` followed
 by `worker install` once to update it to `worker run`. Saved data and credentials
@@ -130,7 +142,7 @@ bun run start store status
 ```
 
 New chats use the invoking terminal's provider, model, and workload; continued
-chats use their saved selection. The worker's saved notes directory and budgets
+chats use their saved selection. The worker's startup notes directory and budgets
 apply to remote requests, including conversation-search result limits. Search
 runs on the owning store connection and needs no provider request. Memory changes are loaded on the next run. Chat output
 and session IDs go to the client terminal and are excluded from worker logs.
@@ -151,7 +163,8 @@ interrupted requests are never automatically replayed.
 
 ## Manual validation
 
-To manually test background execution with your configured provider and model:
+To manually test background execution, first save your provider and model in
+`config.json`:
 
 ```fish
 set when (date -u -v+1M +%Y-%m-%dT%H:%M:%SZ)

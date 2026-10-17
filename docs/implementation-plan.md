@@ -440,9 +440,9 @@ survives restarts, and leaves inspectable results, skipped occurrences, or failu
 Implemented with macOS `worker install/start/stop/status/logs/uninstall` commands
 and the neutral `worker run` host. Shared launch data lives in
 `@poppet/platform`; LaunchAgent control lives in `@poppet/platform-macos`.
-The CLI supplies paths and ordinary settings and selects the platform.
-The LaunchAgent saves absolute runtime
-paths and ordinary settings, starts at login, and keeps the process running with
+The CLI supplies runtime paths and the data-directory selector and selects the platform.
+The LaunchAgent saves absolute runtime paths and `POPPET_DATA_DIR`; the worker
+reads ordinary settings from `config.json` at startup. It starts at login and keeps the process running with
 30-second restart throttling. API keys are excluded from its environment;
 providers use protected saved credentials. SIGTERM uses existing scoped cleanup. Lifecycle mutations finish before
 interruption returns, with bounded launchctl subprocesses. Inspection failures

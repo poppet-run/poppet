@@ -300,7 +300,12 @@ reasoning and protocol-specific response items. Only the matching adapter
 interprets this payload. Validate its version and provider/model identity; keep
 credentials out of transcripts and continuation data.
 
-Environment configuration includes `POPPET_PROVIDER` and `POPPET_MODEL`.
+The optional `<data directory>/config.json` supplies application settings and chat
+limits. Environment variables override individual file values; `POPPET_DATA_DIR`
+selects the data directory and file. Application settings and chat limits share
+one configuration source, while retaining their own validation.
+Provider selection uses `provider` and `model`, overridden by `POPPET_PROVIDER`
+and `POPPET_MODEL`.
 Use `openai-chatgpt` for the existing subscription connection and `opencode-go`
 for OpenCode Go. Reserve `openai-api` for later API-key support.
 An explicit model is required for provider verification and new chat sessions.

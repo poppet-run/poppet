@@ -2,28 +2,64 @@
 
 [Documentation index](index.md)
 
-| Variable               | Default                  | Purpose                                                                                          |
-| ---------------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
-| `POPPET_APP_NAME`      | `Poppet`                 | Application name used for initial ChatGPT registration                                           |
-| `POPPET_DATA_DIR`      | `~/.config/poppet`       | Credential and conversation storage                                                              |
-| `POPPET_NOTES_DIR`     | `<data directory>/notes` | Notes tools' permitted directory                                                                 |
-| `POPPET_PROVIDER`      | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`                                                 |
-| `POPPET_MODEL`         | Unset                    | Explicit model ID for verification and new chat sessions                                         |
-| `POPPET_CONTEXT_BYTES` | `65536`                  | Context size estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576` |
-| `POPPET_HISTORY_TURNS` | `20`                     | Maximum previous complete exchanges sent to the model; maximum `100`                             |
-| `POPPET_OUTPUT_TOKENS` | `2048`                   | Requested output limit when supported, capped by model metadata; maximum `32768`                 |
-| `POPPET_MODEL_TURNS`   | `8`                      | Maximum model requests per run; range `1–32`                                                     |
-| `POPPET_TOOL_CALLS`    | `16`                     | Maximum tool calls per run; range `1–64`                                                         |
-| `POPPET_TOOL_BYTES`    | `16384`                  | Maximum UTF-8 bytes per serialized tool result; range `1024–65536`                               |
-| `POPPET_SOUL_BYTES`    | `8192`                   | Maximum UTF-8 bytes in `soul.md`; range `1–65536`                                                |
-| `POPPET_PROFILE_BYTES` | `8192`                   | Maximum UTF-8 bytes in `profile.md`; range `1–65536`                                             |
-| `POPPET_FACTS_BYTES`   | `8192`                   | Maximum UTF-8 bytes of serialized saved facts sent to the model; range `1–65536`                 |
+## Configuration file
 
-Paths become absolute relative to the current working directory. Explicit values
-must be nonempty and have no leading or trailing whitespace. Use a full path when
-configuring a directory in the environment; literal `~` is not expanded.
+Save persistent settings in `<data directory>/config.json`, which defaults to
+`~/.config/poppet/config.json`. The file is optional, and every field is optional:
 
-For example, in fish:
+```json
+{
+  "provider": "openrouter",
+  "model": "replace-with-model-id",
+  "notesDirectory": "notes",
+  "chat": {
+    "contextBytes": 65536,
+    "outputTokens": 2048,
+    "modelTurns": 8
+  }
+}
+```
+
+Explicit command arguments take precedence where supported, followed by environment
+variables, file values, and built-in defaults. Environment overrides apply to individual
+fields, so overriding output tokens leaves the file's other chat limits intact.
+
+`POPPET_DATA_DIR` selects the data directory and its config file. It remains an
+environment-only setting; `dataDirectory` is not accepted in the file. Missing files
+use environment variables and defaults without creating anything. Unreadable files,
+files larger than 64 KiB, malformed JSON, unknown keys, and wrong value types fail
+with a configuration error.
+
+Use JSON numbers for chat limits. Text must be nonempty without leading or trailing
+whitespace. Relative `notesDirectory` values in the file resolve beside `config.json`.
+Environment paths resolve against the current working directory. Literal `~` is
+not expanded in either source.
+
+Processes load configuration when they start. Restart a running worker after editing
+the file. Configuration defaults affect new chats, messaging sessions, and tasks;
+existing sessions and tasks retain their saved provider and model. Credentials and
+channel settings stay in their existing protected stores.
+
+## Settings and environment overrides
+
+| Environment variable   | File field          | Default                  | Purpose                                                                                     |
+| ---------------------- | ------------------- | ------------------------ | ------------------------------------------------------------------------------------------- |
+| `POPPET_APP_NAME`      | `applicationName`   | `Poppet`                 | Application name used for initial ChatGPT registration                                      |
+| `POPPET_DATA_DIR`      | Environment only    | `~/.config/poppet`       | Configuration, credentials, and conversation storage                                        |
+| `POPPET_NOTES_DIR`     | `notesDirectory`    | `<data directory>/notes` | Notes tools' permitted directory                                                            |
+| `POPPET_PROVIDER`      | `provider`          | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`                                            |
+| `POPPET_MODEL`         | `model`             | Unset                    | Model ID for verification and new sessions and tasks                                        |
+| `POPPET_CONTEXT_BYTES` | `chat.contextBytes` | `65536`                  | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576` |
+| `POPPET_HISTORY_TURNS` | `chat.historyTurns` | `20`                     | Previous complete exchanges sent to the model; maximum `100`                                |
+| `POPPET_OUTPUT_TOKENS` | `chat.outputTokens` | `2048`                   | Requested output limit when supported, capped by model metadata; maximum `32768`            |
+| `POPPET_MODEL_TURNS`   | `chat.modelTurns`   | `8`                      | Model requests per run; range `1–32`                                                        |
+| `POPPET_TOOL_CALLS`    | `chat.toolCalls`    | `16`                     | Tool calls per run; range `1–64`                                                            |
+| `POPPET_TOOL_BYTES`    | `chat.toolBytes`    | `16384`                  | UTF-8 bytes per serialized tool result; range `1024–65536`                                  |
+| `POPPET_SOUL_BYTES`    | `chat.soulBytes`    | `8192`                   | UTF-8 bytes in `soul.md`; range `1–65536`                                                   |
+| `POPPET_PROFILE_BYTES` | `chat.profileBytes` | `8192`                   | UTF-8 bytes in `profile.md`; range `1–65536`                                                |
+| `POPPET_FACTS_BYTES`   | `chat.factsBytes`   | `8192`                   | UTF-8 bytes of serialized saved facts sent to the model; range `1–65536`                    |
+
+For a temporary override in fish:
 
 ```fish
 set -lx POPPET_DATA_DIR "$HOME/.local/share/poppet"
@@ -31,12 +67,18 @@ set -lx POPPET_NOTES_DIR "$HOME/Documents/Notes"
 bun run start config
 ```
 
-The `config` command prints settings. It does not create directories, open a
-database, or contact OpenAI. Credentials use separate protected storage and never
-appear in this output.
+Empty or invalid environment values fail instead of falling back to the file.
 
-Chat budgets must be positive integers. They are validated for chat execution;
-session listing and inspection work independently of these budgets.
+The `config` command prints the invoking process's effective application settings,
+all chat limits under `chat`, the config file's `path` and `exists` status under
+`configFile`, and the names of ordinary settings supplied through the environment
+under `environmentOverrides`. It does not inspect a running worker's settings,
+create directories, open a database, or contact a provider. Credentials and secret
+environment variables never appear in this output.
+
+Chat budgets must be positive integers within the limits above. Their ranges are
+validated for `config`, chat execution, worker startup, and conversation search.
+Session listing and inspection work independently of out-of-range budgets.
 
 ## API keys
 
