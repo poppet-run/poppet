@@ -36,59 +36,42 @@ const bounded = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum
 
 export const ChatSettingsLive = Layer.effect(
   ChatSettings,
-  Effect.gen(function* () {
-    const logReasoning = yield* Config.Boolean("POPPET_LOG_REASONING").pipe(
-      Config.withDefault(defaultPolicy.logReasoning),
-    );
-
-    const contextBytes = yield* Config.schema(bounded(1048576), "POPPET_CONTEXT_BYTES").pipe(
-      Config.withDefault(defaultPolicy.contextBytes),
-    );
-
-    const historyTurns = yield* Config.schema(bounded(100), "POPPET_HISTORY_TURNS").pipe(
-      Config.withDefault(defaultPolicy.historyTurns),
-    );
-
-    const outputTokens = yield* Config.schema(bounded(32768), "POPPET_OUTPUT_TOKENS").pipe(
-      Config.withDefault(defaultPolicy.outputTokens),
-    );
-
-    const modelTurns = yield* Config.schema(bounded(32), "POPPET_MODEL_TURNS").pipe(
-      Config.withDefault(defaultPolicy.modelTurns),
-    );
-
-    const toolCalls = yield* Config.schema(bounded(64), "POPPET_TOOL_CALLS").pipe(
-      Config.withDefault(defaultPolicy.toolCalls),
-    );
-
-    const toolBytes = yield* Config.schema(
-      Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 })),
-      "POPPET_TOOL_BYTES",
-    ).pipe(Config.withDefault(defaultPolicy.toolBytes));
-
-    const soulBytes = yield* Config.schema(bounded(65536), "POPPET_SOUL_BYTES").pipe(
-      Config.withDefault(defaultPolicy.soulBytes),
-    );
-
-    const profileBytes = yield* Config.schema(bounded(65536), "POPPET_PROFILE_BYTES").pipe(
-      Config.withDefault(defaultPolicy.profileBytes),
-    );
-
-    const factsBytes = yield* Config.schema(bounded(65536), "POPPET_FACTS_BYTES").pipe(
-      Config.withDefault(defaultPolicy.factsBytes),
-    );
-
-    return {
-      logReasoning,
-      contextBytes,
-      historyTurns,
-      outputTokens,
-      modelTurns,
-      toolCalls,
-      toolBytes,
-      soulBytes,
-      profileBytes,
-      factsBytes,
-    };
-  }),
+  Effect.suspend(() =>
+    Effect.all(
+      {
+        logReasoning: Config.Boolean("POPPET_LOG_REASONING").pipe(
+          Config.withDefault(defaultPolicy.logReasoning),
+        ),
+        contextBytes: Config.schema(bounded(1048576), "POPPET_CONTEXT_BYTES").pipe(
+          Config.withDefault(defaultPolicy.contextBytes),
+        ),
+        historyTurns: Config.schema(bounded(100), "POPPET_HISTORY_TURNS").pipe(
+          Config.withDefault(defaultPolicy.historyTurns),
+        ),
+        outputTokens: Config.schema(bounded(32768), "POPPET_OUTPUT_TOKENS").pipe(
+          Config.withDefault(defaultPolicy.outputTokens),
+        ),
+        modelTurns: Config.schema(bounded(32), "POPPET_MODEL_TURNS").pipe(
+          Config.withDefault(defaultPolicy.modelTurns),
+        ),
+        toolCalls: Config.schema(bounded(64), "POPPET_TOOL_CALLS").pipe(
+          Config.withDefault(defaultPolicy.toolCalls),
+        ),
+        toolBytes: Config.schema(
+          Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 })),
+          "POPPET_TOOL_BYTES",
+        ).pipe(Config.withDefault(defaultPolicy.toolBytes)),
+        soulBytes: Config.schema(bounded(65536), "POPPET_SOUL_BYTES").pipe(
+          Config.withDefault(defaultPolicy.soulBytes),
+        ),
+        profileBytes: Config.schema(bounded(65536), "POPPET_PROFILE_BYTES").pipe(
+          Config.withDefault(defaultPolicy.profileBytes),
+        ),
+        factsBytes: Config.schema(bounded(65536), "POPPET_FACTS_BYTES").pipe(
+          Config.withDefault(defaultPolicy.factsBytes),
+        ),
+      },
+      { concurrency: 1 },
+    ),
+  ),
 );
