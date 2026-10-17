@@ -4,7 +4,52 @@ import { Effect, Fiber, Match, Redacted } from "effect";
 import { TestClock } from "effect/testing";
 
 import { makeOAuthClient } from "#src/oauth/client";
-import type { HttpFetch } from "#src/oauth/http";
+import { request as httpRequest, type HttpFetch } from "#src/oauth/http";
+
+test("aborts stalled response headers at the request deadline", async () => {
+  const started = Promise.withResolvers<void>();
+  let aborted = false;
+
+  const http: HttpFetch = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      const signal = init?.signal;
+
+      if (!signal) throw new Error("Missing request cancellation");
+      signal.addEventListener(
+        "abort",
+        () => {
+          aborted = true;
+          reject(new Error("Aborted"));
+        },
+        { once: true },
+      );
+      started.resolve();
+    });
+
+  const result = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fiber = yield* httpRequest(http, "https://oauth.invalid").pipe(
+          Effect.result,
+          Effect.forkChild,
+        );
+
+        yield* Effect.promise(() => started.promise);
+        yield* TestClock.adjust("20 seconds");
+
+        return yield* Fiber.join(fiber);
+      }),
+    ).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  expect(result).toMatchObject({
+    failure: {
+      reason: "temporary",
+      message: "Could not contact OpenAI. Retry later; existing credentials were retained.",
+    },
+  });
+  expect(aborted).toBe(true);
+});
 
 test.each(["discovery", "token", "token-error", "revoke"])(
   "closes the %s response body on timeout or completion",

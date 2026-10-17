@@ -29,6 +29,8 @@ export const request = (http: HttpFetch, url: string, init?: RequestInit) =>
       catch: networkError,
     });
   }).pipe(
-    Effect.timeout("20 seconds"),
-    Effect.catchTag("TimeoutError", () => Effect.fail(networkError())),
+    Effect.timeoutOrElse({
+      duration: "20 seconds",
+      orElse: () => Effect.fail(networkError()),
+    }),
   );
