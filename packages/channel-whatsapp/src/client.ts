@@ -294,8 +294,12 @@ const makeWhatsAppClient = (
 
               if (update.connection === "close") {
                 connected = false;
-                const reason = Schema.decodeUnknownOption(Disconnect)(update.lastDisconnect?.error);
-                const code = Option.isSome(reason) ? reason.value.output.statusCode : 0;
+
+                const disconnect = Option.getOrNull(
+                  Schema.decodeUnknownOption(Disconnect)(update.lastDisconnect?.error),
+                );
+
+                const code = disconnect?.output.statusCode ?? 0;
 
                 const invalidSession = [
                   DisconnectReason.badSession,

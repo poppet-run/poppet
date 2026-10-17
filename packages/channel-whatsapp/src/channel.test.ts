@@ -387,49 +387,55 @@ describe.concurrent("WhatsApp adapter", () => {
     }
   });
 
-  test("reconnects a transient disconnect, closes the previous socket and stops after unlinking", async () => {
-    const state = await fixture();
+  test.each(["transient", "unstructured"])(
+    "reconnects a %s disconnect, closes the previous socket and stops after unlinking",
+    async (reason) => {
+      const state = await fixture();
 
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const first = yield* state.open;
-          const next = state.nextSocket();
-          first.ev.emit("connection.update", {
-            connection: "close",
-            lastDisconnect: {
-              error: Object.assign(new Error("private"), {
-                output: { statusCode: DisconnectReason.connectionLost },
-              }),
-              date: new Date(),
-            },
-          });
-          yield* TestClock.adjust("1 second");
-          const second = yield* next;
-          expect(state.ended()).toBe(1);
-          second.ev.emit("connection.update", { connection: "open" });
-          yield* Effect.yieldNow;
-          second.ev.emit("connection.update", {
-            connection: "close",
-            lastDisconnect: {
-              error: Object.assign(new Error("private"), {
-                output: { statusCode: DisconnectReason.loggedOut },
-              }),
-              date: new Date(),
-            },
-          });
-          yield* Effect.yieldNow;
-          yield* TestClock.adjust("30 seconds");
-          expect(state.sockets).toHaveLength(2);
-          expect(yield* (yield* MessagingChannel).status).toMatchObject({
-            connected: false,
-            needsPairing: true,
-          });
-        }),
-      );
-      expect(state.ended()).toBe(2);
-    } finally {
-      await state.close();
-    }
-  });
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const first = yield* state.open;
+            const next = state.nextSocket();
+            first.ev.emit("connection.update", {
+              connection: "close",
+              lastDisconnect: {
+                error: Object.assign(
+                  new Error("private"),
+                  reason === "transient"
+                    ? { output: { statusCode: DisconnectReason.connectionLost } }
+                    : {},
+                ),
+                date: new Date(),
+              },
+            });
+            yield* TestClock.adjust("1 second");
+            const second = yield* next;
+            expect(state.ended()).toBe(1);
+            second.ev.emit("connection.update", { connection: "open" });
+            yield* Effect.yieldNow;
+            second.ev.emit("connection.update", {
+              connection: "close",
+              lastDisconnect: {
+                error: Object.assign(new Error("private"), {
+                  output: { statusCode: DisconnectReason.loggedOut },
+                }),
+                date: new Date(),
+              },
+            });
+            yield* Effect.yieldNow;
+            yield* TestClock.adjust("30 seconds");
+            expect(state.sockets).toHaveLength(2);
+            expect(yield* (yield* MessagingChannel).status).toMatchObject({
+              connected: false,
+              needsPairing: true,
+            });
+          }),
+        );
+        expect(state.ended()).toBe(2);
+      } finally {
+        await state.close();
+      }
+    },
+  );
 });
