@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -49,6 +49,8 @@ test("captures both streams through rotation, drains final output, and returns t
 test("the installed launcher forwards shutdown, drains logs, and releases worker ownership", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-background-shutdown-"));
 
+  await writeFile(join(directory, "config.json"), JSON.stringify({ provider: "opencode-go" }));
+
   const launch = workerLaunch({
     applicationName: "Test",
     dataDirectory: directory,
@@ -95,7 +97,10 @@ test("the installed launcher forwards shutdown, drains logs, and releases worker
       remoteTaskCommand(workerSocketPath(directory), { action: "status" }),
     );
 
-    expect(reply?.value).toMatchObject({ running: true });
+    expect(reply?.value).toMatchObject({
+      running: true,
+      connections: [expect.objectContaining({ provider: "opencode-go" })],
+    });
     // A second launcher must fail before it can start another child or rotate these logs.
     const before = await readFile(path, "utf8");
     await expect(
