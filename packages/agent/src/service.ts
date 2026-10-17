@@ -64,10 +64,9 @@ const failureOutcome = (exit: Exit.Exit<unknown, ChatFailure>): RunOutcome => {
   if (Exit.isSuccess(exit)) return { status: "interrupted", reason: "consumer-stopped" };
 
   if (Cause.hasInterrupts(exit.cause)) return { status: "interrupted", reason: "cancelled" };
-  const failure = Cause.findErrorOption(exit.cause);
+  const error = Option.getOrNull(Cause.findErrorOption(exit.cause));
 
-  if (Option.isNone(failure)) return { status: "failed", reason: "internal" };
-  const error = failure.value;
+  if (error === null) return { status: "failed", reason: "internal" };
   let source = "agent";
 
   if (error instanceof ProviderError) source = "provider";
@@ -271,13 +270,11 @@ export const AgentLive = Layer.effect(
         if (original?.message.role !== "user") return;
         const prompt = original.message.text;
 
-        const result = yield* Effect.scoped(
-          Effect.gen(function* () {
-            const model = yield* resolver.resolve(session.provider, session.model);
-
-            return yield* generateTitle(model, session, prompt);
-          }),
-        ).pipe(Effect.timeout("10 seconds"));
+        const result = yield* resolver.resolve(session.provider, session.model).pipe(
+          Effect.flatMap((model) => generateTitle(model, session, prompt)),
+          Effect.scoped,
+          Effect.timeout("10 seconds"),
+        );
 
         yield* store.finishTitle(session.id, result.title, result.usage);
       }).pipe(
