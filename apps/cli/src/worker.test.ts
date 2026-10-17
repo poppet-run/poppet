@@ -15,7 +15,7 @@ import { MessagingWorker } from "#src/channels";
 import { workerLaunch } from "#src/worker";
 import { runWorker } from "#src/worker-host";
 
-test("builds an absolute CLI launch description without including shell credentials", () => {
+test("builds an absolute launch description that selects the data directory without freezing settings", () => {
   const previous = process.env.POPPET_OPENROUTER_API_KEY;
   const previousSoulBytes = process.env.POPPET_SOUL_BYTES;
   process.env.POPPET_OPENROUTER_API_KEY = "must-not-be-written";
@@ -37,10 +37,7 @@ test("builds an absolute CLI launch description without including shell credenti
       "run",
     ]);
     expect(launch.workingDirectory).toBe(process.cwd());
-    expect(launch.environment.get("POPPET_MODEL")).toBe("selected-model");
-    expect(launch.environment.get("POPPET_DATA_DIR")).toBe("/tmp/data");
-    expect(launch.environment.get("POPPET_SOUL_BYTES")).toBe("4096");
-    expect(launch.environment.has("POPPET_OPENROUTER_API_KEY")).toBe(false);
+    expect(launch.environment).toEqual(new Map([["POPPET_DATA_DIR", "/tmp/data"]]));
     expect(JSON.stringify(Array.from(launch.environment))).not.toContain("must-not-be-written");
   } finally {
     if (previous === undefined) delete process.env.POPPET_OPENROUTER_API_KEY;

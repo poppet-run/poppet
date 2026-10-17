@@ -7,39 +7,13 @@ import { manageWorker as manageMacOSWorker } from "@poppet/platform-macos";
 import { Effect } from "effect";
 
 export const workerLaunch = (config: Settings): WorkerLaunch => {
-  const environment = new Map([
-    ["POPPET_APP_NAME", config.applicationName],
-    ["POPPET_DATA_DIR", config.dataDirectory],
-    ["POPPET_NOTES_DIR", config.notesDirectory],
-    ["POPPET_PROVIDER", config.provider],
-  ]);
-
-  if (config.model !== null) environment.set("POPPET_MODEL", config.model);
-
-  // Copy only known budgets. Shell API keys and unrelated environment values stay out of the plist.
-  for (const name of [
-    "CONTEXT_BYTES",
-    "HISTORY_TURNS",
-    "OUTPUT_TOKENS",
-    "MODEL_TURNS",
-    "TOOL_CALLS",
-    "TOOL_BYTES",
-    "SOUL_BYTES",
-    "PROFILE_BYTES",
-    "FACTS_BYTES",
-  ]) {
-    const key = `POPPET_${name}`;
-    const value = process.env[key];
-
-    if (value !== undefined) environment.set(key, value);
-  }
-
   return {
     dataDirectory: config.dataDirectory,
     executable: process.execPath,
     arguments: [fileURLToPath(new URL("./worker-background.ts", import.meta.url)), "worker", "run"],
     workingDirectory: process.cwd(),
-    environment,
+    // Settings are read from config.json at startup; shell overrides remain local to the caller.
+    environment: new Map([["POPPET_DATA_DIR", config.dataDirectory]]),
   };
 };
 
