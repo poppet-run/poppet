@@ -13,7 +13,6 @@ export {
 
 export {
   Provider,
-  Model,
   ProviderError,
   invalidRequest,
   interrupted,

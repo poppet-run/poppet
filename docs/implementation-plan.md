@@ -95,7 +95,7 @@ and adapter requirements.
 
 - `@poppet/provider` defines Effect Schemas for normalized messages, tools, model
   descriptions, requests, completion events, and versioned continuation. `Provider`
-  discovers and resolves models; `Model` binds one provider/model for inference.
+  discovers models and resolves one provider/model to `ModelOperations` for inference.
 - Provider packages export registrations with their own live composition and
   connection operations. The CLI registers them once and uses shared interfaces
   for auth, model discovery, and inference. Provider IDs are generic; configuration
@@ -155,7 +155,7 @@ Local completion checks cover the same text and tool exchange through ChatGPT
 Responses, Go Responses, Go Chat Completions, and OpenRouter Chat Completions, including output ordering,
 missing terminal output, malformed arguments, incomplete streams, cancellation,
 deadlines, safe error classification, unsupported settings, and selected layer
-composition. Fake `Model` tests require no account. The public Go and OpenRouter
+composition. Fake model operations require no account. The public Go and OpenRouter
 catalogs were checked on 2026-10-13; live Go and OpenRouter inference and a fresh
 live ChatGPT check through the new contract remain separate checks. No agent loop or conversation database is
 implemented in this phase.
@@ -217,7 +217,7 @@ correctly. Test interrupted credential writes and competing owners.
 Depends on phase 3.
 
 Add `agent.ts` and CLI chat commands. Submit messages directly to the runner,
-persist them, assemble bounded context, call the selected `Model` service, and
+persist them, assemble bounded context, resolve the saved model through `ModelResolver`, and
 save the result. The agent imports the shared provider contract without importing
 concrete providers or SDK types. Record the resolved provider/model with each
 run and keep it fixed through tool round trips. Keep one active run. Retain
@@ -999,7 +999,7 @@ channel, including manual edits and the platform's non-atomic rename race.
 
 ## Validation
 
-Use behavior tests with injected `Model`/auth layers and a controllable clock.
+Use behavior tests with injected model resolvers and auth layers and a controllable clock.
 Run shared text and tool-exchange cases against each provider adapter, including
 stream completion, cancellation, and continuation preservation.
 Exercise persistence against temporary SQLite databases. Keep live account checks

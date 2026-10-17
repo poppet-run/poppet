@@ -219,8 +219,6 @@ interface ModelOperations {
 
   readonly stream: (request: ModelRequest) => Stream.Stream<ModelEvent, ProviderError>;
 }
-
-export class Model extends Context.Service<Model, ModelOperations>()("poppet/Model") {}
 ```
 
 `resolve` validates and binds a provider/model selection. The agent resolves
@@ -619,7 +617,7 @@ the output array's contents. Those completed items take precedence over terminal
 snapshots when rebuilding history. It does not
 automatically retry model requests. The OpenAI provider resolves general inference through this
 auth boundary. Subscription verification uses the shared `verifyModel` workflow.
-The future chat runner will consume the shared `Model` service.
+The chat runner uses `ModelResolver` to resolve the saved provider/model for each run.
 
 ## Data and execution rules
 

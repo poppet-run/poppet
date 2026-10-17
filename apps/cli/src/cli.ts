@@ -6,7 +6,6 @@ import { MemoryKey, MemoryValue } from "@poppet/memory";
 import type { WorkerAction } from "@poppet/platform";
 import {
   CredentialInput,
-  Model,
   Provider,
   ProviderConnection,
   verifyModel,
@@ -719,13 +718,15 @@ export const makeCLI = (
             }).pipe(Effect.provide(runtime.provider)),
           ).pipe(Command.withDescription("List supported models")),
           Command.make("verify", {}, () =>
-            Effect.gen(function* () {
-              const model = yield* Model;
-              yield* verifyModel(model);
-              yield* Console.log(
-                `Provider verification passed with ${model.description.provider}/${model.description.id}. Completed inference and one local tool round trip.`,
-              );
-            }).pipe(Effect.provide(runtime.model)),
+            Effect.scoped(
+              Effect.gen(function* () {
+                const model = yield* runtime.resolveModel;
+                yield* verifyModel(model);
+                yield* Console.log(
+                  `Provider verification passed with ${model.description.provider}/${model.description.id}. Completed inference and one local tool round trip.`,
+                );
+              }),
+            ).pipe(Effect.provide(runtime.config)),
           ).pipe(Command.withDescription("Verify the configured model with a local tool")),
         ]),
       ),
