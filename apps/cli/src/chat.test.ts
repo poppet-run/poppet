@@ -342,6 +342,80 @@ const exampleChannel = (id: string) => {
 
 describe("chat CLI", () => {
   test.each(["local", "worker"])(
+    "uses file selection, notes paths, and chat budgets during %s execution",
+    async (mode) => {
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
+
+      for (const key of [
+        "POPPET_PROVIDER",
+        "POPPET_MODEL",
+        "POPPET_NOTES_DIR",
+        "POPPET_MODEL_TURNS",
+      ])
+        delete process.env[key];
+
+      const settings = {
+        provider: "chat-provider",
+        model: "chat-model",
+        notesDirectory: "file-notes",
+      };
+
+      try {
+        await writeFile(
+          join(chat.directory, "config.json"),
+          JSON.stringify({ ...settings, chat: { modelTurns: 1 } }),
+        );
+        chat.state.useTools = true;
+
+        if (mode === "worker") worker = await chat.startWorker();
+
+        await expect(chat.invoke(["chat", "new", "Save a note"])).rejects.toMatchObject({
+          message: "The run has no model turn left to use tool results.",
+        });
+        expect(chat.requests).toHaveLength(1);
+        expect(await Bun.file(join(chat.directory, "file-notes/summary.md")).exists()).toBe(false);
+        await writeFile(
+          join(chat.directory, "config.json"),
+          JSON.stringify({ ...settings, chat: { modelTurns: 2 } }),
+        );
+
+        if (worker !== null) {
+          await expect(
+            chat.invoke(["chat", "new", "Still using the old budget"]),
+          ).rejects.toMatchObject({
+            message: "The run has no model turn left to use tool results.",
+          });
+          await Effect.runPromise(Fiber.interrupt(worker));
+          worker = null;
+          chat.lines.length = 0;
+          worker = await chat.startWorker();
+        }
+
+        await chat.invoke(["chat", "new", "Save a note after reloading"]);
+        expect(await readFile(join(chat.directory, "file-notes/summary.md"), "utf8")).toBe(
+          "A saved summary",
+        );
+        await chat.invoke([
+          "tasks",
+          "add",
+          "File task",
+          "--at",
+          "2099-10-15T09:00:00Z",
+          "Summarize",
+        ]);
+        expect(JSON.parse(chat.lines.at(-1) ?? "")).toMatchObject({
+          provider: "chat-provider",
+          model: "chat-model",
+        });
+      } finally {
+        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
+  test.each(["local", "worker"])(
     "saves explicit skill snapshots for chats and tasks through %s execution",
     async (mode) => {
       const remote = mode === "worker";

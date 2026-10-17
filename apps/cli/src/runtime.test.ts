@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { Agent } from "@poppet/agent";
 import { AppConfig, type Settings } from "@poppet/config";
 import {
   Model,
@@ -12,8 +16,9 @@ import {
   type ModelOperations,
   type ProviderId,
 } from "@poppet/provider";
+import { Store } from "@poppet/store";
 import { WorkerConnections } from "@poppet/tasks";
-import { Effect, Layer, Stream } from "effect";
+import { Context, Effect, Layer, Stream } from "effect";
 
 import { resolveConfiguredModel, selectProviderLayer, runtimeLayers } from "#src/runtime";
 
@@ -170,6 +175,60 @@ describe("configured model runtime", () => {
       });
     },
   );
+});
+
+test("running services retain their startup configuration when the file is edited", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-runtime-config-"));
+  const previous = process.env.POPPET_DATA_DIR;
+  process.env.POPPET_DATA_DIR = directory;
+  const id = "test-provider";
+
+  const runtime = runtimeLayers([
+    {
+      id,
+      name: "Test",
+      authentication: { apiKey: false, consent: false, help: "Test" },
+      layer: Layer.effectContext(
+        Effect.gen(function* () {
+          expect((yield* ProviderEnvironment).applicationName).toBe("Startup name");
+
+          return Context.make(Provider, {
+            id,
+            models: Effect.succeed([]),
+            resolve: () => Effect.succeed(fakeModel(id, "test-model")),
+          }).pipe(
+            Context.add(ProviderConnection, {
+              login: () => Effect.succeed("Connected"),
+              logout: Effect.succeed("Disconnected"),
+              verify: () => Effect.succeed("test-model"),
+              status: Effect.succeed({ connected: true }),
+            }),
+          );
+        }),
+      ),
+    },
+  ]);
+
+  try {
+    await writeFile(
+      join(directory, "config.json"),
+      JSON.stringify({ applicationName: "Startup name" }),
+    );
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* (yield* Store).createSession(id, "test-model");
+          yield* Effect.promise(() => writeFile(join(directory, "config.json"), "invalid JSON"));
+          yield* Stream.runDrain((yield* Agent).send(session.id, "Hello"));
+          expect(yield* (yield* WorkerConnections).status(id)).toMatchObject({ connected: true });
+        }),
+      ).pipe(Effect.provide(runtime.chat)),
+    );
+  } finally {
+    if (previous === undefined) delete process.env.POPPET_DATA_DIR;
+    else process.env.POPPET_DATA_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("worker connection status strips secrets, identifies consent and login actions, and labels cached metadata", async () => {

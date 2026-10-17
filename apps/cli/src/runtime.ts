@@ -45,7 +45,10 @@ export const resolveConfiguredModel = Effect.gen(function* () {
 
   if (config.model === null)
     return yield* Effect.fail(
-      invalidRequest(config.provider, "Set POPPET_MODEL to a model from provider models."),
+      invalidRequest(
+        config.provider,
+        "Set model in config.json or POPPET_MODEL to a model from provider models.",
+      ),
     );
 
   const provider = yield* Provider;
@@ -77,6 +80,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   }
 
   const config = makeAppConfigLive(first.id, [...ids]);
+  const chatSettings = ChatSettingsLive.pipe(Layer.provide(config));
 
   const environment = Layer.effect(
     ProviderEnvironment,
@@ -88,7 +92,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   );
 
   const selectedProvider = (id: ProviderId) =>
-    selectProviderLayer(id, registered).pipe(Layer.provide(environment), Layer.provide(config));
+    selectProviderLayer(id, registered).pipe(Layer.provide(environment));
 
   const provider = Layer.unwrap(
     Effect.gen(function* () {
@@ -104,7 +108,10 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
 
       if (settings.model === null)
         return yield* Effect.fail(
-          invalidRequest(settings.provider, "Set POPPET_MODEL to a model from provider models."),
+          invalidRequest(
+            settings.provider,
+            "Set model in config.json or POPPET_MODEL to a model from provider models.",
+          ),
         );
 
       return Layer.effect(Model, resolveConfiguredModel).pipe(Layer.provideMerge(provider));
@@ -153,55 +160,68 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
       Effect.mapError(() => invalidRequest(id, "The provider returned invalid connection status.")),
     );
 
-  const connections = Layer.succeed(WorkerConnections, {
-    status: (id) =>
-      Effect.scoped(
-        ProviderConnection.use((connection) =>
-          connection.status.pipe(Effect.flatMap((status) => observeConnection(id, status))),
-        ).pipe(Effect.provide(selectedProvider(id))),
-      ).pipe(
-        Effect.catch((error): Effect.Effect<Schema.JsonObject> => {
-          const cached = observed.get(id);
+  const connections = Layer.effect(
+    WorkerConnections,
+    Effect.gen(function* () {
+      const settings = yield* AppConfig;
 
-          if (
-            error instanceof ProviderError &&
-            error.code === "credential_store_busy" &&
-            cached !== undefined
-          )
-            return Effect.succeed({ ...cached, cached: true });
+      return {
+        status: (id) =>
+          Effect.scoped(
+            ProviderConnection.use((connection) =>
+              connection.status.pipe(Effect.flatMap((status) => observeConnection(id, status))),
+            ).pipe(
+              Effect.provide(selectedProvider(id)),
+              Effect.provideService(AppConfig, settings),
+            ),
+          ).pipe(
+            Effect.catch((error): Effect.Effect<Schema.JsonObject> => {
+              const cached = observed.get(id);
 
-          return Effect.succeed({
-            provider: id,
-            connected: null,
-            account: null,
-            planUsage: null,
-            action:
-              error instanceof ProviderError && error.code === "credential_store_busy"
-                ? "Authentication is busy. Check again after the active run finishes."
-                : `Run auth status ${id} to inspect the connection.`,
-          } satisfies Schema.JsonObject);
-        }),
-      ),
-  });
+              if (
+                error instanceof ProviderError &&
+                error.code === "credential_store_busy" &&
+                cached !== undefined
+              )
+                return Effect.succeed({ ...cached, cached: true });
+
+              return Effect.succeed({
+                provider: id,
+                connected: null,
+                account: null,
+                planUsage: null,
+                action:
+                  error instanceof ProviderError && error.code === "credential_store_busy"
+                    ? "Authentication is busy. Check again after the active run finishes."
+                    : `Run auth status ${id} to inspect the connection.`,
+              } satisfies Schema.JsonObject);
+            }),
+          ),
+      };
+    }),
+  ).pipe(Layer.provide(config));
 
   // Build inside the request scope so provider resources stay alive through streamed inference.
-  const resolver = Layer.succeed(ModelResolver, {
-    resolve: (providerId, modelId) =>
-      Effect.gen(function* () {
-        const context = yield* Layer.build(selectedProvider(providerId));
+  const resolver = Layer.effect(
+    ModelResolver,
+    Effect.gen(function* () {
+      const settings = yield* AppConfig;
 
-        yield* Context.get(context, ProviderConnection).status.pipe(
-          Effect.flatMap((status) => observeConnection(providerId, status)),
-          Effect.catch(() => Effect.void),
-        );
+      return {
+        resolve: (providerId, modelId) =>
+          Effect.gen(function* () {
+            const context = yield* Layer.build(selectedProvider(providerId));
 
-        return yield* Context.get(context, Provider).resolve(modelId);
-      }).pipe(
-        Effect.catchTag("ConfigError", () =>
-          Effect.fail(invalidRequest(providerId, "Could not load the provider configuration.")),
-        ),
-      ),
-  });
+            yield* Context.get(context, ProviderConnection).status.pipe(
+              Effect.flatMap((status) => observeConnection(providerId, status)),
+              Effect.catch(() => Effect.void),
+            );
+
+            return yield* Context.get(context, Provider).resolve(modelId);
+          }).pipe(Effect.provideService(AppConfig, settings)),
+      };
+    }),
+  ).pipe(Layer.provide(config));
 
   const chat = AgentLive.pipe(
     Layer.provideMerge(
@@ -210,10 +230,10 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
         skills,
         memory,
         resolver,
-        ChatSettingsLive,
+        chatSettings,
         connections,
-        PagesLive.pipe(Layer.provide(Layer.merge(PageTransportLive, ChatSettingsLive))),
-        NotesLive.pipe(Layer.provide(Layer.merge(config, ChatSettingsLive))),
+        PagesLive.pipe(Layer.provide(Layer.merge(PageTransportLive, chatSettings))),
+        NotesLive.pipe(Layer.provide(Layer.merge(config, chatSettings))),
       ),
     ),
     Layer.provideMerge(config),
@@ -221,6 +241,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
 
   return {
     config,
+    chatSettings,
     provider,
     model,
     selectedProvider,
