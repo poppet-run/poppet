@@ -121,21 +121,24 @@ export const validateRequest = (description: ModelDescription, request: ModelReq
     return decoded;
   });
 
-/** Collects a model stream and requires exactly one completion as its final event. */
+/** Consumes a model stream and requires exactly one completion as its final event. */
 export const completeModel = (model: ModelOperations, request: ModelRequest) =>
   Effect.gen(function* () {
-    const events = yield* Stream.runCollect(model.stream(request));
-    let response: Completion | null = null;
+    const response = yield* Stream.runFoldEffect(
+      model.stream(request),
+      (): Completion | null => null,
+      (completed, event) => {
+        if (completed !== null)
+          return Effect.fail(
+            interrupted(
+              model.description.provider,
+              "The stream has an invalid completion sequence.",
+            ),
+          );
 
-    for (const [index, event] of events.entries()) {
-      if (event.type !== "completed") continue;
-
-      if (response !== null || index !== events.length - 1)
-        return yield* Effect.fail(
-          interrupted(model.description.provider, "The stream has an invalid completion sequence."),
-        );
-      response = event.response;
-    }
+        return Effect.succeed(event.type === "completed" ? event.response : null);
+      },
+    );
 
     if (response === null)
       return yield* Effect.fail(

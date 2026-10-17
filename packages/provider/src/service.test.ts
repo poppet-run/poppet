@@ -59,6 +59,36 @@ describe("shared provider contract", () => {
     );
   });
 
+  test("closes an invalid stream before consuming more output", async () => {
+    const invalid = model([
+      { type: "completed", response },
+      { type: "text-delta", text: "late" },
+    ]);
+
+    let closed = false;
+
+    const inference = completeModel(
+      {
+        ...invalid,
+        stream: (input) =>
+          Stream.concat(invalid.stream(input), Stream.die("Read past invalid completion")).pipe(
+            Stream.ensuring(
+              Effect.sync(() => {
+                closed = true;
+              }),
+            ),
+          ),
+      },
+      request,
+    );
+
+    await expect(Effect.runPromise(inference)).rejects.toMatchObject({
+      reason: "interrupted",
+      message: "The stream has an invalid completion sequence.",
+    });
+    expect(closed).toBe(true);
+  });
+
   test("validates tool capabilities, required tools, and generation bounds", async () => {
     const description = model([]).description;
 
