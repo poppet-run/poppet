@@ -127,15 +127,13 @@ export const WorkerRequestsLive = Layer.effect(
 
           const logReasoning = (text: string) =>
             Console.error(text).pipe(
-              Effect.andThen(
-                Queue.offer(frames, { type: streamReasoning ? "reasoning-log" : "stderr", text }),
-              ),
+              Effect.andThen(Queue.offer(frames, { type: "stderr", text })),
               Effect.asVoid,
             );
 
           const reasoning: ChatReasoning = streamReasoning
             ? {
-                log: logReasoning,
+                log: (text) => Console.error(text),
                 write: (event) => Queue.offer(frames, event).pipe(Effect.asVoid),
               }
             : { log: logReasoning };
@@ -271,6 +269,7 @@ export const remoteWorkerCommand = (
           if (frame.type === "reasoning-delta" || frame.type === "reasoning-end")
             return writeReasoning?.(frame) ?? Effect.void;
 
+          // Older workers send these alongside deltas that streaming clients already render.
           if (frame.type === "reasoning-log")
             return writeReasoning === undefined ? Console.error(frame.text) : Effect.void;
 

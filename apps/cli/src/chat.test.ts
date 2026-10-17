@@ -20,7 +20,7 @@ import {
   type ModelRequest,
   type ProviderRegistration,
 } from "@poppet/provider";
-import { workerSocketPath } from "@poppet/worker";
+import { requestWorker, workerSocketPath } from "@poppet/worker";
 import { Console, Effect, Fiber, Layer, ManagedRuntime, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
@@ -415,6 +415,53 @@ describe("chat CLI", () => {
       }
     },
   );
+
+  test("streams reasoning without sending a second diagnostic copy to the client", async () => {
+    const chat = await fixture();
+    process.env.POPPET_LOG_REASONING = "true";
+    chat.state.reasoning = "Checking the notes.";
+    const worker = await chat.startWorker();
+
+    try {
+      const response = await requestWorker(
+        workerSocketPath(chat.directory),
+        "/commands",
+        {
+          kind: "chat",
+          command: {
+            action: "new",
+            text: "Hello",
+            provider: description.provider,
+            model: description.id,
+            workload: "assistant",
+          },
+          streamReasoning: true,
+        },
+        AbortSignal.timeout(5000),
+      );
+
+      expect(response?.ok).toBe(true);
+
+      const frames = (await response!.text())
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+
+      expect(frames).toContainEqual({ type: "reasoning-delta", text: chat.state.reasoning });
+      expect(frames).not.toContainEqual(expect.objectContaining({ type: "reasoning-log" }));
+      expect(frames).not.toContainEqual(
+        expect.objectContaining({
+          type: "stderr",
+          text: expect.stringContaining("Thinking session="),
+        }),
+      );
+      expect(frames.at(-1)).toEqual({ type: "done" });
+      expect(chat.errors.filter((line) => line.includes("Thinking session="))).toHaveLength(1);
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(worker));
+      await chat.close();
+    }
+  });
 
   test.each(["local", "worker"])(
     "separates interactive thinking around tools through %s execution",
@@ -1182,6 +1229,66 @@ describe("chat CLI", () => {
       await chat.close();
     }
   });
+
+  test.each([false, true])(
+    "accepts older worker reasoning frames without replay or duplicate output when interactive=%s",
+    async (interactive) => {
+      const chat = await fixture();
+      process.env.POPPET_LOG_REASONING = "true";
+      const directory = join(chat.directory, "store");
+      await mkdir(directory, { mode: 0o700 });
+      const path = workerSocketPath(chat.directory);
+      const reasoning = "Checking the notes.";
+      const diagnostic = `Thinking session=older-session run=older-run\n${reasoning}`;
+      let delivered = 0;
+
+      const server = Bun.serve({
+        unix: path,
+        fetch() {
+          delivered++;
+
+          const frames = [
+            { type: "stderr", text: "Session: older-session", sessionId: "older-session" },
+            { type: "reasoning-delta", text: reasoning },
+            { type: "reasoning-end" },
+            { type: "reasoning-log", text: diagnostic },
+            { type: "stdout", text: "Answer\n" },
+            { type: "done" },
+          ];
+
+          return new Response(frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n", {
+            headers: { "content-type": "application/x-ndjson" },
+          });
+        },
+      });
+
+      try {
+        await chmod(path, 0o600);
+
+        if (interactive) {
+          const input = ["Hello", "/exit"];
+          await Effect.runPromise(
+            chat.program(
+              ["chat", "interactive"],
+              Effect.sync(() => input.shift() ?? null),
+            ),
+          );
+        } else await chat.invoke(["chat", "new", "Hello"]);
+
+        expect(chat.chunks.join("")).toBe("Answer\n");
+        expect(chat.thinkingChunks).toEqual(interactive ? ["Thinking:\n", reasoning, "\n\n"] : []);
+        expect(chat.errors.filter((line) => line.includes("Thinking session="))).toEqual(
+          interactive ? [] : [diagnostic],
+        );
+        expect(delivered).toBe(1);
+        expect(chat.state.built).toBe(0);
+        expect(await readdir(directory)).toEqual(["tasks.sock"]);
+      } finally {
+        await server.stop(true);
+        await chat.close();
+      }
+    },
+  );
 
   test("failed, malformed, incomplete, and older worker replies never open local storage or replay a command", async () => {
     const chat = await fixture();
