@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { completeModel, verifyModel, type ModelRequest } from "@poppet/provider";
-import { Effect, Redacted, Schema, Stream } from "effect";
+import { Effect, Fiber, Redacted, Schema, Stream } from "effect";
+import { TestClock } from "effect/testing";
 
 import { makeOpenCodeProvider, type HttpFetch } from "#src/service";
 
@@ -119,6 +120,47 @@ const fixture = (catalogIds = ["gpt-6-luna", "glm-5.3", "minimax-m3"]) => {
 };
 
 describe("OpenCode Go", () => {
+  test("aborts a stalled catalog body when discovery times out", async () => {
+    const reading = Promise.withResolvers<void>();
+    const signals: AbortSignal[] = [];
+
+    const provider = makeOpenCodeProvider(
+      Effect.die("Key must not be read"),
+      async (_input, init) => {
+        const signal = init?.signal;
+
+        if (!signal) throw new Error("Missing request cancellation");
+        signals.push(signal);
+
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              signal.addEventListener("abort", () => controller.error(new Error("Aborted")), {
+                once: true,
+              });
+            },
+            pull() {
+              reading.resolve();
+            },
+          }),
+        );
+      },
+    );
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* provider.models.pipe(Effect.result, Effect.forkChild);
+        yield* Effect.promise(() => reading.promise);
+        yield* TestClock.adjust("30 seconds");
+
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+
+    expect(result).toHaveProperty("failure.reason", "temporary");
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
   test.each([false, true])("streams reasoning_content only when enabled=%s", async (enabled) => {
     const harness = fixture();
     const model = await Effect.runPromise(harness.provider.resolve("glm-5.3"));

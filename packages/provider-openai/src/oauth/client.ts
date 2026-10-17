@@ -76,6 +76,7 @@ export const makeOAuthClient = (http: HttpFetch = fetch, expectedIssuer = issuer
           ),
         );
       }).pipe(
+        Effect.scoped,
         Effect.timeout("20 seconds"),
         Effect.catchTag("TimeoutError", () => Effect.fail(networkError())),
       );
@@ -95,7 +96,7 @@ export const makeOAuthClient = (http: HttpFetch = fetch, expectedIssuer = issuer
         });
 
         if (response.status !== 200) return yield* Effect.fail(requestFailure(response.status));
-      });
+      }).pipe(Effect.scoped);
 
     return {
       authorizationEndpoint: discovery.pipe(
