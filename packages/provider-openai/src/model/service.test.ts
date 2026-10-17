@@ -67,11 +67,16 @@ describe("ChatGPT model verification", () => {
       try {
         await harness.run(login);
         harness.controls.streamMode = mode;
-        await expect(harness.run(verify)).rejects.toBeInstanceOf(ConnectionError);
+
+        const failure = await harness.run(
+          verify.pipe(Effect.match({ onSuccess: () => null, onFailure: (error) => error })),
+        );
+
+        expect(failure).toBeInstanceOf(ConnectionError);
         expect((await harness.saved()).verification).toBeNull();
 
         if (mode === "failed")
-          await expect(harness.run(verify)).rejects.toMatchObject({
+          expect(failure).toMatchObject({
             reason: "usage_limit",
             code: "subscription_sharing_usage_limit_exceeded",
           });

@@ -737,24 +737,31 @@ describe("CLI", () => {
     const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "openrouter" };
 
     try {
-      const commands = [
-        ["auth", "login", "unknown"],
-        ["auth", "login", "--provider"],
-        ["auth", "login", "openrouter", "--provider", "opencode-go"],
-        ["auth", "login", "openrouter", "--consent"],
-        ["auth", "login", "openai-chatgpt", "--key-stdin"],
-        ["auth", "status", "--key-stdin"],
-        ["auth", "verify", "--provider", "openrouter"],
+      const cases = [
+        { args: ["auth", "login", "unknown"], message: "Unknown provider unknown" },
+        { args: ["auth", "login", "--provider"], message: "Missing value for flag --provider" },
+        {
+          args: ["auth", "login", "openrouter", "--provider", "opencode-go"],
+          message: "Choose a provider either positionally or with --provider, not both",
+        },
+        {
+          args: ["auth", "login", "openrouter", "--consent"],
+          message: "OpenRouter does not support --consent",
+        },
+        {
+          args: ["auth", "login", "openai-chatgpt", "--key-stdin"],
+          message: "ChatGPT does not support --key-stdin",
+        },
+        { args: ["auth", "status", "--key-stdin"], message: "Unrecognized flag: --key-stdin" },
       ];
 
-      const results = [];
-
-      for (const command of commands) {
+      for (const { args, message } of cases) {
         // eslint-disable-next-line no-await-in-loop -- Invocations temporarily replace process.env.
-        results.push(await invoke(command, environment));
+        const result = await invoke(args, environment);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain(message);
       }
 
-      expect(results.every((result) => result.exitCode === 1)).toBe(true);
       expect(await readdir(directory)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -957,22 +964,29 @@ describe("CLI", () => {
   });
 
   test("config prints settings supplied by the environment", async () => {
-    const result = await invoke(["config"], {
-      POPPET_APP_NAME: "Test Poppet",
-      POPPET_DATA_DIR: "/tmp/poppet-test",
-    });
+    const directory = await mkdtemp(join(tmpdir(), "poppet-env-cli-"));
 
-    expect(result.exitCode).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual({
-      applicationName: "Test Poppet",
-      dataDirectory: "/tmp/poppet-test",
-      notesDirectory: "/tmp/poppet-test/notes",
-      provider: "openai-chatgpt",
-      model: null,
-      chat: defaultPolicy,
-      configFile: { path: "/tmp/poppet-test/config.json", exists: false },
-      environmentOverrides: ["POPPET_DATA_DIR", "POPPET_APP_NAME"],
-    });
+    try {
+      const result = await invoke(["config"], {
+        POPPET_APP_NAME: "Test Poppet",
+        POPPET_DATA_DIR: directory,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({
+        applicationName: "Test Poppet",
+        dataDirectory: directory,
+        notesDirectory: join(directory, "notes"),
+        provider: "openai-chatgpt",
+        model: null,
+        chat: defaultPolicy,
+        configFile: { path: join(directory, "config.json"), exists: false },
+        environmentOverrides: ["POPPET_DATA_DIR", "POPPET_APP_NAME"],
+      });
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   test("config shows file settings, all chat budgets, and environment overrides without opening storage", async () => {

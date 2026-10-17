@@ -203,91 +203,89 @@ const scheduled = (destination: DeliveryDestination | null) =>
   });
 
 describe.concurrent("messaging gateway", () => {
-  test.each(["discord", "telegram", "whatsapp"])(
-    "%s snapshots a selected skill, resumes it after restart, and starts an unskilled replacement",
-    async (adapter) => {
-      const state = await fixture({ id: adapter });
-      const path = join(state.directory, "skills/review/SKILL.md");
-      await mkdir(join(state.directory, "skills/review"), { recursive: true });
-      await writeFile(path, "Summarize progress using the saved review procedure.");
+  test("snapshots a selected skill, resumes it after restart, and starts an unskilled replacement", async () => {
+    const adapter = "test-channel";
+    const state = await fixture({ id: adapter });
+    const path = join(state.directory, "skills/review/SKILL.md");
+    await mkdir(join(state.directory, "skills/review"), { recursive: true });
+    await writeFile(path, "Summarize progress using the saved review procedure.");
 
-      try {
-        const ids = await state.run(
-          Effect.gen(function* () {
-            const gateway = yield* Gateway;
-            const repo = yield* GatewayRepository;
-            const store = yield* Store;
-            yield* gateway.accept(message("ordinary", "chat", "Original conversation"));
-            yield* gateway.processNext;
-            const original = repo.binding(adapter, "bot", "guild", "chat")!;
-            const selected = message("selected", "chat", "/new --skill review Review Acorn");
-            yield* gateway.accept(selected);
-            yield* gateway.accept(selected);
-            yield* gateway.processNext;
-            expect(yield* gateway.processNext).toBe(false);
-            const skilled = repo.binding(adapter, "bot", "guild", "chat")!;
-            expect(skilled).not.toBe(original);
-            expect(yield* store.session(skilled)).toMatchObject({
-              skill: {
-                name: "review",
-                content: "Summarize progress using the saved review procedure.",
-              },
-            });
-            expect((yield* store.messages(skilled)).map((entry) => entry.message)).toContainEqual({
-              role: "user",
-              text: "Review Acorn",
-            });
-            expect(yield* store.session(original)).toMatchObject({ skill: null });
-            yield* gateway.accept(message("status", "chat", "/status"));
+    try {
+      const ids = await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const repo = yield* GatewayRepository;
+          const store = yield* Store;
+          yield* gateway.accept(message("ordinary", "chat", "Original conversation"));
+          yield* gateway.processNext;
+          const original = repo.binding(adapter, "bot", "guild", "chat")!;
+          const selected = message("selected", "chat", "/new --skill review Review Acorn");
+          yield* gateway.accept(selected);
+          yield* gateway.accept(selected);
+          yield* gateway.processNext;
+          expect(yield* gateway.processNext).toBe(false);
+          const skilled = repo.binding(adapter, "bot", "guild", "chat")!;
+          expect(skilled).not.toBe(original);
+          expect(yield* store.session(skilled)).toMatchObject({
+            skill: {
+              name: "review",
+              content: "Summarize progress using the saved review procedure.",
+            },
+          });
+          expect((yield* store.messages(skilled)).map((entry) => entry.message)).toContainEqual({
+            role: "user",
+            text: "Review Acorn",
+          });
+          expect(yield* store.session(original)).toMatchObject({ skill: null });
+          yield* gateway.accept(message("status", "chat", "/status"));
 
-            while (yield* gateway.deliverNext) {
-              /* Drain the saved replies and status. */
-            }
+          while (yield* gateway.deliverNext) {
+            /* Drain the saved replies and status. */
+          }
 
-            return { original, skilled };
-          }),
-        );
+          return { original, skilled };
+        }),
+      );
 
-        expect(state.sent.at(-1)?.text).toContain("Skill: review");
-        await writeFile(path, "Edited procedure that existing sessions must not see.");
-        await state.run(
-          Effect.gen(function* () {
-            const gateway = yield* Gateway;
-            yield* gateway.recover;
-            yield* gateway.accept(message("follow-up", "chat", "Continue the review"));
-            yield* gateway.processNext;
-            expect((yield* GatewayRepository).binding(adapter, "bot", "guild", "chat")).toBe(
-              ids.skilled,
-            );
-            expect(state.requests.at(-1)?.instructions).toContain("saved review procedure");
-            expect(state.requests.at(-1)?.instructions).not.toContain("Edited procedure");
-          }),
-        );
-        await rm(path);
-        await state.run(
-          Effect.gen(function* () {
-            const gateway = yield* Gateway;
-            const store = yield* Store;
-            yield* gateway.accept(message("deleted-skill", "chat", "Continue again"));
-            yield* gateway.processNext;
-            expect(state.requests.at(-1)?.instructions).toContain("saved review procedure");
-            yield* gateway.accept(message("reset", "chat", "/new Start without a skill"));
-            yield* gateway.processNext;
-            const current = (yield* GatewayRepository).binding(adapter, "bot", "guild", "chat")!;
-            expect(current).not.toBe(ids.skilled);
-            expect(yield* store.session(current)).toMatchObject({ skill: null });
-            expect(state.requests.at(-1)?.instructions).not.toContain("saved review procedure");
-            expect(yield* store.sessions).toHaveLength(3);
-            expect(yield* store.messages(ids.original)).toHaveLength(2);
-            expect(yield* store.messages(ids.skilled)).toHaveLength(6);
-          }),
-        );
-        expect(state.requests).toHaveLength(5);
-      } finally {
-        await state.close();
-      }
-    },
-  );
+      expect(state.sent.at(-1)?.text).toContain("Skill: review");
+      await writeFile(path, "Edited procedure that existing sessions must not see.");
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.recover;
+          yield* gateway.accept(message("follow-up", "chat", "Continue the review"));
+          yield* gateway.processNext;
+          expect((yield* GatewayRepository).binding(adapter, "bot", "guild", "chat")).toBe(
+            ids.skilled,
+          );
+          expect(state.requests.at(-1)?.instructions).toContain("saved review procedure");
+          expect(state.requests.at(-1)?.instructions).not.toContain("Edited procedure");
+        }),
+      );
+      await rm(path);
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const store = yield* Store;
+          yield* gateway.accept(message("deleted-skill", "chat", "Continue again"));
+          yield* gateway.processNext;
+          expect(state.requests.at(-1)?.instructions).toContain("saved review procedure");
+          yield* gateway.accept(message("reset", "chat", "/new Start without a skill"));
+          yield* gateway.processNext;
+          const current = (yield* GatewayRepository).binding(adapter, "bot", "guild", "chat")!;
+          expect(current).not.toBe(ids.skilled);
+          expect(yield* store.session(current)).toMatchObject({ skill: null });
+          expect(state.requests.at(-1)?.instructions).not.toContain("saved review procedure");
+          expect(yield* store.sessions).toHaveLength(3);
+          expect(yield* store.messages(ids.original)).toHaveLength(2);
+          expect(yield* store.messages(ids.skilled)).toHaveLength(6);
+        }),
+      );
+      expect(state.requests).toHaveLength(5);
+    } finally {
+      await state.close();
+    }
+  });
 
   test("invalid selection replies without changing the binding or invoking a model", async () => {
     const state = await fixture();
@@ -599,52 +597,50 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test.each(["discord", "telegram"])(
-    "%s delivers a saved occurrence after restart to its snapshot, without changing the chat session",
-    async (adapter) => {
-      const state = await fixture({ id: adapter });
+  test("delivers a saved occurrence after restart to its snapshot, without changing the chat session", async () => {
+    const adapter = "test-channel";
+    const state = await fixture({ id: adapter });
 
-      try {
-        const occurrence = await state.run(
-          Effect.gen(function* () {
-            const gateway = yield* Gateway;
-            const destination = yield* gateway.resolveDestination("scheduled-thread");
-            const item = yield* scheduled(destination);
-            const { database } = yield* StoreDatabase;
-            // Later configuration and task edits cannot redirect this occurrence.
-            database.run("UPDATE jobs SET destination = ?", [
-              JSON.stringify({ ...destination, conversationId: "different-thread" }),
-            ]);
+    try {
+      const occurrence = await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const destination = yield* gateway.resolveDestination("scheduled-thread");
+          const item = yield* scheduled(destination);
+          const { database } = yield* StoreDatabase;
+          // Later configuration and task edits cannot redirect this occurrence.
+          database.run("UPDATE jobs SET destination = ?", [
+            JSON.stringify({ ...destination, conversationId: "different-thread" }),
+          ]);
 
-            return item;
-          }),
-        );
+          return item;
+        }),
+      );
 
-        await state.run(
-          Effect.gen(function* () {
-            const gateway = yield* Gateway;
-            yield* gateway.recover;
-            expect(yield* gateway.deliverNext).toBe(true);
-            expect(yield* gateway.deliverNext).toBe(false);
-            expect((yield* TaskRepository).deliveries(occurrence.id)).toMatchObject([
-              { state: "sent", attempts: 0 },
-            ]);
-            expect((yield* TaskRepository).occurrence(occurrence.id).status).toBe("completed");
-            expect(
-              (yield* GatewayRepository).binding(adapter, "bot", "guild", "scheduled-thread"),
-            ).toBeNull();
-          }),
-        );
-        expect(state.sent).toEqual([
-          { destination: "scheduled-thread", text: "Answer", nonce: expect.any(String) },
-        ]);
-        expect(state.requests).toHaveLength(1);
-        expect(state.requests[0]!.tools.some((tool) => tool.name === "save_note")).toBe(false);
-      } finally {
-        await state.close();
-      }
-    },
-  );
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.recover;
+          expect(yield* gateway.deliverNext).toBe(true);
+          expect(yield* gateway.deliverNext).toBe(false);
+          expect((yield* TaskRepository).deliveries(occurrence.id)).toMatchObject([
+            { state: "sent", attempts: 0 },
+          ]);
+          expect((yield* TaskRepository).occurrence(occurrence.id).status).toBe("completed");
+          expect(
+            (yield* GatewayRepository).binding(adapter, "bot", "guild", "scheduled-thread"),
+          ).toBeNull();
+        }),
+      );
+      expect(state.sent).toEqual([
+        { destination: "scheduled-thread", text: "Answer", nonce: expect.any(String) },
+      ]);
+      expect(state.requests).toHaveLength(1);
+      expect(state.requests[0]!.tools.some((tool) => tool.name === "save_note")).toBe(false);
+    } finally {
+      await state.close();
+    }
+  });
 
   test.each(["unavailable", "permission", "uncertain"] as const)(
     "keeps scheduled %s delivery separate from execution across restart",

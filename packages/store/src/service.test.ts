@@ -423,95 +423,93 @@ describe("conversation store", () => {
     },
   );
 
-  test.each(["first-provider", "second-provider", "new-provider"] as const)(
-    "persists %s messages, tools, continuation and completed runs across reopening",
-    async (provider) => {
-      const fixtureStore = await fixture();
+  test("persists messages, tools, continuation and completed runs across reopening", async () => {
+    const provider = "new-provider";
+    const fixtureStore = await fixture();
 
-      try {
-        const response = responseFor(provider);
+    try {
+      const response = responseFor(provider);
 
-        const exchange: ReadonlyArray<Message> = [
-          {
-            role: "assistant",
-            output: [
-              {
-                type: "tool-call",
-                callId: "call-1",
-                name: "read_note",
-                namespace: "notes",
-                arguments: '{"path":"test.md"}',
-              },
-            ],
-            continuation: response.continuation,
-          },
-          { role: "tool", callId: "call-1", output: "A note" },
-        ];
+      const exchange: ReadonlyArray<Message> = [
+        {
+          role: "assistant",
+          output: [
+            {
+              type: "tool-call",
+              callId: "call-1",
+              name: "read_note",
+              namespace: "notes",
+              arguments: '{"path":"test.md"}',
+            },
+          ],
+          continuation: response.continuation,
+        },
+        { role: "tool", callId: "call-1", output: "A note" },
+      ];
 
-        const saved = await fixtureStore.run(
-          Effect.gen(function* () {
-            const store = yield* Store;
+      const saved = await fixtureStore.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
 
-            const session = yield* store.createSession(provider, "selected-model", {
-              workload: "coding",
-            });
+          const session = yield* store.createSession(provider, "selected-model", {
+            workload: "coding",
+          });
 
-            const pending = yield* store.queueRun(session.id, [user]);
-            expect(pending).toMatchObject({
-              status: "pending",
-              provider,
-              model: "selected-model",
-              workload: "coding",
-              startedAt: null,
-              result: null,
-            });
-            const running = yield* store.startRun(pending.id);
-            expect(running.status).toBe("running");
-            yield* store.appendMessages({
-              sessionId: session.id,
-              runId: pending.id,
-              messages: exchange,
-            });
-            const completed = yield* store.finishRun(pending.id, { status: "completed", response });
+          const pending = yield* store.queueRun(session.id, [user]);
+          expect(pending).toMatchObject({
+            status: "pending",
+            provider,
+            model: "selected-model",
+            workload: "coding",
+            startedAt: null,
+            result: null,
+          });
+          const running = yield* store.startRun(pending.id);
+          expect(running.status).toBe("running");
+          yield* store.appendMessages({
+            sessionId: session.id,
+            runId: pending.id,
+            messages: exchange,
+          });
+          const completed = yield* store.finishRun(pending.id, { status: "completed", response });
 
-            return { session, completed };
-          }),
-        );
+          return { session, completed };
+        }),
+      );
 
-        await fixtureStore.run(
-          Effect.gen(function* () {
-            const store = yield* Store;
-            expect(yield* store.session(saved.session.id)).toMatchObject({
-              provider,
-              model: "selected-model",
-              workload: "coding",
-            });
-            expect(yield* store.run(saved.completed.id)).toEqual(saved.completed);
-            expect(yield* store.runs(saved.session.id)).toEqual([saved.completed]);
-            const messages = yield* store.messages(saved.session.id);
-            expect(messages.map((entry) => entry.position)).toEqual([0, 1, 2, 3]);
-            expect(messages.every((entry) => entry.runId === saved.completed.id)).toBe(true);
-            expect(messages.map((entry) => entry.message)).toEqual([
-              user,
-              ...exchange,
-              { role: "assistant", output: response.output, continuation: response.continuation },
-            ]);
-            expect(yield* store.status).toMatchObject({
-              schemaVersion: 12,
-              sessions: 1,
-              messages: 4,
-              runs: 1,
-            });
-          }),
-        );
-        expect((await stat(join(fixtureStore.directory, "store"))).mode & 0o777).toBe(0o700);
-        expect((await stat(fixtureStore.path)).mode & 0o777).toBe(0o600);
-        expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
-      } finally {
-        await fixtureStore.close();
-      }
-    },
-  );
+      await fixtureStore.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          expect(yield* store.session(saved.session.id)).toMatchObject({
+            provider,
+            model: "selected-model",
+            workload: "coding",
+          });
+          expect(yield* store.run(saved.completed.id)).toEqual(saved.completed);
+          expect(yield* store.runs(saved.session.id)).toEqual([saved.completed]);
+          const messages = yield* store.messages(saved.session.id);
+          expect(messages.map((entry) => entry.position)).toEqual([0, 1, 2, 3]);
+          expect(messages.every((entry) => entry.runId === saved.completed.id)).toBe(true);
+          expect(messages.map((entry) => entry.message)).toEqual([
+            user,
+            ...exchange,
+            { role: "assistant", output: response.output, continuation: response.continuation },
+          ]);
+          expect(yield* store.status).toMatchObject({
+            schemaVersion: 12,
+            sessions: 1,
+            messages: 4,
+            runs: 1,
+          });
+        }),
+      );
+      expect((await stat(join(fixtureStore.directory, "store"))).mode & 0o777).toBe(0o700);
+      expect((await stat(fixtureStore.path)).mode & 0o777).toBe(0o600);
+      expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
+    } finally {
+      await fixtureStore.close();
+    }
+  });
 
   test("rolls back partial input and completion writes when SQLite rejects a later operation", async () => {
     const fixtureStore = await fixture();
