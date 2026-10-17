@@ -46,18 +46,13 @@ export const readChatLine = Effect.suspend(() => {
       }),
     );
 
-  return Effect.scoped(
-    Effect.gen(function* () {
-      const reader = yield* Effect.acquireRelease(
-        Effect.try({
-          try: () =>
-            createInterface({ input: process.stdin, output: process.stdout, terminal: true }),
-          catch: inputFailure,
-        }),
-        (owned) => Effect.sync(() => owned.close()),
-      );
-
-      return yield* Effect.callback<string | null, AgentError>((resume) => {
+  return Effect.acquireUseRelease(
+    Effect.try({
+      try: () => createInterface({ input: process.stdin, output: process.stdout, terminal: true }),
+      catch: inputFailure,
+    }),
+    (reader) =>
+      Effect.callback<string | null, AgentError>((resume) => {
         const close = () => resume(writeChatText("\n").pipe(Effect.as(null)));
         const fail = () => resume(Effect.fail(inputFailure()));
         reader.once("close", close);
@@ -75,8 +70,8 @@ export const readChatLine = Effect.suspend(() => {
           reader.off("SIGINT", close);
           process.stdin.off("error", fail);
         });
-      });
-    }),
+      }),
+    (reader) => Effect.sync(() => reader.close()),
   );
 });
 
@@ -229,6 +224,21 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
       );
 
     let sessionId = options.sessionId;
+
+    const acknowledgeSession: ChatWriter = (id) =>
+      Effect.suspend(() => {
+        if (sessionId !== undefined && sessionId !== id)
+          return Effect.fail(
+            new AgentError({
+              reason: "interrupted",
+              message: "The chat returned a different session. The prompt has stopped.",
+            }),
+          );
+        sessionId = id;
+
+        return Effect.void;
+      });
+
     yield* Console.error(
       "Enter one message per line. /exit or Ctrl-D leaves the prompt; Ctrl-C cancels and exits.",
     );
@@ -247,20 +257,7 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
             ? { action: "new" as const, coding: options.coding, text }
             : { action: "new" as const, coding: options.coding, skill: options.skill, text };
 
-      const result = yield* send(command, (id) =>
-        Effect.suspend(() => {
-          if (sessionId !== undefined && sessionId !== id)
-            return Effect.fail(
-              new AgentError({
-                reason: "interrupted",
-                message: "The chat returned a different session. The prompt has stopped.",
-              }),
-            );
-          sessionId = id;
-
-          return Effect.void;
-        }),
-      ).pipe(Effect.result);
+      const result = yield* send(command, acknowledgeSession).pipe(Effect.result);
 
       if (Result.isFailure(result)) {
         if (
