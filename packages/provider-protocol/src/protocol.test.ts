@@ -172,6 +172,9 @@ const fixture = (
         output[1] = call;
       }
 
+      if (toolTurn)
+        events.push({ type: "response.reasoning_summary_text.delta", delta: "Plan first" });
+
       if (!toolTurn) events.push({ type: "response.output_text.delta", delta: "Hello " });
 
       for (const [output_index, item] of output.entries())
@@ -332,6 +335,29 @@ const fixture = (
 
 for (const adapter of cases) {
   describe(adapter.name, () => {
+    if (adapter.protocol === "responses")
+      test.each([false, true])(
+        "requests and streams reasoning summaries only when enabled=%s",
+        async (enabled) => {
+          const harness = fixture(adapter);
+
+          const events = await Effect.runPromise(
+            Stream.runCollect(
+              harness.model.stream({
+                ...toolRequest,
+                settings: { reasoningSummary: enabled },
+              }),
+            ),
+          );
+
+          expect(harness.requests[0]?.reasoning).toEqual(enabled ? { summary: "auto" } : undefined);
+          expect(events.filter((event) => event.type === "reasoning-delta")).toEqual(
+            enabled ? [{ type: "reasoning-delta", text: "Plan first" }] : [],
+          );
+          expect(events.at(-1)?.type).toBe("completed");
+        },
+      );
+
     test("completes the shared tool exchange and preserves reasoning and session identity", async () => {
       const harness = fixture(adapter);
       await Effect.runPromise(verifyModel(harness.model));

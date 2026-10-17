@@ -77,6 +77,7 @@ export const ModelRequest = Schema.Struct({
     ),
     maxOutputTokens: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
     toolChoice: Schema.optionalKey(Schema.Literals(["auto", "required", "none"])),
+    reasoningSummary: Schema.optionalKey(Schema.Boolean),
   }),
 });
 
@@ -90,9 +91,10 @@ export const Completion = Schema.Struct({
   ),
 });
 
-/** Incremental text or the single final result that ends a successful model stream. */
+/** Incremental answer or readable reasoning text, followed by one final result. */
 export const ModelEvent = Schema.Union([
   Schema.Struct({ type: Schema.Literal("text-delta"), text: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("reasoning-delta"), text: Schema.String }),
   Schema.Struct({ type: Schema.Literal("completed"), response: Completion }),
 ]);
 

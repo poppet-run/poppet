@@ -65,6 +65,7 @@ export const streamReply = (
     let completed: Completion | null = null;
     let streamed = "";
     let streamedBytes = 0;
+    let reasoningBytes = 0;
 
     const deltas = model.stream(request).pipe(
       Stream.mapEffect((event) =>
@@ -79,6 +80,14 @@ export const streamReply = (
             completed = decoded.response;
 
             return null;
+          }
+
+          if (decoded.type === "reasoning-delta") {
+            reasoningBytes += byteSize(decoded.text);
+
+            if (reasoningBytes > maxTextBytes) return yield* Effect.fail(outputLimit());
+
+            return decoded;
           }
 
           streamedBytes += byteSize(decoded.text);

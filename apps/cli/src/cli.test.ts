@@ -993,6 +993,7 @@ describe("CLI", () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-file-cli-"));
 
     const chat = {
+      logReasoning: true,
       contextBytes: 32768,
       historyTurns: 10,
       outputTokens: 4096,

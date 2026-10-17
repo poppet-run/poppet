@@ -256,6 +256,8 @@ export const responsesModel = (
             if (decoded.settings.maxOutputTokens !== undefined)
               parameters.max_output_tokens = decoded.settings.maxOutputTokens;
 
+            if (decoded.settings.reasoningSummary) parameters.reasoning = { summary: "auto" };
+
             const stream = yield* Effect.tryPromise({
               try: () =>
                 sdk.responses.create(parameters, {
@@ -283,6 +285,15 @@ export const responsesModel = (
                     );
 
                     yield { type: "text-delta", text: delta.delta };
+                  } else if (
+                    event.type === "response.reasoning_summary_text.delta" &&
+                    decoded.settings.reasoningSummary
+                  ) {
+                    const delta = Schema.decodeUnknownSync(Schema.Struct({ delta: Schema.String }))(
+                      event,
+                    );
+
+                    yield { type: "reasoning-delta", text: delta.delta };
                   } else if (event.type === "response.output_item.done") {
                     if (
                       !Number.isSafeInteger(event.output_index) ||

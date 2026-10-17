@@ -274,9 +274,10 @@ Shared protocol helpers accept extensions rather than importing providers.
 - Conversation history supports user text, assistant text, tool calls, and tool
   results. Preserve call IDs and output order. Tool definitions carry names,
   descriptions, and argument schemas; adapters translate their wire format.
-- `ModelEvent` initially supports text deltas and a completed response containing
+- `ModelEvent` supports answer and readable reasoning deltas, and a completed response containing
   authoritative ordered output, tool calls, finish reason, and optional usage.
-  Expected failures use the stream's typed error channel.
+  Expected failures use the stream's typed error channel. Opt-in reasoning diagnostics
+  stay separate from authoritative answer output and encrypted continuation state.
 - `ProviderError` distinguishes authentication, permission, quota, rate limiting,
   temporary failure, invalid request, context limits, and interrupted inference.
   Include safe provider error codes and request IDs when available. Keep

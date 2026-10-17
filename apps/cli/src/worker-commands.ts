@@ -78,7 +78,7 @@ const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatAnnoun
         Effect.flatMap((text) => write(`${text}\n`)),
       );
 
-    return yield* sendChat(command, write, announce);
+    return yield* sendChat(command, write, announce, announce);
   });
 
 export const WorkerRequestsLive = Layer.effect(

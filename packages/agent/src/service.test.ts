@@ -46,7 +46,7 @@ const description: ModelOperations["description"] = {
   },
 };
 
-const fixture = async (resolve: ModelResolver["Service"]["resolve"]) => {
+const fixture = async (resolve: ModelResolver["Service"]["resolve"], logReasoning = false) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-agent-"));
 
   const store = StoreLive.pipe(
@@ -74,7 +74,7 @@ const fixture = async (resolve: ModelResolver["Service"]["resolve"]) => {
             ),
         }),
         Layer.succeed(ModelResolver, { resolve }),
-        Layer.succeed(ChatSettings, defaultPolicy),
+        Layer.succeed(ChatSettings, { ...defaultPolicy, logReasoning }),
       ),
     ),
   );
@@ -90,6 +90,134 @@ const failure = <A, E, R>(program: Effect.Effect<A, E, R>) =>
   program.pipe(Effect.match({ onSuccess: () => null, onFailure: (error) => error }));
 
 describe.concurrent("persisted agent", () => {
+  test.each([false, true])(
+    "logs reasoning only when enabled=%s without changing the answer",
+    async (enabled) => {
+      const requests: ModelRequest[] = [];
+      const logs: string[] = [];
+      const thinking = "Check the notes\nThen answer.\u001b[31m";
+
+      const state = await fixture(
+        () =>
+          Effect.succeed({
+            description,
+            stream: (request) => {
+              requests.push(request);
+
+              return Stream.make<ModelEvent[]>(
+                { type: "reasoning-delta", text: thinking.slice(0, 5) },
+                { type: "reasoning-delta", text: thinking.slice(5) },
+                { type: "text-delta", text: "Hel" },
+                { type: "completed", response: response() },
+              );
+            },
+          }),
+        enabled,
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            const events = yield* Stream.runCollect((yield* Agent).send(session.id, "Hello"));
+            const diagnostics = events.filter((event) => event.type === "reasoning");
+
+            expect(diagnostics.map((event) => event.text)).toEqual(logs);
+            expect(
+              events
+                .filter((event) => event.type === "text-delta")
+                .map((event) => event.text)
+                .join(""),
+            ).toBe("Hello");
+            expect((yield* store.runs(session.id))[0]?.result).toEqual(response());
+            expect(requests[0]?.settings.reasoningSummary).toBe(enabled ? true : undefined);
+            expect(logs).toHaveLength(enabled ? 2 : 0);
+
+            if (enabled) {
+              expect(
+                logs.every((line) => line.includes(`Thinking session=${session.id} run=`)),
+              ).toBe(true);
+              expect(
+                logs.map((line) => JSON.parse(line.slice(line.indexOf(' "') + 1))).join(""),
+              ).toBe(thinking);
+              expect(logs.join("")).not.toContain("\u001b");
+            }
+          }).pipe(
+            Effect.provideService(Console.Console, {
+              ...console,
+              error: (...values) => {
+                logs.push(values.join(" "));
+              },
+            }),
+          ),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test.each(["failed", "interrupted"])(
+    "flushes bounded reasoning logs for a %s run",
+    async (status) => {
+      const logs: string[] = [];
+      const thinking = "x".repeat(4097);
+
+      const state = await fixture(
+        () =>
+          Effect.succeed({
+            description,
+            stream: () =>
+              Stream.concat(
+                Stream.make({ type: "reasoning-delta" as const, text: thinking }),
+                Stream.fail(
+                  new ProviderError({
+                    provider: "test-provider",
+                    reason: "temporary",
+                    message: "Failed",
+                  }),
+                ),
+              ),
+          }),
+        true,
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            const stream = (yield* Agent).send(session.id, "Hello");
+
+            if (status === "interrupted") yield* Stream.runDrain(stream.pipe(Stream.take(2)));
+            else
+              expect(yield* failure(Stream.runDrain(stream))).toMatchObject({
+                reason: "temporary",
+              });
+
+            const chunks: string[] = logs.map((line) =>
+              JSON.parse(line.slice(line.indexOf(' "') + 1)),
+            );
+
+            expect(chunks.map((text) => text.length)).toEqual([2048, 2048, 1]);
+            expect(chunks.join("")).toBe(thinking);
+            expect((yield* store.runs(session.id))[0]?.status).toBe(status);
+          }).pipe(
+            Effect.provideService(Console.Console, {
+              ...console,
+              error: (...values) => {
+                logs.push(values.join(" "));
+              },
+            }),
+          ),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test("streams and resumes after reopening with pinned identity, workload and opaque continuation", async () => {
     const requests: ModelRequest[] = [];
     const events: ChatEvent[] = [];
@@ -360,6 +488,19 @@ describe.concurrent("persisted agent", () => {
       name: "oversize",
       events: [{ type: "completed", response: response("x".repeat(131073)) }],
       reason: "output-limit",
+    },
+    {
+      name: "oversize reasoning",
+      events: [{ type: "reasoning-delta", text: "x".repeat(131073) }],
+      reason: "output-limit",
+    },
+    {
+      name: "trailing reasoning",
+      events: [
+        { type: "completed", response: response() },
+        { type: "reasoning-delta", text: "extra" },
+      ],
+      reason: "protocol",
     },
   ];
 

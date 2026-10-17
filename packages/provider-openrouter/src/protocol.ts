@@ -114,6 +114,15 @@ export const routerOptions: ChatOptions = {
         const value = Schema.decodeUnknownSync(Delta)(delta);
         reasoning += value.reasoning ?? value.reasoning_content ?? "";
         details.push(...(value.reasoning_details ?? []));
+
+        // Structured details can duplicate the plain field in the same frame.
+        const readable = (value.reasoning_details ?? [])
+          .flatMap((detail) =>
+            detail.type === "reasoning.encrypted" ? [] : [detail.text ?? detail.summary ?? ""],
+          )
+          .join("");
+
+        return readable || value.reasoning || value.reasoning_content || "";
       },
       save: () => ({
         protocol: "chat-completions",

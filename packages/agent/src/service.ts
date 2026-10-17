@@ -29,10 +29,11 @@ export class ModelResolver extends Context.Service<
   }
 >()("poppet/ModelResolver") {}
 
-/** Run lifecycle events and incremental answer text emitted by the agent. */
+/** Run lifecycle events, answer text, and locally logged reasoning diagnostics. */
 export type ChatEvent =
   | { readonly type: "started"; readonly run: Run }
   | { readonly type: "text-delta"; readonly text: string }
+  | { readonly type: "reasoning"; readonly text: string }
   | { readonly type: "completed"; readonly run: Run };
 
 /** Failures from orchestration, model inference, or persistence of a chat request. */
@@ -125,6 +126,34 @@ export const AgentLive = Layer.effect(
               }),
             );
 
+            let reasoning = "";
+
+            const flushReasoning = (final = false) =>
+              Effect.gen(function* () {
+                const events: ChatEvent[] = [];
+
+                while (reasoning.length > 0) {
+                  const newline = reasoning.indexOf("\n");
+
+                  const length =
+                    newline >= 0
+                      ? Math.min(newline + 1, 2048)
+                      : final || reasoning.length >= 2048
+                        ? Math.min(reasoning.length, 2048)
+                        : 0;
+
+                  if (length === 0) break;
+                  const chunk = reasoning.slice(0, length);
+                  reasoning = reasoning.slice(length);
+                  const line = `[${new Date().toISOString()}] Thinking session=${sessionId} run=${run.id} ${JSON.stringify(chunk)}`;
+
+                  yield* Console.error(line);
+                  events.push({ type: "reasoning", text: line });
+                }
+
+                return events;
+              });
+
             const reply = Stream.unwrap(
               Effect.gen(function* () {
                 const basePrompt = yield* readMemoryPrompt();
@@ -161,20 +190,41 @@ export const AgentLive = Layer.effect(
                 );
               }),
             ).pipe(
-              Stream.mapEffect((event) => {
-                if (event.type === "text-delta") return Effect.succeed(event);
+              Stream.mapEffect((event) =>
+                Effect.gen(function* () {
+                  if (event.type === "reasoning-delta") {
+                    reasoning += event.text;
 
-                return Effect.uninterruptible(
-                  store.finishRun(run.id, { status: "completed", response: event.response }).pipe(
-                    Effect.tap(() =>
-                      Effect.sync(() => {
-                        settled = true;
-                      }),
+                    return yield* flushReasoning();
+                  }
+
+                  if (event.type === "reasoning-end") return yield* flushReasoning(true);
+
+                  const diagnostics = yield* flushReasoning(true);
+
+                  if (event.type === "text-delta") return [...diagnostics, event];
+
+                  const saved = yield* Effect.uninterruptible(
+                    store.finishRun(run.id, { status: "completed", response: event.response }).pipe(
+                      Effect.tap(() =>
+                        Effect.sync(() => {
+                          settled = true;
+                        }),
+                      ),
                     ),
-                    Effect.map((saved): ChatEvent => ({ type: "completed", run: saved })),
-                  ),
-                );
-              }),
+                  );
+
+                  return [...diagnostics, { type: "completed" as const, run: saved }];
+                }),
+              ),
+              Stream.flatMap(Stream.fromIterable),
+              Stream.catch((error) =>
+                Stream.concat(
+                  Stream.fromEffect(flushReasoning(true)).pipe(Stream.flatMap(Stream.fromIterable)),
+                  Stream.fail(error),
+                ),
+              ),
+              Stream.ensuring(flushReasoning(true).pipe(Effect.asVoid)),
             );
 
             return Stream.concat(Stream.make({ type: "started" as const, run }), reply);
