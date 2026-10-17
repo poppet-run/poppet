@@ -593,12 +593,6 @@ const gateway = Effect.gen(function* () {
     Effect.map((connection) => ({ ...connection, rejected })),
   );
 
-  const status = Effect.gen(function* () {
-    const connection = yield* connectionStatus;
-
-    return { ...connection, ...(yield* gatewayStorage(() => repo.status())) };
-  });
-
   const pollOnce = Effect.gen(function* () {
     if (!channel.poll) return;
     const cursor = yield* gatewayStorage(() => repo.cursor(channel.id, account));
@@ -654,7 +648,6 @@ const gateway = Effect.gen(function* () {
     externalNameChange,
     recover,
     connectionStatus,
-    status,
     run,
   };
 });
