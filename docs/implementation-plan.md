@@ -2,13 +2,17 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–16 implemented with automated checks; macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, and live WhatsApp behavior require manual validation
+Status: Phases 1–16 implemented with automated checks; phases 17–19 planned. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, and live WhatsApp behavior require manual validation
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
 implemented.
 
-Updated: 2026-10-16
+The next planned additions are [web search](#phase-17-web-search),
+[task management through chat](#phase-18-task-management-through-chat), and
+[deeper conversation recall](#phase-19-deeper-conversation-recall).
+
+Updated: 2026-10-17
 
 One user, one active ChatGPT account, a configured provider/model, a local
 TypeScript application, SQLite, explicit memory, and locally scheduled tasks.
@@ -882,8 +886,9 @@ model-assisted HTML/text summaries and a scheduled fetch remain manual validatio
 See [chat](chat.md#read-a-supplied-url), [tasks](tasks.md#read-a-supplied-url),
 [configuration](configuration.md#page-reading), and the
 [architecture](architecture.md#supplied-page-reading) for the implementation.
-Web search, browsers, JavaScript rendering, PDFs, authenticated pages, downloads,
-linked-page crawling, persistent browser state, and caching remain outside scope.
+Web search remains outside this phase and is planned in phase 17. Browsers,
+JavaScript rendering, PDFs, authenticated pages, downloads, linked-page crawling,
+persistent browser state, and caching remain outside scope.
 
 ## Phase 16: Session titles and Discord thread names
 
@@ -996,6 +1001,223 @@ permission/rate-limit failures, uncertain rename reconciliation, and independent
 behavior when an adapter has no naming capability. Run `bun run check`. Separately
 validate live title inference and Discord creation/renaming in the private test
 channel, including manual edits and the platform's non-atomic rename race.
+
+## Phase 17: Web search
+
+Planned. Depends on the durable tool loop from phase 5 and the protected page
+reader from phase 15. Independent of phases 18–19.
+
+Add `poppet_web.search_web` for current questions and scheduled research summaries.
+Start with one configured search backend, returning source results rather than a
+second model-generated answer. Accept a trimmed, nonempty query of at most 512
+UTF-8 bytes and return at most five results with a title, public HTTP(S) URL, and
+snippet. Include a `truncated` flag and keep the entire serialized response within
+`POPPET_TOOL_BYTES`. Empty results are a successful response. Keep result order
+from the backend; no ranking model, embeddings, or general search-provider registry.
+
+The search service owns backend requests and response validation; inference
+providers receive only the generic tool schema and saved results. Use a fixed
+backend endpoint, a 15-second overall deadline, a 1 MiB response limit, and scoped
+cancellation. Reject malformed responses and surface authentication, rate-limit,
+network, and service failures without automatic retries or backend fallback.
+Keep search failures separate from inference-provider quota pauses. Search queries
+go to the configured service; do not send conversation history, notes, memory,
+skills, or inference credentials as additional request context.
+
+Make search opt-in through the existing configuration system, with environment
+values overriding file defaults. Keep any backend key out of `config.json`,
+LaunchAgents, transcripts, and diagnostic output; reuse protected credential and
+redaction conventions. Omit the tool when search is disabled or required setup is
+missing, while leaving supplied-URL reading and ordinary chat available. Validate
+enabled search configuration clearly rather than silently choosing another backend.
+
+Extend `fetch_page` authorization with a run-local set of canonical URLs from
+successfully completed search calls. Grant only URLs actually returned to the
+model within the bounded result, and require a later model turn to fetch them.
+A search and a previously unauthorized fetch in the same batch must still fail
+whole-batch validation before either executes. Search snippets, page links, saved
+search results from older runs, history, and skills cannot add URLs to the set.
+Discard grants when the run ends; do not reconstruct them from transcript text.
+Every fetch retains phase 15's DNS, literal-IP connection, redirect, TLS, body,
+and deadline checks. Search grants never permit crawling or private-network access.
+
+Both interactive and scheduled runs may search; scheduled notes and memory stay
+read-only. Treat titles, snippets, URLs, and fetched text as untrusted data, never
+instructions or authorization for mutations. Ask the model to cite source URLs
+and distinguish a search snippet from a page it actually read. Reuse tool-call
+journaling, namespace checks, budgets, and cancellation throughout.
+
+Keep search schemas, the service contract, and run-local URL grants in
+`@poppet/agent`, with configuration, credential setup, and live composition in
+the host and existing shared packages. Update tool dispatch, page descriptions,
+base instructions, CLI/worker wiring, and fake-model fixtures together. Update
+chat, tasks, configuration, and architecture documentation when implemented,
+including credential setup and where queries are sent. Reuse platform HTTP
+support where suitable; add no browser or cache.
+
+Completion check: ask a new chat to research a current topic without supplying a
+URL. It searches, reads a returned source on a later turn, and cites that source.
+A scheduled research summary follows the same path and uses existing delivery.
+
+Automated checks cover disabled and incomplete setup, argument and response
+validation, empty results, result/byte/body limits, secret omission, service
+failures, deadlines, cancellation, durable results, and scheduled read-only policy.
+Verify grants exclude omitted results, do not cross runs, cannot come from page
+content or history, and cannot authorize a fetch in the search's own batch.
+Retain the page reader's SSRF and connection tests. Run `bun run check`, then
+separately validate one live search-to-page chat and scheduled delivered summary.
+
+## Phase 18: Task management through chat
+
+Planned. Depends on durable scheduling, worker commands, and destination validation
+from phases 7–12. Can ship independently of web search and deeper recall.
+
+Add `poppet_tasks.manage_tasks` with `create`, `list`, `show`, `pause`, and `resume`
+actions for tool-capable interactive CLI and authorized messaging chats. Reuse
+the existing task commands and scheduler instead of introducing another queue or
+schedule format. Omit this tool from scheduled runs and reject fabricated calls
+before execution, so unattended work cannot create or change tasks. No task
+editing, deletion, clear-all, immediate execution, retry, provider-resume, or
+active-run cancellation is exposed through this first version. Existing CLI
+commands remain available.
+
+Only the owner's current explicit request authorizes a task mutation. Describe
+that restriction in the tool and base instructions; historical conversations,
+skills, notes, pages, and tool results cannot request task creation or changes.
+Derive interactive/scheduled origin, owner identity, session selection, and current
+messaging destination from trusted host context, never model-supplied authority
+fields. Keep the existing single-owner access policy. Do not infer authorization
+from a keyword match or add a separate model-based permission classifier.
+
+Creation saves an explicit task name, self-contained prompt, and either a one-off
+timestamp with an offset or a five-field cron expression with an IANA timezone.
+Use the current session's provider, model, and workload; do not let the tool choose
+different inference credentials or silently change an existing task's selection.
+Use existing skill loading and snapshots only when a skill is explicitly selected.
+Tasks still run in fresh sessions with no implicit copy of the current chat.
+Resolve relative times against the host's current time; ask an ordinary follow-up
+when the intended time, timezone, prompt, or task identity is unclear. Require a
+future one-off time and validate recurring schedules with the existing calculator.
+Do not invent a recurring default for an ambiguous reminder request.
+
+Allow local results, or delivery to the current authorized messaging conversation
+when requested. The model selects only `local` or `here`; the host resolves `here`
+through the existing destination validator and stores the normal destination
+snapshot. CLI chat cannot use `here`. Do not accept arbitrary channel IDs, change
+an existing destination, or choose the last active conversation. Later occurrences
+retain the existing authorization rechecks and delivery lifecycle.
+
+List returns bounded task summaries with IDs, names, schedules, and pause state,
+with a stable continuation cursor when more tasks remain. Show returns one task's
+saved prompt, selection, schedule, destination, and bounded recent occurrence
+status. Both respect `POPPET_TOOL_BYTES` and flag omitted or shortened content.
+Do not dump unbounded occurrence history or answers into context. Pause and resume
+require a stable task ID obtained from the user or inspection; ask when names
+match several tasks.
+Preserve existing pause behavior: pending work is cancelled, active work is not
+interrupted, and resume does not replay missed recurring occurrences. Mutation
+receipts report the task ID, saved state, explicit timezone and next occurrence
+where applicable, and delivery destination. Claim success only after commitment.
+
+Keep task mutations and their durable tool receipts atomic in the shared database.
+Use the originating run/call identity to deduplicate creation, so recovery cannot
+create a second job after losing an acknowledgement. Existing tasks migrate with
+no originating tool call. A committed change survives later inference failure;
+failed or interrupted replies never trigger automatic replay. Preserve inspectable
+uncertain outcomes rather than guessing whether a task changed. Reuse existing
+gateway inbound deduplication and tool-call records rather than a new retry system.
+
+Define a narrow task capability in `@poppet/agent` and supply its implementation
+from the host using `@poppet/tasks`. The tasks package already depends on agent
+skills, so the agent must not import the tasks package. Keep command validation,
+mutation, recovery, and scheduler wake-up behavior in the tasks package. Execute
+inside the owning process without sending a loopback request through its own
+worker queue or reacquiring the active agent permit. Preserve existing scheduler
+command serialization and cancellation around the short mutation transaction.
+
+Extend agent run context, CLI/local and worker composition, gateway request
+provenance, tool schemas/dispatch, task persistence/migrations, and fixtures
+together. Provider packages and channel transports remain generic. Update chat,
+tasks, gateway, worker, storage, and architecture documentation when implemented.
+
+Completion check: ask from Telegram or a Discord thread for a summary every Friday
+at an explicit local time, delivered here. Inspect the saved task, pause it, and
+resume it through chat. It runs through the existing scheduler and delivery queue,
+while a scheduled prompt asking to create another task is rejected.
+
+Automated checks cover local/worker and messaging parity, trusted provenance,
+scheduled exclusion and forged calls, invalid/ambiguous times and task IDs,
+DST behavior through the existing calculator, destination authorization, bounded
+inspection, atomic mutation receipts, duplicate creation after acknowledgement
+loss, restart, cancellation, and committed changes surviving later model failure.
+Exercise chat mutations while the scheduler is waiting for the shared agent to
+catch permit or queue deadlocks. Reuse existing scheduler/delivery behavior tests.
+Run `bun run check`; separately validate live chat creation, inspection, pause,
+resume, and one delivered occurrence.
+
+## Phase 19: Deeper conversation recall
+
+Planned. Depends on phase 13 conversation search and persisted chat from phase 4.
+Independent of phases 17–18.
+
+Add `poppet_history.read_session` so a model can read the discussion surrounding a
+search match instead of guessing from its excerpt. Accept a stable session ID and
+optionally either `around_message_id` from a search result or `after_message_id`
+from the previous page, never both. Without an anchor, start at the earliest
+eligible message. An around-message request includes eligible context before and
+after that message, returned in chronological session order. Validate anchors
+belong to that session and are eligible; missing sessions and invalid anchors
+produce clear errors without falling back to another conversation.
+
+Use the same content eligibility as search: user text and final assistant text
+from completed runs only. Exclude failed/interrupted and in-progress exchanges,
+intermediate assistant output, tool arguments/results, reasoning, provider
+continuation, and context snapshots. Never expose raw `Store.messages` records
+as the tool result. Reuse the search projection and original saved messages as
+the source of truth; do not create summaries, another index, or copied transcripts.
+
+Return the session ID and current title, plus at most ten messages containing
+message ID, role, timestamp, and text. Bound the serialized result by
+`POPPET_TOOL_BYTES`, with Unicode-safe text truncation and explicit per-message
+truncation where needed. Return a nullable next-message cursor and a `truncated`
+flag distinguishing a complete result from omitted or shortened content. Advance
+past every returned message, including a shortened one, so an oversized message
+cannot trap pagination. Use stable message anchors rather than offsets so later
+completed exchanges do not duplicate earlier pages. Omitted or shortened text is
+never described as a complete transcript.
+
+Perform bounded queries in `@poppet/store`; do not load an entire large session
+and trim it in the agent. Share eligibility rules with search to prevent drift.
+Keep argument validation, the namespaced tool, dispatch, and instructions in
+`@poppet/agent`. Reuse durable tool records, cancellation, and call/context budgets.
+The model should search first when it lacks a session ID, read around the match,
+and request further pages only when needed. It must identify recalled material
+by session/message IDs and distinguish saved statements from current facts.
+
+Allow this read-only tool in both interactive and scheduled runs under the
+existing single-owner policy. Historical text remains untrusted data and cannot
+authorize memory/note writes, task mutations, or page fetches. Recalled URLs do
+not join phase 17's run-local search grants. Reading another session never resumes
+it, changes its title/activity, imports its continuation, or writes its contents
+into global memory. Adding users requires an explicit cross-session access policy.
+
+Extend store contracts/exports, shared result schemas, agent tool dispatch,
+instructions, and fake-model fixtures together. Keep `chat show` and its existing
+local/worker inspection behavior unchanged; no additional CLI or socket command
+is needed for model recall. Update chat, storage, tasks, and architecture docs
+when implemented. No new dependency or schema migration is expected.
+
+Completion check: search for an older decision, read its surrounding discussion,
+and answer a follow-up using the saved context. A session larger than the tool
+budget remains readable in bounded pages without exposing tool or provider state.
+
+Automated checks cover search/read eligibility parity, chronological ordering,
+anchor/session validation, empty sessions, paging around a match, appended
+exchanges, Unicode and oversized-message truncation, byte limits, cursor progress,
+durable calls, cancellation, and unchanged stored history. A fake-model search-to-
+read round trip verifies follow-up context and scheduled read-only behavior,
+including rejection of mutations and recalled-URL fetches. Run `bun run check`,
+then separately validate recall of an older discussion with a real model.
 
 ## Validation
 
