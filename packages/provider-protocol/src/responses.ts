@@ -343,6 +343,7 @@ export const responsesModel = (
                     "The stream ended without completed inference.",
                   );
 
+                // ChatGPT can omit terminal output; completed item events retain the authoritative items.
                 for (const [index, item] of terminal.output.entries()) {
                   if (!completedItems.has(index)) completedItems.set(index, item);
                 }

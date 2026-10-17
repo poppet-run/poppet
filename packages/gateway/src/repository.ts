@@ -169,6 +169,7 @@ const repository = Effect.gen(function* () {
           )
           .get(adapter, account, conversation),
       ),
+    // synced_title records the attempted session title, even if no remote rename is confirmed.
     nameAttempted: (
       adapter: string,
       account: string,
@@ -181,6 +182,7 @@ const repository = Effect.gen(function* () {
           "UPDATE gateway_bindings SET synced_title = ? WHERE adapter = ? AND account = ? AND conversation_id = ? AND session_id = ?",
         )
         .run(title, adapter, account, conversation, session),
+    // Save the desired remote name before sending; recovery inspects it without replaying a rename.
     namePending: (
       adapter: string,
       account: string,
@@ -193,6 +195,7 @@ const repository = Effect.gen(function* () {
           "UPDATE gateway_bindings SET pending_name = ? WHERE adapter = ? AND account = ? AND conversation_id = ? AND naming_disabled = 0 AND session_id = ?",
         )
         .run(name, adapter, account, conversation, session).changes === 1,
+    // managed_name is the last confirmed remote name; a different observed name belongs to the user.
     nameConfirmed: (
       adapter: string,
       account: string,

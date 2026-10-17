@@ -302,6 +302,7 @@ const makeWhatsAppClient = (
                   DisconnectReason.multideviceMismatch,
                 ].includes(code);
 
+                // Pairing may reset an invalid session once; the worker requires explicit relinking.
                 if (
                   code === DisconnectReason.loggedOut ||
                   (onQr !== undefined && invalidSession && !resetInvalidSession)
