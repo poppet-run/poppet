@@ -48,21 +48,19 @@ export const decodeMemoryCall = (
       }),
     );
 
-  return Schema.decodeUnknownEffect(Schema.fromJsonString(Arguments), {
-    onExcessProperty: "error",
-  })(call.arguments).pipe(
-    Effect.mapError(invalid),
-    Effect.flatMap((args): Effect.Effect<MemoryCall, AgentError> => {
-      if (args.action === "forget")
-        return args.value === null
-          ? Effect.succeed({ name: "memory", action: "forget", key: args.key })
-          : Effect.fail(invalid());
+  return Effect.gen(function* () {
+    const args = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Arguments), {
+      onExcessProperty: "error",
+    })(call.arguments).pipe(Effect.mapError(invalid));
 
-      return args.value !== null
-        ? Effect.succeed({ name: "memory", action: args.action, key: args.key, value: args.value })
-        : Effect.fail(invalid());
-    }),
-  );
+    if (args.action === "forget" && args.value === null)
+      return { name: "memory", action: "forget", key: args.key };
+
+    if (args.action !== "forget" && args.value !== null)
+      return { name: "memory", action: args.action, key: args.key, value: args.value };
+
+    return yield* Effect.fail(invalid());
+  });
 };
 
 /** Preflight the next snapshot before mutation; acknowledgements omit the value to stay bounded. */
