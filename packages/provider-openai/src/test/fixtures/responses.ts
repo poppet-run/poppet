@@ -36,18 +36,22 @@ const ModelRequest = Schema.Struct({
 export const makeResponsesProvider = (controls: Controls) => {
   const requests: Array<typeof ModelRequest.Type> = [];
   const bearerHeaders: Array<string | null> = [];
+  let catalogReads = 0;
 
   const handle = async (request: Request) => {
     const url = new URL(request.url);
     bearerHeaders.push(request.headers.get("authorization"));
 
-    if (url.pathname === "/v1/models")
+    if (url.pathname === "/v1/models") {
+      catalogReads++;
+
       return Response.json({
         models: [
           { slug: "test-model", display_name: "Test model", visibility: "list" },
           { slug: "hidden-model", display_name: "Hidden", visibility: "hide" },
         ],
       });
+    }
 
     if (url.pathname !== "/v1/responses") return new Response(null, { status: 404 });
 
@@ -149,5 +153,5 @@ export const makeResponsesProvider = (controls: Controls) => {
     return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
   };
 
-  return { handle, requests, bearerHeaders };
+  return { handle, requests, bearerHeaders, catalogReads: () => catalogReads };
 };
