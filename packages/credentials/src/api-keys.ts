@@ -212,9 +212,9 @@ export const ApiKeyStoreLive = Layer.effect(
 /** Prefers the environment key, then protected storage; a present but invalid key is an error. */
 export const loadApiKey = (provider: ProviderId, environment: string) =>
   Effect.gen(function* () {
-    const configured = yield* environmentApiKey(provider, environment);
+    const configured = Option.getOrNull(yield* environmentApiKey(provider, environment));
 
-    if (Option.isSome(configured)) return configured.value;
+    if (configured !== null) return configured;
 
     const saved = yield* ApiKeyStore.use((store) => store.read(provider)).pipe(
       Effect.provide(ApiKeyStoreLive),
@@ -243,26 +243,24 @@ export const makeApiKeyConnection = (provider: ProviderOperations, environment: 
         Effect.gen(function* () {
           const input = yield* CredentialInput;
 
-          const key = options.keyStdin
+          let key = options.keyStdin
             ? yield* input.readKey(id, true)
-            : yield* environmentApiKey(id, environment).pipe(
-                Effect.flatMap(
-                  Option.match({ onSome: Effect.succeed, onNone: () => input.readKey(id, false) }),
-                ),
-              );
+            : Option.getOrNull(yield* environmentApiKey(id, environment));
+
+          if (key === null) key = yield* input.readKey(id, false);
 
           yield* store.write(id, key);
 
           return `API key saved for ${id}. Run auth verify <model> --provider ${id} to check access.`;
         }),
       status: Effect.gen(function* () {
-        const key = yield* environmentApiKey(id, environment);
-        const saved = Option.isSome(key) ? null : yield* store.read(id);
+        const key = Option.getOrNull(yield* environmentApiKey(id, environment));
+        const saved = key !== null ? null : yield* store.read(id);
 
         return {
           provider: id,
-          connected: Option.isSome(key) || saved !== null,
-          source: Option.isSome(key) ? "environment" : saved !== null ? "stored" : null,
+          connected: key !== null || saved !== null,
+          source: key !== null ? "environment" : saved !== null ? "stored" : null,
         };
       }),
       logout: store
