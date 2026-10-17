@@ -77,8 +77,10 @@ export const makeOAuthClient = (http: HttpFetch = fetch, expectedIssuer = issuer
         );
       }).pipe(
         Effect.scoped,
-        Effect.timeout("20 seconds"),
-        Effect.catchTag("TimeoutError", () => Effect.fail(networkError())),
+        Effect.timeoutOrElse({
+          duration: "20 seconds",
+          orElse: () => Effect.fail(networkError()),
+        }),
       );
 
     const revoke = (refreshToken: Redacted.Redacted<string>, clientId: string) =>
