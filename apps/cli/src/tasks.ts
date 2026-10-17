@@ -3,10 +3,27 @@ import {
   TaskCommand,
   TaskError,
   nextOccurrence,
+  parseTimestamp,
   taskOperation,
   type Schedule,
 } from "@poppet/tasks";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
+
+export const parseTaskSchedule = (
+  at: Option.Option<string>,
+  cron: Option.Option<string>,
+  tz: Option.Option<string>,
+): Schedule => {
+  if (Option.isSome(at) && Option.isNone(cron) && Option.isNone(tz))
+    return { type: "once", at: parseTimestamp(at.value) };
+
+  if (Option.isNone(at) && Option.isSome(cron) && Option.isSome(tz))
+    return { type: "cron", expression: cron.value, timezone: tz.value };
+
+  throw new TaskError({
+    message: "Use either --at <timestamp> or --cron <expression> --tz <timezone>.",
+  });
+};
 
 export const prepareTask = (
   name: string,

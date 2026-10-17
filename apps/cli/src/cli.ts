@@ -19,7 +19,6 @@ import {
   executeLocalTaskCommand,
   TaskCommand,
   TaskError,
-  parseTimestamp,
   taskOperation,
   readLocalTaskStatus,
 } from "@poppet/tasks";
@@ -52,7 +51,7 @@ import { commandArgs } from "#src/command-args";
 import { manageMemory, type MemoryCommand } from "#src/memory";
 import { providers } from "#src/providers";
 import { findProvider, runtimeLayers } from "#src/runtime";
-import { prepareTask } from "#src/tasks";
+import { parseTaskSchedule, prepareTask } from "#src/tasks";
 import { manageWorker } from "#src/worker";
 import { remoteWorkerCommand, WorkerRequestsLive, type WorkerCommand } from "#src/worker-commands";
 import { runWorker, type WorkerMode } from "#src/worker-host";
@@ -106,18 +105,15 @@ export const makeCLI = (
   const runtime = runtimeLayers(registered);
   validateChannels(registeredChannels);
 
-  const startWorker = (mode: WorkerMode) =>
-    runWorker(mode).pipe(
-      Effect.provide(
-        WorkerRequestsLive.pipe(
-          Layer.provideMerge(
-            mode === "tasks" ? Layer.empty : MessagingWorkerLive(registeredChannels),
-          ),
-          Layer.provideMerge(runtime.tasks),
-          Layer.provideMerge(runtime.chat),
-        ),
-      ),
+  const startWorker = (mode: WorkerMode) => {
+    const requests = WorkerRequestsLive.pipe(
+      Layer.provideMerge(mode === "tasks" ? Layer.empty : MessagingWorkerLive(registeredChannels)),
+      Layer.provideMerge(runtime.tasks),
+      Layer.provideMerge(runtime.chat),
     );
+
+    return runWorker(mode).pipe(Effect.provide(requests));
+  };
 
   const throughWorker = <E>(
     command: WorkerCommand,
@@ -535,16 +531,7 @@ export const makeCLI = (
           whatsappChat,
         }) =>
           Effect.gen(function* () {
-            const schedule = yield* taskOperation(() => {
-              if (Option.isSome(at) && Option.isNone(cron) && Option.isNone(tz))
-                return { type: "once" as const, at: parseTimestamp(at.value) };
-
-              if (Option.isNone(at) && Option.isSome(cron) && Option.isSome(tz))
-                return { type: "cron" as const, expression: cron.value, timezone: tz.value };
-              throw new TaskError({
-                message: "Use either --at <timestamp> or --cron <expression> --tz <timezone>.",
-              });
-            });
+            const schedule = yield* taskOperation(() => parseTaskSchedule(at, cron, tz));
 
             if (
               [discordThread, telegramChat, whatsappChat].filter((value) => value !== undefined)
