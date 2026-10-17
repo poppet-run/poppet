@@ -9,7 +9,7 @@ import {
   dataDirectory as configuredDataDirectory,
 } from "#src/source";
 
-export { ConfigSource } from "#src/source";
+export { ConfigSource, dataDirectory } from "#src/source";
 
 /** Resolved host paths and default model selection for new sessions. */
 export interface Settings {

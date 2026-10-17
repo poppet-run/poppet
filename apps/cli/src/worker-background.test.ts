@@ -51,13 +51,7 @@ test("the installed launcher forwards shutdown, drains logs, and releases worker
 
   await writeFile(join(directory, "config.json"), JSON.stringify({ provider: "opencode-go" }));
 
-  const launch = workerLaunch({
-    applicationName: "Test",
-    dataDirectory: directory,
-    notesDirectory: join(directory, "notes"),
-    provider: "openrouter",
-    model: null,
-  });
+  const launch = workerLaunch(directory);
 
   const child = Bun.spawn([launch.executable, ...launch.arguments], {
     cwd: launch.workingDirectory,

@@ -9,8 +9,23 @@ import { Console, Effect } from "effect";
 
 import { makeCLI } from "#src/cli";
 import { providers } from "#src/providers";
+import type { manageWorker } from "#src/worker";
 
-const invoke = async (args: ReadonlyArray<string>, environment: Record<string, string> = {}) => {
+const invoke = async (
+  args: ReadonlyArray<string>,
+  environment: Record<string, string> = {},
+  worker: typeof manageWorker = (action, dataDirectory) =>
+    Effect.sync(() => {
+      expect(action).toBe("status");
+
+      return {
+        installed: false,
+        loaded: false,
+        plist: join(dataDirectory, "home/Library/LaunchAgents/test.plist"),
+        log: join(dataDirectory, "logs/worker.log"),
+      };
+    }),
+) => {
   const previous = { ...process.env };
 
   // Bun's import.meta.env retains this object, so update it without replacing it.
@@ -40,17 +55,7 @@ const invoke = async (args: ReadonlyArray<string>, environment: Record<string, s
       Effect.sync(() => {
         stdout += text;
       }),
-    (action, config) =>
-      Effect.sync(() => {
-        expect(action).toBe("status");
-
-        return {
-          installed: false,
-          loaded: false,
-          plist: join(config.dataDirectory, "home/Library/LaunchAgents/test.plist"),
-          log: join(config.dataDirectory, "logs/worker.log"),
-        };
-      }),
+    worker,
   );
 
   try {
@@ -763,6 +768,40 @@ describe("CLI", () => {
     expect(result.stdout).toContain("bun run start <subcommand>");
     expect(result.stderr).toBe("");
   });
+
+  test.each(["stop", "uninstall", "logs"])(
+    "worker recovery %s ignores invalid file settings and rejects an empty data directory",
+    async (action) => {
+      const directory = await mkdtemp(join(tmpdir(), "poppet-worker-recovery-"));
+      const calls: string[] = [];
+
+      const worker: typeof manageWorker = (requested, selectedDirectory) =>
+        Effect.sync(() => {
+          expect(selectedDirectory).toBe(directory);
+          calls.push(requested);
+
+          return `${requested} completed`;
+        });
+
+      try {
+        await writeFile(join(directory, "config.json"), '{"model":123}');
+
+        const result = await invoke(["worker", action], { POPPET_DATA_DIR: directory }, worker);
+
+        expect(result).toEqual({ stdout: `${action} completed\n`, stderr: "", exitCode: 0 });
+        expect(calls).toEqual([action]);
+        expect(await readdir(directory)).toEqual(["config.json"]);
+
+        const invalidDirectory = await invoke(["worker", action], { POPPET_DATA_DIR: "" }, worker);
+
+        expect(invalidDirectory.exitCode).toBe(1);
+        expect(invalidDirectory.stderr).toContain("POPPET_DATA_DIR");
+        expect(calls).toEqual([action]);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("root and command help never load configuration or create application files", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-help-"));
