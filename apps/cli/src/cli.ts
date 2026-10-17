@@ -1,6 +1,6 @@
 import { BunServices } from "@effect/platform-bun";
 import { ChatSettings, Skills } from "@poppet/agent";
-import { AppConfig } from "@poppet/config";
+import { AppConfig, ConfigSource } from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
 import { MemoryKey, MemoryValue } from "@poppet/memory";
 import type { WorkerAction } from "@poppet/platform";
@@ -80,7 +80,13 @@ const skillFlag = Flag.String("skill").pipe(
 );
 
 const showConfig = Effect.gen(function* () {
-  yield* Console.log(JSON.stringify(yield* AppConfig, null, 2));
+  yield* Console.log(
+    JSON.stringify(
+      { ...(yield* AppConfig), chat: yield* ChatSettings, ...(yield* ConfigSource) },
+      null,
+      2,
+    ),
+  );
 });
 
 export const makeCLI = (
@@ -650,9 +656,9 @@ export const makeCLI = (
   const app = Command.make("bun run start").pipe(
     Command.withDescription(`Poppet\n\nProviders:\n${providerHelp}`),
     Command.withSubcommands([
-      Command.make("config", {}, () => showConfig.pipe(Effect.provide(runtime.config))).pipe(
-        Command.withDescription("Show validated configuration"),
-      ),
+      Command.make("config", {}, () =>
+        showConfig.pipe(Effect.provide(Layer.merge(runtime.config, runtime.chatSettings))),
+      ).pipe(Command.withDescription("Show validated configuration")),
       Command.make("store").pipe(
         Command.withDescription("Inspect the conversation store"),
         Command.withSubcommands([
