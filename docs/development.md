@@ -38,6 +38,11 @@ loading disabled. It blocks external HTTP requests and system commands, and pass
 the same guards to CLI subprocesses. Workspace test scripts use this runner too.
 Direct `bun test` is rejected unless the isolation runner started it.
 
+The root test command records file durations in `.bun-test-timings.json` so later
+runs can start slower files first. This local cache is ignored by Git and can be
+deleted to reset the timings. Tests still use four workers and at most two
+concurrent tests per worker.
+
 ## Lint rules
 
 The Oxfmt and Oxlint configs are based on
