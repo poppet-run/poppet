@@ -67,19 +67,22 @@ export const executeTaskCommand = (
               Effect.mapError((error) => new TaskError({ message: error.message })),
             );
 
-      const resolver = yield* Effect.serviceOption(TaskDestinations);
+      const resolver = Option.getOrNull(yield* Effect.serviceOption(TaskDestinations));
+      let destination: DeliveryDestination | null = null;
 
-      if (command.delivery && Option.isNone(resolver))
-        return yield* Effect.fail(
-          new TaskError({
-            message: "Start worker run or gateway work before selecting a messaging destination.",
-          }),
+      if (command.delivery) {
+        if (resolver === null)
+          return yield* Effect.fail(
+            new TaskError({
+              message: "Start worker run or gateway work before selecting a messaging destination.",
+            }),
+          );
+
+        destination = yield* resolver.resolve(
+          command.delivery.adapter,
+          command.delivery.conversationId,
         );
-
-      const destination =
-        command.delivery && Option.isSome(resolver)
-          ? yield* resolver.value.resolve(command.delivery.adapter, command.delivery.conversationId)
-          : null;
+      }
 
       return yield* taskOperation(() => repo.add(command.task, now, skill, destination));
     }
@@ -110,12 +113,9 @@ export const executeTaskCommand = (
     });
   });
 
-const recoveredTasks = Effect.gen(function* () {
-  const repo = yield* TaskRepository;
-  yield* taskOperation(() => repo.recover(Date.now()));
-
-  return repo;
-});
+const recoveredTasks = TaskRepository.pipe(
+  Effect.tap((repo) => taskOperation(() => repo.recover(Date.now()))),
+);
 
 export const readLocalTaskStatus = recoveredTasks.pipe(
   Effect.flatMap((repo) => taskOperation(() => repo.status())),
