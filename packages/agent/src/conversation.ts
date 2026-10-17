@@ -28,6 +28,7 @@ import {
 import { maxTextBytes, streamReply } from "#src/reply";
 import { decodeSessionSearchCall, sessionSearchTool, type SessionSearchCall } from "#src/search";
 import { ChatSettings } from "#src/settings";
+import { WebSearch, decodeWebSearchCall, webSearchTool, type WebSearchCall } from "#src/web-search";
 
 type ConversationEvent = ModelEvent | { readonly type: "reasoning-end" };
 
@@ -37,15 +38,17 @@ export const conversation = Effect.gen(function* () {
   const notes = yield* Notes;
   const memory = yield* Memory;
   const pages = yield* Pages;
+  const webSearch = yield* WebSearch;
   const policy = yield* ChatSettings;
 
   const executeTool = (
     run: Run,
     callId: string,
-    call: NoteCall | SessionSearchCall | FetchPageCall | MemoryCall,
+    call: NoteCall | SessionSearchCall | FetchPageCall | MemoryCall | WebSearchCall,
   ) => {
     const operation = Effect.gen(function* () {
       yield* store.startToolCall(run.id, callId);
+      let urls: ReadonlyArray<string> = [];
 
       const result: Effect.Effect<string, AgentError | StoreError> = Match.value(call).pipe(
         Match.when({ name: "search_sessions" }, (plan) =>
@@ -54,6 +57,22 @@ export const conversation = Effect.gen(function* () {
             .pipe(Effect.map((value) => JSON.stringify(value))),
         ),
         Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
+        Match.when({ name: "search_web" }, (plan) =>
+          webSearch.search === null
+            ? Effect.fail(
+                new AgentError({
+                  reason: "tool-permission",
+                  message: "Web search is unavailable.",
+                }),
+              )
+            : webSearch.search(plan.query).pipe(
+                Effect.map((value) => {
+                  urls = value.results.map((item) => item.url);
+
+                  return JSON.stringify(value);
+                }),
+              ),
+        ),
         Match.when({ name: "memory" }, (plan) =>
           executeMemoryCall(memory, plan, run.id, policy.factsBytes),
         ),
@@ -77,7 +96,7 @@ export const conversation = Effect.gen(function* () {
 
       yield* store.finishToolCall(run.id, callId, { status: "completed", output });
 
-      return output;
+      return { output, urls };
     });
 
     // Keep an atomic write and its durable result together on graceful cancellation.
@@ -97,7 +116,13 @@ export const conversation = Effect.gen(function* () {
   ) =>
     Stream.suspend(() => {
       const tools = model.description.capabilities.tools
-        ? [...noteTools, sessionSearchTool, fetchPageTool, memoryTool].filter(
+        ? [
+            ...noteTools,
+            sessionSearchTool,
+            fetchPageTool,
+            memoryTool,
+            ...(webSearch.search === null ? [] : [webSearchTool]),
+          ].filter(
             (tool) => !readOnlyTools || (tool.name !== "save_note" && tool.name !== "memory"),
           )
         : [];
@@ -236,6 +261,7 @@ export const conversation = Effect.gen(function* () {
                         const plan = yield* Match.value(call).pipe(
                           Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
                           Match.when({ name: "memory" }, decodeMemoryCall),
+                          Match.when({ name: "search_web" }, decodeWebSearchCall),
                           Match.when({ name: "fetch_page" }, (pageCall) =>
                             decodeFetchPageCall(pageCall, allowedURLs),
                           ),
@@ -253,7 +279,9 @@ export const conversation = Effect.gen(function* () {
                     });
 
                     for (const { callId, plan } of planned) {
-                      const output = yield* executeTool(run, callId, plan);
+                      const { output, urls } = yield* executeTool(run, callId, plan);
+
+                      for (const url of urls) allowedURLs.add(url);
                       current.push({ role: "tool", callId, output });
                       callsUsed++;
                     }

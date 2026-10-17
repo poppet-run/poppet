@@ -49,6 +49,7 @@ channel settings stay in their existing protected stores.
 | `POPPET_NOTES_DIR`     | `notesDirectory`    | `<data directory>/notes` | Notes tools' permitted directory                                                            |
 | `POPPET_PROVIDER`      | `provider`          | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`                                            |
 | `POPPET_MODEL`         | `model`             | Unset                    | Model ID for verification and new sessions and tasks                                        |
+| `POPPET_WEB_SEARCH`    | `webSearch`         | `false`                  | Enable Brave Search when a search key is available                                          |
 | `POPPET_LOG_REASONING` | `chat.logReasoning` | `false`                  | Log readable provider reasoning to CLI stderr and worker logs                               |
 | `POPPET_CONTEXT_BYTES` | `chat.contextBytes` | `65536`                  | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576` |
 | `POPPET_HISTORY_TURNS` | `chat.historyTurns` | `20`                     | Previous complete exchanges sent to the model; maximum `100`                                |
@@ -153,3 +154,49 @@ See [skills](skills.md) for naming, selection, and snapshot behavior.
 and 1 MiB transferred/decoded body limits are fixed. HTTP(S) uses standard ports
 and direct connections; ambient proxy settings and provider credentials are not
 forwarded. TLS certificate and source-hostname checks remain enabled.
+
+## Web search
+
+Web search uses [Brave's Web Search API](https://api-dashboard.search.brave.com/app/documentation/web-search).
+Save its API key with an interactive prompt, or pipe a key to
+`bun run start web login --key-stdin`:
+
+```fish
+bun run start web login
+bun run start web status
+```
+
+Enable it in `<data directory>/config.json`:
+
+```json
+{
+  "webSearch": true
+}
+```
+
+`POPPET_WEB_SEARCH` overrides that file value. Search is disabled by default.
+`POPPET_BRAVE_SEARCH_API_KEY` overrides the saved key; an empty or invalid override
+fails without falling back. Login saves that environment key when present,
+otherwise prompts without echo. `--key-stdin` explicitly reads stdin instead.
+Keys are never accepted as command-line arguments or general configuration fields.
+
+The existing credential store keeps the key in `auth/brave-search.json` with owner-only
+permissions, separate from inference credentials. `web status` reports `enabled`,
+`configured`, and credential `source` without secrets or remote requests. Missing
+credentials omit the search tool while ordinary chat and page reading remain
+available. `web logout` removes only the saved search key; it does not revoke the
+remote key or unset an environment override. Restart an existing worker after
+changing search settings or credentials. Keys are not copied into LaunchAgents.
+
+Queries go to the fixed `https://api.search.brave.com/res/v1/web/search` endpoint
+with the search key in its authentication header. Redirects are rejected.
+Poppet sends the query and fixed search options, without adding conversation,
+notes, profile, skills, or inference credentials as extra context. The model can
+include details in its query, so review requests involving private information.
+Queries and bounded source results remain in the local tool journal. Provider
+reasoning logs may also contain query or result text when enabled.
+
+Each search has a 15-second deadline, a 1 MiB response-body limit, and at most
+five returned sources within `POPPET_TOOL_BYTES`. Search uses existing run budgets
+and adds no browser, crawling, cache, or inference-provider fallback. See
+[chat](chat.md#search-the-web) for result permissions and citations.

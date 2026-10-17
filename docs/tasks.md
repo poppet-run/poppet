@@ -104,7 +104,8 @@ local wall time across timezone changes. A missing local time during spring DST
 shifts forward; a repeated time during autumn DST runs once. The database stores
 times as UTC milliseconds. `show` includes final answers, run/session IDs, failures,
 and skipped intervals. Each occurrence has a fresh session, current profile and
-facts, and only `read_note` and `search_notes`. A returned `save_note` call is rejected.
+facts, read-only notes and conversation search, page reading, and web search when
+configured. Returned `save_note` and memory calls are rejected.
 Use `--coding` before the prompt only for coding work that the chosen provider accepts.
 
 ## Read a supplied URL
@@ -119,6 +120,21 @@ Each occurrence may read that URL through the same bounded [page reader](chat.md
 as chat. URLs mentioned only by a skill, note, prior conversation, or fetched page
 are not authorized. The task retains read-only notes permissions. No page cache,
 search account, or additional credentials are needed.
+
+## Research with web search
+
+With [web search configured](configuration.md#web-search), a saved prompt may ask
+for current research without supplying a source URL:
+
+```fish
+bun run start tasks add weekly-research --cron "0 9 * * 5" --tz Europe/London "Search for recent Bun releases, read relevant sources, and cite them"
+```
+
+Each occurrence can search and read returned sources on a later model turn.
+Search grants never carry over from older occurrences or saved history. Notes
+and memory stay read-only. Search authentication, service, and rate-limit errors
+fail that occurrence without retrying or pausing its inference provider. Use the
+existing destination flags to deliver completed research through messaging.
 
 ## Missed work, pauses, and retries
 

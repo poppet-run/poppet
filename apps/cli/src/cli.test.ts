@@ -81,6 +81,71 @@ const invoke = async (
 };
 
 describe("CLI", () => {
+  test("manages search credentials independently of inference and keeps config and status secret-free", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-cli-"));
+    const environment = { POPPET_DATA_DIR: directory };
+
+    try {
+      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+        enabled: false,
+        configured: false,
+        source: null,
+      });
+      await writeFile(join(directory, "config.json"), '{"webSearch":true}');
+      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+        enabled: true,
+        configured: false,
+        source: null,
+      });
+
+      const login = await invoke(["web", "login"], {
+        ...environment,
+        POPPET_BRAVE_SEARCH_API_KEY: "search-only-key",
+      });
+
+      expect(login.exitCode).toBe(0);
+      expect(login.stdout).not.toContain("search-only-key");
+      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+        enabled: true,
+        configured: true,
+        source: "stored",
+      });
+
+      const status = await invoke(["web", "status"], {
+        ...environment,
+        POPPET_BRAVE_SEARCH_API_KEY: "override-key",
+      });
+
+      expect(JSON.parse(status.stdout)).toMatchObject({ source: "environment" });
+      expect(status.stdout).not.toContain("override-key");
+
+      const config = await invoke(["config"], {
+        ...environment,
+        POPPET_BRAVE_SEARCH_API_KEY: "override-key",
+      });
+
+      expect(JSON.parse(config.stdout).webSearch).toBe(true);
+      expect(config.stdout).not.toContain("override-key");
+      expect(
+        (await readdir(join(directory, "auth"))).filter((name) => name.endsWith(".json")),
+      ).toEqual(["brave-search.json"]);
+      expect((await invoke(["web", "logout"], environment)).exitCode).toBe(0);
+      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toMatchObject({
+        configured: false,
+      });
+
+      const invalid = await invoke(["web", "status"], {
+        ...environment,
+        POPPET_BRAVE_SEARCH_API_KEY: "invalid key",
+      });
+
+      expect(invalid.exitCode).toBe(1);
+      expect(invalid.stderr).not.toContain("invalid key");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("isolates command configuration from the shell and restores the original environment", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-env-"));
 
@@ -824,6 +889,9 @@ describe("CLI", () => {
       "auth models",
       "auth verify",
       "auth logout",
+      "web login",
+      "web status",
+      "web logout",
       "chat new",
       "chat interactive",
       "chat send",
@@ -979,6 +1047,7 @@ describe("CLI", () => {
         notesDirectory: join(directory, "notes"),
         provider: "openai-chatgpt",
         model: null,
+        webSearch: false,
         chat: defaultPolicy,
         configFile: { path: join(directory, "config.json"), exists: false },
         environmentOverrides: ["POPPET_DATA_DIR", "POPPET_APP_NAME"],
@@ -1032,6 +1101,7 @@ describe("CLI", () => {
         notesDirectory: join(directory, "my-notes"),
         provider: "openrouter",
         model: "override-model",
+        webSearch: false,
         chat: { ...chat, outputTokens: 512 },
         configFile: { path: join(directory, "config.json"), exists: true },
         environmentOverrides: ["POPPET_DATA_DIR", "POPPET_MODEL", "POPPET_OUTPUT_TOKENS"],

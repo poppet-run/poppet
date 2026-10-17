@@ -17,6 +17,7 @@ const FileSettings = Schema.Struct({
   notesDirectory: Schema.optionalKey(ConfigText),
   provider: Schema.optionalKey(ConfigText),
   model: Schema.optionalKey(ConfigText),
+  webSearch: Schema.optionalKey(Schema.Boolean),
   chat: Schema.optionalKey(
     Schema.Struct({
       logReasoning: Schema.optionalKey(Schema.Boolean),
@@ -98,6 +99,7 @@ export const loadConfigSource = Effect.gen(function* () {
       file.notesDirectory === undefined ? undefined : resolve(directory, file.notesDirectory),
     POPPET_PROVIDER: file.provider,
     POPPET_MODEL: file.model,
+    POPPET_WEB_SEARCH: file.webSearch,
     POPPET_LOG_REASONING: file.chat?.logReasoning,
     POPPET_CONTEXT_BYTES: file.chat?.contextBytes,
     POPPET_HISTORY_TURNS: file.chat?.historyTurns,

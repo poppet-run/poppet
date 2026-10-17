@@ -5,8 +5,10 @@ import { join } from "node:path";
 
 import {
   Agent,
+  AgentError,
   AgentLive,
   Pages,
+  WebSearch,
   ChatSettings,
   defaultPolicy,
   ModelResolver,
@@ -68,6 +70,7 @@ const final = () => response([{ type: "text", text: "Acorn summary" }]);
 const fixture = async (
   stream: ModelOperations["stream"],
   pages: Pages["Service"] = { fetch: () => Effect.die("Unexpected page fetch") },
+  webSearch: WebSearch["Service"] = { search: null },
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "p7-"));
   const notesDirectory = join(directory, "notes");
@@ -125,6 +128,7 @@ const fixture = async (
         store,
         memory,
         settings,
+        Layer.succeed(WebSearch, webSearch),
         Layer.succeed(Pages, pages),
         NotesLive.pipe(Layer.provide(Layer.merge(config, settings))),
         Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),
@@ -293,6 +297,107 @@ describe.concurrent("task worker", () => {
       );
       expect(fetched).toEqual(["https://example.com/article"]);
       expect(state.requests).toHaveLength(2);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("scheduled search can read returned sources without acquiring write tools or pausing inference", async () => {
+    let turns = 0;
+
+    const state = await fixture(
+      (request) => {
+        expect(
+          request.tools.some((tool) => tool.name === "save_note" || tool.name === "memory"),
+        ).toBe(false);
+
+        if (++turns === 1)
+          return response([
+            {
+              type: "tool-call",
+              callId: "search",
+              namespace: "poppet_web",
+              name: "search_web",
+              arguments: '{"query":"current topic"}',
+            },
+          ]);
+
+        if (turns === 2)
+          return response([
+            {
+              type: "tool-call",
+              callId: "page",
+              namespace: "poppet_web",
+              name: "fetch_page",
+              arguments: '{"url":"https://example.com/source"}',
+            },
+          ]);
+
+        return final();
+      },
+      { fetch: () => Effect.succeed("Source text") },
+      {
+        search: () =>
+          Effect.succeed({
+            results: [{ title: "Source", url: "https://example.com/source", snippet: "Snippet" }],
+            truncated: false,
+          }),
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          repo.add({ ...state.task, prompt: "Research a current topic" }, 0);
+          repo.reconcile(0);
+          const claimed = repo.claim(0)!;
+          yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
+          expect(repo.occurrence(claimed.occurrence.id).status).toBe("completed");
+          expect(repo.providers()).toEqual([]);
+        }),
+      );
+      expect(state.requests).toHaveLength(3);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("search rate limits fail the occurrence without pausing its inference provider", async () => {
+    const state = await fixture(
+      () =>
+        response([
+          {
+            type: "tool-call",
+            callId: "search",
+            namespace: "poppet_web",
+            name: "search_web",
+            arguments: '{"query":"topic"}',
+          },
+        ]),
+      undefined,
+      {
+        search: () =>
+          Effect.fail(new AgentError({ reason: "tool-rate-limit", message: "Search rate limit" })),
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          repo.add(state.task, 0);
+          repo.reconcile(0);
+          const claimed = repo.claim(0)!;
+          yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
+          expect(repo.occurrence(claimed.occurrence.id)).toMatchObject({
+            status: "failed",
+            reason: "Search rate limit",
+          });
+          expect(repo.providers()).toEqual([]);
+        }),
+      );
+      expect(state.requests).toHaveLength(1);
     } finally {
       await state.close();
     }

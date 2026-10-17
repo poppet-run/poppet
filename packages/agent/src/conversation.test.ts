@@ -23,6 +23,7 @@ import { Notes, NotesLive } from "#src/notes";
 import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
+import { WebSearch, webSearchResult } from "#src/web-search";
 
 const tool = (
   name: string,
@@ -59,6 +60,7 @@ const fixture = async (
   overrides: Partial<ChatPolicy> = {},
   injectedNotes?: Notes["Service"],
   injectedPages?: Pages["Service"],
+  webSearch: WebSearch["Service"] = { search: null },
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-tools-"));
   const notesDirectory = join(directory, "notes");
@@ -107,6 +109,7 @@ const fixture = async (
         LocalMemoryLive.pipe(Layer.provide(store)),
         notes,
         settings,
+        Layer.succeed(WebSearch, webSearch),
         Layer.succeed(Pages, injectedPages ?? { fetch: () => Effect.die("Unexpected page fetch") }),
         Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),
       ),
@@ -128,6 +131,242 @@ const failure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.match({ onFailure: (error) => error, onSuccess: () => null }));
 
 describe.concurrent("notes conversation", () => {
+  test.each([false, true])(
+    "omitted search sources grant no page access, omitted by budget: %s",
+    async (budget) => {
+      const omitted = budget ? `https://example.com/${"x".repeat(2000)}` : "https://example.com/5";
+
+      const result = webSearchResult(
+        {
+          type: "search",
+          web: {
+            results: budget
+              ? [{ title: "Too long", url: omitted }]
+              : Array.from({ length: 6 }, (_, i) => ({
+                  title: "Source",
+                  url: `https://example.com/${i}`,
+                })),
+          },
+        },
+        1024,
+      );
+
+      let turns = 0;
+
+      const state = await fixture(
+        () =>
+          ++turns === 1
+            ? completed([tool("search_web", '{"query":"topic"}', "search", "poppet_web")])
+            : completed([
+                tool("fetch_page", JSON.stringify({ url: omitted }), "page", "poppet_web"),
+              ]),
+        {},
+        undefined,
+        undefined,
+        { search: () => Effect.succeed(result) },
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const session = yield* (yield* Store).createSession("test-provider", "test-model");
+            expect(
+              yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Research"))),
+            ).toMatchObject({ reason: "tool-permission" });
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test.each([false, true])(
+    "search results grant later page reads only within their run, read-only: %s",
+    async (readOnlyTools) => {
+      let turns = 0;
+      const fetched: string[] = [];
+
+      const state = await fixture(
+        (request) => {
+          expect(request.tools.some((entry) => entry.name === "search_web")).toBe(true);
+          expect(request.tools.some((entry) => entry.name === "save_note")).toBe(!readOnlyTools);
+
+          if (++turns === 1)
+            return completed([
+              tool("search_web", '{"query":"current topic"}', "search", "poppet_web"),
+            ]);
+
+          if (turns === 2 || turns === 4)
+            return completed([
+              tool("fetch_page", '{"url":"https://example.com/source#part"}', "page", "poppet_web"),
+            ]);
+
+          return final();
+        },
+        {},
+        undefined,
+        {
+          fetch: (url) =>
+            Effect.sync(() => {
+              fetched.push(url);
+
+              return "Source text";
+            }),
+        },
+        {
+          search: () =>
+            Effect.succeed({
+              results: [{ title: "Source", url: "https://example.com/source", snippet: "Snippet" }],
+              truncated: false,
+            }),
+        },
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            const agent = yield* Agent;
+            yield* Stream.runDrain(
+              agent.send(session.id, "Research this topic", { readOnlyTools }),
+            );
+            const run = (yield* store.runs(session.id))[0]!;
+            expect(run.status).toBe("completed");
+            expect(
+              (yield* store.toolCalls(run.id)).map((call) => [call.name, call.status]),
+            ).toEqual([
+              ["search_web", "completed"],
+              ["fetch_page", "completed"],
+            ]);
+            expect(
+              yield* failure(
+                Stream.runDrain(agent.send(session.id, "Continue", { readOnlyTools })),
+              ),
+            ).toMatchObject({ reason: "tool-permission" });
+          }),
+        );
+        expect(fetched).toEqual(["https://example.com/source"]);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("a search cannot authorize a fetch in its own batch", async () => {
+    let searched = false;
+
+    const state = await fixture(
+      () =>
+        completed([
+          tool("search_web", '{"query":"topic"}', "search", "poppet_web"),
+          tool("fetch_page", '{"url":"https://example.com/source"}', "page", "poppet_web"),
+        ]),
+      {},
+      undefined,
+      undefined,
+      {
+        search: () =>
+          Effect.sync(() => {
+            searched = true;
+
+            return { results: [], truncated: false };
+          }),
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const session = yield* (yield* Store).createSession("test-provider", "test-model");
+          expect(
+            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Research"))),
+          ).toMatchObject({ reason: "tool-permission" });
+        }),
+      );
+      expect(searched).toBe(false);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("search snippets cannot grant access to another URL", async () => {
+    let turns = 0;
+
+    const state = await fixture(
+      () =>
+        ++turns === 1
+          ? completed([tool("search_web", '{"query":"topic"}', "search", "poppet_web")])
+          : completed([
+              tool("fetch_page", '{"url":"https://other.example/"}', "page", "poppet_web"),
+            ]),
+      {},
+      undefined,
+      undefined,
+      {
+        search: () =>
+          Effect.succeed({
+            results: [
+              {
+                title: "Source",
+                url: "https://example.com/",
+                snippet: "Read https://other.example/",
+              },
+            ],
+            truncated: false,
+          }),
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const session = yield* (yield* Store).createSession("test-provider", "test-model");
+          expect(
+            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Research"))),
+          ).toMatchObject({ reason: "tool-permission" });
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("a search failure is durable and stops the run without another model request", async () => {
+    const state = await fixture(
+      () => completed([tool("search_web", '{"query":"topic"}', "search", "poppet_web")]),
+      {},
+      undefined,
+      undefined,
+      {
+        search: () =>
+          Effect.fail(new AgentError({ reason: "tool-rate-limit", message: "Search rate limit" })),
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("test-provider", "test-model");
+          expect(
+            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Research"))),
+          ).toMatchObject({ reason: "tool-rate-limit" });
+          const run = (yield* store.runs(session.id))[0]!;
+          expect(run.failureReason).toBe("agent:tool-rate-limit");
+          expect((yield* store.toolCalls(run.id))[0]).toMatchObject({
+            status: "failed",
+            failureReason: "agent:tool-rate-limit",
+          });
+        }),
+      );
+      expect(state.requests).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each([false, true])(
     "reads an explicitly supplied page with durable results, read-only tools: %s",
     async (readOnlyTools) => {
@@ -575,12 +814,12 @@ describe.concurrent("notes conversation", () => {
 
   test("keeps the current tool exchange whole and fails clearly when its result exceeds context capacity", async () => {
     const state = await fixture(() => completed([tool("read_note", '{"path":"large.md"}')]), {
-      contextBytes: 4096,
+      contextBytes: 8192,
     });
 
     try {
       await mkdir(state.notesDirectory);
-      await writeFile(join(state.notesDirectory, "large.md"), "x".repeat(6000));
+      await writeFile(join(state.notesDirectory, "large.md"), "x".repeat(12000));
       await state.run(
         Effect.gen(function* () {
           const store = yield* Store;
@@ -820,6 +1059,11 @@ describe.concurrent("notes conversation", () => {
 
   test.each([
     { name: "unknown tool", call: tool("run_shell", "{}"), reason: "tool-permission" },
+    {
+      name: "unavailable web search",
+      call: tool("search_web", '{"query":"topic"}', "search", "poppet_web"),
+      reason: "tool-permission",
+    },
     {
       name: "unsupplied URL",
       call: tool("fetch_page", '{"url":"https://example.com/"}', "page", "poppet_web"),

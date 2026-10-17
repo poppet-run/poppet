@@ -63,6 +63,18 @@ See [ChatGPT](providers/openai-chatgpt.md), [OpenCode Go](providers/opencode-go.
 [OpenRouter](providers/openrouter.md), and [API-key handling](configuration.md#api-keys)
 for provider-specific setup and logout behavior.
 
+## Web search setup
+
+| Command                   | Action                                                                            |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `web login [--key-stdin]` | Save a Brave Search key from the environment, hidden prompt, or explicit stdin.   |
+| `web status`              | Show whether search is enabled and a key is configured, without a remote request. |
+| `web logout`              | Remove the saved search key.                                                      |
+
+These commands do not change inference credentials or require a selected model.
+Enable `webSearch` separately and restart any running worker. See
+[configuration](configuration.md#web-search) for credentials and query handling.
+
 ## Chat
 
 | Command                                                  | Action                                                      |

@@ -13,3 +13,10 @@ export { sessionTitle } from "#src/title";
 export { Pages, PagesLive } from "#src/pages";
 
 export { PageTransportLive } from "#src/page-network";
+
+export {
+  WebSearch,
+  BraveSearchResponse,
+  webSearchResult,
+  type WebSearchResult,
+} from "#src/web-search";

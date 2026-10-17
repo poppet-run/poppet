@@ -1,6 +1,11 @@
 import { BunServices } from "@effect/platform-bun";
 import { ChatSettings, Skills } from "@poppet/agent";
-import { AppConfig, ConfigSource, dataDirectory as configuredDataDirectory } from "@poppet/config";
+import {
+  AppConfig,
+  ConfigSource,
+  dataDirectory as configuredDataDirectory,
+  webSearchEnabled,
+} from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
 import { MemoryKey, MemoryValue } from "@poppet/memory";
 import type { WorkerAction } from "@poppet/platform";
@@ -52,6 +57,7 @@ import { manageMemory, type MemoryCommand } from "#src/memory";
 import { providers } from "#src/providers";
 import { findProvider, runtimeLayers } from "#src/runtime";
 import { parseTaskSchedule, prepareTask } from "#src/tasks";
+import { manageWebSearch } from "#src/web-search";
 import { manageWorker } from "#src/worker";
 import { remoteWorkerCommand, WorkerRequestsLive, type WorkerCommand } from "#src/worker-commands";
 import { runWorker, type WorkerMode } from "#src/worker-host";
@@ -82,7 +88,12 @@ const skillFlag = Flag.String("skill").pipe(
 const showConfig = Effect.gen(function* () {
   yield* Console.log(
     JSON.stringify(
-      { ...(yield* AppConfig), chat: yield* ChatSettings, ...(yield* ConfigSource) },
+      {
+        ...(yield* AppConfig),
+        webSearch: yield* webSearchEnabled,
+        chat: yield* ChatSettings,
+        ...(yield* ConfigSource),
+      },
       null,
       2,
     ),
@@ -688,6 +699,38 @@ export const makeCLI = (
         Command.withDescription(`Manage provider connections\n\n${providerHelp}`),
         Command.withShortDescription("Manage provider connections"),
         Command.withSubcommands(authCommands),
+      ),
+      Command.make("web").pipe(
+        Command.withDescription("Manage Brave Search credentials"),
+        Command.withSubcommands([
+          Command.make(
+            "login",
+            {
+              keyStdin: Flag.Boolean("key-stdin").pipe(
+                Flag.withDescription("Read the search API key from stdin"),
+                Flag.atMost(1),
+                Flag.map(([value = false]) => value),
+              ),
+            },
+            ({ keyStdin }) =>
+              manageWebSearch("login", keyStdin).pipe(
+                Effect.provide([runtime.searchCredentials, runtime.config]),
+              ),
+          ).pipe(Command.withDescription("Save a Brave Search API key")),
+          ...(["status", "logout"] as const).map((action) =>
+            Command.make(action, {}, () =>
+              manageWebSearch(action).pipe(
+                Effect.provide([runtime.searchCredentials, runtime.config]),
+              ),
+            ).pipe(
+              Command.withDescription(
+                action === "status"
+                  ? "Show search setup without secrets"
+                  : "Remove the saved search key",
+              ),
+            ),
+          ),
+        ]),
       ),
       Command.make("provider").pipe(
         Command.withDescription("Inspect and verify the configured provider"),

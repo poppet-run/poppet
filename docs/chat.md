@@ -167,7 +167,7 @@ fetched pages grant no permission to retrieve another page.
 
 Reading supports UTF-8 plain text and static HTML. It removes scripts, styles,
 common site navigation and hidden elements, and does not execute JavaScript.
-PDFs, authenticated pages, downloads, crawling, and web search are unsupported.
+PDFs, authenticated pages, downloads, and crawling are unsupported.
 An empty or unsupported page fails the run clearly; there is no automatic retry.
 `chat show` retains the tool call and failure or bounded result.
 
@@ -175,6 +175,35 @@ Destinations must resolve entirely to public addresses on standard HTTP(S) ports
 Credentials in URLs are rejected. Each read has a 15-second overall deadline,
 at most three redirects, and 1 MiB limits for transferred and decoded bodies.
 Results fit `POPPET_TOOL_BYTES`; truncation keeps the source URL and flag.
+
+## Search the web
+
+Enable [web search](configuration.md#web-search) to let tool-capable models use
+`poppet_web.search_web` in local, interactive, worker, and messaging chat:
+
+```fish
+bun run start chat new "Search for recent Bun releases, read a source, and cite it"
+```
+
+Search sends the model's query to Brave Search and returns at most five sources
+with `title`, `url`, and `snippet`, plus a `truncated` flag. Queries must be trimmed,
+nonempty, and at most 512 UTF-8 bytes. Results keep backend order and fit
+`POPPET_TOOL_BYTES`; long text is shortened and URLs that cannot fit are omitted.
+The tool is absent when disabled or missing a key. A configured key does not
+prove that the remote service accepts it.
+
+After a search completes, `fetch_page` may read the URLs actually included in its
+result on a later model turn. These permissions last only for that run. Search
+and a fetch of a newly discovered URL in one batch are rejected before either
+executes. Links appearing only in snippets or page text grant no access, and all
+page reads retain the existing public-address and connection checks. Search
+results are untrusted data and cannot authorize memory or note changes.
+
+An answer should distinguish snippets from pages actually read and cite sources.
+Search has a 15-second deadline and a 1 MiB response limit, with cancellation and
+no automatic retries or backend fallback. Failures remain inspectable in
+`chat show`; search authentication and rate-limit errors do not pause inference
+providers. Search uses the existing model-turn, tool-call, and context budgets.
 
 ## Provider and model selection
 
@@ -211,7 +240,8 @@ only the request, not saved history. Answers are limited to 128 KiB of text and
 1 MiB including continuation. The runner has a 90-second absolute deadline;
 provider inference also retains its 60-second deadline.
 
-Tool-capable models receive the three [notes tools](notes.md) and conversation search. Models without tool
+Tool-capable models receive the three [notes tools](notes.md), conversation search,
+page reading, explicit memory, and web search when configured. Models without tool
 support continue to answer text requests. The runner checks complete tool
 requests before execution and keeps one provider/model throughout the exchange.
 Recorded usage sums all model turns when every turn reports usage, otherwise it

@@ -8,6 +8,7 @@ import {
   SkillsLive,
 } from "@poppet/agent";
 import { AppConfig, makeAppConfigLive } from "@poppet/config";
+import { ApiKeyStoreLive } from "@poppet/credentials";
 import { GatewayRepositoryLive } from "@poppet/gateway";
 import { LocalMemoryLive } from "@poppet/memory";
 import {
@@ -24,6 +25,7 @@ import { TaskRepositoryLive, WorkerConnections } from "@poppet/tasks";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { createConnectionStatus } from "#src/connection-status";
+import { WebSearchLive } from "#src/web-search";
 
 export const findProvider = (
   id: ProviderId,
@@ -153,10 +155,22 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   ).pipe(Layer.provide(config));
 
   const pages = PagesLive.pipe(Layer.provide([PageTransportLive, chatSettings]));
+  const searchCredentials = ApiKeyStoreLive.pipe(Layer.provide(environment), Layer.provide(config));
+  const webSearch = WebSearchLive.pipe(Layer.provide([config, chatSettings, searchCredentials]));
   const notes = NotesLive.pipe(Layer.provide([config, chatSettings]));
 
   const chat = AgentLive.pipe(
-    Layer.provideMerge([store, skills, memory, resolver, chatSettings, connections, pages, notes]),
+    Layer.provideMerge([
+      store,
+      skills,
+      memory,
+      resolver,
+      chatSettings,
+      connections,
+      pages,
+      notes,
+      webSearch,
+    ]),
     Layer.provideMerge(config),
   );
 
@@ -172,6 +186,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     skills,
     chat,
     connections,
+    searchCredentials,
     messagingStatus: GatewayRepositoryLive.pipe(
       Layer.provideMerge(store),
       Layer.provideMerge(config),

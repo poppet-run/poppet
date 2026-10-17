@@ -26,6 +26,7 @@ import { Notes } from "#src/notes";
 import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
+import { WebSearch } from "#src/web-search";
 
 const completion = (calls = false): Completion => ({
   output: calls
@@ -99,6 +100,7 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Mem
         store,
         memory,
         Layer.succeed(ChatSettings, { ...defaultPolicy, ...overrides }),
+        Layer.succeed(WebSearch, { search: null }),
         Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
         Layer.succeed(Notes, { execute: () => Effect.succeed("Note contents") }),
         Layer.succeed(ModelResolver, {
@@ -364,7 +366,7 @@ describe.concurrent("explicit memory in chat", () => {
   test.each(["profile", "soul"] as const)(
     "counts %s toward the overall context budget before inference",
     async (file) => {
-      const saved = await fixture({ contextBytes: 4096 });
+      const saved = await fixture({ contextBytes: 8192 });
 
       try {
         await writeFile(saved[file], "Background information\n".repeat(250));

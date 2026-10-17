@@ -11,6 +11,9 @@ import {
 
 export { ConfigSource, dataDirectory } from "#src/source";
 
+/** Search stays opt-in independently of the selected inference provider. */
+export const webSearchEnabled = Config.Boolean("POPPET_WEB_SEARCH").pipe(Config.withDefault(false));
+
 /** Resolved host paths and default model selection for new sessions. */
 export interface Settings {
   readonly applicationName: string;

@@ -2,14 +2,13 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–16 implemented with automated checks; phases 17–19 planned. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, and live WhatsApp behavior require manual validation
+Status: Phases 1–17 implemented with automated checks; phases 18–19 planned. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, and live scheduled research delivery require manual validation
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
 implemented.
 
-The next planned additions are [web search](#phase-17-web-search),
-[task management through chat](#phase-18-task-management-through-chat), and
+The next planned additions are [task management through chat](#phase-18-task-management-through-chat) and
 [deeper conversation recall](#phase-19-deeper-conversation-recall).
 
 Updated: 2026-10-17
@@ -1004,68 +1003,68 @@ channel, including manual edits and the platform's non-atomic rename race.
 
 ## Phase 17: Web search
 
-Planned. Depends on the durable tool loop from phase 5 and the protected page
-reader from phase 15. Independent of phases 18–19.
+Implemented with automated checks. Live search-to-page inference and a scheduled
+research summary delivered through messaging remain manual validation. Depends on
+the durable tool loop from phase 5 and protected page reader from phase 15.
+Independent of phases 18–19.
 
-Add `poppet_web.search_web` for current questions and scheduled research summaries.
-Start with one configured search backend, returning source results rather than a
-second model-generated answer. Accept a trimmed, nonempty query of at most 512
-UTF-8 bytes and return at most five results with a title, public HTTP(S) URL, and
-snippet. Include a `truncated` flag and keep the entire serialized response within
-`POPPET_TOOL_BYTES`. Empty results are a successful response. Keep result order
-from the backend; no ranking model, embeddings, or general search-provider registry.
+`poppet_web.search_web` accepts a trimmed, nonempty query of at most 512 UTF-8
+bytes. A single Brave Search backend returns at most five source titles,
+canonical public HTTP(S) URLs, and snippets in backend order, with a `truncated`
+flag. Invalid URLs, private literal addresses, and URLs that cannot fit are
+omitted; long text is shortened safely within `POPPET_TOOL_BYTES`. Empty results
+are successful. The service adds no ranking model, cache, or search-provider registry.
 
-The search service owns backend requests and response validation; inference
-providers receive only the generic tool schema and saved results. Use a fixed
-backend endpoint, a 15-second overall deadline, a 1 MiB response limit, and scoped
-cancellation. Reject malformed responses and surface authentication, rate-limit,
-network, and service failures without automatic retries or backend fallback.
-Keep search failures separate from inference-provider quota pauses. Search queries
-go to the configured service; do not send conversation history, notes, memory,
-skills, or inference credentials as additional request context.
+Search is opt-in through `webSearch` in `config.json`, overridden by
+`POPPET_WEB_SEARCH`. `web login [--key-stdin]`, `web status`, and `web logout`
+reuse protected credential storage under `auth/brave-search.json`, independently
+of inference providers. `POPPET_BRAVE_SEARCH_API_KEY` overrides that saved key.
+Missing credentials or disabled search omit the tool while ordinary chat and
+page reading remain available. Invalid enabled setup fails clearly. Keys never
+enter general configuration, LaunchAgents, transcripts, or diagnostics. Restart
+an existing worker after changing settings or credentials.
 
-Make search opt-in through the existing configuration system, with environment
-values overriding file defaults. Keep any backend key out of `config.json`,
-LaunchAgents, transcripts, and diagnostic output; reuse protected credential and
-redaction conventions. Omit the tool when search is disabled or required setup is
-missing, while leaving supplied-URL reading and ordinary chat available. Validate
-enabled search configuration clearly rather than silently choosing another backend.
+Platform fetch sends the query and fixed options to Brave's fixed HTTPS endpoint,
+with a separate authentication header and redirect rejection. It adds no
+conversation, notes, memory, skills, or inference credentials as extra request
+context. A 15-second overall deadline, streamed 1 MiB response limit, strict UTF-8
+and schema validation, and cancellation bound the operation. Authentication,
+rate-limit, HTTP, malformed-response, and network failures become sanitized
+agent errors without retries or backend fallback. Search failures do not pause
+inference providers.
 
-Extend `fetch_page` authorization with a run-local set of canonical URLs from
-successfully completed search calls. Grant only URLs actually returned to the
-model within the bounded result, and require a later model turn to fetch them.
-A search and a previously unauthorized fetch in the same batch must still fail
-whole-batch validation before either executes. Search snippets, page links, saved
-search results from older runs, history, and skills cannot add URLs to the set.
-Discard grants when the run ends; do not reconstruct them from transcript text.
-Every fetch retains phase 15's DNS, literal-IP connection, redirect, TLS, body,
-and deadline checks. Search grants never permit crawling or private-network access.
+A successfully completed and journaled search adds only the URLs actually
+returned to the model to the current run's canonical page allowlist. A later
+model turn may fetch them through the existing DNS, literal-IP, redirect, TLS,
+body, and deadline checks. Whole-batch validation still runs before execution,
+so a search and previously unauthorized fetch in one batch fail before either
+executes. Snippets, page links, omitted results, history, and saved search results
+from previous runs grant no access. Grants are discarded at run end and never
+reconstructed from transcript text.
 
-Both interactive and scheduled runs may search; scheduled notes and memory stay
-read-only. Treat titles, snippets, URLs, and fetched text as untrusted data, never
-instructions or authorization for mutations. Ask the model to cite source URLs
-and distinguish a search snippet from a page it actually read. Reuse tool-call
-journaling, namespace checks, budgets, and cancellation throughout.
+Interactive CLI, worker, and messaging requests share the same service and
+permission rules. Scheduled runs may search and read returned sources while
+notes and memory remain read-only. Results are untrusted source data, never
+mutation authorization. Instructions require citations and distinguish snippets
+from pages actually read. Existing durable calls, run budgets, and cancellation
+remain authoritative.
 
-Keep search schemas, the service contract, and run-local URL grants in
-`@poppet/agent`, with configuration, credential setup, and live composition in
-the host and existing shared packages. Update tool dispatch, page descriptions,
-base instructions, CLI/worker wiring, and fake-model fixtures together. Update
-chat, tasks, configuration, and architecture documentation when implemented,
-including credential setup and where queries are sent. Reuse platform HTTP
-support where suitable; add no browser or cache.
+`@poppet/agent` owns schemas, the service contract, result budgeting, dispatch,
+and run-local grants. The CLI owns the Brave request implementation, credential
+commands, and live composition using existing config/credential packages.
+Provider packages stay unchanged. No new dependency or database migration was
+needed. Chat, tasks, configuration, CLI, and architecture docs describe setup,
+query disclosure, failure behavior, and source permissions.
 
-Completion check: ask a new chat to research a current topic without supplying a
-URL. It searches, reads a returned source on a later turn, and cites that source.
-A scheduled research summary follows the same path and uses existing delivery.
-
-Automated checks cover disabled and incomplete setup, argument and response
-validation, empty results, result/byte/body limits, secret omission, service
-failures, deadlines, cancellation, durable results, and scheduled read-only policy.
-Verify grants exclude omitted results, do not cross runs, cannot come from page
-content or history, and cannot authorize a fetch in the search's own batch.
-Retain the page reader's SSRF and connection tests. Run `bun run check`, then
-separately validate one live search-to-page chat and scheduled delivered summary.
+Automated checks cover disabled/missing setup, file/environment precedence,
+credential independence and redaction, malformed arguments and responses,
+empty results, count/byte/body limits, Unicode truncation, deadlines,
+cancellation, durable results/failures, and scheduled read-only execution.
+Fake-model checks cover search-to-page use, same-batch rejection, snippet and
+omitted-result rejection, and grant isolation across runs. Existing page-reader
+SSRF and connection checks remain in place. Run `bun run check`. Separately
+validate one live research chat and scheduled delivered summary, including source
+citations, using the setup in [configuration](configuration.md#web-search).
 
 ## Phase 18: Task management through chat
 

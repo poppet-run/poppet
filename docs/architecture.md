@@ -419,7 +419,8 @@ continuation together. The newest input must fit by itself or the run fails with
 tokens. Advertised model capacity further limits input and output. The UTF-8 size
 estimate is not an exact tokenizer, and trimming never changes stored history.
 
-Tool-capable models receive the three notes tools, conversation search, and supplied-URL reading. The conversation workflow
+Tool-capable models receive the three notes tools, conversation search, explicit
+memory, page reading, and web search when configured. The conversation workflow
 validates complete tool requests, records them, executes sequentially, and
 continues with the saved results. Models without tool support receive no tools.
 Text deltas stream immediately; terminal-only text or an unstreamed final suffix
@@ -480,8 +481,9 @@ and scheduled runs. Providers see only the generic tool definition and result.
 No store migration or new configuration is needed.
 
 The host extracts canonical HTTP(S) URLs solely from the current user message or
-saved scheduled prompt. Whole-batch validation checks the requested initial URL
-against that set before any tool executes. History, skills, notes, and page links
+saved scheduled prompt. Completed web searches can add their returned source URLs
+for this run only. Whole-batch validation checks the requested initial URL against
+that set before any tool executes. History, skills, notes, snippets, and page links
 cannot expand it. Page text remains untrusted source material, and guidance asks
 the model to cite the returned final source URL.
 
@@ -518,6 +520,38 @@ checks use the production HTTP(S) client to prove literal-address connections,
 source Host/SNI and TLS identity, proxy isolation, wire/decompression limits, and
 cancellation. Fake-model and scheduler checks cover authorization, durable results,
 failure without replay, and unchanged read-only notes permissions.
+
+## Web search
+
+`agent/web-search.ts` owns `poppet_web.search_web`, the `WebSearch` service contract,
+response schemas, URL filtering, and Unicode-safe result budgeting. A null search
+operation means disabled or missing credentials, so the tool is not advertised.
+`cli/web-search.ts` implements the single Brave backend using platform fetch and
+the existing API-key store. Configuration layers provide the opt-in flag with
+environment-over-file precedence; keys stay outside normal configuration and
+inference-provider packages. CLI setup and the local/worker runtime share these
+layers. No dependency or database migration is added.
+
+Requests use Brave's fixed HTTPS endpoint, query-only context, and a separate
+authentication header with redirect rejection. An Effect deadline bounds the
+request and body to 15 seconds. Streaming reads enforce a 1 MiB response limit;
+invalid UTF-8, malformed JSON/schema, unsupported content types, and HTTP failures
+produce sanitized agent errors without replay or backend fallback. Cancellation
+aborts fetch. Authentication and rate-limit failures have tool-specific reason
+codes and never enter inference-provider pause handling.
+
+Results keep at most five source titles, canonical URLs, and snippets in backend
+order, within the serialized tool budget. Invalid URLs, private literal addresses,
+and URLs that cannot fit are omitted and mark the result truncated. Hostname
+address validation remains mandatory when a page is fetched. Only returned
+sources gain a run-local page grant after the tool result is durably completed.
+Grants come from the fresh service result rather than replayed transcript text.
+Whole-batch validation runs first, so search cannot authorize a new fetch in that
+same batch. Results omitted by count or byte limits, snippet links, and previous
+runs never grant access. Scheduled runs use the same path and retain read-only
+notes and memory. Tests cover the request boundary, setup, failure/cancellation,
+limits, grant lifetime, and scheduled execution. Live search-to-page inference
+and scheduled messaging delivery remain separate manual checks.
 
 ## Conversation search
 

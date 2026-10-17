@@ -21,6 +21,7 @@ import { Notes } from "#src/notes";
 import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver, type ChatEvent } from "#src/service";
 import { ChatSettings, defaultPolicy } from "#src/settings";
+import { WebSearch } from "#src/web-search";
 
 const response = (text = "Hello"): Completion => ({
   output: [{ type: "text", text }],
@@ -66,6 +67,7 @@ const fixture = async (resolve: ModelResolver["Service"]["resolve"], logReasonin
       Layer.mergeAll(
         store,
         LocalMemoryLive.pipe(Layer.provide(store)),
+        Layer.succeed(WebSearch, { search: null }),
         Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
         Layer.succeed(Notes, {
           execute: () =>

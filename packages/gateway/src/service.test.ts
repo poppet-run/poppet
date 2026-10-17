@@ -11,6 +11,7 @@ import {
   ModelResolver,
   NotesLive,
   Pages,
+  WebSearch,
   Skills,
   SkillsLive,
 } from "@poppet/agent";
@@ -114,6 +115,7 @@ const fixture = async (
         store,
         LocalMemoryLive.pipe(Layer.provide(store)),
         settings,
+        Layer.succeed(WebSearch, { search: null }),
         Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
         NotesLive.pipe(Layer.provide(Layer.merge(config, settings))),
         Layer.succeed(ModelResolver, {
