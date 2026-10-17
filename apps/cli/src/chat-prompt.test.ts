@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 
 import { AgentError } from "@poppet/agent";
 import { WorkerRequestError } from "@poppet/worker";
@@ -7,6 +8,68 @@ import { TestClock } from "effect/testing";
 
 import type { ChatCommand } from "#src/chat";
 import { interactiveChat, interactiveChatOutput, thinkingIndicator } from "#src/chat-prompt";
+
+test.concurrent("readline releases stdin error listeners after completed prompts", async () => {
+  let transcript = "";
+  let prompts = 0;
+  const input = ["first\n", "second\n", "\u0004"];
+  const decoder = new TextDecoder();
+  const finished = Promise.withResolvers<string>();
+
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "--eval",
+      `
+        import { Effect } from "effect";
+        import { readChatLine } from "./chat-prompt.ts";
+
+        const before = process.stdin.listenerCount("error");
+        const results = await Effect.runPromise(Effect.gen(function* () {
+          const results = [];
+          for (let index = 0; index < 3; index++) {
+            const text = yield* readChatLine;
+            results.push({ text, listeners: process.stdin.listenerCount("error") - before });
+          }
+          return results;
+        }));
+        console.log("RESULT " + JSON.stringify(results));
+      `,
+    ],
+    {
+      cwd: fileURLToPath(new URL(".", import.meta.url)),
+      env: { PATH: process.env.PATH ?? "", TERM: "dumb", NO_COLOR: "1" },
+      terminal: {
+        data(terminal, data) {
+          transcript += decoder.decode(data, { stream: true });
+          const count = transcript.split("You> ").length - 1;
+
+          while (prompts < count && prompts < input.length) terminal.write(input[prompts++]!);
+        },
+        exit: () => finished.resolve(transcript),
+      },
+    },
+  );
+
+  try {
+    const [exitCode, output] = await Effect.runPromise(
+      Effect.promise(() => Promise.all([child.exited, finished.promise])).pipe(
+        Effect.timeout("5 seconds"),
+      ),
+    );
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(output.match(/RESULT (.+)/)?.[1] ?? "null")).toEqual([
+      { text: "first", listeners: 0 },
+      { text: "second", listeners: 0 },
+      { text: null, listeners: 0 },
+    ]);
+  } finally {
+    child.kill("SIGKILL");
+    child.terminal?.close();
+    await child.exited;
+  }
+}, 15_000);
 
 const fixture = (lines: (string | null)[]) => {
   let reads = 0;

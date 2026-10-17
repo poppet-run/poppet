@@ -55,6 +55,8 @@ export const readChatLine = Effect.suspend(() => {
       Effect.callback<string | null, AgentError>((resume) => {
         const close = () => resume(writeChatText("\n").pipe(Effect.as(null)));
         const fail = () => resume(Effect.fail(inputFailure()));
+        // Callback cleanup only runs on interruption, so completed reads also need cleanup.
+        reader.once("close", () => process.stdin.off("error", fail));
         reader.once("close", close);
         reader.once("SIGINT", close);
         process.stdin.once("error", fail);
