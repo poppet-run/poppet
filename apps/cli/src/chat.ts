@@ -65,7 +65,6 @@ export type ChatReasoningWriter = (
 
 export interface ChatReasoning {
   readonly write?: ChatReasoningWriter;
-  readonly relay?: ChatAnnouncer;
   readonly log?: (line: string) => Effect.Effect<void>;
 }
 
@@ -221,9 +220,6 @@ export const sendChat = (
       if (event.type === "started") return announce(`Run: ${event.run.id}`);
 
       if (event.type === "text-delta") return write(event.text);
-
-      // The agent logs locally; worker clients also receive the diagnostic over stderr frames.
-      if (event.type === "reasoning") return reasoning.relay?.(event.text) ?? Effect.void;
 
       if (event.type === "reasoning-delta" || event.type === "reasoning-end")
         return reasoning.write?.(event) ?? Effect.void;
