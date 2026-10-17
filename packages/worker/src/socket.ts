@@ -76,6 +76,12 @@ export const requestWorker = async (
   return response;
 };
 
+const decodeRequestBody = (request: Request) =>
+  Effect.tryPromise({
+    try: async () => Schema.decodeUnknownSync(Schema.Json)(await request.json()),
+    catch: () => new WorkerRequestError({ message: "Invalid request body." }),
+  }).pipe(Effect.timeout("10 seconds"), Effect.option);
+
 /** Opens a protected Unix socket in scope; the caller must already own the store. */
 export const serveWorker = (path: string, handle: WorkerRequests["Service"]["handle"]) =>
   Effect.acquireRelease(
@@ -108,10 +114,7 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
               const reply = Effect.gen(function* () {
                 if (request.method !== "POST") return new Response("Not found", { status: 404 });
 
-                const body = yield* Effect.tryPromise({
-                  try: async () => Schema.decodeUnknownSync(Schema.Json)(await request.json()),
-                  catch: () => new WorkerRequestError({ message: "Invalid request body." }),
-                }).pipe(Effect.timeout("10 seconds"), Effect.option);
+                const body = yield* decodeRequestBody(request);
 
                 if (Option.isNone(body))
                   return Response.json(
