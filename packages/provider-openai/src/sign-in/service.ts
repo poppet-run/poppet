@@ -64,15 +64,16 @@ export const makeBrowserSignIn = (
         return yield* callback.authorization;
       }),
     ).pipe(
-      Effect.timeout(timeoutMs),
-      Effect.catchTag("TimeoutError", () =>
-        Effect.fail(
-          new ConnectionError({
-            reason: "callback",
-            message: "Sign-in timed out. Start a new sign-in.",
-          }),
-        ),
-      ),
+      Effect.timeoutOrElse({
+        duration: timeoutMs,
+        orElse: () =>
+          Effect.fail(
+            new ConnectionError({
+              reason: "callback",
+              message: "Sign-in timed out. Start a new sign-in.",
+            }),
+          ),
+      }),
     ),
 });
 
