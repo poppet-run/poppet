@@ -7,6 +7,8 @@ import { Effect } from "effect";
 
 import { acquireOwnerLock } from "#src/lock";
 
+import { makeFIFO } from "../../../tools/testing/fifo";
+
 test("recovers a crashed owner and still excludes another process", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-owner-"));
   const path = join(directory, "owner.lock");
@@ -44,7 +46,7 @@ test("recovers a crashed owner and still excludes another process", async () => 
   }
 });
 
-test("preserves unknown legacy owners and rejects symlinks", async () => {
+test("preserves unknown legacy owners and rejects symlinks and named pipes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-owner-protected-"));
   const path = join(directory, "owner.lock");
   const target = join(directory, "untouched");
@@ -62,6 +64,11 @@ test("preserves unknown legacy owners and rejects symlinks", async () => {
       reason: "storage",
     });
     expect(await readFile(target, "utf8")).toBe("keep this file");
+    await rm(path);
+    makeFIFO(path);
+    await expect(Effect.runPromise(Effect.scoped(acquireOwnerLock(path)))).rejects.toMatchObject({
+      reason: "storage",
+    });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

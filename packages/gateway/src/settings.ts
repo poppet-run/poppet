@@ -51,7 +51,7 @@ export const loadChannelSettings = (dataDirectory: string, adapter: string) =>
       try: async () => {
         const handle = await open(
           join(directory, `${adapter}.json`),
-          constants.O_RDONLY | constants.O_NOFOLLOW,
+          constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
         ).catch((cause: unknown) => {
           if (Schema.is(MissingFile)(cause)) return null;
           throw cause;

@@ -47,12 +47,13 @@ export const acquireOwnerLock = (path: string) =>
           database.run("BEGIN EXCLUSIVE");
           database.run("COMMIT");
 
-          const previous = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW).catch(
-            (cause: unknown) => {
-              if (Schema.is(MissingFile)(cause)) return null;
-              throw cause;
-            },
-          );
+          const previous = await open(
+            path,
+            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+          ).catch((cause: unknown) => {
+            if (Schema.is(MissingFile)(cause)) return null;
+            throw cause;
+          });
 
           let saved: string | null = null;
 

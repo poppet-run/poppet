@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  link,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +17,8 @@ import { ProviderEnvironment } from "@poppet/provider";
 import { Effect, Layer, Redacted } from "effect";
 
 import { ApiKeyStore, ApiKeyStoreLive, loadApiKey } from "#src/api-keys";
+
+import { makeFIFO } from "../../../tools/testing/fifo";
 
 const harness = async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-api-keys-"));
@@ -180,4 +192,30 @@ describe("API-key storage", () => {
       await store.close();
     }
   });
+
+  test.each(["hardlink", "fifo"])(
+    "rejects %s credentials before changing file permissions",
+    async (kind) => {
+      const store = await harness();
+
+      try {
+        await store.run((keys) => keys.write("test-provider", Redacted.make("router-key")));
+        const path = join(store.directory, "auth/test-provider.json");
+        const target = join(store.directory, "unrelated");
+        await writeFile(target, "leave this alone", { mode: 0o644 });
+        await rm(path);
+
+        if (kind === "hardlink") await link(target, path);
+        else makeFIFO(path);
+
+        await expect(store.run((keys) => keys.read("test-provider"))).rejects.toMatchObject({
+          reason: "authentication",
+        });
+        expect(await readFile(target, "utf8")).toBe("leave this alone");
+        expect((await stat(target)).mode & 0o777).toBe(0o644);
+      } finally {
+        await store.close();
+      }
+    },
+  );
 });
