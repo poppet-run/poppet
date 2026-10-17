@@ -46,7 +46,7 @@ export const telegramChannelLayer = (settings: TelegramSettings, http: HttpFetch
 
     const observe = <A>(operation: Effect.Effect<A, ChannelError>) =>
       operation.pipe(
-        Effect.tap(() =>
+        Effect.tap(
           Effect.sync(() => {
             connected = true;
             error = null;
@@ -136,29 +136,26 @@ export const telegramChannelLayer = (settings: TelegramSettings, http: HttpFetch
                   }),
                 );
               previous = update.update_id;
-              const decoded = Schema.decodeUnknownOption(Message)(update.message);
+              const input = Option.getOrNull(Schema.decodeUnknownOption(Message)(update.message));
               let message: IncomingMessage | null = null;
 
-              if (Option.isSome(decoded)) {
-                const input = decoded.value;
-
-                if (
-                  !input.from.is_bot &&
-                  String(input.from.id) === owner &&
-                  String(input.chat.id) === owner &&
-                  input.message_thread_id === undefined &&
-                  input.text.trim()
-                )
-                  message = {
-                    messageId: String(update.update_id),
-                    scopeId: owner,
-                    parentId: owner,
-                    conversationId: owner,
-                    senderId: owner,
-                    text: input.text.trim(),
-                    mentioned: false,
-                  };
-              }
+              if (
+                input !== null &&
+                !input.from.is_bot &&
+                String(input.from.id) === owner &&
+                String(input.chat.id) === owner &&
+                input.message_thread_id === undefined &&
+                input.text.trim()
+              )
+                message = {
+                  messageId: String(update.update_id),
+                  scopeId: owner,
+                  parentId: owner,
+                  conversationId: owner,
+                  senderId: owner,
+                  text: input.text.trim(),
+                  mentioned: false,
+                };
 
               if (message === null) ignored++;
               polled.push({ cursor: String(update.update_id + 1), message });
