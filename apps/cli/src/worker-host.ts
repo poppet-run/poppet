@@ -24,9 +24,23 @@ export const runWorker = (mode: WorkerMode) =>
       const config = yield* AppConfig;
       const commands = yield* WorkerRequests;
       const tasks = mode === "gateway" ? null : yield* makeTaskWorker;
-      const messaging = yield* Effect.serviceOption(MessagingWorker);
+      const messaging = Option.getOrNull(yield* Effect.serviceOption(MessagingWorker));
       const services = yield* Effect.context<Store | TaskRepository | Skills>();
       const startedAt = yield* Clock.currentTimeMillis;
+
+      const destinations: TaskDestinations["Service"] = {
+        resolve: (adapter, conversationId) =>
+          messaging !== null
+            ? messaging
+                .resolveDestination(adapter, conversationId)
+                .pipe(Effect.mapError((error) => new TaskError({ message: error.message })))
+            : Effect.fail(
+                new TaskError({
+                  message:
+                    "Start worker run or gateway work before selecting a messaging destination.",
+                }),
+              ),
+      };
 
       yield* serveWorker(workerSocketPath(config.dataDirectory), (request, body) => {
         if (new URL(request.url).pathname !== "/tasks") return commands.handle(request, body);
@@ -45,32 +59,18 @@ export const runWorker = (mode: WorkerMode) =>
               running: true,
               pid: process.pid,
               startedAt,
-              services: { tasks: tasks !== null, gateway: Option.isSome(messaging) },
+              services: { tasks: tasks !== null, gateway: messaging !== null },
             };
-          }).pipe(
-            Effect.provideService(TaskDestinations, {
-              resolve: (adapter, conversationId) =>
-                Option.isSome(messaging)
-                  ? messaging.value
-                      .resolveDestination(adapter, conversationId)
-                      .pipe(Effect.mapError((error) => new TaskError({ message: error.message })))
-                  : Effect.fail(
-                      new TaskError({
-                        message:
-                          "Start worker run or gateway work before selecting a messaging destination.",
-                      }),
-                    ),
-            }),
-          ),
+          }).pipe(Effect.provideService(TaskDestinations, destinations)),
         );
       });
       yield* Console.log(
         "Worker running. Use commands in another terminal; Ctrl-C stops the worker.",
       );
 
-      yield* Effect.all(
-        [tasks?.run ?? Effect.never, Option.isSome(messaging) ? messaging.value.run : Effect.never],
-        { concurrency: 2, discard: true },
-      );
+      yield* Effect.all([tasks?.run ?? Effect.never, messaging?.run ?? Effect.never], {
+        concurrency: 2,
+        discard: true,
+      });
     }),
   );
