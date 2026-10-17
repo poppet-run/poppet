@@ -93,6 +93,19 @@ matches with stable message-ID ordering for ties, and bounds excerpts and output
 The CLI and agent tool use this same operation on the owning store connection.
 See [conversation search](chat.md#search-past-conversations).
 
+`Store.readSession` uses the same indexed eligible message IDs and the
+`searchable_messages` projection over original saved messages. It reads at most
+eleven rows for forward paging, or six on each side of an around-message anchor
+including lookahead. SQL bounds each returned text before it reaches the agent.
+It creates no new index, summary, transcript copy, or schema migration.
+
+The result has at most ten chronological messages and fits the supplied JSON
+byte budget. Stable message anchors must belong to the requested session and
+eligible history. Per-message and overall truncation flags mark shortened text
+and omitted context; `nextAfterMessageId` advances past the last returned message,
+including a shortened one. Current titles are read without changing session
+activity. See [conversation context](chat.md#read-conversation-context).
+
 ## Permissions and recovery
 
 The store directory uses `0700` permissions; the database and WAL sidecars use

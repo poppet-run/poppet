@@ -40,6 +40,36 @@ export interface SessionSearchResult {
   readonly truncated: boolean;
 }
 
+/** Stable anchors refer only to eligible messages in the requested session. */
+export const SessionReadQuery = Schema.Struct({
+  sessionId: Id,
+  aroundMessageId: Schema.NullOr(SessionSearchMatch.fields.messageId),
+  afterMessageId: Schema.NullOr(SessionSearchMatch.fields.messageId),
+}).check(
+  Schema.makeFilter((query) => query.aroundMessageId === null || query.afterMessageId === null),
+);
+
+export type SessionReadQuery = typeof SessionReadQuery.Type;
+
+/** Only saved user/final-answer text is recalled; truncation never implies a complete transcript. */
+export const SessionReadMessage = Schema.Struct({
+  messageId: SessionSearchMatch.fields.messageId,
+  role: SessionSearchMatch.fields.role,
+  createdAt: Schema.Natural,
+  text: Schema.String,
+  truncated: Schema.Boolean,
+});
+
+export const SessionReadResult = Schema.Struct({
+  sessionId: Id,
+  title: Schema.NullOr(Schema.String),
+  messages: Schema.Array(SessionReadMessage),
+  nextAfterMessageId: Schema.NullOr(SessionSearchMatch.fields.messageId),
+  truncated: Schema.Boolean,
+});
+
+export type SessionReadResult = typeof SessionReadResult.Type;
+
 /** A sanitized single-line title of at most 80 Unicode code points. */
 export const SessionTitle = Schema.NonEmptyString.check(
   Schema.makeFilter(

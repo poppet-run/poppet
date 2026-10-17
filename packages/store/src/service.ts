@@ -12,6 +12,7 @@ import { Context, DateTime, Effect, Layer, Schema } from "effect";
 
 import { StoreDatabase, StoreDatabaseLive } from "#src/database";
 import { StoreError, storageFailure, corruptRecord, readRecord } from "#src/errors";
+import { readSession } from "#src/recall";
 import {
   Id,
   MessageBatch,
@@ -22,6 +23,8 @@ import {
   SessionTitle,
   SkillSnapshot,
   type SessionSearchResult,
+  type SessionReadQuery,
+  type SessionReadResult,
   StoredMessage,
   ToolCall,
   ToolOutcome,
@@ -59,6 +62,11 @@ interface StoreOperations {
     query: string,
     maxBytes: number,
   ) => Effect.Effect<SessionSearchResult, StoreError>;
+  /** Reads at most ten eligible messages around or after a stable anchor within a JSON byte budget. */
+  readonly readSession: (
+    query: SessionReadQuery,
+    maxBytes: number,
+  ) => Effect.Effect<SessionReadResult, StoreError>;
   /** Reads messages in session order and rejects continuation belonging to another model. */
   readonly messages: (sessionId: string) => Effect.Effect<ReadonlyArray<StoredMessage>, StoreError>;
   /** Appends the entire batch atomically; active sessions require their running run's ID. */
@@ -722,6 +730,8 @@ export const StoreLive = Layer.effect(
       appendMessages,
       searchSessions: (query, maxBytes) =>
         Effect.try({ try: () => searchSessions(database, query, maxBytes), catch: requestFailure }),
+      readSession: (query, maxBytes) =>
+        Effect.try({ try: () => readSession(database, query, maxBytes), catch: requestFailure }),
       session: (id) =>
         Effect.try({
           try: () => sessionFor(database, Schema.decodeUnknownSync(Id)(id)),

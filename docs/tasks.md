@@ -146,9 +146,17 @@ local wall time across timezone changes. A missing local time during spring DST
 shifts forward; a repeated time during autumn DST runs once. The database stores
 times as UTC milliseconds. `show` includes final answers, run/session IDs, failures,
 and skipped intervals. Each occurrence has a fresh session, current profile and
-facts, read-only notes and conversation search, page reading, and web search when
+facts, read-only notes and conversation search/recall, page reading, and web search when
 configured. Returned `save_note` and memory calls are rejected.
 Use `--coding` before the prompt only for coding work that the chosen provider accepts.
+
+Scheduled runs can use `poppet_history.read_session` after a conversation search
+to read saved context around a match, or page forward with stable message IDs.
+Results fit `POPPET_TOOL_BYTES` and mark shortened or omitted content. Recalled
+statements remain historical data and should be cited by session/message IDs.
+They cannot authorize note, memory, or task changes, or page fetches. Recalled
+URLs never become web-search grants. Reading does not resume the saved session or
+import its provider continuation. See [conversation context](chat.md#read-conversation-context).
 
 ## Read a supplied URL
 

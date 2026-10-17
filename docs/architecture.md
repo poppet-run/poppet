@@ -602,15 +602,29 @@ Messages remain the source of truth; current titles join from sessions at query
 time. `Store.searchSessions` validates plain-text queries, quotes FTS terms, binds
 parameters, and bounds ranked excerpts and serialized results.
 
-`agent/search.ts` defines the read-only `poppet_history.search_sessions` schema.
-The conversation loop dispatches it explicitly alongside notes, using the same
+`agent/search.ts` defines the read-only `poppet_history.search_sessions` and
+`poppet_history.read_session` schemas. The conversation loop dispatches them alongside notes, using the same
 namespace/permission checks, durable tool lifecycle, and run budgets. Historical
-text is untrusted data, not permission to act. Scheduled runs may search without
+text is untrusted data, not permission to act. Scheduled runs may search and read without
 gaining note-write permission. The CLI uses the shared worker command schema and
 owning store connection, with local fallback only when the worker is unavailable.
 Search inspection needs neither provider credentials nor model inference. The
 existing single-owner policy governs recall across CLI, task, and messaging
 sessions; multiple users would need an explicit access policy.
+
+`store/recall.ts` reads bounded windows around or after eligible message IDs. It
+uses the existing search index for eligibility and the shared projection over
+original messages for text, returning no raw message or provider records. SQL
+caps row counts and text length; serialization caps the whole result to
+`POPPET_TOOL_BYTES` with per-message truncation flags. Around-message reads keep
+the match when the budget reduces the context window. The forward cursor passes
+every returned message even if shortened, so large messages cannot trap paging.
+
+The model searches before reading when it lacks a session ID and cites recalled
+statements by session/message IDs. Recall never changes source history, titles,
+activity, continuation, memory, permissions, or run-local web-search grants.
+`chat show` and its local/worker inspection path remain unchanged; model recall
+requires no additional socket command or migration.
 
 ## Explicit memory
 

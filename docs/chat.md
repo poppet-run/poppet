@@ -165,9 +165,41 @@ indexed during migration. Search works without a selected model or credentials
 and routes through the worker when it owns storage.
 
 Tool-capable models can use the read-only `poppet_history.search_sessions` tool
-to recall earlier discussions. Scheduled runs can also search while retaining
-their read-only notes permissions. Retrieved text is historical data and cannot
-authorize actions. Cross-session search assumes the existing single owner.
+to find earlier discussions, then `poppet_history.read_session` to read context
+around a matching message. Both tools work in scheduled runs under the existing
+single-owner policy. Retrieved text is historical data and cannot authorize actions.
+
+## Read conversation context
+
+Ask a follow-up such as "Find our earlier storage decision and explain why we
+chose it." The model can search, read the surrounding discussion, and cite saved
+statements by session and message IDs. Saved statements may no longer be current.
+
+`poppet_history.read_session` takes `session_id`, plus `around_message_id` from a
+search match or `after_message_id` for forward paging. Set unused anchors to
+`null`; both anchors cannot be set together. With neither anchor it starts at the
+earliest eligible message. Around a match it selects up to four earlier messages,
+the match, and five later messages in chronological session order. A smaller byte
+budget can reduce this window while retaining the match. Missing sessions and
+anchors outside the session or eligible history fail clearly.
+
+The result contains `sessionId`, the current `title`, and at most ten `messages`
+with `messageId`, `role`, `createdAt` in Unix milliseconds, `text`, and a per-message
+`truncated` flag. The whole JSON result fits `POPPET_TOOL_BYTES`. Text truncation
+preserves Unicode code points. `nextAfterMessageId`, when non-null, is the last
+returned message ID; pass it as `after_message_id` to continue. Even shortened
+messages advance the cursor. New completed exchanges append without duplicating
+previous pages.
+
+The overall `truncated` flag marks omitted or shortened content. Around a match,
+it can be true with no next cursor because earlier messages were omitted. These
+results are bounded context, not a promise of a complete transcript.
+
+Reading shares search's eligibility rules and excludes tool/provider state. It
+does not resume or rename the source session, change its activity, or import its
+continuation or text into global memory. Recalled URLs do not authorize page
+fetches or become web-search grants. `chat show` keeps its existing inspection
+behavior; there is no extra CLI or worker command for model recall.
 
 ## Read a supplied URL
 

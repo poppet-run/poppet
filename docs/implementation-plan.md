@@ -2,13 +2,13 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–18 implemented with automated checks; phase 19 planned. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation
+Status: Phases 1–19 implemented with automated checks. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
 implemented.
 
-The next planned addition is [deeper conversation recall](#phase-19-deeper-conversation-recall).
+All currently planned phases are implemented. [Deeper conversation recall](#phase-19-deeper-conversation-recall) adds bounded context reading after search.
 
 Updated: 2026-10-17
 
@@ -1136,67 +1136,54 @@ pause/resume, and one delivered occurrence using the [task guide](tasks.md#manag
 
 ## Phase 19: Deeper conversation recall
 
-Planned. Depends on phase 13 conversation search and persisted chat from phase 4.
-Independent of phases 17–18.
+Implemented with automated checks. Real-model recall of an older discussion
+remains a manual validation step. Builds on phase 13 search and phase 4 chat;
+independent of phases 17–18.
 
-Add `poppet_history.read_session` so a model can read the discussion surrounding a
-search match instead of guessing from its excerpt. Accept a stable session ID and
-optionally either `around_message_id` from a search result or `after_message_id`
-from the previous page, never both. Without an anchor, start at the earliest
-eligible message. An around-message request includes eligible context before and
-after that message, returned in chronological session order. Validate anchors
-belong to that session and are eligible; missing sessions and invalid anchors
-produce clear errors without falling back to another conversation.
+`poppet_history.read_session` accepts `session_id` and nullable
+`around_message_id` / `after_message_id`, never both set. With no anchor it starts
+at the earliest eligible message. Around a match it selects up to four preceding
+messages, the match, and five following messages in chronological session order.
+The byte budget can reduce this window while preserving the match. Missing
+sessions and invalid or ineligible anchors fail clearly.
 
-Use the same content eligibility as search: user text and final assistant text
-from completed runs only. Exclude failed/interrupted and in-progress exchanges,
-intermediate assistant output, tool arguments/results, reasoning, provider
-continuation, and context snapshots. Never expose raw `Store.messages` records
-as the tool result. Reuse the search projection and original saved messages as
-the source of truth; do not create summaries, another index, or copied transcripts.
+`Store.readSession` uses indexed eligible IDs and the shared search projection
+over original saved messages. It returns only completed-run user text and final
+assistant text, excluding failed/interrupted and in-progress exchanges,
+intermediate output, tool data, reasoning, continuation, and context snapshots.
+SQL bounds rows and text before they reach the agent. No index, transcript copy,
+summary, dependency, or schema migration was added.
 
-Return the session ID and current title, plus at most ten messages containing
-message ID, role, timestamp, and text. Bound the serialized result by
-`POPPET_TOOL_BYTES`, with Unicode-safe text truncation and explicit per-message
-truncation where needed. Return a nullable next-message cursor and a `truncated`
-flag distinguishing a complete result from omitted or shortened content. Advance
-past every returned message, including a shortened one, so an oversized message
-cannot trap pagination. Use stable message anchors rather than offsets so later
-completed exchanges do not duplicate earlier pages. Omitted or shortened text is
-never described as a complete transcript.
+Results include the session ID, current title, and at most ten messages with
+message ID, role, timestamp, text, and a per-message truncation flag. The entire
+JSON result fits `POPPET_TOOL_BYTES`, preserving Unicode code points. The overall
+`truncated` flag marks shortened or omitted content. `nextAfterMessageId` advances
+past the last returned message, even when shortened, and is null when no later
+eligible message remains. Around-message results can still omit earlier context.
+Stable anchors avoid duplicate pages when new exchanges complete.
 
-Perform bounded queries in `@poppet/store`; do not load an entire large session
-and trim it in the agent. Share eligibility rules with search to prevent drift.
-Keep argument validation, the namespaced tool, dispatch, and instructions in
-`@poppet/agent`. Reuse durable tool records, cancellation, and call/context budgets.
-The model should search first when it lacks a session ID, read around the match,
-and request further pages only when needed. It must identify recalled material
-by session/message IDs and distinguish saved statements from current facts.
+The agent owns strict argument validation, namespaced dispatch, and instructions.
+Recall uses existing durable calls, cancellation, and call/context budgets in
+interactive and scheduled runs. Instructions direct the model to search first
+when needed, read around a match, page only as needed, cite saved statements by
+session/message IDs, and distinguish them from current facts.
 
-Allow this read-only tool in both interactive and scheduled runs under the
-existing single-owner policy. Historical text remains untrusted data and cannot
-authorize memory/note writes, task mutations, or page fetches. Recalled URLs do
-not join phase 17's run-local search grants. Reading another session never resumes
-it, changes its title/activity, imports its continuation, or writes its contents
-into global memory. Adding users requires an explicit cross-session access policy.
-
-Extend store contracts/exports, shared result schemas, agent tool dispatch,
-instructions, and fake-model fixtures together. Keep `chat show` and its existing
-local/worker inspection behavior unchanged; no additional CLI or socket command
-is needed for model recall. Update chat, storage, tasks, and architecture docs
-when implemented. No new dependency or schema migration is expected.
-
-Completion check: search for an older decision, read its surrounding discussion,
-and answer a follow-up using the saved context. A session larger than the tool
-budget remains readable in bounded pages without exposing tool or provider state.
+Historical text stays untrusted. Recalled URLs grant no page access and never join
+web-search grants. Scheduled note/memory/task mutations remain blocked. Reading
+never resumes the source session, changes its title/activity, imports its
+continuation, or writes global memory. The existing single-owner access policy
+still applies. `chat show` and its local/worker inspection behavior are unchanged;
+model recall needs no CLI or socket command.
 
 Automated checks cover search/read eligibility parity, chronological ordering,
 anchor/session validation, empty sessions, paging around a match, appended
 exchanges, Unicode and oversized-message truncation, byte limits, cursor progress,
 durable calls, cancellation, and unchanged stored history. A fake-model search-to-
 read round trip verifies follow-up context and scheduled read-only behavior,
-including rejection of mutations and recalled-URL fetches. Run `bun run check`,
-then separately validate recall of an older discussion with a real model.
+including rejection of mutations and recalled-URL fetches. Run `bun run check`.
+Separately validate with a real model by searching for an older decision, reading
+its surrounding discussion, and answering a follow-up using the saved context.
+See [conversation context](chat.md#read-conversation-context).
 
 ## Validation
 

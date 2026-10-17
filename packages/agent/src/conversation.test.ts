@@ -14,7 +14,7 @@ import {
   type Output,
 } from "@poppet/provider";
 import { responsesModel } from "@poppet/provider-protocol";
-import { Store, StoreLive } from "@poppet/store";
+import { SessionReadResult, SessionSearchMatch, Store, StoreLive } from "@poppet/store";
 import { Effect, Fiber, Layer, Schema, Stream } from "effect";
 import OpenAI from "openai";
 
@@ -631,7 +631,7 @@ describe.concurrent("notes conversation", () => {
   });
 
   test.each([false, true])(
-    "recalls completed conversations with durable search calls, read-only tools: %s",
+    "searches then reads saved context with durable calls, read-only tools: %s",
     async (readOnlyTools) => {
       let turn = 0;
 
@@ -640,6 +640,9 @@ describe.concurrent("notes conversation", () => {
           if (++turn === 1) {
             expect(request.tools).toContainEqual(
               expect.objectContaining({ name: "search_sessions", namespace: "poppet_history" }),
+            );
+            expect(request.tools).toContainEqual(
+              expect.objectContaining({ name: "read_session", namespace: "poppet_history" }),
             );
             expect(request.tools.some((entry) => entry.name === "save_note")).toBe(!readOnlyTools);
             expect(request.instructions).toContain("historical messages");
@@ -650,6 +653,44 @@ describe.concurrent("notes conversation", () => {
           }
 
           const result = request.messages.at(-1);
+
+          if (turn === 3) {
+            expect(result).toMatchObject({ role: "tool", callId: "read" });
+
+            if (result?.role !== "tool") throw new Error("Expected read result");
+            expect(Buffer.byteLength(result.output)).toBeLessThanOrEqual(1024);
+
+            const page = Schema.decodeUnknownSync(Schema.fromJsonString(SessionReadResult))(
+              result.output,
+            );
+
+            expect(page).toMatchObject({
+              sessionId: "earlier",
+              title: "Earlier project",
+              nextAfterMessageId: null,
+              truncated: false,
+              messages: [
+                {
+                  role: "user",
+                  text: "We chose it to reuse the shared parser. Why?",
+                  truncated: false,
+                },
+                { role: "assistant", text: "Acorn uses TypeScript.", truncated: false },
+              ],
+            });
+            expect(result.output).not.toContain("signature");
+
+            return completed(
+              [
+                {
+                  type: "text",
+                  text: `The saved discussion says it reused the shared parser [session ${page.sessionId}, message ${page.messages[0]!.messageId}].`,
+                },
+              ],
+              turn,
+            );
+          }
+
           expect(result).toMatchObject({ role: "tool", callId: "recall" });
 
           if (result?.role !== "tool") throw new Error("Expected search result");
@@ -667,7 +708,30 @@ describe.concurrent("notes conversation", () => {
           });
           expect(result.output).not.toContain("signature");
 
-          return completed([{ type: "text", text: "Acorn uses TypeScript." }], turn);
+          const search = Schema.decodeUnknownSync(
+            Schema.fromJsonString(
+              Schema.Struct({
+                matches: Schema.Array(SessionSearchMatch),
+                truncated: Schema.Boolean,
+              }),
+            ),
+          )(result.output);
+
+          return completed(
+            [
+              tool(
+                "read_session",
+                JSON.stringify({
+                  session_id: search.matches[0]!.sessionId,
+                  around_message_id: search.matches[0]!.messageId,
+                  after_message_id: null,
+                }),
+                "read",
+                "poppet_history",
+              ),
+            ],
+            turn,
+          );
         },
         { toolBytes: 1024 },
       );
@@ -682,7 +746,7 @@ describe.concurrent("notes conversation", () => {
             });
 
             const saved = yield* store.queueRun(earlier.id, [
-              { role: "user", text: "What is the project?" },
+              { role: "user", text: "We chose it to reuse the shared parser. Why?" },
             ]);
 
             yield* store.startRun(saved.id);
@@ -691,6 +755,8 @@ describe.concurrent("notes conversation", () => {
               response: response([{ type: "text", text: "Acorn uses TypeScript." }]),
             });
             yield* store.renameSession(earlier.id, "Earlier project");
+            const savedHistory = yield* store.messages(earlier.id);
+            const savedSession = yield* store.session(earlier.id);
             const session = yield* store.createSession("test-provider", "test-model");
             yield* Stream.runDrain(
               (yield* Agent).send(session.id, "Recall my project", { readOnlyTools }),
@@ -699,10 +765,13 @@ describe.concurrent("notes conversation", () => {
             expect(run.status).toBe("completed");
             expect(yield* store.toolCalls(run.id)).toMatchObject([
               { name: "search_sessions", namespace: "poppet_history", status: "completed" },
+              { name: "read_session", namespace: "poppet_history", status: "completed" },
             ]);
+            expect(yield* store.messages(earlier.id)).toEqual(savedHistory);
+            expect(yield* store.session(earlier.id)).toEqual(savedSession);
           }),
         );
-        expect(state.requests).toHaveLength(2);
+        expect(state.requests).toHaveLength(3);
         expect(await readdir(state.directory)).toEqual(["store"]);
       } finally {
         await state.close();
@@ -1082,6 +1151,7 @@ describe.concurrent("notes conversation", () => {
         "search_notes",
         "save_note",
         "search_sessions",
+        "read_session",
         "fetch_page",
         "memory",
       ]);
@@ -1111,6 +1181,25 @@ describe.concurrent("notes conversation", () => {
   });
 
   test.each([
+    {
+      name: "recall in a foreign namespace",
+      call: tool(
+        "read_session",
+        '{"session_id":"earlier","around_message_id":null,"after_message_id":null}',
+      ),
+      reason: "tool-permission",
+    },
+    ...[
+      "{",
+      '{"session_id":"../other","around_message_id":null,"after_message_id":null}',
+      '{"session_id":"earlier","around_message_id":1,"after_message_id":2}',
+      '{"session_id":"earlier","around_message_id":null,"after_message_id":0}',
+      '{"session_id":"earlier","around_message_id":null,"after_message_id":null,"other":true}',
+    ].map((arguments_) => ({
+      name: `invalid recall arguments ${arguments_}`,
+      call: tool("read_session", arguments_, "read", "poppet_history"),
+      reason: "tool-arguments",
+    })),
     { name: "unknown tool", call: tool("run_shell", "{}"), reason: "tool-permission" },
     {
       name: "unavailable web search",
@@ -1201,6 +1290,19 @@ describe.concurrent("notes conversation", () => {
       calls: [
         tool("save_note", '{"path":"a.md","content":"no"}', "a"),
         tool("save_note", '{"path":"b.md","content":"no"}', "b"),
+      ],
+    },
+    {
+      name: "recall calls",
+      policy: { toolCalls: 1 },
+      calls: [
+        tool("search_sessions", '{"query":"Acorn"}', "search", "poppet_history"),
+        tool(
+          "read_session",
+          '{"session_id":"earlier","around_message_id":null,"after_message_id":null}',
+          "read",
+          "poppet_history",
+        ),
       ],
     },
   ])("exhausts $name before executing a new batch", async ({ policy, calls }) => {
@@ -1344,6 +1446,100 @@ describe.concurrent("notes conversation", () => {
         }),
       );
       expect(state.requests).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("missing recall records a failed durable call without a model follow-up", async () => {
+    const state = await fixture(() =>
+      completed([
+        tool(
+          "read_session",
+          '{"session_id":"missing","around_message_id":null,"after_message_id":null}',
+          "read",
+          "poppet_history",
+        ),
+      ]),
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("test-provider", "test-model");
+          expect(
+            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Recall"))),
+          ).toMatchObject({ reason: "not-found", message: "The recalled session does not exist." });
+          const run = (yield* store.runs(session.id))[0]!;
+          expect(run).toMatchObject({ status: "failed", failureReason: "store:not-found" });
+          expect(yield* store.toolCalls(run.id)).toMatchObject([
+            { status: "failed", failureReason: "store:not-found", output: null },
+          ]);
+        }),
+      );
+      expect(state.requests).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("cancels after recall without changing the source session or replaying the read", async () => {
+    const followedUp = Promise.withResolvers<void>();
+
+    const state = await fixture((request) => {
+      if (request.messages.at(-1)?.role === "tool") {
+        followedUp.resolve();
+
+        return Stream.never;
+      }
+
+      return completed([
+        tool(
+          "read_session",
+          '{"session_id":"earlier","around_message_id":null,"after_message_id":null}',
+          "read",
+          "poppet_history",
+        ),
+      ]);
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+
+          const earlier = yield* store.createSession("test-provider", "test-model", {
+            id: "earlier",
+          });
+
+          const saved = yield* store.queueRun(earlier.id, [
+            { role: "user", text: "Saved context" },
+          ]);
+
+          yield* store.startRun(saved.id);
+          yield* store.finishRun(saved.id, {
+            status: "completed",
+            response: response([{ type: "text", text: "Saved answer" }]),
+          });
+          const history = yield* store.messages(earlier.id);
+          const session = yield* store.createSession("test-provider", "test-model");
+
+          const fiber = yield* Effect.forkChild(
+            Stream.runDrain((yield* Agent).send(session.id, "Recall")),
+          );
+
+          yield* Effect.promise(() => followedUp.promise);
+          yield* Fiber.interrupt(fiber);
+          const run = (yield* store.runs(session.id))[0]!;
+          expect(run.status).toBe("interrupted");
+          expect(yield* store.toolCalls(run.id)).toMatchObject([
+            { status: "completed", output: expect.stringContaining("Saved context") },
+          ]);
+          expect(yield* store.messages(earlier.id)).toEqual(history);
+        }),
+      );
+      expect(state.requests).toHaveLength(2);
     } finally {
       await state.close();
     }

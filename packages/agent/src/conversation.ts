@@ -33,7 +33,14 @@ import {
   type FetchPageCall,
 } from "#src/pages";
 import { maxTextBytes, streamReply } from "#src/reply";
-import { decodeSessionSearchCall, sessionSearchTool, type SessionSearchCall } from "#src/search";
+import {
+  decodeSessionReadCall,
+  decodeSessionSearchCall,
+  sessionReadTool,
+  sessionSearchTool,
+  type SessionReadCall,
+  type SessionSearchCall,
+} from "#src/search";
 import { ChatSettings } from "#src/settings";
 import { ChatTasks, decodeTaskCall, taskTool, type PreparedTaskCall } from "#src/task-tools";
 import { WebSearch, decodeWebSearchCall, webSearchTool, type WebSearchCall } from "#src/web-search";
@@ -57,6 +64,7 @@ export const conversation = Effect.gen(function* () {
     call:
       | NoteCall
       | SessionSearchCall
+      | SessionReadCall
       | FetchPageCall
       | MemoryCall
       | WebSearchCall
@@ -70,6 +78,11 @@ export const conversation = Effect.gen(function* () {
         Match.when({ name: "search_sessions" }, (plan) =>
           store
             .searchSessions(plan.query, policy.toolBytes)
+            .pipe(Effect.map((value) => JSON.stringify(value))),
+        ),
+        Match.when({ name: "read_session" }, (plan) =>
+          store
+            .readSession(plan.query, policy.toolBytes)
             .pipe(Effect.map((value) => JSON.stringify(value))),
         ),
         Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
@@ -141,6 +154,7 @@ export const conversation = Effect.gen(function* () {
         ? [
             ...noteTools,
             sessionSearchTool,
+            sessionReadTool,
             fetchPageTool,
             memoryTool,
             ...(webSearch.search === null ? [] : [webSearchTool]),
@@ -169,6 +183,7 @@ export const conversation = Effect.gen(function* () {
 
           const plan = yield* Match.value(call).pipe(
             Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
+            Match.when({ name: "read_session" }, decodeSessionReadCall),
             Match.when({ name: "memory" }, decodeMemoryCall),
             Match.when({ name: "search_web" }, decodeWebSearchCall),
             Match.when({ name: "manage_tasks" }, (taskCall) =>

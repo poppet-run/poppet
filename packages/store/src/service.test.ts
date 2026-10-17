@@ -10,6 +10,7 @@ import { Effect, Fiber, Layer } from "effect";
 
 import { StoreError } from "#src/errors";
 import { applyMigrations, migrations } from "#src/migrations";
+import type { SessionReadResult } from "#src/schema";
 import { Store, StoreLive } from "#src/service";
 
 const fixture = async () => {
@@ -81,6 +82,12 @@ describe("conversation store", () => {
 
           yield* store.startRun(run.id);
           expect((yield* store.searchSessions("Orchard", 16384)).matches).toEqual([]);
+          expect(
+            (yield* store.readSession(
+              { sessionId: session.id, aroundMessageId: null, afterMessageId: null },
+              16384,
+            )).messages,
+          ).toEqual([]);
           yield* store.recordToolCalls(run.id, {
             ...responseFor("new-provider"),
             output: [
@@ -160,6 +167,39 @@ describe("conversation store", () => {
             expect((yield* store.searchSessions(query, 16384)).matches).toEqual([]);
           }
 
+          const history = yield* store.messages(session.id);
+          const metadata = yield* store.session(session.id);
+          const read = { sessionId: session.id, aroundMessageId: null, afterMessageId: null };
+          const recalled = yield* store.readSession(read, 16384);
+          expect(recalled).toEqual({
+            sessionId: session.id,
+            title: "The orchard",
+            messages: matches.matches.map(({ messageId, role, createdAt, excerpt }) => ({
+              messageId,
+              role,
+              createdAt,
+              text: excerpt,
+              truncated: false,
+            })),
+            nextAfterMessageId: null,
+            truncated: false,
+          });
+
+          for (const entry of history) {
+            if (recalled.messages.some((message) => message.messageId === entry.id)) continue;
+            yield* reject(
+              store.readSession({ ...read, aroundMessageId: entry.id }, 16384),
+              "invalid-request",
+            );
+            yield* reject(
+              store.readSession({ ...read, afterMessageId: entry.id }, 16384),
+              "invalid-request",
+            );
+          }
+
+          expect(yield* store.messages(session.id)).toEqual(history);
+          expect(yield* store.session(session.id)).toEqual(metadata);
+
           return session;
         }),
       );
@@ -179,6 +219,175 @@ describe("conversation store", () => {
       await saved.close();
     }
   });
+
+  test("pages in session order around stable matches and past appended exchanges, validating session anchors", async () => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Store.use((store) =>
+          Effect.gen(function* () {
+            const session = yield* store.createSession("new-provider", "selected-model");
+            const empty = yield* store.createSession("new-provider", "selected-model");
+            const query = { sessionId: session.id, aroundMessageId: null, afterMessageId: null };
+            expect(yield* store.readSession({ ...query, sessionId: empty.id }, 1024)).toMatchObject(
+              {
+                title: empty.title,
+                messages: [],
+                truncated: false,
+                nextAfterMessageId: null,
+              },
+            );
+
+            const complete = (number: number) =>
+              Effect.gen(function* () {
+                const run = yield* store.queueRun(session.id, [
+                  { role: "user", text: `Question ${number}` },
+                ]);
+
+                yield* store.startRun(run.id);
+                yield* store.finishRun(run.id, {
+                  status: "completed",
+                  response: responseFor("new-provider", `Answer ${number}`),
+                });
+              });
+
+            for (let number = 0; number < 20; number++) yield* complete(number);
+            const history = yield* store.messages(session.id);
+            const first = yield* store.readSession(query, 16384);
+            expect(first.messages.map((message) => message.messageId)).toEqual(
+              history.slice(0, 10).map((message) => message.id),
+            );
+            expect(first).toMatchObject({ truncated: true, nextAfterMessageId: history[9]!.id });
+
+            const around = yield* store.readSession(
+              { ...query, aroundMessageId: history[12]!.id },
+              16384,
+            );
+
+            expect(around.messages.map((message) => message.messageId)).toEqual(
+              history.slice(8, 18).map((message) => message.id),
+            );
+            expect(around).toMatchObject({ truncated: true, nextAfterMessageId: history[17]!.id });
+            yield* complete(20);
+            const ids = first.messages.map((message) => message.messageId);
+            let cursor = first.nextAfterMessageId;
+
+            while (cursor !== null) {
+              const page = yield* store.readSession({ ...query, afterMessageId: cursor }, 16384);
+              ids.push(...page.messages.map((message) => message.messageId));
+              cursor = page.nextAfterMessageId;
+            }
+
+            expect(ids).toEqual((yield* store.messages(session.id)).map((message) => message.id));
+            expect(
+              yield* store.readSession({ ...query, afterMessageId: ids.at(-1)! }, 1024),
+            ).toMatchObject({ messages: [], nextAfterMessageId: null, truncated: false });
+            yield* reject(store.readSession({ ...query, sessionId: "missing" }, 1024), "not-found");
+
+            for (const invalid of [
+              { ...query, sessionId: empty.id, aroundMessageId: ids[0]! },
+              { ...query, aroundMessageId: 999999 },
+              { ...query, aroundMessageId: ids[0]!, afterMessageId: ids[1]! },
+              { ...query, afterMessageId: -1 },
+            ])
+              yield* reject(store.readSession(invalid, 1024), "invalid-request");
+            yield* reject(store.readSession(query, 100), "invalid-request");
+          }),
+        ),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test.each([1024, 16384, 65536])(
+    "bounds recall to %s bytes without splitting Unicode or trapping oversized messages",
+    async (maxBytes) => {
+      const saved = await fixture();
+
+      try {
+        await saved.run(
+          Store.use((store) =>
+            Effect.gen(function* () {
+              const session = yield* store.createSession("new-provider", "selected-model", {
+                id: "s".repeat(128),
+              });
+
+              yield* store.renameSession(session.id, "🙂".repeat(80));
+              const texts = ['🙂東京\n"\t'.repeat(20000), "before\0after", "Final discussion"];
+
+              for (let index = 0; index < 7; index++) {
+                const run = yield* store.queueRun(session.id, [
+                  { role: "user", text: texts[index % 3]! },
+                ]);
+
+                yield* store.startRun(run.id);
+                yield* store.finishRun(run.id, {
+                  status: "completed",
+                  response: responseFor("new-provider", texts[(index + 1) % 3]!),
+                });
+              }
+
+              const history = yield* store.messages(session.id);
+              const query = { sessionId: session.id, aroundMessageId: null, afterMessageId: null };
+              let cursor: number | null = null;
+              const ids: number[] = [];
+
+              do {
+                const page: SessionReadResult = yield* store.readSession(
+                  { ...query, afterMessageId: cursor },
+                  maxBytes,
+                );
+
+                expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(maxBytes);
+                expect(page.messages.length).toBeGreaterThan(0);
+                expect(page.messages.length).toBeLessThanOrEqual(10);
+
+                for (const message of page.messages) {
+                  const original = history.find((entry) => entry.id === message.messageId)!.message;
+
+                  if (original.role === "tool") throw new Error("Recalled a tool result");
+
+                  const text =
+                    original.role === "user"
+                      ? original.text
+                      : original.output
+                          .flatMap((part) => (part.type === "text" ? [part.text] : []))
+                          .join("\n");
+
+                  expect(text.startsWith(message.text)).toBe(true);
+                  expect(message.text.isWellFormed()).toBe(true);
+                  expect(message.truncated).toBe(message.text !== text);
+                }
+
+                expect(page.truncated).toBe(
+                  page.nextAfterMessageId !== null ||
+                    page.messages.some((message) => message.truncated),
+                );
+                ids.push(...page.messages.map((message) => message.messageId));
+                cursor = page.nextAfterMessageId;
+              } while (cursor !== null);
+
+              expect(ids).toEqual(history.map((message) => message.id));
+              const match = history[8]!.id;
+
+              const around = yield* store.readSession(
+                { ...query, aroundMessageId: match },
+                maxBytes,
+              );
+
+              expect(around.messages.some((message) => message.messageId === match)).toBe(true);
+              expect(Buffer.byteLength(JSON.stringify(around))).toBeLessThanOrEqual(maxBytes);
+              expect(around.truncated).toBe(true);
+            }),
+          ),
+        );
+      } finally {
+        await saved.close();
+      }
+    },
+  );
 
   test("treats queries as plain text and bounds ranked results, UTF-8 excerpts and serialized bytes", async () => {
     const saved = await fixture();
