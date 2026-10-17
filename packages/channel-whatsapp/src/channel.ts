@@ -107,25 +107,17 @@ export const whatsappChannelLayer = (
                     }),
             });
 
-            return yield* Effect.tryPromise({
-              try: async () => {
-                const sent = await socket.sendMessage(
-                  `${id}@s.whatsapp.net`,
-                  { text, linkPreview: null },
-                  { messageId },
-                );
+            return yield* Effect.tryPromise(async () => {
+              const sent = await socket.sendMessage(
+                `${id}@s.whatsapp.net`,
+                { text, linkPreview: null },
+                { messageId },
+              );
 
-                if (sent?.key.id !== messageId)
-                  throw new Error("Missing or mismatched WhatsApp send acknowledgement");
+              if (sent?.key.id !== messageId)
+                throw new Error("Missing or mismatched WhatsApp send acknowledgement");
 
-                return messageId;
-              },
-              catch: () =>
-                new ChannelError({
-                  reason: "uncertain",
-                  message:
-                    "WhatsApp may have accepted this reply. Inspect its saved delivery before reposting.",
-                }),
+              return messageId;
             }).pipe(
               Effect.timeout("15 seconds"),
               Effect.mapError(

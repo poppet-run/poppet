@@ -11,7 +11,7 @@ import {
   type UserFacingSocketConfig,
   type WAMessage,
 } from "baileys";
-import { Deferred, Effect, Option, Stream } from "effect";
+import { Deferred, Effect, Fiber, Option, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { openWhatsAppAuth } from "#src/auth";
@@ -330,6 +330,39 @@ describe.concurrent("WhatsApp adapter", () => {
       );
       expect(state.sent).toHaveLength(1);
       expect(state.ended()).toBe(2);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("an unacknowledged send times out as uncertain without retrying", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const socket = yield* state.open;
+          const started = Deferred.makeUnsafe<void>();
+          let attempts = 0;
+          socket.sendMessage = () => {
+            attempts++;
+            Effect.runSync(Deferred.succeed(started, undefined));
+
+            return new Promise<never>(() => undefined);
+          };
+
+          const channel = yield* MessagingChannel;
+
+          const sending = yield* channel
+            .send(settings.ownerPhone, "Answer", "timed-out")
+            .pipe(Effect.result, Effect.forkChild);
+
+          yield* Deferred.await(started);
+          yield* TestClock.adjust("15 seconds");
+          expect(yield* Fiber.join(sending)).toHaveProperty("failure.reason", "uncertain");
+          expect(attempts).toBe(1);
+        }),
+      );
     } finally {
       await state.close();
     }
