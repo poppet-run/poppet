@@ -147,19 +147,22 @@ export const discordChannelLayer = (
           ? null
           : "The Discord token does not match the configured bot ID.";
       });
-      yield* Effect.tryPromise({
+
+      const login = Effect.tryPromise({
         try: () => client.login(Redacted.value(settings.token)),
         catch: discordFailure,
       }).pipe(
         Effect.andThen(Effect.never),
         Effect.catch(() =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
             connectionError = "Discord login failed. Check credentials and Message Content intent.";
-          }).pipe(Effect.andThen(Effect.sleep("30 seconds"))),
+            yield* Effect.sleep("30 seconds");
+          }),
         ),
         Effect.forever,
-        Effect.forkScoped,
       );
+
+      yield* login.pipe(Effect.forkScoped);
 
       const checkAccess = (message: IncomingMessage, conversationId: string) =>
         Effect.tryPromise({

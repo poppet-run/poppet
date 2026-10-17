@@ -3,6 +3,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { MessagingChannel } from "@poppet/gateway";
 import { ChannelType, Client, Events, MessageFlags, Options, RateLimitError } from "discord.js";
 import { Effect, Option, Redacted, Stream } from "effect";
+import { TestClock } from "effect/testing";
 
 import { discordChannelLayer } from "#src/channel";
 
@@ -344,7 +345,7 @@ describe("Discord adapter", () => {
     }
   });
 
-  test("keeps failed login inside the adapter and redacts connection errors", async () => {
+  test("retries failed login after 30 seconds and redacts connection errors", async () => {
     const client = new Client({ intents: [] });
     const login = spyOn(client, "login").mockRejectedValue(new Error("secret-discord-token"));
     const destroy = spyOn(client, "destroy").mockResolvedValue();
@@ -360,8 +361,16 @@ describe("Discord adapter", () => {
           expect(JSON.stringify(status)).not.toContain("secret-discord-token");
           const result = yield* channel.send("400", "Reply", "nonce").pipe(Effect.result);
           expect(result).toHaveProperty("failure.reason", "unavailable");
-        }).pipe(Effect.provide(discordChannelLayer(settings, () => client))),
+          yield* TestClock.adjust("29 seconds");
+          expect(login).toHaveBeenCalledTimes(1);
+          yield* TestClock.adjust("1 second");
+          expect(login).toHaveBeenCalledTimes(2);
+        }).pipe(
+          Effect.provide(discordChannelLayer(settings, () => client)),
+          Effect.provide(TestClock.layer()),
+        ),
       );
+      expect(login).toHaveBeenCalledTimes(2);
       expect(destroy).toHaveBeenCalledTimes(1);
     } finally {
       login.mockRestore();
