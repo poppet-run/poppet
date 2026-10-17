@@ -1,6 +1,6 @@
 import { BunServices } from "@effect/platform-bun";
 import { ChatSettings, Skills } from "@poppet/agent";
-import { AppConfig, ConfigSource } from "@poppet/config";
+import { AppConfig, ConfigSource, dataDirectory as configuredDataDirectory } from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
 import { MemoryKey, MemoryValue } from "@poppet/memory";
 import type { WorkerAction } from "@poppet/platform";
@@ -25,7 +25,7 @@ import {
   readLocalTaskStatus,
 } from "@poppet/tasks";
 import { workerSocketPath } from "@poppet/worker";
-import { Console, Data, Effect, Layer, Option, Schema } from "effect";
+import { ConfigProvider, Console, Data, Effect, Layer, Option, Schema } from "effect";
 import { Argument, CliConfig, CliOutput, Command, Flag, GlobalFlag } from "effect/cli";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
@@ -187,10 +187,18 @@ export const makeCLI = (
       ),
     );
 
-  const runWorkerCommand = (action: WorkerAction) =>
-    Effect.gen(function* () {
+  const runWorkerCommand = (action: WorkerAction) => {
+    if (action === "stop" || action === "uninstall" || action === "logs")
+      return configuredDataDirectory
+        .parse(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))
+        .pipe(
+          Effect.flatMap((directory) => worker(action, directory)),
+          Effect.flatMap((managed) => Console.log(managed)),
+        );
+
+    return Effect.gen(function* () {
       const config = yield* AppConfig;
-      const managed = yield* worker(action, config);
+      const managed = yield* worker(action, config.dataDirectory);
 
       if (action !== "status") return yield* Console.log(managed);
 
@@ -229,6 +237,7 @@ export const makeCLI = (
         ),
       );
     }).pipe(Effect.provide(runtime.config));
+  };
 
   const runTasks = (command: TaskCommand) =>
     Effect.gen(function* () {

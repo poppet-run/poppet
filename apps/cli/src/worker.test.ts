@@ -22,13 +22,7 @@ test("builds an absolute launch description that selects the data directory with
   process.env.POPPET_SOUL_BYTES = "4096";
 
   try {
-    const launch = workerLaunch({
-      applicationName: "Test",
-      dataDirectory: "/tmp/data",
-      notesDirectory: "/tmp/notes",
-      provider: "openrouter",
-      model: "selected-model",
-    });
+    const launch = workerLaunch("/tmp/data");
 
     expect(launch.executable).toBe(process.execPath);
     expect(launch.arguments).toEqual([

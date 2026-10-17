@@ -53,6 +53,11 @@ entry point, current working directory, and `POPPET_DATA_DIR`. The worker reads
 requires uninstalling and installing again. Each data directory has its own
 launch agent. Manage it with the same `POPPET_DATA_DIR`.
 
+`worker stop`, `worker uninstall`, and `worker logs` use only the data directory.
+They remain available when `config.json` is invalid, so a configuration error does
+not prevent stopping the worker or reading its logs. `POPPET_DATA_DIR` must still
+be valid.
+
 Older installations saved ordinary settings and budget overrides in their
 LaunchAgent environment. Move the settings you want to keep into `config.json`,
 then run `worker uninstall` followed by `worker install` once to remove those
