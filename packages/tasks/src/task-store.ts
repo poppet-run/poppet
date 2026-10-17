@@ -533,9 +533,5 @@ export class TaskRepository extends Context.Service<TaskRepository, TaskStore>()
 
 export const TaskRepositoryLive = Layer.effect(
   TaskRepository,
-  Effect.gen(function* () {
-    const { database } = yield* StoreDatabase;
-
-    return makeTaskStore(database);
-  }),
+  Effect.map(StoreDatabase, ({ database }) => makeTaskStore(database)),
 );
