@@ -29,6 +29,8 @@ bun run start chat new "Help me plan a small TypeScript project"
 Use `bun run start chat interactive` for a terminal prompt, or append a saved
 session ID to resume it. Chat consumes provider usage. OpenCode Go supports coding
 workloads only.
+Save persistent settings in `~/.config/poppet/config.json`; environment variables
+override file values. See [configuration](docs/configuration.md) for supported fields.
 See [getting started](docs/getting-started.md) for setup and session continuation,
 or choose another [provider](docs/index.md#providers).
 

@@ -162,7 +162,8 @@ Results fit `POPPET_TOOL_BYTES`; truncation keeps the source URL and flag.
 
 ## Provider and model selection
 
-New sessions use `POPPET_PROVIDER` and the required `POPPET_MODEL`. Existing
+New sessions use the configured `provider` and required `model`, with
+`POPPET_PROVIDER` and `POPPET_MODEL` taking precedence over file values. Existing
 sessions keep their saved provider, model, and workload when configuration
 changes. Start a new session to change that selection. OpenCode Go requires a
 coding session:
