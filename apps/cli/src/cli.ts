@@ -90,6 +90,11 @@ const showConfig = Effect.gen(function* () {
   );
 });
 
+const showModels = Effect.gen(function* () {
+  const provider = yield* Provider;
+  yield* Console.log(JSON.stringify(yield* provider.models, null, 2));
+});
+
 export const makeCLI = (
   registered: ReadonlyArray<ProviderRegistration>,
   write: ChatWriter = writeChatText,
@@ -160,12 +165,7 @@ export const makeCLI = (
         );
 
       return yield* Effect.gen(function* () {
-        if (command.action === "models") {
-          const provider = yield* Provider;
-          yield* Console.log(JSON.stringify(yield* provider.models, null, 2));
-
-          return;
-        }
+        if (command.action === "models") return yield* showModels;
 
         const connection = yield* ProviderConnection;
 
@@ -190,10 +190,7 @@ export const makeCLI = (
   const runMemory = (command: MemoryCommand) =>
     throughWorker(
       { kind: "memory", command },
-      manageMemory(command).pipe(
-        Effect.provide(runtime.memory),
-        Effect.flatMap((text) => Console.log(text)),
-      ),
+      manageMemory(command).pipe(Effect.provide(runtime.memory), Effect.flatMap(Console.log)),
     );
 
   const runWorkerCommand = (action: WorkerAction) => {
@@ -202,7 +199,7 @@ export const makeCLI = (
         .parse(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))
         .pipe(
           Effect.flatMap((directory) => worker(action, directory)),
-          Effect.flatMap((managed) => Console.log(managed)),
+          Effect.flatMap(Console.log),
         );
 
     return Effect.gen(function* () {
@@ -280,10 +277,7 @@ export const makeCLI = (
 
       return throughWorker(
         { kind: "chat", command },
-        inspection.pipe(
-          Effect.provide(runtime.store),
-          Effect.flatMap((text) => Console.log(text)),
-        ),
+        inspection.pipe(Effect.provide(runtime.store), Effect.flatMap(Console.log)),
       );
     }
 
@@ -711,12 +705,9 @@ export const makeCLI = (
       Command.make("provider").pipe(
         Command.withDescription("Inspect and verify the configured provider"),
         Command.withSubcommands([
-          Command.make("models", {}, () =>
-            Effect.gen(function* () {
-              const provider = yield* Provider;
-              yield* Console.log(JSON.stringify(yield* provider.models, null, 2));
-            }).pipe(Effect.provide(runtime.provider)),
-          ).pipe(Command.withDescription("List supported models")),
+          Command.make("models", {}, () => showModels.pipe(Effect.provide(runtime.provider))).pipe(
+            Command.withDescription("List supported models"),
+          ),
           Command.make("verify", {}, () =>
             Effect.scoped(
               Effect.gen(function* () {
@@ -763,13 +754,9 @@ export const makeCLI = (
   return (args: ReadonlyArray<string>) =>
     execute(commandArgs(args, registeredChannels)).pipe(
       Effect.catchTag("ShowHelp", (error) =>
-        Effect.gen(function* () {
-          const formatter = yield* CliOutput.Formatter;
-
-          return yield* Effect.fail(
-            new UsageError({ message: formatter.formatErrors(error.errors) }),
-          );
-        }),
+        CliOutput.Formatter.use((formatter) =>
+          Effect.fail(new UsageError({ message: formatter.formatErrors(error.errors) })),
+        ),
       ),
       // Parsing and help need platform services, but no application resources.
       Effect.provideService(CliConfig.CliConfig, CliConfig.make({ builtIns: [GlobalFlag.Help] })),
