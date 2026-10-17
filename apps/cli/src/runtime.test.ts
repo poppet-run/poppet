@@ -6,7 +6,6 @@ import { join } from "node:path";
 import { Agent } from "@poppet/agent";
 import { AppConfig, type Settings } from "@poppet/config";
 import {
-  Model,
   Provider,
   ProviderConnection,
   ProviderEnvironment,
@@ -20,7 +19,7 @@ import { Store } from "@poppet/store";
 import { WorkerConnections } from "@poppet/tasks";
 import { Context, Effect, Layer, Stream } from "effect";
 
-import { resolveConfiguredModel, selectProviderLayer, runtimeLayers } from "#src/runtime";
+import { runtimeLayers } from "#src/runtime";
 
 const config: Settings = {
   applicationName: "Test",
@@ -54,69 +53,62 @@ const fakeModel = (provider: ProviderId, id: string): ModelOperations => ({
     }),
 });
 
+const register = (id: ProviderId, provider: Layer.Layer<Provider>): ProviderRegistration => ({
+  id,
+  name: id,
+  authentication: { consent: false, apiKey: false, help: "Test connection" },
+  layer: Layer.merge(
+    provider,
+    Layer.succeed(ProviderConnection, {
+      login: () => Effect.succeed("Connected"),
+      status: Effect.succeed({ connected: false }),
+      logout: Effect.succeed("Disconnected"),
+      verify: () => Effect.succeed("selected-model"),
+    }),
+  ),
+});
+
 describe("configured model runtime", () => {
   test.each(["first-provider", "second-provider", "new-provider"] as const)(
     "builds only %s and resolves the explicit model",
     async (selected) => {
       const built: ProviderId[] = [];
+      const closed: ProviderId[] = [];
       const resolved: string[] = [];
 
       const layer = (id: ProviderId) =>
         Layer.effect(
           Provider,
-          Effect.sync(() => {
-            built.push(id);
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              built.push(id);
 
-            return {
-              id,
-              models: Effect.succeed([fakeModel(id, "selected-model").description]),
-              resolve: (model: string) =>
-                Effect.sync(() => {
-                  resolved.push(model);
+              return {
+                id,
+                models: Effect.succeed([fakeModel(id, "selected-model").description]),
+                resolve: (model: string) =>
+                  Effect.sync(() => {
+                    resolved.push(model);
 
-                  return fakeModel(id, model);
-                }),
-            };
-          }),
+                    return fakeModel(id, model);
+                  }),
+              };
+            }),
+            () =>
+              Effect.sync(() => {
+                closed.push(id);
+              }),
+          ),
         );
 
-      const runtime = Layer.effect(Model, resolveConfiguredModel).pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(AppConfig, { ...config, provider: selected }),
-            selectProviderLayer(
-              selected,
-              ["first-provider", "second-provider", "new-provider"].map(
-                (id): ProviderRegistration => ({
-                  id,
-                  name: id,
-                  authentication: { consent: false, apiKey: false, help: "Test connection" },
-                  layer: Layer.merge(
-                    layer(id),
-                    Layer.succeed(ProviderConnection, {
-                      login: () => Effect.succeed("Connected"),
-                      status: Effect.succeed({ connected: false }),
-                      logout: Effect.succeed("Disconnected"),
-                      verify: () => Effect.succeed("selected-model"),
-                    }),
-                  ),
-                }),
-              ),
-            ).pipe(
-              Layer.provide(
-                Layer.succeed(ProviderEnvironment, {
-                  applicationName: "Test",
-                  dataDirectory: "/unused",
-                }),
-              ),
-            ),
-          ),
-        ),
+      const runtime = runtimeLayers(
+        ["first-provider", "second-provider", "new-provider"].map((id) => register(id, layer(id))),
       );
 
       const result = await Effect.runPromise(
         Effect.gen(function* () {
-          const model = yield* Model;
+          const model = yield* runtime.resolveModel;
+          expect(closed).toEqual([]);
 
           return yield* completeModel(model, {
             sessionId: "fake-session",
@@ -126,25 +118,26 @@ describe("configured model runtime", () => {
             tools: [],
             settings: {},
           });
-        }).pipe(Effect.provide(runtime)),
+        }).pipe(Effect.provideService(AppConfig, { ...config, provider: selected }), Effect.scoped),
       );
 
       expect(built).toEqual([selected]);
+      expect(closed).toEqual([selected]);
       expect(resolved).toEqual(["selected-model"]);
       expect(result.output).toEqual([{ type: "text", text: "fake model answer" }]);
     },
   );
 
   test("requires an explicit model before discovery or inference", async () => {
+    const runtime = runtimeLayers([
+      register("openai-chatgpt", Layer.effect(Provider, Effect.die("Provider must not be built"))),
+    ]);
+
     await expect(
       Effect.runPromise(
-        resolveConfiguredModel.pipe(
+        runtime.resolveModel.pipe(
           Effect.provideService(AppConfig, { ...config, model: null }),
-          Effect.provideService(Provider, {
-            id: "openai-chatgpt",
-            models: Effect.die("Discovery must not run"),
-            resolve: () => Effect.die("Resolution must not run"),
-          }),
+          Effect.scoped,
         ),
       ),
     ).rejects.toMatchObject({ reason: "invalid-request" });
@@ -158,16 +151,20 @@ describe("configured model runtime", () => {
         mismatch === "other-model" ? "different-model" : "selected-model",
       );
 
+      const runtime = runtimeLayers([
+        register(
+          "openai-chatgpt",
+          Layer.succeed(Provider, {
+            id: "openai-chatgpt",
+            models: Effect.succeed([]),
+            resolve: () => Effect.succeed(selected),
+          }),
+        ),
+      ]);
+
       await expect(
         Effect.runPromise(
-          resolveConfiguredModel.pipe(
-            Effect.provideService(AppConfig, config),
-            Effect.provideService(Provider, {
-              id: "openai-chatgpt",
-              models: Effect.succeed([]),
-              resolve: () => Effect.succeed(selected),
-            }),
-          ),
+          runtime.resolveModel.pipe(Effect.provideService(AppConfig, config), Effect.scoped),
         ),
       ).rejects.toMatchObject({
         reason: "invalid-request",

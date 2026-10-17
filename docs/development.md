@@ -113,7 +113,7 @@ packages/
     src/worker.ts         LaunchAgent control, plist generation, and bounded log reading
   provider/               @poppet/provider
     src/schema.ts         Normalized messages, tools, events, and continuation
-    src/service.ts        Provider and selected Model services, typed errors
+    src/service.ts        Provider service, model operations, and typed errors
     src/verification.ts   Shared local tool round-trip verification
     src/registration.ts   Connection interface, provider metadata, and host services
   provider-protocol/      @poppet/provider-protocol
@@ -160,7 +160,8 @@ Register it in `apps/cli/src/providers.ts` and declare its CLI workspace depende
 The registration supplies the ID, display name, authentication capabilities, help,
 and complete live layer. Configuration defaults to the first registered provider.
 
-The CLI consumes shared `Provider`, `Model`, and `ProviderConnection` services.
+The CLI consumes shared `Provider` and `ProviderConnection` services and resolved
+`ModelOperations`. Verification keeps provider resources open in its request scope.
 Provider packages own authentication, environment-variable names, protocol choice,
 headers, continuation extensions, and error rules. Shared credentials and protocol
 helpers receive these settings from their owner. Adding a provider needs no changes

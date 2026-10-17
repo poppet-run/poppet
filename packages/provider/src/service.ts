@@ -44,9 +44,6 @@ export interface ProviderOperations {
 /** Supplies the selected provider's model catalogue and resolver. */
 export class Provider extends Context.Service<Provider, ProviderOperations>()("poppet/Provider") {}
 
-/** Supplies one resolved model for inference. */
-export class Model extends Context.Service<Model, ModelOperations>()("poppet/Model") {}
-
 export const invalidRequest = (provider: ProviderId, message: string) =>
   new ProviderError({ provider, reason: "invalid-request", message });
 

@@ -11,7 +11,6 @@ import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import { GatewayRepositoryLive } from "@poppet/gateway";
 import { LocalMemoryLive } from "@poppet/memory";
 import {
-  Model,
   Provider,
   ProviderEnvironment,
   ProviderConnection,
@@ -24,8 +23,6 @@ import { StoreLive } from "@poppet/store";
 import { TaskRepositoryLive, WorkerConnections } from "@poppet/tasks";
 import { Context, Effect, Layer, Schema } from "effect";
 
-import { providers } from "#src/providers";
-
 export const findProvider = (
   id: ProviderId,
   registered: ReadonlyArray<ProviderRegistration>,
@@ -36,34 +33,6 @@ export const findProvider = (
     ? Effect.fail(invalidRequest(id, `Unknown provider ${id}. Choose a registered provider.`))
     : Effect.succeed(provider);
 };
-
-export const selectProviderLayer = (id: ProviderId, registered = providers) =>
-  Layer.unwrap(findProvider(id, registered).pipe(Effect.map((entry) => entry.layer)));
-
-export const resolveConfiguredModel = Effect.gen(function* () {
-  const config = yield* AppConfig;
-
-  if (config.model === null)
-    return yield* Effect.fail(
-      invalidRequest(
-        config.provider,
-        "Set model in config.json or POPPET_MODEL to a model from provider models.",
-      ),
-    );
-
-  const provider = yield* Provider;
-  const model = yield* provider.resolve(config.model);
-
-  if (model.description.provider !== config.provider || model.description.id !== config.model)
-    return yield* Effect.fail(
-      invalidRequest(
-        config.provider,
-        "The provider resolved a different model. No fallback is allowed.",
-      ),
-    );
-
-  return model;
-});
 
 /** Wires registered providers and shared storage into the host's command and agent services. */
 export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) => {
@@ -92,7 +61,9 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   );
 
   const selectedProvider = (id: ProviderId) =>
-    selectProviderLayer(id, registered).pipe(Layer.provide(environment));
+    Layer.unwrap(findProvider(id, registered).pipe(Effect.map((entry) => entry.layer))).pipe(
+      Layer.provide(environment),
+    );
 
   const provider = Layer.unwrap(
     Effect.gen(function* () {
@@ -102,21 +73,31 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     }),
   ).pipe(Layer.provideMerge(config));
 
-  const model = Layer.unwrap(
-    Effect.gen(function* () {
-      const settings = yield* AppConfig;
+  const resolveModel = Effect.gen(function* () {
+    const settings = yield* AppConfig;
 
-      if (settings.model === null)
-        return yield* Effect.fail(
-          invalidRequest(
-            settings.provider,
-            "Set model in config.json or POPPET_MODEL to a model from provider models.",
-          ),
-        );
+    if (settings.model === null)
+      return yield* Effect.fail(
+        invalidRequest(
+          settings.provider,
+          "Set model in config.json or POPPET_MODEL to a model from provider models.",
+        ),
+      );
 
-      return Layer.effect(Model, resolveConfiguredModel).pipe(Layer.provideMerge(provider));
-    }),
-  ).pipe(Layer.provide(config));
+    // The caller's scope keeps provider resources alive until inference finishes.
+    const context = yield* Layer.build(selectedProvider(settings.provider));
+    const model = yield* Context.get(context, Provider).resolve(settings.model);
+
+    if (model.description.provider !== settings.provider || model.description.id !== settings.model)
+      return yield* Effect.fail(
+        invalidRequest(
+          settings.provider,
+          "The provider resolved a different model. No fallback is allowed.",
+        ),
+      );
+
+    return model;
+  });
 
   const store = StoreLive.pipe(Layer.provide(config));
 
@@ -243,7 +224,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     config,
     chatSettings,
     provider,
-    model,
+    resolveModel,
     selectedProvider,
     store,
     memory,
