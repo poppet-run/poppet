@@ -13,7 +13,7 @@ import {
   type ModelRequest,
 } from "@poppet/provider";
 import { Store, StoreLive } from "@poppet/store";
-import { Deferred, Effect, Fiber, Layer, Match, Stream } from "effect";
+import { Console, Deferred, Effect, Fiber, Layer, Match, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { AgentError } from "#src/errors";
@@ -599,6 +599,7 @@ describe("session naming", () => {
     "keeps the successful answer and fallback after %s naming, without retry",
     async (mode) => {
       let names = 0;
+      const errors: string[] = [];
       const started = Deferred.makeUnsafe<void>();
 
       const state = await fixture(() =>
@@ -667,9 +668,16 @@ describe("session naming", () => {
               status: "completed",
               result: response(),
             });
-          }).pipe(Effect.provide(TestClock.layer())),
+          }).pipe(
+            Effect.provide(TestClock.layer()),
+            Effect.provideService(Console.Console, {
+              ...console,
+              error: (...values) => errors.push(values.join(" ")),
+            }),
+          ),
         );
         expect(names).toBe(1);
+        expect(errors).toHaveLength(["invalid", "oversized", "deadline"].includes(mode) ? 1 : 0);
       } finally {
         await state.close();
       }
