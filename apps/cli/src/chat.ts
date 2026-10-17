@@ -9,7 +9,14 @@ import {
   type ChatEvent,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
-import { Session, SessionSearchQuery, SkillName, Store } from "@poppet/store";
+import {
+  Session,
+  SessionSearchQuery,
+  SkillName,
+  Store,
+  type StoredMessage,
+  type Run,
+} from "@poppet/store";
 import { Console, Effect, Schema, Stream } from "effect";
 
 /** Parsed chat actions before defaults are resolved into an executable request. */
@@ -92,6 +99,34 @@ export const writeChatThinking: ChatWriter = (text) =>
     process.env.NO_COLOR ? text : styleText(["dim", "cyan"], text, { stream: process.stderr }),
   );
 
+const messageForInspection = (entry: StoredMessage) => ({
+  id: entry.id,
+  sessionId: entry.sessionId,
+  runId: entry.runId,
+  position: entry.position,
+  createdAt: entry.createdAt,
+  message:
+    entry.message.role === "assistant"
+      ? { role: "assistant", output: entry.message.output }
+      : entry.message,
+});
+
+const runForInspection = (run: Run) => ({
+  id: run.id,
+  sessionId: run.sessionId,
+  provider: run.provider,
+  model: run.model,
+  workload: run.workload,
+  status: run.status,
+  createdAt: run.createdAt,
+  startedAt: run.startedAt,
+  finishedAt: run.finishedAt,
+  failureReason: run.failureReason,
+  output: run.result?.output ?? null,
+  usage: run.result?.usage ?? null,
+  finishReason: run.result?.finishReason ?? null,
+});
+
 export const inspectChat = (
   command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,
   toolBytes = defaultPolicy.toolBytes,
@@ -124,32 +159,8 @@ export const inspectChat = (
       {
         session,
         toolCalls,
-        messages: messages.map((entry) => ({
-          id: entry.id,
-          sessionId: entry.sessionId,
-          runId: entry.runId,
-          position: entry.position,
-          createdAt: entry.createdAt,
-          message:
-            entry.message.role === "assistant"
-              ? { role: "assistant", output: entry.message.output }
-              : entry.message,
-        })),
-        runs: runs.map((run) => ({
-          id: run.id,
-          sessionId: run.sessionId,
-          provider: run.provider,
-          model: run.model,
-          workload: run.workload,
-          status: run.status,
-          createdAt: run.createdAt,
-          startedAt: run.startedAt,
-          finishedAt: run.finishedAt,
-          failureReason: run.failureReason,
-          output: run.result?.output ?? null,
-          usage: run.result?.usage ?? null,
-          finishReason: run.result?.finishReason ?? null,
-        })),
+        messages: messages.map(messageForInspection),
+        runs: runs.map(runForInspection),
       },
       null,
       2,
@@ -183,12 +194,7 @@ export const prepareChat = (
     return command.skill === undefined ? request : { ...request, skill: command.skill };
   });
 
-export const sendChat = (
-  command: ChatSubmission,
-  write: ChatWriter,
-  announce: ChatAnnouncer = (text) => Console.error(text),
-  reasoning: ChatReasoning = {},
-) =>
+const resolveChatSession = (command: ChatSubmission) =>
   Effect.gen(function* () {
     const store = yield* Store;
 
@@ -199,14 +205,22 @@ export const sendChat = (
         ? yield* Skills.use((skills) => skills.load(selectedSkill))
         : null;
 
-    const sessionId =
-      command.action === "new"
-        ? (yield* store.createSession(command.provider, command.model, {
-            workload: command.workload,
-            skill,
-          })).id
-        : command.id;
+    return command.action === "new"
+      ? (yield* store.createSession(command.provider, command.model, {
+          workload: command.workload,
+          skill,
+        })).id
+      : command.id;
+  });
 
+export const sendChat = (
+  command: ChatSubmission,
+  write: ChatWriter,
+  announce: ChatAnnouncer = (text) => Console.error(text),
+  reasoning: ChatReasoning = {},
+) =>
+  Effect.gen(function* () {
+    const sessionId = yield* resolveChatSession(command);
     yield* announce(`Session: ${sessionId}`, sessionId);
     const agent = yield* Agent;
 
