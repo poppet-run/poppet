@@ -96,6 +96,7 @@ export const createHarness = async () => {
     authorizations: oauth.authorizations,
     grants: oauth.grants,
     requests: responses.requests,
+    catalogReads: responses.catalogReads,
     bearerHeaders: responses.bearerHeaders,
     run,
     saved,

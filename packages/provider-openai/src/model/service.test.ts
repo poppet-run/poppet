@@ -7,7 +7,7 @@ import { Effect, Redacted } from "effect";
 
 import { ChatGPTAuth } from "#src/auth/service";
 import { ConnectionError } from "#src/connection";
-import { makeChatGPTProvider } from "#src/model/service";
+import { makeChatGPTModel, makeChatGPTProvider } from "#src/model/service";
 import type { HttpFetch } from "#src/oauth/http";
 import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt";
 
@@ -19,6 +19,7 @@ describe("ChatGPT model verification", () => {
       await harness.run(login);
       harness.controls.streamMode = "empty_terminal";
       expect(await harness.run(verify)).toBe("test-model");
+      expect(harness.catalogReads()).toBe(1);
       expect(harness.requests).toHaveLength(2);
       expect(harness.requests[1]?.input.slice(1, 3)).toMatchObject([
         { type: "reasoning", id: "reason-1", encrypted_content: "test-reasoning-state" },
@@ -123,7 +124,7 @@ describe("ChatGPT provider inference", () => {
 
       const failure = await Effect.runPromise(
         Effect.gen(function* () {
-          const provider = yield* makeChatGPTProvider(http);
+          const provider = makeChatGPTProvider(yield* makeChatGPTModel(http));
           const model = yield* provider.resolve("test-model");
 
           return yield* completeModel(model, {

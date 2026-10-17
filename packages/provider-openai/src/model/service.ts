@@ -67,25 +67,42 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
       return catalog.models.filter((model) => model.visibility === "list");
     });
 
+    const selectedModel = (entry: AvailableModel) =>
+      responsesModel(
+        describeModel(entry),
+        auth.accessToken.pipe(
+          Effect.map((token) => clientFor(token, http)),
+          Effect.mapError(providerFailure),
+        ),
+        {
+          failure: (cause) => inferenceFailure("openai-chatgpt", cause),
+          remoteFailure: (status, code, requestId) =>
+            remoteFailure("openai-chatgpt", status, code, requestId),
+        },
+      );
+
     const verify = (requestedModel: string | null) =>
       Effect.gen(function* () {
         const catalog = yield* models;
-        const model = requestedModel ?? catalog[0]?.slug;
 
-        if (!model || !catalog.some((entry) => entry.slug === model))
+        const entry =
+          requestedModel === null
+            ? catalog[0]
+            : catalog.find((model) => model.slug === requestedModel);
+
+        if (!entry)
           return yield* Effect.fail(
             new ConnectionError({
               reason: "unsupported",
               message: "Choose a model from bun run start auth models.",
             }),
           );
-        const selected = yield* resolve(model).pipe(Effect.mapError(connectionFailure));
-        yield* verifyModel(selected).pipe(Effect.mapError(connectionFailure));
+        yield* verifyModel(selectedModel(entry)).pipe(Effect.mapError(connectionFailure));
         // Record success only after inference completes and the local tool result
         // comes back correctly. This confirms model access and tool handling.
-        yield* auth.recordVerification(model);
+        yield* auth.recordVerification(entry.slug);
 
-        return model;
+        return entry.slug;
       });
 
     const resolve = (model: string) =>
@@ -98,16 +115,7 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
             invalidRequest("openai-chatgpt", "Choose a model from the ChatGPT catalog."),
           );
 
-        const client = auth.accessToken.pipe(
-          Effect.map((token) => clientFor(token, http)),
-          Effect.mapError(providerFailure),
-        );
-
-        return responsesModel(describeModel(entry), client, {
-          failure: (cause) => inferenceFailure("openai-chatgpt", cause),
-          remoteFailure: (status, code, requestId) =>
-            remoteFailure("openai-chatgpt", status, code, requestId),
-        });
+        return selectedModel(entry);
       });
 
     return { models, verify, resolve } satisfies ModelOperations;
@@ -122,18 +130,16 @@ const describeModel = (model: AvailableModel): ModelDescription => ({
   capabilities: { tools: true, generationSettings: [], contextWindow: null, maxOutputTokens: null },
 });
 
-export const makeChatGPTProvider = (http: HttpFetch = fetch) =>
-  Effect.gen(function* () {
-    const connection = yield* makeChatGPTModel(http);
+export const makeChatGPTProvider = (connection: ChatGPTModel["Service"]): ProviderOperations => ({
+  id: "openai-chatgpt",
+  models: connection.models.pipe(
+    Effect.map((models) => models.map(describeModel)),
+    Effect.mapError(providerFailure),
+  ),
+  resolve: connection.resolve,
+});
 
-    return {
-      id: "openai-chatgpt",
-      models: connection.models.pipe(
-        Effect.map((models) => models.map(describeModel)),
-        Effect.mapError(providerFailure),
-      ),
-      resolve: connection.resolve,
-    } satisfies ProviderOperations;
-  });
-
-export const ChatGPTProviderLive = Layer.effect(Provider, makeChatGPTProvider());
+export const ChatGPTProviderLive = Layer.effect(
+  Provider,
+  Effect.map(ChatGPTModel, makeChatGPTProvider),
+).pipe(Layer.provide(ChatGPTModelLive));
