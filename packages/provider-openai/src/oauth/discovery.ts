@@ -55,6 +55,7 @@ export const discoverIssuer = (http: HttpFetch, expectedIssuer: string) =>
 
     return metadata;
   }).pipe(
+    Effect.scoped,
     Effect.timeout("20 seconds"),
     Effect.catchTag("TimeoutError", () => Effect.fail(networkError())),
   );

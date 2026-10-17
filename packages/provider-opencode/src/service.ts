@@ -66,25 +66,26 @@ export const makeOpenCodeProvider = (
   baseUrl = "https://opencode.ai/inference/go/v1",
 ): ProviderOperations => {
   const models = Effect.gen(function* () {
-    const response = yield* Effect.tryPromise({
-      try: (signal) => http(`${baseUrl}/models`, { signal, headers: { "User-Agent": userAgent } }),
-      catch: (cause) => inferenceFailure("opencode-go", cause),
-    });
-
-    if (!response.ok) {
-      yield* Effect.promise(() => response.body?.cancel() ?? Promise.resolve());
-
-      return yield* Effect.fail(
-        inferenceFailure(
-          "opencode-go",
-          new APIError(response.status, undefined, undefined, response.headers),
-        ),
-      );
-    }
-
+    // Keep the response body inside the fetch's cancellation boundary.
     const body = yield* Effect.tryPromise({
-      try: () => response.json(),
-      catch: () => invalidRequest("opencode-go", "OpenCode Go returned an invalid model catalog."),
+      try: async (signal) => {
+        const response = await http(`${baseUrl}/models`, {
+          signal,
+          headers: { "User-Agent": userAgent },
+        });
+
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw new APIError(response.status, undefined, undefined, response.headers);
+        }
+
+        try {
+          return await response.json();
+        } catch {
+          throw invalidRequest("opencode-go", "OpenCode Go returned an invalid model catalog.");
+        }
+      },
+      catch: (cause) => inferenceFailure("opencode-go", cause),
     });
 
     const catalog = yield* Schema.decodeUnknownEffect(Catalog)(body).pipe(
