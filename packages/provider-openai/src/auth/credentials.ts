@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -91,29 +92,34 @@ export const CredentialStoreLive = Layer.effect(
       }).pipe(Effect.uninterruptible);
 
     const read = Effect.gen(function* () {
-      // lstat inspects the path itself, letting us reject symlinks before reading
-      // credentials or changing file permissions.
-      const info = yield* Effect.tryPromise({
-        try: () =>
-          lstat(path).catch((cause: unknown) => {
-            if (Schema.is(MissingFile)(cause)) return null;
-            throw cause;
-          }),
-        catch: storageError,
-      });
-
-      if (info === null) return null;
-
       const contents = yield* Effect.tryPromise({
         try: async () => {
-          if (!info.isFile() || info.isSymbolicLink())
-            throw new Error("Credentials must be a regular file.");
-          await chmod(path, 0o600);
+          const handle = await open(
+            path,
+            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+          ).catch((cause: unknown) => {
+            if (Schema.is(MissingFile)(cause)) return null;
+            throw cause;
+          });
 
-          return Bun.file(path).text();
+          if (handle === null) return null;
+
+          try {
+            const info = await handle.stat();
+
+            if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.())
+              throw new Error("Credentials must be owned regular files without links.");
+            await handle.chmod(0o600);
+
+            return await handle.readFile("utf8");
+          } finally {
+            await handle.close();
+          }
         },
         catch: storageError,
       });
+
+      if (contents === null) return null;
 
       return yield* Schema.decodeUnknownEffect(ConnectionJson)(contents).pipe(
         Effect.mapError(storageError),

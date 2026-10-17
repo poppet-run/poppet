@@ -121,7 +121,7 @@ export const ApiKeyStoreLive = Layer.effect(
           try: async () => {
             const handle = await open(
               path(provider),
-              constants.O_RDONLY | constants.O_NOFOLLOW,
+              constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
             ).catch((cause: unknown) => {
               if (Schema.is(MissingFile)(cause)) return null;
               throw cause;
@@ -130,7 +130,10 @@ export const ApiKeyStoreLive = Layer.effect(
             if (handle === null) return null;
 
             try {
-              if (!(await handle.stat()).isFile()) throw new Error("Invalid credential file");
+              const info = await handle.stat();
+
+              if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.())
+                throw new Error("Invalid credential file");
               await handle.chmod(0o600);
 
               return await handle.readFile("utf8");

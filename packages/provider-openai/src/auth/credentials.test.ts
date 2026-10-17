@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { readFile, symlink, unlink, writeFile } from "node:fs/promises";
+import { link, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { createHarness, login, status } from "#src/test/fixtures/chatgpt";
+
+import { makeFIFO } from "../../../../tools/testing/fifo";
 
 describe("Credential storage", () => {
   test("rejects malformed stored credentials and competing owners", async () => {
@@ -20,22 +22,33 @@ describe("Credential storage", () => {
       await harness.close();
     }
   });
-  test("rejects credential symlinks without reading or changing their targets", async () => {
-    const harness = await createHarness();
+  test.each(["symlink", "hardlink", "fifo"])(
+    "rejects credential %s files without reading or changing their targets",
+    async (kind) => {
+      const harness = await createHarness();
 
-    try {
-      await harness.run(login);
-      const path = join(harness.directory, "auth/connection.json");
-      const target = join(harness.directory, "unrelated-file");
-      await writeFile(target, "keep this file");
-      await unlink(path);
-      await symlink(target, path);
-      await expect(harness.run(status)).rejects.toMatchObject({ reason: "storage" });
-      expect(await readFile(target, "utf8")).toBe("keep this file");
-      await unlink(target);
-      await expect(harness.run(status)).rejects.toMatchObject({ reason: "storage" });
-    } finally {
-      await harness.close();
-    }
-  });
+      try {
+        await harness.run(login);
+        const path = join(harness.directory, "auth/connection.json");
+        const target = join(harness.directory, "unrelated-file");
+        await writeFile(target, "keep this file", { mode: 0o644 });
+        await unlink(path);
+
+        if (kind === "symlink") await symlink(target, path);
+        else if (kind === "hardlink") await link(target, path);
+        else makeFIFO(path);
+
+        await expect(harness.run(status)).rejects.toMatchObject({ reason: "storage" });
+        expect(await readFile(target, "utf8")).toBe("keep this file");
+        expect((await stat(target)).mode & 0o777).toBe(0o644);
+
+        if (kind === "symlink") {
+          await unlink(target);
+          await expect(harness.run(status)).rejects.toMatchObject({ reason: "storage" });
+        }
+      } finally {
+        await harness.close();
+      }
+    },
+  );
 });

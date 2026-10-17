@@ -7,6 +7,8 @@ import { Effect } from "effect";
 
 import { loadChannelSettings, saveChannelSettings } from "#src/settings";
 
+import { makeFIFO } from "../../../tools/testing/fifo";
+
 describe.concurrent("protected channel settings", () => {
   test("saves settings with protected permissions and repairs permissions when reading", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-channel-settings-"));
@@ -27,7 +29,7 @@ describe.concurrent("protected channel settings", () => {
     }
   });
 
-  test.each(["symlink", "hardlink", "oversized"])(
+  test.each(["symlink", "hardlink", "oversized", "fifo"])(
     "rejects %s settings without exposing their contents or changing link targets",
     async (kind) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-channel-invalid-"));
@@ -41,6 +43,7 @@ describe.concurrent("protected channel settings", () => {
 
         if (kind === "symlink") await symlink(other, path);
         else if (kind === "hardlink") await link(other, path);
+        else if (kind === "fifo") makeFIFO(path);
         else await writeFile(path, "channel-secret".repeat(2000));
 
         const result = await Effect.runPromise(
