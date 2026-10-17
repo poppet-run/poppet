@@ -62,18 +62,16 @@ export const conversation = Effect.gen(function* () {
 
       const output = yield* result.pipe(
         Effect.catch((error) =>
-          Effect.gen(function* () {
-            yield* store.finishToolCall(run.id, callId, {
+          store
+            .finishToolCall(run.id, callId, {
               status:
                 call.name === "save_note" ||
                 (call.name === "memory" && error.reason === "memory-storage")
                   ? "uncertain"
                   : "failed",
               reason: `${error instanceof AgentError ? "agent" : "store"}:${error.reason}`,
-            });
-
-            return yield* Effect.fail(error);
-          }),
+            })
+            .pipe(Effect.andThen(Effect.fail(error))),
         ),
       );
 
