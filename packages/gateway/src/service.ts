@@ -229,22 +229,9 @@ const gateway = Effect.gen(function* () {
       yield* mark(message, "completed");
     });
 
-  /** Executes the next eligible queued request, retrying setup only before a run exists. */
-  const processNext = Effect.gen(function* () {
-    const entry = yield* gatewayStorage(() =>
-      repo.next(channel.id, account, clock.currentTimeMillisUnsafe()),
-    );
-
-    if (entry === null) return false;
-
-    if (!authorized(entry.message)) {
-      yield* gatewayStorage(() => repo.state(entry.id, "cancelled"));
-
-      return true;
-    }
-
-    const execute = Effect.gen(function* () {
-      yield* mark(entry.message, "working");
+  /** Resolves and binds a session before inference, reusing saved IDs and skill snapshots on recovery. */
+  const prepareSession = (entry: Inbox) =>
+    Effect.gen(function* () {
       const parsed = yield* messagingRequest(entry.message.text).pipe(Effect.result);
       const prompt = Result.isSuccess(parsed) ? parsed.success.prompt : entry.message.text;
 
@@ -263,6 +250,8 @@ const gateway = Effect.gen(function* () {
           yield* gatewayStorage(() => repo.address(entry.id, conversation));
           yield* finish(entry.id, text, "failed");
           yield* mark(entry.message, "stopped");
+
+          return null;
         });
 
       if (Result.isFailure(parsed)) return yield* reject(parsed.failure.message);
@@ -317,6 +306,30 @@ const gateway = Effect.gen(function* () {
         repo.attach(entry.id, conversation, session.id, created.managedName, request.fresh),
       );
 
+      return { conversation, session, prompt: request.prompt };
+    });
+
+  /** Executes the next eligible queued request, retrying setup only before a run exists. */
+  const processNext = Effect.gen(function* () {
+    const entry = yield* gatewayStorage(() =>
+      repo.next(channel.id, account, clock.currentTimeMillisUnsafe()),
+    );
+
+    if (entry === null) return false;
+
+    if (!authorized(entry.message)) {
+      yield* gatewayStorage(() => repo.state(entry.id, "cancelled"));
+
+      return true;
+    }
+
+    const execute = Effect.gen(function* () {
+      yield* mark(entry.message, "working");
+      const prepared = yield* prepareSession(entry);
+
+      if (prepared === null) return;
+      const { conversation, session, prompt } = prepared;
+
       if (active !== null)
         active.entry = { ...entry, conversationId: conversation, sessionId: session.id };
       yield* gatewayStorage(() => repo.state(entry.id, "executing"));
@@ -329,7 +342,7 @@ const gateway = Effect.gen(function* () {
             Effect.forever,
             Effect.forkScoped,
           );
-          yield* Stream.runDrain(agent.send(session.id, request.prompt, { runId: entry.runId }));
+          yield* Stream.runDrain(agent.send(session.id, prompt, { runId: entry.runId }));
         }),
       );
       const run = yield* store.run(entry.runId);
