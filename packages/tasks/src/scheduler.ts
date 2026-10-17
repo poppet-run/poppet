@@ -80,7 +80,7 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) 
         modelFailure = error;
       });
 
-    const execution = Effect.gen(function* () {
+    yield* Effect.gen(function* () {
       yield* workerLog(
         clock.currentTimeMillisUnsafe(),
         `${occurrenceLabel(job.name, item.id)} started provider=${job.provider}`,
@@ -167,8 +167,6 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) 
         }),
       ),
     );
-
-    yield* execution;
   });
 
 interface ActiveOccurrence {
@@ -189,7 +187,7 @@ export const makeTaskWorker = Effect.gen(function* () {
   const commands = yield* Semaphore.make(1);
   let active: ActiveOccurrence | null = null;
   const startedAt = clock.currentTimeMillisUnsafe();
-  const connections = yield* Effect.serviceOption(WorkerConnections);
+  const connections = Option.getOrNull(yield* Effect.serviceOption(WorkerConnections));
 
   yield* reconcileTasks(repo, clock.currentTimeMillisUnsafe(), true);
   const pauses = yield* taskOperation(() => repo.providers());
@@ -215,9 +213,8 @@ export const makeTaskWorker = Effect.gen(function* () {
           pid: process.pid,
           startedAt,
           activeOccurrence: active?.id ?? null,
-          connections: Option.isSome(connections)
-            ? yield* Effect.forEach(ids, (id) => connections.value.status(id))
-            : [],
+          connections:
+            connections !== null ? yield* Effect.forEach(ids, (id) => connections.status(id)) : [],
         };
       }
 
