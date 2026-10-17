@@ -105,15 +105,16 @@ export const makeWebSearch = (
       },
       catch: (cause) => (cause instanceof AgentError ? cause : searchFailure()),
     }).pipe(
-      Effect.timeout("15 seconds"),
-      Effect.mapError((cause) =>
-        cause instanceof AgentError
-          ? cause
-          : new AgentError({
+      Effect.timeoutOrElse({
+        duration: "15 seconds",
+        orElse: () =>
+          Effect.fail(
+            new AgentError({
               reason: "tool-network",
               message: "The search request exceeded its 15-second deadline.",
             }),
-      ),
+          ),
+      }),
     ),
 });
 
@@ -143,13 +144,11 @@ export const manageWebSearch = (action: "login" | "status" | "logout", keyStdin 
     const store = yield* ApiKeyStore;
 
     if (action === "login") {
-      const configured = keyStdin
-        ? Option.none()
-        : yield* environmentApiKey(credentialId, keyEnvironment);
+      let key = keyStdin
+        ? yield* readKeyStdin(credentialId)
+        : Option.getOrNull(yield* environmentApiKey(credentialId, keyEnvironment));
 
-      const key = Option.isSome(configured)
-        ? configured.value
-        : yield* keyStdin ? readKeyStdin(credentialId) : readHiddenKey(credentialId);
+      if (key === null) key = yield* readHiddenKey(credentialId);
 
       yield* store.write(credentialId, key);
       yield* Console.log(

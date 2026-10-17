@@ -86,6 +86,30 @@ test.concurrent.each(["openrouter", "opencode-go"])(
   15_000,
 );
 
+test.concurrent("web login reads stdin instead of an invalid environment key", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-web-stdin-"));
+
+  try {
+    const saved = await invokeProcess(
+      ["web", "login", "--key-stdin"],
+      {
+        POPPET_DATA_DIR: directory,
+        POPPET_BRAVE_SEARCH_API_KEY: "invalid search key",
+      },
+      "stdin-search-secret\n",
+    );
+
+    expect(saved.exitCode).toBe(0);
+    expect(saved.stdout + saved.stderr).not.toContain("stdin-search-secret");
+    expect(saved.stdout + saved.stderr).not.toContain("invalid search key");
+    expect(JSON.parse(await Bun.file(join(directory, "auth/brave-search.json")).text()).key).toBe(
+      "stdin-search-secret",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test.concurrent("unattended key input fails without creating credentials", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-unattended-"));
 
