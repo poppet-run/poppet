@@ -221,35 +221,31 @@ export const conversation = Effect.gen(function* () {
                       );
 
                     // Validate the whole batch before any call can change notes or memory.
-                    const planned = yield* Effect.forEach(
-                      calls,
-                      (
-                        call,
-                      ): Effect.Effect<
-                        NoteCall | SessionSearchCall | FetchPageCall | MemoryCall,
-                        AgentError
-                      > => {
+                    const planned = yield* Effect.forEach(calls, (call) =>
+                      Effect.gen(function* () {
                         if (
                           !tools.some(
                             (tool) => tool.name === call.name && tool.namespace === call.namespace,
                           )
                         )
-                          return Effect.fail(
+                          return yield* Effect.fail(
                             new AgentError({
                               reason: "tool-permission",
                               message: "The requested tool is not allowed in this run.",
                             }),
                           );
 
-                        return Match.value(call).pipe(
+                        const plan = yield* Match.value(call).pipe(
                           Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
                           Match.when({ name: "memory" }, decodeMemoryCall),
-                          Match.when({ name: "fetch_page" }, (plan) =>
-                            decodeFetchPageCall(plan, allowedURLs),
+                          Match.when({ name: "fetch_page" }, (pageCall) =>
+                            decodeFetchPageCall(pageCall, allowedURLs),
                           ),
                           Match.orElse(decodeNoteCall),
                         );
-                      },
+
+                        return { callId: call.callId, plan };
+                      }),
                     );
 
                     current.push({
@@ -258,18 +254,9 @@ export const conversation = Effect.gen(function* () {
                       continuation: response.continuation,
                     });
 
-                    for (const [index, call] of calls.entries()) {
-                      const plan = planned[index];
-
-                      if (!plan)
-                        return yield* Effect.fail(
-                          new AgentError({
-                            reason: "protocol",
-                            message: "The tool-call plan is incomplete.",
-                          }),
-                        );
-                      const output = yield* executeTool(run, call.callId, plan);
-                      current.push({ role: "tool", callId: call.callId, output });
+                    for (const { callId, plan } of planned) {
+                      const output = yield* executeTool(run, callId, plan);
+                      current.push({ role: "tool", callId, output });
                       callsUsed++;
                     }
 
