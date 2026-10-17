@@ -121,9 +121,6 @@ describe.concurrent("persisted agent", () => {
             const store = yield* Store;
             const session = yield* store.createSession("test-provider", "test-model");
             const events = yield* Stream.runCollect((yield* Agent).send(session.id, "Hello"));
-            const diagnostics = events.filter((event) => event.type === "reasoning");
-
-            expect(diagnostics.map((event) => event.text)).toEqual(logs);
             expect(
               events
                 .filter((event) => event.type === "reasoning-delta")

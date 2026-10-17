@@ -125,17 +125,20 @@ export const WorkerRequestsLive = Layer.effect(
           const frames = yield* Queue.make<Frame, Cause.Done>({ capacity: 16 });
           const streamReasoning = command.value.kind === "chat" && command.value.streamReasoning;
 
-          const relayReasoning: ChatAnnouncer = (text) =>
-            Queue.offer(frames, { type: streamReasoning ? "reasoning-log" : "stderr", text }).pipe(
+          const logReasoning = (text: string) =>
+            Console.error(text).pipe(
+              Effect.andThen(
+                Queue.offer(frames, { type: streamReasoning ? "reasoning-log" : "stderr", text }),
+              ),
               Effect.asVoid,
             );
 
           const reasoning: ChatReasoning = streamReasoning
             ? {
-                relay: relayReasoning,
+                log: logReasoning,
                 write: (event) => Queue.offer(frames, event).pipe(Effect.asVoid),
               }
-            : { relay: relayReasoning };
+            : { log: logReasoning };
 
           yield* execute(
             command.value,
@@ -156,6 +159,11 @@ export const WorkerRequestsLive = Layer.effect(
             }),
             Effect.ensuring(Queue.end(frames)),
             Effect.forkIn(owned),
+          );
+
+          // Close the queue before producer cleanup can try to forward its last diagnostic.
+          yield* Effect.addFinalizer(() => Queue.end(frames)).pipe(
+            Effect.provideService(Scope.Scope, owned),
           );
 
           const disconnected = Effect.callback<void>((resume) => {

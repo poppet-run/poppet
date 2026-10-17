@@ -29,13 +29,12 @@ export class ModelResolver extends Context.Service<
   }
 >()("poppet/ModelResolver") {}
 
-/** Run lifecycle events, streamed text, and locally logged reasoning diagnostics. */
+/** Run lifecycle events, streamed answer text, and readable reasoning. */
 export type ChatEvent =
   | { readonly type: "started"; readonly run: Run }
   | { readonly type: "text-delta"; readonly text: string }
   | { readonly type: "reasoning-delta"; readonly text: string }
   | { readonly type: "reasoning-end" }
-  | { readonly type: "reasoning"; readonly text: string }
   | { readonly type: "completed"; readonly run: Run };
 
 /** Failures from orchestration, model inference, or persistence of a chat request. */
@@ -140,8 +139,6 @@ export const AgentLive = Layer.effect(
 
             const flushReasoning = (final = false) =>
               Effect.gen(function* () {
-                const events: ChatEvent[] = [];
-
                 while (reasoning.length > 0) {
                   const newline = reasoning.indexOf("\n");
 
@@ -158,10 +155,7 @@ export const AgentLive = Layer.effect(
                   const line = `[${new Date().toISOString()}] Thinking session=${sessionId} run=${run.id} ${JSON.stringify(chunk)}`;
 
                   yield* options.reasoningLog?.(line) ?? Console.error(line);
-                  events.push({ type: "reasoning", text: line });
                 }
-
-                return events;
               });
 
             const reply = Stream.unwrap(
@@ -205,20 +199,14 @@ export const AgentLive = Layer.effect(
                   if (event.type === "reasoning-delta") {
                     reasoning += event.text;
 
-                    const diagnostics = yield* flushReasoning();
+                    yield* flushReasoning();
 
-                    return [...diagnostics, event];
+                    return event;
                   }
 
-                  if (event.type === "reasoning-end") {
-                    const diagnostics = yield* flushReasoning(true);
+                  yield* flushReasoning(true);
 
-                    return [...diagnostics, event];
-                  }
-
-                  const diagnostics = yield* flushReasoning(true);
-
-                  if (event.type === "text-delta") return [...diagnostics, event];
+                  if (event.type === "text-delta" || event.type === "reasoning-end") return event;
 
                   const saved = yield* Effect.uninterruptible(
                     store.finishRun(run.id, { status: "completed", response: event.response }).pipe(
@@ -230,17 +218,10 @@ export const AgentLive = Layer.effect(
                     ),
                   );
 
-                  return [...diagnostics, { type: "completed" as const, run: saved }];
+                  return { type: "completed" as const, run: saved };
                 }),
               ),
-              Stream.flatMap(Stream.fromIterable),
-              Stream.catch((error) =>
-                Stream.concat(
-                  Stream.fromEffect(flushReasoning(true)).pipe(Stream.flatMap(Stream.fromIterable)),
-                  Stream.fail(error),
-                ),
-              ),
-              Stream.ensuring(flushReasoning(true).pipe(Effect.asVoid)),
+              Stream.ensuring(flushReasoning(true)),
             );
 
             return Stream.concat(Stream.make({ type: "started" as const, run }), reply);
