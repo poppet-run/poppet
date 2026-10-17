@@ -358,28 +358,23 @@ const gateway = Effect.gen(function* () {
           yield* mark(entry.message, "stopped");
 
           if (Cause.hasInterrupts(exit.cause)) return;
-          const error = Cause.findErrorOption(exit.cause);
+          const error = Option.getOrNull(Cause.findErrorOption(exit.cause));
 
           if (
-            Option.isSome(error) &&
-            error.value instanceof ChannelError &&
-            ["unavailable", "uncertain"].includes(error.value.reason) &&
+            error instanceof ChannelError &&
+            ["unavailable", "uncertain"].includes(error.reason) &&
             entry.attempts < 3 &&
             (yield* store.run(entry.runId)) === null
           ) {
             const retryAt =
               clock.currentTimeMillisUnsafe() +
-              Math.max(1000 * 2 ** entry.attempts, error.value.retryAfterMs ?? 0);
+              Math.max(1000 * 2 ** entry.attempts, error.retryAfterMs ?? 0);
 
             yield* gatewayStorage(() => repo.retry(entry, retryAt));
           } else {
             const saved = yield* gatewayStorage(() => repo.item(entry.id));
 
-            if (
-              saved.conversationId !== null &&
-              Option.isSome(error) &&
-              !(error.value instanceof StoreError)
-            ) {
+            if (saved.conversationId !== null && error !== null && !(error instanceof StoreError)) {
               yield* finish(
                 entry.id,
                 "The request failed. Use /status in this conversation to inspect its session before sending a new request.",
@@ -403,13 +398,9 @@ const gateway = Effect.gen(function* () {
     );
 
     if (Exit.isFailure(result)) {
-      const failure = Cause.findErrorOption(result.cause);
+      const failure = Option.getOrNull(Cause.findErrorOption(result.cause));
 
-      if (
-        Cause.hasDies(result.cause) ||
-        (Option.isSome(failure) && failure.value instanceof StoreError)
-      )
-        return yield* result;
+      if (Cause.hasDies(result.cause) || failure instanceof StoreError) return yield* result;
       yield* Console.error(
         "Messaging request failed or was cancelled. Inspect gateway status and saved runs.",
       );
@@ -608,25 +599,28 @@ const gateway = Effect.gen(function* () {
   /** Recovers once, then receives input, runs inference, and delivers replies concurrently. */
   const run = Effect.gen(function* () {
     yield* recover;
+
+    const receive = channel.poll
+      ? pollOnce.pipe(
+          Effect.catchTag("ChannelError", (error) =>
+            Effect.sleep(Math.max(1000, error.retryAfterMs ?? 1000)),
+          ),
+          Effect.andThen(Effect.sleep("100 millis")),
+          Effect.forever,
+        )
+      : Stream.runForEach(channel.messages, (message) =>
+          accept(message).pipe(
+            Effect.catchTag("ChannelError", (error) =>
+              Effect.sync(() => {
+                rejected++;
+              }).pipe(Effect.andThen(Console.error(error.message))),
+            ),
+          ),
+        );
+
     yield* Effect.all(
       [
-        channel.poll
-          ? pollOnce.pipe(
-              Effect.catchTag("ChannelError", (error) =>
-                Effect.sleep(Math.max(1000, error.retryAfterMs ?? 1000)),
-              ),
-              Effect.andThen(Effect.sleep("100 millis")),
-              Effect.forever,
-            )
-          : Stream.runForEach(channel.messages, (message) =>
-              accept(message).pipe(
-                Effect.catchTag("ChannelError", (error) =>
-                  Effect.sync(() => {
-                    rejected++;
-                  }).pipe(Effect.andThen(Console.error(error.message))),
-                ),
-              ),
-            ),
+        receive,
         processNext.pipe(Effect.andThen(Effect.sleep("100 millis")), Effect.forever),
         deliverNext.pipe(Effect.andThen(Effect.sleep("250 millis")), Effect.forever),
         nameNext.pipe(Effect.andThen(Effect.sleep("1 second")), Effect.forever),
