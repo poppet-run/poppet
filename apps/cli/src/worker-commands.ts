@@ -123,37 +123,34 @@ export const WorkerRequestsLive = Layer.effect(
 
           const owned = yield* Scope.fork(yield* Effect.scope);
           const frames = yield* Queue.make<Frame, Cause.Done>({ capacity: 16 });
+          const emitFrame = (frame: Frame) => Queue.offer(frames, frame).pipe(Effect.asVoid);
           const streamReasoning = command.value.kind === "chat" && command.value.streamReasoning;
 
           const logReasoning = (text: string) =>
-            Console.error(text).pipe(
-              Effect.andThen(Queue.offer(frames, { type: "stderr", text })),
-              Effect.asVoid,
-            );
+            Console.error(text).pipe(Effect.andThen(emitFrame({ type: "stderr", text })));
 
           const reasoning: ChatReasoning = streamReasoning
             ? {
                 log: (text) => Console.error(text),
-                write: (event) => Queue.offer(frames, event).pipe(Effect.asVoid),
+                write: emitFrame,
               }
             : { log: logReasoning };
 
           yield* execute(
             command.value,
-            (text) => Queue.offer(frames, { type: "stdout", text }).pipe(Effect.asVoid),
+            (text) => emitFrame({ type: "stdout", text }),
             (text, sessionId) =>
-              Queue.offer(
-                frames,
+              emitFrame(
                 sessionId === undefined
                   ? { type: "stderr", text }
                   : { type: "stderr", text, sessionId },
-              ).pipe(Effect.asVoid),
+              ),
             reasoning,
           ).pipe(
             Effect.provide(provided),
             Effect.matchEffect({
-              onFailure: (error) => Queue.offer(frames, { type: "failed", message: error.message }),
-              onSuccess: () => Queue.offer(frames, { type: "done" }),
+              onFailure: (error) => emitFrame({ type: "failed", message: error.message }),
+              onSuccess: () => emitFrame({ type: "done" }),
             }),
             Effect.ensuring(Queue.end(frames)),
             Effect.forkIn(owned),
@@ -174,10 +171,7 @@ export const WorkerRequestsLive = Layer.effect(
           });
 
           // Own the body as well as its producer, so shutdown also ends idle HTTP responses.
-          const controller = yield* Effect.acquireRelease(
-            Effect.sync(() => new AbortController()),
-            (value) => Effect.sync(() => value.abort()),
-          ).pipe(Effect.provideService(Scope.Scope, owned));
+          const signal = yield* Effect.abortSignal.pipe(Effect.provideService(Scope.Scope, owned));
 
           const context = yield* Effect.context<never>();
           const encoder = new TextEncoder();
@@ -186,7 +180,7 @@ export const WorkerRequestsLive = Layer.effect(
             Stream.interruptWhen(disconnected),
             Stream.onExit((exit) => Scope.close(owned, exit)),
             Stream.map((frame) => encoder.encode(`${JSON.stringify(frame)}\n`)),
-            Stream.toReadableStreamWith(context, { signal: controller.signal }),
+            Stream.toReadableStreamWith(context, { signal }),
           );
 
           return new Response(body, { headers: { "content-type": "application/x-ndjson" } });
@@ -212,10 +206,7 @@ export const remoteWorkerCommand = (
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const controller = yield* Effect.acquireRelease(
-        Effect.sync(() => new AbortController()),
-        (owned) => Effect.sync(() => owned.abort()),
-      );
+      const scopedSignal = yield* Effect.abortSignal;
 
       const response = yield* Effect.tryPromise({
         try: (signal) =>
@@ -225,7 +216,7 @@ export const remoteWorkerCommand = (
             command.kind === "chat" && writeReasoning !== undefined
               ? { ...command, streamReasoning: true }
               : command,
-            AbortSignal.any([signal, controller.signal]),
+            AbortSignal.any([signal, scopedSignal]),
           ),
         catch: (cause) => (cause instanceof WorkerRequestError ? cause : lostResponse()),
       });
