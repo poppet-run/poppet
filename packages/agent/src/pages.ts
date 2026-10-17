@@ -158,15 +158,16 @@ export const PagesLive = Layer.effect(
           });
         }
       }).pipe(
-        Effect.timeout("15 seconds"),
-        Effect.mapError((cause) =>
-          cause instanceof AgentError
-            ? cause
-            : new AgentError({
+        Effect.timeoutOrElse({
+          duration: "15 seconds",
+          orElse: () =>
+            Effect.fail(
+              new AgentError({
                 reason: "tool-network",
                 message: "The page request exceeded its 15-second deadline.",
               }),
-        ),
+            ),
+        }),
       );
 
     return { fetch };
