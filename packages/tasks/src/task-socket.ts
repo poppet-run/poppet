@@ -42,24 +42,24 @@ export const taskResponse = <E extends { readonly message: string }>(
   handle: (command: TaskCommand) => Effect.Effect<unknown, E>,
 ) =>
   Effect.gen(function* () {
-    const command = Schema.decodeUnknownOption(TaskCommand)(body);
+    const command = Option.getOrNull(Schema.decodeUnknownOption(TaskCommand)(body));
 
-    if (Option.isNone(command))
+    if (command === null)
       return Response.json({ ok: false, message: "Invalid task command." }, { status: 400 });
-    const operation = handle(command.value);
+    const operation = handle(command);
 
     // Leave time to report failure before the ten-second transport deadline.
     const exit = yield* Effect.exit(
-      command.value.action === "add" ? operation.pipe(Effect.timeout("8 seconds")) : operation,
+      command.action === "add" ? operation.pipe(Effect.timeout("8 seconds")) : operation,
     );
 
     if (Exit.isSuccess(exit)) return Response.json({ ok: true, value: exit.value });
-    const failure = Cause.findErrorOption(exit.cause);
+    const failure = Option.getOrNull(Cause.findErrorOption(exit.cause));
 
     return Response.json(
       {
         ok: false,
-        message: Option.isSome(failure) ? failure.value.message : "The task command failed.",
+        message: failure?.message ?? "The task command failed.",
       },
       { status: 400 },
     );
