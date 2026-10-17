@@ -156,54 +156,50 @@ export const ApiKeyStoreLive = Layer.effect(
       });
 
     const write = (provider: ProviderId, key: Redacted.Redacted<string>) =>
-      Schema.decodeUnknownEffect(ProviderId)(provider)
-        .pipe(
+      Effect.gen(function* () {
+        yield* Schema.decodeUnknownEffect(ProviderId)(provider).pipe(
           Effect.mapError(() => storageError(provider)),
-          Effect.flatMap(() =>
-            locked(
-              provider,
-              Effect.tryPromise({
-                try: async () => {
-                  const contents = Schema.encodeSync(SavedKey)({ version: 1, provider, key });
-                  const temporary = join(directory, `.${provider}-${randomUUID()}.tmp`);
-                  const handle = await open(temporary, "wx", 0o600);
+        );
+        yield* locked(
+          provider,
+          Effect.tryPromise({
+            try: async () => {
+              const contents = Schema.encodeSync(SavedKey)({ version: 1, provider, key });
+              const temporary = join(directory, `.${provider}-${randomUUID()}.tmp`);
+              const handle = await open(temporary, "wx", 0o600);
 
-                  try {
-                    await handle.writeFile(contents, "utf8");
-                    await handle.sync();
-                    await handle.close();
-                    await rename(temporary, path(provider));
-                  } catch (cause) {
-                    await handle.close().catch(() => undefined);
-                    await unlink(temporary).catch(() => undefined);
-                    throw cause;
-                  }
-                },
-                catch: () => storageError(provider),
-              }),
-            ),
-          ),
-        )
-        .pipe(Effect.uninterruptible);
+              try {
+                await handle.writeFile(contents, "utf8");
+                await handle.sync();
+                await handle.close();
+                await rename(temporary, path(provider));
+              } catch (cause) {
+                await handle.close().catch(() => undefined);
+                await unlink(temporary).catch(() => undefined);
+                throw cause;
+              }
+            },
+            catch: () => storageError(provider),
+          }),
+        );
+      }).pipe(Effect.uninterruptible);
 
     const remove = (provider: ProviderId) =>
-      Schema.decodeUnknownEffect(ProviderId)(provider)
-        .pipe(
+      Effect.gen(function* () {
+        yield* Schema.decodeUnknownEffect(ProviderId)(provider).pipe(
           Effect.mapError(() => storageError(provider)),
-          Effect.flatMap(() =>
-            locked(
-              provider,
-              Effect.tryPromise({
-                try: () =>
-                  unlink(path(provider)).catch((cause: unknown) => {
-                    if (!Schema.is(MissingFile)(cause)) throw cause;
-                  }),
-                catch: () => storageError(provider),
+        );
+        yield* locked(
+          provider,
+          Effect.tryPromise({
+            try: () =>
+              unlink(path(provider)).catch((cause: unknown) => {
+                if (!Schema.is(MissingFile)(cause)) throw cause;
               }),
-            ),
-          ),
-        )
-        .pipe(Effect.uninterruptible);
+            catch: () => storageError(provider),
+          }),
+        );
+      }).pipe(Effect.uninterruptible);
 
     return { read, write, remove } satisfies StoreOperations;
   }),
