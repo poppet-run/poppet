@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { Agent } from "@poppet/agent";
+import { Agent, ModelResolver } from "@poppet/agent";
 import { AppConfig, type Settings } from "@poppet/config";
 import {
   Provider,
@@ -303,4 +303,84 @@ test("worker connection status strips secrets, identifies consent and login acti
       });
     }).pipe(Effect.provide(runtime.connections)),
   );
+});
+
+test("model resolution shares connection metadata with status queries within one runtime", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-runtime-status-"));
+  const previous = process.env.POPPET_DATA_DIR;
+  process.env.POPPET_DATA_DIR = directory;
+  const id = "test-provider";
+  let busy = false;
+
+  const registered: ReadonlyArray<ProviderRegistration> = [
+    {
+      id,
+      name: "Test",
+      authentication: { apiKey: false, consent: false, help: "Test" },
+      layer: Layer.merge(
+        Layer.succeed(Provider, {
+          id,
+          models: Effect.succeed([]),
+          resolve: () => Effect.succeed(fakeModel(id, "test-model")),
+        }),
+        Layer.unwrap(
+          Effect.sync(() =>
+            busy
+              ? Layer.effect(
+                  ProviderConnection,
+                  Effect.fail(
+                    new ProviderError({
+                      provider: id,
+                      reason: "authentication",
+                      code: "credential_store_busy",
+                      message: "busy",
+                    }),
+                  ),
+                )
+              : Layer.succeed(ProviderConnection, {
+                  login: () => Effect.succeed("Connected"),
+                  logout: Effect.succeed("Disconnected"),
+                  verify: () => Effect.succeed("test-model"),
+                  status: Effect.succeed({ connected: true, email: "resolved@example.com" }),
+                }),
+          ),
+        ),
+      ),
+    },
+  ];
+
+  const runtime = runtimeLayers(registered);
+
+  try {
+    await Effect.runPromise(
+      ModelResolver.use((resolver) => resolver.resolve(id, "test-model")).pipe(
+        Effect.scoped,
+        Effect.provide(runtime.chat),
+      ),
+    );
+    busy = true;
+
+    const status = WorkerConnections.use((connections) => connections.status(id));
+    expect(await Effect.runPromise(status.pipe(Effect.provide(runtime.connections)))).toMatchObject(
+      {
+        provider: id,
+        account: "resolved@example.com",
+        connected: true,
+        cached: true,
+      },
+    );
+
+    const independent = runtimeLayers(registered);
+    expect(
+      await Effect.runPromise(status.pipe(Effect.provide(independent.connections))),
+    ).toMatchObject({
+      connected: null,
+      account: null,
+      action: "Authentication is busy. Check again after the active run finishes.",
+    });
+  } finally {
+    if (previous === undefined) delete process.env.POPPET_DATA_DIR;
+    else process.env.POPPET_DATA_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
