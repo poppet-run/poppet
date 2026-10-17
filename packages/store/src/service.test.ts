@@ -765,6 +765,51 @@ describe("conversation store", () => {
     },
   );
 
+  test.each(["workload", "continuation"])(
+    "rejects a run's foreign %s through both single and session reads",
+    async (kind) => {
+      const saved = await fixture();
+
+      try {
+        const run = await saved.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("new-provider", "selected-model");
+            const pending = yield* store.queueRun(session.id, [user]);
+            yield* store.startRun(pending.id);
+
+            return yield* store.finishRun(pending.id, {
+              status: "completed",
+              response: responseFor("new-provider"),
+            });
+          }),
+        );
+
+        using tampered = new Database(saved.path);
+
+        if (kind === "workload")
+          tampered.query("UPDATE runs SET workload = 'coding' WHERE id = ?").run(run.id);
+        else
+          tampered
+            .query("UPDATE runs SET result = ? WHERE id = ?")
+            .run(JSON.stringify(responseFor("other-provider")), run.id);
+
+        tampered.close(true);
+
+        await saved.run(
+          Store.use((store) =>
+            Effect.gen(function* () {
+              yield* reject(store.run(run.id), "corrupt");
+              yield* reject(store.runs(run.sessionId), "corrupt");
+            }),
+          ),
+        );
+      } finally {
+        await saved.close();
+      }
+    },
+  );
+
   test.each(["malformed-json", "foreign-continuation"])(
     "rejects %s rows without exposing payloads",
     async (kind) => {

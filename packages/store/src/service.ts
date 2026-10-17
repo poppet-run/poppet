@@ -11,7 +11,7 @@ import {
 import { Context, DateTime, Effect, Layer, Schema } from "effect";
 
 import { StoreDatabase, StoreDatabaseLive } from "#src/database";
-import { StoreError, storageFailure } from "#src/errors";
+import { StoreError, storageFailure, corruptRecord, readRecord } from "#src/errors";
 import {
   Id,
   MessageBatch,
@@ -21,14 +21,13 @@ import {
   Session,
   SessionTitle,
   SkillSnapshot,
-  SessionSearchMatch,
-  SessionSearchQuery,
   type SessionSearchResult,
   StoredMessage,
   ToolCall,
   ToolOutcome,
   type StoreStatus,
 } from "#src/schema";
+import { searchSessions } from "#src/search";
 
 interface StoreOperations {
   readonly status: Effect.Effect<StoreStatus, StoreError>;
@@ -164,26 +163,10 @@ const Counts = Schema.Struct({
 
 const Position = Schema.Struct({ position: Schema.Natural });
 
-const corruptRecord = () =>
-  new StoreError({
-    reason: "corrupt",
-    message: "The conversation store contains an invalid record.",
-  });
-
 const continuationMatches = (
   selection: Pick<Session, "provider" | "model">,
   continuation: Continuation,
 ) => continuation.provider === selection.provider && continuation.model === selection.model;
-
-// Invalid saved data is corruption; invalid caller input is handled separately by requestFailure.
-const readRecord = <A>(read: () => A): A => {
-  try {
-    return read();
-  } catch (cause) {
-    if (cause instanceof Schema.SchemaError) throw corruptRecord();
-    throw cause;
-  }
-};
 
 const requestFailure = (cause: unknown) =>
   cause instanceof Schema.SchemaError
@@ -201,11 +184,10 @@ const sessionFor = (database: Database, id: string) =>
   );
 
 // Decoding a row alone cannot check whether its model identity agrees with the session and result.
-const validateRunRecord = (database: Database, run: Run) => {
-  const session = sessionFor(database, run.sessionId);
-
+const validateRunRecord = (session: Session | null, run: Run) => {
   if (
     !session ||
+    run.sessionId !== session.id ||
     run.provider !== session.provider ||
     run.model !== session.model ||
     run.workload !== session.workload ||
@@ -222,7 +204,7 @@ const runFor = (database: Database, id: string) =>
       database.query(`${runSql} WHERE id = ?`).get(id),
     );
 
-    return run === null ? null : validateRunRecord(database, run);
+    return run === null ? null : validateRunRecord(sessionFor(database, run.sessionId), run);
   });
 
 const requireSession = (database: Database, id: string) => {
@@ -712,90 +694,7 @@ export const StoreLive = Layer.effect(
       finishRun,
       appendMessages,
       searchSessions: (query, maxBytes) =>
-        Effect.try({
-          try: () => {
-            const text = Schema.decodeUnknownSync(SessionSearchQuery)(query);
-            Schema.decodeUnknownSync(
-              Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 })),
-            )(maxBytes);
-
-            const terms = text
-              .split(/\s+/u)
-              .filter((term) => /[\p{L}\p{N}]/u.test(term))
-              .map((term) => `"${term.replaceAll('"', '""')}"`);
-
-            if (terms.length === 0) return { matches: [], truncated: false };
-
-            // Use a fresh marker so stored text cannot be mistaken for a match boundary.
-            const marker = randomUUID();
-
-            const rows = readRecord(() =>
-              Schema.decodeUnknownSync(
-                Schema.Array(
-                  Schema.Struct({
-                    ...SessionSearchMatch.fields,
-                    textLength: Schema.Natural,
-                  }),
-                ),
-              )(
-                database
-                  .query(`SELECT m.session_id AS sessionId, m.id AS messageId,
-                  s.title, m.created_at AS createdAt, json_extract(m.payload, '$.role') AS role,
-                  snippet(session_search, 0, ?, ?, '', 48) AS excerpt,
-                  length(session_search.text) AS textLength
-                  FROM session_search JOIN messages AS m ON m.id = session_search.rowid
-                  JOIN sessions AS s ON s.id = m.session_id
-                  WHERE session_search MATCH ?
-                  ORDER BY rank, m.id LIMIT 11`)
-                  .all(marker, marker, terms.join(" AND ")),
-              ),
-            );
-
-            const matches: Array<typeof SessionSearchMatch.Type> = [];
-            let truncated = rows.length > 10;
-
-            for (const { textLength, ...row } of rows.slice(0, 10)) {
-              const [before = "", hit = ""] = row.excerpt.split(marker);
-              const characters = [...row.excerpt.replaceAll(marker, "")];
-              const offset = [...before].length;
-              const hitLength = [...hit].length;
-              truncated ||= characters.length > 1000 || characters.length < textLength;
-              let length = Math.min(1000, characters.length);
-
-              if (hitLength > length) continue;
-
-              const excerpt = () => {
-                const start = Math.max(
-                  0,
-                  Math.min(
-                    offset - Math.floor((length - hitLength) / 2),
-                    characters.length - length,
-                  ),
-                );
-
-                return characters.slice(start, start + length).join("");
-              };
-
-              let match = { ...row, excerpt: excerpt() };
-
-              while (
-                Buffer.byteLength(
-                  JSON.stringify({ matches: [...matches, match], truncated: true }),
-                ) > maxBytes
-              ) {
-                if (length === hitLength) return { matches, truncated: true };
-                length = Math.max(hitLength, Math.floor(length / 2));
-                match = { ...row, excerpt: excerpt() };
-                truncated = true;
-              }
-
-              matches.push(match);
-            }
-
-            return { matches, truncated };
-          },
-          catch: requestFailure,
-        }),
+        Effect.try({ try: () => searchSessions(database, query, maxBytes), catch: requestFailure }),
       session: (id) =>
         Effect.try({
           try: () => sessionFor(database, Schema.decodeUnknownSync(Id)(id)),
@@ -844,7 +743,7 @@ export const StoreLive = Layer.effect(
       runs: (sessionId) =>
         Effect.try({
           try: () => {
-            requireSession(database, Schema.decodeUnknownSync(Id)(sessionId));
+            const session = requireSession(database, Schema.decodeUnknownSync(Id)(sessionId));
 
             const runs = readRecord(() =>
               Schema.decodeUnknownSync(Schema.Array(RunRecord))(
@@ -854,7 +753,7 @@ export const StoreLive = Layer.effect(
               ),
             );
 
-            return runs.map((run) => validateRunRecord(database, run));
+            return runs.map((run) => validateRunRecord(session, run));
           },
           catch: requestFailure,
         }),
