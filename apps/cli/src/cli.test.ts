@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { defaultPolicy } from "@poppet/agent";
 import { Console, Effect } from "effect";
 
 import { makeCLI } from "#src/cli";
@@ -929,7 +930,80 @@ describe("CLI", () => {
       notesDirectory: "/tmp/poppet-test/notes",
       provider: "openai-chatgpt",
       model: null,
+      chat: defaultPolicy,
+      configFile: { path: "/tmp/poppet-test/config.json", exists: false },
+      environmentOverrides: ["POPPET_DATA_DIR", "POPPET_APP_NAME"],
     });
+  });
+
+  test("config shows file settings, all chat budgets, and environment overrides without opening storage", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-file-cli-"));
+
+    const chat = {
+      contextBytes: 32768,
+      historyTurns: 10,
+      outputTokens: 4096,
+      modelTurns: 4,
+      toolCalls: 8,
+      toolBytes: 8192,
+      soulBytes: 4096,
+      profileBytes: 2048,
+      factsBytes: 1024,
+    };
+
+    try {
+      await writeFile(
+        join(directory, "config.json"),
+        JSON.stringify({
+          applicationName: "File app",
+          provider: "openrouter",
+          model: "file-model",
+          notesDirectory: "my-notes",
+          chat,
+        }),
+      );
+
+      const result = await invoke(["config"], {
+        POPPET_DATA_DIR: directory,
+        POPPET_MODEL: "override-model",
+        POPPET_OUTPUT_TOKENS: "512",
+        POPPET_OPENROUTER_API_KEY: "must-not-appear",
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(JSON.parse(result.stdout)).toEqual({
+        applicationName: "File app",
+        dataDirectory: directory,
+        notesDirectory: join(directory, "my-notes"),
+        provider: "openrouter",
+        model: "override-model",
+        chat: { ...chat, outputTokens: 512 },
+        configFile: { path: join(directory, "config.json"), exists: true },
+        environmentOverrides: ["POPPET_DATA_DIR", "POPPET_MODEL", "POPPET_OUTPUT_TOKENS"],
+      });
+      expect(result.stdout).not.toContain("must-not-appear");
+      expect(await readdir(directory)).toEqual(["config.json"]);
+
+      const emptyOverride = await invoke(["config"], {
+        POPPET_DATA_DIR: directory,
+        POPPET_OUTPUT_TOKENS: "",
+      });
+
+      expect(emptyOverride.exitCode).toBe(1);
+      expect(emptyOverride.stdout).toBe("");
+      expect(emptyOverride.stderr).toContain("POPPET_OUTPUT_TOKENS");
+      await writeFile(join(directory, "config.json"), JSON.stringify({ chat: { modelTurns: 0 } }));
+      const invalid = await invoke(["config"], { POPPET_DATA_DIR: directory });
+      expect(invalid.exitCode).toBe(1);
+      expect(invalid.stdout).toBe("");
+      expect(invalid.stderr).toContain("POPPET_MODEL_TURNS");
+      const inspection = await invoke(["chat", "sessions"], { POPPET_DATA_DIR: directory });
+      expect(inspection.exitCode).toBe(0);
+      expect(JSON.parse(inspection.stdout)).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   test.each(["openai-chatgpt", "opencode-go", "openrouter"])(
