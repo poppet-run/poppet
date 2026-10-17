@@ -30,13 +30,14 @@ export const pairWhatsApp = (
     yield* client.linked;
   }).pipe(
     Effect.provide(WhatsAppClientLive(dataDirectory, settings, createSocket, showQr)),
-    Effect.timeout("2 minutes"),
-    Effect.mapError((cause) =>
-      cause instanceof ChannelError
-        ? cause
-        : new ChannelError({
+    Effect.timeoutOrElse({
+      duration: "2 minutes",
+      orElse: () =>
+        Effect.fail(
+          new ChannelError({
             reason: "configuration",
             message: "WhatsApp pairing timed out or failed. Run gateway whatsapp pair again.",
           }),
-    ),
+        ),
+    }),
   );

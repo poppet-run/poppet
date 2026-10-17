@@ -4,14 +4,63 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { DisconnectReason, makeEventBuffer } from "baileys";
-import { Deferred, Effect, Result } from "effect";
+import { Deferred, Effect, Fiber, Result } from "effect";
 import { TestClock } from "effect/testing";
 
 import { quietLogger, WhatsAppClient, WhatsAppClientLive, type SocketFactory } from "#src/client";
+import { pairWhatsApp } from "#src/pair";
 
 const settings = { version: 1 as const, accountPhone: "447700900001", ownerPhone: "447700900002" };
 
 describe.concurrent("WhatsApp foreground pairing", () => {
+  test("the pairing deadline closes a socket that never links", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-wa-pair-deadline-"));
+    const created = Deferred.makeUnsafe<void>();
+    let closed = 0;
+
+    const factory: SocketFactory = () => {
+      const ev = makeEventBuffer(quietLogger);
+      Effect.runSync(Deferred.succeed(created, undefined));
+
+      return {
+        ev,
+        user: undefined,
+        signalRepository: { lidMapping: { getPNForLID: async () => null } },
+        sendMessage: async () => {
+          throw new Error("Pairing must not send messages");
+        },
+        sendPresenceUpdate: async () => undefined,
+        end: async () => {
+          closed++;
+          ev.destroy();
+        },
+      };
+    };
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const fiber = yield* pairWhatsApp(directory, settings, factory).pipe(
+            Effect.result,
+            Effect.forkChild,
+          );
+
+          yield* Deferred.await(created);
+          yield* TestClock.adjust("2 minutes");
+          expect(yield* Fiber.join(fiber)).toMatchObject({
+            failure: {
+              reason: "configuration",
+              message: "WhatsApp pairing timed out or failed. Run gateway whatsapp pair again.",
+            },
+          });
+          expect(closed).toBe(1);
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test.each(["paired", "invalid-session", "wrong-account", "cancelled"])(
     "%s releases its socket and persists only the verified session",
     async (outcome) => {
