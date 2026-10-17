@@ -4,6 +4,7 @@ import type {
   Message,
   ModelEvent,
   ModelOperations,
+  Output,
   ProviderError,
 } from "@poppet/provider";
 import {
@@ -156,6 +157,41 @@ export const conversation = Effect.gen(function* () {
           ? `${prompt}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
           : prompt;
 
+      const prepareTool = (call: Extract<Output, { type: "tool-call" }>) =>
+        Effect.gen(function* () {
+          if (!tools.some((tool) => tool.name === call.name && tool.namespace === call.namespace))
+            return yield* Effect.fail(
+              new AgentError({
+                reason: "tool-permission",
+                message: "The requested tool is not allowed in this run.",
+              }),
+            );
+
+          const plan = yield* Match.value(call).pipe(
+            Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
+            Match.when({ name: "memory" }, decodeMemoryCall),
+            Match.when({ name: "search_web" }, decodeWebSearchCall),
+            Match.when({ name: "manage_tasks" }, (taskCall) =>
+              decodeTaskCall(taskCall).pipe(
+                Effect.flatMap((action) =>
+                  tasks!.prepare(action, {
+                    origin: readOnlyTools ? "scheduled" : "interactive",
+                    runId: run.id,
+                    callId: taskCall.callId,
+                    here,
+                  }),
+                ),
+              ),
+            ),
+            Match.when({ name: "fetch_page" }, (pageCall) =>
+              decodeFetchPageCall(pageCall, allowedURLs),
+            ),
+            Match.orElse(decodeNoteCall),
+          );
+
+          return { callId: call.callId, plan };
+        });
+
       const current: Message[] = [{ role: "user", text }];
       let turns = 0;
       let callsUsed = 0;
@@ -280,45 +316,7 @@ export const conversation = Effect.gen(function* () {
                       );
 
                     // Validate the whole batch before any call can change notes or memory.
-                    const planned = yield* Effect.forEach(calls, (call) =>
-                      Effect.gen(function* () {
-                        if (
-                          !tools.some(
-                            (tool) => tool.name === call.name && tool.namespace === call.namespace,
-                          )
-                        )
-                          return yield* Effect.fail(
-                            new AgentError({
-                              reason: "tool-permission",
-                              message: "The requested tool is not allowed in this run.",
-                            }),
-                          );
-
-                        const plan = yield* Match.value(call).pipe(
-                          Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
-                          Match.when({ name: "memory" }, decodeMemoryCall),
-                          Match.when({ name: "search_web" }, decodeWebSearchCall),
-                          Match.when({ name: "manage_tasks" }, (taskCall) =>
-                            decodeTaskCall(taskCall).pipe(
-                              Effect.flatMap((action) =>
-                                tasks!.prepare(action, {
-                                  origin: readOnlyTools ? "scheduled" : "interactive",
-                                  runId: run.id,
-                                  callId: taskCall.callId,
-                                  here,
-                                }),
-                              ),
-                            ),
-                          ),
-                          Match.when({ name: "fetch_page" }, (pageCall) =>
-                            decodeFetchPageCall(pageCall, allowedURLs),
-                          ),
-                          Match.orElse(decodeNoteCall),
-                        );
-
-                        return { callId: call.callId, plan };
-                      }),
-                    );
+                    const planned = yield* Effect.forEach(calls, prepareTool);
 
                     current.push({
                       role: "assistant",
