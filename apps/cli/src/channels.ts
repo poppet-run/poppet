@@ -57,6 +57,16 @@ const counts = (repo: GatewayRepository["Service"]) =>
     catch: () => new StoreError({ reason: "storage", message: "Cannot read messaging status." }),
   });
 
+const disabledWorker = (entry: ChannelRegistration, error?: string) => {
+  const status = { id: entry.id, name: entry.name, enabled: false };
+
+  return {
+    resolveDestination: null,
+    run: Effect.never,
+    status: Effect.succeed(error === undefined ? status : { ...status, error }),
+  };
+};
+
 export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistration>) =>
   Layer.effect(
     MessagingWorker,
@@ -66,41 +76,16 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
 
       const workers = yield* Effect.forEach(configured, ({ entry, loaded }) =>
         Effect.gen(function* () {
-          if (Result.isFailure(loaded))
-            return {
-              resolveDestination: null,
-              run: Effect.never,
-              status: Effect.succeed({
-                id: entry.id,
-                name: entry.name,
-                enabled: false,
-                error: loaded.failure.message,
-              }),
-            };
+          if (Result.isFailure(loaded)) return disabledWorker(entry, loaded.failure.message);
 
-          if (loaded.success === null)
-            return {
-              resolveDestination: null,
-              run: Effect.never,
-              status: Effect.succeed({ id: entry.id, name: entry.name, enabled: false }),
-            };
+          if (loaded.success === null) return disabledWorker(entry);
 
           // Each adapter needs its own gateway; the agent and store remain shared.
           const context = yield* Layer.build(
             GatewayLive.pipe(Layer.provide(loaded.success), Layer.fresh),
           ).pipe(Effect.result);
 
-          if (Result.isFailure(context))
-            return {
-              resolveDestination: null,
-              run: Effect.never,
-              status: Effect.succeed({
-                id: entry.id,
-                name: entry.name,
-                enabled: false,
-                error: context.failure.message,
-              }),
-            };
+          if (Result.isFailure(context)) return disabledWorker(entry, context.failure.message);
 
           const gateway = Context.get(context.success, Gateway);
 
