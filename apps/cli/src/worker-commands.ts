@@ -16,11 +16,23 @@ import {
 } from "effect";
 
 import { MessagingWorker } from "#src/channels";
-import { ChatRequest, inspectChat, sendChat, type ChatWriter, type ChatAnnouncer } from "#src/chat";
+import {
+  ChatRequest,
+  inspectChat,
+  sendChat,
+  type ChatWriter,
+  type ChatAnnouncer,
+  type ChatReasoning,
+  type ChatReasoningWriter,
+} from "#src/chat";
 import { MemoryCommand, manageMemory } from "#src/memory";
 
 const WorkerCommand = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("chat"), command: ChatRequest }),
+  Schema.Struct({
+    kind: Schema.Literal("chat"),
+    command: ChatRequest,
+    streamReasoning: Schema.optionalKey(Schema.Boolean),
+  }),
   Schema.Struct({ kind: Schema.Literal("memory"), command: MemoryCommand }),
   Schema.Struct({ kind: Schema.Literal("store") }),
   Schema.Struct({ kind: Schema.Literal("gateway") }),
@@ -31,17 +43,24 @@ export type WorkerCommand = typeof WorkerCommand.Type;
 
 const Frame = Schema.Union([
   Schema.Struct({
-    type: Schema.Literals(["stdout", "stderr"]),
+    type: Schema.Literals(["stdout", "stderr", "reasoning-log"]),
     text: Schema.String,
     sessionId: Schema.optionalKey(Session.fields.id),
   }),
+  Schema.Struct({ type: Schema.Literal("reasoning-delta"), text: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("reasoning-end") }),
   Schema.Struct({ type: Schema.Literal("done") }),
   Schema.Struct({ type: Schema.Literal("failed"), message: Schema.String }),
 ]);
 
 type Frame = typeof Frame.Type;
 
-const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatAnnouncer) =>
+const execute = (
+  request: WorkerCommand,
+  write: ChatWriter,
+  announce: ChatAnnouncer,
+  reasoning: ChatReasoning,
+) =>
   Effect.gen(function* () {
     if (request.kind === "gateway") {
       const messaging = yield* Effect.serviceOption(MessagingWorker);
@@ -78,7 +97,7 @@ const execute = (request: WorkerCommand, write: ChatWriter, announce: ChatAnnoun
         Effect.flatMap((text) => write(`${text}\n`)),
       );
 
-    return yield* sendChat(command, write, announce, announce);
+    return yield* sendChat(command, write, announce, reasoning);
   });
 
 export const WorkerRequestsLive = Layer.effect(
@@ -104,6 +123,19 @@ export const WorkerRequestsLive = Layer.effect(
 
           const owned = yield* Scope.fork(yield* Effect.scope);
           const frames = yield* Queue.make<Frame, Cause.Done>({ capacity: 16 });
+          const streamReasoning = command.value.kind === "chat" && command.value.streamReasoning;
+
+          const relayReasoning: ChatAnnouncer = (text) =>
+            Queue.offer(frames, { type: streamReasoning ? "reasoning-log" : "stderr", text }).pipe(
+              Effect.asVoid,
+            );
+
+          const reasoning: ChatReasoning = streamReasoning
+            ? {
+                relay: relayReasoning,
+                write: (event) => Queue.offer(frames, event).pipe(Effect.asVoid),
+              }
+            : { relay: relayReasoning };
 
           yield* execute(
             command.value,
@@ -115,6 +147,7 @@ export const WorkerRequestsLive = Layer.effect(
                   ? { type: "stderr", text }
                   : { type: "stderr", text, sessionId },
               ).pipe(Effect.asVoid),
+            reasoning,
           ).pipe(
             Effect.provide(provided),
             Effect.matchEffect({
@@ -168,6 +201,8 @@ export const remoteWorkerCommand = (
   command: WorkerCommand,
   write: ChatWriter,
   onSession: ChatWriter = () => Effect.void,
+  writeReasoning?: ChatReasoningWriter,
+  announce: ChatWriter = (text) => Console.error(text),
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -178,7 +213,14 @@ export const remoteWorkerCommand = (
 
       const response = yield* Effect.tryPromise({
         try: (signal) =>
-          requestWorker(path, "/commands", command, AbortSignal.any([signal, controller.signal])),
+          requestWorker(
+            path,
+            "/commands",
+            command.kind === "chat" && writeReasoning !== undefined
+              ? { ...command, streamReasoning: true }
+              : command,
+            AbortSignal.any([signal, controller.signal]),
+          ),
         catch: (cause) => (cause instanceof WorkerRequestError ? cause : lostResponse()),
       });
 
@@ -218,10 +260,16 @@ export const remoteWorkerCommand = (
               done = true;
             });
 
+          if (frame.type === "reasoning-delta" || frame.type === "reasoning-end")
+            return writeReasoning?.(frame) ?? Effect.void;
+
+          if (frame.type === "reasoning-log")
+            return writeReasoning === undefined ? Console.error(frame.text) : Effect.void;
+
           if (frame.type === "stderr")
             return Effect.gen(function* () {
               if (frame.sessionId !== undefined) yield* onSession(frame.sessionId);
-              yield* Console.error(frame.text);
+              yield* announce(frame.text);
             });
 
           return write(frame.text);

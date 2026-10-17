@@ -270,6 +270,8 @@ export const responsesModel = (
             const events = async function* (): AsyncGenerator<ModelEvent> {
               let terminal: typeof Terminal.Type | null = null;
               const completedItems = new Map<number, typeof Item.Type>();
+              let reasoningItem: string | null = null;
+              let reasoningSummary = 0;
 
               try {
                 for await (const event of stream) {
@@ -289,10 +291,25 @@ export const responsesModel = (
                     event.type === "response.reasoning_summary_text.delta" &&
                     decoded.settings.reasoningSummary
                   ) {
-                    const delta = Schema.decodeUnknownSync(Schema.Struct({ delta: Schema.String }))(
-                      event,
-                    );
+                    const delta = Schema.decodeUnknownSync(
+                      Schema.Struct({
+                        delta: Schema.String,
+                        item_id: Schema.NonEmptyString,
+                        summary_index: Schema.Natural,
+                      }),
+                    )(event);
 
+                    if (delta.delta.length === 0) continue;
+
+                    // Summary parts are separate sections, even when their text has no newlines.
+                    if (
+                      reasoningItem !== null &&
+                      (reasoningItem !== delta.item_id || reasoningSummary !== delta.summary_index)
+                    )
+                      yield { type: "reasoning-delta", text: "\n\n" };
+
+                    reasoningItem = delta.item_id;
+                    reasoningSummary = delta.summary_index;
                     yield { type: "reasoning-delta", text: delta.delta };
                   } else if (event.type === "response.output_item.done") {
                     if (

@@ -1,4 +1,13 @@
-import { Agent, AgentError, defaultPolicy, Skills, sessionTitle } from "@poppet/agent";
+import { styleText } from "node:util";
+
+import {
+  Agent,
+  AgentError,
+  defaultPolicy,
+  Skills,
+  sessionTitle,
+  type ChatEvent,
+} from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { Session, SessionSearchQuery, SkillName, Store } from "@poppet/store";
 import { Console, Effect, Schema, Stream } from "effect";
@@ -49,9 +58,20 @@ export type ChatWriter = (text: string) => Effect.Effect<void, AgentError>;
 /** Session metadata accompanies its announcement without parsing terminal output. */
 export type ChatAnnouncer = (text: string, sessionId?: string) => Effect.Effect<void, AgentError>;
 
-export const writeChatText: ChatWriter = (text) =>
+/** Routes live reasoning separately from buffered diagnostic log entries. */
+export type ChatReasoningWriter = (
+  event: Extract<ChatEvent, { type: "reasoning-delta" | "reasoning-end" }>,
+) => Effect.Effect<void, AgentError>;
+
+export interface ChatReasoning {
+  readonly write?: ChatReasoningWriter;
+  readonly relay?: ChatAnnouncer;
+  readonly log?: (line: string) => Effect.Effect<void>;
+}
+
+const writeChatOutput = (output: NodeJS.WriteStream, text: string) =>
   Effect.callback<void, AgentError>((resume) => {
-    process.stdout.write(text, (error) =>
+    output.write(text, (error) =>
       resume(
         error
           ? Effect.fail(
@@ -64,6 +84,14 @@ export const writeChatText: ChatWriter = (text) =>
       ),
     );
   });
+
+export const writeChatText: ChatWriter = (text) => writeChatOutput(process.stdout, text);
+
+export const writeChatThinking: ChatWriter = (text) =>
+  writeChatOutput(
+    process.stderr,
+    process.env.NO_COLOR ? text : styleText(["dim", "cyan"], text, { stream: process.stderr }),
+  );
 
 export const inspectChat = (
   command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,
@@ -160,7 +188,7 @@ export const sendChat = (
   command: ChatSubmission,
   write: ChatWriter,
   announce: ChatAnnouncer = (text) => Console.error(text),
-  relayReasoning: ChatAnnouncer = () => Effect.void,
+  reasoning: ChatReasoning = {},
 ) =>
   Effect.gen(function* () {
     const store = yield* Store;
@@ -182,13 +210,23 @@ export const sendChat = (
 
     yield* announce(`Session: ${sessionId}`, sessionId);
     const agent = yield* Agent;
-    yield* Stream.runForEach(agent.send(sessionId, command.text), (event) => {
+
+    const reply = agent.send(
+      sessionId,
+      command.text,
+      reasoning.log === undefined ? {} : { reasoningLog: reasoning.log },
+    );
+
+    yield* Stream.runForEach(reply, (event) => {
       if (event.type === "started") return announce(`Run: ${event.run.id}`);
 
       if (event.type === "text-delta") return write(event.text);
 
       // The agent logs locally; worker clients also receive the diagnostic over stderr frames.
-      if (event.type === "reasoning") return relayReasoning(event.text);
+      if (event.type === "reasoning") return reasoning.relay?.(event.text) ?? Effect.void;
+
+      if (event.type === "reasoning-delta" || event.type === "reasoning-end")
+        return reasoning.write?.(event) ?? Effect.void;
 
       return Effect.void;
     });
