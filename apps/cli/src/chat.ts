@@ -141,7 +141,7 @@ export const prepareChat = (
       return yield* Effect.fail(
         new AgentError({
           reason: "invalid-request",
-          message: "Set POPPET_MODEL before starting a session.",
+          message: "Set model in config.json or POPPET_MODEL before starting a session.",
         }),
       );
 

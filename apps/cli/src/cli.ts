@@ -1,5 +1,5 @@
 import { BunServices } from "@effect/platform-bun";
-import { ChatSettings, ChatSettingsLive, Skills } from "@poppet/agent";
+import { ChatSettings, Skills } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
 import { MemoryKey, MemoryValue } from "@poppet/memory";
@@ -246,7 +246,7 @@ export const makeCLI = (
         command.action === "search"
           ? ChatSettings.pipe(
               Effect.flatMap(({ toolBytes }) => inspectChat(command, toolBytes)),
-              Effect.provide(ChatSettingsLive),
+              Effect.provide(runtime.chatSettings),
             )
           : inspectChat(command);
 
@@ -288,7 +288,7 @@ export const makeCLI = (
 
       const providerFlag = Flag.String("provider").pipe(
         Flag.withSchema(ProviderId),
-        Flag.withDescription("Override POPPET_PROVIDER"),
+        Flag.withDescription("Override the configured provider"),
         Flag.atMost(1),
         Flag.map(([value]) => Option.fromUndefinedOr(value)),
       );

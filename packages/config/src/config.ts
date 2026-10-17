@@ -1,8 +1,15 @@
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { ProviderId } from "@poppet/provider";
-import { Config, ConfigProvider, Context, Effect, Layer, Option, Schema } from "effect";
+import { Config, Context, Effect, Layer, Option, Schema } from "effect";
+
+import {
+  ConfigSourceLive,
+  ConfigText,
+  dataDirectory as configuredDataDirectory,
+} from "#src/source";
+
+export { ConfigSource } from "#src/source";
 
 /** Resolved host paths and default model selection for new sessions. */
 export interface Settings {
@@ -16,8 +23,6 @@ export interface Settings {
 /** Supplies host configuration without requiring consumers to read environment variables. */
 export class AppConfig extends Context.Service<AppConfig, Settings>()("poppet/AppConfig") {}
 
-const ConfigText = Schema.NonEmptyString.check(Schema.isTrimmed());
-
 /** Reads configuration, resolves directory paths, and validates configured provider selection. */
 export const loadConfig = (defaultProvider: ProviderId, providers: ReadonlyArray<ProviderId>) =>
   Effect.gen(function* () {
@@ -25,10 +30,7 @@ export const loadConfig = (defaultProvider: ProviderId, providers: ReadonlyArray
       Config.withDefault("Poppet"),
     );
 
-    const dataDirectory = yield* Config.schema(ConfigText, "POPPET_DATA_DIR").pipe(
-      Config.withDefault(join(homedir(), ".config", "poppet")),
-      Config.map((directory) => resolve(directory)),
-    );
+    const dataDirectory = yield* configuredDataDirectory;
 
     const notesDirectory = yield* Config.schema(ConfigText, "POPPET_NOTES_DIR").pipe(
       Config.withDefault(join(dataDirectory, "notes")),
@@ -55,7 +57,5 @@ export const makeAppConfigLive = (
   providers: ReadonlyArray<ProviderId>,
 ) =>
   Layer.effect(AppConfig, loadConfig(defaultProvider, providers)).pipe(
-    // Preserve empty environment values so validation rejects them instead of
-    // treating them as missing and silently choosing a default.
-    Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))),
+    Layer.provideMerge(ConfigSourceLive),
   );

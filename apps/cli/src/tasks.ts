@@ -22,7 +22,9 @@ export const prepareTask = (
 
     if (config.model === null)
       return yield* Effect.fail(
-        new TaskError({ message: "Set POPPET_MODEL before adding a task." }),
+        new TaskError({
+          message: "Set model in config.json or POPPET_MODEL before adding a task.",
+        }),
       );
 
     const command = {

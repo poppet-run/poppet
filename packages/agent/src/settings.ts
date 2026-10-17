@@ -1,4 +1,4 @@
-import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
+import { Config, Context, Effect, Layer, Schema } from "effect";
 
 /** Per-run limits for context, model turns, tool execution, and memory loaded into the prompt. */
 export interface ChatPolicy {
@@ -84,10 +84,4 @@ export const ChatSettingsLive = Layer.effect(
       factsBytes,
     };
   }),
-).pipe(
-  Layer.provide(
-    Layer.sync(ConfigProvider.ConfigProvider, () =>
-      ConfigProvider.fromEnv({ preserveEmptyStrings: true }),
-    ),
-  ),
 );
