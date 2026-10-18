@@ -1,5 +1,5 @@
 import { BunServices } from "@effect/platform-bun";
-import { ChatSettings, Skills } from "@poppet/agent";
+import { ChatSettings, logChatDiagnostic, Skills } from "@poppet/agent";
 import {
   AppConfig,
   ConfigSource,
@@ -313,7 +313,7 @@ export const makeCLI = (
             (text, sessionId) =>
               Effect.gen(function* () {
                 if (sessionId !== undefined) yield* onSession(sessionId);
-                yield* output?.announce(text) ?? Console.error(text);
+                yield* output?.announce(text) ?? logChatDiagnostic(text);
               }),
             output === undefined ? {} : { write: output.reasoning, log: () => Effect.void },
             output === undefined

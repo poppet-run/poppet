@@ -9,6 +9,63 @@ import { TestClock } from "effect/testing";
 import type { ChatCommand } from "#src/chat";
 import { interactiveChat, interactiveChatOutput, thinkingIndicator } from "#src/chat-prompt";
 
+test.concurrent.each(["colour", "NO_COLOR", "redirected"])(
+  "chat diagnostics use grey or plain text with %s output",
+  async (mode) => {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--eval",
+        `
+          import { Console, Effect } from "effect";
+          import { logChatDiagnostic } from "@poppet/agent";
+          import { interactiveChatOutput } from "./chat-prompt.ts";
+
+          await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+            yield* logChatDiagnostic("Session: saved-session");
+            const output = yield* interactiveChatOutput(() => Effect.void, () => Effect.void, false);
+            yield* output.announce("Run: saved-run");
+            yield* logChatDiagnostic('Thinking session=saved-session run=saved-run "Checking notes."');
+            yield* Console.error("Request failed");
+          })));
+        `,
+      ],
+      {
+        cwd: fileURLToPath(new URL(".", import.meta.url)),
+        env: {
+          PATH: process.env.PATH ?? "",
+          TERM: "xterm-256color",
+          FORCE_COLOR: mode === "colour" ? "1" : undefined,
+          NO_COLOR: mode === "NO_COLOR" ? "1" : undefined,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toBe("");
+    expect(Bun.stripANSI(stderr)).toBe(
+      'Session: saved-session\nRun: saved-run\nThinking session=saved-session run=saved-run "Checking notes."\nRequest failed\n',
+    );
+
+    if (mode === "colour") {
+      expect(stderr).toContain("\u001b[90mSession: saved-session\u001b[39m");
+      expect(stderr).toContain("\u001b[90mRun: saved-run\u001b[39m");
+      expect(stderr).toContain(
+        '\u001b[90mThinking session=saved-session run=saved-run "Checking notes."\u001b[39m',
+      );
+      expect(stderr).toContain("\u001b[31mRequest failed\u001b[0m");
+    } else expect(stderr).toBe(Bun.stripANSI(stderr));
+  },
+);
+
 test.concurrent("readline releases stdin error listeners after completed prompts", async () => {
   let transcript = "";
   let prompts = 0;

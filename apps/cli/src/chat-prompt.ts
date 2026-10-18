@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 
-import { AgentError } from "@poppet/agent";
+import { AgentError, logChatDiagnostic } from "@poppet/agent";
 import { Console, Effect, Result, Semaphore } from "effect";
 
 import {
@@ -201,7 +201,7 @@ export const interactiveChatOutput = (
           ? Effect.void
           : terminal.withPermit(stop.pipe(Effect.andThen(write(text)))),
       announce: (text: string) =>
-        terminal.withPermit(clear.pipe(Effect.andThen(Console.error(text)))),
+        terminal.withPermit(clear.pipe(Effect.andThen(logChatDiagnostic(text)))),
       reasoning,
     };
   });

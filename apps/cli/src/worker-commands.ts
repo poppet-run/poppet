@@ -1,20 +1,9 @@
-import { Agent, ChatSettings, Skills, type AgentError } from "@poppet/agent";
+import { Agent, ChatSettings, logChatDiagnostic, Skills, type AgentError } from "@poppet/agent";
 import { MCP, MCPCommand, inspectMCP } from "@poppet/mcp";
 import { Memory } from "@poppet/memory";
 import { Session, Store } from "@poppet/store";
 import { WorkerRequests, WorkerRequestError, requestWorker } from "@poppet/worker";
-import {
-  Cause,
-  Console,
-  Context,
-  Effect,
-  Layer,
-  Option,
-  Queue,
-  Schema,
-  Stream,
-  Scope,
-} from "effect";
+import { Cause, Context, Effect, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
 
 import { MessagingWorker } from "#src/channels";
 import {
@@ -136,11 +125,11 @@ export const WorkerRequestsLive = Layer.effect(
           const streamReasoning = command.value.kind === "chat" && command.value.streamReasoning;
 
           const logDiagnostic = (text: string) =>
-            Console.error(text).pipe(Effect.andThen(emitFrame({ type: "stderr", text })));
+            logChatDiagnostic(text).pipe(Effect.andThen(emitFrame({ type: "stderr", text })));
 
           const reasoning: ChatReasoning = streamReasoning
             ? {
-                log: Console.error,
+                log: logChatDiagnostic,
                 write: emitFrame,
               }
             : { log: logDiagnostic };
@@ -212,7 +201,7 @@ export const remoteWorkerCommand = (
   write: ChatWriter,
   onSession: ChatWriter = () => Effect.void,
   writeReasoning?: ChatReasoningWriter,
-  announce: ChatWriter = Console.error,
+  announce: ChatWriter = logChatDiagnostic,
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -272,7 +261,7 @@ export const remoteWorkerCommand = (
 
           // Older workers send these alongside deltas that streaming clients already render.
           if (frame.type === "reasoning-log")
-            return writeReasoning === undefined ? Console.error(frame.text) : Effect.void;
+            return writeReasoning === undefined ? logChatDiagnostic(frame.text) : Effect.void;
 
           if (frame.type === "stderr")
             return Effect.gen(function* () {

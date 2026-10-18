@@ -4,6 +4,7 @@ import {
   Agent,
   AgentError,
   defaultPolicy,
+  logChatDiagnostic,
   Skills,
   sessionTitle,
   type ChatEvent,
@@ -17,7 +18,7 @@ import {
   type StoredMessage,
   type Run,
 } from "@poppet/store";
-import { Console, Effect, Schema, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
 
 /** Parsed chat actions before defaults are resolved into an executable request. */
 export type ChatCommand =
@@ -216,7 +217,7 @@ const resolveChatSession = (command: ChatSubmission) =>
 export const sendChat = (
   command: ChatSubmission,
   write: ChatWriter,
-  announce: ChatAnnouncer = (text) => Console.error(text),
+  announce: ChatAnnouncer = logChatDiagnostic,
   reasoning: ChatReasoning = {},
   timingLog?: (line: string) => Effect.Effect<void>,
 ) =>

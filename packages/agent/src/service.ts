@@ -1,3 +1,5 @@
+import { styleText } from "node:util";
+
 import {
   ProviderError,
   RequestTiming,
@@ -99,6 +101,9 @@ const failureOutcome = (exit: Exit.Exit<unknown, ChatFailure>): RunOutcome => {
   };
 };
 
+export const logChatDiagnostic = (text: string) =>
+  Console.error(process.env.NO_COLOR ? text : styleText("gray", text, { stream: process.stderr }));
+
 export const AgentLive = Layer.effect(
   Agent,
   Effect.gen(function* () {
@@ -191,7 +196,7 @@ export const AgentLive = Layer.effect(
                   reasoning = reasoning.slice(length);
                   const line = `[${new Date().toISOString()}] Thinking session=${sessionId} run=${run.id} ${JSON.stringify(chunk)}`;
 
-                  yield* options.reasoningLog?.(line) ?? Console.error(line);
+                  yield* options.reasoningLog?.(line) ?? logChatDiagnostic(line);
                 }
               });
 
