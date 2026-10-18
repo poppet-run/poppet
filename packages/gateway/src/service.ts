@@ -447,7 +447,7 @@ const gateway = Effect.gen(function* () {
       return true;
     }
 
-    const sent = Effect.gen(function* () {
+    yield* Effect.gen(function* () {
       yield* channel.checkAccess(entry.message, destination);
       // Commit before the send. An interruption after this point is an uncertain delivery.
       yield* gatewayStorage(() => repo.delivering(delivery));
@@ -459,9 +459,7 @@ const gateway = Effect.gen(function* () {
       );
 
       yield* gatewayStorage(() => repo.delivered(delivery, id));
-    });
-
-    yield* sent.pipe(
+    }).pipe(
       Effect.catchTag("ChannelError", (error) =>
         gatewayStorage(() =>
           repo.deliveryFailed(
