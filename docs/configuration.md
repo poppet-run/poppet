@@ -49,6 +49,7 @@ channel settings stay in their existing protected stores.
 | `POPPET_NOTES_DIR`     | `notesDirectory`    | `<data directory>/notes` | Notes tools' permitted directory                                                            |
 | `POPPET_PROVIDER`      | `provider`          | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`                                            |
 | `POPPET_MODEL`         | `model`             | Unset                    | Model ID for verification and new sessions and tasks                                        |
+| `POPPET_MCP_SERVERS`   | `mcpServers`        | `[]`                     | JSON server list replacing file values; local MCP tools and scheduled permissions           |
 | `POPPET_WEB_SEARCH`    | `webSearch`         | `false`                  | Enable Brave Search when a search key is available                                          |
 | `POPPET_LOG_REASONING` | `chat.logReasoning` | `false`                  | Log readable provider reasoning to CLI stderr and worker logs                               |
 | `POPPET_CONTEXT_BYTES` | `chat.contextBytes` | `65536`                  | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576` |
@@ -81,6 +82,12 @@ environment variables never appear in this output.
 Chat budgets must be positive integers within the limits above. Their ranges are
 validated for `config`, chat execution, worker startup, and conversation search.
 Session listing and inspection work independently of out-of-range budgets.
+
+## MCP servers
+
+See [MCP tools](mcp.md) for server entries, selected environment and protected
+credential references, separate scheduled allowlists, limits, and inspection.
+Configuration contains names and references only. Restart the worker after edits.
 
 ## Reasoning logs
 

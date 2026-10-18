@@ -166,6 +166,8 @@ export const ToolCall = Schema.Struct({
   name: Tool.fields.name,
   namespace: Tool.fields.namespace,
   arguments: Schema.String,
+  serverId: Schema.NullOr(Schema.NonEmptyString),
+  toolName: Schema.NullOr(Schema.NonEmptyString),
   status: Schema.Literals([
     "pending",
     "running",

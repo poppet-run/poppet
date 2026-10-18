@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
 import { loadConfig, webSearchEnabled } from "#src/config";
@@ -27,6 +28,53 @@ const load = (environment: Record<string, string>) =>
   );
 
 describe("configuration sources", () => {
+  test("MCP defaults to no servers, resolves file paths, and environment replacement preserves disabled servers", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-config-"));
+
+    const server = {
+      id: "local",
+      enabled: true,
+      command: "/usr/bin/example",
+      args: ["server"],
+      cwd: "local",
+      tools: ["read", "write"],
+      scheduledTools: ["read"],
+      environment: { TOKEN: { credential: "mcp-local" } },
+    };
+
+    try {
+      const initial = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(await Effect.runPromise(mcpServers.pipe(Effect.provide(initial.context)))).toEqual([]);
+      await writeFile(join(directory, "config.json"), JSON.stringify({ mcpServers: [server] }));
+      const file = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(await Effect.runPromise(mcpServers.pipe(Effect.provide(file.context)))).toEqual([
+        { ...server, cwd: join(directory, "local") },
+      ]);
+
+      const overridden = await Effect.runPromise(
+        load({
+          POPPET_DATA_DIR: directory,
+          POPPET_MCP_SERVERS: JSON.stringify([{ ...server, enabled: false }]),
+        }),
+      );
+
+      expect(
+        (await Effect.runPromise(mcpServers.pipe(Effect.provide(overridden.context))))[0],
+      ).toMatchObject({ enabled: false });
+
+      const disabled = await Effect.runPromise(
+        load({ POPPET_DATA_DIR: directory, POPPET_MCP_SERVERS: "[]" }),
+      );
+
+      expect(await Effect.runPromise(mcpServers.pipe(Effect.provide(disabled.context)))).toEqual(
+        [],
+      );
+      expect(disabled.source.environmentOverrides).toContain("POPPET_MCP_SERVERS");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("web search is opt-in and environment overrides the file without exposing keys", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-search-config-"));
 

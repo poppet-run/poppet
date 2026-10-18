@@ -5,7 +5,7 @@ A small personal AI agent for local use, built with TypeScript, Bun, and Effect.
 Poppet streams chat through ChatGPT, OpenCode Go, or OpenRouter and saves sessions
 locally. It can read, search, and save notes, use an editable profile and saved
 facts, follow explicitly selected local Markdown skills, read supplied URLs, search
-the web when configured, recall saved discussions, manage scheduled tasks through chat, and reply in Discord threads or
+the web when configured, use explicitly allowed local MCP tools, recall saved discussions, manage scheduled tasks through chat, and reply in Discord threads or
 private Telegram and WhatsApp chats. A shared worker runs scheduling and messaging; on macOS it can start at login.
 
 ## Quick start
@@ -41,7 +41,7 @@ The [documentation index](docs/index.md) links to all guides and references.
 
 - [Configuration](docs/configuration.md)
 - [Command line](docs/cli.md)
-- [Notes](docs/notes.md) and [memory](docs/memory.md)
+- [Notes](docs/notes.md), [memory](docs/memory.md), and [MCP tools](docs/mcp.md)
 - [Scheduled tasks](docs/tasks.md) and [worker](docs/worker.md)
 - [Discord](docs/gateways/discord.md), [Telegram](docs/gateways/telegram.md), and [WhatsApp](docs/gateways/whatsapp.md)
 - [Development](docs/development.md)

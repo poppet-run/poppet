@@ -19,7 +19,8 @@ import { Effect, Fiber, Layer, Schema, Stream } from "effect";
 import OpenAI from "openai";
 
 import { AgentError } from "#src/errors";
-import { Notes, NotesLive } from "#src/notes";
+import { ExternalTools, type ExternalTool } from "#src/external-tools";
+import { Notes, NotesLive, noteTools } from "#src/notes";
 import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
@@ -63,6 +64,7 @@ const fixture = async (
   injectedPages?: Pages["Service"],
   webSearch: WebSearch["Service"] = { search: null },
   chatTasks?: ChatTasks["Service"],
+  externalTools?: ExternalTools["Service"],
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-tools-"));
   const notesDirectory = join(directory, "notes");
@@ -113,6 +115,7 @@ const fixture = async (
         settings,
         Layer.succeed(WebSearch, webSearch),
         chatTasks === undefined ? Layer.empty : Layer.succeed(ChatTasks, chatTasks),
+        externalTools === undefined ? Layer.empty : Layer.succeed(ExternalTools, externalTools),
         Layer.succeed(Pages, injectedPages ?? { fetch: () => Effect.die("Unexpected page fetch") }),
         Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),
       ),
@@ -134,6 +137,107 @@ const failure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.match({ onFailure: (error) => error, onSuccess: () => null }));
 
 describe.concurrent("notes conversation", () => {
+  test("external preflight rejects an invalid batch before its first call executes", async () => {
+    let executed = 0;
+
+    const entry: ExternalTool = {
+      serverId: "fixture",
+      toolName: "original-tool",
+      definition: {
+        name: "custom",
+        namespace: "poppet_mcp",
+        description: "Fixture",
+        parameters: { type: "object" },
+      },
+      prepare: (json) =>
+        json === "{}"
+          ? Effect.succeed({
+              name: "external",
+              execute: Effect.sync(() => {
+                executed++;
+
+                return "done";
+              }),
+            })
+          : Effect.fail(
+              new AgentError({ reason: "tool-arguments", message: "Invalid MCP arguments" }),
+            ),
+    };
+
+    const state = await fixture(
+      () =>
+        completed([
+          tool("custom", "{}", "first", "poppet_mcp"),
+          tool("custom", "invalid", "second", "poppet_mcp"),
+        ]),
+      {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { snapshot: () => Effect.succeed([entry]) },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("test-provider", "test-model");
+          expect(
+            yield* (yield* Agent)
+              .send(session.id, "Run both tools")
+              .pipe(Stream.runDrain, Effect.flip),
+          ).toHaveProperty("reason", "tool-arguments");
+          const calls = yield* store.toolCalls((yield* store.runs(session.id))[0]!.id);
+          expect(calls.map((call) => call.status)).toEqual(["interrupted", "interrupted"]);
+          expect(
+            calls.every((call) => call.serverId === "fixture" && call.toolName === "original-tool"),
+          ).toBe(true);
+        }),
+      );
+      expect(executed).toBe(0);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each(["collision", "unknown"])("rejects external %s tools before dispatch", async (mode) => {
+    const entry: ExternalTool = {
+      serverId: "fixture",
+      toolName: "original-tool",
+      definition: noteTools[0]!,
+      prepare: () => Effect.die("Must not prepare denied tools"),
+    };
+
+    const state = await fixture(
+      () => completed([tool("unknown", "{}", "denied", "poppet_mcp")]),
+      {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { snapshot: () => Effect.succeed(mode === "collision" ? [entry] : []) },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("test-provider", "test-model");
+          expect(
+            yield* (yield* Agent)
+              .send(session.id, "Run the tool")
+              .pipe(Stream.runDrain, Effect.flip),
+          ).toHaveProperty("reason", "tool-permission");
+        }),
+      );
+
+      if (mode === "collision") expect(state.requests).toHaveLength(0);
+    } finally {
+      await state.close();
+    }
+  });
+
   test("task preflight validates the whole batch before an earlier note can change", async () => {
     const state = await fixture(
       () =>

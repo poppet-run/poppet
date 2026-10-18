@@ -2,13 +2,13 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–19 implemented with automated checks; phase 20 planned. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
+Status: Phases 1–20 implemented with automated checks. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
 implemented.
 
-The next planned addition is [MCP server support](#phase-20-mcp-server-support).
+[MCP server support](#phase-20-mcp-server-support) is implemented for local stdio tools. See the [MCP guide](mcp.md) for setup and remaining live validation.
 
 Updated: 2026-10-18
 
@@ -1188,7 +1188,16 @@ See [conversation context](chat.md#read-conversation-context).
 
 ## Phase 20: MCP server support
 
-Planned. Depends on phase 5's tool loop, phase 4's durable records, and phases 8–9's
+Implementation uses `@modelcontextprotocol/client` 2.3.1, `@poppet/mcp`, the
+agent's provider-independent `ExternalTools` contract through a host adapter, and migration 14 for saved
+server/tool identity. The strict JSON-string argument wrapper preserves original
+schema validation, including optional fields. Connections start lazily, stay with
+the worker, and close with their owner. Failed connections need an owner restart;
+no call is retried. Bounds, supported schemas, credential references, inspection
+commands, and the remaining live completion checks are documented in [MCP tools](mcp.md).
+
+Implemented with automated fixture-server and injected-model checks. Live-model,
+messaging and scheduled-read validation remains manual. Depends on phase 5's tool loop, phase 4's durable records, and phases 8–9's
 shared worker ownership. Reuses phase 7's scheduled-run permissions and the existing
 messaging agent path.
 

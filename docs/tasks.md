@@ -2,6 +2,11 @@
 
 [Documentation index](index.md)
 
+Scheduled [MCP tools](mcp.md) are denied by default. A server's `scheduledTools`
+must be an explicitly reviewed read-only subset of its interactive `tools`.
+Annotations cannot grant permission. Restart the worker after changing these
+lists. MCP results cannot authorize built-in mutations or page fetching.
+
 ## Create and inspect tasks
 
 Select a provider and model as for chat, and sign in before running a task.

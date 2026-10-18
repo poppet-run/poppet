@@ -18,6 +18,7 @@ import { Clock, Effect, Match, Option, Stream } from "effect";
 
 import { assembleContext, byteSize, outputBudget } from "#src/context";
 import { AgentError } from "#src/errors";
+import { ExternalTools, type PreparedExternalCall } from "#src/external-tools";
 import {
   memoryTool,
   decodeMemoryCall,
@@ -56,6 +57,7 @@ export const conversation = Effect.gen(function* () {
   const webSearch = yield* WebSearch;
   const policy = yield* ChatSettings;
   const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
+  const external = Option.getOrNull(yield* Effect.serviceOption(ExternalTools));
   const clock = yield* Clock.Clock;
 
   const executeTool = (
@@ -68,7 +70,8 @@ export const conversation = Effect.gen(function* () {
       | FetchPageCall
       | MemoryCall
       | WebSearchCall
-      | PreparedTaskCall,
+      | PreparedTaskCall
+      | PreparedExternalCall,
   ) => {
     const operation = Effect.gen(function* () {
       yield* store.startToolCall(run.id, callId);
@@ -87,6 +90,7 @@ export const conversation = Effect.gen(function* () {
         ),
         Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
         Match.when({ name: "manage_tasks" }, (plan) => plan.execute),
+        Match.when({ name: "external" }, (plan) => plan.execute),
         Match.when({ name: "search_web" }, (plan) =>
           webSearch.search === null
             ? Effect.fail(
@@ -114,6 +118,7 @@ export const conversation = Effect.gen(function* () {
           store
             .finishToolCall(run.id, callId, {
               status:
+                (call.name === "external" && error.reason !== "tool-reported") ||
                 call.name === "save_note" ||
                 (call.name === "manage_tasks" &&
                   error instanceof StoreError &&
@@ -149,214 +154,274 @@ export const conversation = Effect.gen(function* () {
     readOnlyTools: boolean,
     here: Effect.Effect<DeliveryDestination, AgentError> | null = null,
   ) =>
-    Stream.suspend(() => {
-      const tools = model.description.capabilities.tools
-        ? [
-            ...noteTools,
-            sessionSearchTool,
-            sessionReadTool,
-            fetchPageTool,
-            memoryTool,
-            ...(webSearch.search === null ? [] : [webSearchTool]),
-            ...(tasks === null || readOnlyTools ? [] : [taskTool]),
-          ].filter(
-            (tool) => !readOnlyTools || (tool.name !== "save_note" && tool.name !== "memory"),
-          )
-        : [];
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const catalog =
+          model.description.capabilities.tools && external !== null
+            ? yield* external.snapshot(readOnlyTools)
+            : [];
 
-      const allowedURLs = suppliedPageURLs(text);
+        const tools = model.description.capabilities.tools
+          ? [
+              ...noteTools,
+              ...catalog.map((entry) => entry.definition),
+              sessionSearchTool,
+              sessionReadTool,
+              fetchPageTool,
+              memoryTool,
+              ...(webSearch.search === null ? [] : [webSearchTool]),
+              ...(tasks === null || readOnlyTools ? [] : [taskTool]),
+            ].filter(
+              (tool) => !readOnlyTools || (tool.name !== "save_note" && tool.name !== "memory"),
+            )
+          : [];
 
-      const instructions =
-        tasks !== null && !readOnlyTools
-          ? `${prompt}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
-          : prompt;
+        const identities = new Set<string>();
 
-      const prepareTool = (call: Extract<Output, { type: "tool-call" }>) =>
-        Effect.gen(function* () {
-          if (!tools.some((tool) => tool.name === call.name && tool.namespace === call.namespace))
+        for (const tool of tools) {
+          const identity = JSON.stringify([tool.namespace, tool.name]);
+
+          if (identities.has(identity))
             return yield* Effect.fail(
               new AgentError({
                 reason: "tool-permission",
-                message: "The requested tool is not allowed in this run.",
+                message: "External tool identity collides with another tool.",
               }),
             );
+          identities.add(identity);
+        }
 
-          const plan = yield* Match.value(call).pipe(
-            Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
-            Match.when({ name: "read_session" }, decodeSessionReadCall),
-            Match.when({ name: "memory" }, decodeMemoryCall),
-            Match.when({ name: "search_web" }, decodeWebSearchCall),
-            Match.when({ name: "manage_tasks" }, (taskCall) =>
-              decodeTaskCall(taskCall).pipe(
-                Effect.flatMap((action) =>
-                  tasks!.prepare(action, {
-                    origin: readOnlyTools ? "scheduled" : "interactive",
-                    runId: run.id,
-                    callId: taskCall.callId,
-                    here,
-                  }),
-                ),
-              ),
-            ),
-            Match.when({ name: "fetch_page" }, (pageCall) =>
-              decodeFetchPageCall(pageCall, allowedURLs),
-            ),
-            Match.orElse(decodeNoteCall),
-          );
+        const allowedURLs = suppliedPageURLs(text);
 
-          return { callId: call.callId, plan };
-        });
+        const baseInstructions =
+          external?.instructions === undefined ? prompt : `${prompt}\n\n${external.instructions}`;
 
-      const current: Message[] = [{ role: "user", text }];
-      let turns = 0;
-      let callsUsed = 0;
-      let outputBytes = 0;
-      let reasoningBytes = 0;
-      let usage: Completion["usage"] = { inputTokens: 0, outputTokens: 0 };
+        const instructions =
+          tasks !== null && !readOnlyTools
+            ? `${baseInstructions}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
+            : baseInstructions;
 
-      const turn = (): Stream.Stream<ConversationEvent, AgentError | ProviderError | StoreError> =>
-        Stream.unwrap(
+        const prepareTool = (call: Extract<Output, { type: "tool-call" }>) =>
           Effect.gen(function* () {
-            if (++turns > policy.modelTurns)
+            if (!tools.some((tool) => tool.name === call.name && tool.namespace === call.namespace))
               return yield* Effect.fail(
                 new AgentError({
-                  reason: "budget",
-                  message: "The run exhausted its model-turn budget.",
+                  reason: "tool-permission",
+                  message: "The requested tool is not allowed in this run.",
                 }),
               );
 
-            const messages = yield* Effect.try({
-              try: () =>
-                assembleContext(
-                  history,
-                  runs,
-                  current,
-                  model.description,
-                  policy,
-                  tools,
-                  instructions,
-                ),
-              catch: (cause) =>
-                cause instanceof AgentError
-                  ? cause
-                  : new AgentError({
-                      reason: "history",
-                      message: "Could not assemble conversation history.",
+            const entry = catalog.find(
+              (candidate) =>
+                candidate.definition.name === call.name &&
+                candidate.definition.namespace === call.namespace,
+            );
+
+            if (entry !== undefined)
+              return { callId: call.callId, plan: yield* entry.prepare(call.arguments) };
+
+            const plan = yield* Match.value(call).pipe(
+              Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
+              Match.when({ name: "read_session" }, decodeSessionReadCall),
+              Match.when({ name: "memory" }, decodeMemoryCall),
+              Match.when({ name: "search_web" }, decodeWebSearchCall),
+              Match.when({ name: "manage_tasks" }, (taskCall) =>
+                decodeTaskCall(taskCall).pipe(
+                  Effect.flatMap((action) =>
+                    tasks!.prepare(action, {
+                      origin: readOnlyTools ? "scheduled" : "interactive",
+                      runId: run.id,
+                      callId: taskCall.callId,
+                      here,
                     }),
-            });
+                  ),
+                ),
+              ),
+              Match.when({ name: "fetch_page" }, (pageCall) =>
+                decodeFetchPageCall(pageCall, allowedURLs),
+              ),
+              Match.orElse(decodeNoteCall),
+            );
 
-            const settings = model.description.capabilities.generationSettings.includes(
-              "maxOutputTokens",
-            )
-              ? { maxOutputTokens: outputBudget(model.description, policy) }
-              : {};
+            return { callId: call.callId, plan };
+          });
 
-            return streamReply(
-              model,
-              {
-                sessionId: run.sessionId,
-                workload: run.workload,
-                instructions,
-                messages,
-                tools,
-                settings: policy.logReasoning ? { ...settings, reasoningSummary: true } : settings,
-              },
-              run,
-            ).pipe(
-              Stream.flatMap((event) => {
-                if (event.type === "reasoning-delta") {
-                  reasoningBytes += byteSize(event.text);
+        const current: Message[] = [{ role: "user", text }];
+        let turns = 0;
+        let callsUsed = 0;
+        let outputBytes = 0;
+        let reasoningBytes = 0;
+        let usage: Completion["usage"] = { inputTokens: 0, outputTokens: 0 };
 
-                  if (reasoningBytes > maxTextBytes)
-                    return Stream.fail(
-                      new AgentError({
-                        reason: "output-limit",
-                        message: "The run exceeded the reasoning size limit.",
-                      }),
-                    );
-
-                  return policy.logReasoning ? Stream.make(event) : Stream.empty;
-                }
-
-                if (event.type === "text-delta") {
-                  outputBytes += byteSize(event.text);
-
-                  return outputBytes > maxTextBytes
-                    ? Stream.fail(
-                        new AgentError({
-                          reason: "output-limit",
-                          message: "The run exceeded the output size limit.",
-                        }),
-                      )
-                    : Stream.make(event);
-                }
-
-                const response = event.response;
-                usage =
-                  usage !== null && response.usage !== null
-                    ? {
-                        inputTokens: usage.inputTokens + response.usage.inputTokens,
-                        outputTokens: usage.outputTokens + response.usage.outputTokens,
-                      }
-                    : null;
-
-                const calls = response.output.flatMap((part) =>
-                  part.type === "tool-call" ? [part] : [],
-                );
-
-                if (calls.length === 0)
-                  return Stream.make({
-                    type: "completed" as const,
-                    response: { ...response, usage },
-                  });
-
-                const followup = Stream.unwrap(
-                  Effect.gen(function* () {
-                    yield* store.recordToolCalls(run.id, response);
-
-                    if (callsUsed + calls.length > policy.toolCalls)
-                      return yield* Effect.fail(
-                        new AgentError({
-                          reason: "budget",
-                          message: "The run exhausted its tool-call budget.",
-                        }),
-                      );
-
-                    if (turns === policy.modelTurns)
-                      return yield* Effect.fail(
-                        new AgentError({
-                          reason: "budget",
-                          message: "The run has no model turn left to use tool results.",
-                        }),
-                      );
-
-                    // Validate the whole batch before any call can change notes or memory.
-                    const planned = yield* Effect.forEach(calls, prepareTool);
-
-                    current.push({
-                      role: "assistant",
-                      output: response.output,
-                      continuation: response.continuation,
-                    });
-
-                    for (const { callId, plan } of planned) {
-                      const { output, urls } = yield* executeTool(run, callId, plan);
-
-                      for (const url of urls) allowedURLs.add(url);
-                      current.push({ role: "tool", callId, output });
-                      callsUsed++;
-                    }
-
-                    return turn();
+        const turn = (): Stream.Stream<
+          ConversationEvent,
+          AgentError | ProviderError | StoreError
+        > =>
+          Stream.unwrap(
+            Effect.gen(function* () {
+              if (++turns > policy.modelTurns)
+                return yield* Effect.fail(
+                  new AgentError({
+                    reason: "budget",
+                    message: "The run exhausted its model-turn budget.",
                   }),
                 );
 
-                return Stream.concat(Stream.make({ type: "reasoning-end" as const }), followup);
-              }),
-            );
-          }),
-        );
+              const messages = yield* Effect.try({
+                try: () =>
+                  assembleContext(
+                    history,
+                    runs,
+                    current,
+                    model.description,
+                    policy,
+                    tools,
+                    instructions,
+                  ),
+                catch: (cause) =>
+                  cause instanceof AgentError
+                    ? cause
+                    : new AgentError({
+                        reason: "history",
+                        message: "Could not assemble conversation history.",
+                      }),
+              });
 
-      return turn();
-    });
+              const settings = model.description.capabilities.generationSettings.includes(
+                "maxOutputTokens",
+              )
+                ? { maxOutputTokens: outputBudget(model.description, policy) }
+                : {};
+
+              return streamReply(
+                model,
+                {
+                  sessionId: run.sessionId,
+                  workload: run.workload,
+                  instructions,
+                  messages,
+                  tools,
+                  settings: policy.logReasoning
+                    ? { ...settings, reasoningSummary: true }
+                    : settings,
+                },
+                run,
+              ).pipe(
+                Stream.flatMap((event) => {
+                  if (event.type === "reasoning-delta") {
+                    reasoningBytes += byteSize(event.text);
+
+                    if (reasoningBytes > maxTextBytes)
+                      return Stream.fail(
+                        new AgentError({
+                          reason: "output-limit",
+                          message: "The run exceeded the reasoning size limit.",
+                        }),
+                      );
+
+                    return policy.logReasoning ? Stream.make(event) : Stream.empty;
+                  }
+
+                  if (event.type === "text-delta") {
+                    outputBytes += byteSize(event.text);
+
+                    return outputBytes > maxTextBytes
+                      ? Stream.fail(
+                          new AgentError({
+                            reason: "output-limit",
+                            message: "The run exceeded the output size limit.",
+                          }),
+                        )
+                      : Stream.make(event);
+                  }
+
+                  const response = event.response;
+                  usage =
+                    usage !== null && response.usage !== null
+                      ? {
+                          inputTokens: usage.inputTokens + response.usage.inputTokens,
+                          outputTokens: usage.outputTokens + response.usage.outputTokens,
+                        }
+                      : null;
+
+                  const calls = response.output.flatMap((part) =>
+                    part.type === "tool-call" ? [part] : [],
+                  );
+
+                  if (calls.length === 0)
+                    return Stream.make({
+                      type: "completed" as const,
+                      response: { ...response, usage },
+                    });
+
+                  const followup = Stream.unwrap(
+                    Effect.gen(function* () {
+                      yield* store.recordToolCalls(
+                        run.id,
+                        response,
+                        calls.flatMap((call) => {
+                          const entry = catalog.find(
+                            (candidate) =>
+                              candidate.definition.name === call.name &&
+                              candidate.definition.namespace === call.namespace,
+                          );
+
+                          return entry === undefined
+                            ? []
+                            : [
+                                {
+                                  callId: call.callId,
+                                  serverId: entry.serverId,
+                                  toolName: entry.toolName,
+                                },
+                              ];
+                        }),
+                      );
+
+                      if (callsUsed + calls.length > policy.toolCalls)
+                        return yield* Effect.fail(
+                          new AgentError({
+                            reason: "budget",
+                            message: "The run exhausted its tool-call budget.",
+                          }),
+                        );
+
+                      if (turns === policy.modelTurns)
+                        return yield* Effect.fail(
+                          new AgentError({
+                            reason: "budget",
+                            message: "The run has no model turn left to use tool results.",
+                          }),
+                        );
+
+                      // Validate the whole batch before any call can change notes or memory.
+                      const planned = yield* Effect.forEach(calls, prepareTool);
+
+                      current.push({
+                        role: "assistant",
+                        output: response.output,
+                        continuation: response.continuation,
+                      });
+
+                      for (const { callId, plan } of planned) {
+                        const { output, urls } = yield* executeTool(run, callId, plan);
+
+                        for (const url of urls) allowedURLs.add(url);
+                        current.push({ role: "tool", callId, output });
+                        callsUsed++;
+                      }
+
+                      return turn();
+                    }),
+                  );
+
+                  return Stream.concat(Stream.make({ type: "reasoning-end" as const }), followup);
+                }),
+              );
+            }),
+          );
+
+        return turn();
+      }),
+    );
 });

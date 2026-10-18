@@ -12,6 +12,11 @@ bun run start tasks work    # Scheduling only
 bun run start gateway work  # Messaging only
 ```
 
+All three modes own enabled [MCP connections](mcp.md), started lazily on discovery
+or an eligible agent run and closed on shutdown. CLI discovery uses these same
+connections. `mcp status` inspects them without starting a process. Restart the
+worker after changing server configuration or to reconnect a failed server.
+
 All three modes own one SQLite connection and serve task, chat, memory, and store-status commands
 through `store/tasks.sock`, protected by the `0700` store directory and `0600`
 socket. Commands use the worker when it is running and execute locally when it

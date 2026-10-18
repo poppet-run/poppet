@@ -10,6 +10,7 @@ Start with [getting started](getting-started.md) to install dependencies, connec
 - [Command line](cli.md): commands, provider selection, and verification.
 - [Chat](chat.md): saved sessions, streaming answers, context, and cancellation.
 - [Notes](notes.md): reading, searching, and saving files within the notes directory.
+- [MCP tools](mcp.md): trusted local servers, allowlists, inspection, and scheduled reads.
 - [Skills](skills.md): explicitly selected local procedures saved with chats and tasks.
 - [Memory](memory.md): an editable profile and explicitly saved facts shared across sessions.
 - [Storage](storage.md): the local database, permissions, ownership, and recovery.

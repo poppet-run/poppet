@@ -3,6 +3,7 @@ import { open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
 
 export const ConfigText = Schema.NonEmptyString.check(Schema.isTrimmed());
@@ -18,6 +19,7 @@ const FileSettings = Schema.Struct({
   provider: Schema.optionalKey(ConfigText),
   model: Schema.optionalKey(ConfigText),
   webSearch: Schema.optionalKey(Schema.Boolean),
+  mcpServers: Schema.optionalKey(MCPServers),
   chat: Schema.optionalKey(
     Schema.Struct({
       logReasoning: Schema.optionalKey(Schema.Boolean),
@@ -100,6 +102,7 @@ export const loadConfigSource = Effect.gen(function* () {
     POPPET_PROVIDER: file.provider,
     POPPET_MODEL: file.model,
     POPPET_WEB_SEARCH: file.webSearch,
+    POPPET_MCP_SERVERS: mcpFileValue(file.mcpServers, directory),
     POPPET_LOG_REASONING: file.chat?.logReasoning,
     POPPET_CONTEXT_BYTES: file.chat?.contextBytes,
     POPPET_HISTORY_TURNS: file.chat?.historyTurns,

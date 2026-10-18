@@ -7,6 +7,7 @@ import {
   webSearchEnabled,
 } from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
+import { inspectMCP, mcpServers, type MCPCommand } from "@poppet/mcp";
 import { MemoryKey, MemoryValue } from "@poppet/memory";
 import type { WorkerAction } from "@poppet/platform";
 import {
@@ -91,6 +92,7 @@ const showConfig = Effect.gen(function* () {
       {
         ...(yield* AppConfig),
         webSearch: yield* webSearchEnabled,
+        mcpServers: yield* mcpServers,
         chat: yield* ChatSettings,
         ...(yield* ConfigSource),
       },
@@ -193,6 +195,12 @@ export const makeCLI = (
         }),
       );
     });
+
+  const runMCP = (command: MCPCommand) =>
+    throughWorker(
+      { kind: "mcp", command },
+      inspectMCP(command).pipe(Effect.provide(runtime.mcp), Effect.flatMap(Console.log)),
+    );
 
   const runMemory = (command: MemoryCommand) =>
     throughWorker(
@@ -699,6 +707,25 @@ export const makeCLI = (
         Command.withDescription(`Manage provider connections\n\n${providerHelp}`),
         Command.withShortDescription("Manage provider connections"),
         Command.withSubcommands(authCommands),
+      ),
+      Command.make("mcp").pipe(
+        Command.withDescription("Inspect configured local MCP servers"),
+        Command.withSubcommands([
+          ...(["servers", "status"] as const).map((action) =>
+            Command.make(action, {}, () => runMCP({ action })).pipe(
+              Command.withDescription(
+                "Show permissions and connection state without starting servers",
+              ),
+            ),
+          ),
+          Command.make("tools", { server: Argument.String("server") }, ({ server }) =>
+            runMCP({ action: "tools", server }),
+          ).pipe(
+            Command.withDescription(
+              "Discover allowed tools using the worker or scoped local connections",
+            ),
+          ),
+        ]),
       ),
       Command.make("web").pipe(
         Command.withDescription("Manage Brave Search credentials"),

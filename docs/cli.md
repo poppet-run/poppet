@@ -63,6 +63,17 @@ See [ChatGPT](providers/openai-chatgpt.md), [OpenCode Go](providers/opencode-go.
 [OpenRouter](providers/openrouter.md), and [API-key handling](configuration.md#api-keys)
 for provider-specific setup and logout behavior.
 
+## MCP inspection
+
+| Command              | Action                                                                           |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `mcp servers`        | Show configured permissions and connection state without launching servers.      |
+| `mcp status`         | Show connection diagnostics and available tools without launching servers.       |
+| `mcp tools <server>` | Explicitly discover the server's allowed tools using the owner or a local scope. |
+
+These commands need no model. They route through the worker when it is running.
+See [MCP tools](mcp.md) for configuration, permissions, and process ownership.
+
 ## Web search setup
 
 | Command                   | Action                                                                            |

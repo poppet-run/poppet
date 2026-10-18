@@ -32,32 +32,33 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 The Bun monorepo uses private workspaces:
 
-| Workspace                     | Responsibility                                                                 | Workspace dependencies                                         |
-| ----------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition             | Config, agent, memory, tasks, store, platform, provider layers |
-| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                | Config, memory, store, provider contract                       |
-| `@poppet/config`              | Validated settings and the `AppConfig` service                                 | Provider contract                                              |
-| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                    | Provider contract                                              |
-| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle          | Config, credentials, provider contract                         |
-| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots               | Config and store for the local implementation                  |
-| `@poppet/platform`            | Worker actions, errors, and a host-supplied launch description                 | None                                                           |
-| `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                   | Platform contract                                              |
-| `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                      | Config, agent, store, worker transport, provider contract      |
-| `@poppet/worker`              | Protected local command transport and request lifecycle                        | Effect                                                         |
-| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery       | Agent, config, credentials, store, provider contract           |
-| `@poppet/channel-whatsapp`    | QR-linked personal chat, protected Signal keys, socket lifecycle, and settings | Gateway contract                                               |
-| `@poppet/channel-telegram`    | Telegram private chat, HTTP transport, polling normalization, and settings     | Gateway contract                                               |
-| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings    | Gateway contract                                               |
-| `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts      | None                                                           |
-| `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming            | Provider contract                                              |
-| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                | Provider contract, credentials, protocol adapters              |
-| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration               | Provider contract, credentials, protocol adapters              |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference    | Provider contract, protocol adapters                           |
+| Workspace                     | Responsibility                                                                     | Workspace dependencies                                         |
+| ----------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                 | Config, agent, memory, tasks, store, platform, provider layers |
+| `@poppet/mcp`                 | Scoped stdio clients, bounded discovery, original-schema validation, result limits | Credentials, provider contract                                 |
+| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                    | Config, memory, store, provider contract                       |
+| `@poppet/config`              | Validated settings and the `AppConfig` service                                     | Provider contract, MCP configuration schema                    |
+| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                        | Provider contract                                              |
+| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle              | Config, credentials, provider contract                         |
+| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                   | Config and store for the local implementation                  |
+| `@poppet/platform`            | Worker actions, errors, and a host-supplied launch description                     | None                                                           |
+| `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                       | Platform contract                                              |
+| `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                          | Config, agent, store, worker transport, provider contract      |
+| `@poppet/worker`              | Protected local command transport and request lifecycle                            | Effect                                                         |
+| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery           | Agent, config, credentials, store, provider contract           |
+| `@poppet/channel-whatsapp`    | QR-linked personal chat, protected Signal keys, socket lifecycle, and settings     | Gateway contract                                               |
+| `@poppet/channel-telegram`    | Telegram private chat, HTTP transport, polling normalization, and settings         | Gateway contract                                               |
+| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings        | Gateway contract                                               |
+| `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts          | None                                                           |
+| `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming                | Provider contract                                              |
+| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                    | Provider contract, credentials, protocol adapters              |
+| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                   | Provider contract, credentials, protocol adapters              |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference        | Provider contract, protocol adapters                           |
 
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
 `packages/provider-openrouter`, `packages/provider-protocol`, `packages/credentials`,
-`packages/store`, `packages/agent`, `packages/memory`, `packages/tasks`,
+`packages/store`, `packages/agent`, `packages/mcp`, `packages/memory`, `packages/tasks`,
 `packages/platform`, `packages/platform-macos`, `packages/worker`, `packages/gateway`, and
 `packages/channel-discord`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
@@ -1109,3 +1110,32 @@ for optional inference. External edits disable synchronization, and uncertain
 acknowledgements are reconciled without a second remote mutation. The Discord
 adapter owns SDK calls, permissions, platform name limits, and error mapping;
 other adapters can omit the capability. Inference-provider packages are unchanged.
+
+## MCP clients
+
+`@poppet/mcp` owns configuration schemas, prompt policy, inspection commands,
+errors, allowed tool contracts, and the official SDK's local stdio connections
+and discovery. It depends on credentials and the provider contract, with no agent
+or application-config dependency. The lightweight `@poppet/mcp/config` export lets
+`@poppet/config` validate the file section and resolve its paths without importing
+the SDK or starting a client.
+
+The CLI supplies the tool-result byte limit to `makeMCPLive` and adapts its tools
+and errors to the agent through `MCPAgentToolsLive`. `ExternalTools` in
+`@poppet/agent` stays generic, including optional host-owned instructions. MCP
+policy comes from its package; server instructions never enter that hook. The
+existing loop includes tool definitions in context budgeting, validates whole call
+batches, records original identities, and dispatches calls with the normal tool
+budgets and run cancellation.
+
+Migration 14 adds nullable `server_id` and `tool_name` columns to durable calls.
+Existing records retain null identities. Running calls settle as uncertain when
+interrupted or recovered; neither the agent nor MCP client replays them. Reported
+tool errors are failed; post-dispatch transport or protocol errors are uncertain.
+
+Discovery freezes permissions until owner restart. The strict one-string wrapper
+retains original JSON Schema validation and optional-field semantics across
+providers. Selected credentials stay out of prompts and inspection. Worker
+inspection exposes only servers, status and allowed catalog discovery; invocation
+continues through the normal durable agent path. See [MCP tools](mcp.md) for limits,
+credential references, supported schemas, and the live validation path.

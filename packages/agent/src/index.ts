@@ -2,6 +2,8 @@ export { Agent, AgentLive, ModelResolver, type ChatEvent, type ChatFailure } fro
 
 export { AgentError } from "#src/errors";
 
+export { ExternalTools, type ExternalTool, type PreparedExternalCall } from "#src/external-tools";
+
 export { Skills, SkillsLive } from "#src/skills";
 
 export { Notes, NotesLive } from "#src/notes";

@@ -88,7 +88,11 @@ describe("chat context", () => {
   test("uses model capacity and UTF-8 bytes and never drops an oversized new message silently", () => {
     const smallModel: ModelDescription = {
       ...model,
-      capabilities: { ...model.capabilities, contextWindow: 4096, maxOutputTokens: 1024 },
+      capabilities: {
+        ...model.capabilities,
+        contextWindow: byteSize(instructions) + 2560,
+        maxOutputTokens: 1024,
+      },
     };
 
     const bigOld: Message = { role: "user", text: "x".repeat(3000) };

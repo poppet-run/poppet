@@ -16,7 +16,7 @@ bun run check
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`,
-`@poppet/store`, `@poppet/agent`, `@poppet/memory`, `@poppet/tasks`,
+`@poppet/store`, `@poppet/agent`, `@poppet/mcp`, `@poppet/memory`, `@poppet/tasks`,
 `@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`,
 `@poppet/channel-discord`, `@poppet/channel-telegram`, and `@poppet/channel-whatsapp`.
 Root `start` and `dev` commands run the CLI from the
@@ -84,6 +84,14 @@ packages/
     src/memory-tools.ts   Validated memory changes with budget checks and source runs
     src/context.ts        Complete-exchange context assembly and limits
     src/settings.ts       Validated chat budgets
+  mcp/                    @poppet/mcp
+    src/service.ts        MCP contract, scoped clients, permissions, discovery, invocation
+    src/config.ts         Server schemas and environment/file configuration
+    src/commands.ts       Read-only inspection commands
+    src/errors.ts         MCP failures adapted by the host
+    src/instructions.ts   Host-owned MCP tool policy
+    src/catalog.ts        Schema validation, stable names, bounded results
+    src/transport.ts      Awaited SDK stdio teardown
   config/                 @poppet/config
     src/config.ts         Validated settings and AppConfig service/layer
   credentials/            @poppet/credentials

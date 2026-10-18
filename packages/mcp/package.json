@@ -1,0 +1,29 @@
+{
+  "name": "@poppet/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts"
+  },
+  "scripts": {
+    "typecheck": "bun --check",
+    "test": "bun --no-env-file ../../tools/testing/run.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "@poppet/credentials": "workspace:*",
+    "@poppet/provider": "workspace:*",
+    "ajv": "8.20.0",
+    "effect": "4.0.4"
+  },
+  "devDependencies": {
+    "@poppet/provider-protocol": "workspace:*",
+    "openai": "7.32.0"
+  }
+}

@@ -89,6 +89,11 @@ interface StoreOperations {
   readonly recordToolCalls: (
     runId: string,
     response: Completion,
+    identities?: ReadonlyArray<{
+      readonly callId: string;
+      readonly serverId: string;
+      readonly toolName: string;
+    }>,
   ) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;
   /** Reads calls in execution order; the run must exist. */
   readonly toolCalls: (runId: string) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;
@@ -127,7 +132,7 @@ const runSql = `SELECT id, session_id AS sessionId, provider, model, workload, s
 const messageSql = `SELECT id, session_id AS sessionId, run_id AS runId, position, created_at AS createdAt, payload AS message FROM messages`;
 
 const toolSql = `SELECT run_id AS runId, call_id AS callId, position, name, namespace, arguments, status,
-  created_at AS createdAt, started_at AS startedAt, finished_at AS finishedAt, output, failure_reason AS failureReason FROM tool_calls`;
+  created_at AS createdAt, started_at AS startedAt, finished_at AS finishedAt, output, failure_reason AS failureReason, server_id AS serverId, tool_name AS toolName FROM tool_calls`;
 
 const toolCallsFor = (database: Database, runId: string) =>
   readRecord(() => {
@@ -522,7 +527,11 @@ export const StoreLive = Layer.effect(
           .immediate(),
       );
 
-    const recordToolCalls = (runId: string, response: Completion) =>
+    const recordToolCalls: StoreOperations["recordToolCalls"] = (
+      runId,
+      response,
+      identities = [],
+    ) =>
       atTime((at) =>
         database
           .transaction(() => {
@@ -553,8 +562,8 @@ export const StoreLive = Layer.effect(
             );
 
             using insert =
-              database.prepare(`INSERT INTO tool_calls (run_id, call_id, position, name, namespace, arguments, status, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`);
+              database.prepare(`INSERT INTO tool_calls (run_id, call_id, position, name, namespace, arguments, status, created_at, server_id, tool_name)
+              VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`);
 
             for (const [index, call] of calls.entries()) {
               if (existing.get(runId, call.callId))
@@ -562,6 +571,7 @@ export const StoreLive = Layer.effect(
                   reason: "conflict",
                   message: "Tool call IDs cannot be reused within a run.",
                 });
+              const identity = identities.find((entry) => entry.callId === call.callId);
               insert.run(
                 runId,
                 call.callId,
@@ -570,6 +580,8 @@ export const StoreLive = Layer.effect(
                 call.namespace,
                 call.arguments,
                 createdAt,
+                identity?.serverId ?? null,
+                identity?.toolName ?? null,
               );
             }
 

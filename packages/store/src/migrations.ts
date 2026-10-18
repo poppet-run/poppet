@@ -236,6 +236,14 @@ export const migrations: ReadonlyArray<Migration> = [
     CREATE UNIQUE INDEX task_source_call ON jobs (source_run_id, source_call_id) WHERE source_run_id IS NOT NULL;
     `,
   },
+  {
+    version: 14,
+    name: "external-tool-identities",
+    sql: `
+    ALTER TABLE tool_calls ADD COLUMN server_id TEXT;
+    ALTER TABLE tool_calls ADD COLUMN tool_name TEXT CHECK ((server_id IS NULL) = (tool_name IS NULL));
+    `,
+  },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

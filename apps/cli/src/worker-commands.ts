@@ -1,4 +1,5 @@
 import { Agent, ChatSettings, Skills, type AgentError } from "@poppet/agent";
+import { MCP, MCPCommand, inspectMCP } from "@poppet/mcp";
 import { Memory } from "@poppet/memory";
 import { Session, Store } from "@poppet/store";
 import { WorkerRequests, WorkerRequestError, requestWorker } from "@poppet/worker";
@@ -36,6 +37,7 @@ const WorkerCommand = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("memory"), command: MemoryCommand }),
   Schema.Struct({ kind: Schema.Literal("store") }),
   Schema.Struct({ kind: Schema.Literal("gateway") }),
+  Schema.Struct({ kind: Schema.Literal("mcp"), command: MCPCommand }),
 ]);
 
 /** Chat, memory, and status operations sent to the process that owns local storage. */
@@ -62,6 +64,9 @@ const execute = (
   reasoning: ChatReasoning,
 ) =>
   Effect.gen(function* () {
+    if (request.kind === "mcp")
+      return yield* inspectMCP(request.command).pipe(Effect.flatMap((text) => write(`${text}\n`)));
+
     if (request.kind === "gateway") {
       const messaging = yield* Effect.serviceOption(MessagingWorker);
 
@@ -106,9 +111,12 @@ export const WorkerRequestsLive = Layer.effect(
     const services = yield* Effect.context<Agent | Store | Memory | ChatSettings | Skills>();
     const messaging = yield* Effect.serviceOption(MessagingWorker);
 
+    const mcp = yield* Effect.serviceOption(MCP);
+    const base = Option.isSome(mcp) ? Context.add(services, MCP, mcp.value) : services;
+
     const provided = Option.isSome(messaging)
-      ? Context.add(services, MessagingWorker, messaging.value)
-      : services;
+      ? Context.add(base, MessagingWorker, messaging.value)
+      : base;
 
     return {
       handle: (request, payload): Effect.Effect<Response, never, Scope.Scope> =>

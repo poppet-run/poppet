@@ -627,7 +627,7 @@ describe("CLI", () => {
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
         path: join(directory, "store/poppet.sqlite"),
-        schemaVersion: 13,
+        schemaVersion: 14,
         sessions: 0,
         messages: 0,
         runs: 0,
@@ -1048,6 +1048,7 @@ describe("CLI", () => {
         provider: "openai-chatgpt",
         model: null,
         webSearch: false,
+        mcpServers: [],
         chat: defaultPolicy,
         configFile: { path: join(directory, "config.json"), exists: false },
         environmentOverrides: ["POPPET_DATA_DIR", "POPPET_APP_NAME"],
@@ -1102,6 +1103,7 @@ describe("CLI", () => {
         provider: "openrouter",
         model: "override-model",
         webSearch: false,
+        mcpServers: [],
         chat: { ...chat, outputTokens: 512 },
         configFile: { path: join(directory, "config.json"), exists: true },
         environmentOverrides: ["POPPET_DATA_DIR", "POPPET_MODEL", "POPPET_OUTPUT_TOKENS"],
