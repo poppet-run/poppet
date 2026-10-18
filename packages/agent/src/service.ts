@@ -219,7 +219,7 @@ export const AgentLive = Layer.effect(
 
                   const saved = yield* Effect.uninterruptible(
                     store.finishRun(run.id, { status: "completed", response: event.response }).pipe(
-                      Effect.tap(() =>
+                      Effect.tap(
                         Effect.sync(() => {
                           settled = true;
                         }),
