@@ -496,6 +496,50 @@ describe("chat CLI", () => {
     },
   );
 
+  test.each(["local", "worker"])(
+    "streams chat new thinking before the %s answer is ready",
+    async (mode) => {
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
+      let request: Fiber.Fiber<void, unknown> | null = null;
+      process.env.POPPET_LOG_REASONING = "true";
+      chat.state.reasoning = "Checking the notes.";
+      chat.state.hold = true;
+      chat.state.useTools = true;
+
+      try {
+        if (mode === "worker") worker = await chat.startWorker();
+        request = Effect.runFork(chat.program(["chat", "new", "Hello"]));
+        await Effect.runPromise(
+          Effect.gen(function* () {
+            while (!chat.thinkingChunks.includes(chat.state.reasoning))
+              yield* Effect.sleep("5 millis");
+          }).pipe(Effect.timeout("5 seconds")),
+        );
+        expect(chat.thinkingChunks).toEqual(["Thinking:\n", chat.state.reasoning]);
+        expect(chat.chunks).toEqual([]);
+        chat.state.hold = false;
+        await chat.clock.runPromise(TestClock.adjust("5 millis"));
+        await Effect.runPromise(Fiber.join(request));
+        expect(chat.thinkingChunks).toEqual([
+          "Thinking:\n",
+          chat.state.reasoning,
+          "\n\n",
+          "Thinking:\n",
+          chat.state.reasoning,
+          "\n\n",
+        ]);
+        expect(chat.chunks.join("")).toBe("Answer\n");
+      } finally {
+        if (request !== null) await Effect.runPromise(Fiber.interrupt(request));
+
+        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+    15_000,
+  );
+
   test("streams reasoning without sending a second diagnostic copy to the client", async () => {
     const chat = await fixture();
     process.env.POPPET_LOG_REASONING = "true";
@@ -637,10 +681,16 @@ describe("chat CLI", () => {
         await chat.invoke(["chat", "new", "Hello"]);
         expect(chat.chunks.join("")).toBe("Answer\n");
         const reasoning = chat.errors.filter((line) => line.includes("Thinking session="));
-        expect(reasoning).toHaveLength(2);
-        expect(reasoning[0]).toContain(`session=${chat.requests[0]?.sessionId} run=`);
-        expect(reasoning[0]).toContain(chat.state.reasoning);
-        expect(reasoning[0]).not.toContain("retain privately");
+        expect(reasoning).toEqual([]);
+        expect(chat.thinkingChunks).toEqual([
+          "Thinking:\n",
+          chat.state.reasoning,
+          "\n\n",
+          "Thinking:\n",
+          chat.state.reasoning,
+          "\n\n",
+        ]);
+        expect(chat.thinkingChunks.join("")).not.toContain("retain privately");
         expect(chat.requests).toHaveLength(2);
         expect(chat.requests.every((request) => request.settings.reasoningSummary)).toBe(true);
 
@@ -650,13 +700,18 @@ describe("chat CLI", () => {
           chat.invoke(["chat", "send", chat.requests[0]!.sessionId, "Again"]),
         ).rejects.toMatchObject({ message: "Fixture request failed" });
         const diagnostics = chat.errors.filter((line) => line.includes("Thinking session="));
-        expect(diagnostics).toHaveLength(3);
+        expect(diagnostics).toHaveLength(1);
         expect(diagnostics.at(-1)).toContain(chat.state.reasoning);
 
-        if (mode === "worker")
-          expect(await readFile(join(chat.directory, "logs/worker.log"), "utf8")).toBe(
-            `${diagnostics.join("\n")}\n`,
-          );
+        if (mode === "worker") {
+          const workerLog = await readFile(join(chat.directory, "logs/worker.log"), "utf8");
+          const saved = workerLog.trim().split("\n");
+          expect(saved).toHaveLength(3);
+          expect(saved[0]).toContain(`session=${chat.requests[0]?.sessionId} run=`);
+          expect(saved[0]).toContain("Check the notes before answering.");
+          expect(saved.at(-1)).toBe(diagnostics[0]);
+        }
+
         await chat.invoke(["chat", "show", chat.requests[0]!.sessionId]);
         expect(chat.chunks.join("")).not.toContain(chat.state.reasoning);
       } finally {
@@ -740,6 +795,7 @@ describe("chat CLI", () => {
       chat.state.reasoning = "Private thinking";
       await chat.invoke(["chat", "new", "Hello"]);
       expect(chat.errors.some((line) => line.includes("Thinking session="))).toBe(false);
+      expect(chat.thinkingChunks).toEqual([]);
       expect(chat.errors.some((line) => line.includes("Timing session="))).toBe(false);
       expect(chat.requests[0]?.settings.reasoningSummary).toBeUndefined();
       process.env.POPPET_LOG_REASONING = "invalid";
@@ -1422,10 +1478,8 @@ describe("chat CLI", () => {
         } else await chat.invoke(["chat", "new", "Hello"]);
 
         expect(chat.chunks.join("")).toBe("Answer\n");
-        expect(chat.thinkingChunks).toEqual(interactive ? ["Thinking:\n", reasoning, "\n\n"] : []);
-        expect(chat.errors.filter((line) => line.includes("Thinking session="))).toEqual(
-          interactive ? [] : [diagnostic],
-        );
+        expect(chat.thinkingChunks).toEqual(["Thinking:\n", reasoning, "\n\n"]);
+        expect(chat.errors.filter((line) => line.includes("Thinking session="))).toEqual([]);
         expect(delivered).toBe(1);
         expect(chat.state.built).toBe(0);
         expect(await readdir(directory)).toEqual(["tasks.sock"]);

@@ -27,6 +27,9 @@ bun run start chat show $session_id
 and usage as JSON. Opaque provider continuation is retained privately in SQLite
 and omitted from this display. Inspection needs no selected model or login.
 
+With `chat.logReasoning` enabled, `chat new` streams thinking to stderr using the
+[interactive prompt's formatting](#interactive-prompt). Stdout contains only the answer.
+
 ## Interactive prompt
 
 Start a new session or resume one in a terminal:

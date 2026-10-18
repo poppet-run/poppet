@@ -298,7 +298,11 @@ export const makeCLI = (
 
     return Effect.scoped(
       Effect.gen(function* () {
-        const output = interactive ? yield* interactiveChatOutput(write, writeThinking) : undefined;
+        const output =
+          interactive || command.action === "new"
+            ? yield* interactiveChatOutput(write, writeThinking)
+            : undefined;
+
         const submission = yield* prepareChat(command);
 
         yield* throughWorker(
