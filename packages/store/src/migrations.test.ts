@@ -4,25 +4,11 @@ import { describe, expect, test } from "bun:test";
 import { applyMigrations, migrations } from "#src/migrations";
 
 describe("store migrations", () => {
-  test("retains existing tasks with no chat-tool provenance when upgrading schema 12", () => {
+  test("rolls back initial schema creation when a later migration fails", () => {
     using database = new Database(":memory:");
-    applyMigrations(database, migrations.slice(0, 12));
-    database.run(
-      `INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at) VALUES ('saved', 'Summary', 'Saved prompt', 'test', 'model', 'assistant', '{"type":"once","at":1000}', 1000, 0)`,
-    );
-    applyMigrations(database);
-    expect(
-      database.query("SELECT id, prompt, source_run_id, source_call_id FROM jobs").get(),
-    ).toEqual({ id: "saved", prompt: "Saved prompt", source_run_id: null, source_call_id: null });
-  });
-
-  test("rolls back every pending migration and ledger entry on a later failure", () => {
-    using database = new Database(":memory:");
-    applyMigrations(database, migrations.slice(0, 1));
-    database.run("INSERT INTO sessions VALUES ('saved', 'openrouter', 'model', 1, 1)");
 
     const broken = {
-      version: migrations.length + 1,
+      version: 2,
       name: "broken",
       sql: "CREATE TABLE partial (id INTEGER); invalid SQL;",
     };
@@ -30,101 +16,53 @@ describe("store migrations", () => {
     expect(() => applyMigrations(database, [...migrations, broken])).toThrow(
       "No pending migrations were committed",
     );
+    expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 0 });
+    expect(database.query("PRAGMA application_id").get()).toEqual({ application_id: 0 });
+    expect(database.query("SELECT name FROM sqlite_master").all()).toEqual([]);
+    expect(applyMigrations(database)).toBe(1);
+  });
+
+  test("rolls back every pending migration and ledger entry while preserving saved data", () => {
+    using database = new Database(":memory:");
+    applyMigrations(database, migrations, 10);
+    database.run(
+      "INSERT INTO sessions (id, provider, model, created_at, updated_at) VALUES ('saved', 'openrouter', 'model', 1, 1)",
+    );
+
+    const next = {
+      version: 2,
+      name: "session-index",
+      sql: "CREATE INDEX sessions_by_provider ON sessions (provider);",
+    };
+
+    const broken = {
+      version: 3,
+      name: "broken",
+      sql: "CREATE TABLE partial (id INTEGER); invalid SQL;",
+    };
+
+    expect(() => applyMigrations(database, [...migrations, next, broken], 20)).toThrow(
+      "No pending migrations were committed",
+    );
     expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 1 });
-    expect(database.query("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([
-      { version: 1 },
-    ]);
+    expect(
+      database.query("SELECT version, applied_at FROM schema_migrations ORDER BY version").all(),
+    ).toEqual([{ version: 1, applied_at: 10 }]);
     expect(
       database
-        .query(
-          "SELECT name FROM sqlite_master WHERE name IN ('partial', 'one_active_run', 'session_search', 'searchable_messages', 'index_completed_run')",
-        )
+        .query("SELECT name FROM sqlite_master WHERE name IN ('partial', 'sessions_by_provider')")
         .all(),
     ).toEqual([]);
     expect(database.query("SELECT id FROM sessions").get()).toEqual({ id: "saved" });
-    expect(applyMigrations(database)).toBe(migrations.length);
-    expect(applyMigrations(database)).toBe(migrations.length);
-  });
-
-  test("upgrades existing sessions and tasks with no skill selected", () => {
-    using database = new Database(":memory:");
-    applyMigrations(database, migrations.slice(0, 9));
-    database.run(
-      "INSERT INTO sessions (id, provider, model, created_at, updated_at) VALUES ('saved', 'test', 'model', 1, 1)",
-    );
-    database.run(`INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, created_at)
-      VALUES ('job', 'Review', 'Review notes', 'test', 'model', 'assistant', '{"type":"once","at":1}', 1)`);
-    applyMigrations(database);
-    expect(database.query("SELECT skill FROM sessions").get()).toEqual({ skill: null });
-    expect(database.query("SELECT skill FROM jobs").get()).toEqual({ skill: null });
-  });
-
-  test("upgrades existing tasks and occurrences without inventing destinations", () => {
-    using database = new Database(":memory:");
-    applyMigrations(database, migrations.slice(0, 10));
-    database.run(`INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, created_at)
-      VALUES ('job', 'Review', 'Review notes', 'test', 'model', 'assistant', '{"type":"once","at":1}', 1)`);
-    database.run(
-      "INSERT INTO job_occurrences (id, job_id, scheduled_at, status) VALUES ('occurrence', 'job', 1, 'pending')",
-    );
-    applyMigrations(database);
-    expect(database.query("SELECT destination FROM jobs").get()).toEqual({ destination: null });
-    expect(database.query("SELECT destination FROM job_occurrences").get()).toEqual({
-      destination: null,
-    });
-  });
-
-  test("backfills completed conversation text from schema 8 without indexing intermediate or failed content", () => {
-    using database = new Database(":memory:");
-    applyMigrations(database, migrations.slice(0, 8));
-    database.run(
-      "INSERT INTO sessions (id, provider, model, created_at, updated_at) VALUES ('saved', 'test', 'model', 1, 1)",
-    );
-    database.run(`INSERT INTO runs (id, session_id, provider, model, status, created_at, started_at, finished_at, result)
-      VALUES ('done', 'saved', 'test', 'model', 'completed', 1, 1, 1, '{}')`);
-    database.run(`INSERT INTO runs (id, session_id, provider, model, status, created_at, finished_at, failure_reason)
-      VALUES ('failed', 'saved', 'test', 'model', 'failed', 1, 1, 'test')`);
-
-    const messages = [
-      { role: "user", text: "backfilled question" },
-      {
-        role: "assistant",
-        output: [{ type: "text", text: "intermediate" }],
-        continuation: { secret: "continuation" },
-      },
-      { role: "tool", output: "tool output" },
-      {
-        role: "assistant",
-        output: [
-          { type: "text", text: "backfilled" },
-          { type: "text", text: "answer" },
-        ],
-        continuation: { secret: "continuation" },
-      },
-      { role: "user", text: "failed input" },
-    ];
-
-    for (const [position, message] of messages.entries())
-      database
-        .query(
-          "INSERT INTO messages (session_id, run_id, position, created_at, payload) VALUES ('saved', ?, ?, 1, ?)",
-        )
-        .run(position === 4 ? "failed" : "done", position, JSON.stringify(message));
-
-    applyMigrations(database);
-    expect(database.query("SELECT rowid, text FROM session_search ORDER BY rowid").all()).toEqual([
-      { rowid: 1, text: "backfilled question" },
-      { rowid: 4, text: "backfilled\nanswer" },
-    ]);
+    expect(applyMigrations(database, [...migrations, next], 20)).toBe(2);
+    expect(applyMigrations(database, [...migrations, next], 30)).toBe(2);
     expect(
-      database
-        .query("SELECT rowid FROM session_search WHERE session_search MATCH ? ORDER BY rowid")
-        .all('"backfilled"'),
-    ).toEqual([{ rowid: 1 }, { rowid: 4 }]);
-    applyMigrations(database);
-    expect(database.query("SELECT count(*) AS count FROM session_search").get()).toEqual({
-      count: 2,
-    });
+      database.query("SELECT version, applied_at FROM schema_migrations ORDER BY version").all(),
+    ).toEqual([
+      { version: 1, applied_at: 10 },
+      { version: 2, applied_at: 20 },
+    ]);
+    expect(database.query("SELECT id FROM sessions").get()).toEqual({ id: "saved" });
   });
 
   test.each(["future-version", "changed-checksum", "missing-ledger"])(
@@ -152,7 +90,7 @@ describe("store migrations", () => {
       unrelated.query("SELECT name FROM sqlite_master WHERE name = 'schema_migrations'").get(),
     ).toBeNull();
     using empty = new Database(":memory:");
-    expect(() => applyMigrations(empty, migrations.slice(1))).toThrow(
+    expect(() => applyMigrations(empty, [{ ...migrations[0]!, version: 2 }])).toThrow(
       "unsupported or changed migration history",
     );
   });

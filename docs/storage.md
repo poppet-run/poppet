@@ -20,25 +20,30 @@ bun run start store status
 
 ## Schema and saved records
 
-Migration 4 adds durable tool calls and their execution states. Migration 5 adds
-explicitly saved facts in `memories`. Migration 8 adds session titles, their
-source, a durable automatic-attempt claim, and separate title-request usage.
-Existing sessions keep null titles; there is no backfill or inference on old
-history. Manual titles take precedence over automatic results, and metadata
+The initial schema includes durable tool calls and their execution states,
+explicitly saved facts in `memories`, and session titles with their source,
+a durable automatic-attempt claim, and separate title-request usage.
+Manual titles take precedence over automatic results, and metadata
 updates leave session activity timestamps unchanged. Gateway bindings also retain
 creation provenance, confirmed and pending remote names, the last title considered
 for synchronization, and whether external edits or failures disabled naming.
 
 `@poppet/store` provides a scoped Effect `Store` service backed by
-[Bun SQLite](https://bun.sh/docs/runtime/sqlite). The initial migrations create
-sessions, messages, runs, and history indexes. A checksummed migration ledger
-rejects newer schemas and changed migration history. All pending migrations
-commit together; a failure rolls back the pending batch.
+[Bun SQLite](https://bun.sh/docs/runtime/sqlite). One initial migration creates
+the complete schema. Migration SQL lives in timestamped TypeScript files under
+`packages/store/src/migrations/`, registered in order by `migrations.ts`.
+A checksummed migration ledger rejects newer schemas and changed migration
+history. All pending migrations commit together; a failure rolls back the pending
+batch.
 
-Sessions retain their selected provider, model, and workload. Migration 3 adds
-workload to sessions and runs, defaulting existing records to `assistant`.
-Messages preserve order, tool
-call IDs, tool results, and versioned provider continuation. Runs persist pending
+The unreleased migration history has been consolidated into schema version 1.
+Development databases created with the former 14-step history are rejected.
+Stop Poppet and use a fresh data directory to start with the new schema; existing
+databases are never reset automatically.
+
+Sessions retain their selected provider, model, and workload. Sessions and runs
+default to the `assistant` workload. Messages preserve order, tool call IDs, tool
+results, and versioned provider continuation. Runs persist pending
 inputs before execution, then transition through running to completed, failed,
 or interrupted. Successful completion writes its assistant message and result
 in one transaction. The store validates continuation identity on write and read.
@@ -46,17 +51,18 @@ It permits one pending or running run across all sessions.
 
 ## Scheduled delivery destinations
 
-Migration 13 adds nullable `source_run_id` and `source_call_id` columns to jobs,
-with a unique source-call index. Existing tasks retain no tool origin. Chat task
-mutations and their completed tool result/message commit in one shared-database
+Jobs have nullable `source_run_id` and `source_call_id` columns,
+with a unique source-call index. Tasks created outside chat have no tool origin.
+Chat task mutations and their completed tool result/message commit in one shared-database
 transaction. Failure to save the receipt rolls back the task change. Repeating a
 completed call returns its original saved receipt, and a later model failure does
 not undo a committed task. This reuses the tool journal without introducing
 automatic execution replay.
 
-Migration 11 adds nullable JSON `destination` columns to jobs and occurrences.
+Jobs and occurrences have nullable JSON `destination` columns.
 Each occurrence copies the task's adapter, bot account, owner, server, parent
-channel, and thread IDs when queued. Existing records retain no destination.
+channel, and thread IDs when queued. Tasks without messaging delivery have no
+destination.
 The gateway copies completed answers into its delivery queue using a unique
 `occurrence_id` on the inbox record, so recovery cannot enqueue the result twice.
 Delivery chunks retain their own state independently of task execution. Queued
@@ -64,7 +70,7 @@ replies and their saved answers survive clearing task definitions and history.
 
 ## Messaging polling progress
 
-Migration 12 adds `gateway_cursors`, keyed by adapter and bot account. Polling
+`gateway_cursors` stores polling progress by adapter and bot account. Polling
 updates commit to the inbox before advancing their cursor. Rejected input can
 advance deliberately; overload or storage failure preserves the previous cursor.
 Inbox deduplication covers a crash between those commits. Message bindings,
@@ -72,15 +78,16 @@ acceptance identities, and polling offsets stay separate across adapters/account
 
 ## Skill snapshots
 
-Migration 10 adds nullable JSON `skill` columns to sessions and jobs. Each selected
-skill saves its validated `name` and full `content` at creation. Existing records
-have no skill. Task occurrences copy their task's snapshot into the new session;
-no later run rereads the skill file. Inspection exposes snapshots without provider
+Sessions and jobs have nullable JSON `skill` columns. Each selected
+skill saves its validated `name` and full `content` at creation. Records created
+without a selected skill have no snapshot. Task occurrences copy their task's
+snapshot into the new session; no later run rereads the skill file. Inspection
+exposes snapshots without provider
 continuation or credentials. See [skills](skills.md).
 
 ## Conversation search index
 
-Migration 9 creates an FTS5 index and backfills completed user messages and final
+The schema includes an FTS5 index for completed user messages and final
 assistant text. Intermediate responses, tool data, failed/interrupted inputs,
 and provider continuation are excluded. A trigger on successful run completion
 updates the index in the same transaction as the final message and run result.
@@ -119,7 +126,7 @@ Never remove a `.lock.sqlite` file while Poppet is running. These small lock
 databases contain no credentials and remain after logout. On reopening, unfinished runs become interrupted
 with a `process-exit` reason. Poppet does not automatically replay them.
 
-Tests cover persistent tool exchanges for all providers, upgrades and migration
+Tests cover persistent tool exchanges for all providers, migration ordering and
 rollback, transaction rollback, invalid records, run transitions, competing
 owners, and scoped cleanup. Live ChatGPT token renewal
 remains a separate phase 3 follow-up.

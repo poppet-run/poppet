@@ -159,8 +159,8 @@ prompt supplies inference and fallback titles; `/status` includes the skill name
 Naming updates also check session identity so stale work cannot update a newer
 binding. Adapters and provider packages require no skill-specific changes.
 
-The shared store schema defines the bounded name/content snapshot. Migration 10
-adds nullable snapshots to sessions and jobs. Task execution copies the saved
+The shared store schema defines the bounded name/content snapshot and
+nullable snapshots on sessions and jobs. Task execution copies the saved
 snapshot into each occurrence session without filesystem access. The agent adds
 one saved snapshot to the run's instructions, below base rules, and the existing
 context budget accounts for its serialized bytes. Tool dispatch and scheduled
@@ -374,16 +374,19 @@ lock, and opens Bun SQLite with strict bindings, foreign keys, WAL, and full
 synchronous commits. Scope finalizers close SQLite before releasing ownership.
 Database files and WAL sidecars use owner-only permissions.
 
-`migrations.ts` owns append-only numbered SQL migrations and a ledger containing
-names, checksums, and application times. It checks the application ID and schema
+`migrations.ts` registers append-only SQL migrations from timestamped TypeScript
+files in `migrations/` and owns a ledger containing names, checksums, and
+application times. Each registration has a sequential version. The unreleased
+history is consolidated into one initial migration; older development databases
+require a fresh data directory. The runner checks the application ID and schema
 version, validates all applied ledger entries, and applies every pending step
 inside one immediate transaction. A failed migration preserves the previous
 schema and ledger. Changed history and future schema versions require an explicit
 migration decision rather than silent repair.
 
 `schema.ts` defines session, message, run, and terminal-outcome records with
-Effect Schema. Migration 3 adds persisted workloads, defaulting legacy records to
-`assistant`. `service.ts` binds provider/model/workload selection to sessions and runs,
+Effect Schema. The initial schema persists workloads, defaulting sessions and
+runs to `assistant`. `service.ts` binds provider/model/workload selection to sessions and runs,
 validates persisted messages and completion payloads, and checks continuation
 identity. SQLite foreign keys enforce record ownership and a partial unique
 index permits only one pending or running run.
@@ -466,8 +469,8 @@ the parent again, atomically rename it, and sync the directory. The agent keeps
 this save and its durable result recording uninterruptible during graceful
 shutdown. An abrupt crash can still separate a write from result persistence.
 
-Migration 4 adds `tool_calls`. Store methods atomically record an assistant tool
-request with pending calls and a completed tool result with its transcript
+`tool_calls` stores durable tool execution. Store methods atomically record an
+assistant tool request with pending calls and a completed tool result with its transcript
 message. The state progresses from pending to running to completed or failed.
 Run failure/reopening interrupts pending calls and marks remaining running calls
 uncertain. Completed calls are immutable; terminal calls cannot restart. Calls
@@ -581,7 +584,7 @@ timer reconciles new work. Pause and resume retain repository semantics.
 
 `Store.commitToolCall` runs the synchronous task operation and completion of its
 tool journal/message in one SQLite transaction. A receipt failure rolls back the
-mutation. Migration 13 records a unique creating run/call pair on jobs; completed
+mutation. Jobs record a unique creating run/call pair; completed
 calls return their saved receipt without executing again. Committed changes
 survive later inference failure, and uncertain storage outcomes remain inspectable
 without automatic replay. List uses bounded ID-cursor queries; show limits recent
@@ -595,8 +598,8 @@ chat creation, pause/resume, and delivered occurrence checks remain separate.
 
 ## Conversation search
 
-Migration 9 adds an FTS5 index of completed user messages and final assistant text.
-A shared SQL view defines eligibility for backfill and the run-completion trigger,
+The schema includes an FTS5 index of completed user messages and final assistant text.
+A shared SQL view defines eligibility for the run-completion trigger,
 which indexes new exchanges inside the completion transaction. Tool content,
 intermediate responses, failed/interrupted inputs, and continuation are excluded.
 Messages remain the source of truth; current titles join from sessions at query
@@ -635,11 +638,11 @@ requires no additional socket command or migration.
 `memories` table and editable `<data directory>/profile.md` and `soul.md` files.
 It retains up to 128 facts of at most 4096 UTF-8 bytes each.
 
-The store owns database acquisition and migration 5. `StoreLive` also exposes the
-scoped `StoreDatabase` service, allowing the CLI to supply one connection and
+The store owns database acquisition and the `memories` table schema. `StoreLive`
+also exposes the scoped `StoreDatabase` service, allowing the CLI to supply one connection and
 owner lock to conversation storage and local memory. The memory implementation
 owns fact SQL; the conversation `Store` has no memory operations or dependency on
-the memory package. Existing migration checksums and persisted formats are unchanged.
+the memory package.
 
 The CLI manages facts through `Memory` without constructing a model provider or
 requiring a model. The agent asks for one snapshot at run start, passing the chat
@@ -959,7 +962,7 @@ separate sessions alone do not isolate the current shared profile, facts, or not
 
 ### Acceptance, execution, and delivery
 
-Add numbered store migrations for conversation bindings, accepted message IDs,
+The store schema includes conversation bindings, accepted message IDs,
 and delivery records. The gateway owns their repository through the shared
 `StoreDatabase`; the store retains database ownership and migration history.
 Deduplicate by adapter, bot account, and external message ID. Persist accepted
@@ -989,7 +992,7 @@ scheduled work remain available; storage failures still stop unsafe execution.
 Status exposes connection state, pending work, and failed or uncertain delivery
 without logging chat content or secrets.
 
-Migration 7 implements bindings, inbox records, and ordered reply chunks. The
+The schema includes bindings, inbox records, and ordered reply chunks. The
 gateway reserves a run ID before execution and supplies it to `Agent.send` and
 the store. Stable session IDs recover a crash between session creation and
 thread binding. Recovery inspects the saved run before deciding whether an
@@ -1085,8 +1088,8 @@ References: [Effect installation](https://effect.website/docs/v4/getting-started
 
 ## Session and conversation naming
 
-`@poppet/store` owns title metadata and atomic attempt claims. Migration 8 leaves
-existing sessions unnamed. New sessions begin with a fallback; accepting their
+`@poppet/store` owns title metadata and atomic attempt claims.
+New sessions begin with a fallback; accepting their
 first user input replaces it with a normalized prompt title in the same durable
 transaction. Scheduled sessions instead save the task name at creation. Manual
 renames and generated results update metadata without changing activity ordering.
@@ -1128,8 +1131,8 @@ existing loop includes tool definitions in context budgeting, validates whole ca
 batches, records original identities, and dispatches calls with the normal tool
 budgets and run cancellation.
 
-Migration 14 adds nullable `server_id` and `tool_name` columns to durable calls.
-Existing records retain null identities. Running calls settle as uncertain when
+Durable calls have nullable `server_id` and `tool_name` columns.
+Built-in calls retain null identities. Running calls settle as uncertain when
 interrupted or recovered; neither the agent nor MCP client replays them. Reported
 tool errors are failed; post-dispatch transport or protocol errors are uncertain.
 

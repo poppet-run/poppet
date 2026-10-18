@@ -12,6 +12,12 @@ implemented.
 
 Updated: 2026-10-18
 
+Storage history: the unreleased migrations are now consolidated into schema
+version 1 in one timestamped initial migration. Migration numbers and
+upgrade/backfill checks in the phase notes below describe the original work,
+not a supported upgrade path. See [storage](storage.md#schema-and-saved-records)
+and [development](development.md#store-migrations) for the current setup.
+
 One user, one active ChatGPT account, a configured provider/model, a local
 TypeScript application, SQLite, explicit memory, and locally scheduled tasks.
 Start with a CLI calling the runner directly. Introduce a background service

@@ -9,7 +9,7 @@ import { type Completion, type Message, type ProviderId } from "@poppet/provider
 import { Effect, Fiber, Layer } from "effect";
 
 import { StoreError } from "#src/errors";
-import { applyMigrations, migrations } from "#src/migrations";
+import { applyMigrations } from "#src/migrations";
 import type { SessionReadResult } from "#src/schema";
 import { Store, StoreLive } from "#src/service";
 
@@ -705,7 +705,7 @@ describe("conversation store", () => {
             { role: "assistant", output: response.output, continuation: response.continuation },
           ]);
           expect(yield* store.status).toMatchObject({
-            schemaVersion: 14,
+            schemaVersion: 1,
             sessions: 1,
             messages: 4,
             runs: 1,
@@ -901,7 +901,7 @@ describe("conversation store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 14,
+        schemaVersion: 1,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));
@@ -909,16 +909,16 @@ describe("conversation store", () => {
     }
   });
 
-  test.each([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])(
-    "upgrades schema %s while retaining session history and existing or default workloads",
-    async (version) => {
+  test.each(["assistant", "coding"])(
+    "reopens session history with the existing or default %s workload",
+    async (workload) => {
       const fixtureStore = await fixture();
 
       try {
         await mkdir(join(fixtureStore.directory, "store"));
         using old = new Database(fixtureStore.path);
         old.run("PRAGMA foreign_keys = ON");
-        applyMigrations(old, migrations.slice(0, version));
+        applyMigrations(old);
         old
           .query(
             "INSERT INTO sessions (id, provider, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -929,9 +929,8 @@ describe("conversation store", () => {
             "INSERT INTO runs (id, session_id, provider, model, status, created_at) VALUES (?, ?, ?, ?, 'pending', 1)",
           )
           .run("old-run", "old-session", "new-provider", "selected-model");
-        const workload = version >= 3 ? "coding" : "assistant";
 
-        if (version >= 3) {
+        if (workload === "coding") {
           old.run("UPDATE sessions SET workload = 'coding'");
           old.run("UPDATE runs SET workload = 'coding'");
         }
@@ -945,7 +944,7 @@ describe("conversation store", () => {
         await fixtureStore.run(
           Store.use((store) =>
             Effect.gen(function* () {
-              expect((yield* store.status).schemaVersion).toBe(14);
+              expect((yield* store.status).schemaVersion).toBe(1);
               expect((yield* store.messages("old-session"))[0]?.message).toEqual(user);
               expect(yield* store.session("old-session")).toMatchObject({
                 workload,

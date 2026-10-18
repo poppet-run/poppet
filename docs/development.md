@@ -43,6 +43,18 @@ runs can start slower files first. This local cache is ignored by Git and can be
 deleted to reset the timings. Tests still use four workers and at most two
 concurrent tests per worker.
 
+## Store migrations
+
+Add migration SQL in a TypeScript file under `packages/store/src/migrations/`,
+named `YYYYMMDDHHMMSS_description.ts` with a UTC timestamp. Import its SQL in
+`packages/store/src/migrations.ts` and append an entry with the next sequential
+version and a stable name. Keep applied files and registrations unchanged;
+the ledger checks their names and SQL checksums before applying pending steps.
+
+The unreleased schema starts at version 1 with one initial migration. Databases
+from the former 14-step history need a fresh data directory. See
+[storage](storage.md#schema-and-saved-records).
+
 ## Lint rules
 
 The Oxfmt and Oxlint configs are based on
@@ -104,7 +116,8 @@ packages/
     src/context-file.ts   Bounded UTF-8 personality and profile reads
   store/                  @poppet/store
     src/database.ts       Scoped SQLite connection, ownership, and permissions
-    src/migrations.ts     Versioned schema and transactional migration ledger
+    src/migrations.ts     Ordered migrations and transactional migration ledger
+    src/migrations/       Timestamped migration SQL in TypeScript files
     src/schema.ts         Durable session, message, and run schemas
     src/service.ts        Validated record operations and run lifecycle
   tasks/                  @poppet/tasks
