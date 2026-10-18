@@ -55,6 +55,8 @@ if (mode === "stubborn") {
   setInterval(() => {}, 1000);
 }
 
+if (mode === "protocol-idle") process.on("SIGUSR1", () => send({}));
+
 createInterface({ input: process.stdin }).on("line", (line) => {
   const request = Schema.decodeUnknownSync(
     Schema.fromJsonString(
@@ -115,6 +117,14 @@ createInterface({ input: process.stdin }).on("line", (line) => {
             : inputSchema,
       };
 
+      if (mode === "credential-description") tool.description = process.env.SELECTED ?? "";
+
+      if (mode === "credential-key")
+        tool.inputSchema = {
+          type: "object",
+          properties: { [process.env.SELECTED ?? ""]: { type: "string" } },
+        };
+
       if (name === "invalid-output")
         tool.outputSchema = {
           type: "object",
@@ -127,10 +137,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     });
 
     const result = { tools: mode === "duplicate" ? [tools[0]!, tools[0]!] : tools };
-    reply(
-      request.id,
-      request.params?.cursor === "next" ? result : { ...result, nextCursor: "next" },
-    );
+    const page = request.params?.cursor === "next" ? result : { ...result, nextCursor: "next" };
+
+    if (mode === "protocol-startup" && request.params?.cursor === "next")
+      process.stdout.write(
+        `${JSON.stringify({ jsonrpc: "2.0", id: request.id, result: page })}\n{}\n`,
+      );
+    else reply(request.id, page);
   } else if (request.method === "tools/call") {
     const name = request.params?.name;
 

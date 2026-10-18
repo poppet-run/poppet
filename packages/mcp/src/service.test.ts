@@ -14,6 +14,7 @@ const fixture = async (
   mode = "normal",
   tools = ["read", "write"],
   scheduledTools: string[] = [],
+  environment: MCPServer["environment"] = {},
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-"));
 
@@ -25,6 +26,7 @@ const fixture = async (
     cwd: directory,
     tools,
     scheduledTools,
+    environment,
   };
 
   const layer = makeMCPLive(1024).pipe(
@@ -108,27 +110,38 @@ describe("MCP stdio client", () => {
     }
   });
 
-  test.each(["duplicate", "schema", "oversized", "flood", "endless", "no-tools"])(
-    "rejects %s discovery and closes the child without disabling built-ins",
-    async (mode) => {
-      const state = await fixture(mode);
+  test.each([
+    "duplicate",
+    "schema",
+    "oversized",
+    "flood",
+    "endless",
+    "no-tools",
+    "protocol-startup",
+  ])("rejects %s discovery and closes the child without disabling built-ins", async (mode) => {
+    const state = await fixture(mode);
 
-      try {
-        await state.run(
-          Effect.gen(function* () {
-            expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
-            expect((yield* (yield* MCP).status)[0]).toMatchObject({
-              state: "unavailable",
-              pid: null,
-            });
-          }),
-        );
-        expect(dead(Number(await readFile(join(state.directory, "pid"), "utf8")))).toBe(true);
-      } finally {
-        await state.close();
-      }
-    },
-  );
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
+          expect((yield* (yield* MCP).status)[0]).toMatchObject({
+            state: "unavailable",
+            pid: null,
+            availableTools: [],
+          });
+
+          const pid = Number(
+            yield* Effect.promise(() => readFile(join(state.directory, "pid"), "utf8")),
+          );
+
+          expect(dead(pid)).toBe(true);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
 
   test("scheduled permissions are an explicit subset and catalog notifications never add tools", async () => {
     const state = await fixture("normal", ["read", "write", "notify"], ["read"]);
@@ -177,30 +190,126 @@ describe("MCP stdio client", () => {
     },
   );
 
-  test("cancellation sends cancellation and closes the child", async () => {
-    const state = await fixture("normal", ["hang"]);
-    let pid = 0;
+  test("cancellation waits for teardown while the owning layer stays open", async () => {
+    const state = await fixture("stubborn", ["hang"]);
 
     try {
       await state.run(
         Effect.gen(function* () {
           const tool = (yield* (yield* MCP).snapshot(false))[0]!;
-          pid = (yield* (yield* MCP).status)[0]!.pid!;
+          const pid = (yield* (yield* MCP).status)[0]!.pid!;
           const call = yield* tool.prepare('{"input":"{}"}');
           const fiber = yield* call.execute.pipe(Effect.forkChild);
-          yield* Effect.sleep("50 millis");
+          yield* Effect.gen(function* () {
+            while (
+              !(yield* Effect.promise(state.events)).some((event) => event.method === "tools/call")
+            )
+              yield* Effect.sleep("5 millis");
+          }).pipe(Effect.timeout("2 seconds"));
           yield* Fiber.interrupt(fiber);
+          expect(dead(pid)).toBe(true);
+          expect((yield* (yield* MCP).status)[0]).toMatchObject({
+            state: "unavailable",
+            pid: null,
+            availableTools: [],
+          });
+          expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
         }),
       );
-      expect(dead(pid)).toBe(true);
       expect((await state.events()).filter((event) => event.method === "tools/call")).toHaveLength(
         1,
+      );
+      expect(
+        (await state.events()).filter((event) => event.method === "notifications/cancelled"),
+      ).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  }, 10000);
+
+  test("an idle protocol failure reaps the child and rejects calls from a retained catalog", async () => {
+    const state = await fixture("protocol-idle", ["read"]);
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const mcp = yield* MCP;
+          const tool = (yield* mcp.snapshot(false))[0]!;
+          const call = yield* tool.prepare('{"input":"{}"}');
+          const pid = (yield* mcp.status)[0]!.pid!;
+          process.kill(pid, "SIGUSR1");
+          yield* Effect.gen(function* () {
+            while (!dead(pid)) yield* Effect.sleep("5 millis");
+          }).pipe(Effect.timeout("2 seconds"));
+          expect((yield* mcp.status)[0]).toMatchObject({
+            state: "unavailable",
+            pid: null,
+            availableTools: [],
+          });
+          expect(yield* call.execute.pipe(Effect.flip)).toHaveProperty("reason", "tool-network");
+          expect(yield* mcp.snapshot(false)).toEqual([]);
+        }),
+      );
+      expect((await state.events()).filter((event) => event.method === "tools/call")).toHaveLength(
+        0,
       );
     } finally {
       await state.close();
     }
   });
 });
+
+test.each(["", "false"])(
+  "ordinary selected environment value %j permits discovery",
+  async (value) => {
+    const previous = process.env.POPPET_MCP_SELECTED;
+    process.env.POPPET_MCP_SELECTED = value;
+
+    const state = await fixture("normal", ["read"], [], {
+      SELECTED: { env: "POPPET_MCP_SELECTED" },
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          expect((yield* (yield* MCP).snapshot(false)).map((tool) => tool.toolName)).toEqual([
+            "read",
+          ]);
+        }),
+      );
+      expect((await state.events())[0]!.environment).toMatchObject({ SELECTED: value });
+    } finally {
+      if (previous === undefined) delete process.env.POPPET_MCP_SELECTED;
+      else process.env.POPPET_MCP_SELECTED = previous;
+      await state.close();
+    }
+  },
+);
+
+test.each(["credential-description", "credential-key"])(
+  "rejects selected secrets in %s",
+  async (mode) => {
+    const previous = process.env.POPPET_MCP_SELECTED;
+    process.env.POPPET_MCP_SELECTED = "selected-mcp-secret";
+    const state = await fixture(mode, ["read"], [], { SELECTED: { env: "POPPET_MCP_SELECTED" } });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
+          const status = (yield* (yield* MCP).status)[0]!;
+          expect(status).toMatchObject({ state: "unavailable", pid: null });
+          expect(status.diagnostic).toContain("selected credential");
+          expect(JSON.stringify(status)).not.toContain("selected-mcp-secret");
+        }),
+      );
+    } finally {
+      if (previous === undefined) delete process.env.POPPET_MCP_SELECTED;
+      else process.env.POPPET_MCP_SELECTED = previous;
+      await state.close();
+    }
+  },
+);
 
 test("passes only selected environment and protected credentials and redacts returned values", async () => {
   const state = await fixture();

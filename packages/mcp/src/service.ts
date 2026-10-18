@@ -3,7 +3,13 @@ import { ApiKeyStore } from "@poppet/credentials";
 import type { Tool } from "@poppet/provider";
 import { Console, Context, Data, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
 
-import { compileSchema, decodeArguments, definition, toolResult } from "#src/catalog";
+import {
+  compileSchema,
+  containsSecret,
+  decodeArguments,
+  definition,
+  toolResult,
+} from "#src/catalog";
 import { mcpServers, type MCPServer } from "#src/config";
 import { MCPError } from "#src/errors";
 import { ScopedStdioTransport } from "#src/transport";
@@ -29,6 +35,7 @@ interface Connection {
   state: "idle" | "connected" | "unavailable" | "disabled";
   diagnostic: string | null;
   tools: ReadonlyArray<MCPTool>;
+  closing: Promise<void> | null;
 }
 
 export class MCP extends Context.Service<
@@ -61,6 +68,201 @@ export class MCP extends Context.Service<
 
 const failed = (message: string) => new MCPError({ reason: "tool-network", message });
 
+const startupFailure = (config: MCPServer, cause: unknown) =>
+  failed(
+    `MCP ${config.id}: ${cause instanceof MCPDiagnostic ? cause.message : "Startup or protocol failed. Check the executable and server compatibility."}`,
+  );
+
+const close = (connection: Connection): Promise<void> => {
+  connection.closing ??= (async () => {
+    await connection.client.close().catch(() => {});
+    await connection.transport.close();
+  })();
+
+  return connection.closing;
+};
+
+const invalidate = (connection: Connection, message: string) => {
+  connection.state = "unavailable";
+  connection.diagnostic ??= message;
+
+  return close(connection);
+};
+
+const resolveEnvironment = (config: MCPServer, credentials: ApiKeyStore["Service"]) =>
+  Effect.gen(function* () {
+    const env: Record<string, string> = {};
+
+    for (const [name, reference] of Object.entries(config.environment ?? {})) {
+      const value =
+        "env" in reference
+          ? process.env[reference.env]
+          : yield* credentials.read(reference.credential).pipe(
+              Effect.map((key) => (key === null ? undefined : Redacted.value(key))),
+              Effect.mapError(() => failed(`MCP ${config.id}: cannot read selected credential.`)),
+            );
+
+      if (value === undefined || value.includes("\0") || value.length > 8192)
+        return yield* Effect.fail(
+          failed(
+            `MCP ${config.id}: a selected environment or credential reference is missing or invalid.`,
+          ),
+        );
+      env[name] = value;
+    }
+
+    return env;
+  });
+
+const discoverTools = async (config: MCPServer, client: Client, signal: AbortSignal) => {
+  if (!client.getServerCapabilities()?.tools)
+    throw new MCPDiagnostic({ message: "Server does not advertise tools capability." });
+  const discovered: ServerTool[] = [];
+  const names = new Set<string>();
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  let bytes = 0;
+
+  for (let page = 0; ; page++) {
+    if (page === 8) throw new MCPDiagnostic({ message: "Discovery exceeds 8 pages." });
+
+    // Each cursor depends on the previous page.
+    // eslint-disable-next-line no-await-in-loop
+    const result = await client.request(
+      { method: "tools/list", params: cursor === undefined ? {} : { cursor } },
+      { signal, timeout: 5000 },
+    );
+
+    bytes += Buffer.byteLength(JSON.stringify(result));
+
+    if (bytes > 262144 || discovered.length + result.tools.length > 128)
+      throw new MCPDiagnostic({ message: "Discovery exceeds 128 tools or 256 KiB." });
+
+    for (const tool of result.tools) {
+      if (names.has(tool.name) || tool.name.length > 256)
+        throw new MCPDiagnostic({ message: "Duplicate or oversized tool name." });
+      names.add(tool.name);
+      discovered.push(tool);
+    }
+
+    cursor = result.nextCursor;
+
+    if (cursor === undefined) break;
+
+    if (cursor.length > 1024 || cursors.has(cursor))
+      throw new MCPDiagnostic({ message: "Invalid discovery cursor." });
+    cursors.add(cursor);
+  }
+
+  if (config.tools.some((name) => !names.has(name)))
+    throw new MCPDiagnostic({
+      message: "An allowlisted tool was not discovered. Check tools in config.json.",
+    });
+
+  return discovered.filter((tool) => config.tools.includes(tool.name));
+};
+
+const compile = (input: Schema.JsonObject) => {
+  try {
+    return compileSchema(input);
+  } catch {
+    throw new MCPDiagnostic({
+      message:
+        "Unsupported tool schema. Use draft-07 or 2020-12 JSON Schema, at most 16 KiB, depth 16 and 512 nodes; references, patterns and unknown formats or keywords are unsupported.",
+    });
+  }
+};
+
+const makeTool = (
+  config: MCPServer,
+  tool: ServerTool,
+  connection: Connection,
+  secrets: ReadonlyArray<string>,
+  toolBytes: number,
+): MCPTool => {
+  if ((tool.description?.length ?? 0) > 4096 || tool.execution?.taskSupport === "required")
+    throw new MCPDiagnostic({
+      message: "Tool description exceeds 4096 characters or requires unsupported task execution.",
+    });
+
+  if (
+    secrets.length > 0 &&
+    containsSecret(Schema.decodeUnknownSync(Schema.JsonObject)(tool), secrets)
+  )
+    throw new MCPDiagnostic({ message: "Tool definition contains a selected credential." });
+  const schema = Schema.decodeUnknownSync(Schema.JsonObject)(tool.inputSchema);
+
+  if (schema.type !== "object")
+    throw new MCPDiagnostic({ message: "Tool input must be an object schema." });
+  const validate = compile(schema);
+
+  const output =
+    tool.outputSchema === undefined
+      ? null
+      : compile(Schema.decodeUnknownSync(Schema.JsonObject)(tool.outputSchema));
+
+  const uncertain = () =>
+    new MCPError({
+      reason: "tool-uncertain",
+      message: `MCP ${config.id}/${tool.name}: Connection or protocol failed after dispatch; effects may be unknown. Restart to reconnect. No call was retried.`,
+    });
+
+  const execute = (args: Schema.JsonObject) =>
+    Effect.gen(function* () {
+      if (connection.state !== "connected")
+        return yield* Effect.fail(
+          failed(connection.diagnostic ?? `MCP ${config.id} is unavailable.`),
+        );
+
+      const result = yield* Effect.tryPromise({
+        try: (signal) =>
+          connection.client.request(
+            { method: "tools/call", params: { name: tool.name, arguments: args } },
+            { signal, timeout: 10000 },
+          ),
+        catch: uncertain,
+      });
+
+      return yield* Effect.try({
+        try: () => {
+          if (!result.isError && output !== null && !output(result.structuredContent))
+            throw new Error("Invalid structured output.");
+
+          return toolResult(result, toolBytes, secrets);
+        },
+        catch: (cause) => (cause instanceof MCPError ? cause : uncertain()),
+      });
+    }).pipe(
+      Effect.tapError((error) =>
+        error.reason === "tool-uncertain"
+          ? Effect.promise(() => invalidate(connection, error.message))
+          : Effect.void,
+      ),
+      Effect.onInterrupt(() => Effect.promise(() => invalidate(connection, uncertain().message))),
+    );
+
+  return {
+    serverId: config.id,
+    toolName: tool.name,
+    definition: definition(config.id, tool.name, tool.description ?? "", schema),
+    prepare: (argumentsJSON) =>
+      Effect.try({
+        try: () => {
+          const args = decodeArguments(argumentsJSON);
+
+          if (!validate(args)) throw new Error("Arguments do not match schema.");
+
+          return { execute: execute(args) };
+        },
+        catch: () =>
+          new MCPError({
+            reason: "tool-arguments",
+            message: `MCP ${config.id}/${tool.name}: input must contain a JSON object matching the original input schema.`,
+          }),
+      }),
+  };
+};
+
 /** Lazily starts owner-configured processes; the layer's scope owns every client. */
 export const makeMCPLive = (toolBytes: number) =>
   Layer.effect(
@@ -71,15 +273,8 @@ export const makeMCPLive = (toolBytes: number) =>
       const lock = yield* Semaphore.make(1);
       const connections = new Map<string, Connection>();
 
-      const close = async (connection: Connection) => {
-        await connection.client.close().catch(() => {});
-        await connection.transport.close();
-      };
-
       yield* Effect.addFinalizer(() =>
-        Effect.promise(async () => {
-          await Promise.all([...connections.values()].map(close));
-        }),
+        Effect.promise(() => Promise.all([...connections.values()].map(close))),
       );
 
       const connect = (config: MCPServer) =>
@@ -109,11 +304,15 @@ export const makeMCPLive = (toolBytes: number) =>
             state: config.enabled ? "idle" : "disabled",
             diagnostic: null,
             tools: [],
+            closing: null,
           };
 
           const disconnected = () => {
-            connection.state = "unavailable";
-            connection.diagnostic ??= `MCP ${config.id}: disconnected or invalid protocol. Restart to reconnect; dispatched calls may have unknown effects.`;
+            // The owner finalizer awaits this same teardown and reports any cleanup failure.
+            void invalidate(
+              connection,
+              `MCP ${config.id}: disconnected or invalid protocol. Restart to reconnect; dispatched calls may have unknown effects.`,
+            ).catch(() => {});
           };
 
           // The SDK exposes callback properties rather than EventTarget listeners.
@@ -126,211 +325,53 @@ export const makeMCPLive = (toolBytes: number) =>
           if (!config.enabled) return connection;
 
           const startup = Effect.gen(function* () {
-            for (const [name, reference] of Object.entries(config.environment ?? {})) {
-              const value =
-                "env" in reference
-                  ? process.env[reference.env]
-                  : yield* credentials.read(reference.credential).pipe(
-                      Effect.map((key) => (key === null ? undefined : Redacted.value(key))),
-                      Effect.mapError(() =>
-                        failed(`MCP ${config.id}: cannot read selected credential.`),
-                      ),
-                    );
+            Object.assign(env, yield* resolveEnvironment(config, credentials));
+            const secrets = Object.values(env).filter((value) => value.length > 0);
 
-              if (value === undefined || value.includes("\0") || value.length > 8192)
-                return yield* Effect.fail(
-                  failed(
-                    `MCP ${config.id}: a selected environment or credential reference is missing or invalid.`,
-                  ),
-                );
-              env[name] = value;
-            }
-
-            return yield* Effect.tryPromise({
+            const discovered = yield* Effect.tryPromise({
               try: async (signal) => {
                 await client.connect(transport, { signal, timeout: 5000 });
 
-                if (!client.getServerCapabilities()?.tools)
-                  throw new MCPDiagnostic({
-                    message: "Server does not advertise tools capability.",
-                  });
-                const discovered: ServerTool[] = [];
-                const names = new Set<string>();
-                const cursors = new Set<string>();
-                let cursor: string | undefined;
-                let bytes = 0;
-
-                for (let page = 0; ; page++) {
-                  if (page === 8)
-                    throw new MCPDiagnostic({ message: "Discovery exceeds 8 pages." });
-
-                  // Each cursor depends on the previous page.
-                  // eslint-disable-next-line no-await-in-loop
-                  const result = await client.request(
-                    { method: "tools/list", params: cursor === undefined ? {} : { cursor } },
-                    { signal, timeout: 5000 },
-                  );
-
-                  bytes += Buffer.byteLength(JSON.stringify(result));
-
-                  if (bytes > 262144 || discovered.length + result.tools.length > 128)
-                    throw new MCPDiagnostic({ message: "Discovery exceeds 128 tools or 256 KiB." });
-
-                  for (const tool of result.tools) {
-                    if (names.has(tool.name) || tool.name.length > 256)
-                      throw new MCPDiagnostic({ message: "Duplicate or oversized tool name." });
-                    names.add(tool.name);
-                    discovered.push(tool);
-                  }
-
-                  cursor = result.nextCursor;
-
-                  if (cursor === undefined) break;
-
-                  if (cursor.length > 1024 || cursors.has(cursor))
-                    throw new MCPDiagnostic({ message: "Invalid discovery cursor." });
-                  cursors.add(cursor);
-                }
-
-                const tools: MCPTool[] = [];
-
-                for (const tool of discovered) {
-                  if (!config.tools.includes(tool.name)) continue;
-
-                  if (
-                    (tool.description?.length ?? 0) > 4096 ||
-                    tool.execution?.taskSupport === "required"
-                  )
-                    throw new MCPDiagnostic({
-                      message:
-                        "Tool description exceeds 4096 characters or requires unsupported task execution.",
-                    });
-
-                  if (
-                    Object.values(env).some((value) =>
-                      JSON.stringify(tool).includes(JSON.stringify(value).slice(1, -1)),
-                    )
-                  )
-                    throw new MCPDiagnostic({
-                      message: "Tool definition contains a selected credential.",
-                    });
-                  const schema = Schema.decodeUnknownSync(Schema.JsonObject)(tool.inputSchema);
-
-                  if (schema.type !== "object")
-                    throw new MCPDiagnostic({ message: "Tool input must be an object schema." });
-
-                  const compile = (input: Schema.JsonObject) => {
-                    try {
-                      return compileSchema(input);
-                    } catch {
-                      throw new MCPDiagnostic({
-                        message:
-                          "Unsupported tool schema. Use draft-07 or 2020-12 JSON Schema, at most 16 KiB, depth 16 and 512 nodes; references, patterns and unknown formats or keywords are unsupported.",
-                      });
-                    }
-                  };
-
-                  const validate = compile(schema);
-
-                  const output =
-                    tool.outputSchema === undefined
-                      ? null
-                      : compile(Schema.decodeUnknownSync(Schema.JsonObject)(tool.outputSchema));
-
-                  tools.push({
-                    serverId: config.id,
-                    toolName: tool.name,
-                    definition: definition(config.id, tool.name, tool.description ?? "", schema),
-                    prepare: (argumentsJSON) =>
-                      Effect.try({
-                        try: () => {
-                          const args = decodeArguments(argumentsJSON);
-
-                          if (!validate(args)) throw new Error("Arguments do not match schema.");
-
-                          return {
-                            execute: Effect.tryPromise({
-                              try: async (callSignal) => {
-                                try {
-                                  const result = await client.request(
-                                    {
-                                      method: "tools/call",
-                                      params: { name: tool.name, arguments: args },
-                                    },
-                                    { signal: callSignal, timeout: 10000 },
-                                  );
-
-                                  if (
-                                    !result.isError &&
-                                    output !== null &&
-                                    !output(result.structuredContent)
-                                  )
-                                    throw new Error("Invalid structured output.");
-
-                                  return toolResult(result, toolBytes, Object.values(env));
-                                } catch (cause) {
-                                  if (cause instanceof MCPError) throw cause;
-                                  connection.state = "unavailable";
-                                  connection.diagnostic =
-                                    "Connection or protocol failed after dispatch; effects may be unknown. Restart to reconnect. No call was retried.";
-                                  await close(connection);
-                                  throw new MCPError({
-                                    reason: "tool-uncertain",
-                                    message: `MCP ${config.id}/${tool.name}: ${connection.diagnostic}`,
-                                  });
-                                }
-                              },
-                              catch: (cause) =>
-                                cause instanceof MCPError
-                                  ? cause
-                                  : new MCPError({
-                                      reason: "tool-uncertain",
-                                      message: `MCP ${config.id}/${tool.name}: effects may be unknown. The call was not retried.`,
-                                    }),
-                            }),
-                          };
-                        },
-                        catch: () =>
-                          new MCPError({
-                            reason: "tool-arguments",
-                            message: `MCP ${config.id}/${tool.name}: input must contain a JSON object matching the original input schema.`,
-                          }),
-                      }),
-                  });
-                }
-
-                const missing = config.tools.filter((name) => !names.has(name));
-
-                if (missing.length > 0)
-                  throw new MCPDiagnostic({
-                    message: "An allowlisted tool was not discovered. Check tools in config.json.",
-                  });
-
-                return tools;
+                return discoverTools(config, client, signal);
               },
-              catch: (cause) =>
-                failed(
-                  `MCP ${config.id}: ${cause instanceof MCPDiagnostic ? cause.message : "Startup or protocol failed. Check the executable and server compatibility."}`,
-                ),
+              catch: (cause) => startupFailure(config, cause),
             });
+
+            const tools = yield* Effect.try({
+              try: () =>
+                discovered.map((tool) => makeTool(config, tool, connection, secrets, toolBytes)),
+              catch: (cause) => startupFailure(config, cause),
+            });
+
+            // A protocol callback can fail the connection before discovery's Promise resumes.
+            if (connection.state === "unavailable")
+              return yield* Effect.fail(
+                failed(connection.diagnostic ?? `MCP ${config.id}: startup failed.`),
+              );
+            connection.tools = tools;
+            connection.state = "connected";
           }).pipe(Effect.timeout("8 seconds"));
 
           yield* startup.pipe(
-            Effect.tap((tools) =>
-              Effect.sync(() => {
-                connection.tools = tools;
-                connection.state = "connected";
-              }),
-            ),
             Effect.catch((error) =>
               Effect.gen(function* () {
-                connection.state = "unavailable";
-                connection.diagnostic = `${error instanceof MCPError ? error.message : `MCP ${config.id}: startup timed out.`} Restart to reconnect.`;
-                yield* Effect.promise(() => close(connection));
+                yield* Effect.promise(() =>
+                  invalidate(
+                    connection,
+                    `${error instanceof MCPError ? error.message : `MCP ${config.id}: startup timed out.`} Restart to reconnect.`,
+                  ),
+                );
                 yield* Console.error(connection.diagnostic);
               }),
             ),
-            Effect.onInterrupt(() => Effect.promise(() => close(connection))),
+            Effect.onInterrupt(() =>
+              Effect.promise(() =>
+                invalidate(
+                  connection,
+                  `MCP ${config.id}: startup interrupted. Restart to reconnect.`,
+                ),
+              ),
+            ),
           );
 
           return connection;

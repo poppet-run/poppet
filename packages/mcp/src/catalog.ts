@@ -21,26 +21,64 @@ const invalid = () =>
     "Unsupported MCP schema. Use a JSON object schema of at most 16 KiB, depth 16 and 512 nodes, without references or regular expressions.",
   );
 
+const schemaMaps = new Set([
+  "properties",
+  "$defs",
+  "definitions",
+  "dependentSchemas",
+  "dependencies",
+]);
+
+const schemaValues = new Set([
+  "additionalProperties",
+  "unevaluatedProperties",
+  "propertyNames",
+  "items",
+  "additionalItems",
+  "unevaluatedItems",
+  "prefixItems",
+  "contains",
+  "allOf",
+  "anyOf",
+  "oneOf",
+  "not",
+  "if",
+  "then",
+  "else",
+  "contentSchema",
+]);
+
 /** Reject costly or recursive schemas before compilation, without discarding validation keywords. */
 export const compileSchema = (input: Schema.JsonObject) => {
   if (Buffer.byteLength(JSON.stringify(input)) > 16384) throw invalid();
   let nodes = 0;
 
-  const visit = (value: Schema.Json, depth: number): void => {
+  const visit = (value: Schema.Json, depth: number, position: "schema" | "map" | "data"): void => {
     if (++nodes > 512 || depth > 16) throw invalid();
 
-    if (Schema.is(Schema.Array(Schema.Json))(value)) {
-      for (const item of value) visit(item, depth + 1);
-    } else if (Schema.is(Schema.JsonObject)(value)) {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1, position);
+    } else if (Schema.is(Schema.ObjectKeyword)(value)) {
       for (const [key, item] of Object.entries(value)) {
-        if (["$ref", "$dynamicRef", "$recursiveRef", "pattern", "patternProperties"].includes(key))
+        if (
+          position === "schema" &&
+          ["$ref", "$dynamicRef", "$recursiveRef", "pattern", "patternProperties"].includes(key)
+        )
           throw invalid();
-        visit(item, depth + 1);
+        let child: "schema" | "map" | "data" = "data";
+
+        if (position === "map") child = "schema";
+        else if (position === "schema") {
+          if (schemaMaps.has(key)) child = "map";
+          else if (schemaValues.has(key)) child = "schema";
+        }
+
+        visit(item, depth + 1, child);
       }
     }
   };
 
-  visit(input, 0);
+  visit(input, 0, "schema");
   const options = { strict: true, allErrors: false, validateFormats: true, ownProperties: true };
 
   const ajv =
@@ -79,6 +117,21 @@ export const decodeArguments = (json: string) => {
   return Schema.decodeUnknownSync(Schema.fromJsonString(Schema.JsonObject))(wrapper.input);
 };
 
+/** Check JSON strings and keys, so booleans and JSON syntax cannot match credentials. */
+export const containsSecret = (value: Schema.Json, secrets: ReadonlyArray<string>): boolean => {
+  if (Schema.is(Schema.String)(value)) return secrets.some((secret) => value.includes(secret));
+
+  if (Array.isArray(value)) return value.some((item) => containsSecret(item, secrets));
+
+  if (Schema.is(Schema.ObjectKeyword)(value))
+    return Object.entries(value).some(
+      ([key, item]) =>
+        secrets.some((secret) => key.includes(secret)) || containsSecret(item, secrets),
+    );
+
+  return false;
+};
+
 export const toolResult = (
   result: CallToolResult,
   limit: number,
@@ -110,9 +163,9 @@ export const toolResult = (
   const redact = (value: Schema.Json): Schema.Json => {
     if (Schema.is(Schema.String)(value)) return redactText(value);
 
-    if (Schema.is(Schema.Array(Schema.Json))(value)) return value.map(redact);
+    if (Array.isArray(value)) return value.map(redact);
 
-    if (Schema.is(Schema.JsonObject)(value))
+    if (Schema.is(Schema.ObjectKeyword)(value))
       return Object.fromEntries(
         Object.entries(value).map(([key, item]) => [redactText(key), redact(item)]),
       );
@@ -127,8 +180,8 @@ export const toolResult = (
         "The MCP tool reported an error. Its operation did not complete successfully; inspect the server before trying again.",
     });
 
-  let content = result.content.flatMap((part) =>
-    part.type === "text" ? [Schema.decodeUnknownSync(Schema.String)(redact(part.text))] : [],
+  const content = result.content.flatMap((part) =>
+    part.type === "text" ? [redactText(part.text)] : [],
   );
 
   let structuredContent =
@@ -137,44 +190,59 @@ export const toolResult = (
       : redact(Schema.decodeUnknownSync(Schema.Json)(result.structuredContent));
 
   let omittedStructuredContent = false;
-  const omittedContent = result.content.length - content.length;
-  let truncated = omittedContent > 0;
+  let truncated = result.content.length > content.length;
 
-  const serialize = () =>
+  const serialize = (texts: ReadonlyArray<string>) =>
     JSON.stringify({
-      content,
+      content: texts,
       structuredContent,
-      omittedContent,
+      omittedContent: result.content.length - texts.length,
       omittedStructuredContent,
       truncated,
       redacted,
     });
 
-  let output = serialize();
+  let output = serialize(content);
 
-  while (Buffer.byteLength(output) > limit) {
-    truncated = true;
+  if (Buffer.byteLength(output) <= limit) return output;
+  truncated = true;
 
-    if (structuredContent !== null) {
-      structuredContent = null;
-      omittedStructuredContent = true;
-    } else {
-      const index = content.findIndex((text) => text.length > 0);
+  if (structuredContent !== null) {
+    structuredContent = null;
+    omittedStructuredContent = true;
+    output = serialize(content);
 
-      if (index < 0) {
-        content = [];
+    if (Buffer.byteLength(output) <= limit) return output;
+  }
 
-        if (Buffer.byteLength(serialize()) > limit)
-          throw new Error("MCP result budget is too small.");
-      } else {
-        let text = content[index]!.slice(0, Math.floor(content[index]!.length / 2));
+  if (Buffer.byteLength(serialize([])) > limit) throw new Error("MCP result budget is too small.");
+  let low = 0;
+  let high = content.length;
 
-        if (/[\uD800-\uDBFF]$/.test(text)) text = text.slice(0, -1);
-        content[index] = text;
-      }
-    }
+  // Search prefixes instead of repeatedly shrinking and serializing every block.
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
 
-    output = serialize();
+    if (Buffer.byteLength(serialize(content.slice(0, middle))) <= limit) low = middle;
+    else high = middle - 1;
+  }
+
+  const retained = content.slice(0, low);
+  const next = content[low] ?? "";
+  output = serialize(retained);
+  low = 0;
+  high = next.length;
+
+  // Spend the remaining bytes on the next block without splitting a surrogate pair.
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    const text = next.slice(0, middle).replace(/[\uD800-\uDBFF]$/, "");
+    const candidate = serialize(text.length === 0 ? retained : [...retained, text]);
+
+    if (Buffer.byteLength(candidate) <= limit) {
+      low = middle;
+      output = candidate;
+    } else high = middle - 1;
   }
 
   return output;

@@ -49,6 +49,36 @@ test("validates 2020-12 without coercion, defaults, or silently ignoring unsuppo
   expect(() => compileSchema(nested)).toThrow("Unsupported MCP schema");
 });
 
+test("distinguishes schema keywords from property names and literal data", () => {
+  const literal = { pattern: "a", $ref: "literal", patternProperties: {} };
+
+  const validate = compileSchema({
+    type: "object",
+    properties: {
+      pattern: { type: "string" },
+      $ref: { type: "string" },
+      patternProperties: { type: "object", const: literal, default: literal, examples: [literal] },
+    },
+    additionalProperties: false,
+  });
+
+  expect(validate({ pattern: "text", $ref: "value", patternProperties: literal })).toBe(true);
+  expect(validate({ pattern: 1 })).toBe(false);
+  expect(() =>
+    compileSchema({
+      type: "object",
+      properties: { values: { type: "array", items: { $ref: "#/definitions/value" } } },
+      definitions: { value: { type: "string" } },
+    }),
+  ).toThrow("Unsupported MCP schema");
+  expect(() =>
+    compileSchema({
+      type: "object",
+      $defs: { value: { anyOf: [{ type: "string", pattern: "a" }] } },
+    }),
+  ).toThrow("Unsupported MCP schema");
+});
+
 test("omits oversized structured content and explicitly marks valid bounded serialization", () => {
   const output = toolResult(
     {
@@ -66,6 +96,26 @@ test("omits oversized structured content and explicitly marks valid bounded seri
   });
   expect(output).not.toContain("�");
   expect(output).not.toMatch(/\\ud[89ab][0-9a-f]{2}/i);
+});
+
+test("retains a useful prefix of many text blocks and counts dropped blocks", () => {
+  const content = Array.from({ length: 8000 }, (_, i) => ({
+    type: "text" as const,
+    text: String(i),
+  }));
+
+  const output = toolResult({ content }, 1024);
+  const result = JSON.parse(output);
+
+  expect(Buffer.byteLength(JSON.stringify({ content }))).toBeLessThan(262144);
+  expect(Buffer.byteLength(output)).toBeLessThanOrEqual(1024);
+  expect(result.truncated).toBe(true);
+  expect(result.content.length).toBeGreaterThan(100);
+  expect(result.content.slice(0, -1)).toEqual(
+    content.slice(0, result.content.length - 1).map((part) => part.text),
+  );
+  expect(content[result.content.length - 1]!.text.startsWith(result.content.at(-1))).toBe(true);
+  expect(result.omittedContent).toBe(content.length - result.content.length);
 });
 
 test("redacts secret values and keys in one pass without expanding earlier redaction markers", () => {
