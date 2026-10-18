@@ -356,12 +356,15 @@ describe("chat task operations", () => {
           const action: ChatTaskAction = { action: "show", id: ids[0]! };
           const { context } = yield* recorded(action, "show", first.run);
           const output = yield* execute(action, context);
+          const result = JSON.parse(output);
           expect(Buffer.byteLength(output)).toBeLessThanOrEqual(1024);
-          expect(JSON.parse(output)).toMatchObject({
+          expect(result).toMatchObject({
             truncated: true,
             task: { id: ids[0], provider: "test-provider" },
           });
-          expect(JSON.parse(output).task.prompt).not.toContain("�");
+          expect(result.task.prompt.length).toBeGreaterThan(0);
+          expect(input.prompt.startsWith(result.task.prompt)).toBe(true);
+          expect(result.task.prompt.isWellFormed()).toBe(true);
         }),
       );
     } finally {

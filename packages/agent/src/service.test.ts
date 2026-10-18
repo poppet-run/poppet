@@ -673,6 +673,19 @@ describe.concurrent("persisted agent", () => {
       reason: "output-limit",
     },
     {
+      name: "oversize continuation",
+      events: [
+        {
+          type: "completed",
+          response: {
+            ...response(),
+            continuation: { ...response().continuation, data: { opaque: "x".repeat(1048576) } },
+          },
+        },
+      ],
+      reason: "output-limit",
+    },
+    {
       name: "oversize reasoning",
       events: [{ type: "reasoning-delta", text: "x".repeat(131073) }],
       reason: "output-limit",

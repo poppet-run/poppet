@@ -25,10 +25,11 @@ describe.concurrent("ChatGPT token lifecycle", () => {
         }),
       );
 
+      const grants = harness.grants.filter((grant) => grant.get("grant_type") === "refresh_token");
+
       expect(tokens.map(Redacted.value)).toEqual(["test-access-2", "test-access-2"]);
-      expect(
-        harness.grants.filter((grant) => grant.get("grant_type") === "refresh_token"),
-      ).toHaveLength(1);
+      expect(grants).toHaveLength(1);
+      expect(grants[0]?.get("refresh_token")).toBe("test-refresh-1");
       expect(
         Redacted.value(
           (await harness.saved()).credentials?.refreshToken ?? Redacted.make("missing"),

@@ -93,13 +93,15 @@ describe("web search results", () => {
   });
 
   test("fits Unicode text within the serialized budget and omits URLs that cannot fit", () => {
+    const title = "界🙂".repeat(2000);
+
     const result = webSearchResult(
       {
         type: "search",
         web: {
           results: [
             {
-              title: "界🙂".repeat(2000),
+              title,
               url: "https://example.com/",
               description: "🙂".repeat(4000),
             },
@@ -112,8 +114,10 @@ describe("web search results", () => {
 
     expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(1024);
     expect(result.results).toHaveLength(1);
-    expect(result.results[0]?.title).not.toContain("�");
-    expect(result.results[0]?.snippet).not.toContain("�");
+    expect(result.results[0]!.title.length).toBeGreaterThan(0);
+    expect(title.startsWith(result.results[0]!.title)).toBe(true);
+    expect(result.results[0]!.title.isWellFormed()).toBe(true);
+    expect(result.results[0]!.snippet.isWellFormed()).toBe(true);
     expect(result.truncated).toBe(true);
   });
 });
