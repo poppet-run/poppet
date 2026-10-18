@@ -1521,6 +1521,40 @@ describe("chat CLI", () => {
     }
   });
 
+  test("a quiet worker chat survives Bun's default socket idle timeout", async () => {
+    const chat = await fixture();
+    const worker = await chat.startWorker();
+    chat.state.hold = true;
+    const client = Effect.runFork(chat.program(["chat", "new", "Wait for the answer"]));
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          while (chat.requests.length === 0 || !chat.chunks.includes("An"))
+            yield* Effect.sleep("5 millis");
+        }).pipe(Effect.timeout("5 seconds")),
+      );
+      // This must use real time: TestClock cannot advance Bun's socket timeout.
+      await Effect.runPromise(Effect.sleep("13 seconds"));
+      chat.state.hold = false;
+      await chat.clock.runPromise(TestClock.adjust("5 millis"));
+      await Effect.runPromise(Fiber.join(client).pipe(Effect.timeout("3 seconds")));
+      expect(chat.chunks.join("")).toBe("Answer\n");
+      expect(chat.requests).toHaveLength(1);
+
+      const session = chat.errors.find((line) => line.startsWith("Session: "))!.slice(9);
+      chat.chunks.length = 0;
+      await chat.invoke(["chat", "show", session]);
+      expect(JSON.parse(chat.chunks.join(""))).toMatchObject({
+        runs: [{ status: "completed" }],
+      });
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(client));
+      await Effect.runPromise(Fiber.interrupt(worker));
+      await chat.close();
+    }
+  }, 25000);
+
   test("stopping the worker interrupts active and queued chats and leaves sessions inspectable locally", async () => {
     const chat = await fixture();
     const worker = await chat.startWorker();

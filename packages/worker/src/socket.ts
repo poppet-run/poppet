@@ -104,7 +104,7 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
             await unlink(path);
           }
 
-          const server = Bun.serve({
+          const options: Bun.Serve.Options<undefined> = {
             unix: path,
             // Chat budgets allow 1 MiB of serialized context. Leave room for command metadata.
             maxRequestBodySize: 2 * 1024 * 1024,
@@ -147,7 +147,11 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
                     ),
               );
             },
-          });
+          };
+
+          // Bun honors this on Unix sockets despite its types; per-request timeout is inert (#43816).
+          Object.assign(options, { idleTimeout: 0 });
+          const server = Bun.serve(options);
 
           try {
             await chmod(path, 0o600);
