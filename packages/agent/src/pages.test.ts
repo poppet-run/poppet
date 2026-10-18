@@ -296,17 +296,19 @@ log(&quot;done&quot;)
 
     expect(short.text).toBe(plain.trim());
 
+    const content = '🌳"\\'.repeat(5000);
+
     const output = await Effect.runPromise(
-      fetch(
-        "https://example.com",
-        { request: () => Effect.succeed(response('🌳"\\'.repeat(5000))) },
-        1024,
-      ),
+      fetch("https://example.com", { request: () => Effect.succeed(response(content)) }, 1024),
     );
 
+    const result = JSON.parse(output);
+
     expect(encode(output).byteLength).toBeLessThanOrEqual(1024);
-    expect(JSON.parse(output)).toMatchObject({ truncated: true });
-    expect(JSON.parse(output).text).not.toMatch(/[\uD800-\uDBFF]$/);
+    expect(result).toMatchObject({ truncated: true });
+    expect(result.text.length).toBeGreaterThan(0);
+    expect(content.startsWith(result.text)).toBe(true);
+    expect(result.text.isWellFormed()).toBe(true);
   });
 
   test.each([

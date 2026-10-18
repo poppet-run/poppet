@@ -343,6 +343,7 @@ describe("conversation store", () => {
                 expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(maxBytes);
                 expect(page.messages.length).toBeGreaterThan(0);
                 expect(page.messages.length).toBeLessThanOrEqual(10);
+                expect(page.messages.some((message) => message.text.length > 0)).toBe(true);
 
                 for (const message of page.messages) {
                   const original = history.find((entry) => entry.id === message.messageId)!.message;

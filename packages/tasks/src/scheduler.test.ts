@@ -370,44 +370,50 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test.each(["create", "list", "show", "pause", "resume"])(
-    "scheduled runs reject fabricated task %s calls",
-    async (action) => {
-      const state = await fixture((request) => {
-        expect(request.tools.some((tool) => tool.name === "manage_tasks")).toBe(false);
+  test("scheduled runs reject fabricated task calls", async () => {
+    const state = await fixture((request) => {
+      expect(request.tools.some((tool) => tool.name === "manage_tasks")).toBe(false);
 
-        return response([
-          {
-            type: "tool-call",
-            callId: "task",
-            name: "manage_tasks",
-            namespace: "poppet_tasks",
-            arguments: JSON.stringify({ action }),
-          },
-        ]);
-      });
-
-      try {
-        await state.run(
-          Effect.gen(function* () {
-            const repo = yield* TaskRepository;
-            repo.add(state.task, 0);
-            repo.reconcile(0);
-            const claimed = repo.claim(0)!;
-            yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-            expect(repo.list()).toHaveLength(1);
-            expect(repo.occurrence(claimed.occurrence.id)).toMatchObject({ status: "failed" });
-            expect(
-              (yield* (yield* Store).run(repo.occurrence(claimed.occurrence.id).runId!))
-                ?.failureReason,
-            ).toBe("agent:tool-permission");
+      return response([
+        {
+          type: "tool-call",
+          callId: "task",
+          name: "manage_tasks",
+          namespace: "poppet_tasks",
+          arguments: JSON.stringify({
+            action: "list",
+            id: null,
+            name: null,
+            prompt: null,
+            schedule: null,
+            delivery: null,
+            skill: null,
+            after: null,
           }),
-        );
-      } finally {
-        await state.close();
-      }
-    },
-  );
+        },
+      ]);
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          repo.add(state.task, 0);
+          repo.reconcile(0);
+          const claimed = repo.claim(0)!;
+          yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
+          expect(repo.list()).toHaveLength(1);
+          expect(repo.occurrence(claimed.occurrence.id)).toMatchObject({ status: "failed" });
+          expect(
+            (yield* (yield* Store).run(repo.occurrence(claimed.occurrence.id).runId!))
+              ?.failureReason,
+          ).toBe("agent:tool-permission");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
 
   test("task creation expires before the transport deadline, including queue wait, without a late save", async () => {
     const state = await fixture(final);

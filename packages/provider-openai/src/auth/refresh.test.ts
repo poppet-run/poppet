@@ -38,6 +38,23 @@ describe.concurrent("ChatGPT token lifecycle", () => {
       await harness.close();
     }
   });
+  test("rejects renewed tokens for another account without replacing saved credentials", async () => {
+    const harness = await createHarness();
+
+    try {
+      harness.controls.expireAccess = true;
+      await harness.run(login);
+      const path = join(harness.directory, "auth/connection.json");
+      const before = await readFile(path, "utf8");
+      harness.controls.subject = "another-account";
+
+      await expect(harness.run(verify)).rejects.toMatchObject({ reason: "identity" });
+      expect(await readFile(path, "utf8")).toBe(before);
+      expect(harness.requests).toHaveLength(0);
+    } finally {
+      await harness.close();
+    }
+  });
   test("preserves tokens on temporary refresh failure and clears terminally unusable tokens", async () => {
     const harness = await createHarness();
 
