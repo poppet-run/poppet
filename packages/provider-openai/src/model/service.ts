@@ -1,6 +1,7 @@
 import {
   Provider,
   invalidRequest,
+  measureTiming,
   verifyModel,
   type ModelDescription,
   type ModelOperations as SelectedModelOperations,
@@ -45,27 +46,31 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
   Effect.gen(function* () {
     const auth = yield* ChatGPTAuth;
 
-    const models = Effect.gen(function* () {
-      const token = yield* auth.accessToken;
+    const models = measureTiming(
+      "model-catalog",
+      Effect.gen(function* () {
+        const token = yield* auth.accessToken;
 
-      const body = yield* Effect.tryPromise({
-        try: (signal) => clientFor(token, http).get("/models", { signal }),
-        catch: modelFailure,
-      });
+        const body = yield* Effect.tryPromise({
+          try: (signal) => clientFor(token, http).get("/models", { signal }),
+          catch: modelFailure,
+        });
 
-      const catalog = yield* Schema.decodeUnknownEffect(ModelCatalog)(body).pipe(
-        Effect.mapError(
-          () =>
-            new ConnectionError({
-              reason: "unsupported",
-              message: "OpenAI returned an unsupported model catalog.",
-            }),
-        ),
-      );
+        const catalog = yield* Schema.decodeUnknownEffect(ModelCatalog)(body).pipe(
+          Effect.mapError(
+            () =>
+              new ConnectionError({
+                reason: "unsupported",
+                message: "OpenAI returned an unsupported model catalog.",
+              }),
+          ),
+        );
 
-      // Offer only models the account catalog marks as visible to the user.
-      return catalog.models.filter((model) => model.visibility === "list");
-    });
+        // Offer only models the account catalog marks as visible to the user.
+        return catalog.models.filter((model) => model.visibility === "list");
+      }),
+      { cached: false },
+    );
 
     const selectedModel = (entry: AvailableModel) =>
       responsesModel(

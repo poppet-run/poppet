@@ -231,6 +231,7 @@ describe("configuration sources", () => {
     ["data directory in file", '{"dataDirectory":"elsewhere"}'],
     ["wrong value type", '{"chat":{"outputTokens":"1024"}}'],
     ["wrong reasoning flag type", '{"chat":{"logReasoning":"true"}}'],
+    ["wrong timing flag type", '{"chat":{"logTimings":"true"}}'],
     ["wrong search flag type", '{"webSearch":"true"}'],
     ["search credential in file", '{"braveSearchApiKey":"must-not-appear"}'],
     ["empty setting", '{"model":""}'],

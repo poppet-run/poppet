@@ -1064,6 +1064,7 @@ describe("CLI", () => {
 
     const chat = {
       logReasoning: true,
+      logTimings: true,
       contextBytes: 32768,
       historyTurns: 10,
       outputTokens: 4096,

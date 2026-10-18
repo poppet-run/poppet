@@ -47,7 +47,11 @@ const description: ModelOperations["description"] = {
   },
 };
 
-const fixture = async (resolve: ModelResolver["Service"]["resolve"], logReasoning = false) => {
+const fixture = async (
+  resolve: ModelResolver["Service"]["resolve"],
+  logReasoning = false,
+  logTimings = false,
+) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-agent-"));
 
   const store = StoreLive.pipe(
@@ -76,7 +80,7 @@ const fixture = async (resolve: ModelResolver["Service"]["resolve"], logReasonin
             ),
         }),
         Layer.succeed(ModelResolver, { resolve }),
-        Layer.succeed(ChatSettings, { ...defaultPolicy, logReasoning }),
+        Layer.succeed(ChatSettings, { ...defaultPolicy, logReasoning, logTimings }),
       ),
     ),
   );
@@ -92,6 +96,180 @@ const failure = <A, E, R>(program: Effect.Effect<A, E, R>) =>
   program.pipe(Effect.match({ onSuccess: () => null, onFailure: (error) => error }));
 
 describe.concurrent("persisted agent", () => {
+  test.each([false, true])(
+    "records opt-in timings without counting later tool turns twice, enabled=%s",
+    async (enabled) => {
+      const logs: string[] = [];
+
+      const model: ModelOperations = {
+        description,
+        stream: (request) =>
+          Stream.unwrap(
+            Effect.gen(function* () {
+              const naming = request.settings.toolChoice === "none";
+              const toolResult = request.messages.some((message) => message.role === "tool");
+              yield* TestClock.adjust(
+                naming ? "50 millis" : toolResult ? "75 millis" : "25 millis",
+              );
+
+              if (!naming && !toolResult)
+                return Stream.make({
+                  type: "completed" as const,
+                  response: {
+                    ...response(),
+                    output: [
+                      {
+                        type: "tool-call" as const,
+                        callId: "search",
+                        name: "search_sessions",
+                        namespace: "poppet_history",
+                        arguments: '{"query":"history"}',
+                      },
+                    ],
+                    finishReason: "tool-calls" as const,
+                  },
+                });
+
+              return Stream.make<ModelEvent[]>(
+                { type: "text-delta", text: "Hel" },
+                { type: "text-delta", text: "lo" },
+                { type: "completed", response: response() },
+              );
+            }),
+          ),
+      };
+
+      const state = await fixture(
+        () => TestClock.adjust("25 millis").pipe(Effect.as(model)),
+        false,
+        enabled,
+      );
+
+      const timingLog = (line: string) =>
+        Effect.sync(() => {
+          logs.push(line);
+        });
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            const agent = yield* Agent;
+
+            const events = yield* Stream.runCollect(
+              agent.send(session.id, "Private prompt", { timingLog }),
+            );
+
+            expect(
+              events
+                .filter((event) => event.type === "text-delta")
+                .map((event) => event.text)
+                .join(""),
+            ).toBe("Hello");
+            yield* agent.nameSession(session.id, timingLog);
+
+            const timings: { stage: string; durationMs: number; outcome?: string }[] = logs.map(
+              (line) => JSON.parse(line.slice(line.indexOf(" {") + 1)),
+            );
+
+            expect(
+              timings.flatMap((timing) =>
+                timing.stage === "model-turn" ? [timing.durationMs] : [],
+              ),
+            ).toEqual(enabled ? [25, 75] : []);
+
+            if (enabled) {
+              expect(timings).toContainEqual({ stage: "first-text", durationMs: 125 });
+              expect(timings).toContainEqual({
+                stage: "run",
+                durationMs: 125,
+                outcome: "completed",
+              });
+              expect(timings).toContainEqual({
+                stage: "session-title",
+                durationMs: 75,
+                outcome: "completed",
+              });
+              expect(timings.some((timing) => timing.stage === "tool")).toBe(true);
+              expect(logs.every((line) => line.includes(`session=${session.id}`))).toBe(true);
+              expect(logs.join("")).not.toContain("Private prompt");
+            } else expect(logs).toEqual([]);
+          }).pipe(Effect.provide(TestClock.layer())),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test.each(["failed", "interrupted"] as const)(
+    "records terminal timings when a run is %s",
+    async (status) => {
+      const logs: string[] = [];
+
+      const state = await fixture(
+        () =>
+          Effect.succeed({
+            description,
+            stream: () =>
+              Stream.concat(
+                Stream.make({ type: "text-delta" as const, text: "Partial" }),
+                status === "failed"
+                  ? Stream.fail(
+                      new ProviderError({
+                        provider: "test-provider",
+                        reason: "temporary",
+                        message: "Failed",
+                      }),
+                    )
+                  : Stream.never,
+              ),
+          }),
+        false,
+        true,
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+
+            const stream = (yield* Agent).send(session.id, "Hello", {
+              timingLog: (line) =>
+                Effect.sync(() => {
+                  logs.push(line);
+                }),
+            });
+
+            if (status === "failed")
+              expect(yield* failure(Stream.runDrain(stream))).toMatchObject({
+                reason: "temporary",
+              });
+            else yield* Stream.runDrain(stream.pipe(Stream.take(2)));
+
+            expect((yield* store.runs(session.id))[0]?.status).toBe(status);
+
+            const timings: { stage: string; outcome?: string }[] = logs.map((line) =>
+              JSON.parse(line.slice(line.indexOf(" {") + 1)),
+            );
+
+            expect(timings.filter((timing) => timing.stage === "first-text")).toHaveLength(1);
+            expect(timings).toContainEqual(
+              expect.objectContaining({ stage: "run", outcome: status }),
+            );
+            expect(timings.find((timing) => timing.stage === "model-turn")).toMatchObject({
+              outcome: status,
+            });
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test.each([false, true])(
     "logs reasoning only when enabled=%s without changing the answer",
     async (enabled) => {

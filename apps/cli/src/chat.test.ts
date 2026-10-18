@@ -55,6 +55,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     POPPET_TOOL_CALLS: "16",
     POPPET_TOOL_BYTES: "16384",
     POPPET_LOG_REASONING: "false",
+    POPPET_LOG_TIMINGS: "false",
   };
 
   const previous = new Map(Object.keys(environment).map((key) => [key, process.env[key]]));
@@ -666,19 +667,85 @@ describe("chat CLI", () => {
     },
   );
 
-  test("environment overrides the file reasoning setting and invalid values fail configuration", async () => {
+  test.each(["local", "worker"])(
+    "forwards %s timing diagnostics separately from answers and records failures",
+    async (mode) => {
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
+      const workerLogs: string[] = [];
+      delete process.env.POPPET_LOG_TIMINGS;
+
+      try {
+        await writeFile(
+          join(chat.directory, "config.json"),
+          JSON.stringify({ chat: { logTimings: true } }),
+        );
+
+        if (mode === "worker")
+          worker = await chat.startWorker("all", {
+            ...console,
+            log: (...values) => {
+              chat.lines.push(values.join(" "));
+            },
+            error: (...values) => {
+              workerLogs.push(values.join(" "));
+            },
+          });
+
+        await chat.invoke(["chat", "new", "Private prompt"]);
+        expect(chat.chunks.join("")).toBe("Answer\n");
+        const entries = chat.errors.filter((line) => line.includes("Timing session="));
+
+        const timings: { stage: string; durationMs: number }[] = entries.map((line) =>
+          JSON.parse(line.slice(line.indexOf(" {") + 1)),
+        );
+
+        expect(timings.map((timing) => timing.stage)).toEqual([
+          "memory",
+          "model-resolution",
+          "first-text",
+          "model-turn",
+          "run",
+          "model-resolution",
+          "session-title",
+        ]);
+        expect(
+          timings.every((timing) => Number.isFinite(timing.durationMs) && timing.durationMs >= 0),
+        ).toBe(true);
+        expect(entries.join("")).not.toContain("Private prompt");
+        chat.state.failNext = true;
+        await expect(
+          chat.invoke(["chat", "send", chat.requests[0]!.sessionId, "Fail"]),
+        ).rejects.toMatchObject({ message: "Fixture request failed" });
+        const diagnostics = chat.errors.filter((line) => line.includes("Timing session="));
+        expect(diagnostics.at(-1)).toContain('"stage":"run"');
+        expect(diagnostics.at(-1)).toContain('"outcome":"failed"');
+
+        if (mode === "worker") expect(workerLogs).toEqual(diagnostics);
+      } finally {
+        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
+  test("environment overrides file diagnostic settings and invalid values fail configuration", async () => {
     const chat = await fixture();
 
     try {
       await writeFile(
         join(chat.directory, "config.json"),
-        JSON.stringify({ chat: { logReasoning: true } }),
+        JSON.stringify({ chat: { logReasoning: true, logTimings: true } }),
       );
       chat.state.reasoning = "Private thinking";
       await chat.invoke(["chat", "new", "Hello"]);
       expect(chat.errors.some((line) => line.includes("Thinking session="))).toBe(false);
+      expect(chat.errors.some((line) => line.includes("Timing session="))).toBe(false);
       expect(chat.requests[0]?.settings.reasoningSummary).toBeUndefined();
       process.env.POPPET_LOG_REASONING = "invalid";
+      await expect(chat.invoke(["config"])).rejects.toHaveProperty("_tag", "ConfigError");
+      process.env.POPPET_LOG_REASONING = "false";
+      process.env.POPPET_LOG_TIMINGS = "invalid";
       await expect(chat.invoke(["config"])).rejects.toHaveProperty("_tag", "ConfigError");
     } finally {
       await chat.close();

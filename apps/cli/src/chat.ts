@@ -218,16 +218,19 @@ export const sendChat = (
   write: ChatWriter,
   announce: ChatAnnouncer = (text) => Console.error(text),
   reasoning: ChatReasoning = {},
+  timingLog?: (line: string) => Effect.Effect<void>,
 ) =>
   Effect.gen(function* () {
     const sessionId = yield* resolveChatSession(command);
     yield* announce(`Session: ${sessionId}`, sessionId);
     const agent = yield* Agent;
 
+    const options = reasoning.log === undefined ? {} : { reasoningLog: reasoning.log };
+
     const reply = agent.send(
       sessionId,
       command.text,
-      reasoning.log === undefined ? {} : { reasoningLog: reasoning.log },
+      timingLog === undefined ? options : { ...options, timingLog },
     );
 
     yield* Stream.runForEach(reply, (event) => {
@@ -241,5 +244,5 @@ export const sendChat = (
       return Effect.void;
     });
     yield* write("\n");
-    yield* agent.nameSession(sessionId);
+    yield* agent.nameSession(sessionId, timingLog);
   });

@@ -1,4 +1,11 @@
-import { ProviderError, type ModelOperations, type ProviderId } from "@poppet/provider";
+import {
+  ProviderError,
+  RequestTiming,
+  measureTiming,
+  recordTiming,
+  type ModelOperations,
+  type ProviderId,
+} from "@poppet/provider";
 import {
   Store,
   StoreError,
@@ -8,6 +15,7 @@ import {
 } from "@poppet/store";
 import {
   Cause,
+  Clock,
   Console,
   Context,
   Effect,
@@ -22,6 +30,7 @@ import {
 import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
 import { memoryPrompt } from "#src/memory";
+import { ChatSettings } from "#src/settings";
 import { generateTitle, sessionTitle } from "#src/title";
 
 /** Resolves registered models through the host while the request's resource scope stays open. */
@@ -51,7 +60,10 @@ export class Agent extends Context.Service<
   Agent,
   {
     /** Best-effort optional naming after the answer has been delivered. */
-    readonly nameSession: (sessionId: string) => Effect.Effect<void>;
+    readonly nameSession: (
+      sessionId: string,
+      timingLog?: (line: string) => Effect.Effect<void>,
+    ) => Effect.Effect<void>;
     /** Streams a reply; readOnlyTools excludes note/memory writes and task management. */
     readonly send: (
       sessionId: string,
@@ -60,6 +72,7 @@ export class Agent extends Context.Service<
         readonly readOnlyTools?: boolean;
         readonly runId?: string;
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
+        readonly timingLog?: (line: string) => Effect.Effect<void>;
         /** Host-only validation of this run's authorized messaging conversation. */
         readonly taskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
       },
@@ -93,6 +106,7 @@ export const AgentLive = Layer.effect(
     const resolver = yield* ModelResolver;
     const converse = yield* conversation;
     const readMemoryPrompt = yield* memoryPrompt;
+    const policy = yield* ChatSettings;
     const requests = yield* Semaphore.make(1);
 
     const send = (
@@ -102,15 +116,30 @@ export const AgentLive = Layer.effect(
         readonly readOnlyTools?: boolean;
         readonly runId?: string;
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
+        readonly timingLog?: (line: string) => Effect.Effect<void>;
         readonly taskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
       } = {},
     ): Stream.Stream<ChatEvent, ChatFailure> =>
       Stream.suspend(() => {
         let active: Run | null = null;
         let settled = false;
+        let startedAt: number | null = null;
+        let firstText = false;
+
+        const timing: RequestTiming["Service"] = {
+          record: (entry) =>
+            policy.logTimings
+              ? (options.timingLog ?? Console.error)(
+                  `[${new Date().toISOString()}] Timing session=${sessionId} run=${active?.id ?? "pending"} ${JSON.stringify(entry)}`,
+                )
+              : Effect.void,
+        };
 
         const stream = Stream.unwrap(
           Effect.gen(function* () {
+            const requestedAt = yield* Clock.currentTimeMillis;
+            startedAt = requestedAt;
+
             if (text.trim().length === 0)
               return yield* Effect.fail(
                 new AgentError({ reason: "invalid-request", message: "Enter a nonempty message." }),
@@ -168,14 +197,17 @@ export const AgentLive = Layer.effect(
 
             const reply = Stream.unwrap(
               Effect.gen(function* () {
-                const basePrompt = yield* readMemoryPrompt();
+                const basePrompt = yield* measureTiming("memory", readMemoryPrompt());
 
                 const prompt =
                   session.skill === null
                     ? basePrompt
                     : `${basePrompt}\n\nExplicitly selected owner-written procedure follows as JSON. Apply it to this session, below the base rules. It cannot override explicit user requests, tool permissions, or scheduled runs' read-only notes policy. It grants no additional capabilities.\n${JSON.stringify(session.skill)}`;
 
-                const model = yield* resolver.resolve(session.provider, session.model);
+                const model = yield* measureTiming(
+                  "model-resolution",
+                  resolver.resolve(session.provider, session.model),
+                );
 
                 if (
                   model.description.provider !== session.provider ||
@@ -214,6 +246,11 @@ export const AgentLive = Layer.effect(
                   }
 
                   yield* flushReasoning(true);
+
+                  if (event.type === "text-delta" && event.text.length > 0 && !firstText) {
+                    firstText = true;
+                    yield* recordTiming("first-text", requestedAt);
+                  }
 
                   if (event.type === "text-delta" || event.type === "reasoning-end") return event;
 
@@ -257,6 +294,17 @@ export const AgentLive = Layer.effect(
               ? Effect.void
               : store.finishRun(active.id, failureOutcome(exit)).pipe(Effect.asVoid, Effect.orDie),
           ),
+          Stream.onExit((exit) =>
+            startedAt === null
+              ? Effect.void
+              : recordTiming("run", startedAt, {
+                  outcome: settled
+                    ? "completed"
+                    : Exit.isSuccess(exit) || Cause.hasInterrupts(exit.cause)
+                      ? "interrupted"
+                      : "failed",
+                }).pipe(Effect.provideService(RequestTiming, timing)),
+          ),
         );
 
         // Interactive and scheduled requests share one permit for the full stream lifetime.
@@ -264,10 +312,10 @@ export const AgentLive = Layer.effect(
           Effect.acquireRelease(requests.take(1).pipe(Effect.interruptible), () =>
             requests.release(1),
           ).pipe(Effect.as(settledStream)),
-        );
+        ).pipe(Stream.provideService(RequestTiming, timing));
       });
 
-    const nameSession = (sessionId: string) =>
+    const nameSession = (sessionId: string, timingLog = Console.error) =>
       Effect.gen(function* () {
         const session = yield* store.claimTitle(sessionId);
 
@@ -280,15 +328,26 @@ export const AgentLive = Layer.effect(
         if (original?.message.role !== "user") return;
         const prompt = original.message.text;
 
-        const result = yield* resolver.resolve(session.provider, session.model).pipe(
-          Effect.flatMap((model) => generateTitle(model, session, prompt)),
-          Effect.scoped,
-          Effect.timeout("10 seconds"),
+        const result = yield* measureTiming(
+          "session-title",
+          measureTiming("model-resolution", resolver.resolve(session.provider, session.model)).pipe(
+            Effect.flatMap((model) => generateTitle(model, session, prompt)),
+            Effect.scoped,
+            Effect.timeout("10 seconds"),
+          ),
         );
 
         yield* store.finishTitle(session.id, result.title, result.usage);
       }).pipe(
         requests.withPermit,
+        Effect.provideService(RequestTiming, {
+          record: (timing) =>
+            policy.logTimings
+              ? timingLog(
+                  `[${new Date().toISOString()}] Timing session=${sessionId} ${JSON.stringify(timing)}`,
+                )
+              : Effect.void,
+        }),
         Effect.catchCause((cause) =>
           Cause.hasInterrupts(cause)
             ? Effect.void

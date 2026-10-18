@@ -52,6 +52,7 @@ channel settings stay in their existing protected stores.
 | `POPPET_MCP_SERVERS`   | `mcpServers`        | `[]`                     | JSON server list replacing file values; local MCP tools and scheduled permissions           |
 | `POPPET_WEB_SEARCH`    | `webSearch`         | `false`                  | Enable Brave Search when a search key is available                                          |
 | `POPPET_LOG_REASONING` | `chat.logReasoning` | `false`                  | Log readable provider reasoning to CLI stderr and worker logs                               |
+| `POPPET_LOG_TIMINGS`   | `chat.logTimings`   | `false`                  | Log request-stage durations to CLI stderr and worker logs                                   |
 | `POPPET_CONTEXT_BYTES` | `chat.contextBytes` | `65536`                  | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576` |
 | `POPPET_HISTORY_TURNS` | `chat.historyTurns` | `20`                     | Previous complete exchanges sent to the model; maximum `100`                                |
 | `POPPET_OUTPUT_TOKENS` | `chat.outputTokens` | `2048`                   | Requested output limit when supported, capped by model metadata; maximum `32768`            |
@@ -127,6 +128,35 @@ are asked for reasoning summaries; OpenRouter and OpenCode expose their returned
 reasoning text or summaries. Availability depends on the model and provider.
 Encrypted reasoning and continuation metadata are excluded. This setting does
 not select a reasoning effort or token budget.
+
+## Timing logs
+
+Set `chat.logTimings` to `true` in `config.json` to log request durations in
+milliseconds. It defaults to `false` and covers CLI, scheduled, and messaging
+runs. Worker-backed CLI requests also receive the diagnostics on stderr.
+Restart a running worker after changing its configuration.
+
+For a temporary local override in fish:
+
+```fish
+set -lx POPPET_LOG_TIMINGS true
+bun run start chat interactive
+```
+
+Each `Timing` entry includes a session ID, a run ID when available, and JSON with
+`stage` and `durationMs`. Measured stages include memory loading, model resolution,
+ChatGPT catalog lookup, MCP startup/discovery, individual model turns, tool
+execution, the full run, and optional session naming. Catalog entries include
+`cached`; timed operations include an `outcome` of `completed`, `failed`, or
+`interrupted`. Model resolution includes authentication and catalog access. The
+`first-text` duration starts when the agent begins a run and ends at its first
+nonempty answer chunk, including any preceding tool turns. It excludes CLI
+startup and waiting for another run's permit. Naming happens after the answer
+and has its own duration; nested stage durations must not be added together.
+
+Logs contain fixed stage labels, identifiers, durations, and outcomes. Prompts,
+answers, tool arguments, credentials, and continuation state are excluded.
+Answer stdout and messaging replies remain answer-only.
 
 ## API keys
 

@@ -1,8 +1,9 @@
 import { Config, Context, Effect, Layer, Schema } from "effect";
 
-/** Per-run reasoning logging and limits for context, tools, and memory loaded into the prompt. */
+/** Per-run diagnostics and limits for context, tools, and memory loaded into the prompt. */
 export interface ChatPolicy {
   readonly logReasoning: boolean;
+  readonly logTimings: boolean;
   readonly contextBytes: number;
   readonly historyTurns: number;
   readonly outputTokens: number;
@@ -21,6 +22,7 @@ export class ChatSettings extends Context.Service<ChatSettings, ChatPolicy>()(
 
 export const defaultPolicy: ChatPolicy = {
   logReasoning: false,
+  logTimings: false,
   contextBytes: 65536,
   historyTurns: 20,
   outputTokens: 2048,
@@ -41,6 +43,9 @@ export const ChatSettingsLive = Layer.effect(
       {
         logReasoning: Config.Boolean("POPPET_LOG_REASONING").pipe(
           Config.withDefault(defaultPolicy.logReasoning),
+        ),
+        logTimings: Config.Boolean("POPPET_LOG_TIMINGS").pipe(
+          Config.withDefault(defaultPolicy.logTimings),
         ),
         contextBytes: Config.schema(bounded(1048576), "POPPET_CONTEXT_BYTES").pipe(
           Config.withDefault(defaultPolicy.contextBytes),

@@ -62,6 +62,7 @@ const execute = (
   write: ChatWriter,
   announce: ChatAnnouncer,
   reasoning: ChatReasoning,
+  timingLog: (line: string) => Effect.Effect<void>,
 ) =>
   Effect.gen(function* () {
     if (request.kind === "mcp")
@@ -102,7 +103,7 @@ const execute = (
         Effect.flatMap((text) => write(`${text}\n`)),
       );
 
-    return yield* sendChat(command, write, announce, reasoning);
+    return yield* sendChat(command, write, announce, reasoning, timingLog);
   });
 
 export const WorkerRequestsLive = Layer.effect(
@@ -134,7 +135,7 @@ export const WorkerRequestsLive = Layer.effect(
           const emitFrame = (frame: Frame) => Queue.offer(frames, frame).pipe(Effect.asVoid);
           const streamReasoning = command.value.kind === "chat" && command.value.streamReasoning;
 
-          const logReasoning = (text: string) =>
+          const logDiagnostic = (text: string) =>
             Console.error(text).pipe(Effect.andThen(emitFrame({ type: "stderr", text })));
 
           const reasoning: ChatReasoning = streamReasoning
@@ -142,7 +143,7 @@ export const WorkerRequestsLive = Layer.effect(
                 log: Console.error,
                 write: emitFrame,
               }
-            : { log: logReasoning };
+            : { log: logDiagnostic };
 
           yield* execute(
             command.value,
@@ -154,6 +155,7 @@ export const WorkerRequestsLive = Layer.effect(
                   : { type: "stderr", text, sessionId },
               ),
             reasoning,
+            logDiagnostic,
           ).pipe(
             Effect.provide(provided),
             Effect.matchEffect({

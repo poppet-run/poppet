@@ -1,4 +1,5 @@
 import { Memory } from "@poppet/memory";
+import { measureTiming, recordTiming } from "@poppet/provider";
 import type {
   Completion,
   Message,
@@ -14,7 +15,7 @@ import {
   type StoredMessage,
   type DeliveryDestination,
 } from "@poppet/store";
-import { Clock, Effect, Match, Option, Stream } from "effect";
+import { Cause, Clock, Effect, Exit, Match, Option, Stream } from "effect";
 
 import { assembleContext, byteSize, outputBudget } from "#src/context";
 import { AgentError } from "#src/errors";
@@ -113,7 +114,7 @@ export const conversation = Effect.gen(function* () {
         Match.orElse((plan) => notes.execute(plan)),
       );
 
-      const output = yield* result.pipe(
+      const output = yield* measureTiming("tool", result).pipe(
         Effect.catch((error) =>
           store
             .finishToolCall(run.id, callId, {
@@ -158,7 +159,7 @@ export const conversation = Effect.gen(function* () {
       Effect.gen(function* () {
         const catalog =
           model.description.capabilities.tools && external !== null
-            ? yield* external.snapshot(readOnlyTools)
+            ? yield* measureTiming("mcp-discovery", external.snapshot(readOnlyTools))
             : [];
 
         const tools = model.description.capabilities.tools
@@ -293,6 +294,9 @@ export const conversation = Effect.gen(function* () {
                 ? { maxOutputTokens: outputBudget(model.description, policy) }
                 : {};
 
+              const modelStartedAt = yield* Clock.currentTimeMillis;
+              let modelFinished = false;
+
               return streamReply(
                 model,
                 {
@@ -307,6 +311,22 @@ export const conversation = Effect.gen(function* () {
                 },
                 run,
               ).pipe(
+                Stream.tap((event) => {
+                  if (event.type !== "completed") return Effect.void;
+                  modelFinished = true;
+
+                  return recordTiming("model-turn", modelStartedAt, { outcome: "completed" });
+                }),
+                Stream.onExit((exit) =>
+                  modelFinished
+                    ? Effect.void
+                    : recordTiming("model-turn", modelStartedAt, {
+                        outcome:
+                          Exit.isSuccess(exit) || Cause.hasInterrupts(exit.cause)
+                            ? "interrupted"
+                            : "failed",
+                      }),
+                ),
                 Stream.flatMap((event) => {
                   if (event.type === "reasoning-delta") {
                     reasoningBytes += byteSize(event.text);

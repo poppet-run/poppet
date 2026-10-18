@@ -312,6 +312,9 @@ export const makeCLI = (
                 yield* output?.announce(text) ?? Console.error(text);
               }),
             output === undefined ? {} : { write: output.reasoning, log: () => Effect.void },
+            output === undefined
+              ? Console.error
+              : (line) => output.announce(line).pipe(Effect.ignore),
           ).pipe(Effect.provide(runtime.chat)),
           onSession,
           output,
