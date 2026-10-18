@@ -228,3 +228,34 @@ startup and physical sleep/wake remain separate manual checks. Follow the
 [Discord guide](gateways/discord.md) and [worker manual validation](worker.md#manual-validation)
 for those paths. The [implementation plan](implementation-plan.md) records
 phase-specific validation and remaining work.
+
+### Manual live test checklist
+
+Use small prompts and the same `POPPET_DATA_DIR` throughout. Select an
+assistant-capable provider and model for messaging and scheduled tasks.
+
+- [ ] Sign in to each provider you use, select a supported model, and run
+      `bun run start provider verify`. Expect inference and the tool round trip to
+      succeed.
+- [ ] Run `bun run start chat interactive`. Send two messages, confirm context is
+      retained, then cancel a longer request with Ctrl-C. Start another chat and confirm
+      it works.
+- [ ] For ChatGPT, repeat a request when the access token nears expiry. Expect
+      automatic renewal without signing in again.
+- [ ] Test each enabled messaging adapter: Discord in an allowed thread; Telegram
+      or WhatsApp in the owner's private chat. Check replies, `/status`, `/cancel`, and
+      rejection of another sender. For WhatsApp self-chat, confirm replies do not
+      trigger another run.
+- [ ] Restart the worker and send a follow-up. Expect the same session. Briefly
+      disconnect the network and restore it; check reconnection and absence of
+      duplicate replies.
+- [ ] Save provider/model settings in `config.json` and credentials in protected
+      storage. Stop foreground workers, then run `bun run start worker install`, or
+      `bun run start worker stop` followed by `bun run start worker start` for an
+      existing installation. Check `bun run start worker status` and
+      `bun run start worker logs`.
+- [ ] Log out of macOS and back in. Confirm the worker starts automatically,
+      responds to CLI commands, and receives messaging input.
+- [ ] Schedule a one-off task, sleep across its due time, then wake. Expect one
+      execution. Restart the worker and confirm it does not repeat; check that logs
+      append without exposing secrets.
