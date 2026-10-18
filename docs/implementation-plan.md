@@ -2,15 +2,15 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–19 implemented with automated checks. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
+Status: Phases 1–19 implemented with automated checks; phase 20 planned. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
 implemented.
 
-All currently planned phases are implemented. [Deeper conversation recall](#phase-19-deeper-conversation-recall) adds bounded context reading after search.
+The next planned addition is [MCP server support](#phase-20-mcp-server-support).
 
-Updated: 2026-10-17
+Updated: 2026-10-18
 
 One user, one active ChatGPT account, a configured provider/model, a local
 TypeScript application, SQLite, explicit memory, and locally scheduled tasks.
@@ -38,6 +38,7 @@ route against the user's account before building the agent around it.
 | Occurrence calculator               | Timezone-aware recurring occurrences; assess Effect Cron before adding another package                                 | Scheduled tasks           |
 | Discord client                      | Gateway lifecycle, thread operations, and rate limits; select a Bun-compatible client and pin it during implementation | Discord gateway           |
 | Other messaging clients             | Assess each platform's HTTP API or client when its adapter is implemented                                              | Later messaging adapters  |
+| MCP TypeScript SDK                  | Stdio client and protocol lifecycle; verify Bun compatibility and pin a supported release during implementation        | MCP server support        |
 
 Pin dependencies as they are introduced. See [architecture.md](architecture.md)
 for Effect service boundaries and execution rules.
@@ -1184,6 +1185,99 @@ including rejection of mutations and recalled-URL fetches. Run `bun run check`.
 Separately validate with a real model by searching for an older decision, reading
 its surrounding discussion, and answering a follow-up using the saved context.
 See [conversation context](chat.md#read-conversation-context).
+
+## Phase 20: MCP server support
+
+Planned. Depends on phase 5's tool loop, phase 4's durable records, and phases 8–9's
+shared worker ownership. Reuses phase 7's scheduled-run permissions and the existing
+messaging agent path.
+
+Make Poppet an MCP client that connects to explicitly configured local stdio
+servers and exposes allowed tools to the model. Use the official TypeScript SDK
+for protocol negotiation and transport. Start with tool discovery and invocation;
+remote HTTP/OAuth, MCP resources and prompts, sampling, elicitation, media, server
+installation, and exposing Poppet itself as an MCP server are outside this phase.
+See the [MCP tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
+and [SDK client documentation](https://ts.sdk.modelcontextprotocol.io/v2/clients/connect).
+
+Keep connections, discovery, protocol validation, and process cleanup in
+`@poppet/mcp`. The CLI composes its live layer into the process running the agent.
+Inject a provider-independent tool interface into `@poppet/agent`; keep provider
+adapters generic and avoid a second model/tool loop. Use scoped subprocesses and
+argument arrays without an implicit shell. Local servers run executable code with
+the host account's permissions; an MCP tool allowlist is not an OS sandbox.
+
+Add validated server entries to file configuration with stable IDs, executable,
+arguments, optional working directory, named environment/secret references, and
+explicit tool allowlists. MCP is disabled unless the owner configures and enables
+a server. Preserve file defaults and environment overrides; never put secret
+values in general config, LaunchAgents, model prompts, inspection output, or logs.
+Pass a minimal child environment plus only explicitly selected credentials,
+rather than inheriting every provider/channel secret. The model cannot add
+servers, change commands, install packages, or expand permissions. Worker config
+changes take effect after restart, following existing configuration behavior.
+
+The worker owns server processes when it owns the agent. A standalone CLI run uses
+scoped local connections; a CLI request routed through the worker uses those
+connections. Startup is bounded, and one unavailable server produces a clear
+diagnostic without disabling built-in tools. Owner shutdown, startup failure,
+and scoped CLI cancellation release clients and reap their children. Reconnection
+may serve a later request but never replays an earlier tool call automatically.
+
+Expose only discovered tools on each server's allowlist. Bound discovery pages, tool
+counts, descriptions, schemas, and protocol messages before unbounded buffering.
+Map server/tool identities to stable provider-safe names with an exact reverse
+mapping, rejecting collisions with built-ins or other servers. Validate the
+original input schema and model arguments, and handle provider strict-schema
+requirements without silently weakening validation. Unsupported schemas or
+capabilities receive an actionable diagnostic. Snapshot the allowed catalog for
+each run; server list-change notifications cannot add permissions during a run.
+Tool definitions count toward the existing context budget.
+
+Maintain separate interactive and scheduled allowlists. Scheduled tools must be
+an owner-reviewed read-only subset, disabled by default; server annotations such
+as `readOnlyHint` cannot grant access. Interactive mutations require an explicitly
+allowed tool and the owner's current request. Server descriptions and results
+remain untrusted data. They cannot authorize built-in memory/note/task mutations,
+change permissions, or grant page access. URLs returned by MCP do not become
+web-search grants. Poppet forwards tool arguments and selected credentials; it
+does not inject conversation history or global memory into MCP requests.
+
+Dispatch MCP calls through existing durable tool records, batch validation, call
+budgets, cancellation, and timeouts. Records must identify the server and original
+tool independently of an in-memory discovery catalog. Bound text and structured
+JSON results by `POPPET_TOOL_BYTES`, preserving Unicode and valid serialization,
+and explicitly mark omitted or shortened content. Do not automatically fetch
+resource links or forward unsupported media. Distinguish tool-reported errors
+from transport/protocol failures and never report a failed operation as a
+successful mutation. A timeout, disconnect, or cancellation after dispatch can
+leave effects unknown; preserve an uncertain durable outcome without automatic
+retry or replay, including after restart.
+
+Add `mcp servers`, `mcp tools <server>`, and `mcp status` for configuration,
+discovery, effective permissions, and connection diagnostics. Pure config/status
+inspection must not launch a server or require a model. Explicit tool discovery
+uses the owning worker when available and scoped local connections otherwise.
+Do not expose an arbitrary tool-execution socket command. Extend config schemas,
+runtime composition, agent contracts/dispatch, inspection, and fixtures together.
+Add an MCP guide and update configuration, CLI, worker, tasks, and architecture
+docs when implemented.
+
+Automated checks use a fixture stdio server to exercise real protocol startup,
+paginated discovery, invocation, errors, cancellation, and child cleanup. Cover
+name collisions, unsupported schemas, strict-schema provider compatibility,
+unknown/denied tools, server-driven catalog changes, default-denied scheduling,
+explicitly allowed scheduled reads, blocked mutations, secret/environment
+isolation, bounded discovery/results, Unicode, and unavailable servers. Verify
+durable records, uncertain outcomes without replay, local/worker parity, and
+that untrusted MCP output grants no built-in mutation or page-fetch authority.
+Run `bun run check`.
+
+Completion check: connect one trusted local server, inspect its allowed tools,
+and complete a real-model tool round trip through CLI and messaging. Separately
+verify an explicitly allowed scheduled read and worker shutdown without orphaned
+server processes. Remote transports and broader MCP capabilities remain later
+work.
 
 ## Validation
 
