@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   Provider,
   invalidRequest,
@@ -9,7 +11,7 @@ import {
   type ProviderOperations,
 } from "@poppet/provider";
 import { responsesModel } from "@poppet/provider-protocol";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Clock, Context, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
 
 import { ChatGPTAuth } from "#src/auth/service";
 import { ConnectionError } from "#src/connection";
@@ -31,6 +33,18 @@ const ModelCatalog = Schema.Struct({
 /** An account-catalog entry before translation into the shared model description. */
 export type AvailableModel = (typeof ModelCatalog.Type.models)[number];
 
+interface CatalogCache {
+  readonly lock: Semaphore.Semaphore;
+  entry: {
+    readonly credential: string;
+    readonly expiresAt: number;
+    readonly models: ReadonlyArray<AvailableModel>;
+  } | null;
+}
+
+// Provider layers are rebuilt per request; retain only one credential-bound entry per transport.
+const catalogs = new WeakMap<HttpFetch, CatalogCache>();
+
 interface ModelOperations {
   readonly models: Effect.Effect<ReadonlyArray<AvailableModel>, ConnectionError>;
   readonly verify: (model: string | null) => Effect.Effect<string, ConnectionError>;
@@ -45,32 +59,72 @@ export class ChatGPTModel extends Context.Service<ChatGPTModel, ModelOperations>
 export const makeChatGPTModel = (http: HttpFetch = fetch) =>
   Effect.gen(function* () {
     const auth = yield* ChatGPTAuth;
+    let cache = catalogs.get(http);
 
-    const models = measureTiming(
-      "model-catalog",
+    if (cache === undefined) {
+      cache = { lock: Semaphore.makeUnsafe(1), entry: null };
+      catalogs.set(http, cache);
+    }
+
+    const catalogCache = cache;
+
+    const readCatalog = (requested?: string) =>
       Effect.gen(function* () {
         const token = yield* auth.accessToken;
+        const credential = createHash("sha256").update(Redacted.value(token)).digest("hex");
 
-        const body = yield* Effect.tryPromise({
-          try: (signal) => clientFor(token, http).get("/models", { signal }),
-          catch: modelFailure,
-        });
+        return yield* catalogCache.lock.withPermit(
+          Effect.gen(function* () {
+            const entry = catalogCache.entry;
+            const now = yield* Clock.currentTimeMillis;
 
-        const catalog = yield* Schema.decodeUnknownEffect(ModelCatalog)(body).pipe(
-          Effect.mapError(
-            () =>
-              new ConnectionError({
-                reason: "unsupported",
-                message: "OpenAI returned an unsupported model catalog.",
+            if (
+              requested !== undefined &&
+              entry?.credential === credential &&
+              entry.expiresAt > now &&
+              entry.models.some((model) => model.slug === requested)
+            )
+              return yield* measureTiming("model-catalog", Effect.succeed(entry.models), {
+                cached: true,
+              });
+
+            catalogCache.entry = null;
+
+            return yield* measureTiming(
+              "model-catalog",
+              Effect.gen(function* () {
+                const body = yield* Effect.tryPromise({
+                  try: (signal) => clientFor(token, http).get("/models", { signal }),
+                  catch: modelFailure,
+                });
+
+                const catalog = yield* Schema.decodeUnknownEffect(ModelCatalog)(body).pipe(
+                  Effect.mapError(
+                    () =>
+                      new ConnectionError({
+                        reason: "unsupported",
+                        message: "OpenAI returned an unsupported model catalog.",
+                      }),
+                  ),
+                );
+
+                // Offer only models the account catalog marks as visible to the user.
+                const models = catalog.models.filter((model) => model.visibility === "list");
+                catalogCache.entry = {
+                  credential,
+                  expiresAt: (yield* Clock.currentTimeMillis) + 60_000,
+                  models,
+                };
+
+                return models;
               }),
-          ),
+              { cached: false },
+            );
+          }),
         );
+      });
 
-        // Offer only models the account catalog marks as visible to the user.
-        return catalog.models.filter((model) => model.visibility === "list");
-      }),
-      { cached: false },
-    );
+    const models = readCatalog();
 
     const selectedModel = (entry: AvailableModel) =>
       responsesModel(
@@ -112,7 +166,7 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
 
     const resolve = (model: string) =>
       Effect.gen(function* () {
-        const catalog = yield* models.pipe(Effect.mapError(providerFailure));
+        const catalog = yield* readCatalog(model).pipe(Effect.mapError(providerFailure));
         const entry = catalog.find((candidate) => candidate.slug === model);
 
         if (!entry)

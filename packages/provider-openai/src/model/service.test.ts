@@ -2,14 +2,127 @@ import { describe, expect, test } from "bun:test";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { completeModel } from "@poppet/provider";
+import { completeModel, RequestTiming } from "@poppet/provider";
 import { Effect, Redacted } from "effect";
+import { TestClock } from "effect/testing";
 
 import { ChatGPTAuth } from "#src/auth/service";
 import { ConnectionError } from "#src/connection";
 import { makeChatGPTModel, makeChatGPTProvider } from "#src/model/service";
 import type { HttpFetch } from "#src/oauth/http";
 import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt";
+
+const catalogFixture = () => {
+  const state = { token: "first-token", connected: true, reads: 0, fail: false, malformed: false };
+
+  const http: HttpFetch = async () => {
+    state.reads++;
+
+    return state.fail
+      ? Response.json({ error: { code: "unavailable" } }, { status: 503 })
+      : Response.json(
+          state.malformed
+            ? {}
+            : {
+                models: [
+                  { slug: "test-model", display_name: "Test", visibility: "list" },
+                  { slug: "hidden-model", display_name: "Hidden", visibility: "hide" },
+                ],
+              },
+        );
+  };
+
+  const auth: ChatGPTAuth["Service"] = {
+    accessToken: Effect.suspend(() =>
+      !state.connected
+        ? Effect.fail(new ConnectionError({ reason: "reconnect", message: "Sign in again." }))
+        : Effect.succeed(Redacted.make(state.token)),
+    ),
+    login: () => Effect.die("Unexpected login"),
+    status: Effect.die("Unexpected status"),
+    signOut: Effect.die("Unexpected sign-out"),
+    recordVerification: () => Effect.die("Unexpected verification"),
+  };
+
+  return { state, http, auth };
+};
+
+describe("ChatGPT model catalog cache", () => {
+  test("shares successful lookups across rebuilt services and concurrent resolves, but refreshes explicit listings and unknown models", async () => {
+    const { state, http, auth } = catalogFixture();
+    const timings: { cached?: boolean }[] = [];
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const first = yield* makeChatGPTModel(http);
+        yield* Effect.all([first.resolve("test-model"), first.resolve("test-model")], {
+          concurrency: 2,
+        });
+        const rebuilt = yield* makeChatGPTModel(http);
+        yield* rebuilt.resolve("test-model");
+        expect(state.reads).toBe(1);
+        expect(timings.map((timing) => timing.cached)).toEqual([false, true, true]);
+        expect(yield* rebuilt.models).toEqual([
+          { slug: "test-model", display_name: "Test", visibility: "list" },
+        ]);
+        expect(state.reads).toBe(2);
+        expect(yield* rebuilt.resolve("hidden-model").pipe(Effect.isFailure)).toBe(true);
+        expect(state.reads).toBe(3);
+      }).pipe(
+        Effect.provideService(ChatGPTAuth, auth),
+        Effect.provideService(RequestTiming, {
+          record: (timing) =>
+            Effect.sync(() => {
+              timings.push(timing);
+            }),
+        }),
+      ),
+    );
+    expect(JSON.stringify(timings)).not.toContain("first-token");
+  });
+
+  test("expires after one minute, invalidates when credentials change, and checks authentication on hits", async () => {
+    const { state, http, auth } = catalogFixture();
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const model = yield* makeChatGPTModel(http);
+        yield* model.resolve("test-model");
+        yield* TestClock.adjust("59999 millis");
+        yield* model.resolve("test-model");
+        expect(state.reads).toBe(1);
+        yield* TestClock.adjust("1 millis");
+        yield* model.resolve("test-model");
+        expect(state.reads).toBe(2);
+        state.token = "replacement-token";
+        yield* model.resolve("test-model");
+        expect(state.reads).toBe(3);
+        state.connected = false;
+        expect(yield* model.resolve("test-model").pipe(Effect.isFailure)).toBe(true);
+        expect(state.reads).toBe(3);
+      }).pipe(Effect.provideService(ChatGPTAuth, auth), Effect.provide(TestClock.layer())),
+    );
+  });
+
+  test.each(["fail", "malformed"] as const)(
+    "does not cache a %s catalog response",
+    async (mode) => {
+      const { state, http, auth } = catalogFixture();
+      state[mode] = true;
+
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const model = yield* makeChatGPTModel(http);
+          expect(yield* model.resolve("test-model").pipe(Effect.isFailure)).toBe(true);
+          state[mode] = false;
+          yield* model.resolve("test-model");
+          yield* model.resolve("test-model");
+          expect(state.reads).toBe(2);
+        }).pipe(Effect.provideService(ChatGPTAuth, auth)),
+      );
+    },
+  );
+});
 
 describe("ChatGPT model verification", () => {
   test("retains completed streamed items in output order when the terminal response omits them", async () => {

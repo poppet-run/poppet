@@ -39,6 +39,15 @@ again. Usage limits, ineligible accounts, temporary failures, and interrupted
 streams produce separate errors. Model requests are not automatically retried.
 The flow uses OAuth credentials and requires no API key or client secret.
 
+Model resolution reuses a successful catalog lookup for up to one minute within
+the same process, including across interactive CLI turns and worker requests.
+Each lookup still checks current authentication. Credential changes, an expired
+entry, or a model absent from the cached catalog trigger a fresh request.
+`auth models` and `auth verify` always fetch a fresh catalog. Failed responses
+are not cached, and nothing is written to disk. Separate one-shot CLI processes
+do not share the cache. Enable [timing logs](../configuration.md#timing-logs) to
+see catalog hits and misses.
+
 ## Credential storage
 
 Credentials live in `<POPPET_DATA_DIR>/auth/connection.json`, with owner-only file
