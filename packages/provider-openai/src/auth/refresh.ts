@@ -42,16 +42,15 @@ export const accessTokenWorkflow = Effect.gen(function* () {
     if (!credentials.refreshToken) return yield* Effect.fail(reconnect());
 
     const refreshed = yield* oauth.exchange(refreshBody(credentials.refreshToken, clientId)).pipe(
-      Effect.catchTag("ConnectionError", (error) =>
-        Effect.gen(function* () {
-          // Only terminal token failures clear credentials. A network or service
-          // failure leaves them available for a later attempt.
-          if (error.reason === "reconnect")
-            yield* store.write({ ...connection, credentials: null, verification: null });
+      Effect.catchTag("ConnectionError", (error) => {
+        // Only terminal token failures clear credentials. A network or service
+        // failure leaves them available for a later attempt.
+        if (error.reason !== "reconnect") return Effect.fail(error);
 
-          return yield* Effect.fail(error);
-        }),
-      ),
+        return store
+          .write({ ...connection, credentials: null, verification: null })
+          .pipe(Effect.andThen(Effect.fail(error)));
+      }),
     );
 
     if (refreshed.id_token) {
