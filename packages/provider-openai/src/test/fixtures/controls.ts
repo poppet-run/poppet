@@ -20,6 +20,7 @@ export interface Controls {
   refreshError: string | null;
   streamMode: StreamMode;
   expireAccess: boolean;
+  omitRefreshFields: boolean;
   revokeFailure: boolean;
 }
 
@@ -34,5 +35,6 @@ export const createControls = (): Controls => ({
   refreshError: null,
   streamMode: "completed",
   expireAccess: false,
+  omitRefreshFields: false,
   revokeFailure: false,
 });

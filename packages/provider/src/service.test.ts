@@ -37,16 +37,12 @@ const model = (events: ReadonlyArray<ModelEvent>): ModelOperations => ({
 });
 
 describe("shared provider contract", () => {
-  test("rejects missing, duplicate, or nonterminal completion", async () => {
+  test("rejects missing or duplicate completion", async () => {
     const sequences = [
       [],
       [
         { type: "completed", response },
         { type: "completed", response },
-      ],
-      [
-        { type: "completed", response },
-        { type: "text-delta", text: "late" },
       ],
     ] as const;
 

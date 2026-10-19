@@ -39,6 +39,29 @@ describe.concurrent("ChatGPT token lifecycle", () => {
       await harness.close();
     }
   });
+  test("renews access while preserving omitted refresh credentials and scopes", async () => {
+    const harness = await createHarness();
+
+    try {
+      harness.controls.expireAccess = true;
+      await harness.run(login);
+      const before = (await harness.saved()).credentials!;
+      harness.controls.omitRefreshFields = true;
+
+      const token = await harness.run(ChatGPTAuth.use((auth) => auth.accessToken));
+      const after = (await harness.saved()).credentials!;
+
+      expect(Redacted.value(token)).toBe("test-access-2");
+      expect(after.accessToken && Redacted.value(after.accessToken)).toBe(Redacted.value(token));
+      expect(after.refreshToken && Redacted.value(after.refreshToken)).toBe(
+        before.refreshToken && Redacted.value(before.refreshToken),
+      );
+      expect(Redacted.value(after.idToken)).toBe(Redacted.value(before.idToken));
+      expect(after.scopes).toEqual(before.scopes);
+    } finally {
+      await harness.close();
+    }
+  });
   test("rejects renewed tokens for another account without replacing saved credentials", async () => {
     const harness = await createHarness();
 

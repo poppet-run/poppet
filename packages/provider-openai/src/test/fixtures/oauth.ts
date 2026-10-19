@@ -88,11 +88,12 @@ export const makeOAuthProvider = async (controls: Controls) => {
 
       return Response.json({
         access_token: `test-access-${tokenCount}`,
-        refresh_token: `test-refresh-${tokenCount}`,
-        id_token: idToken,
+        refresh_token:
+          refresh && controls.omitRefreshFields ? undefined : `test-refresh-${tokenCount}`,
+        id_token: refresh && controls.omitRefreshFields ? undefined : idToken,
         token_type: "Bearer",
         expires_in: controls.expireAccess && !refresh ? 10 : 3600,
-        scope: controls.scopes,
+        scope: refresh && controls.omitRefreshFields ? undefined : controls.scopes,
       });
     }
 

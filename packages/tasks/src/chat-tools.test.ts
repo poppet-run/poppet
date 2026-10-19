@@ -215,6 +215,32 @@ describe("chat task operations", () => {
     }
   });
 
+  test("rejects a prepared task once its one-off time has passed", async () => {
+    const state = await fixture();
+
+    const action: ChatTaskAction = {
+      ...create,
+      schedule: { type: "once", at: new Date(now + 1000).toISOString() },
+    };
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const { context, store } = yield* recorded(action);
+          const planned = yield* (yield* ChatTasks).prepare(action, context);
+          yield* store.startToolCall(context.runId, context.callId);
+          yield* TestClock.adjust("1 second");
+          expect(yield* planned.execute.pipe(Effect.flip)).toMatchObject({
+            reason: "invalid-request",
+          });
+          expect((yield* TaskRepository).list()).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("rejects scheduled origin, unavailable here delivery, and unauthorized destinations", async () => {
     const state = await fixture();
     const action: ChatTaskAction = { ...create, delivery: "here" };
