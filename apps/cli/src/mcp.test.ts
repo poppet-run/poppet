@@ -213,6 +213,34 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
 };
 
 describe("MCP host integration", () => {
+  test("an unavailable browser leaves configured MCP tools and ordinary chat available", async () => {
+    const state = await fixture();
+
+    try {
+      await writeFile(
+        join(state.directory, "config.json"),
+        JSON.stringify({
+          provider: "fixture",
+          model: "fixture",
+          mcpServers: [state.server],
+          browser: {
+            enabled: true,
+            command: "/missing-agent-browser",
+            chromiumExecutable: "/missing-chromium",
+            allowedDomains: ["example.com"],
+          },
+        }),
+      );
+      expect(await state.invoke(["chat", "new", "Read the fixture"])).toContain("Done");
+      expect(state.requests[0]!.tools.some((tool) => tool.namespace === "poppet_mcp")).toBe(true);
+      expect(state.requests[0]!.tools.some((tool) => tool.namespace === "poppet_browser")).toBe(
+        false,
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each([false, true])(
     "uses scoped local or worker-owned discovery and durable calls, worker: %s",
     async (worker) => {
@@ -274,6 +302,20 @@ describe("MCP host integration", () => {
       const state = await fixture("read", scheduledTools);
 
       try {
+        await writeFile(
+          join(state.directory, "config.json"),
+          JSON.stringify({
+            provider: "fixture",
+            model: "fixture",
+            mcpServers: [state.server],
+            browser: {
+              enabled: true,
+              command: "/must-not-launch-browser",
+              chromiumExecutable: "/missing-chromium",
+              allowedDomains: ["example.com"],
+            },
+          }),
+        );
         await Effect.runPromise(
           Effect.gen(function* () {
             const store = yield* Store;
@@ -284,6 +326,9 @@ describe("MCP host integration", () => {
               .pipe(Stream.runDrain);
             const runs = yield* store.runs(session.id);
             const calls = yield* store.toolCalls(runs[0]!.id);
+            expect(
+              state.requests[0]!.tools.some((tool) => tool.namespace === "poppet_browser"),
+            ).toBe(false);
             expect(calls.length).toBe(scheduledTools.length);
             expect(state.requests[0]!.tools.some((tool) => tool.namespace === "poppet_mcp")).toBe(
               scheduledTools.length > 0,

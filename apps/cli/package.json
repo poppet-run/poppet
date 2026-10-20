@@ -16,6 +16,7 @@
   "dependencies": {
     "@effect/platform-bun": "4.0.4",
     "@poppet/agent": "workspace:*",
+    "@poppet/browser": "workspace:*",
     "@poppet/channel-discord": "workspace:*",
     "@poppet/channel-telegram": "workspace:*",
     "@poppet/channel-whatsapp": "workspace:*",

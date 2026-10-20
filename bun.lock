@@ -18,6 +18,7 @@
       "dependencies": {
         "@effect/platform-bun": "4.0.4",
         "@poppet/agent": "workspace:*",
+        "@poppet/browser": "workspace:*",
         "@poppet/channel-discord": "workspace:*",
         "@poppet/channel-telegram": "workspace:*",
         "@poppet/channel-whatsapp": "workspace:*",
@@ -52,6 +53,14 @@
       "devDependencies": {
         "@poppet/provider-protocol": "workspace:*",
         "openai": "7.32.0",
+      },
+    },
+    "packages/browser": {
+      "name": "@poppet/browser",
+      "version": "0.0.0",
+      "dependencies": {
+        "@poppet/provider": "workspace:*",
+        "effect": "4.0.4",
       },
     },
     "packages/channel-discord": {
@@ -89,6 +98,7 @@
       "name": "@poppet/config",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/browser": "workspace:*",
         "@poppet/mcp": "workspace:*",
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
@@ -420,6 +430,8 @@
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
 
     "@poppet/agent": ["@poppet/agent@workspace:packages/agent"],
+
+    "@poppet/browser": ["@poppet/browser@workspace:packages/browser"],
 
     "@poppet/channel-discord": ["@poppet/channel-discord@workspace:packages/channel-discord"],
 

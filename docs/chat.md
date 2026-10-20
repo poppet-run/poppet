@@ -280,6 +280,14 @@ an answer. Failed inputs remain visible and are excluded from subsequent model
 context; sending another message is an explicit new request. Requests are never
 automatically retried or switched to another provider/model.
 
+## Browser automation
+
+With [browser automation](browser.md) configured, interactive and authorized
+messaging chats can navigate websites, inspect rendered text, and perform
+explicitly requested form interactions. Each run has a fresh isolated browser;
+tabs and login state do not persist between messages. `chat show` includes browser
+tool records. Ctrl-C closes the run's resources. Scheduled runs have no browser tools.
+
 ## Context and run limits
 
 Context retains recent complete exchanges, including tool pairs and continuation,

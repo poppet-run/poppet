@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
-import { loadConfig, webSearchEnabled } from "#src/config";
+import { browserSettings, loadConfig, webSearchEnabled } from "#src/config";
 import { ConfigSource, loadConfigSource } from "#src/source";
 
 const load = (environment: Record<string, string>) =>
@@ -28,6 +28,64 @@ const load = (environment: Record<string, string>) =>
   );
 
 describe("configuration sources", () => {
+  test("browser defaults off, resolves a file executable, and honors complete environment replacement", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-browser-config-"));
+
+    try {
+      const defaults = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(
+        await Effect.runPromise(browserSettings.pipe(Effect.provide(defaults.context))),
+      ).toEqual({ enabled: false });
+      await writeFile(
+        join(directory, "config.json"),
+        JSON.stringify({
+          browser: {
+            enabled: true,
+            command: "bin/agent-browser",
+            chromiumExecutable: "/opt/chromium",
+            allowedDomains: ["example.com"],
+          },
+        }),
+      );
+      const file = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(
+        await Effect.runPromise(browserSettings.pipe(Effect.provide(file.context))),
+      ).toMatchObject({
+        enabled: true,
+        command: join(directory, "bin/agent-browser"),
+        allowedDomains: ["example.com"],
+      });
+
+      const overridden = await Effect.runPromise(
+        load({ POPPET_DATA_DIR: directory, POPPET_BROWSER: '{"enabled":false}' }),
+      );
+
+      expect(
+        await Effect.runPromise(browserSettings.pipe(Effect.provide(overridden.context))),
+      ).toEqual({ enabled: false });
+      expect(overridden.source.environmentOverrides).toContain("POPPET_BROWSER");
+
+      await Promise.all(
+        [
+          "",
+          '{"enabled":true}',
+          '{"enabled":true,"chromiumExecutable":"/chrome","allowedDomains":["*.example.com"]}',
+          '{"enabled":false,"extraArgs":[]}',
+        ].map(async (value) => {
+          const invalid = await Effect.runPromise(
+            load({ POPPET_DATA_DIR: directory, POPPET_BROWSER: value }),
+          );
+
+          await expect(
+            Effect.runPromise(browserSettings.pipe(Effect.provide(invalid.context))),
+          ).rejects.toHaveProperty("_tag", "ConfigError");
+        }),
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("MCP defaults to no servers, resolves file paths, and environment replacement preserves disabled servers", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-config-"));
 

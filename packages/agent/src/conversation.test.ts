@@ -137,6 +137,51 @@ const failure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.match({ onFailure: (error) => error, onSuccess: () => null }));
 
 describe.concurrent("notes conversation", () => {
+  test.each([false, true])(
+    "external resources close with each run, scheduled=%s",
+    async (scheduled) => {
+      const opened: string[] = [];
+      const closed: string[] = [];
+
+      const state = await fixture(() => final(), {}, undefined, undefined, undefined, undefined, {
+        snapshot: (readOnly, run) =>
+          Effect.gen(function* () {
+            expect(readOnly).toBe(scheduled);
+            expect(run.sessionId).toBeTruthy();
+            opened.push(run.runId);
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(() => {
+                closed.push(run.runId);
+              }),
+            );
+
+            return [];
+          }),
+      });
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            const agent = yield* Agent;
+            yield* agent
+              .send(session.id, "First", { readOnlyTools: scheduled })
+              .pipe(Stream.runDrain);
+            expect(closed).toEqual(opened);
+            yield* agent
+              .send(session.id, "Second", { readOnlyTools: scheduled })
+              .pipe(Stream.runDrain);
+            expect(closed).toEqual(opened);
+            expect(new Set(opened).size).toBe(2);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test("external preflight rejects an invalid batch before its first call executes", async () => {
     let executed = 0;
 

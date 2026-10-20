@@ -1,5 +1,5 @@
 import type { Tool } from "@poppet/provider";
-import { Context, type Effect } from "effect";
+import { Context, type Effect, type Scope } from "effect";
 
 import type { AgentError } from "#src/errors";
 
@@ -23,6 +23,7 @@ export class ExternalTools extends Context.Service<
     readonly instructions?: string;
     readonly snapshot: (
       scheduled: boolean,
-    ) => Effect.Effect<ReadonlyArray<ExternalTool>, AgentError>;
+      run: { readonly sessionId: string; readonly runId: string },
+    ) => Effect.Effect<ReadonlyArray<ExternalTool>, AgentError, Scope.Scope>;
   }
 >()("poppet/ExternalTools") {}
