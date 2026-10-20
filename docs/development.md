@@ -87,6 +87,11 @@ apps/
       worker-log.ts       Protected file writes and bounded archive retention
       worker-commands.ts  Interactive command transport and host request handling
 packages/
+  browser/                @poppet/browser
+    src/browser.ts        Isolated per-run tools, permissions, references, result limits
+    src/browser-process.ts Pinned daemon, capped probes, bounded Unix socket requests
+    src/config.ts         Browser schemas and environment/file configuration
+    src/errors.ts         Browser failures adapted by the host
   agent/                  @poppet/agent
     src/service.ts        Persisted chat runner, deadlines, run finalization
     src/conversation.ts   Sequential model/tool loop and run budgets

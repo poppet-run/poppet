@@ -42,26 +42,27 @@ channel settings stay in their existing protected stores.
 
 ## Settings and environment overrides
 
-| Environment variable   | File field          | Default                  | Purpose                                                                                     |
-| ---------------------- | ------------------- | ------------------------ | ------------------------------------------------------------------------------------------- |
-| `POPPET_APP_NAME`      | `applicationName`   | `Poppet`                 | Application name used for initial ChatGPT registration                                      |
-| `POPPET_DATA_DIR`      | Environment only    | `~/.config/poppet`       | Configuration, credentials, and conversation storage                                        |
-| `POPPET_NOTES_DIR`     | `notesDirectory`    | `<data directory>/notes` | Notes tools' permitted directory                                                            |
-| `POPPET_PROVIDER`      | `provider`          | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`                                            |
-| `POPPET_MODEL`         | `model`             | Unset                    | Model ID for verification and new sessions and tasks                                        |
-| `POPPET_MCP_SERVERS`   | `mcpServers`        | `[]`                     | JSON server list replacing file values; local MCP tools and scheduled permissions           |
-| `POPPET_WEB_SEARCH`    | `webSearch`         | `false`                  | Enable Brave Search when a search key is available                                          |
-| `POPPET_LOG_REASONING` | `chat.logReasoning` | `false`                  | Log readable provider reasoning to CLI stderr and worker logs                               |
-| `POPPET_LOG_TIMINGS`   | `chat.logTimings`   | `false`                  | Log request-stage durations to CLI stderr and worker logs                                   |
-| `POPPET_CONTEXT_BYTES` | `chat.contextBytes` | `65536`                  | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576` |
-| `POPPET_HISTORY_TURNS` | `chat.historyTurns` | `20`                     | Previous complete exchanges sent to the model; maximum `100`                                |
-| `POPPET_OUTPUT_TOKENS` | `chat.outputTokens` | `2048`                   | Requested output limit when supported, capped by model metadata; maximum `32768`            |
-| `POPPET_MODEL_TURNS`   | `chat.modelTurns`   | `8`                      | Model requests per run; range `1–32`                                                        |
-| `POPPET_TOOL_CALLS`    | `chat.toolCalls`    | `16`                     | Tool calls per run; range `1–64`                                                            |
-| `POPPET_TOOL_BYTES`    | `chat.toolBytes`    | `16384`                  | UTF-8 bytes per serialized tool result; range `1024–65536`                                  |
-| `POPPET_SOUL_BYTES`    | `chat.soulBytes`    | `8192`                   | UTF-8 bytes in `soul.md`; range `1–65536`                                                   |
-| `POPPET_PROFILE_BYTES` | `chat.profileBytes` | `8192`                   | UTF-8 bytes in `profile.md`; range `1–65536`                                                |
-| `POPPET_FACTS_BYTES`   | `chat.factsBytes`   | `8192`                   | UTF-8 bytes of serialized saved facts sent to the model; range `1–65536`                    |
+| Environment variable   | File field          | Default                  | Purpose                                                                                       |
+| ---------------------- | ------------------- | ------------------------ | --------------------------------------------------------------------------------------------- |
+| `POPPET_APP_NAME`      | `applicationName`   | `Poppet`                 | Application name used for initial ChatGPT registration                                        |
+| `POPPET_DATA_DIR`      | Environment only    | `~/.config/poppet`       | Configuration, credentials, and conversation storage                                          |
+| `POPPET_NOTES_DIR`     | `notesDirectory`    | `<data directory>/notes` | Notes tools' permitted directory                                                              |
+| `POPPET_PROVIDER`      | `provider`          | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`                                              |
+| `POPPET_MODEL`         | `model`             | Unset                    | Model ID for verification and new sessions and tasks                                          |
+| `POPPET_MCP_SERVERS`   | `mcpServers`        | `[]`                     | JSON server list replacing file values; local MCP tools and scheduled permissions             |
+| `POPPET_BROWSER`       | `browser`           | `{"enabled":false}`      | JSON object replacing browser settings, with native CLI, pinned Chromium, and allowed domains |
+| `POPPET_WEB_SEARCH`    | `webSearch`         | `false`                  | Enable Brave Search when a search key is available                                            |
+| `POPPET_LOG_REASONING` | `chat.logReasoning` | `false`                  | Log readable provider reasoning to CLI stderr and worker logs                                 |
+| `POPPET_LOG_TIMINGS`   | `chat.logTimings`   | `false`                  | Log request-stage durations to CLI stderr and worker logs                                     |
+| `POPPET_CONTEXT_BYTES` | `chat.contextBytes` | `65536`                  | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576`   |
+| `POPPET_HISTORY_TURNS` | `chat.historyTurns` | `20`                     | Previous complete exchanges sent to the model; maximum `100`                                  |
+| `POPPET_OUTPUT_TOKENS` | `chat.outputTokens` | `2048`                   | Requested output limit when supported, capped by model metadata; maximum `32768`              |
+| `POPPET_MODEL_TURNS`   | `chat.modelTurns`   | `8`                      | Model requests per run; range `1–32`                                                          |
+| `POPPET_TOOL_CALLS`    | `chat.toolCalls`    | `16`                     | Tool calls per run; range `1–64`                                                              |
+| `POPPET_TOOL_BYTES`    | `chat.toolBytes`    | `16384`                  | UTF-8 bytes per serialized tool result; range `1024–65536`                                    |
+| `POPPET_SOUL_BYTES`    | `chat.soulBytes`    | `8192`                   | UTF-8 bytes in `soul.md`; range `1–65536`                                                     |
+| `POPPET_PROFILE_BYTES` | `chat.profileBytes` | `8192`                   | UTF-8 bytes in `profile.md`; range `1–65536`                                                  |
+| `POPPET_FACTS_BYTES`   | `chat.factsBytes`   | `8192`                   | UTF-8 bytes of serialized saved facts sent to the model; range `1–65536`                      |
 
 For a temporary override in fish:
 
@@ -89,6 +90,13 @@ Session listing and inspection work independently of out-of-range budgets.
 See [MCP tools](mcp.md) for server entries, selected environment and protected
 credential references, separate scheduled allowlists, limits, and inspection.
 Configuration contains names and references only. Restart the worker after edits.
+
+## Browser automation
+
+Browser automation uses an optional `browser` file section, replaced by
+`POPPET_BROWSER`. It defaults to disabled. See [browser setup](browser.md) for the
+pinned executables, allowed hostnames, settings, and limitations. Restart the
+worker after edits. Browser tools are unavailable to scheduled runs.
 
 ## Reasoning logs
 

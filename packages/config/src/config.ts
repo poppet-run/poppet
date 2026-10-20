@@ -11,6 +11,8 @@ import {
 
 export { ConfigSource, dataDirectory } from "#src/source";
 
+export { BrowserSettings, browserSettings } from "@poppet/browser/config";
+
 /** Search stays opt-in independently of the selected inference provider. */
 export const webSearchEnabled = Config.Boolean("POPPET_WEB_SEARCH").pipe(Config.withDefault(false));
 

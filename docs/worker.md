@@ -35,6 +35,13 @@ store even if a dead worker left its socket behind. A lost response to a deliver
 not trigger local fallback. Task outcomes and provider pauses commit together;
 recovery restores a quota pause from an unfinished occurrence's saved run.
 
+## Browser resources
+
+Optional [browser automation](browser.md) runs inside the process owning the chat.
+Worker-backed CLI and messaging chats get separate run-owned browser resources.
+Configuration changes require a restart. Cancelling a chat or stopping the worker
+closes those resources. Browser tools are omitted from scheduled tasks.
+
 ## macOS login startup
 
 On macOS, stop any foreground worker, then install a user LaunchAgent to start

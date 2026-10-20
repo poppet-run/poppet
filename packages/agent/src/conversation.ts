@@ -159,7 +159,10 @@ export const conversation = Effect.gen(function* () {
       Effect.gen(function* () {
         const catalog =
           model.description.capabilities.tools && external !== null
-            ? yield* measureTiming("mcp-discovery", external.snapshot(readOnlyTools))
+            ? yield* measureTiming(
+                "external-tools",
+                external.snapshot(readOnlyTools, { sessionId: run.sessionId, runId: run.id }),
+              )
             : [];
 
         const tools = model.description.capabilities.tools

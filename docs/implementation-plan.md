@@ -2,7 +2,7 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–20 implemented with automated checks. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
+Status: Phases 1–21 implemented with automated checks. Phase 21 also has a pinned local-browser check; live-model CLI and messaging browser completion remain manual. Phase 22 computer use is deferred. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
@@ -10,7 +10,11 @@ implemented.
 
 [MCP server support](#phase-20-mcp-server-support) is implemented for local stdio tools. See the [MCP guide](mcp.md) for setup and remaining live validation.
 
-Updated: 2026-10-18
+[Browser automation](#phase-21-browser-automation-with-agent-browser) uses
+agent-browser and text snapshots. [Computer use](#phase-22-computer-use-deferred)
+remains a separate later phase.
+
+Updated: 2026-10-20
 
 Storage history: the unreleased migrations are now consolidated into schema
 version 1 in one timestamped initial migration. Migration numbers and
@@ -45,6 +49,7 @@ route against the user's account before building the agent around it.
 | Discord client                      | Gateway lifecycle, thread operations, and rate limits; select a Bun-compatible client and pin it during implementation | Discord gateway           |
 | Other messaging clients             | Assess each platform's HTTP API or client when its adapter is implemented                                              | Later messaging adapters  |
 | MCP TypeScript SDK                  | Stdio client and protocol lifecycle; verify Bun compatibility and pin a supported release during implementation        | MCP server support        |
+| agent-browser CLI and Chromium      | Local browser automation; agent-browser 0.39.1 and Chrome for Testing 155.0.8059.84                                    | Browser automation        |
 
 Pin dependencies as they are introduced. See [architecture.md](architecture.md)
 for Effect service boundaries and execution rules.
@@ -1293,6 +1298,141 @@ and complete a real-model tool round trip through CLI and messaging. Separately
 verify an explicitly allowed scheduled read and worker shutdown without orphaned
 server processes. Remote transports and broader MCP capabilities remain later
 work.
+
+## Phase 21: Browser automation with agent-browser
+
+Implemented with fixture and injected-model checks, plus a standalone check with
+agent-browser 0.39.1 and Chrome for Testing 155.0.8059.84 on Apple silicon macOS.
+Live-model CLI/messaging completion and live worker cancellation/shutdown remain
+manual. See [browser automation](browser.md) for setup and validation.
+
+Native MCP handshake and selected schemas passed a compatibility probe. The
+implementation uses the plan's fixed adapter because native tools expose launch
+and session overrides, and their CLI lifecycle detaches the daemon. `@poppet/browser`
+owns the pinned native daemon and sends validated commands over its private Unix
+socket. It also owns browser settings, errors, and tools, which the CLI adapts to
+the agent's external-tool contract. No provider, external dependency, or storage
+schema changes were needed.
+Windows support, persistent login state, and computer use remain outside scope.
+
+Depends on phase 5's tool loop, phase 4's durable records, phases 8–9's
+worker ownership, and phase 20's external-tool integration. Reuses the existing
+messaging agent path. Browser automation is optional and interactive-only in this
+phase; every scheduled run receives no browser tools.
+
+Let Poppet navigate JavaScript websites, inspect compact accessibility snapshots,
+and interact with elements through agent-browser. Start with local Chromium,
+text results, and a fresh isolated browser session for each run. Navigation,
+snapshots, clicks, form filling, bounded key presses, scrolling, and close are the
+initial operations. Use snapshot element references for interactions and refresh
+the snapshot after navigation or a stale-reference error. Do not guess targets or
+silently replay an interaction that may already have changed the page.
+
+First verify the native `agent-browser mcp --tools core` server against Poppet's
+MCP handshake, strict schema validation, and bounded text results. Its default
+profile contains more operations than this phase permits, so use an explicit
+Poppet tool allowlist as well as a daemon-enforced action policy. Reuse
+`@poppet/mcp` and the existing `ExternalTools` contract where they meet the session
+and lifecycle requirements below. If native MCP cannot enforce those requirements,
+use a small fixed-command CLI adapter through the same external-tool hook. Keep
+one model/tool loop and compose browser tools alongside existing MCP tools.
+See the [agent-browser commands](https://agent-browser.dev/commands#mcp-server),
+[sessions](https://agent-browser.dev/sessions), and
+[security controls](https://agent-browser.dev/security).
+
+Keep browser process/session management and command validation outside provider
+adapters. Extend the host-to-tool context only as needed to bind browser work to
+the current session and run. Poppet chooses an opaque browser session identity;
+model arguments cannot select another session, attach to an existing daemon, or
+override launch settings. Native MCP's optional session arguments must not bypass
+this binding. Keep browser state isolated across CLI, worker, and messaging runs,
+even though the worker retains its general MCP connections.
+
+Add owner-controlled file configuration for enablement, the installed executable,
+and allowed domains, preserving file defaults and environment overrides. Disabled
+or unavailable browser support leaves ordinary chat and existing tools available
+with an actionable diagnostic. Install the pinned CLI and its supported Chromium
+build explicitly during setup; never install or upgrade them from a model call.
+Prefer an absolute executable path for the background worker. Configuration
+changes take effect after restart, following existing worker behavior.
+
+Poppet fixes command arguments, working directories, security settings, and a
+minimal child environment. No shell, arbitrary CLI flags, scripts, plugins, or
+inherited provider/channel credentials are exposed. Prevent ambient agent-browser
+configuration from enabling other profiles, providers, or capabilities. Use a
+private runtime directory and namespace so other chats or ordinary agent-browser
+invocations cannot reuse the run's browser state. Persistent profiles, imported
+cookies, auth-vault access, saved login state, and attaching to the owner's daily
+browser are outside this phase.
+
+Enable agent-browser's domain restrictions before the first navigation and deny
+unlisted actions. Require an explicit nonempty owner-configured domain allowlist;
+page text, discovered links, model arguments, and search results cannot expand it.
+Validate navigation URLs as HTTP(S), without embedded credentials. Verify that
+redirects, new tabs, and subresource requests obey the same domain restrictions,
+and fail closed when the selected launch mode cannot enforce them. Document any
+required CDN domains and the pinned release's network limitations. Browser
+traffic does not pass through `fetch_page`'s DNS/IP checks, and a hostname
+allowlist does not provide an operating-system network sandbox.
+
+Browser interactions can submit forms or change external state. Perform them
+only for the owner's current explicit request; never describe generic clicking
+or typing as read-only. Page content and tool results remain untrusted data and
+cannot authorize other actions, change permissions, mutate notes/memory/tasks, or
+grant `fetch_page` access. Return the current URL with observations so answers can
+cite pages actually inspected. Arbitrary JavaScript evaluation, downloads,
+uploads, clipboard access, network interception controls, screenshots, and PDF
+output are outside the initial tool set. A general pause-and-approve workflow is
+also later work, not an implied capability of this phase.
+
+Use existing durable tool records, whole-batch validation, call/model-turn budgets,
+and uncertain outcomes. Bound browser startup, each command, and captured stdout
+and stderr before unbounded buffering. Return validated text/JSON within
+`POPPET_TOOL_BYTES`, preserving Unicode and marking shortened content. Keep page
+data and command failures out of raw diagnostics. Check the existing MCP startup
+and invocation deadlines against real browser startup and navigation; change only
+the browser-specific limits if required. Cancellation, timeout, run completion,
+startup failure, and worker shutdown must close the run's daemon and browser as
+well as its command subprocesses. Closing only the short-lived CLI is insufficient.
+Never retry or resume an uncertain browser action automatically after restart.
+
+Update configuration decoding, host composition, external-tool context, cleanup,
+and fixtures together. Add a browser setup/usage guide and update configuration,
+chat, worker, tasks, MCP, and architecture docs when implemented. Keep the provider
+message format and storage schema unchanged unless the integration proves a
+specific need; text-based browser use requires no image support.
+
+Automated checks use an injected model and a controlled command/MCP fixture.
+Cover disabled and unavailable setup, config precedence, denied actions and
+domains, session-override rejection, state isolation across runs, malformed and
+oversized output, Unicode truncation, stale references, deadlines, cancellation,
+daemon/browser cleanup, durable uncertain outcomes without replay, and omission
+of browser tools from scheduled runs. Verify that page content cannot grant
+mutation or page-fetch authority. Exercise a small local test site with the pinned
+real browser for navigation, redirects, blocked subresources, form interaction,
+and isolation; keep external sites and live inference out of automated fixtures.
+Run `bun run check`.
+
+Completion check: complete one explicitly requested browser workflow with a real
+model through CLI and an authorized messaging conversation, including text
+extraction and an intentional form action on a disposable test site. Inspect the
+saved calls, verify denied navigation, cancel a running workflow, and confirm no
+run-owned daemon or browser remains after cleanup or worker shutdown. These live
+checks remain manual and must pass before describing browser support as complete.
+
+## Phase 22: Computer use, deferred
+
+Deferred until phase 21 is implemented and validated. Native application control
+is a separate capability; it is not required to complete browser automation.
+Evaluate Cua Driver through MCP for a limited accessibility-tree trial, then
+decide whether the target is the owner's desktop or an isolated computer.
+
+Write the detailed plan before implementation. It must cover app permissions,
+session ownership, cancellation, and any required approval flow. Screenshot-based
+control also needs image-capable provider requests, model capability checks,
+bounded image storage/context handling, and a retention policy. Selecting a Cua
+runtime, provisioning VMs, native mouse/keyboard control, and image forwarding
+remain outside phase 21.
 
 ## Validation
 

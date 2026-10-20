@@ -5,6 +5,7 @@ import {
   ConfigSource,
   dataDirectory as configuredDataDirectory,
   webSearchEnabled,
+  browserSettings,
 } from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
 import { inspectMCP, mcpServers, type MCPCommand } from "@poppet/mcp";
@@ -92,6 +93,7 @@ const showConfig = Effect.gen(function* () {
       {
         ...(yield* AppConfig),
         webSearch: yield* webSearchEnabled,
+        browser: yield* browserSettings,
         mcpServers: yield* mcpServers,
         chat: yield* ChatSettings,
         ...(yield* ConfigSource),

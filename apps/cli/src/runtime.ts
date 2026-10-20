@@ -27,7 +27,7 @@ import { ChatTasksLive, TaskRepositoryLive, WorkerConnections } from "@poppet/ta
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { createConnectionStatus } from "#src/connection-status";
-import { MCPAgentToolsLive } from "#src/mcp";
+import { ExternalAgentToolsLive } from "#src/mcp";
 import { WebSearchLive } from "#src/web-search";
 
 export const findProvider = (
@@ -167,7 +167,10 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     ChatSettings.pipe(Effect.map(({ toolBytes }) => makeMCPLive(toolBytes))),
   ).pipe(Layer.provide([config, chatSettings, searchCredentials]));
 
-  const externalTools = MCPAgentToolsLive.pipe(Layer.provideMerge(mcp));
+  const externalTools = ExternalAgentToolsLive.pipe(
+    Layer.provideMerge(mcp),
+    Layer.provide([config, chatSettings]),
+  );
 
   const chat = AgentLive.pipe(
     Layer.provideMerge([
