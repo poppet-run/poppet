@@ -432,7 +432,7 @@ Text deltas stream immediately; terminal-only text or an unstreamed final suffix
 is emitted before committing the answer. The source must end cleanly after one
 validated completion matching the session identity. Malformed, missing, duplicate,
 or trailing events fail. Text is capped at 128 KiB and serialized completion at
-1 MiB. A 90-second absolute deadline includes provider resolution and streaming;
+1 MiB. A five-minute absolute deadline includes provider resolution and streaming;
 provider adapters retain their own 60-second inference deadlines.
 
 Run finalizers record provider/agent/store failure categories or interruption.

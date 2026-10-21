@@ -279,7 +279,7 @@ export const AgentLive = Layer.effect(
           }),
         ).pipe(
           Stream.interruptWhen(
-            Effect.sleep("90 seconds").pipe(
+            Effect.sleep("5 minutes").pipe(
               Effect.andThen(
                 Effect.fail(
                   new AgentError({

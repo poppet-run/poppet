@@ -31,7 +31,7 @@ Runs default to eight model turns and sixteen tool calls. Every requested batch
 is checked against the run's allowed tools and argument schemas before any call
 in that batch executes. A batch is not executed unless another model turn remains
 to consume its results. Tool results and definitions count toward context size;
-the current exchange is kept whole and fails if it cannot fit. The 90-second
+the current exchange is kept whole and fails if it cannot fit. The five-minute
 run deadline includes all model turns and tools. The 128 KiB text limit applies
 across all turns, and each serialized completion is limited to 1 MiB.
 

@@ -296,7 +296,7 @@ Poppet also reserves room for output and request overhead. UTF-8 bytes are a
 conservative estimate rather than an exact tokenizer; providers can still reject
 oversized context. A new message that cannot fit fails clearly. Trimming changes
 only the request, not saved history. Answers are limited to 128 KiB of text and
-1 MiB including continuation. The runner has a 90-second absolute deadline;
+1 MiB including continuation. The runner has a five-minute absolute deadline;
 provider inference also retains its 60-second deadline.
 
 Tool-capable models receive the three [notes tools](notes.md), conversation search,

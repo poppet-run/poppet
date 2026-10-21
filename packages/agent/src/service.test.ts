@@ -783,7 +783,7 @@ describe.concurrent("persisted agent", () => {
     }
   });
 
-  test("a nonterminating model reaches the absolute deadline and leaves an inspectable interrupted run", async () => {
+  test("allows runs beyond 90 seconds but interrupts a nonterminating model after five minutes", async () => {
     const state = await fixture(() => Effect.succeed({ description, stream: () => Stream.never }));
 
     try {
@@ -801,6 +801,8 @@ describe.concurrent("persisted agent", () => {
 
           yield* Deferred.await(started);
           yield* TestClock.adjust("90 seconds");
+          expect((yield* store.runs(session.id))[0]?.status).toBe("running");
+          yield* TestClock.adjust("210 seconds");
           expect(yield* failure(Fiber.join(fiber))).toMatchObject({ reason: "interrupted" });
           expect((yield* store.runs(session.id))[0]?.status).toBe("interrupted");
           expect((yield* store.messages(session.id)).length).toBe(1);

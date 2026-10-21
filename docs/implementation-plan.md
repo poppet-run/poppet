@@ -266,7 +266,7 @@ inside the request scope so credential ownership survives through streaming.
 The runner saves input before provider resolution, enforces one active run,
 streams text, and commits an answer only after exactly one completed response
 and clean stream termination. Provider errors, invalid completion sequences,
-oversized context/output, cancellation, early consumption, and a 90-second
+oversized context/output, cancellation, early consumption, and a five-minute
 absolute deadline leave inspectable terminal runs. Partial answers are not
 committed; failed inputs remain inspectable but are excluded from later context.
 No automatic retries or provider/model fallbacks are enabled.
@@ -309,8 +309,8 @@ Implemented the sequential tool loop in `@poppet/agent`, with `poppet_notes.read
 advertising tool support. Every batch is decoded and permission-checked before
 execution. Whole tool exchanges and provider continuation remain together across
 model turns and history trimming. Model-turn, tool-call, result-size, context,
-and aggregate text limits bound the run. The absolute run deadline remains 90
-seconds, and model requests are never retried or switched to a fallback.
+and aggregate text limits bound the run. The absolute run deadline is five
+minutes, and model requests are never retried or switched to a fallback.
 
 Migration 4 adds durable call IDs, ordering, names, raw arguments, execution
 states, output, and failure reasons. Complete tool requests are recorded before

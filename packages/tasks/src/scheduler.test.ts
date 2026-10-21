@@ -731,7 +731,7 @@ describe.concurrent("task worker", () => {
           );
 
           yield* Deferred.await(started);
-          yield* TestClock.adjust("90 seconds");
+          yield* TestClock.adjust("5 minutes");
           yield* Fiber.join(running);
           const occurrence = repo.occurrence(active.occurrence.id);
 
