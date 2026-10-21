@@ -2,15 +2,19 @@
 
 [Documentation index](index.md) · [Implementation plan](implementation-plan.md)
 
-Recorded on 2026-10-21. These are candidates for later planning, in the order
-discussed. They are not scheduled work or authorization to implement them.
-Recheck current capabilities before starting a separate plan for any item.
+Recorded on 2026-10-21. These priorities have detailed plans in the
+[implementation plan](implementation-plan.md), in the order discussed. They are
+not scheduled work or authorization to implement them. Recheck current
+capabilities and the relevant phase's compatibility gates before implementation.
 
 Change-aware monitoring already has a [Phase 23 plan](implementation-plan.md#phase-23-change-aware-monitoring).
 The remaining priorities are below. Task editing is the suggested next focused
 improvement.
 
 ## 1. Editable tasks and snoozing
+
+Planning is captured in [Phase 24](implementation-plan.md#phase-24-editable-tasks-and-snoozing),
+with task editing first and separate stages for skip-next, snooze, and run-now.
 
 Support requests such as "Move my morning summary to 08:30", "Skip tomorrow",
 and "Run this now" without recreating a task.
@@ -25,6 +29,10 @@ Starting points: [scheduled tasks](tasks.md), `packages/tasks/src/task-schema.ts
 
 ## 2. Documents and voice messages
 
+Planning is captured in [Phase 25](implementation-plan.md#phase-25-documents-and-voice-messages),
+with authorized text attachments first, PDF extraction next, and opt-in voice
+transcription afterward.
+
 Let the owner send a document for summarization or dictate a reminder from a
 phone. Start with text attachments and text-based PDFs in one messaging adapter.
 Plan voice transcription afterward; screenshots and scanned-document OCR can wait.
@@ -38,6 +46,9 @@ Starting points: [Telegram](gateways/telegram.md), [gateway architecture](archit
 `packages/gateway/src/channel.ts`, and `packages/channel-telegram/src/`.
 
 ## 3. Context for individual projects
+
+Planning is captured in [Phase 26](implementation-plan.md#phase-26-context-for-individual-projects),
+with saved project instructions first, then scoped facts and selected notes.
 
 Let the owner explicitly select a project with its own instructions, selected
 notes, and facts. Project details should load for that project without becoming
@@ -54,6 +65,10 @@ Starting points: [memory](memory.md), [skills](skills.md),
 
 ## 4. Actions the owner can review and approve
 
+Planning is captured in [Phase 27](implementation-plan.md#phase-27-actions-the-owner-can-review-and-approve),
+starting with an immutable proposal to create a note, followed by one supported
+external action and explicitly enabled scheduled proposals.
+
 Let Poppet prepare a concrete change, show the proposed action, and wait for
 approval before executing it. A scheduled review could propose a calendar
 change or draft a reply while execution waits for the owner.
@@ -69,6 +84,10 @@ Starting points: [MCP permissions](mcp.md#permissions-and-untrusted-content),
 
 ## 5. Browser login state across requests
 
+Planning is captured in [Phase 28](implementation-plan.md#phase-28-browser-login-state-across-requests),
+with a pinned-runtime compatibility gate, exclusive profile ownership, attended
+login, explicit CLI session selection, and clearing/recovery.
+
 Allow an explicitly enabled, isolated browser profile to retain login state
 between messages so authenticated workflows do not require signing in every time.
 
@@ -81,6 +100,10 @@ Starting points: [browser lifecycle](browser.md#use-and-lifecycle),
 `packages/browser/src/browser.ts`, and `browser-process.ts`.
 
 ## 6. A useful `poppet doctor`
+
+Planning is captured in [Phase 29](implementation-plan.md#phase-29-a-useful-poppet-doctor),
+with local inspection, bounded worker observations, and consistent human/JSON
+results. It can be delivered independently of the other planned phases.
 
 Provide one command that explains worker availability, authentication problems,
 provider pauses, failed scheduled work or delivery, and unavailable MCP/browser
@@ -95,6 +118,10 @@ Starting points: [worker status](worker.md#status-and-logs),
 [CLI inspection commands](cli.md), and the existing task, auth, MCP, and config status paths.
 
 ## Workflows to try with existing tools
+
+Trial stages are captured in [Phase 30](implementation-plan.md#phase-30-calendar-briefings-and-weekly-reviews),
+covering capability/time-source checks, a calendar briefing, and a weekly review.
+These are configuration trials before any dedicated runtime integration.
 
 Try calendar briefings and weekly project reviews with existing MCP reads,
 scheduled tasks, and local skills before planning dedicated integrations.

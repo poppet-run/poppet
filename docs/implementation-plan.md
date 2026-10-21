@@ -17,8 +17,24 @@ starts with a separately scoped accessibility-only trial.
 [Change-aware monitoring](#phase-23-change-aware-monitoring) is implemented with
 automated checks. Real-model monitoring and live change delivery remain manual.
 
-See [future priorities](future-priorities.md) for the other feature candidates
-saved for later planning.
+[Editable tasks and snoozing](#phase-24-editable-tasks-and-snoozing) is planned in
+separate stages for editing, skip-next, snooze, and run-now.
+
+The other saved priorities have detailed plans below. They remain planned work;
+these notes do not authorize implementation.
+
+| Phase                                                                      | First deliverable                                          | Follow-up stages                                                   |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| [25: Documents and voice](#phase-25-documents-and-voice-messages)          | Owner-sent Telegram text attachments                       | Text-based PDFs, then opt-in voice transcription                   |
+| [26: Project context](#phase-26-context-for-individual-projects)           | Explicit project instructions saved with a session or task | Project facts and selected notes                                   |
+| [27: Reviewed actions](#phase-27-actions-the-owner-can-review-and-approve) | Review and approve one proposed note write                 | One supported external action, then scheduled proposals            |
+| [28: Browser login state](#phase-28-browser-login-state-across-requests)   | One explicitly selected, protected browser profile         | Attended login, reuse, inspection, and clearing                    |
+| [29: Doctor](#phase-29-a-useful-poppet-doctor)                             | Read-only local health report with next steps              | Worker observations and stable JSON output                         |
+| [30: Workflow trials](#phase-30-calendar-briefings-and-weekly-reviews)     | Existing-tool capability checks                            | Calendar briefings and weekly reviews without a native integration |
+
+See [future priorities](future-priorities.md) for the priority order and workflows
+to try using existing tools. The phase numbers organize delivery; independent
+work such as doctor need not wait for every earlier phase.
 
 Updated: 2026-10-21
 
@@ -2094,6 +2110,1137 @@ The phase is complete when the automated checks and this real-model delivery
 path pass. Until then, mark implementation, fixture coverage, and live validation
 separately. Model extraction accuracy, incomplete source visibility, polling gaps,
 and uncertain remote delivery remain explicit limits after completion.
+
+## Phase 24: Editable tasks and snoozing
+
+Planned only. This phase extends the existing task commands, worker endpoint,
+and `poppet_tasks.manage_tasks` tool. It depends on phases 7–9, 18, and 23.
+Implement and validate the stages separately, starting with task editing.
+Skip-next, snooze, and run-now have distinct meanings and should not arrive as
+one large first change. No runtime changes are authorized by this plan alone.
+
+### Goals and boundaries
+
+Support changing a saved task's name, prompt, or schedule while retaining its ID,
+history, provider selection, skill snapshot, and delivery destination. Then add
+controls for one upcoming execution. Reuse the single task worker, SQLite owner,
+cron/timezone handling, command lock, tool receipts, and gateway delivery queue.
+No new dependency, scheduler, general workflow engine, or global configuration
+is needed.
+
+| Operation | Meaning                                                             | Recurring schedule                                             |
+| --------- | ------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Edit      | Change the task definition for work that has not started            | Replace only when explicitly supplied                          |
+| Skip-next | Cancel exactly one selected upcoming execution                      | Keep the regular cadence                                       |
+| Snooze    | Delay exactly one selected upcoming execution until a later instant | Keep the regular cadence; do not accumulate intervening checks |
+| Run-now   | Queue an explicitly requested execution through the normal worker   | Keep the regular cadence                                       |
+
+Snooze delays execution, not an already queued gateway message. Reposting a
+previous alert, acknowledgement reminders, duration-expression parsing, editing
+provider/model/workload/skills/destinations, changing reporting versus monitoring
+mode, and bulk edits are outside this phase. Keep those separate from the core
+controls. Natural-language chat may resolve an explicit relative time using the
+current request time; the tool still receives a concrete timestamp.
+
+### Shared mutation and history rules
+
+Use stable task IDs. Every definition edit carries the revision returned by
+inspection. The CLI can read that revision automatically before issuing the
+mutation; chat must inspect before editing. Revalidate it inside the committing
+transaction. Reject a stale revision instead of silently refreshing and applying
+the same request to a newer definition.
+
+Reject edits and the new timing controls while that task has a running
+occurrence. Do not interrupt it implicitly or wait for the shared agent to become
+idle. The owner may use the existing explicit cancellation command first.
+Recheck running state when committing, under the same command ownership used
+for claiming work. This also covers a completed model run whose occurrence has
+not yet finalized. Other tasks may continue running normally.
+
+Edits are allowed on paused tasks and never resume them. Skip-next, snooze, and
+run-now require an unpaused task. They never clear a provider pause or grant
+additional tools. Ordinary scheduled work and monitoring retain their read-only
+execution policy.
+
+Persist a small task-change record in the same transaction as each mutation.
+Record the operation identity, task/revision, time, changed fields or selected
+occurrence, and resulting schedule/timing state. Definition edits retain before
+and after values for the edited fields. Keep this task-specific; do not introduce
+a general event-sourcing layer. Bound stored fields using existing task limits.
+
+Chat mutations and their durable tool receipts must commit together, as creation
+does today. Derive chat operation identity from the host's run/call IDs. CLI
+mutations carry a client-generated request ID; repeating the same request ID
+returns its original saved receipt. A timeout or lost response must not trigger
+local fallback, a new request ID, or a second mutation. A user issuing a separate
+command after an ambiguous result should inspect the saved task/change first.
+
+New actions use explicit discriminators on `/tasks`, so an older worker rejects
+them instead of ignoring extra fields or turning them into ordinary creation.
+Keep the bounded command deadline and validate future times again at commit,
+including time spent waiting for command ownership. A failed receipt/history
+write rolls back the mutation. Log committed IDs, actions, and times without
+printing prompts, note contents, credentials, or model output.
+
+### Stage 24a: Edit a task definition
+
+Add the proposed CLI interface:
+
+```fish
+bun run start tasks edit <task-id> --name "Morning review"
+bun run start tasks edit <task-id> --prompt "Read project.md and summarize its open decisions."
+bun run start tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
+bun run start tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
+```
+
+Allow a nonempty patch containing name, prompt, and/or a complete schedule.
+Omitted fields stay unchanged. Reuse existing name/prompt byte limits and the
+existing once/cron parsers. A recurring replacement needs both expression and
+explicit timezone; a one-off replacement needs a future offset-qualified
+instant. Reject conflicting schedule forms, timezone-only patches, unknown
+fields, and empty patches. Identical supplied values are a no-op and do not
+cancel work, increment the revision, reset monitoring, or add another change.
+
+Report tasks may switch between once and cron schedules. Monitors must remain
+recurring. Changing a completed one-off's name or prompt does not execute it
+again; supplying a new future schedule explicitly rearms it. Schedule edits
+replace any snooze override introduced in Stage 24c, and the receipt must say so.
+
+When a schedule changes, cancel any pending occurrence with a specific
+`task-edited` reason and compute the new next time from the commit time. Do not
+backfill old recurring slots. Preserve the paused flag, completed/failed history,
+old session names, and already queued messages.
+
+For a name/prompt edit with a pending occurrence, replace that unstarted
+occurrence in the same transaction using the new definition revision. Preserve
+its logical schedule time, effective ready time, and destination snapshot.
+Record the replaced occurrence as cancelled, retaining its original definition
+for inspection. If no pending occurrence exists, preserve the current `nextAt`.
+A pending one-off can therefore receive its edited prompt without disappearing
+or creating two executions.
+
+Extend `manage_tasks` with `edit`. Reuse its nullable name/prompt/schedule fields
+as the patch, add an inspected revision, and keep unrelated fields null. Validate
+at least one editable field. The model cannot supply a provider, owner,
+destination, permission, or skill override. Mutate only on the current owner's
+explicit request, never from history, pages, notes, skills, or tool output.
+
+The receipt includes task ID, old/new revision, effective changed fields, next
+time, paused state, replaced occurrence IDs, and whether a monitoring baseline
+was reset. Inspection shows current definition and historical occurrence
+snapshots; renaming a task does not rename existing chat sessions or threads.
+
+### Definition snapshots and monitoring baselines
+
+Queued occurrences currently retain a destination but read the current task
+when claimed. Add a persisted execution-definition snapshot and definition
+revision to each occurrence. Save only the fields needed to execute and inspect
+it: name, prompt, provider, model, workload, skill snapshot, monitoring mode, and
+schedule. Keep the existing per-occurrence destination authoritative. Claiming
+and explicit retries use the occurrence snapshot, not the current mutable job.
+Expiration and retry eligibility use that snapshot's scheduling kind as well;
+an edit must not retroactively change the policy for historical work.
+
+Change occurrence uniqueness from task/time to task/definition-revision/time.
+Keep the existing constraint permitting at most one pending or running
+occurrence per task. This lets an edit replace an unstarted slot or move a
+schedule back to a previously cancelled future time without deleting history or
+colliding with its old occurrence. Automatic reconciliation must still avoid
+duplicate slots within one revision.
+
+Add a monotonically increasing definition revision on jobs. An edit increments
+it only when at least one supplied field changes. Append the next migration
+from the current version-2 schema and backfill existing occurrences at revision
+zero using their current task definition and their own saved destination. Before
+this feature, definitions were immutable through supported commands, so this is
+the available definition for legacy rows. Do not claim to reconstruct unsupported
+manual database edits.
+
+Rebuilding occurrence uniqueness must preserve related monitoring results and
+all original IDs. Plan the parent/child table copy and rename together; dropping
+an occurrence table with cascading foreign keys can delete monitoring history.
+Keep migration atomic and preserve result ordering, constraints, indexes,
+sessions, tool calls, and gateway records. Never rewrite applied migrations or
+require a database reset. Add fields for later timing stages only when those
+stages are implemented.
+
+A monitor name or schedule edit preserves its successful comparison baseline.
+Any actual prompt change conservatively starts a new quiet baseline, because
+the host cannot decide whether the watched field or source changed semantically.
+Retain old results for history. Store a per-job baseline boundary using the last
+committed monitor-result ID, and compare only results after that boundary.
+Do not delete observations or clear unrelated facts.
+
+Recheck that no occurrence is running before moving that boundary. Keep normal
+finalization and restart recovery consistent with occurrence snapshots and the
+current baseline boundary. Explicit retry of an old monitor occurrence predating
+the latest prompt change must be rejected; instruct the owner to use the next
+current-definition check. A name/schedule change alone does not make prior
+monitor evidence belong to a different watched value.
+
+### Stage 24b: Skip exactly one upcoming execution
+
+Add `tasks skip-next <task-id>` and the matching chat action. Select the pending
+occurrence if one exists; otherwise select the next scheduled slot. Bind the
+request to the inspected occurrence ID, or to the inspected next-slot timestamp
+plus definition revision. For pending targets, also bind the inspected effective
+ready time and pending state. Revalidate the target at commit. Do not silently
+select another slot if the scheduler or another command moved it meanwhile.
+
+Cancel the selected pending occurrence with an explicit skip reason. If the
+selected slot has not been queued, persist a cancelled occurrence for that slot
+with its definition/destination snapshot. Advance `nextAt` exactly once from the
+selected logical slot when necessary, not from when the command happened to
+arrive. Reuse the existing reconciliation policy for any further overdue slots;
+do not accidentally enqueue a backlog.
+
+For a one-off task, skipping consumes its only scheduled execution. It remains
+inspectable and may be explicitly retried under existing rules. For recurring
+work, the next regular slot remains scheduled. No task definition edit or monitor
+baseline reset occurs. The receipt identifies the exact skipped slot and the
+next time. Replayed operation IDs cannot skip a second slot.
+
+### Stage 24c: Snooze the next execution
+
+Add the proposed interface:
+
+```fish
+bun run start tasks snooze <task-id> --until 2099-10-22T10:00:00+01:00
+```
+
+Add `snooze` to the chat tool with an absolute offset-qualified `until` value.
+Ask about ambiguous targets or local times. Use the same explicit target binding
+as skip-next. Require a scheduled or pending execution; do not recreate completed
+one-offs or snooze an already sent result.
+
+Persist `availableAt` separately from immutable logical `scheduledAt`. Initially
+it equals `scheduledAt`. Snoozing moves only `availableAt` to an instant later
+than both now and the target's current effective due time. An identical future
+until value is a no-op; moving earlier is not snoozing in this version. The
+receipt shows the logical slot, new ready time, and unchanged recurring schedule.
+
+If the next slot is not queued yet, materialize that one pending occurrence with
+its snapshot and requested ready time, advancing the stored next slot once.
+This must not make it runnable early: claiming now needs `availableAt <= now`,
+with deterministic ordering by ready time, logical time, and ID. Keep the
+single-pending/running-per-task rule. While a recurring check is held, intervening
+cron slots follow existing busy-skip behavior instead of accumulating more work.
+
+Use effective ready time for recurring pending expiration and explicit-retry
+freshness checks, preserving the existing 24-hour window after that time.
+Otherwise a deliberate long snooze could expire before its requested execution.
+One-off work keeps its existing no-expiration policy. A stopped worker later
+runs the persisted pending occurrence once when eligible, subject to expiration
+and provider pauses; do not rebuild it from an in-memory timer.
+
+Pausing cancels pending work, including a snoozed occurrence, while preserving
+monitoring history. Resuming a recurring task resumes its ordinary cadence and
+does not restore the cancelled snooze. A cancelled one-off still needs an explicit
+retry or future schedule edit. Clearing tasks removes timing overrides with task
+history and retains existing queued gateway messages.
+
+### Stage 24d: Run-now as a separate follow-up
+
+Add `tasks run-now <task-id>` and the matching chat action only after the earlier
+stages have passed. Queue through the same worker, fresh session, snapshot,
+read-only policy, provider pauses, budgets, and delivery path. The command receipt
+acknowledges queued work, not an answer or successful delivery.
+
+If a regular occurrence is already pending and eligible, return that same
+occurrence rather than queueing another. Reject a future snoozed/held occurrence
+or running task instead of silently undoing a snooze or bypassing active work.
+If a regular slot is already due but not queued, consume that slot through normal
+reconciliation. Otherwise, a recurring task gets one explicitly marked manual
+occurrence at now, without moving its next regular time. An unstarted one-off
+runs its selected logical slot early and consumes its future schedule. Its
+ready time may therefore precede its logical schedule time; only the explicit
+run-now action can introduce that early eligibility.
+
+Persist manual origin so inspection and expiration policy are explicit. A manual
+extra run keeps the normal recurring freshness window; one-off work keeps its
+no-expiration policy. A historical occurrence-key collision must fail clearly,
+never return an unrelated completed answer or manufacture a different timestamp.
+Operation-ID replay returns the original queued receipt. For a monitor, run-now
+is another check using the same baseline rules; it does not force a notification.
+
+### Implementation reach and delivery order
+
+| Stage          | Required work                                                                                                                                                                                                                                                     | Acceptance focus                                                                                                                  |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 24a. Editing   | Task schemas/repository/commands and exports; migration/fixtures; occurrence snapshots, uniqueness, retry and recovery; monitoring baseline boundary; CLI parser and `command-args.ts`; worker actions/deadlines; chat arguments, receipts and bounded inspection | Edit without changing task identity, rewriting history, executing old pending definitions, or comparing different monitor prompts |
+| 24b. Skip-next | Exact target resolution, cancelled-slot persistence, schedule advancement, operation identity and receipts; CLI/chat exposure                                                                                                                                     | Skip the selected execution once without shifting recurring cadence or selecting a different target after a race                  |
+| 24c. Snoozing  | Persisted ready time; reconciliation, claim ordering, expiration, retry, pause/resume and inspection; CLI/chat exposure                                                                                                                                           | No early execution, survives restart, one held occurrence, and no backlog after the delay                                         |
+| 24d. Run-now   | Durable manual origin and enqueue operation, existing-pending reuse, one-off consumption, receipts and CLI/chat exposure                                                                                                                                          | One queued run through ordinary permissions and provider holds, with recurring cadence preserved                                  |
+
+Keep each stage independently reviewable with its behavior tests and documentation.
+Extend existing task/socket/scheduler, agent task-tool, CLI/host, store migration,
+and gateway regression fixtures. Reuse providers and channel adapters unchanged.
+Update tasks, CLI, chat, storage, architecture, development, and this plan as each
+stage lands; examples here are proposed interfaces until implementation exists.
+
+### Verification and completion gates
+
+Use `bun run test <path>` with temporary SQLite state, injected models, and a
+controllable clock. Run `bun run check` after each delivered stage. Do not add
+wall-clock sleeps, live model accounts, or messaging services to fixtures.
+
+Prove these distinct behaviors:
+
+1. Partial edits and no-ops; complete timezone-aware schedule replacement;
+   one-off rearming; invalid/past timestamps, unknown fields, and monitor-to-once
+   rejection. Clock checks happen at commit, including after queue delays.
+2. Replacement of a pending one-off/cron occurrence with the new revision;
+   cancellation history and old snapshots retained; task ID, selections,
+   destination, completed sessions, queued replies, and paused state preserved.
+3. Claim/edit races, stale revisions, running-task rejection, receipt/history
+   rollback, repeated operation IDs, lost responses without local fallback, and
+   old-worker rejection. No mutation waits for the agent or deadlocks its run.
+4. Migration from version 2 with pending, completed, and monitored work;
+   parent/child foreign-key preservation, occurrence-key replacement, backfill,
+   failed-migration rollback, and task clearing without losing queued replies.
+5. Prompt-edited monitors establish a fresh quiet baseline while rename/schedule
+   edits preserve comparison. Old observations remain inspectable; stale monitor
+   retries cannot contaminate a new baseline. Recovery reaches the same result.
+6. Skip a queued or not-yet-queued slot, skip a one-off, and repeat an acknowledged
+   skip. A changed inspected target fails instead of skipping the following slot.
+7. Snooze before/after queueing; no execution before ready time; long snooze and
+   expiration after ready time; timezone/DST boundaries, missed cron slots, worker
+   restart, provider pauses, repeated snooze, pause/resume, and cancellation.
+8. Run-now with future/due/pending/held/running work; manual duplicate protection;
+   one-off consumption; unchanged recurring cadence; monitor checks that stay
+   quiet when unchanged; ordinary delivery authorization and uncertain sends.
+9. Strict model argument schemas, bounded history/receipts, and explicit-current-
+   request authority. Recalled or fetched text cannot edit a task, snooze work,
+   create manual runs, choose destinations, or expand scheduled tool access.
+
+After each stage, use disposable local state for a short CLI and worker-backed
+manual path. Edit a saved task and inspect its identity/history; skip one slot;
+snooze one check, restart before it is due, and verify it runs once afterward.
+For monitoring, edit the source prompt and confirm a new quiet baseline. When
+Stage 24d exists, request run-now and confirm the next cron time stays intact.
+Separately exercise the implemented chat actions with a real model and one
+authorized messaging destination, checking receipts and eventual delivery.
+
+Passing fixtures or planning this phase does not establish real-model intent
+handling, physical sleep/wake behavior, or live messaging reliability. Record
+implemented stages, automated validation, and manual evidence separately.
+
+## Phase 25: Documents and voice messages
+
+Planned only. Start with one attachment in the configured owner's private
+Telegram chat. This phase builds on the durable gateway inbox and text-only
+agent from phases 4, 10, and 12. Deliver text files, PDF extraction, and voice
+transcription separately. Other adapters can adopt the shared contract later.
+
+### Goal and first version
+
+Let the owner send a short document with a question and receive an answer grounded
+in its extracted text. Accept UTF-8 `.txt`, `.md`, and `.markdown` files first,
+then text-based PDFs. A document without a caption gets a short summary; a caption
+supplies the current request. An unsupported or unreadable attachment receives a
+clear reply without starting inference on an empty substitute.
+
+Keep provider messages text-only. Reuse the existing agent context budget,
+conversation storage, cancellation, and answer delivery. Do not add native model
+file uploads, images, OCR, archives, remote-link ingestion, generated attachments,
+or a document search index. Do not select a transcription dependency or assume
+existing provider credentials include audio access before the voice probe.
+
+Use these proposed initial limits, checked again during the compatibility probes:
+
+| Input          | Download limit | Processing limit                                         | Text supplied to the agent       |
+| -------------- | -------------- | -------------------------------------------------------- | -------------------------------- |
+| Text document  | 64 KiB         | Strict UTF-8, one file                                   | At most 32 KiB                   |
+| Text-based PDF | 8 MiB          | At most 64 pages and 30 seconds                          | At most 32 KiB, with page labels |
+| Voice message  | 8 MiB          | At most 2 minutes and a 90-second transcription deadline | At most 16 KiB                   |
+
+These are host limits, independent of platform or service limits. Smaller remote
+limits still apply. Count bytes while streaming, even when metadata or
+`Content-Length` claims a smaller size. Reject oversized text files rather than
+silently cutting off instructions. PDF extraction may return a bounded excerpt
+only when the receipt and model input both state which pages/text were omitted.
+Combined captions, extracted text, instructions, and tools still have to fit the
+existing context budget; do not raise it automatically.
+
+### Stage 25a: Authorized intake and text files
+
+Extend the adapter-normalized message with optional, bounded attachment metadata.
+Preserve decoding of existing text-only inbox records and leave other adapters
+unchanged. Retain the original caption separately from extracted content; gateway
+controls such as `/cancel` and `/new` must parse only the owner's message text,
+never text found inside an attachment.
+
+Telegram normalization must check owner ID, private chat, bot/account identity,
+and supported message shape before downloading anything. Use an opaque platform
+file reference tied to that message. Resolve it through the configured adapter,
+not through a model-supplied URL or local path. Validate file type using metadata
+and actual bytes; filenames and declared MIME types alone are insufficient.
+Use generated local filenames, reject redirects outside the intended service,
+and keep token-bearing download URLs out of storage, errors, and logs.
+
+Continue saving the normalized inbox entry before advancing the polling cursor.
+Deduplicate using the existing account/message identity. Add an attachment result
+record keyed to that inbox entry, holding safe metadata, processing state, content
+hash, extraction version, and the accepted text or a bounded failure reason.
+Save the accepted text before starting the model run. Duplicate updates and
+restarts must reuse that result and the inbox's existing run binding, rather than
+start another chat or deliver another answer.
+
+The worker owns download and extraction. Do not run them inside an open database
+transaction or occupy the model permit while downloading. Use a scoped private
+temporary directory, bounded reads, cancellation, and cleanup on success, failure,
+and shutdown. On restart, remove only abandoned temporary directories owned by
+this feature. An interrupted local download/extraction may restart from the
+platform reference within a bounded retry policy. An expired reference receives
+an actionable failure; there is no alternate arbitrary-URL fetch.
+
+Pass extracted document text as clearly labelled untrusted source material with
+its filename and completeness information. It cannot authorize note/memory/task
+mutations, tool installation, URL fetching, or a new destination. A caption may
+authorize an action under the existing current-request rules; instructions inside
+the file cannot. Keep the same distinction in saved history and recall, not just
+in the first prompt. Automatic titles use the caption or a safe attachment label.
+
+### Stage 25b: Text-based PDF extraction
+
+First run a local compatibility probe against a small, maintained parser supported
+by the pinned Bun runtime. Reuse an installed suitable library if available;
+otherwise select and pin one dependency after verifying text extraction, Unicode,
+page boundaries, cancellation, and memory use on bounded fixtures. Do not depend
+on a shell command merely because it happens to be installed on the developer's
+machine. Keep this probe separate from live inference.
+
+Run parsing in an owned worker or subprocess that can be terminated at its
+deadline; a synchronous parser must not block the gateway or defeat cancellation.
+Disable external resource loading, embedded scripts, attachments, and network
+access in the parser where applicable. Reject encrypted/password-protected PDFs,
+malformed files, image-only documents, and inputs that exceed processing limits.
+Do not silently send them to an OCR service.
+
+Retain page numbers in the extracted text so answers can cite the document and
+page. Describe extraction as text extraction, without claiming that diagrams,
+layout, tables, or every page were understood. A partial result must never be
+presented as a complete document. Reuse Stage 25a's intake, durable result,
+retention, and delivery path rather than adding another upload system.
+
+### Stage 25c: Opt-in voice transcription
+
+Before implementation, compare one local runtime and one explicitly configured
+service using short disposable audio samples. Record supported formats, pinned
+runtime/API, installation requirements, measured latency and resource use, cost
+where applicable, and the service's audio retention terms. Choose one route for
+the first version. Do not silently reuse subscription auth or introduce a new
+general provider interface for a single transcriber.
+
+Voice processing is disabled until the owner configures that route and is told
+where audio goes. Reuse authorized attachment intake, validate actual audio format
+and duration, and bind the transcript to the original owner/message identity.
+Store the accepted transcript before inference. A timed-out remote transcription
+has an unknown billing outcome and is not automatically resubmitted; inspection
+and an explicit retry must make that uncertainty visible.
+
+For the first version, show the transcript before any consequential mutation.
+Ordinary questions can receive a transcript and answer together. A dictated
+reminder produces a proposed task with its resolved time/timezone and asks for
+owner confirmation in a subsequent message before calling the existing task
+tool. Do not treat model-inferred words, background speakers, or embedded audio
+instructions as separately authenticated requests. Ambiguous transcription gets
+a clarification, not an invented task or fact.
+
+### Retention, implementation reach, and completion gates
+
+Remove raw document/audio bytes when processing finishes. Keep only the bounded
+accepted text and safe source metadata alongside the durable conversation.
+Explain that removing temporary audio does not remove saved transcripts, answers,
+or provider-side records. Reuse existing owner-controlled history retention; do
+not claim that clearing an attachment erases earlier tool effects. Diagnostic
+output excludes captions, extracted text, transcripts, tokens, and file URLs.
+
+| Area            | Required changes                                                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gateway         | `packages/gateway/src/channel.ts`, inbox decoding/storage, acceptance and processing, run binding, cancellation and error replies                 |
+| Telegram        | `packages/channel-telegram/src/channel.ts` and `api.ts`: owner-first metadata parsing and protected, bounded downloads                            |
+| Agent and store | Structured source provenance beside text-only messages, context assembly, title/recall handling, append-only migration and legacy-record fixtures |
+| Host and config | Worker-owned extraction, temporary-file lifetime, explicit voice configuration/credentials, composition in `apps/cli/src/runtime.ts`              |
+| Documentation   | Telegram, chat, storage, configuration, architecture, development, and this phase's actual validation status                                      |
+
+Use injected download/transcription functions and local fixture documents. Prove
+unauthorized inputs cause no download; captions and attachment-only messages are
+accepted correctly; legacy inbox records still decode; duplicates and restart
+produce one run/answer; filenames cannot escape temporary storage; misleading
+types, redirects, oversized streams, invalid UTF-8, corrupt PDFs, extraction
+timeouts, and cancellation fail safely. Verify cleanup and that worker control
+requests remain responsive during parsing. Check page/omission labels, context
+overflow before inference, untrusted-source recall, and dictated-task confirmation.
+
+Run focused tests and `bun run check` for each stage. Then use one authorized
+Telegram chat to send a text file, a short PDF, an unsupported file, and, after
+voice is enabled, a short recording. Check restart/deduplication, answer grounding,
+and a dictated reminder's confirmation. Parser fixtures do not establish live
+Telegram download behavior, real transcription accuracy, or model intent handling.
+
+## Phase 26: Context for individual projects
+
+Planned only. Reuse the explicit skill-selection and saved-snapshot approach from
+phase 14, the memory service from phase 6, and existing session/task ownership.
+This phase does not require Phase 25 or a project-management interface.
+
+### Goal and selection rules
+
+Let the owner explicitly select one project when creating a session or task.
+Project instructions, facts, and selected notes should inform that work without
+being injected into unrelated conversations. Begin with a single bounded context
+file; add facts and selected-note behavior in separate stages.
+
+Use named directories under `<POPPET_DATA_DIR>/projects/<name>/`, initially with
+one `PROJECT.md`. Reuse the skill name, regular-file, UTF-8, symlink/hard-link,
+and 8 KiB validation rules. A project name is an identifier, not an arbitrary path.
+Do not infer a project from the working directory, conversation text, a link, or
+a recalled message. Repository scanning, automatic fact extraction, project
+renaming, and project-specific tool/provider credentials are outside this phase.
+
+Proposed owner interfaces:
+
+```fish
+bun run start projects list
+bun run start projects show acorn
+bun run start chat new --project acorn "Review the next milestone"
+bun run start tasks add acorn-review --project acorn --cron "0 9 * * 1" --tz Europe/London "Review progress"
+```
+
+Messaging selection uses an explicit `/new --project acorn <message>` command,
+combinable with the existing single skill. Options precede the prompt. Ordinary
+follow-ups retain their saved selection; `/new <message>` creates an unscoped
+session. Project and skill selection cannot grant additional tools or file access.
+
+### Stage 26a: Instructions and durable selection
+
+Save a nullable project snapshot on sessions and task definitions: stable project
+name and the validated instruction text. Existing records migrate to `null`.
+Read the file in the process owning the store when the session/task is created,
+not in a separate CLI process before sending a worker command. Continuing a
+session or executing a task uses its saved instructions even after the source
+file changes or disappears, matching existing skill semantics.
+
+Create a new session/task to refresh the snapshot in this stage. Phase 24 edits
+retain project selection and its instruction snapshot. A task explicitly created
+from a project chat inherits that chat's project snapshot through host metadata;
+the model cannot supply another project's text or change scope. Scheduled
+occurrence sessions must carry the same selection through restart and retry.
+Keep delivery destinations, model selection, and skill snapshots unchanged.
+
+Prompt composition keeps base tool/safety rules highest. Explicit current user
+requests take precedence over saved preferences; within compatible saved
+preferences, project-specific instructions refine global profile/personality.
+Selected skills remain procedures subject to those rules. Label global and
+project material separately and count everything toward the existing context
+budget. Reject malformed or oversized new selections before resolving a model;
+do not truncate project instructions or silently use global context instead.
+
+Scope agent conversation search and reads to the session's selected project,
+including `null` for unscoped sessions. Enforce the scope in the host/repository,
+not through a model-supplied search argument. Otherwise a default recall could
+reintroduce another project's details. Owner CLI inspection may still inspect
+any session explicitly. Cross-project model recall needs a separate future
+design; project selection is a context boundary within one owner's data, not
+multi-user access control. Leave generated titles free of unrelated project data.
+
+Expose selection and saved instruction provenance through `chat show`, task
+inspection, messaging status, and worker-backed results. Do not imply that saved
+instructions are the current contents of `PROJECT.md`. Listing/inspection of
+project files should require neither provider login nor model inference.
+
+### Stage 26b: Explicit project facts
+
+Extend the existing fact service with an optional host-selected project scope.
+Keep existing CLI memory commands global by default; add explicit `--project`
+selection for project facts. Use the same key/value validation and create,
+replace, and forget semantics. Store scope separately from the key, with a
+composite uniqueness rule; do not fake scope with a string prefix that existing
+global queries could accidentally include.
+
+Each run reads current global facts and its current project facts once, retaining
+that snapshot across model/tool turns. Saved project instructions remain fixed,
+as above. Use one bounded project-fact budget, initially 8 KiB, within the overall
+context limit. A conflicting project key refines the same global preference only
+in that project; keep source scope visible in the prompt and inspection.
+
+In a project chat, the memory tool targets that project by default and records
+the host's project/run identity. It cannot choose a different project or write
+global facts. An explicit request to change global memory is handled with the
+owner's global CLI command or an unscoped chat, rather than silently switching
+scope. Scheduled runs receive the selected facts but retain no memory-writing
+tool. Profiles, project files, recalled text, notes, and skills remain context,
+not authorization to save facts.
+
+Deleting a project directory does not erase saved sessions, task snapshots, or
+facts. Inspection reports orphaned project facts and provides the existing
+explicit forget path. Do not introduce cascading history deletion or silently
+move those facts into global memory.
+
+### Stage 26c: Explicitly selected notes
+
+Add an owner-edited, bounded `notes.json` in the project directory containing at
+most eight relative note paths within the existing configured notes root. Validate
+it with the same safe file rules; paths must resolve through existing note checks.
+It is an explicit file selection, not a new filesystem root or a list of URLs.
+Selecting a code repository never grants access to its whole tree.
+
+Snapshot the selected path list with a new session/task, while reading current
+note contents through existing read tools when needed. Treat note text as
+untrusted data, not project instructions. In a project with a note selection,
+constrain note search/read/write to that set using host context; selected paths
+do not bypass normal write authorization. Without a selection, preserve the
+existing explicitly configured notes-root policy and say so in inspection.
+Do not eagerly load eight files into every prompt or build another notes index.
+
+Missing/deleted notes produce a clear tool result without falling back to a
+similarly named file. Keep bounds, omission markers, source paths, and existing
+hard-link/symlink rejection. A scheduled review can read selected notes but cannot
+edit them or add new selections. Changing the project note selection affects new
+sessions/tasks; current ones retain their saved list.
+
+### Implementation reach and completion gates
+
+| Area          | Required changes                                                                                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project files | A small validated loader using existing context-file/skill patterns; list/show without inference                                               |
+| Persistence   | Session, task, and occurrence snapshots; project-scoped facts and recall queries; append-only migration, backfills, and exports                |
+| Callers       | CLI parsing and `command-args.ts`, chat/task creation, worker schemas and composition, gateway `/new`/status, host-bound task and memory tools |
+| Agent         | Prompt composition and budgets, scoped recall, fact snapshots, selected-note checks, bounded inspection                                        |
+| Documentation | CLI, chat, tasks, memory, skills, storage, gateway usage, architecture, and stage status                                                       |
+
+Test explicit selection through local CLI, worker, messaging, and chat-created
+tasks; snapshot survival after source edits/deletion; old records remaining
+unscoped; current facts loading once per run; key conflicts and scoped mutations;
+and scheduled read-only behavior. Prove project/unscoped recall cannot bypass its
+host scope by guessing a session ID, and note selection cannot escape the notes
+root. Include invalid files, context overflow before inference, restart, task
+retry, stale worker rejection, migration rollback, and deletion without history
+loss. Use distinct behavior cases rather than copying every existing skill test.
+
+Run focused tests and `bun run check` per stage. Manually create two projects
+with conflicting harmless preferences, continue each after restart, and schedule
+one review. Confirm selection in inspection and that unrelated facts/notes are
+not supplied. Repeat explicit selection in one authorized messaging conversation.
+Automated prompt assertions establish supplied context and tool limits; a live
+model check is still needed for instruction-following and useful project reviews.
+
+## Phase 27: Actions the owner can review and approve
+
+Planned only. Start with one concrete action: creating a new note inside the
+existing notes root. Reuse note validation, protected worker ownership, durable
+tool-call provenance, and existing inspection patterns. Broaden to one external
+integration only after the local approval lifecycle is proven.
+
+### Goal and first version
+
+Poppet prepares an exact proposed change, returns its ID and complete reviewable
+content, and waits. The owner can inspect, approve, cancel, or let it expire.
+Approval executes that saved proposal directly; it does not start another model
+turn to reconstruct arguments. This is an opt-in proposal path. Existing explicit
+interactive writes keep their current behavior unless the owner selects it.
+
+The first proposal type is `create_note`, with a relative path and bounded UTF-8
+content using existing note limits. It never replaces an existing note. This
+keeps the first precondition precise and avoids promising an atomic comparison
+and replacement against arbitrary external editors. Replacement/diff approval,
+bulk approvals, action chains, recurring approvals, delegated approvers, and a
+general workflow engine are outside the first delivery.
+
+### Stage 27a: Immutable local proposals and owner approval
+
+Add a narrowly defined proposal tool for interactive, tool-capable models. It
+validates the note path/content and saves a proposal only on the owner's current
+explicit request to prepare something for review. Fetched text, recalled content,
+skills, notes, and project instructions cannot authorize a proposal. The tool's
+completed result says `pending approval`; it must not claim the note was saved.
+
+Persist the immutable proposal payload, payload digest/version, owner identity,
+source session/run/call IDs, creation and expiry times, and intended result path.
+Use a 24-hour initial expiry and existing bounded note content. Bind the record
+to the active data directory and owner; proposal IDs are not bearer credentials.
+Deduplicate proposal creation by the host's source run/call identity, with the
+creation receipt committed in the same transaction. Editing a proposal means
+cancelling it and creating a new ID, never changing an already reviewed payload.
+
+Proposed local owner commands:
+
+```fish
+bun run start approvals list
+bun run start approvals show $proposal_id
+bun run start approvals approve $proposal_id
+bun run start approvals cancel $proposal_id
+```
+
+`show` displays the exact destination, complete content, source, expiry, and
+current state. A shortened list entry is not the full review. Approval responses
+identify that same immutable payload and its durable outcome. Keep approval and
+cancellation CLI-only initially, through the protected worker socket when it is
+running and the ordinary single-owner path otherwise. A lost worker response
+must not trigger local fallback or another execution.
+
+Use a small persisted lifecycle: pending, executing, completed, failed, cancelled,
+expired, or uncertain. Expiry can be projected when inspecting/claiming a pending
+record; it does not require another scheduler. Approval atomically claims a
+still-pending record after checking identity, expiry, payload integrity, current
+notes-root policy, safe path, and the target's absence. Cancellation and approval
+race through that same claim. A duplicate approval returns the saved state or
+receipt; it never dispatches again.
+
+Extend the shared note implementation with safe create-only publication. A
+check-then-overwriting-rename is insufficient: another writer may create the
+target between those steps. Revalidate paths at execution and use an operation
+that cannot replace an existing target. Leave the existing file untouched when
+the precondition no longer holds. Reuse private temporary files and cleanup.
+
+Persist `executing` before dispatch, release the database transaction, then
+execute through the same owner and mutation coordination as ordinary tools.
+Persist a bounded outcome receipt afterward. Waiting for owner approval holds
+neither the agent permit nor an open transaction. Do not invent a model run to
+record execution; link the separate approval receipt to its originating tool call.
+
+If cancellation or a crash occurs after dispatch and completion was not durably
+recorded, preserve `uncertain`. Recovery never changes it back to pending or
+automatically retries. The owner inspects the target and receipt before preparing
+a replacement proposal. Graceful cancellation should let a started local atomic
+write and receipt finish together where possible, as existing note writes do.
+
+### Stage 27b: One supported external action
+
+Choose one actual configured integration and a specific action after inspecting
+its current schema and behavior. The compatibility probe must establish target
+identity, authorization, stable argument interpretation, relevant state/version
+preconditions, timeout semantics, and whether an idempotency key is supported.
+Do not expose arbitrary MCP mutations as approvable simply because their schema
+can be displayed.
+
+For the selected action, store the exact server/tool identity, validated argument
+payload, concrete account/resource/destination, and the reviewed precondition.
+The host creates the preview from validated fields; model prose cannot substitute
+for the actual payload. Redact secret fields and reject actions whose meaningful
+effects cannot be reviewed without exposing credentials. Do not put raw arguments
+in diagnostics. Configuration changes or a different tool/schema identity require
+a new proposal rather than approving an old payload against a new integration.
+
+At execution, recheck current integration permissions and the action's supported
+preconditions. A changed target fails for review. If the integration cannot
+enforce a required precondition at mutation time, exclude that operation from
+the first supported action instead of claiming race protection from a prior read.
+An external idempotency key, when supported, is tied to the proposal ID. Without
+one, durable single dispatch still cannot prove exactly-once remote execution;
+unknown outcomes remain uncertain and are not replayed.
+
+### Stage 27c: Scheduled proposals and owner notifications
+
+Only after Stage 27a, allow an explicitly configured reporting task to prepare
+the supported note proposal. Keep the ordinary scheduled note/memory/MCP write
+tools unavailable. Add a separate host permission to create this proposal type;
+it grants no permission to execute it. The owner must opt in when creating the
+task and choose the allowed proposal destination. A task prompt or skill cannot
+grant that permission itself. Monitoring tasks do not propose actions initially.
+
+Bind a scheduled proposal to its occurrence and saved task revision, with at most
+one proposal per permitted action in that occurrence. A task edit/deletion or a
+changed permission invalidates pending proposals from that definition at approval
+time. Preserve completed receipts when source tasks/history are cleared; cancel
+pending work explicitly rather than losing its audit trail through a cascade.
+Use Phase 24's revision/snapshot rules when available; otherwise implement that
+narrow definition binding before enabling scheduled proposals.
+
+Notify the owner of a proposal through a separately identified durable gateway
+delivery, retaining existing destination authorization and uncertain-send rules.
+A notification is not an execution receipt. Duplicate runs or notification
+delivery cannot approve the action. Keep approval local until a separate
+owner-authenticated messaging command binds the exact proposal ID and payload;
+quoted messages, reactions, another sender, or a bare conversational "yes" do
+not constitute approval. Cross-channel approvals are outside this stage.
+
+### Implementation reach and completion gates
+
+| Area                     | Required changes                                                                                                                       |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Store                    | Proposal/receipt records, unique source identity, atomic state claims, expiry and recovery, append-only migration and inspection       |
+| Agent and notes          | Narrow proposal tool and instructions, source-bound receipts, shared create-only note publication, bounded previews                    |
+| CLI and worker           | Approval list/show/approve/cancel schemas, explicit action discriminators, owner checks, bounded dispatch and duplicate-safe responses |
+| Optional external action | One typed integration adapter reusing existing tool validation/transport and recording preconditions and uncertain results             |
+| Scheduled follow-up      | Explicit task capability and revision binding, occurrence deduplication, gateway proposal notifications without direct execution       |
+| Documentation            | CLI, chat, notes, tasks, MCP permissions where applicable, storage, architecture, and validation status                                |
+
+Test that proposing has no note side effect, payloads are immutable, unauthorized
+sources cannot approve, and expired/cancelled/changed-policy proposals cannot
+execute. Race two approvals, approval versus cancellation, and an external file
+creation versus publication. Prove no overwrite, one dispatch, duplicate receipts,
+and correct uncertainty after a simulated crash or lost response. Exercise path
+escape/link rejection, payload limits, receipt rollback, migration/restart, and
+secret-free diagnostics. External-action fixtures must cover changed preconditions
+and remote acceptance followed by a lost response.
+
+Run focused tests and `bun run check` per stage. Manually prepare a harmless note,
+review its full content, approve it, and verify repeated approval does nothing.
+Cancel and expire separate proposals. Only then validate the chosen external
+action with a disposable target and a live authorized account. Scheduled proposals
+also need one live notification check. Local fixtures cannot prove an external
+service's idempotency or a real model's ability to prepare useful proposals.
+
+## Phase 28: Browser login state across requests
+
+Planned only. Extend the phase 21 browser's owned-daemon lifecycle rather than
+replacing it. Keep fresh per-run browser state as the default. This phase is
+independent of project context; reusable login state must not be selected by
+project instructions or model-generated paths.
+
+### Goal and compatibility gate
+
+Allow one explicitly enabled owner profile to preserve website login state
+between eligible interactive requests. Browser processes, sockets, references,
+and temporary runtime directories still belong to one run and are closed at
+its end. Persist only the browser profile needed for login, not a daemon running
+indefinitely or old page-element references.
+
+First verify the pinned agent-browser/Chromium combination's supported mechanism
+for a persistent profile and an attended login window using the existing direct
+daemon protocol. Probe a disposable local test site with a harmless cookie,
+restart, and check that storage is retained. Also verify two-process contention,
+crash recovery, shutdown, profile path/config precedence, and whether unrelated
+environment/configuration is loaded. Read the pinned upstream documentation and
+runtime behavior before choosing flags; do not assume a CLI feature is supported
+by the daemon interface.
+
+Stop at the compatibility gate if the runtime cannot keep profile ownership,
+domain policy, bounded startup/shutdown, and cancellation intact. Do not replace
+the owned transport with detached CLI processes, copy the everyday browser
+profile, or work around unsupported persistence by exporting cookies into the
+model context. Record the tested versions and exact supported launch contract.
+
+### Stage 28a: Protected storage and exclusive ownership
+
+Use one fixed owner profile below the Poppet data directory, separately from each
+run's temporary HOME/socket/config directory. The model cannot choose its path,
+create profiles, import cookies, or read profile files. Reject symlinked roots,
+unexpected ownership, and unsafe permissions before launching. Create directories
+with mode `0700` and a restrictive process umask; protect metadata and browser
+state from other local users. Filesystem permissions are not an encryption or
+backup guarantee; document that profile backups contain login secrets.
+
+Reuse the existing owner-lock pattern for an exclusive profile lease covering
+startup through confirmed process exit. It must work across worker and direct
+CLI processes. A busy profile fails clearly instead of opening a second browser,
+copying live files, falling back to a fresh profile, or attaching to an arbitrary
+existing process. Use the lease identity and owned-process information for stale
+lock recovery, not a PID alone. Never kill an unrelated browser to free a profile.
+
+Separate persistent and disposable paths in cleanup. Stop the owned daemon and
+browser before releasing the lease. If exit cannot be confirmed, retain a blocked
+profile state for inspection/recovery rather than permit concurrent reuse. Normal
+run cleanup deletes temporary sockets/configuration, never the persistent profile.
+Do not silently delete or rebuild a profile after corruption.
+
+### Stage 28b: Attended login and explicit request selection
+
+Add owner CLI commands to inspect the profile and open an attended login session
+through the same protected lifecycle. The owner enters passwords and completes
+MFA directly in the owned browser. Do not ask the model to manage a password
+vault, read cookies, solve challenges, or export credentials. The login session
+uses the same configured domain policy and exclusively owns the profile until
+it is closed.
+
+For the first version, allow selection only on explicitly created interactive
+CLI sessions, for example `chat new --browser-profile owner <message>`. Persist
+that choice and the profile generation in session metadata; follow-ups retain
+it. No selection means today's fresh state. Worker-backed CLI chat must carry
+the same explicit metadata, and an old worker must reject the new request rather
+than ignore it. The model cannot turn profile access on during a run.
+
+Keep profile use unavailable to scheduled tasks and messaging conversations in
+this stage. Their authentication, account/destination binding, and unattended
+behavior need a separate delivery gate. Even selected interactive sessions retain
+the existing browser tool set and action policy. Logged-in clicks or submissions
+still require the owner's current explicit request; persistent authentication
+does not turn browser actions into read-only tools or approve future actions.
+
+Reapply current allowed-domain policy at every launch. A profile does not grant
+permission to other domains or expose provider credentials in the child process.
+Verify the pinned runtime's handling of restored pages, redirects, service workers,
+and non-HTTP schemes against that policy. Preserve the documented limitations of
+browser network isolation rather than claiming stronger isolation from a saved
+profile. A separate Phase 27 integration would be needed for durable reviewed
+browser actions; this phase does not implement one.
+
+### Stage 28c: Inspection, clearing, and recovery
+
+Inspection reports configured versus selected state, profile generation, lease
+owner/liveness, last lifecycle failure, and whether reuse is blocked. It does not
+list cookie values, site storage, visited URLs, page text, or arbitrary profile
+filenames. Do not claim that a stored profile is currently signed in without
+visiting the relevant site in an explicitly authorized request.
+
+An explicit owner clear command requires exclusive ownership and refuses while
+the profile is in use; the owner can cancel/close the active session first. Persist
+a clearing state and invalidate its generation before removing only the validated
+profile directory. Keep a small non-secret lifecycle receipt. An interrupted clear
+remains blocked until explicit recovery finishes it. Sessions bound to the old
+generation must request a new selection, preventing cleared state from being silently
+recreated under an old authorization. Do not restore a cleared profile from a
+cache or copy. Explain that local clearing does not revoke website sessions on
+the server; server-side sign-out/revocation is a separate owner action.
+
+Recovery uses owned-process shutdown and validated stale-lease checks. It never
+launches a browser merely to inspect status, automatically repairs a corrupt
+profile, or removes another process's lock. Keep reset/recovery commands explicit
+and narrow; generic cookie import/export and multiple profiles can wait.
+
+### Implementation reach and completion gates
+
+| Area                        | Required changes                                                                                                                                    |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser                     | `packages/browser/src/config.ts`, `browser.ts`, and `browser-process.ts`: verified profile launch, lease, split lifetimes, cancellation and cleanup |
+| Config/credentials patterns | Protected fixed profile path, metadata/generation, owner-lock reuse, redacted status and explicit clear                                             |
+| Store and callers           | Nullable session selection, migration, CLI parsing/`command-args.ts`, worker requests and runtime composition; scheduled/messaging rejection        |
+| Documentation               | Browser setup/lifecycle/limits, CLI, configuration, storage, worker behavior, and the pinned compatibility evidence                                 |
+
+Use injected launchers and temporary profiles to test default fresh state,
+explicit selection, policy changes, generation invalidation, safe clear, lock
+contention, stale-process identity, symlink/permission failures, crash recovery,
+and cleanup that preserves persistent data. Check failed shutdown cannot release
+the profile for another process. Assert no cookies or profile contents enter
+model prompts, journal records, logs, or diagnostics.
+
+Run focused tests and `bun run check`. The completion gate also needs an attended
+check with the pinned real runtime: establish harmless login state on a controlled
+site, close the run, reuse it in a second request, demonstrate fresh default state
+in another session, reject concurrent ownership, then clear and verify old
+selection is invalid. Use a disposable live account only after those checks.
+Fake process tests cannot establish actual cookie persistence, MFA behavior, or
+complete browser-process cleanup.
+
+## Phase 29: A useful `poppet doctor`
+
+Planned only. Combine existing configuration, auth, task, worker, gateway, MCP,
+and browser inspection. This phase can be delivered independently of phases
+24–28; report those capabilities only when they exist. Do not create another
+monitoring service or background health poller.
+
+### Goal and output contract
+
+One `poppet doctor` invocation should explain what needs attention and the next
+owner action. Default checks are read-only and bounded. They do not make model
+requests, refresh tokens, run MCP servers/tools, start Chromium, send messages,
+restart the worker, install dependencies, migrate databases, or repair state.
+Optional capabilities that are not enabled are skipped, not failures.
+
+Each result has a stable check ID, status (`ok`, `warning`, `error`, or `skipped`),
+observation time/source, short explanation, and an actionable next step when
+needed. State whether an observation is live local state, saved metadata, or not
+checked. A saved successful model call is not proof of current provider reachability;
+a configured executable path is not proof that its runtime can launch.
+
+Proposed exit behavior: `0` when no actionable problem is found, `1` for actionable
+warnings/errors, and `2` when required inspection could not be completed. Disabled
+optional capabilities do not affect the exit code. A missing installation/data
+directory is reported with setup guidance without creating it. Invalid config
+should still allow independent worker/filesystem checks where safely possible.
+
+### Stage 29a: Local inspection without runtime side effects
+
+Start with a small explicit collector using existing status/validation helpers.
+Compose only the services needed for inspection, not the full inference/worker
+runtime. Separate readers from constructors that acquire ownership, initialize
+directories, recover runs, or write migrations. In particular, the normal store
+layer cannot be used merely because its `status` method looks read-only.
+
+| Check          | Evidence and next-step behavior                                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Configuration  | Effective non-secret settings and validation errors; identify the selected data directory and config source                                       |
+| Worker         | Protected socket reachability and existing platform service status, distinguished from one another; suggest the relevant status/start/log command |
+| Authentication | Provider connection metadata and credential-file safety without access-token refresh; distinguish missing, expired, and unverified saved state    |
+| Provider holds | Saved hold reason and retry time, not a fresh inference probe; explain whether waiting or reconnecting is appropriate                             |
+| Scheduled work | Bounded recent failure/interruption counts and IDs, next due work, and stale running state without changing it                                    |
+| Delivery       | Pending/failed/uncertain delivery counts and age; tell the owner to inspect uncertain sends before retrying                                       |
+| MCP            | Enabled configuration, command availability and allowlist consistency; no server discovery or tool execution                                      |
+| Browser        | Enabled configuration, executable paths, domain policy and supported-version metadata when available; no process launch                           |
+| Context files  | Existing validated profile/personality/selected skill files where relevant, with errors rather than their private contents                        |
+
+Use saved status readers for credentials; do not call an access-token resolver or
+assume every provider's connection-status implementation is free of writes or
+network access. Report configured-but-unverified providers honestly. Platform
+service inspection may use existing read-only OS commands, with bounded output
+and deadlines; it must not bootstrap, unload, or modify a service.
+
+When no worker owns the store, a new read-only inspection path may query supported
+schema metadata and bounded existing projections. It must not create a database,
+apply migrations, acquire the writer's owner lock, checkpoint WAL, or mark runs
+interrupted. Verify that opening it creates no WAL/SHM or other files. If the
+runtime cannot safely inspect a particular state without writes, report that check
+as unavailable. Do not force SQLite immutable mode and silently ignore live WAL
+data. An unknown/newer schema gets compatibility guidance, not best-effort queries
+against guessed columns.
+
+### Stage 29b: Worker observations and actionable diagnosis
+
+Prefer a bounded status request to the existing protected socket when a worker
+is reachable. Read its configuration identity, task/provider holds, gateway
+connection observations, and delivery summaries without claiming new work or
+waiting for the agent permit. Add an explicit inspection discriminator if the
+existing response lacks a required field; old workers should produce a clear
+unsupported-check result.
+
+Compare the CLI's selected config/data directory with the running worker's
+reported identity. Show a mismatch and an explicit restart/configuration next
+step rather than silently combining unrelated snapshots. A stopped worker,
+unreachable socket, unhealthy messaging connection, and mismatched installation
+are distinct findings. Saved gateway observations retain their timestamps and
+must not be labelled a fresh remote connectivity check.
+
+Give each operation a short deadline, initially 2 seconds per local/socket check
+and 10 seconds overall. Independent failures should not suppress useful results
+from other checks. A timed-out worker request must not fall back to a mutable
+local store owner. Do not read or print arbitrary logs to guess a diagnosis;
+link the owner to the appropriate bounded inspection command instead.
+
+As other phases land, add only their specific saved-state checks: attachment
+processing failures, missing project selections, expired/pending approval counts,
+or a blocked browser-profile lease. Do not implement those future storage shapes
+early or automatically clean them up. Keep live network probes and a `--fix`
+mode outside this phase; existing explicit verification commands remain the way
+to test live account/tool access.
+
+### Stage 29c: Human output and stable JSON
+
+Render a short overall result followed by actionable findings and their commands.
+Keep successful checks compact. Add `--json` with a versioned, documented shape
+using the same check results and exit codes, not a separate diagnostic execution
+path. Include provenance/timestamps so scripts cannot mistake saved observations
+for current service health. Bound lists and indicate omitted counts.
+
+Construct output from an explicit allowlist of safe fields. Never serialize whole
+config objects, raw auth/provider errors, token-bearing keys/URLs, tool arguments,
+message text, note content, attachment text, cookies, or environment dumps.
+Use existing neutral diagnostic styling for informational CLI output and reserve
+error styling for actual failures. Recommendations are inert text, expressed
+using real existing commands; doctor never executes its own suggested repair.
+
+### Implementation reach and completion gates
+
+| Area                | Required changes                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| CLI                 | Command registration, a focused doctor collector/renderer, bounded human/JSON results, exit codes and exports |
+| Existing services   | Reuse config/auth/MCP/browser inspection; extract genuinely read-only readers only where needed               |
+| Store/tasks/gateway | Supported read-only diagnostic queries and bounded worker summaries, with no migration/recovery side effects  |
+| Worker              | Explicit status fields, config identity and deadlines using existing protected transport                      |
+| Documentation       | CLI reference, troubleshooting/worker/configuration guides, JSON contract, check provenance and known limits  |
+
+Test a clean setup, absent data directory, bad config, expired/missing credentials,
+provider hold, failed work, uncertain delivery, disabled optional tools, missing
+executables, and unreachable/mismatched/old workers. Use injected status providers
+and temporary databases, including WAL and unsupported-schema fixtures. Verify
+the command leaves files, schema version, run states, and credential bytes
+unchanged; creates no files on an uninitialized installation; performs no network
+calls, model requests, token refreshes, or tool/browser launches; and returns
+partial findings within its deadlines. Test human/JSON agreement and secret
+redaction in values, object keys, nested causes, and malformed configuration.
+
+Run focused tests, CLI checks, and `bun run check`. Manually run doctor with the
+worker stopped and running, and with one deliberately broken disposable config.
+Confirm useful next steps and no repairs, launches, paid calls, or state changes.
+A passing doctor reports the checks it actually performed; it does not establish
+live provider access, website login, MCP correctness, or messaging delivery.
+
+## Phase 30: Calendar briefings and weekly reviews
+
+Planned configuration trials, not a new native integration. Start with existing
+MCP reads, notes, conversation recall, local skills, and reporting tasks from
+phases 7, 13–14, and 20. Phase 26 can improve project selection later but is not
+required for a review of explicitly named notes. Do not implement a calendar
+package or workflow engine before these trials reveal a concrete missing need.
+
+### Stage 30a: Check capabilities and choose bounded inputs
+
+Inspect one owner-authorized calendar integration's actual tools and permissions.
+Choose the exact calendar/account, reporting timezone, fields to include, maximum
+date window, and source limits. Verify that the chosen reads support date bounds,
+pagination, all-day events, recurring instances, timezone offsets, and explicit
+failure results. Record the tool identities and allow only the required reads
+in `scheduledTools`. A claimed read-only annotation is not enough to authorize
+arbitrary tools, and no calendar write tool becomes scheduled by this trial.
+
+Resolve the reporting window from a trusted time source. Currently the agent adds
+UTC time for interactive task management, while `packages/tasks/src/scheduler.ts`
+passes the saved prompt to a read-only run without adding an occurrence timestamp.
+First test a fixed date range interactively. For recurrence, use a verified
+read-only integration time/window capability if one exists. Otherwise record
+host-supplied scheduled/current time as a focused follow-up requirement and stop
+the recurring trial there. Do not infer today's date from model knowledge or
+invent unsupported prompt templates.
+
+For weekly reviews, select a small named note set and any explicitly relevant
+conversation sources. Keep existing notes-root and recall permissions; no
+repository scan or automatic global-memory harvesting. Confirm whether the
+sources actually carry dates. An undated note is not evidence of work completed
+this week. Capture missing capabilities separately from configuration mistakes.
+
+### Stage 30b: Calendar briefing skill and one reporting task
+
+Write one owner-reviewed `calendar-briefing` skill with a concrete output:
+reporting window/timezone, today's agenda, overlaps apparent in the returned data,
+and preparation notes supported by those events. Include source identities and
+retrieval time. Distinguish an empty calendar from a failed, incomplete, or
+truncated response. Do not infer free time from partial results or follow links
+inside event descriptions without the existing URL authorization.
+
+Run it interactively against the fixed range first, then create one ordinary
+recurring reporting task only after the time-source gate passes. Start with local
+results; add one explicitly chosen private delivery destination after the owner
+has reviewed the output's private fields. Existing destination authorization does
+not itself establish that a channel has the intended audience. Keep schedule,
+provider holds, retry/uncertain delivery, and cancellation behavior unchanged.
+
+The briefing cannot accept invitations, move events, message participants, save
+facts, or create more tasks. Event content remains untrusted. Future reviewed
+calendar actions depend on a separately implemented Phase 27 action adapter,
+not on this skill's prose. A daily briefing intentionally reports each scheduled
+run; it does not need monitoring baselines unless the owner separately asks for
+change-only notifications.
+
+### Stage 30c: Weekly review skill and measured follow-up
+
+Write one `weekly-review` skill for a specified project/source set and date range.
+Report supported progress, unresolved decisions, and proposed next steps, citing
+note paths or session/message IDs. Keep facts separate from recommendations and
+mark gaps or undated material. Do not present an old recalled plan as current
+completion evidence. With Phase 26, select its project explicitly; otherwise
+keep the source set in the task prompt/skill rather than claiming project scope.
+
+Test one fixed-week review interactively, then one recurring reporting task after
+the same time-source gate. Output remains a report. Saving a review note,
+changing tasks, approving actions, or updating memory requires a separate explicit
+owner request and the relevant existing permissions. Record whether results were
+useful over at least two reporting windows, plus omitted sources, tool failures,
+context-limit failures, and owner corrections. Avoid adding custom code merely
+to improve a single prompt.
+
+### Reach, validation, and completion gate
+
+The expected deliverables are documented setup, two owner-reviewed skill files
+in the owner's data directory, one task per accepted workflow, and a small
+capability-gap record. Repository documentation/examples may be added when the
+trial is actually authorized. No runtime code or new dependency is expected;
+any missing time, pagination, or source-selection capability gets its own focused
+implementation plan before coding.
+
+Use disposable calendar fixtures or controlled live test events for an all-day
+event, overlapping events, a recurring instance, an empty window, and a timezone/
+DST boundary. Check partial/failing reads, source bounds, and instructions embedded
+in descriptions. For reviews, include dated and undated notes and an outdated
+conversation statement. Inspect actual tool receipts and task results instead
+of judging only the final prose. Existing commands still handle pause/resume,
+provider holds, and delivery; avoid duplicating their implementation tests.
+
+Complete each trial only after one fixed-window interactive result and, if its
+time source is supported, two scheduled windows have been inspected. Live account
+and delivery checks require the owner's chosen integration/destination. Planning
+these trials or writing the skills does not establish live calendar correctness
+or useful weekly review quality.
 
 ## Validation
 
