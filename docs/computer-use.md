@@ -10,9 +10,9 @@ remain unimplemented.
 
 `@poppet/computer-use` owns settings, the fixed window binding, driver policy,
 process lifetime, and normalization. It reuses the existing MCP transport and
-schema compiler without weakening their validation. Fixture tests cover the
-integration; a real-model observation with the owner's Terminal permission
-identity still needs manual validation.
+schema compiler without weakening their validation. Fixture tests and the
+attended real-model observation passed. See the [verified live trial](#verified-live-trial)
+for its scope and remaining action-reference limitation.
 
 On 2026-10-21 the pinned native startup, bounded three-tool discovery, original
 schema checks, and session cleanup also passed a permission-only check. That
@@ -136,7 +136,35 @@ Enable `chat.logTimings` to record `computer-startup`, `computer-snapshot`, and
 `computer-cleanup` through the existing timing logger. Timing output is evidence
 for that run, not a performance guarantee.
 
-The remaining attended check is one real-model observation in the prepared
-Terminal, followed by inspection of the actual display, saved calls, process
-cleanup, and ordinary-chat behavior. The no-inference 22a permission scenarios
-remain separate evidence; they do not prove live-model behavior.
+## Verified live trial
+
+The attended read-only check passed on 2026-10-21 with `openai-chatgpt` and
+`gpt-6.1-sol`, Cua Driver 0.38.0, macOS 27.0.1 on Apple silicon, and Calculator
+12.0. The owner ran the CLI from Terminal with Accessibility enabled and Screen
+Recording disabled, using separate authenticated trial storage and an
+owner-supplied PID/window binding.
+
+The saved run contained exactly one completed `computer/snapshot` call with
+`{}` arguments. Its normalized result contained 35 elements in 4,155 UTF-8
+bytes. The model reported the existing display, last expression, and arithmetic
+buttons. The owner confirmed those matched the actual app and the display stayed
+unchanged. No calculation or input action was requested or performed.
+
+Inspection of the loaded manifest, exact target policy, and session constraint
+confirmed screenshot-free observation with launch, capture, and input denied.
+The owned driver exited, its private runtime directory was removed, and the
+desktop lease was released. A separate ordinary chat completed without tool
+calls or computer startup timing stages. Normalized observations and trial
+authentication remain in private trial storage; no private evidence is committed.
+
+Single-run timings were 153 ms for driver startup, 347 ms for the snapshot, and
+13 ms for cleanup. The observation run took 9,066 ms, followed by a separate
+3,118 ms title request. These are measurements from this trial, not performance
+guarantees.
+
+The snapshot was marked truncated and every reference was null because tree
+completeness was unproven. The model correctly reported this limitation. This
+passes read-only observation; it does not establish action readiness. Stage 22c
+must resolve completeness and safe reference issuance before adding presses,
+while preserving validation and the prohibition on references from incomplete
+observations. No Stage 22c action behavior was exercised.

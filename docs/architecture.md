@@ -77,7 +77,8 @@ offers only `poppet_computer.snapshot`, with no built-in tools or normal MCP/bro
 catalog. Its fixed driver arguments, native policy, permission checks, private
 files, desktop lease, and process cleanup stay in the capability package. MCP
 compiler and transport imports use the shared package's exported helpers. See
-[computer trial](computer-use.md) for the manual setup and remaining live check.
+[computer trial](computer-use.md) for manual setup, verified live results, and the
+remaining action-reference limitation.
 
 Root scripts preserve `bun run start`, `bun run dev`, and `bun run check`.
 Start and dev run the CLI without changing the working directory. Root checks

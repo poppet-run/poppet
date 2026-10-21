@@ -2,7 +2,7 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–21 implemented with automated checks. Phase 21 also has a pinned local-browser check; live-model CLI and messaging browser completion remain manual. Phase 22's Stage 22a compatibility probe is implemented and passed the attended accessibility-only Calculator trial without inference, including the owner-run permission scenarios. Stage 22b's read-only Calculator adapter is implemented with fixture coverage; its attended real-model observation remains manual. Stage 22c remains unimplemented. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
+Status: Phases 1–21 implemented with automated checks. Phase 21 also has a pinned local-browser check; live-model CLI and messaging browser completion remain manual. Phase 22's Stage 22a compatibility probe is implemented and passed the attended accessibility-only Calculator trial without inference, including the owner-run permission scenarios. Stage 22b's read-only Calculator adapter passed fixture checks and its attended real-model observation; completeness remained unproven and all references were null. Stage 22c remains unimplemented. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
@@ -1428,8 +1428,9 @@ checks remain manual and must pass before describing browser support as complete
 Stage 22a's isolated compatibility probe is implemented and passed its attended
 Calculator checks. See the [probe guide](computer-use-probe.md) for commands,
 boundaries, and verified results. Stage 22b's read-only adapter is implemented;
-see the [trial guide](computer-use.md). Its real-model observation remains manual.
-Stage 22c is planned only. No driver installation, permission changes, or action
+see the [trial guide](computer-use.md) for its passing attended real-model check.
+The observation yielded no usable action references. Stage 22c is planned only.
+No driver installation, permission changes, or action
 implementation are authorized by this plan alone.
 The first deliverable is an attended macOS accessibility trial, not general
 desktop automation. Phase 21's outstanding live checks remain prerequisites for
@@ -1586,8 +1587,13 @@ Implemented after 22a passed, in `@poppet/computer-use`, following
 `@poppet/browser`'s package boundary. The package owns driver settings, the
 run-scoped client, the fixed window binding, bounded references, and normalized
 text results alongside the isolated compatibility probe. The CLI adapts its
-errors and tools to `ExternalTools`. Fixture coverage verifies the integration;
-the attended real-model observation remains pending.
+errors and tools to `ExternalTools`. Fixture coverage and the attended real-model
+observation passed. On 2026-10-21, `gpt-6.1-sol` used one snapshot, correctly
+reported Calculator's existing display and arithmetic buttons, and identified
+the truncated result. The owner confirmed the app matched and stayed unchanged.
+Saved calls, loaded policy, cleanup of the owned driver, runtime files and desktop
+lease, and ordinary-chat behavior were checked. See the
+[verified trial](computer-use.md#verified-live-trial).
 Keep the normal MCP catalog separate; do not expose raw driver tools as a second
 route around the adapter's fixed arguments.
 
@@ -1627,6 +1633,12 @@ this stage. This separates useful observation from action routing and verifies
 that tool-capable text models can consume the result without image support.
 
 ### Stage 22c: Bounded AX button actions
+
+The Stage 22b live result was readable but marked truncated with all references
+null because tree completeness was unproven. Resolve completeness and safe
+reference issuance before enabling actions. Keep the existing prohibition on
+references from incomplete observations; the passing read-only check does not
+waive it. Stage 22c remains unimplemented.
 
 After the observation check passes, add `poppet_computer.press` accepting only a
 reference from the latest returned snapshot. The host maps it to a driver token
@@ -1750,9 +1762,11 @@ Manual completion path after implementation:
 1. Record the pinned driver/OS/app versions and sanitized 22a probe results. Confirm
    the narrow manifest, direct runtime identity, Accessibility grant, and absence
    of Screen Recording permission and screenshots.
-2. Use disposable Poppet state and the prepared Calculator PID/window ID. Complete
-   one real-model read-only observation through the CLI. This Stage 22b check
-   remains manual; fixture results do not establish live-model behavior.
+2. Passed on 2026-10-21: one real-model read-only CLI observation using disposable
+   Poppet state and the owner-supplied Calculator PID/window ID. The owner
+   confirmed the saved result matched the unchanged app. Native cleanup and an
+   ordinary chat also passed. Completeness was unproven, so all references were
+   null and action readiness remains unestablished.
 3. After Stage 22c is separately implemented, explicitly request clear and `12 + 7`.
    Observe `19` in the actual app and saved snapshot; check that only allowed AX presses were dispatched and the answer
    reports the observed result.

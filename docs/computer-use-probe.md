@@ -8,8 +8,8 @@ chat, workers, and configured MCP servers. It installs nothing and changes no
 macOS permissions. `@poppet/computer-use` owns the probe, driver policy, lifecycle
 checks, tests, and captured schemas. It reuses the compiler and scoped transport
 from `@poppet/mcp`. The [Stage 22b read-only adapter](computer-use.md) is implemented
-with fixture coverage; its real-model observation remains manual. Stage 22c actions
-remain unimplemented.
+and passed its attended real-model observation. Its incomplete snapshot yielded
+no action references. Stage 22c actions remain unimplemented.
 
 ## Prepare and run
 
