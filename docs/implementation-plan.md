@@ -2,7 +2,7 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–21 implemented with automated checks. Phase 21 also has a pinned local-browser check; live-model CLI and messaging browser completion remain manual. Phase 22 is planned, starting with an accessibility-only trial; no computer-use runtime is implemented. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
+Status: Phases 1–21 implemented with automated checks. Phase 21 also has a pinned local-browser check; live-model CLI and messaging browser completion remain manual. Phase 22's Stage 22a compatibility probe is implemented and passed the attended accessibility-only Calculator trial without inference, including the owner-run permission scenarios. Stages 22b–22c remain unimplemented. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
@@ -1425,8 +1425,11 @@ checks remain manual and must pass before describing browser support as complete
 
 ## Phase 22: Computer use
 
-Planned only. No driver installation, permission changes, application control,
-configuration changes, or runtime implementation are authorized by this plan.
+Stage 22a's isolated compatibility probe is implemented and passed its attended
+Calculator checks. See the [probe guide](computer-use-probe.md) for commands,
+boundaries, and verified results. Stages 22b–22c are planned only. No driver
+installation, permission changes, or further runtime integration are authorized
+by this plan alone.
 The first deliverable is an attended macOS accessibility trial, not general
 desktop automation. Phase 21's outstanding live checks remain prerequisites for
 claiming the combined browser/computer feature set is ready. Planning and an
@@ -1520,9 +1523,21 @@ agent loop, native accessibility implementation, or generic approval framework.
 
 ### Stage 22a: Compatibility probe, without inference
 
-This is the first implementation slice after separate authorization. Use a small
-explicitly invoked self-check, outside the automated test suite. Its fixed calls
-must run against the pinned real driver and disposable Calculator state.
+The probe passed against checksum-verified Cua Driver 0.38.0 on Apple silicon
+macOS 27.0.1 with Calculator 12.0 on 2026-10-21. All original input/output schemas
+and strict wrappers passed. The shared MCP compiler accepts only Cua's reviewed
+linear snapshot-token pattern and valid required-only union branches; it retains
+runtime assertions and existing schema limits without stripping keywords.
+The normal Calculator sequence, stale tokens, denied app/argument access, session
+revocation, startup rejection, cancellation, EOF, and forced idle-owner exit passed.
+The owner also verified the normal trial from Terminal without Screen Recording,
+locked-screen refusal, and revoked Accessibility before app access. This result
+does not establish live-model behavior or forced owner exit during an in-flight
+real desktop action. The probe exports private schemas and content-free outcomes.
+
+The ordered checks define the explicitly invoked self-check, outside the
+automated test suite. Its fixed calls run against the pinned real driver and
+disposable Calculator state; automated tests use synthetic fixtures.
 
 1. Inspect the candidate's needed schemas without desktop calls. Check the input
    and output shapes against Poppet's current schema compiler and strict provider
@@ -1532,14 +1547,18 @@ must run against the pinned real driver and disposable Calculator state.
    windows, disable full-desktop access, and permit only the underlying observation,
    AX press, and lifecycle operations actually needed by the host. Negotiate MCP
    and verify real discovery stays within Poppet's limits before any desktop call.
-3. Resolve Calculator using a host-fixed bundle-ID filter. Select exactly one
-   eligible window and bind its process/window identity. Prove that unfiltered
+3. Resolve Calculator using a host-fixed bundle ID. The pinned driver classifies
+   even filtered `list_windows` as full-desktop access, so keep enumeration denied.
+   Use only `launch_app` with `bundle_id: "com.apple.calculator"` as trusted setup,
+   without URLs, files, extra arguments, alternate instances, or app termination.
+   Select exactly one eligible window and bind its process/window identity. Prove that unfiltered
    enumeration and another application's window are denied or prevented before
    any content reaches Poppet. Merely filtering a broad result afterward is not
    enough for the intended observation boundary.
 4. Read a bounded tree with `include_screenshot: false`, no screenshot output path,
-   and structured elements. Confirm there are no image blocks, capture files, or
-   capture attempts. Check roles, values, supported actions, snapshot identity,
+   and structured elements plus tree text. The pinned driver omits the read-only
+   display from its actionable element array. Confirm there are no image blocks,
+   capture files, or capture attempts. Check roles, values, supported actions, snapshot identity,
    stale-token errors, and the readable Calculator display.
 5. Perform a fixed AX button press with no coordinates or alternate delivery mode.
    Verify the displayed result through a new tree. Check the pinned route rather
@@ -1562,8 +1581,9 @@ missing enforcement is a failed gate, not permission to expose the full driver.
 
 ### Stage 22b: Read-only Poppet trial
 
-Only after 22a passes, add the smallest capability-owned adapter, following
-`@poppet/browser`'s package boundary. The proposed `@poppet/computer` owns driver
+Only after 22a passes, extend `@poppet/computer-use` with the smallest
+capability-owned adapter, following `@poppet/browser`'s package boundary. The
+package already owns the isolated compatibility probe. The adapter will own driver
 settings, the run-scoped client, the window binding, reference validation, and
 normalized text results. The CLI adapts its errors and tools to `ExternalTools`.
 Keep the normal MCP catalog separate; do not expose raw driver tools as a second
@@ -1690,15 +1710,15 @@ out of diagnostics. Broader sensitive-app support needs a retention decision.
 
 The following is the expected scope after the probe, not a request to implement:
 
-| Area                   | Required work                                                                                                                                 |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/computer`    | Fixed trial schemas/tools, driver ownership, window/reference checks, result normalization, fixture and explicit real-driver self-check       |
-| `packages/mcp`         | Reuse existing SDK, schema/result helpers and scoped transport; narrow exports only where required, without changing ordinary MCP behavior    |
-| `packages/config`      | Disabled settings, file/environment precedence, path validation, pure config inspection, decoding fixtures                                    |
-| `apps/cli`             | Fresh standalone-chat opt-in, host composition, worker-routing rejection, diagnostics, package dependency and CLI/runtime fixtures            |
-| `packages/agent`       | Host permit reaches the external snapshot with default denial; preserve validation, budgets, saved identities and uncertain outcomes          |
-| Worker, gateway, tasks | Prove omission of computer tools and rejection of forged permits; no new remote execution command                                             |
-| Documentation          | Trial setup/limits/manual checks; update configuration, CLI, chat, architecture, development, worker/tasks references and this phase's status |
+| Area                    | Required work                                                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/computer-use` | Fixed trial schemas/tools, driver ownership, window/reference checks, result normalization, fixture and explicit real-driver self-check       |
+| `packages/mcp`          | Reuse existing SDK, schema/result helpers and scoped transport; narrow exports only where required, without changing ordinary MCP behavior    |
+| `packages/config`       | Disabled settings, file/environment precedence, path validation, pure config inspection, decoding fixtures                                    |
+| `apps/cli`              | Fresh standalone-chat opt-in, host composition, worker-routing rejection, diagnostics, package dependency and CLI/runtime fixtures            |
+| `packages/agent`        | Host permit reaches the external snapshot with default denial; preserve validation, budgets, saved identities and uncertain outcomes          |
+| Worker, gateway, tasks  | Prove omission of computer tools and rejection of forged permits; no new remote execution command                                             |
+| Documentation           | Trial setup/limits/manual checks; update configuration, CLI, chat, architecture, development, worker/tasks references and this phase's status |
 
 Automated tests use a fixture stdio driver and injected models, with no real
 desktop, OS grants, external network, or inference account. Reuse existing

@@ -94,6 +94,16 @@
         "@types/qrcode-terminal": "0.12.2",
       },
     },
+    "packages/computer-use": {
+      "name": "@poppet/computer-use",
+      "version": "0.0.0",
+      "dependencies": {
+        "@modelcontextprotocol/client": "2.3.1",
+        "@poppet/credentials": "workspace:*",
+        "@poppet/mcp": "workspace:*",
+        "effect": "4.0.4",
+      },
+    },
     "packages/config": {
       "name": "@poppet/config",
       "version": "0.0.0",
@@ -440,6 +450,8 @@
     "@poppet/channel-whatsapp": ["@poppet/channel-whatsapp@workspace:packages/channel-whatsapp"],
 
     "@poppet/cli": ["@poppet/cli@workspace:apps/cli"],
+
+    "@poppet/computer-use": ["@poppet/computer-use@workspace:packages/computer-use"],
 
     "@poppet/config": ["@poppet/config@workspace:packages/config"],
 
