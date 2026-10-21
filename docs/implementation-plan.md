@@ -17,6 +17,9 @@ starts with a separately scoped accessibility-only trial.
 [Change-aware monitoring](#phase-23-change-aware-monitoring) is implemented with
 automated checks. Real-model monitoring and live change delivery remain manual.
 
+See [future priorities](future-priorities.md) for the other feature candidates
+saved for later planning.
+
 Updated: 2026-10-21
 
 Storage history: the unreleased base schema is consolidated into version 1 in
