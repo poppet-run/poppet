@@ -185,6 +185,30 @@ describe.concurrent("browser tools", () => {
     }
   });
 
+  test("accepts bare snapshot references without allowing stale references", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const tools = yield* state.tools();
+          yield* call(tools, "open", { url: "https://example.com/" });
+          yield* call(tools, "snapshot");
+          yield* call(tools, "fill", { reference: "e1", text: "Tom" });
+          expect(yield* call(tools, "click", { reference: "e2" }).pipe(Effect.flip)).toHaveProperty(
+            "reason",
+            "tool-arguments",
+          );
+          expect(JSON.parse(yield* call(tools, "snapshot")).text).toContain("Tom");
+          yield* call(tools, "click", { reference: "e2" });
+        }),
+      );
+      await state.cleaned();
+    } finally {
+      await state.close();
+    }
+  });
+
   test("rejects session/flag overrides, disallowed URLs, and unsafe values before dispatch", async () => {
     const state = await fixture();
 
