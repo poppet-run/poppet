@@ -65,7 +65,7 @@ export const monitoringRecords = (database: Database) => {
     database
       .query(`SELECT o.id FROM job_occurrences o JOIN jobs j ON j.id = o.job_id
       JOIN runs r ON r.id = o.run_id AND r.session_id = o.session_id
-      WHERE o.status = 'running' AND j.monitor = 1 AND r.status = 'running'
+      WHERE o.status = 'running' AND json_extract(o.definition, '$.monitor') = 1 AND r.status = 'running'
         AND o.session_id = ? AND o.run_id = ?`)
       .get(run.sessionId, run.runId) !== null;
 
@@ -146,9 +146,11 @@ export const monitoringRecords = (database: Database) => {
       database.query(`${resultSql} WHERE occurrence_id = ?`).get(occurrenceId),
     );
 
-  const latest = (jobId: string) =>
+  const latest = (jobId: string, after = 0) =>
     Schema.decodeUnknownSync(Schema.NullOr(MonitorResult))(
-      database.query(`${resultSql} WHERE job_id = ? ORDER BY id DESC LIMIT 1`).get(jobId),
+      database
+        .query(`${resultSql} WHERE job_id = ? AND id > ? ORDER BY id DESC LIMIT 1`)
+        .get(jobId, after),
     );
 
   // The caller commits this projection and occurrence completion in the same transaction.
@@ -191,7 +193,7 @@ export const monitoringRecords = (database: Database) => {
 
     const observedAt = candidate.finishedAt;
     const observation = validate(linked.runId, input, candidate.position);
-    const previous = latest(job.id);
+    const previous = latest(job.id, job.monitorBaselineAfter);
 
     const decision =
       previous === null

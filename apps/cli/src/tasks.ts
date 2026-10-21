@@ -1,6 +1,11 @@
+import { randomUUID } from "node:crypto";
+
 import { AppConfig } from "@poppet/config";
 import {
   TaskCommand,
+  TaskControl,
+  TaskPatch,
+  TaskInspection,
   TaskError,
   nextOccurrence,
   parseTimestamp,
@@ -8,6 +13,29 @@ import {
   type Schedule,
 } from "@poppet/tasks";
 import { Effect, Option, Schema } from "effect";
+
+/** Bind a CLI mutation to the exact task/next execution returned by inspection. */
+export const prepareTaskControl = (
+  inspection: typeof TaskInspection.Type,
+  action: TaskControl["action"],
+  patch?: typeof TaskPatch.Type,
+  until?: number,
+): TaskControl => {
+  const { task, target } = inspection;
+  const base = { id: task.id, revision: task.revision, operationId: randomUUID() };
+
+  if (action === "edit") return Schema.decodeUnknownSync(TaskControl)({ ...base, action, patch });
+
+  if (target === null)
+    throw new TaskError({
+      message: "This task has no upcoming execution. Edit its schedule to rearm it.",
+    });
+
+  if (action === "snooze")
+    return Schema.decodeUnknownSync(TaskControl)({ ...base, action, target, until });
+
+  return Schema.decodeUnknownSync(TaskControl)({ ...base, action, target });
+};
 
 export const parseTaskSchedule = (
   at: Option.Option<string>,

@@ -13,9 +13,76 @@ const fields = {
   delivery: "local",
   skill: null,
   after: null,
+  revision: null,
+  target: null,
+  until: null,
 } as const;
 
 describe("chat task arguments", () => {
+  test("requires inspected revisions/targets for controls and rejects mixed fields and empty patches", async () => {
+    const input = {
+      type: "tool-call" as const,
+      callId: "control",
+      name: "manage_tasks",
+      namespace: "poppet_tasks",
+    };
+
+    const empty = { ...fields, name: null, prompt: null, schedule: null, delivery: null };
+    const target = { occurrenceId: null, scheduledAt: 1000, availableAt: 1000 };
+    const edit = { ...empty, action: "edit", id: "job", revision: 2, prompt: "Updated" };
+    expect(
+      await Effect.runPromise(decodeTaskCall({ ...input, arguments: JSON.stringify(edit) })),
+    ).toEqual({
+      action: "edit",
+      id: "job",
+      revision: 2,
+      name: null,
+      prompt: "Updated",
+      schedule: null,
+    });
+
+    await Promise.all(
+      ["skip_next", "snooze", "run_now"].map(async (action) => {
+        const control = {
+          ...empty,
+          action,
+          id: "job",
+          revision: 2,
+          target,
+          until: action === "snooze" ? "2099-10-22T09:00:00Z" : null,
+        };
+
+        expect(
+          await Effect.runPromise(decodeTaskCall({ ...input, arguments: JSON.stringify(control) })),
+        ).toMatchObject({ action, id: "job", revision: 2, target });
+      }),
+    );
+
+    await Promise.all(
+      [
+        { ...edit, revision: null },
+        { ...edit, prompt: null },
+        { ...edit, skill: "other" },
+        { ...edit, target },
+        { ...edit, origin: "interactive" },
+        { ...empty, action: "snooze", id: "job", revision: 2, target, until: null },
+        { ...empty, action: "run_now", id: "job", revision: 2, target: null },
+        {
+          ...empty,
+          action: "skip_next",
+          id: "job",
+          revision: 2,
+          target,
+          until: "2099-10-22T09:00:00Z",
+        },
+      ].map((invalid) =>
+        expect(
+          Effect.runPromise(decodeTaskCall({ ...input, arguments: JSON.stringify(invalid) })),
+        ).rejects.toMatchObject({ reason: "tool-arguments" }),
+      ),
+    );
+  });
+
   test("decodes an explicit schedule without accepting host authority from the model", async () => {
     const input = {
       type: "tool-call" as const,

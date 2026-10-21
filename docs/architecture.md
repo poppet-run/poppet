@@ -588,6 +588,21 @@ worker commands and occurrence claiming. Chat executes directly in that process
 and never reacquires the agent permit or calls its own worker socket. The existing
 timer reconciles new work. Pause and resume retain repository semantics.
 
+Task controls bind an inspected definition revision and, for skip/snooze/run-now,
+the exact occurrence/ready time or unqueued slot. Chat requires a completed `show`
+receipt earlier in the current run; the CLI uses a small `inspect` worker request.
+Commit rechecks revision, target, paused/running state, and future times. New
+action discriminators let older workers reject the requests. A lost worker
+response never falls back to local mutation.
+
+Each occurrence saves its definition and revision. Claiming/retrying uses that
+snapshot; a pending edit cancels and replaces the original without rewriting
+history. Snooze changes persisted `available_at`, not the cron schedule or
+logical slot, and run-now queues through normal permissions/provider holds.
+Task-specific operation records retain atomic replay receipts and bounded change
+history. Monitor prompt edits establish a fresh comparison boundary while retaining
+old observations. See [task controls](tasks.md#edit-and-control-the-next-execution).
+
 `Store.commitToolCall` runs the synchronous task operation and completion of its
 tool journal/message in one SQLite transaction. A receipt failure rolls back the
 mutation. Jobs record a unique creating run/call pair; completed

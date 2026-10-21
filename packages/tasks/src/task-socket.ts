@@ -42,7 +42,9 @@ export const taskResponse = <E extends { readonly message: string }>(
   handle: (command: TaskCommand) => Effect.Effect<unknown, E>,
 ) =>
   Effect.gen(function* () {
-    const command = Option.getOrNull(Schema.decodeUnknownOption(TaskCommand)(body));
+    const command = Option.getOrNull(
+      Schema.decodeUnknownOption(TaskCommand, { onExcessProperty: "error" })(body),
+    );
 
     if (command === null)
       return Response.json({ ok: false, message: "Invalid task command." }, { status: 400 });
@@ -50,7 +52,7 @@ export const taskResponse = <E extends { readonly message: string }>(
 
     // Leave time to report failure before the ten-second transport deadline.
     const exit = yield* Effect.exit(
-      command.action === "add" || command.action === "add-monitor"
+      ["add", "add-monitor", "edit", "skip-next", "snooze", "run-now"].includes(command.action)
         ? operation.pipe(Effect.timeout("8 seconds"))
         : operation,
     );

@@ -137,6 +137,101 @@ const complete = (store: Store["Service"], run: Run) =>
   });
 
 describe.concurrent("change-aware monitoring", () => {
+  test("preserves comparisons for rename/schedule edits and starts a quiet baseline after prompt edits without deleting history", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo, store) =>
+        Effect.gen(function* () {
+          const job = repo.add(task, start, null, null, undefined, true);
+          const first = yield* begin(repo, store, start + 60_000);
+          yield* source(store, first.run);
+          yield* candidate(store, first.run, "A");
+          yield* complete(store, first.run);
+          repo.finish(first.id, "completed", null, start + 60_000);
+          expect(repo.monitoring.result(first.id)?.decision).toBe("baseline");
+          repo.control(
+            {
+              action: "edit",
+              id: job.id,
+              revision: 0,
+              operationId: "rename",
+              patch: {
+                name: "Renamed",
+                schedule: { type: "cron", expression: "*/2 * * * *", timezone: "UTC" },
+              },
+            },
+            start + 60_000,
+          );
+          const second = yield* begin(repo, store, start + 120_000);
+          yield* source(store, second.run, "B");
+          yield* candidate(store, second.run, "B");
+          yield* complete(store, second.run);
+          repo.finish(second.id, "completed", null, start + 120_000);
+          expect(repo.monitoring.result(second.id)).toMatchObject({
+            decision: "changed",
+            previousValue: "A",
+          });
+
+          const reset = repo.control(
+            {
+              action: "edit",
+              id: job.id,
+              revision: 1,
+              operationId: "prompt",
+              patch: { prompt: "Watch a different release source" },
+            },
+            start + 120_000,
+          );
+
+          expect(reset.baselineReset).toBe(true);
+          expect(repo.monitoring.latest(job.id, repo.task(job.id).monitorBaselineAfter)).toBeNull();
+          expect(repo.monitoring.result(second.id)?.value).toBe("B");
+          const third = yield* begin(repo, store, start + 240_000);
+          yield* source(store, third.run, "C");
+          yield* candidate(store, third.run, "C");
+          yield* complete(store, third.run);
+          repo.recover(start + 240_001);
+          expect(repo.monitoring.result(third.id)).toMatchObject({
+            decision: "baseline",
+            previousValue: null,
+            notificationText: null,
+          });
+          repo.reconcile(start + 360_000);
+          const old = repo.claim(start + 360_000)!;
+          repo.finish(old.occurrence.id, "failed", "test", start + 360_000);
+          repo.control(
+            {
+              action: "edit",
+              id: job.id,
+              revision: 2,
+              operationId: "again",
+              patch: { prompt: task.prompt },
+            },
+            start + 360_000,
+          );
+          expect(() => repo.retry(old.occurrence.id, start + 360_001)).toThrow(
+            "predates a prompt change",
+          );
+          expect(() =>
+            repo.control(
+              {
+                action: "edit",
+                id: job.id,
+                revision: 3,
+                operationId: "once",
+                patch: { schedule: { type: "once", at: start + 500_000 } },
+              },
+              start + 360_000,
+            ),
+          ).toThrow("recurring");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("compares values rather than summaries, saves transitions once, and clears projections with tasks", async () => {
     const state = await fixture();
 

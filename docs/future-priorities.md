@@ -8,21 +8,20 @@ not scheduled work or authorization to implement them. Recheck current
 capabilities and the relevant phase's compatibility gates before implementation.
 
 Change-aware monitoring already has a [Phase 23 plan](implementation-plan.md#phase-23-change-aware-monitoring).
-The remaining priorities are below. Task editing is the suggested next focused
-improvement.
+Task controls are also implemented in Phase 24. The later priorities remain
+planned work.
 
 ## 1. Editable tasks and snoozing
 
-Planning is captured in [Phase 24](implementation-plan.md#phase-24-editable-tasks-and-snoozing),
-with task editing first and separate stages for skip-next, snooze, and run-now.
+Implemented with automated checks in [Phase 24](implementation-plan.md#phase-24-editable-tasks-and-snoozing),
+including editing, skip-next, snooze, and run-now. See the [task controls guide](tasks.md#edit-and-control-the-next-execution).
 
 Support requests such as "Move my morning summary to 08:30", "Skip tomorrow",
 and "Run this now" without recreating a task.
 
-Start by planning schedule and prompt edits through the existing task commands
-and chat tool. Preserve task identity and history, validate timezone changes,
-and define what happens to pending and active occurrences. Treat skip-next,
-snooze, and run-now as distinct follow-ups rather than adding them all at once.
+Task IDs and history are preserved. Revisions and exact execution targets reject
+stale changes; occurrence snapshots preserve historical definitions. Live model
+and messaging validation remain manual.
 
 Starting points: [scheduled tasks](tasks.md), `packages/tasks/src/task-schema.ts`,
 `task-store.ts`, `commands.ts`, `chat-tools.ts`, and `apps/cli/src/tasks.ts`.

@@ -79,8 +79,73 @@ export const NewTask = Schema.Struct({
 
 export type NewTask = typeof NewTask.Type;
 
+export const TaskPatch = Schema.Struct({
+  name: Schema.optionalKey(NewTask.fields.name),
+  prompt: Schema.optionalKey(NewTask.fields.prompt),
+  schedule: Schema.optionalKey(Schedule),
+}).check(Schema.makeFilter((patch) => Object.keys(patch).length > 0));
+
+/** An inspected pending occurrence or the exact unqueued next slot. */
+export const TaskTarget = Schema.Struct({
+  occurrenceId: Schema.NullOr(Session.fields.id),
+  scheduledAt: Schema.Natural,
+  availableAt: Schema.Natural,
+});
+
+export type TaskTarget = typeof TaskTarget.Type;
+
+export const TaskInspection = Schema.Struct({
+  task: Schema.Struct({ id: Session.fields.id, revision: Schema.Natural }),
+  target: Schema.NullOr(TaskTarget),
+});
+
+export const TaskControl = Schema.Union([
+  Schema.Struct({
+    action: Schema.Literal("edit"),
+    id: Session.fields.id,
+    operationId: boundedText(512),
+    revision: Schema.Natural,
+    patch: TaskPatch,
+  }),
+  Schema.Struct({
+    action: Schema.Literals(["skip-next", "run-now"]),
+    id: Session.fields.id,
+    operationId: boundedText(512),
+    revision: Schema.Natural,
+    target: TaskTarget,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("snooze"),
+    id: Session.fields.id,
+    operationId: boundedText(512),
+    revision: Schema.Natural,
+    target: TaskTarget,
+    until: Schema.Natural,
+  }),
+]);
+
+export type TaskControl = typeof TaskControl.Type;
+
+export const ControlReceipt = Schema.Struct({
+  operationId: Schema.String,
+  action: Schema.Literals(["edit", "skip-next", "snooze", "run-now"]),
+  taskId: Session.fields.id,
+  previousRevision: Schema.Natural,
+  revision: Schema.Natural,
+  changedFields: Schema.Array(Schema.String),
+  nextAt: Schema.NullOr(Schema.Natural),
+  paused: Schema.Literals([0, 1]),
+  occurrenceId: Schema.NullOr(Session.fields.id),
+  replacedOccurrenceIds: Schema.Array(Session.fields.id),
+  baselineReset: Schema.Boolean,
+  snoozeCleared: Schema.Boolean,
+  scheduledAt: Schema.NullOr(Schema.Natural),
+  availableAt: Schema.NullOr(Schema.Natural),
+});
+
 /** Commands accepted by both the local task store and the worker endpoint. */
 export const TaskCommand = Schema.Union([
+  TaskControl,
   Schema.Struct({
     action: Schema.Literals(["add", "add-monitor"]),
     task: NewTask,
@@ -94,7 +159,7 @@ export const TaskCommand = Schema.Union([
   }),
   Schema.Struct({ action: Schema.Literals(["list", "providers", "clear", "status"]) }),
   Schema.Struct({
-    action: Schema.Literals(["show", "pause", "resume", "cancel", "retry"]),
+    action: Schema.Literals(["show", "inspect", "pause", "resume", "cancel", "retry"]),
     id: Session.fields.id,
   }),
   Schema.Struct({ action: Schema.Literal("resume-provider"), provider: ProviderId }),
@@ -106,6 +171,9 @@ export type TaskCommand = typeof TaskCommand.Type;
 export const Task = Schema.Struct({
   ...NewTask.fields,
   monitor: Schema.BooleanFromBit,
+  revision: Schema.Natural,
+  monitorRevision: Schema.Natural,
+  monitorBaselineAfter: Schema.Natural,
   destination: Schema.NullOr(Schema.fromJsonString(DeliveryDestination)),
   skill: Schema.NullOr(Schema.fromJsonString(SkillSnapshot)),
   schedule: Schema.fromJsonString(Schedule),
@@ -117,12 +185,23 @@ export const Task = Schema.Struct({
 
 export type Task = typeof Task.Type;
 
+/** Immutable execution fields, independent of later edits and host defaults. */
+export const TaskDefinition = Schema.Struct({
+  ...NewTask.fields,
+  monitor: Schema.Boolean,
+  skill: Schema.NullOr(SkillSnapshot),
+});
+
 /** One scheduled execution, linked to its session and run as they are created. */
 export const Occurrence = Schema.Struct({
   id: Session.fields.id,
   jobId: Session.fields.id,
+  revision: Schema.Natural,
+  definition: Schema.fromJsonString(TaskDefinition),
   destination: Schema.NullOr(Schema.fromJsonString(DeliveryDestination)),
   scheduledAt: Schema.Natural,
+  availableAt: Schema.Natural,
+  origin: Schema.Literals(["scheduled", "manual"]),
   status: Schema.Literals([
     "pending",
     "running",

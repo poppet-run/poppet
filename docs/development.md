@@ -53,7 +53,9 @@ version and a stable name. Keep applied files and registrations unchanged;
 the ledger checks their names and SQL checksums before applying pending steps.
 
 The unreleased base schema starts at version 1 with one initial migration.
-Migration 2 adds monitoring to existing version-1 databases without a reset. Databases
+Migration 2 adds monitoring; migration 3 adds task revisions, occurrence snapshots,
+ready times and mutation receipts. Upgrades from versions 1 and 2 retain saved
+data, including monitoring children during occurrence-table replacement. Databases
 from the former 14-step history need a fresh data directory. See
 [storage](storage.md#schema-and-saved-records).
 

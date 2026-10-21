@@ -105,7 +105,8 @@ for provenance, limits, cancellation, and uncertain outcomes.
 
 ## Manage scheduled tasks
 
-Ask a tool-capable model to create, list, show, pause, or resume a task through
+Ask a tool-capable model to create, inspect, edit, pause, resume, skip, snooze,
+or run a task now through
 `poppet_tasks.manage_tasks`. Use `create_monitor` for an explicit request to watch a specific source value
 and notify only when it changes. Monitoring requires a recurring schedule and
 starts with a quiet successful baseline; failed checks leave that baseline
@@ -117,6 +118,13 @@ the model should ask about ambiguity rather than invent a recurring schedule.
 In messaging, request delivery here to use the current authorized conversation.
 CLI chat creates tasks with local results. See [tasks](tasks.md#manage-tasks-through-chat)
 for examples, receipts, inspection limits, and the actions available in this version.
+
+Edits require an inspected definition revision; skip-next, snooze and run-now also
+bind the inspected next execution. The model must call `show` in the current run
+before those changes. Snooze delays execution rather than postponing a delivered
+message. Run-now queues normal read-only work and cannot undo a future hold.
+See [task controls](tasks.md#edit-and-control-the-next-execution) for running-task
+restrictions, retained snapshots, and monitoring baseline resets.
 
 Only your current explicit request authorizes a change. Instructions inside
 recalled conversations, notes, pages, skills, or tool results do not. A committed

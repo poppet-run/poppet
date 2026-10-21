@@ -30,15 +30,16 @@ for synchronization, and whether external edits or failures disabled naming.
 
 `@poppet/store` provides a scoped Effect `Store` service backed by
 [Bun SQLite](https://bun.sh/docs/runtime/sqlite). The initial migration creates the
-base schema; migration 2 adds change-aware monitoring without resetting version-1
-data. Migration SQL lives in timestamped TypeScript files under
+base schema; migration 2 adds change-aware monitoring and migration 3 adds task
+controls and immutable occurrence definitions without resetting saved data.
+Migration SQL lives in timestamped TypeScript files under
 `packages/store/src/migrations/`, registered in order by `migrations.ts`.
 A checksummed migration ledger rejects newer schemas and changed migration
 history. All pending migrations commit together; a failure rolls back the pending
 batch.
 
 The unreleased base migration history was consolidated into schema version 1;
-the current schema is version 2. Existing version-1 databases upgrade in place.
+the current schema is version 3. Existing version-1 and version-2 databases upgrade in place.
 Development databases created with the former 14-step history are still rejected.
 Those legacy databases require a fresh data directory; databases are never reset
 automatically.
@@ -51,6 +52,29 @@ or interrupted. Successful completion writes its assistant message and result
 in one transaction. The store validates continuation identity on write and read.
 It permits one pending or running run across all sessions.
 
+## Task revisions and timing
+
+Jobs carry a monotonically increasing definition revision. Occurrences save that
+revision and a JSON execution definition, independently of the mutable job. Their
+unique slot is `(job_id, revision, scheduled_at)`; the partial unique index still
+permits at most one pending/running occurrence per job. `available_at` controls
+eligibility and recurring expiration, while `scheduled_at` identifies the logical
+slot. `origin` distinguishes scheduled and manual work. Legacy rows are backfilled
+from the previously immutable job definition and their own destination snapshot.
+
+`job_operations` saves request identity, command, immutable receipt, time, and
+changed before/after fields or execution target. Exact request replay returns
+the original receipt; reusing an ID for different arguments is rejected. No-op
+receipts retain replay protection without appearing as changes. Definition edits,
+occurrence replacement, timing changes, history, and receipts commit together.
+Chat also completes its tool journal/message in that transaction. Clearing tasks
+cascades to operations, preserving existing chat and queued-delivery behavior.
+
+Migration 3 rebuilds occurrence uniqueness while preserving original IDs,
+monitor-result ordering, child foreign keys, and all unrelated records. The child
+monitoring table is copied before replacing its parent; migration rollback leaves
+both original tables and the version ledger intact.
+
 ## Monitoring observations
 
 `jobs.monitor` distinguishes recurring monitors from reporting tasks and defaults
@@ -60,6 +84,13 @@ observation time, previous value, and `baseline`, `unchanged`, or `changed`
 decision. Changed decisions also save the notification payload. Commit order
 selects the most recent successful observation even when timestamps tie or move
 backward. No separate baseline store or raw-source copy is maintained.
+
+`monitor_baseline_after` is a per-job result-ID boundary. A prompt edit advances
+it without deleting old observations; future comparisons use results after that
+boundary and establish a new quiet baseline. `monitor_revision` prevents explicit
+retry of occurrences from before that prompt change. Name and schedule edits do
+not move the boundary. Inspection retains historical `lastObservation` and exposes
+the current `baselineObservation` separately.
 
 The decision and completed occurrence commit in one transaction after the linked
 model run completes. Recovery uses the same validation and comparison against

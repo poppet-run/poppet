@@ -119,6 +119,131 @@ const execute = (action: ChatTaskAction, context: ChatTaskContext) =>
   });
 
 describe("chat task operations", () => {
+  test("edits and snoozes through host-bound atomic receipts, revalidates stale targets and rolls back history on journal failure", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const { database } = yield* StoreDatabase;
+          const first = yield* recorded(create);
+          const created = JSON.parse(yield* execute(create, first.context));
+          const id = created.task.id;
+
+          const edit: ChatTaskAction = {
+            action: "edit",
+            id,
+            revision: 0,
+            name: "Edited",
+            prompt: null,
+            schedule: null,
+          };
+
+          const missing = yield* recorded(edit, "uninspected", first.run);
+          expect(
+            yield* (yield* ChatTasks).prepare(edit, missing.context).pipe(Effect.result),
+          ).toHaveProperty("failure.reason", "tool-arguments");
+          const inspection = yield* recorded({ action: "show", id }, "inspect-edit", first.run);
+          yield* execute({ action: "show", id }, inspection.context);
+          const second = yield* recorded(edit, "edit", first.run);
+          const edited = yield* execute(edit, second.context);
+          expect(JSON.parse(edited)).toMatchObject({
+            revision: 1,
+            taskId: id,
+            changedFields: ["name"],
+            task: { name: "Edited" },
+          });
+          expect(yield* (yield* (yield* ChatTasks).prepare(edit, second.context)).execute).toBe(
+            edited,
+          );
+
+          const snooze: ChatTaskAction = {
+            action: "snooze",
+            id,
+            revision: 1,
+            target: repo.nextTarget(id)!,
+            until: "2026-10-19T09:00:00Z",
+          };
+
+          const inspectedNext = yield* recorded({ action: "show", id }, "inspect-next", first.run);
+          yield* execute({ action: "show", id }, inspectedNext.context);
+          const third = yield* recorded(snooze, "snooze", first.run);
+          const held = JSON.parse(yield* execute(snooze, third.context));
+          expect(held).toMatchObject({
+            availableAt: Date.parse(snooze.until),
+            changedFields: ["availableAt"],
+          });
+
+          const stale: ChatTaskAction = {
+            action: "skip_next",
+            id,
+            revision: 1,
+            target: snooze.target,
+          };
+
+          const fourth = yield* recorded(stale, "stale", first.run);
+          expect(yield* execute(stale, fourth.context).pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "invalid-request",
+          );
+          const rollback: ChatTaskAction = { ...edit, revision: 1, name: "Must roll back" };
+          const fifth = yield* recorded(rollback, "rollback", first.run);
+          database.run(
+            "CREATE TRIGGER reject_control_receipt BEFORE UPDATE OF status ON tool_calls WHEN NEW.call_id = 'rollback' AND NEW.status = 'completed' BEGIN SELECT RAISE(ABORT, 'receipt failed'); END",
+          );
+          expect(yield* execute(rollback, fifth.context).pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "storage",
+          );
+          expect(repo.task(id)).toMatchObject({ revision: 1, name: "Edited" });
+          expect(repo.nextTarget(id)?.availableAt).toBe(Date.parse(snooze.until));
+          expect(repo.changes(id)).toHaveLength(2);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("validates one-off edit deadlines again at commit", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const first = yield* recorded(create);
+          const id = JSON.parse(yield* execute(create, first.context)).task.id;
+          const inspection = yield* recorded({ action: "show", id }, "inspect", first.run);
+          yield* execute({ action: "show", id }, inspection.context);
+
+          const edit: ChatTaskAction = {
+            action: "edit",
+            id,
+            revision: 0,
+            name: null,
+            prompt: null,
+            schedule: { type: "once", at: new Date(now + 1000).toISOString() },
+          };
+
+          const call = yield* recorded(edit, "edit", first.run);
+          const planned = yield* (yield* ChatTasks).prepare(edit, call.context);
+          yield* first.store.startToolCall(call.context.runId, call.context.callId);
+          yield* TestClock.adjust("2 seconds");
+          expect(yield* planned.execute.pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "invalid-request",
+          );
+          expect(repo.task(id).revision).toBe(0);
+          expect(repo.changes(id)).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("creates a monitor with an atomic quiet-baseline receipt and rejects one-off monitoring", async () => {
     const state = await fixture();
 

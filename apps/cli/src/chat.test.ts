@@ -171,6 +171,9 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                                   delivery: state.taskAction === "create" ? "local" : null,
                                   skill: null,
                                   after: null,
+                                  revision: null,
+                                  target: null,
+                                  until: null,
                                 }),
                               };
 

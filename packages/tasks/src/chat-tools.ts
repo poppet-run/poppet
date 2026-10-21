@@ -1,14 +1,25 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { AgentError, ChatSettings, ChatTasks, Skills } from "@poppet/agent";
 import { Store, StoreError, type DeliveryDestination, type SkillSnapshot } from "@poppet/store";
-import { Clock, Effect, Layer, Match, Schema } from "effect";
+import { Clock, Effect, Layer, Match, Option, Schema } from "effect";
 
-import { NewTask, nextOccurrence, parseTimestamp, TaskError, type Task } from "#src/task-schema";
+import {
+  NewTask,
+  nextOccurrence,
+  parseTimestamp,
+  TaskError,
+  TaskControl,
+  TaskInspection,
+  type Task,
+} from "#src/task-schema";
 import { TaskRepository } from "#src/task-store";
 
 const summary = (task: Task) => ({
   id: task.id,
   name: task.name,
   monitor: task.monitor,
+  revision: task.revision,
   schedule:
     task.schedule.type === "once"
       ? { type: "once", at: new Date(task.schedule.at).toISOString() }
@@ -69,9 +80,8 @@ export const ChatTasksLive = Layer.effect(
             );
           const run = yield* store.run(context.runId);
 
-          const saved = (yield* store.toolCalls(context.runId)).find(
-            (call) => call.callId === context.callId,
-          );
+          const journal = yield* store.toolCalls(context.runId);
+          const saved = journal.find((call) => call.callId === context.callId);
 
           if (run === null || saved?.name !== "manage_tasks" || saved.namespace !== "poppet_tasks")
             return yield* Effect.fail(
@@ -95,8 +105,9 @@ export const ChatTasksLive = Layer.effect(
           let input: NewTask | null = null;
           let skill: SkillSnapshot | null = null;
           let destination: DeliveryDestination | null = null;
+          let change: TaskControl | null = null;
 
-          if ("schedule" in action) {
+          if ("delivery" in action) {
             input = yield* Effect.try({
               try: () => {
                 const schedule =
@@ -159,13 +170,132 @@ export const ChatTasksLive = Layer.effect(
                 action.action === "list" ? repo.listPage(action.after) : repo.task(action.id),
               catch: invalid,
             });
+
+            if (
+              action.action === "edit" ||
+              action.action === "skip_next" ||
+              action.action === "snooze" ||
+              action.action === "run_now"
+            ) {
+              change = yield* Effect.try({
+                try: () => {
+                  const base = {
+                    id: action.id,
+                    revision: action.revision,
+                    operationId: `${context.runId}:${context.callId}`,
+                  };
+
+                  if (action.action === "edit") {
+                    const patch: Record<string, Schema.Json> = {};
+
+                    if (action.name !== null) patch.name = action.name;
+
+                    if (action.prompt !== null) patch.prompt = action.prompt;
+
+                    if (action.schedule !== null)
+                      patch.schedule =
+                        action.schedule.type === "once"
+                          ? { type: "once", at: parseTimestamp(action.schedule.at) }
+                          : action.schedule;
+
+                    return Schema.decodeUnknownSync(TaskControl, { onExcessProperty: "error" })({
+                      ...base,
+                      action: "edit",
+                      patch,
+                    });
+                  }
+
+                  if (action.action === "snooze")
+                    return {
+                      ...base,
+                      action: "snooze" as const,
+                      target: action.target,
+                      until: parseTimestamp(action.until),
+                    };
+
+                  return {
+                    ...base,
+                    action:
+                      action.action === "skip_next" ? ("skip-next" as const) : ("run-now" as const),
+                    target: action.target,
+                  };
+                },
+                catch: invalid,
+              });
+              const requested = change;
+
+              const inspected = journal.some((call) => {
+                if (
+                  call.namespace !== "poppet_tasks" ||
+                  call.name !== "manage_tasks" ||
+                  call.status !== "completed" ||
+                  call.position >= saved.position ||
+                  call.output === null
+                )
+                  return false;
+
+                const args = Option.getOrNull(
+                  Schema.decodeUnknownOption(
+                    Schema.fromJsonString(
+                      Schema.Struct({ action: Schema.Literal("show"), id: Schema.String }),
+                    ),
+                  )(call.arguments),
+                );
+
+                const observed = Option.getOrNull(
+                  Schema.decodeUnknownOption(Schema.fromJsonString(TaskInspection))(call.output),
+                );
+
+                return (
+                  args?.id === requested.id &&
+                  observed?.task.id === requested.id &&
+                  observed.task.revision === requested.revision &&
+                  (requested.action === "edit" ||
+                    isDeepStrictEqual(observed.target, requested.target))
+                );
+              });
+
+              if (!inspected)
+                return yield* Effect.fail(
+                  new AgentError({
+                    reason: "tool-arguments",
+                    message:
+                      "Inspect the task with show earlier in this run, then copy its revision and target.",
+                  }),
+                );
+
+              if (change.action === "edit" && change.patch.schedule !== undefined) {
+                const edited = change;
+                yield* Effect.try({
+                  try: () => {
+                    const schedule = edited.patch.schedule!;
+                    nextOccurrence(schedule, clock.currentTimeMillisUnsafe());
+
+                    if (
+                      schedule.type === "once" &&
+                      schedule.at <= clock.currentTimeMillisUnsafe() &&
+                      !isDeepStrictEqual(schedule, repo.task(edited.id).schedule)
+                    )
+                      throw new TaskError({
+                        message: "Choose a future one-off time with an explicit UTC offset.",
+                      });
+
+                    if (repo.task(edited.id).monitor && schedule.type !== "cron")
+                      throw new TaskError({
+                        message: "Monitoring requires a recurring cron schedule and timezone.",
+                      });
+                  },
+                  catch: invalid,
+                });
+              }
+            }
           }
 
           const execute = store
             .commitToolCall(context.runId, context.callId, () => {
               const now = clock.currentTimeMillisUnsafe();
 
-              if ("schedule" in action) {
+              if ("delivery" in action) {
                 const valid = input!;
 
                 if (valid.schedule.type === "once" && valid.schedule.at <= now)
@@ -191,6 +321,27 @@ export const ChatTasksLive = Layer.effect(
                     action: action.action,
                     task: summary(task),
                     baseline: task.monitor ? "pending-first-success" : null,
+                    truncated: false,
+                  }),
+                  toolBytes,
+                );
+              }
+
+              if (change !== null) {
+                let receipt;
+
+                try {
+                  receipt = repo.control(change, now);
+                } catch (cause) {
+                  if (cause instanceof TaskError)
+                    throw new StoreError({ reason: "invalid-request", message: cause.message });
+                  throw cause;
+                }
+
+                return bounded(
+                  JSON.stringify({
+                    ...receipt,
+                    task: summary(repo.task(change.id)),
                     truncated: false,
                   }),
                   toolBytes,
@@ -253,6 +404,9 @@ export const ChatTasksLive = Layer.effect(
                 id: item.id,
                 status: item.status,
                 scheduledAt: item.scheduledAt,
+                availableAt: item.availableAt,
+                revision: item.revision,
+                origin: item.origin,
                 finishedAt: item.finishedAt,
                 reason: item.reason,
                 monitoring: repo.monitoring.result(item.id),
@@ -273,6 +427,7 @@ export const ChatTasksLive = Layer.effect(
                     skill: task.skill?.name ?? null,
                   },
                   occurrences,
+                  target: repo.nextTarget(task.id),
                   lastObservation,
                   truncated,
                 });

@@ -186,6 +186,100 @@ const fixture = async (
 };
 
 describe.concurrent("task worker", () => {
+  test("worker control requests preserve snapshots and execute run-now through the ordinary read-only runner", async () => {
+    const state = await fixture(() => final());
+
+    try {
+      await state.run(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const repo = yield* TaskRepository;
+            const worker = yield* makeTaskWorker;
+            const path = workerSocketPath(state.directory);
+            yield* serveWorker(path, (_request, body) => taskResponse(body, worker.handle));
+            const at = Date.now() + 60_000;
+            const job = repo.add({ ...state.task, schedule: { type: "once", at } }, Date.now());
+
+            const edited = yield* remoteTaskCommand(path, {
+              action: "edit",
+              id: job.id,
+              revision: 0,
+              operationId: "worker-edit",
+              patch: { prompt: "Read the new decisions" },
+            });
+
+            expect(edited?.value).toMatchObject({ revision: 1 });
+
+            const held = yield* remoteTaskCommand(path, {
+              action: "snooze",
+              id: job.id,
+              revision: 1,
+              operationId: "worker-snooze",
+              target: repo.nextTarget(job.id)!,
+              until: at + 60_000,
+            });
+
+            expect(held?.value).toMatchObject({ availableAt: at + 60_000 });
+
+            const early = yield* remoteTaskCommand(path, {
+              action: "run-now",
+              id: job.id,
+              revision: 1,
+              operationId: "held-run",
+              target: repo.nextTarget(job.id)!,
+            }).pipe(Effect.result);
+
+            expect(early).toHaveProperty("failure.message", expect.stringContaining("held"));
+            yield* remoteTaskCommand(path, {
+              action: "skip-next",
+              id: job.id,
+              revision: 1,
+              operationId: "worker-skip",
+              target: repo.nextTarget(job.id)!,
+            });
+            yield* remoteTaskCommand(path, {
+              action: "edit",
+              id: job.id,
+              revision: 1,
+              operationId: "worker-rearm",
+              patch: { schedule: { type: "once", at: at + 120_000 } },
+            });
+
+            const request = {
+              action: "run-now" as const,
+              id: job.id,
+              revision: 2,
+              operationId: "worker-run",
+              target: repo.nextTarget(job.id)!,
+            };
+
+            const queued = yield* remoteTaskCommand(path, request);
+            expect((yield* remoteTaskCommand(path, request))?.value).toEqual(queued?.value);
+            const claimed = repo.claim(Date.now())!;
+            expect(claimed.occurrence).toMatchObject({
+              origin: "manual",
+              definition: { prompt: "Read the new decisions" },
+            });
+            yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
+            expect(repo.occurrence(claimed.occurrence.id).status).toBe("completed");
+            expect(state.requests).toHaveLength(1);
+            expect(state.requests[0]?.messages).toMatchObject([
+              { role: "user", text: "Read the new decisions" },
+            ]);
+            expect(
+              state.requests[0]?.tools.some((tool) =>
+                ["save_note", "memory", "manage_tasks"].includes(tool.name),
+              ),
+            ).toBe(false);
+            expect(state.errors).toEqual([]);
+          }),
+        ),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("monitoring captures fresh note evidence through the agent while retaining scheduled restrictions", async () => {
     const state = await fixture((request) => {
       expect(request.tools.some((tool) => tool.namespace === "poppet_monitor")).toBe(true);
@@ -315,6 +409,9 @@ describe.concurrent("task worker", () => {
               delivery: null,
               skill: null,
               after: null,
+              revision: null,
+              target: null,
+              until: null,
             }),
           })),
         );
@@ -416,6 +513,9 @@ describe.concurrent("task worker", () => {
                 delivery: null,
                 skill: null,
                 after: null,
+                revision: null,
+                target: null,
+                until: null,
               }),
             },
           ]),
@@ -476,6 +576,9 @@ describe.concurrent("task worker", () => {
             delivery: null,
             skill: null,
             after: null,
+            revision: null,
+            target: null,
+            until: null,
           }),
         },
       ]);

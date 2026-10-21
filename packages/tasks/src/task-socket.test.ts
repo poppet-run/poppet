@@ -6,7 +6,43 @@ import { join } from "node:path";
 import { serveWorker } from "@poppet/worker";
 import { Effect } from "effect";
 
-import { remoteTaskCommand } from "#src/task-socket";
+import { remoteTaskCommand, taskResponse } from "#src/task-socket";
+
+test("control commands reject missing bindings and extra mutation fields before dispatch", async () => {
+  let dispatched = 0;
+
+  const handle = () =>
+    Effect.sync(() => {
+      dispatched++;
+
+      return {};
+    });
+
+  const edit = {
+    action: "edit",
+    id: "task",
+    revision: 0,
+    operationId: "request",
+    patch: { name: "Renamed" },
+  };
+
+  await Promise.all(
+    [
+      { ...edit, patch: {} },
+      { ...edit, patch: { provider: "other" } },
+      { ...edit, revision: null },
+      { ...edit, destination: "other" },
+      { action: "snooze", id: "task", operationId: "request", revision: 0, until: 1000 },
+    ].map(async (body) => {
+      const response = await Effect.runPromise(taskResponse(body, handle));
+      expect(response.status).toBe(400);
+    }),
+  );
+
+  expect(dispatched).toBe(0);
+  expect((await Effect.runPromise(taskResponse(edit, handle))).status).toBe(200);
+  expect(dispatched).toBe(1);
+});
 
 test("a lost response to a delivered mutation never permits local fallback", async () => {
   const directory = await mkdtemp("/tmp/p7-response-");

@@ -17,8 +17,9 @@ starts with a separately scoped accessibility-only trial.
 [Change-aware monitoring](#phase-23-change-aware-monitoring) is implemented with
 automated checks. Real-model monitoring and live change delivery remain manual.
 
-[Editable tasks and snoozing](#phase-24-editable-tasks-and-snoozing) is planned in
-separate stages for editing, skip-next, snooze, and run-now.
+[Editable tasks and snoozing](#phase-24-editable-tasks-and-snoozing) is implemented
+through editing, skip-next, snooze, and run-now, with automated checks. Real-model
+intent handling and live messaging validation remain manual.
 
 The other saved priorities have detailed plans below. They remain planned work;
 these notes do not authorize implementation.
@@ -40,7 +41,8 @@ Updated: 2026-10-21
 
 Storage history: the unreleased base schema is consolidated into version 1 in
 one timestamped initial migration. Phase 23 adds migration 2 without resetting
-version-1 data. Migration numbers and
+version-1 data. Phase 24 adds migration 3 for task controls and occurrence snapshots,
+retaining version-1/version-2 data. Migration numbers and
 upgrade/backfill checks in the phase notes below describe the original work,
 not a supported upgrade path. See [storage](storage.md#schema-and-saved-records)
 and [development](development.md#store-migrations) for the current setup.
@@ -2113,11 +2115,12 @@ and uncertain remote delivery remain explicit limits after completion.
 
 ## Phase 24: Editable tasks and snoozing
 
-Planned only. This phase extends the existing task commands, worker endpoint,
-and `poppet_tasks.manage_tasks` tool. It depends on phases 7–9, 18, and 23.
-Implement and validate the stages separately, starting with task editing.
-Skip-next, snooze, and run-now have distinct meanings and should not arrive as
-one large first change. No runtime changes are authorized by this plan alone.
+Implemented through Stages 24a–24d with automated checks. This phase extends
+the existing task commands, worker endpoint, and `poppet_tasks.manage_tasks`
+tool, building on phases 7–9, 18, and 23. The stages below describe the delivered
+contracts. Live model intent handling, physical sleep/wake, and live messaging
+validation remain manual; the automated paths use isolated stores and injected
+models rather than the owner's running worker or accounts.
 
 ### Goals and boundaries
 
@@ -2184,7 +2187,7 @@ printing prompts, note contents, credentials, or model output.
 
 ### Stage 24a: Edit a task definition
 
-Add the proposed CLI interface:
+Implemented CLI interface:
 
 ```fish
 bun run start tasks edit <task-id> --name "Morning review"
@@ -2302,7 +2305,7 @@ next time. Replayed operation IDs cannot skip a second slot.
 
 ### Stage 24c: Snooze the next execution
 
-Add the proposed interface:
+Implemented interface:
 
 ```fish
 bun run start tasks snooze <task-id> --until 2099-10-22T10:00:00+01:00

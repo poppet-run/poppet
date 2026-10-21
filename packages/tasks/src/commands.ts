@@ -32,6 +32,13 @@ export const executeTaskCommand = (
   now: number,
 ) =>
   Effect.gen(function* () {
+    if (command.action === "inspect")
+      return yield* taskOperation(() => {
+        const job = repo.task(command.id);
+
+        return { task: { id: job.id, revision: job.revision }, target: repo.nextTarget(job.id) };
+      });
+
     if (command.action === "show") {
       const job = yield* taskOperation(() => repo.task(command.id));
       const occurrences = yield* taskOperation(() => repo.occurrences(job.id));
@@ -55,7 +62,12 @@ export const executeTaskCommand = (
 
       return {
         task: job,
+        target: yield* taskOperation(() => repo.nextTarget(job.id)),
+        changes: yield* taskOperation(() => repo.changes(job.id)),
         lastObservation: yield* taskOperation(() => repo.monitoring.latest(job.id)),
+        baselineObservation: yield* taskOperation(() =>
+          repo.monitoring.latest(job.id, job.monitorBaselineAfter),
+        ),
         occurrences: results,
         skipped: yield* taskOperation(() => repo.skips(job.id)),
       };
@@ -120,6 +132,11 @@ export const executeTaskCommand = (
           return repo.cancel(command.id, now);
         case "retry":
           return repo.retry(command.id, now);
+        case "edit":
+        case "skip-next":
+        case "snooze":
+        case "run-now":
+          return repo.control(command, now);
         case "resume-provider":
           repo.resumeProvider(command.provider, now);
 

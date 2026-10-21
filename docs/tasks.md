@@ -37,6 +37,58 @@ bun run start tasks pause <task-id>
 bun run start tasks resume <task-id>
 ```
 
+## Edit and control the next execution
+
+Edit a task without replacing its ID or losing its history:
+
+```fish
+bun run start tasks edit <task-id> --name "Morning review"
+bun run start tasks edit <task-id> --prompt "Read project.md and summarize its open decisions."
+bun run start tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
+bun run start tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
+bun run start tasks skip-next <task-id>
+bun run start tasks snooze <task-id> --until 2099-10-22T10:00:00+01:00
+bun run start tasks run-now <task-id>
+```
+
+Edits change only supplied name, prompt, or schedule fields. A cron replacement
+requires both expression and timezone; a one-off replacement requires a future
+offset-qualified timestamp. Empty patches, unknown fields, conflicting schedules,
+and timezone-only changes are rejected. Identical values are a no-op. Provider,
+model, workload, skill, destination, and monitor/report mode remain unchanged.
+Paused tasks may be edited without resuming them. Cancel a running occurrence
+explicitly before using any of these controls on that task.
+
+Every occurrence saves the definition and revision it executes. A name/prompt
+edit replaces an unstarted occurrence with a new snapshot while retaining its
+logical slot, ready time, and destination. The original stays cancelled in history.
+A schedule change cancels pending work, clears its snooze, and computes the next
+future slot. Editing a completed one-off's name/prompt does not rerun it; supply
+a different future schedule to rearm it. Monitors remain recurring. A monitor
+prompt change starts a fresh quiet baseline; name/schedule changes preserve it.
+
+| Control     | Behavior                                                                                                                                                                                                                            |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skip-next` | Consume exactly the selected pending occurrence or next slot. A recurring task keeps its cadence; a one-off has no next execution.                                                                                                  |
+| `snooze`    | Delay that execution until a later future instant. `scheduledAt` keeps its original slot; `availableAt` is its effective ready time. The hold survives restart, and intervening cron slots do not build a backlog.                  |
+| `run-now`   | Queue through the normal read-only runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
+
+The CLI inspects the revision and exact target before sending a mutation. The
+worker rechecks both when committing and rejects stale requests instead of
+selecting another slot. Receipts include the operation ID, revisions, changed
+fields, affected occurrence IDs, next time, and baseline/snooze changes. Repeating
+an operation ID returns its original receipt. Lost responses never trigger local
+fallback or replay. Inspect `tasks show` and its latest 20 `changes` before
+issuing another command after an unclear result.
+
+Pausing cancels a snoozed occurrence. Resume uses the ordinary future cron cadence
+and does not restore the snooze. Recurring expiration and retry freshness use
+`availableAt`, with the existing 24-hour window after that time; one-offs do not
+expire. Retries use the historical occurrence definition. A monitor occurrence
+older than its latest prompt change cannot be retried against the new baseline.
+Restart an older worker before using these new commands; unsupported actions
+fail explicitly. No additional login or model is required to manage saved tasks.
+
 ## Change-aware monitoring
 
 Use `--monitor` with a recurring cron schedule and an explicit timezone. Name a
@@ -106,8 +158,8 @@ Resume task <task-id>.
 Ask explicitly to monitor a precise value to use `create_monitor`, for example:
 "Every day at 09:00 Europe/London, read https://example.com/releases.txt and
 notify me here only when its latest stable release tag changes." Monitoring
-creation uses a recurring schedule and saves a quiet first baseline. List, show,
-pause, and resume handle both reporting tasks and monitors.
+creation uses a recurring schedule and saves a quiet first baseline. All task
+controls handle both reporting tasks and monitors.
 
 The `poppet_tasks.manage_tasks` tool uses the existing scheduler. New tasks retain
 the current session's provider, model, and workload, with a self-contained prompt
@@ -127,9 +179,12 @@ The model cannot supply an arbitrary destination, account, owner, or provider.
 Inspection uses bounded pages and flags shortened prompts or omitted occurrence
 status. Use stable task IDs to pause or resume; duplicate names need clarification.
 Pause cancels pending work and leaves active work running. Resume does not replay
-missed recurring occurrences. These actions do not edit or delete tasks, retry
-occurrences, cancel active runs, or change provider pauses; the CLI commands
-remain available for those operations.
+missed recurring occurrences. Use `edit`, `skip_next`, `snooze`, and `run_now` for
+the corresponding controls above. The host requires a completed `show` inspection
+earlier in the current run, and validates its revision and exact target again at
+commit. A snooze uses an absolute `until` timestamp with an offset; ask about an
+unclear timezone. Deleting tasks, retrying occurrences, cancelling active runs,
+and changing provider pauses remain CLI operations.
 
 Task changes and their durable tool receipts commit together. A saved change
 survives a later model failure or interrupted answer. Inspect `tasks list`,

@@ -57,6 +57,545 @@ const fixture = async () => {
 };
 
 describe.concurrent("task schedules", () => {
+  test("retains a one-off rearmed while paused and defers it behind an older explicit retry", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo) =>
+        Effect.sync(() => {
+          const job = repo.add(once, start);
+          repo.reconcile(start);
+          const original = repo.claim(start)!;
+          repo.finish(original.occurrence.id, "failed", "test", start);
+          repo.pause(job.id, start);
+          repo.control(
+            {
+              action: "edit",
+              id: job.id,
+              revision: 0,
+              operationId: "rearm-paused",
+              patch: { prompt: "New one-off", schedule: { type: "once", at: start + 1000 } },
+            },
+            start,
+          );
+          expect(repo.task(job.id).paused).toBe(1);
+          repo.resume(job.id, start);
+          expect(repo.task(job.id).nextAt).toBe(start + 1000);
+          repo.retry(original.occurrence.id, start);
+          expect(() => repo.reconcile(start + 1000)).not.toThrow();
+          expect(repo.task(job.id).nextAt).toBe(start + 1000);
+          expect(repo.claim(start + 1000)?.task).toMatchObject({
+            revision: 0,
+            prompt: once.prompt,
+          });
+          repo.finish(original.occurrence.id, "completed", null, start + 1000);
+          repo.reconcile(start + 1000);
+          expect(repo.claim(start + 1000)?.task).toMatchObject({
+            revision: 1,
+            prompt: "New one-off",
+          });
+          expect(repo.task(job.id).nextAt).toBeNull();
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("edits a queued one-off with a new snapshot, preserving identity, destination and replay receipts", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo) =>
+        Effect.sync(() => {
+          const skill = { name: "review", content: "Read the selected note." };
+          const job = repo.add(once, start, skill);
+          repo.reconcile(start);
+          const original = repo.occurrences(job.id)[0]!;
+
+          const command = {
+            action: "edit" as const,
+            id: job.id,
+            revision: 0,
+            operationId: "edit",
+            patch: { name: "Renamed", prompt: "Read the current decisions" },
+          };
+
+          const receipt = repo.control(command, start + 1);
+          expect(receipt).toMatchObject({
+            revision: 1,
+            replacedOccurrenceIds: [original.id],
+            baselineReset: false,
+          });
+          expect(repo.occurrence(original.id)).toMatchObject({
+            status: "cancelled",
+            reason: "task-edited",
+            definition: { name: once.name, prompt: once.prompt },
+          });
+          const pending = repo.occurrence(receipt.occurrenceId!);
+          expect(pending).toMatchObject({
+            revision: 1,
+            scheduledAt: start,
+            availableAt: start,
+            definition: { name: "Renamed", prompt: "Read the current decisions", skill },
+          });
+          expect(repo.task(job.id)).toMatchObject({
+            id: job.id,
+            provider: job.provider,
+            model: job.model,
+            nextAt: null,
+            skill,
+          });
+          expect(repo.control(command, start + 2)).toEqual(receipt);
+          expect(() =>
+            repo.control({ ...command, patch: { name: "Different" } }, start + 2),
+          ).toThrow("different task request");
+          const noop = repo.control({ ...command, revision: 1, operationId: "noop" }, start + 3);
+          expect(noop).toMatchObject({ revision: 1, changedFields: [], replacedOccurrenceIds: [] });
+          expect(repo.changes(job.id)).toHaveLength(1);
+          const claimed = repo.claim(start + 4)!;
+          expect(claimed.task).toMatchObject({
+            name: "Renamed",
+            prompt: "Read the current decisions",
+          });
+          repo.finish(claimed.occurrence.id, "completed", null, start + 4);
+          expect(repo.clear()).toBe(1);
+          expect(repo.changes(job.id)).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("edits paused and completed one-offs without resuming or rerunning them, and rearms only an explicit schedule", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo) =>
+        Effect.sync(() => {
+          const job = repo.add(once, start);
+          repo.pause(job.id, start);
+          repo.control(
+            {
+              action: "edit",
+              id: job.id,
+              revision: 0,
+              operationId: "paused",
+              patch: { prompt: "New prompt" },
+            },
+            start,
+          );
+          expect(repo.task(job.id).paused).toBe(1);
+          repo.resume(job.id, start);
+          repo.reconcile(start);
+          const item = repo.claim(start)!;
+          repo.finish(item.occurrence.id, "completed", null, start);
+          repo.control(
+            {
+              action: "edit",
+              id: job.id,
+              revision: 1,
+              operationId: "done",
+              patch: { name: "Finished" },
+            },
+            start + 1,
+          );
+          expect(repo.task(job.id).nextAt).toBeNull();
+          expect(repo.claim(start + 1)).toBeNull();
+          expect(() =>
+            repo.control(
+              {
+                action: "edit",
+                id: job.id,
+                revision: 2,
+                operationId: "past",
+                patch: { schedule: { type: "once", at: start - 1 } },
+              },
+              start + 1,
+            ),
+          ).toThrow("future");
+          repo.control(
+            {
+              action: "edit",
+              id: job.id,
+              revision: 2,
+              operationId: "rearm",
+              patch: { schedule: { type: "once", at: start + 1000 } },
+            },
+            start + 1,
+          );
+          repo.reconcile(start + 1000);
+          expect(repo.claim(start + 1000)?.task).toMatchObject({
+            name: "Finished",
+            prompt: "New prompt",
+            revision: 3,
+          });
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("rejects stale definitions and running edits, and rolls back edits when recording their receipt fails", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo, _store, database) =>
+        Effect.sync(() => {
+          const job = repo.add(once, start);
+          repo.reconcile(start);
+
+          const command = {
+            action: "edit" as const,
+            id: job.id,
+            revision: 0,
+            operationId: "change",
+            patch: { name: "Changed" },
+          };
+
+          const before = repo.task(job.id);
+          database.run(
+            "CREATE TRIGGER reject_operation BEFORE INSERT ON job_operations BEGIN SELECT RAISE(ABORT, 'receipt failed'); END",
+          );
+          expect(() => repo.control(command, start)).toThrow("receipt failed");
+          expect(repo.task(job.id)).toEqual(before);
+          expect(repo.occurrences(job.id)).toHaveLength(1);
+          expect(repo.occurrences(job.id)[0]?.status).toBe("pending");
+          expect(repo.changes(job.id)).toEqual([]);
+          database.run("DROP TRIGGER reject_operation");
+          repo.control(command, start);
+          expect(() => repo.control({ ...command, operationId: "stale" }, start)).toThrow(
+            "definition changed",
+          );
+          repo.claim(start);
+          expect(() =>
+            repo.control({ ...command, revision: 1, operationId: "running" }, start),
+          ).toThrow("running occurrence");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("skip-next consumes exactly the inspected queued or future slot and cannot skip a second slot on replay", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo) =>
+        Effect.sync(() => {
+          const job = repo.add(recurring, start);
+          const target = repo.nextTarget(job.id)!;
+
+          const command = {
+            action: "skip-next" as const,
+            id: job.id,
+            revision: 0,
+            operationId: "skip",
+            target,
+          };
+
+          const receipt = repo.control(command, start);
+          expect(repo.occurrence(receipt.occurrenceId!)).toMatchObject({
+            status: "cancelled",
+            scheduledAt: start + 60_000,
+            reason: "skipped-by-owner",
+          });
+          expect(repo.task(job.id).nextAt).toBe(start + 120_000);
+          expect(repo.control(command, start + 1)).toEqual(receipt);
+          expect(() => repo.control({ ...command, operationId: "stale" }, start + 1)).toThrow(
+            "next execution changed",
+          );
+          repo.reconcile(start + 120_000);
+          const pending = repo.nextTarget(job.id)!;
+          repo.control({ ...command, operationId: "pending", target: pending }, start + 120_000);
+          expect(repo.task(job.id).nextAt).toBe(start + 180_000);
+          const single = repo.add(once, start);
+          repo.control(
+            { ...command, id: single.id, operationId: "once", target: repo.nextTarget(single.id)! },
+            start,
+          );
+          expect(repo.task(single.id).nextAt).toBeNull();
+          expect(repo.claim(start + 120_000)).toBeNull();
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("persists a long snooze across restart, skips intervening slots and expires relative to ready time", async () => {
+    const state = await fixture();
+    const until = start + 3 * recurringExpiry;
+
+    try {
+      const saved = await state.run((repo) =>
+        Effect.sync(() => {
+          const job = repo.add(recurring, start);
+
+          const command = {
+            action: "snooze" as const,
+            id: job.id,
+            revision: 0,
+            operationId: "hold",
+            target: repo.nextTarget(job.id)!,
+            until,
+          };
+
+          const receipt = repo.control(command, start);
+          const target = repo.nextTarget(job.id)!;
+          expect(repo.control({ ...command, operationId: "same", target }, start)).toMatchObject({
+            changedFields: [],
+          });
+          expect(repo.changes(job.id)).toHaveLength(1);
+          expect(() =>
+            repo.control({ ...command, operationId: "earlier", target, until: until - 1 }, start),
+          ).toThrow("later");
+          expect(() =>
+            repo.control({ ...command, operationId: "stale", until: until + 1 }, start),
+          ).toThrow("next execution changed");
+          expect(repo.claim(until - 1)).toBeNull();
+          expect(repo.status().nextScheduledAt).toBe(until);
+
+          return { id: job.id, occurrence: receipt.occurrenceId! };
+        }),
+      );
+
+      await state.run((repo) =>
+        Effect.sync(() => {
+          repo.reconcile(until - 1, true);
+          expect(repo.occurrence(saved.occurrence)).toMatchObject({
+            status: "pending",
+            scheduledAt: start + 60_000,
+            availableAt: until,
+          });
+          expect(repo.claim(until - 1)).toBeNull();
+          repo.blockProvider(recurring.provider, "quota", until);
+          expect(repo.claim(until)).toBeNull();
+          repo.resumeProvider(recurring.provider, until + 1);
+          expect(repo.claim(until + 1)?.occurrence.id).toBe(saved.occurrence);
+          repo.finish(saved.occurrence, "failed", "test", until + 1);
+          repo.retry(saved.occurrence, until + 1);
+          repo.blockProvider(recurring.provider, "quota", until + 1);
+          repo.resumeProvider(recurring.provider, until + recurringExpiry);
+          expect(repo.occurrence(saved.occurrence).status).toBe("expired");
+          expect(() => repo.retry(saved.occurrence, until + recurringExpiry)).toThrow("expired");
+          repo.reconcile(until + recurringExpiry);
+          expect(repo.claim(until + recurringExpiry)).toBeNull();
+          repo.reconcile(until + recurringExpiry + 60_000);
+          expect(repo.claim(until + recurringExpiry + 60_000)?.occurrence.scheduledAt).toBe(
+            until + recurringExpiry + 60_000,
+          );
+          expect(repo.skips(saved.id).length).toBeGreaterThan(0);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("keeps a snooze through prompt edits, clears it on schedule replacement and cancels it on pause", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo) =>
+        Effect.sync(() => {
+          const job = repo.add(recurring, start);
+
+          const held = repo.control(
+            {
+              action: "snooze",
+              id: job.id,
+              revision: 0,
+              operationId: "hold",
+              target: repo.nextTarget(job.id)!,
+              until: start + 500_000,
+            },
+            start,
+          );
+
+          const edited = repo.control(
+            {
+              action: "edit",
+              id: job.id,
+              revision: 0,
+              operationId: "prompt",
+              patch: { prompt: "Updated" },
+            },
+            start,
+          );
+
+          expect(repo.occurrence(edited.occurrenceId!)).toMatchObject({
+            availableAt: start + 500_000,
+            scheduledAt: start + 60_000,
+            definition: { prompt: "Updated" },
+          });
+          expect(repo.occurrence(held.occurrenceId!).status).toBe("cancelled");
+
+          const changed = repo.control(
+            {
+              action: "edit",
+              id: job.id,
+              revision: 1,
+              operationId: "schedule",
+              patch: { schedule: { type: "cron", expression: "*/2 * * * *", timezone: "UTC" } },
+            },
+            start,
+          );
+
+          expect(changed.snoozeCleared).toBe(true);
+          expect(repo.nextTarget(job.id)?.occurrenceId).toBeNull();
+          repo.control(
+            {
+              action: "snooze",
+              id: job.id,
+              revision: 2,
+              operationId: "held-again",
+              target: repo.nextTarget(job.id)!,
+              until: start + 600_000,
+            },
+            start,
+          );
+          repo.pause(job.id, start);
+          expect(() =>
+            repo.control(
+              {
+                action: "skip-next",
+                id: job.id,
+                revision: 2,
+                operationId: "paused",
+                target: repo.nextTarget(job.id)!,
+              },
+              start,
+            ),
+          ).toThrow("Resume");
+          repo.resume(job.id, start + 600_000);
+          expect(repo.nextTarget(job.id)?.availableAt).toBeGreaterThan(start + 600_000);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("run-now preserves cron cadence, reuses eligible work, rejects held work and consumes a one-off early", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo) =>
+        Effect.sync(() => {
+          const job = repo.add(recurring, start);
+
+          const command = {
+            action: "run-now" as const,
+            id: job.id,
+            revision: 0,
+            operationId: "manual",
+            target: repo.nextTarget(job.id)!,
+          };
+
+          const receipt = repo.control(command, start);
+          expect(repo.task(job.id).nextAt).toBe(start + 60_000);
+          expect(repo.occurrence(receipt.occurrenceId!)).toMatchObject({
+            origin: "manual",
+            scheduledAt: start,
+            availableAt: start,
+          });
+          expect(repo.control(command, start + 1)).toEqual(receipt);
+
+          const reused = repo.control(
+            { ...command, operationId: "reuse", target: repo.nextTarget(job.id)! },
+            start + 1,
+          );
+
+          expect(reused.occurrenceId).toBe(receipt.occurrenceId);
+          expect(repo.changes(job.id)).toHaveLength(1);
+          repo.cancel(receipt.occurrenceId!, start);
+          expect(() => repo.control({ ...command, operationId: "collision" }, start)).toThrow(
+            "already exists",
+          );
+          repo.control(
+            {
+              action: "snooze",
+              id: job.id,
+              revision: 0,
+              operationId: "hold",
+              target: repo.nextTarget(job.id)!,
+              until: start + 120_000,
+            },
+            start,
+          );
+          expect(() =>
+            repo.control(
+              { ...command, operationId: "held", target: repo.nextTarget(job.id)! },
+              start,
+            ),
+          ).toThrow("held");
+
+          const single = repo.add(
+            { ...once, schedule: { type: "once", at: start + 500_000 } },
+            start,
+          );
+
+          const early = repo.control(
+            {
+              ...command,
+              id: single.id,
+              operationId: "early",
+              target: repo.nextTarget(single.id)!,
+            },
+            start,
+          );
+
+          expect(repo.task(single.id).nextAt).toBeNull();
+          expect(repo.occurrence(early.occurrenceId!)).toMatchObject({
+            scheduledAt: start + 500_000,
+            availableAt: start,
+            origin: "manual",
+          });
+          expect(repo.claim(start)?.task.id).toBe(single.id);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("retries use historical definitions and their scheduling kind after the live task changes", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo) =>
+        Effect.sync(() => {
+          const job = repo.add(once, start);
+          repo.reconcile(start);
+          const original = repo.claim(start)!;
+          repo.finish(original.occurrence.id, "failed", "test", start);
+          repo.control(
+            {
+              action: "edit",
+              id: job.id,
+              revision: 0,
+              operationId: "new-definition",
+              patch: { prompt: "Current", schedule: recurring.schedule },
+            },
+            start,
+          );
+          repo.retry(original.occurrence.id, start + 2 * recurringExpiry);
+          expect(repo.claim(start + 2 * recurringExpiry)?.task).toMatchObject({
+            prompt: once.prompt,
+            schedule: once.schedule,
+            revision: 0,
+          });
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("keeps the queued destination on restart and explicit execution retry despite a changed task", async () => {
     const state = await fixture();
 

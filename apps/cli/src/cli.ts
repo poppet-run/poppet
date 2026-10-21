@@ -25,6 +25,10 @@ import {
   remoteTaskCommand,
   executeLocalTaskCommand,
   TaskCommand,
+  TaskPatch,
+  NewTask,
+  TaskInspection,
+  parseTimestamp,
   TaskError,
   taskOperation,
   readLocalTaskStatus,
@@ -58,7 +62,7 @@ import { commandArgs } from "#src/command-args";
 import { manageMemory, type MemoryCommand } from "#src/memory";
 import { providers } from "#src/providers";
 import { findProvider, runtimeLayers } from "#src/runtime";
-import { parseTaskSchedule, prepareTask } from "#src/tasks";
+import { parseTaskSchedule, prepareTask, prepareTaskControl } from "#src/tasks";
 import { manageWebSearch } from "#src/web-search";
 import { manageWorker } from "#src/worker";
 import { remoteWorkerCommand, WorkerRequestsLive, type WorkerCommand } from "#src/worker-commands";
@@ -262,14 +266,46 @@ export const makeCLI = (
     }).pipe(Effect.provide(runtime.config));
   };
 
-  const runTasks = (command: TaskCommand) =>
+  const runTasks = (
+    command: TaskCommand,
+    prepare?: (inspection: typeof TaskInspection.Type) => TaskCommand,
+  ) =>
     Effect.gen(function* () {
       const config = yield* AppConfig;
       const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), command);
 
-      if (reply !== null) return yield* Console.log(JSON.stringify(reply.value, null, 2));
+      if (reply !== null) {
+        if (prepare === undefined) return yield* Console.log(JSON.stringify(reply.value, null, 2));
 
-      const result = yield* executeLocalTaskCommand(command).pipe(Effect.provide(runtime.tasks));
+        const mutation = yield* taskOperation(() =>
+          prepare(Schema.decodeUnknownSync(TaskInspection)(reply.value)),
+        );
+
+        const changed = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), mutation);
+
+        if (changed === null)
+          return yield* Effect.fail(
+            new TaskError({
+              message:
+                "The inspected worker stopped. Inspect the task again; the command was not retried locally.",
+            }),
+          );
+
+        return yield* Console.log(JSON.stringify(changed.value, null, 2));
+      }
+
+      const result = yield* Effect.gen(function* () {
+        const inspected = yield* executeLocalTaskCommand(command);
+
+        return prepare === undefined
+          ? inspected
+          : yield* executeLocalTaskCommand(
+              yield* taskOperation(() =>
+                prepare(Schema.decodeUnknownSync(TaskInspection)(inspected)),
+              ),
+            );
+      }).pipe(Effect.provide(runtime.tasks));
+
       yield* Console.log(JSON.stringify(result, null, 2));
     }).pipe(Effect.provide(runtime.config));
 
@@ -501,6 +537,84 @@ export const makeCLI = (
   const tasks = Command.make("tasks").pipe(
     Command.withDescription("Schedule and manage requests"),
     Command.withSubcommands([
+      Command.make(
+        "edit",
+        {
+          id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)),
+          name: Flag.String("name").pipe(Flag.withSchema(NewTask.fields.name), Flag.atMost(1)),
+          prompt: Flag.String("prompt").pipe(
+            Flag.withSchema(NewTask.fields.prompt),
+            Flag.atMost(1),
+          ),
+          at: Flag.String("at").pipe(Flag.atMost(1)),
+          cron: Flag.String("cron").pipe(Flag.atMost(1)),
+          tz: Flag.String("tz").pipe(Flag.atMost(1)),
+        },
+        ({ id, name, prompt, at, cron, tz }) =>
+          Effect.gen(function* () {
+            const patch = yield* taskOperation(() => {
+              const fields: Record<string, Schema.Json> = {};
+
+              if (name[0] !== undefined) fields.name = name[0];
+
+              if (prompt[0] !== undefined) fields.prompt = prompt[0];
+
+              if (at.length + cron.length + tz.length > 0)
+                fields.schedule = parseTaskSchedule(
+                  Option.fromUndefinedOr(at[0]),
+                  Option.fromUndefinedOr(cron[0]),
+                  Option.fromUndefinedOr(tz[0]),
+                );
+
+              if (Object.keys(fields).length === 0)
+                throw new TaskError({
+                  message: "Supply --name, --prompt, --at, or --cron with --tz.",
+                });
+
+              return Schema.decodeUnknownSync(TaskPatch)(fields);
+            });
+
+            yield* runTasks({ action: "inspect", id }, (value) =>
+              prepareTaskControl(value, "edit", patch),
+            );
+          }),
+      ).pipe(Command.withDescription("Edit a task's name, prompt or complete schedule")),
+      ...(["skip-next", "run-now"] as const).map((action) =>
+        Command.make(
+          action,
+          { id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)) },
+          ({ id }) =>
+            runTasks({ action: "inspect", id }, (value) => prepareTaskControl(value, action)),
+        ).pipe(
+          Command.withDescription(
+            action === "skip-next"
+              ? "Skip exactly the next execution"
+              : "Queue one execution through the worker",
+          ),
+        ),
+      ),
+      Command.make(
+        "snooze",
+        {
+          id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)),
+          until: Flag.String("until").pipe(Flag.atMost(1)),
+        },
+        ({ id, until }) =>
+          Effect.gen(function* () {
+            const at = yield* taskOperation(() => {
+              if (until[0] === undefined)
+                throw new TaskError({
+                  message: "Use --until with a future timestamp including Z or an offset.",
+                });
+
+              return parseTimestamp(until[0]);
+            });
+
+            yield* runTasks({ action: "inspect", id }, (value) =>
+              prepareTaskControl(value, "snooze", undefined, at),
+            );
+          }),
+      ).pipe(Command.withDescription("Delay the next execution until a later absolute time")),
       Command.make(
         "add",
         {

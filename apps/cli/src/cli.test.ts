@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { defaultPolicy } from "@poppet/agent";
+import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { Console, Effect } from "effect";
 
 import { makeCLI } from "#src/cli";
@@ -81,6 +82,119 @@ const invoke = async (
 };
 
 describe("CLI", () => {
+  test("a worker disappearing after inspection never falls back to a local task mutation", async () => {
+    const directory = await mkdtemp("/tmp/p24-owner-");
+    const storeDirectory = join(directory, "store");
+    await mkdir(storeDirectory, { mode: 0o700 });
+    const path = workerSocketPath(directory);
+    let requests = 0;
+
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            yield* serveWorker(path, (_request, body) =>
+              Effect.promise(async () => {
+                requests++;
+                expect(body).toEqual({ action: "inspect", id: "saved-task" });
+                await unlink(path);
+
+                return Response.json({
+                  ok: true,
+                  value: { task: { id: "saved-task", revision: 0 }, target: null },
+                });
+              }),
+            );
+
+            const reply = yield* Effect.promise(() =>
+              invoke(["tasks", "edit", "saved-task", "--name", "Changed"], {
+                POPPET_DATA_DIR: directory,
+              }),
+            );
+
+            expect(reply.exitCode).toBe(1);
+            expect(reply.stderr).toContain("not retried locally");
+            expect(requests).toBe(1);
+            expect(yield* Effect.promise(() => readdir(storeDirectory))).toEqual([]);
+          }),
+        ),
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("edits, skips, snoozes and queues saved tasks without credentials while preserving snapshots and cadence", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-task-controls-cli-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "saved-model" };
+    const offline = { POPPET_DATA_DIR: directory };
+
+    try {
+      const added = await invoke(
+        ["tasks", "add", "Original", "--at", "2099-10-22T09:00:00Z", "Read notes"],
+        environment,
+      );
+
+      expect(added.exitCode).toBe(0);
+      const id = JSON.parse(added.stdout).id;
+
+      const snoozed = await invoke(
+        ["tasks", "snooze", id, "--until", "2099-10-23T09:00:00Z"],
+        offline,
+      );
+
+      expect(snoozed.exitCode).toBe(0);
+      const held = JSON.parse(snoozed.stdout);
+
+      const edited = await invoke(
+        ["tasks", "edit", id, "--name", "Renamed", "--prompt", "Read the new decisions"],
+        offline,
+      );
+
+      expect(edited.exitCode).toBe(0);
+      const replacement = JSON.parse(edited.stdout);
+      expect(replacement).toMatchObject({
+        revision: 1,
+        availableAt: held.availableAt,
+        replacedOccurrenceIds: [held.occurrenceId],
+      });
+      expect((await invoke(["tasks", "edit", id], offline)).exitCode).toBe(1);
+      expect((await invoke(["tasks", "edit", id, "--tz", "UTC"], offline)).exitCode).toBe(1);
+
+      const rescheduled = await invoke(
+        ["tasks", "edit", id, "--cron", "0 9 * * *", "--tz", "Europe/London"],
+        offline,
+      );
+
+      expect(rescheduled.exitCode).toBe(0);
+      expect(JSON.parse(rescheduled.stdout).snoozeCleared).toBe(true);
+      const skipped = await invoke(["tasks", "skip-next", id], offline);
+      expect(skipped.exitCode).toBe(0);
+      const nextAt = JSON.parse(skipped.stdout).nextAt;
+      const immediate = await invoke(["tasks", "run-now", id], offline);
+      expect(immediate.exitCode).toBe(0);
+      const queued = JSON.parse(immediate.stdout);
+      expect(queued.nextAt).toBe(nextAt);
+      const replay = await invoke(["tasks", "run-now", id], offline);
+      expect(replay.exitCode).toBe(0);
+      expect(JSON.parse(replay.stdout).occurrenceId).toBe(queued.occurrenceId);
+      const shown = await invoke(["tasks", "show", id], offline);
+      expect(shown.exitCode).toBe(0);
+      expect(JSON.parse(shown.stdout)).toMatchObject({
+        task: {
+          id,
+          revision: 2,
+          name: "Renamed",
+          model: "saved-model",
+          prompt: "Read the new decisions",
+        },
+        target: { occurrenceId: queued.occurrenceId },
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("creates recurring monitors locally and rejects one-off monitoring before opening storage", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-monitor-cli-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "saved-model" };
@@ -685,7 +799,7 @@ describe("CLI", () => {
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
         path: join(directory, "store/poppet.sqlite"),
-        schemaVersion: 2,
+        schemaVersion: 3,
         sessions: 0,
         messages: 0,
         runs: 0,

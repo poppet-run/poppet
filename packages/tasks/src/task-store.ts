@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
 import { DeliveryDestination, StoreDatabase, SkillSnapshot } from "@poppet/store";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
@@ -12,6 +13,10 @@ import {
   Skipped,
   Task,
   TaskError,
+  TaskControl,
+  ControlReceipt,
+  TaskDefinition,
+  type TaskTarget,
   nextOccurrence,
 } from "#src/task-schema";
 
@@ -27,9 +32,11 @@ interface TaskSkip {
 export const recurringExpiry = 24 * 60 * 60 * 1000;
 
 const taskSql = `SELECT id, name, prompt, provider, model, workload, schedule,
-  monitor, skill, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
+  monitor, revision, monitor_revision AS monitorRevision, monitor_baseline_after AS monitorBaselineAfter,
+  skill, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
 
 const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, status,
+  revision, definition, available_at AS availableAt, origin,
   destination, session_id AS sessionId, run_id AS runId, finished_at AS finishedAt, reason FROM job_occurrences`;
 
 /** Builds synchronous task operations on the caller's owned database; failures are thrown. */
@@ -70,6 +77,71 @@ export const makeTaskStore = (database: Database) => {
     return Schema.decodeUnknownSync(Schema.Array(Occurrence))(statement.all(jobId, limit));
   };
 
+  const executionTask = (item: Occurrence): Task => ({
+    ...task(item.jobId),
+    ...item.definition,
+    revision: item.revision,
+    destination: item.destination,
+  });
+
+  const insertOccurrence = (
+    job: Task,
+    scheduledAt: number,
+    availableAt = scheduledAt,
+    status: Occurrence["status"] = "pending",
+    reason: string | null = null,
+    finishedAt: number | null = null,
+    origin: Occurrence["origin"] = "scheduled",
+    destination = job.destination,
+    ignoreDuplicate = false,
+  ) => {
+    const id = randomUUID();
+    const definition = Schema.decodeUnknownSync(TaskDefinition)(job);
+    database
+      .query(`INSERT INTO job_occurrences
+        (id, job_id, revision, definition, scheduled_at, available_at, status, reason, finished_at, origin, destination)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ${ignoreDuplicate ? "ON CONFLICT (job_id, revision, scheduled_at) DO NOTHING" : ""}`)
+      .run(
+        id,
+        job.id,
+        job.revision,
+        JSON.stringify(definition),
+        scheduledAt,
+        availableAt,
+        status,
+        reason,
+        finishedAt,
+        origin,
+        destination === null ? null : JSON.stringify(destination),
+      );
+
+    return id;
+  };
+
+  const activeOccurrence = (id: string, status: "pending" | "running") => {
+    const row = database
+      .query(`${occurrenceSql} WHERE job_id = ? AND status = ? LIMIT 1`)
+      .get(id, status);
+
+    return row === null ? undefined : Schema.decodeUnknownSync(Occurrence)(row);
+  };
+
+  const nextTarget = (id: string): TaskTarget | null => {
+    const job = task(id);
+    const pending = activeOccurrence(id, "pending");
+
+    if (pending !== undefined)
+      return {
+        occurrenceId: pending.id,
+        scheduledAt: pending.scheduledAt,
+        availableAt: pending.availableAt,
+      };
+
+    return job.nextAt === null
+      ? null
+      : { occurrenceId: null, scheduledAt: job.nextAt, availableAt: job.nextAt };
+  };
+
   const providers = () => {
     using statement = database.prepare(
       `SELECT provider, reason, resume_at AS resumeAt, failures FROM job_provider_pauses ORDER BY provider`,
@@ -91,7 +163,7 @@ export const makeTaskStore = (database: Database) => {
       .transaction(() => {
         // The run may have saved a quota failure before the occurrence was finalized.
         database.run(`INSERT INTO job_provider_pauses (provider, reason, resume_at, failures)
-      SELECT DISTINCT jobs.provider, 'quota', NULL, 1
+      SELECT DISTINCT json_extract(occurrences.definition, '$.provider'), 'quota', NULL, 1
       FROM job_occurrences AS occurrences
       JOIN jobs ON jobs.id = occurrences.job_id
       JOIN runs ON runs.id = occurrences.run_id
@@ -123,7 +195,7 @@ export const makeTaskStore = (database: Database) => {
   const expire = (now: number) => {
     using statement =
       database.prepare(`UPDATE job_occurrences SET status = 'expired', finished_at = ?, reason = 'summary-expired'
-      WHERE status = 'pending' AND scheduled_at <= ? AND job_id IN (SELECT id FROM jobs WHERE json_extract(schedule, '$.type') = 'cron')`);
+      WHERE status = 'pending' AND available_at <= ? AND json_extract(definition, '$.schedule.type') = 'cron'`);
 
     statement.run(now, now - recurringExpiry);
   };
@@ -153,20 +225,24 @@ export const makeTaskStore = (database: Database) => {
 
           const busy = hasActive(job.id);
 
+          // A historical retry may hold a rearmed one-off; keep its slot until that work finishes.
+          if (busy && job.schedule.type === "once") continue;
+
           const skip = job.schedule.type === "cron" && (startup || busy);
 
           if (skip) {
             recordSkip(job, job.nextAt, startup ? "downtime" : "previous-occurrence-active");
           } else {
-            using statement = database.prepare(
-              "INSERT INTO job_occurrences (id, job_id, scheduled_at, status, destination) VALUES (?, ?, ?, 'pending', ?) ON CONFLICT (job_id, scheduled_at) DO NOTHING",
-            );
-
-            statement.run(
-              randomUUID(),
-              job.id,
+            insertOccurrence(
+              job,
               job.nextAt,
-              job.destination === null ? null : JSON.stringify(job.destination),
+              job.nextAt,
+              "pending",
+              null,
+              null,
+              "scheduled",
+              job.destination,
+              true,
             );
 
             // A delayed timer enqueues the earliest due occurrence and skips the rest.
@@ -256,6 +332,299 @@ export const makeTaskStore = (database: Database) => {
       })
       .immediate();
 
+  /** Revision/target checks, state changes, history and replay receipts share one transaction. */
+  const control = (input: TaskControl, now: number) =>
+    database
+      .transaction(() => {
+        const command = Schema.decodeUnknownSync(TaskControl, { onExcessProperty: "error" })(input);
+
+        const saved = Schema.decodeUnknownSync(
+          Schema.NullOr(
+            Schema.Struct({
+              command: Schema.fromJsonString(Schema.Json),
+              receipt: Schema.fromJsonString(ControlReceipt),
+            }),
+          ),
+        )(
+          database
+            .query("SELECT command, receipt FROM job_operations WHERE operation_id = ?")
+            .get(command.operationId),
+        );
+
+        if (saved !== null) {
+          if (!isDeepStrictEqual(saved.command, command))
+            throw new TaskError({
+              message: "The operation ID belongs to a different task request.",
+            });
+
+          return saved.receipt;
+        }
+
+        const job = task(command.id);
+
+        if (job.revision !== command.revision)
+          throw new TaskError({
+            message: "The task definition changed. Inspect it again before changing it.",
+          });
+        const active = activeOccurrence(job.id, "running");
+
+        if (active !== undefined)
+          throw new TaskError({
+            message: "Cancel the running occurrence before changing this task.",
+          });
+
+        const pending = activeOccurrence(job.id, "pending");
+        let selected: Occurrence | null = null;
+        let replacedOccurrenceIds: string[] = [];
+        let changedFields: string[] = [];
+        let baselineReset = false;
+        let snoozeCleared = false;
+        let details: Schema.Json = null;
+
+        if (command.action === "edit") {
+          const patch = command.patch;
+
+          const fields = (["name", "prompt", "schedule"] as const).filter(
+            (field) => patch[field] !== undefined && !isDeepStrictEqual(patch[field], job[field]),
+          );
+
+          changedFields = fields;
+
+          if (changedFields.length > 0) {
+            const scheduleChanged = changedFields.includes("schedule");
+            const schedule = patch.schedule ?? job.schedule;
+
+            if (job.monitor && schedule.type !== "cron")
+              throw new TaskError({
+                message: "Monitoring requires a recurring cron schedule and timezone.",
+              });
+
+            if (scheduleChanged && schedule.type === "once" && schedule.at <= now)
+              throw new TaskError({
+                message: "Choose a future one-off time with an explicit UTC offset.",
+              });
+
+            const nextAt = scheduleChanged
+              ? schedule.type === "once"
+                ? schedule.at
+                : nextOccurrence(schedule, now)
+              : job.nextAt;
+
+            baselineReset = job.monitor && changedFields.includes("prompt");
+
+            const boundary = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.Natural }))(
+              database
+                .query(
+                  "SELECT COALESCE(MAX(id), 0) AS id FROM job_monitor_results WHERE job_id = ?",
+                )
+                .get(job.id),
+            ).id;
+
+            database
+              .query(`UPDATE jobs SET name = ?, prompt = ?, schedule = ?, next_at = ?, revision = revision + 1,
+            monitor_revision = ?, monitor_baseline_after = ? WHERE id = ?`)
+              .run(
+                patch.name ?? job.name,
+                patch.prompt ?? job.prompt,
+                JSON.stringify(schedule),
+                nextAt,
+                baselineReset ? job.revision + 1 : job.monitorRevision,
+                baselineReset ? boundary : job.monitorBaselineAfter,
+                job.id,
+              );
+
+            if (pending !== undefined) {
+              database.run(
+                "UPDATE job_occurrences SET status = 'cancelled', finished_at = ?, reason = 'task-edited' WHERE id = ?",
+                [now, pending.id],
+              );
+              replacedOccurrenceIds = [pending.id];
+              snoozeCleared = scheduleChanged && pending.availableAt > pending.scheduledAt;
+
+              if (!scheduleChanged) {
+                const id = insertOccurrence(
+                  task(job.id),
+                  pending.scheduledAt,
+                  pending.availableAt,
+                  "pending",
+                  null,
+                  null,
+                  pending.origin,
+                  pending.destination,
+                );
+
+                selected = occurrence(id);
+              }
+            }
+
+            const updated = task(job.id);
+            details = {
+              before: Object.fromEntries(fields.map((field) => [field, job[field]])),
+              after: Object.fromEntries(fields.map((field) => [field, updated[field]])),
+            };
+          }
+        } else {
+          if (job.paused)
+            throw new TaskError({ message: "Resume the task before changing its next execution." });
+
+          if (!isDeepStrictEqual(command.target, nextTarget(job.id)))
+            throw new TaskError({
+              message: "The next execution changed. Inspect the task again before changing it.",
+            });
+          const target = command.target;
+
+          const advance = (after: number) =>
+            database.run("UPDATE jobs SET next_at = ? WHERE id = ?", [
+              nextOccurrence(job.schedule, after),
+              job.id,
+            ]);
+
+          if (command.action === "skip-next") {
+            if (pending !== undefined) {
+              database.run(
+                "UPDATE job_occurrences SET status = 'cancelled', finished_at = ?, reason = 'skipped-by-owner' WHERE id = ?",
+                [now, pending.id],
+              );
+              selected = occurrence(pending.id);
+            } else {
+              selected = occurrence(
+                insertOccurrence(
+                  job,
+                  target.scheduledAt,
+                  target.availableAt,
+                  "cancelled",
+                  "skipped-by-owner",
+                  now,
+                ),
+              );
+              advance(target.scheduledAt);
+            }
+
+            changedFields = ["skip-next"];
+          } else if (command.action === "snooze") {
+            if (command.until <= now || command.until < target.availableAt)
+              throw new TaskError({
+                message: "Snooze until a future time later than the current ready time.",
+              });
+
+            if (command.until === target.availableAt) {
+              selected = pending ?? null;
+            } else {
+              if (pending !== undefined) {
+                database.run("UPDATE job_occurrences SET available_at = ? WHERE id = ?", [
+                  command.until,
+                  pending.id,
+                ]);
+                selected = occurrence(pending.id);
+              } else {
+                selected = occurrence(insertOccurrence(job, target.scheduledAt, command.until));
+                advance(target.scheduledAt);
+              }
+
+              changedFields = ["availableAt"];
+            }
+          } else if (pending !== undefined) {
+            if (pending.availableAt > now)
+              throw new TaskError({
+                message:
+                  "The next occurrence is held until a future time. Run-now cannot undo a hold.",
+              });
+
+            if (
+              pending.definition.schedule.type === "cron" &&
+              pending.availableAt <= now - recurringExpiry
+            )
+              throw new TaskError({
+                message:
+                  "This pending summary expired. Skip it or wait for reconciliation before running current work.",
+              });
+            selected = pending;
+          } else {
+            const due = target.scheduledAt <= now;
+            const logical = job.schedule.type === "once" || due ? target.scheduledAt : now;
+
+            const collision = database
+              .query(
+                "SELECT id FROM job_occurrences WHERE job_id = ? AND revision = ? AND scheduled_at = ?",
+              )
+              .get(job.id, job.revision, logical);
+
+            if (collision !== null)
+              throw new TaskError({
+                message:
+                  "An occurrence already exists at this time. Inspect its history before retrying.",
+              });
+            selected = occurrence(
+              insertOccurrence(
+                job,
+                logical,
+                Math.min(logical, now),
+                "pending",
+                null,
+                null,
+                "manual",
+              ),
+            );
+
+            if (job.schedule.type === "once" || due) {
+              advance(now);
+              const following = nextOccurrence(job.schedule, logical);
+
+              if (following !== null && following <= now)
+                database.run(
+                  "INSERT INTO job_skips (job_id, first_at, last_at, reason) VALUES (?, ?, ?, 'worker-delayed')",
+                  [job.id, following, now],
+                );
+            }
+
+            changedFields = ["run-now"];
+          }
+
+          if (changedFields.length > 0)
+            details = {
+              target,
+              occurrenceId: selected?.id ?? null,
+              availableAt: selected?.availableAt ?? null,
+              nextAt: task(job.id).nextAt,
+            };
+        }
+
+        const updated = task(job.id);
+
+        const receipt = Schema.decodeUnknownSync(ControlReceipt)({
+          operationId: command.operationId,
+          action: command.action,
+          taskId: job.id,
+          previousRevision: job.revision,
+          revision: updated.revision,
+          changedFields,
+          nextAt: updated.nextAt,
+          paused: updated.paused,
+          replacedOccurrenceIds,
+          baselineReset,
+          snoozeCleared,
+          occurrenceId: selected?.id ?? null,
+          scheduledAt: selected?.scheduledAt ?? null,
+          availableAt: selected?.availableAt ?? null,
+        });
+
+        database
+          .query(
+            "INSERT INTO job_operations (operation_id, job_id, command, receipt, changes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            command.operationId,
+            job.id,
+            JSON.stringify(command),
+            JSON.stringify(receipt),
+            details === null ? null : JSON.stringify(details),
+            now,
+          );
+
+        return receipt;
+      })
+      .immediate();
+
   const clear = () =>
     database
       .transaction(() => {
@@ -267,6 +636,7 @@ export const makeTaskStore = (database: Database) => {
           throw new TaskError({ message: "Interrupt active work before clearing tasks." });
 
         // Task history references conversations; deleting it leaves those conversations intact.
+        database.run("DELETE FROM job_operations");
         database.run("DELETE FROM job_skips");
         database.run("DELETE FROM job_occurrences");
 
@@ -282,11 +652,7 @@ export const makeTaskStore = (database: Database) => {
         if (!job.paused) return job;
 
         const nextAt =
-          job.schedule.type === "once"
-            ? occurrences(id).length === 0
-              ? job.schedule.at
-              : null
-            : nextOccurrence(job.schedule, now);
+          job.schedule.type === "once" ? job.nextAt : nextOccurrence(job.schedule, now);
 
         database.run("UPDATE jobs SET paused = 0, next_at = ? WHERE id = ?", [nextAt, id]);
 
@@ -322,7 +688,13 @@ export const makeTaskStore = (database: Database) => {
         if (hasActive(job.id))
           throw new TaskError({ message: "The task already has an active occurrence." });
 
-        if (job.schedule.type === "cron" && item.scheduledAt <= now - recurringExpiry)
+        if (item.definition.monitor && item.revision < job.monitorRevision)
+          throw new TaskError({
+            message:
+              "This monitor predates a prompt change. Use the next current-definition check.",
+          });
+
+        if (item.definition.schedule.type === "cron" && item.availableAt <= now - recurringExpiry)
           throw new TaskError({ message: "This summary expired. Add a new one-off task instead." });
 
         database.run(
@@ -340,18 +712,20 @@ export const makeTaskStore = (database: Database) => {
       .transaction(() => {
         expire(now);
 
-        using statement = database.prepare(`${occurrenceSql} WHERE status = 'pending'
-      AND job_id IN (SELECT id FROM jobs WHERE paused = 0 AND provider NOT IN
-        (SELECT provider FROM job_provider_pauses WHERE resume_at IS NULL OR resume_at > ?))
-      ORDER BY scheduled_at, id LIMIT 1`);
+        using statement =
+          database.prepare(`${occurrenceSql} WHERE status = 'pending' AND available_at <= ?
+      AND job_id IN (SELECT id FROM jobs WHERE paused = 0)
+      AND json_extract(definition, '$.provider') NOT IN
+        (SELECT provider FROM job_provider_pauses WHERE resume_at IS NULL OR resume_at > ?)
+      ORDER BY available_at, scheduled_at, id LIMIT 1`);
 
-        const row = statement.get(now);
+        const row = statement.get(now, now);
 
         if (!row) return null;
         const item = Schema.decodeUnknownSync(Occurrence)(row);
         database.run("UPDATE job_occurrences SET status = 'running' WHERE id = ?", [item.id]);
 
-        return { occurrence: occurrence(item.id), task: task(item.jobId) };
+        return { occurrence: occurrence(item.id), task: executionTask(item) };
       })
       .immediate();
 
@@ -374,7 +748,7 @@ export const makeTaskStore = (database: Database) => {
       .transaction(() => {
         // Explicit cancellation wins over the run's cleanup callback.
         const item = occurrence(id);
-        const job = task(item.jobId);
+        const job = executionTask(item);
 
         if (item.status === "running" && status === "completed" && job.monitor) {
           try {
@@ -392,7 +766,7 @@ export const makeTaskStore = (database: Database) => {
         );
 
         const saved = occurrence(id);
-        const provider = task(saved.jobId).provider;
+        const provider = saved.definition.provider;
 
         const providerPause =
           pauseReason === null ? null : blockProvider(provider, pauseReason, now);
@@ -450,14 +824,25 @@ export const makeTaskStore = (database: Database) => {
     );
 
     using recent =
-      database.prepare(`SELECT occurrences.id, jobs.id AS jobId, jobs.provider, jobs.name, occurrences.status,
+      database.prepare(`SELECT occurrences.id, jobs.id AS jobId, json_extract(occurrences.definition, '$.provider') AS provider,
+      json_extract(occurrences.definition, '$.name') AS name, occurrences.status,
       occurrences.scheduled_at AS scheduledAt, occurrences.run_id AS runId,
       CASE WHEN occurrences.reason LIKE 'monitor:%' THEN occurrences.reason ELSE runs.failure_reason END AS failureReason
       FROM job_occurrences AS occurrences JOIN jobs ON jobs.id = occurrences.job_id
       LEFT JOIN runs ON runs.id = occurrences.run_id
       ORDER BY COALESCE(occurrences.finished_at, occurrences.scheduled_at) DESC, occurrences.id DESC LIMIT 5`);
 
-    const upcoming = jobs.filter((job) => !job.paused && job.nextAt !== null);
+    const upcoming = jobs
+      .filter((job) => !job.paused)
+      .flatMap((job) => {
+        const queued = activeOccurrence(job.id, "pending");
+
+        return queued !== undefined
+          ? [queued.availableAt]
+          : hasActive(job.id) || job.nextAt === null
+            ? []
+            : [job.nextAt];
+      });
 
     const results = Schema.decodeUnknownSync(
       Schema.Array(
@@ -481,8 +866,7 @@ export const makeTaskStore = (database: Database) => {
       pendingCount: Schema.decodeUnknownSync(Schema.Struct({ count: Schema.Natural }))(
         pending.get(),
       ).count,
-      nextScheduledAt:
-        upcoming.length === 0 ? null : Math.min(...upcoming.map((job) => job.nextAt!)),
+      nextScheduledAt: upcoming.length === 0 ? null : Math.min(...upcoming),
       providerPauses: providers().map((held) =>
         Object.assign(held, {
           action:
@@ -521,6 +905,24 @@ export const makeTaskStore = (database: Database) => {
     task,
     occurrence,
     occurrences,
+    nextTarget,
+    control,
+    changes: (id: string, limit = 20) =>
+      Schema.decodeUnknownSync(
+        Schema.Array(
+          Schema.Struct({
+            operationId: Schema.String,
+            receipt: Schema.fromJsonString(ControlReceipt),
+            changes: Schema.fromJsonString(Schema.Json),
+            createdAt: Schema.Natural,
+          }),
+        ),
+      )(
+        database
+          .query(`SELECT operation_id AS operationId, receipt, changes, created_at AS createdAt
+      FROM job_operations WHERE job_id = ? AND changes IS NOT NULL ORDER BY created_at DESC, rowid DESC LIMIT ?`)
+          .all(id, limit),
+      ),
     deliveries: (id: string) =>
       Schema.decodeUnknownSync(
         Schema.Array(
