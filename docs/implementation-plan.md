@@ -2,7 +2,7 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–21 implemented with automated checks. Phase 21 also has a pinned local-browser check; live-model CLI and messaging browser completion remain manual. Phase 22 computer use is deferred. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
+Status: Phases 1–21 implemented with automated checks. Phase 21 also has a pinned local-browser check; live-model CLI and messaging browser completion remain manual. Phase 22 is planned, starting with an accessibility-only trial; no computer-use runtime is implemented. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
@@ -11,10 +11,10 @@ implemented.
 [MCP server support](#phase-20-mcp-server-support) is implemented for local stdio tools. See the [MCP guide](mcp.md) for setup and remaining live validation.
 
 [Browser automation](#phase-21-browser-automation-with-agent-browser) uses
-agent-browser and text snapshots. [Computer use](#phase-22-computer-use-deferred)
-remains a separate later phase.
+agent-browser and text snapshots. [Computer use](#phase-22-computer-use)
+starts with a separately scoped accessibility-only trial.
 
-Updated: 2026-10-20
+Updated: 2026-10-21
 
 Storage history: the unreleased migrations are now consolidated into schema
 version 1 in one timestamped initial migration. Migration numbers and
@@ -1423,19 +1423,342 @@ saved calls, verify denied navigation, cancel a running workflow, and confirm no
 run-owned daemon or browser remains after cleanup or worker shutdown. These live
 checks remain manual and must pass before describing browser support as complete.
 
-## Phase 22: Computer use, deferred
+## Phase 22: Computer use
 
-Deferred until phase 21 is implemented and validated. Native application control
-is a separate capability; it is not required to complete browser automation.
-Evaluate Cua Driver through MCP for a limited accessibility-tree trial, then
-decide whether the target is the owner's desktop or an isolated computer.
+Planned only. No driver installation, permission changes, application control,
+configuration changes, or runtime implementation are authorized by this plan.
+The first deliverable is an attended macOS accessibility trial, not general
+desktop automation. Phase 21's outstanding live checks remain prerequisites for
+claiming the combined browser/computer feature set is ready. Planning and an
+isolated compatibility probe need not wait for those checks.
 
-Write the detailed plan before implementation. It must cover app permissions,
-session ownership, cancellation, and any required approval flow. Screenshot-based
-control also needs image-capable provider requests, model capability checks,
-bounded image storage/context handling, and a retention policy. Selecting a Cua
-runtime, provisioning VMs, native mouse/keyboard control, and image forwarding
-remain outside phase 21.
+### Trial scope and success condition
+
+Use the local Mac and Calculator, `com.apple.calculator`, with the owner present.
+The owner opens Calculator in basic mode on the current Space and sets aside its
+current calculation. This avoids provisioning a VM or building a test app before
+we know whether the integration works. It does not isolate the desktop: Calculator
+state is shared with the owner and other automation.
+
+Start with one window, one run, and two model-facing operations: read its
+accessibility snapshot and press a button identified in that snapshot. First
+complete a read-only observation. Then explicitly request clearing the display,
+calculating `12 + 7`, and reading back `19`. The answer must use the observed
+display, not the model's own arithmetic. A wrong display is a failed trial even
+when every tool call reports success.
+
+The trial is macOS on Apple silicon, standalone CLI, and a fresh chat only.
+Worker-backed requests, messaging, scheduling, resumed chats, and the interactive
+prompt receive no computer tools. Other operating systems and Intel Macs need
+their own evidence before support is claimed. There is no automatic escalation
+when an application exposes an incomplete tree or refuses an AX action.
+
+Screenshots, image forwarding, pixels, native key events, text entry, menus,
+clipboard access, app launch/termination, window management, files, browser/CDP
+tools, recording, history hydration, remote desktops, and VM provisioning are
+outside the trial. Typing and broader application support require a later plan
+after this trial produces evidence.
+
+### Upstream evidence and candidate runtime
+
+Research checked on 2026-10-21. Use
+[Cua Driver 0.38.0](https://github.com/trycua/cua/releases/tag/cua-driver-rs-v0.38.0)
+as the candidate, not a verified dependency. Record the exact macOS release asset,
+checksum, signature identity, OS version, and exported schemas in the compatibility
+probe. Pin the tested executable; no latest-version lookup, installation, or
+upgrade occurs during a chat. The generated upstream documentation can differ
+from that release, so the installed contract must pass the gates below.
+
+Relevant upstream contracts:
+
+- Bare macOS MCP proxies to the shared app daemon. `mcp --direct` instead owns
+  its runtime and TCC attribution. Prefer direct stdio for the trial; do not
+  silently attach to or stop an existing daemon.
+  See [MCP launch modes](https://cua.ai/docs/cua-driver/reference/cli/serve-and-configure).
+- `standard` permits broad input. `bounded` requires an approved capability
+  manifest; tool and resource restrictions apply inside the driver.
+  See [permissions](https://cua.ai/docs/cua-driver/guides/permissions).
+- Window state can omit screenshots. Element tokens belong to a window snapshot
+  and become stale after a replacement snapshot. `get_accessibility_tree` is
+  broad desktop discovery, not the per-window read needed here.
+  See [window tools](https://cua.ai/docs/cua-driver/reference/mcp-tools/apps-windows-and-screen).
+- Element clicks support AX actions, while other click forms and typing can use
+  native events. Fix the trial to a left-button AX `press` and verify that route.
+  See [input tools](https://cua.ai/docs/cua-driver/reference/mcp-tools/click-and-type).
+- Sessions share the desktop; their labels do not grant isolation or authority.
+  See [runtime ownership](https://cua.ai/docs/cua-driver/concepts/how-cua-driver-works).
+
+These are compatibility requirements, not claims that Poppet or the candidate
+binary has already enforced them. If direct mode cannot provide reliable
+permissions, bounded access, and cleanup, stop the trial and revise the runtime
+choice. Do not add a shared daemon, app wrapper, SDK bridge, or VM as an implicit
+fallback.
+
+### Existing Poppet contracts to reuse
+
+The agent already has scoped `ExternalTools.snapshot`, whole-batch argument
+preparation, sequential execution, saved external server/tool identities,
+cancellation, uncertain outcomes, and run budgets. The provider contract accepts
+text tool results and does not support image messages. No provider change or
+storage migration is needed for this trial.
+
+`@poppet/mcp` already owns SDK negotiation, schema validation, capped stdio,
+text/JSON results, and awaited child teardown. Its general connections stay with
+their process owner and its tools expose the discovered argument schema. That
+does not by itself bind a driver to one run/window or force screenshot-free
+arguments. Dropping image blocks from a result also does not prevent capture.
+Its generic tool-error message does not preserve driver refusal codes. Decode
+the driver's bounded outcome in the adapter before generic result formatting so
+stale tokens, denied actions, and unknown effects do not become indistinguishable.
+
+Use MCP as the driver protocol and the existing agent loop. The first probe
+should test the existing MCP client and catalog helpers before adding a computer
+adapter. Prefer reusing the scoped transport and schema/result helpers through
+narrow exports if needed. Do not weaken general MCP schema validation or change
+its connection lifetime to accommodate one driver. Do not add another MCP SDK,
+agent loop, native accessibility implementation, or generic approval framework.
+
+### Stage 22a: Compatibility probe, without inference
+
+This is the first implementation slice after separate authorization. Use a small
+explicitly invoked self-check, outside the automated test suite. Its fixed calls
+must run against the pinned real driver and disposable Calculator state.
+
+1. Inspect the candidate's needed schemas without desktop calls. Check the input
+   and output shapes against Poppet's current schema compiler and strict provider
+   wrapper; save a sanitized fixture, not desktop content.
+2. Launch a directly owned runtime with bounded mode, a private manifest and policy,
+   and no ambient credentials or launch options. Restrict resources to Calculator
+   windows, disable full-desktop access, and permit only the underlying observation,
+   AX press, and lifecycle operations actually needed by the host. Negotiate MCP
+   and verify real discovery stays within Poppet's limits before any desktop call.
+3. Resolve Calculator using a host-fixed bundle-ID filter. Select exactly one
+   eligible window and bind its process/window identity. Prove that unfiltered
+   enumeration and another application's window are denied or prevented before
+   any content reaches Poppet. Merely filtering a broad result afterward is not
+   enough for the intended observation boundary.
+4. Read a bounded tree with `include_screenshot: false`, no screenshot output path,
+   and structured elements. Confirm there are no image blocks, capture files, or
+   capture attempts. Check roles, values, supported actions, snapshot identity,
+   stale-token errors, and the readable Calculator display.
+5. Perform a fixed AX button press with no coordinates or alternate delivery mode.
+   Verify the displayed result through a new tree. Check the pinned route rather
+   than assuming any tool named `click` is accessibility-only.
+6. Probe denied app access, screenshot requests, pixel/foreground variants, unknown
+   tools, stale tokens, locked-screen behavior, revoked permissions, stdin EOF,
+   cancellation, and forced owner exit. There must be no surviving run-owned
+   driver or continued input after teardown.
+
+The owner grants Accessibility to the identity actually used by direct mode.
+Do not assume an existing `CuaDriver.app` grant covers it. Leave Screen Recording
+ungranted for the probe; verify AX reads and actions still work without a capture
+request. If the runtime requires capture permission or generates images anyway,
+the accessibility-only gate fails. Do not automate System Settings or OS prompts.
+
+The probe must also establish how the loaded manifest/policy can be verified and
+whether resource restrictions prevent broad metadata disclosure. Record both
+successful and refused calls with content-free outcomes. A schema mismatch or
+missing enforcement is a failed gate, not permission to expose the full driver.
+
+### Stage 22b: Read-only Poppet trial
+
+Only after 22a passes, add the smallest capability-owned adapter, following
+`@poppet/browser`'s package boundary. The proposed `@poppet/computer` owns driver
+settings, the run-scoped client, the window binding, reference validation, and
+normalized text results. The CLI adapts its errors and tools to `ExternalTools`.
+Keep the normal MCP catalog separate; do not expose raw driver tools as a second
+route around the adapter's fixed arguments.
+
+Configuration is disabled by default. The proposed `computer` section needs only
+`enabled` and an absolute installed `command`; Calculator and the permitted
+operations remain fixed for this trial. Preserve file defaults and complete
+`POPPET_COMPUTER` overrides, including explicit disablement, using the existing
+configuration pattern. No credentials, arbitrary arguments, endpoints, policy
+paths, or general app allowlist are needed in this first version.
+
+Add an explicit, proposed `chat new --computer` opt-in for one standalone run.
+This syntax does not exist yet. Forward a host-only permit through `Agent.send`
+and `ExternalTools.snapshot`; absent permits deny access. Never infer it from
+prompt text, saved history, a skill, or a model argument, and never persist it on
+the session. Worker request schemas must not accept it. If a worker owns the
+selected data directory, reject the trial with an actionable diagnostic; do not
+bypass storage ownership or silently route it through the worker.
+
+Use a separate trial data directory with empty notes/profile/memory, no channels
+or scheduled work, and other MCP/browser/search capabilities disabled. Provider
+authentication still follows the normal credential path. Existing arbitrary
+owner-configured MCP servers are outside this computer feature's boundary and
+must not be configured in the trial. Ordinary chats must not start the driver.
+
+Expose `poppet_computer.snapshot` with no model arguments. The host supplies the
+bound window, screenshot-free options, and limits. Return one normalized JSON
+observation with `snapshotId`, app/window identity, bounded element references,
+roles, labels, values, enabled state, supported actions, and `truncated`. Strip
+unneeded geometry and metadata. No raw provider image or attachment is produced.
+Use fresh complete observations rather than upstream diff merging in this trial.
+
+First ask a real model to identify Calculator's display and available arithmetic
+buttons. Inspect saved calls and the actual window; no action tool is offered in
+this stage. This separates useful observation from action routing and verifies
+that tool-capable text models can consume the result without image support.
+
+### Stage 22c: Bounded AX button actions
+
+After the observation check passes, add `poppet_computer.press` accepting only a
+reference from the latest returned snapshot. The host maps it to a driver token
+and fixes the window, left button, AX `press`, and background delivery. Never
+accept model-selected PIDs, window IDs, sessions, coordinates, alternate actions,
+modifiers, file paths, or launch settings. Check that the retained element is an
+enabled pressable Calculator content button; exclude window chrome and menus.
+
+Validate references both during batch preparation and immediately before dispatch.
+Consume the current references when an action is dispatched, even when its result
+is lost. A later run, replaced snapshot, changed window, or restarted app cannot
+reuse them. Do not silently rebind to a replacement process/window or retarget by
+label when a token is stale.
+
+Return a fresh snapshot after each completed press, so the next decision uses
+observed state without spending a separate model turn on another read. If action
+delivery succeeded but observation failed, report that the effect is unverified;
+do not turn that into a clean refusal or retry the press. Driver refusal before
+dispatch, stale reference, unverified effect, and transport uncertainty must stay
+distinct. A reported event delivery is not proof that the display changed.
+
+Instruct the model to send one computer operation per turn. Preserve the agent's
+whole-batch validation; do not claim a multi-call batch is atomic. If multiple
+presses were prepared from one snapshot, dispatch-time validation must reject a
+later consumed reference before sending it. No rollback or automatic replay is
+attempted. Refreshing observation is allowed; repeating an action with an unknown
+outcome requires the owner to inspect state and make a new request.
+
+The run opt-in, explicit calculation request, and fixed Calculator boundary are
+the trial's authorization flow. There is no per-click approval UI. Any request
+outside that boundary fails closed. App text and driver descriptions/results are
+untrusted data; they cannot enable another app or authorize note, memory, task,
+page-fetch, or other external actions. Reuse the existing prompt and tool checks;
+they are not an OS sandbox or proof against arbitrary prompt injection.
+
+### Ownership, limits, and saved data
+
+One scoped MCP connection and directly owned driver process belong to one Poppet
+run. Use its implicit lifecycle session or a host-chosen identity, never a
+model-selected session label. Hold an additional per-user desktop lease across
+data directories, reusing `acquireOwnerLock` at a stable protected path. A second
+Poppet computer trial must fail busy rather than contend for Calculator. This
+cannot lock out the human or unrelated automation; the owner must set the app
+aside and stop other desktop drivers for the attended check.
+
+Create private runtime files with directory mode `0700` and file mode `0600`.
+Pass a minimal child environment without provider/channel secrets or inherited
+Cua overrides. Fix bounded mode, the generated manifest/policy, and no file or
+desktop-capture grants before connecting. Manifest expiry and idle bounds must
+cover at most the existing five-minute chat deadline, without automatic renewal.
+Do not attach to an ambient socket or run a service at login.
+
+Reuse existing budget settings. Initial proposed bounds are 128 AX elements,
+depth 12, and a one-second tree walk; the compatibility probe must show Calculator
+fits. Cap protocol messages and each process pipe at 256 KiB and model arguments
+at 64 KiB. Keep each model-facing result within `POPPET_TOOL_BYTES`, preserve
+Unicode/valid JSON, and mark both upstream and host truncation. Do not expose
+action references from an incomplete observation. Bound startup and each MCP
+request using the existing eight-second startup and ten-second request limits;
+adjust only a measured computer-specific limit if the real probe requires it.
+
+Keep the default eight model turns and sixteen tool calls. An initial snapshot,
+clear, five arithmetic presses, and a final answer fit eight model turns when
+each press returns its observation. Do not raise global budgets for this demo.
+Record startup/observation/action/cleanup durations and call counts as evidence;
+make no performance claim before measurement.
+
+Completion, failed startup, timeout, Ctrl-C, permission loss, and consumer exit
+must invalidate references, end the session where possible, close MCP, reap the
+owned child, and remove private files before releasing the desktop lease. Bound
+graceful shutdown and terminate only a verified owned child if needed. Report
+cleanup failure and leave no path that silently resumes the abandoned workflow.
+The app was opened by the owner and must remain open. Do not quit or reset it as
+cleanup. OS permissions remain until the owner revokes them.
+
+Reuse durable external-call records with `serverId: "computer"` and operation
+names `snapshot`/`press`. Interrupted dispatched calls remain uncertain, including
+after restart. Existing chat history stores normalized observations and arguments
+under its normal retention rules; AX text is not ephemeral just because private
+runtime files are removed. No screenshot, raw desktop dump, recording, or separate
+history store is added. Use disposable trial content and keep raw driver output
+out of diagnostics. Broader sensitive-app support needs a retention decision.
+
+### Implementation reach and verification
+
+The following is the expected scope after the probe, not a request to implement:
+
+| Area                   | Required work                                                                                                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/computer`    | Fixed trial schemas/tools, driver ownership, window/reference checks, result normalization, fixture and explicit real-driver self-check       |
+| `packages/mcp`         | Reuse existing SDK, schema/result helpers and scoped transport; narrow exports only where required, without changing ordinary MCP behavior    |
+| `packages/config`      | Disabled settings, file/environment precedence, path validation, pure config inspection, decoding fixtures                                    |
+| `apps/cli`             | Fresh standalone-chat opt-in, host composition, worker-routing rejection, diagnostics, package dependency and CLI/runtime fixtures            |
+| `packages/agent`       | Host permit reaches the external snapshot with default denial; preserve validation, budgets, saved identities and uncertain outcomes          |
+| Worker, gateway, tasks | Prove omission of computer tools and rejection of forged permits; no new remote execution command                                             |
+| Documentation          | Trial setup/limits/manual checks; update configuration, CLI, chat, architecture, development, worker/tasks references and this phase's status |
+
+Automated tests use a fixture stdio driver and injected models, with no real
+desktop, OS grants, external network, or inference account. Reuse existing
+cross-provider text-tool tests instead of duplicating provider suites.
+
+| Behavior                     | Evidence required                                                                                                                              |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Default denial               | No process without config plus the current local opt-in; no tools in ordinary, resumed, worker, messaging, scheduled, or title-generation runs |
+| Window and resource boundary | Other apps, broad enumeration, process/window replacement, desktop scope, screenshots, files, and launch/session overrides cannot dispatch     |
+| AX-only actions              | Only current enabled content-button refs; all coordinate, foreground, key, modifier and alternate-action forms fail before dispatch            |
+| Snapshot lifetime            | Replaced, cross-run, truncated, and consumed refs fail; a second prepared press cannot reuse the first press's snapshot                        |
+| Honest outcomes              | Failed post-action observation stays unverified; timeout/disconnect/cancellation stays uncertain; no replay after reconnect/restart            |
+| Ownership                    | Separate data directories contend on the desktop lease; startup failure and every exit path close/reap the owned child and release state       |
+| Bounded data                 | Malformed/oversized protocol output, partial trees, Unicode, result limits and accidental media fail safely without leaking raw diagnostics    |
+| Untrusted text               | App/driver prompt injection grants no computer scope, built-in mutation, or page-fetch authority                                               |
+
+Use `bun run test` for focused behavior checks and `bun run check` for the completed
+implementation. The real-driver self-check is a separate, explicitly invoked
+manual step; passing fixture tests does not prove TCC attribution, application
+behavior, AX-only delivery, or real-process cleanup.
+
+Manual completion path after implementation:
+
+1. Record the pinned driver/OS/app versions and sanitized 22a probe results. Confirm
+   the narrow manifest, direct runtime identity, Accessibility grant, and absence
+   of Screen Recording permission and screenshots.
+2. Use disposable Poppet state and the prepared Calculator window. Complete one
+   real-model read-only observation through the CLI.
+3. Explicitly request clear and `12 + 7`. Observe `19` in the actual app and saved
+   snapshot; check that only allowed AX presses were dispatched and the answer
+   reports the observed result.
+4. Exercise a stale reference, another-app request, denied screenshot/input forms,
+   permission loss, and a second simultaneous trial. They must refuse without
+   changing the target or widening authority.
+5. Cancel while observing and while a press is in flight. Repeat with timeout and
+   owner-process exit. Inspect uncertain records, surviving processes, private
+   files, the lease, and Calculator state. Never replay the uncertain press.
+6. Run an ordinary chat and the existing automated suite to check that disabled
+   computer support does not affect browser/MCP tools or normal routing.
+
+### Completion gate and later Phase 22 work
+
+The accessibility trial is complete only when protocol/permission gates, fixture
+tests, read-only inference, bounded real-model action, saved-outcome inspection,
+and real cleanup checks all pass. Mark results separately; a successful
+Calculator demo does not establish reliable automation of other apps.
+
+After the trial, decide whether a useful next workflow needs direct application
+control at all; prefer an existing purpose-built MCP/API integration where it
+already solves the task. Broader local app access needs owner-configured app
+boundaries, explicit text-entry/action policy, sensitive-data retention, and an
+approval/revocation design. Worker and messaging access need a separately defined
+host-origin permit and desktop ownership model before any rollout. Scheduling
+remains denied until unattended operation has its own validation.
+
+Choose local desktop versus isolated computer again before enabling workflows
+with real user data. Screenshot control is a later decision requiring
+image-capable provider requests and model checks, bounded image storage/context,
+retention, pixel grounding, and focus/input policy. No VM runtime, image pipeline,
+generic mouse/keyboard tool, or general approval UI is part of the trial.
 
 ## Validation
 
