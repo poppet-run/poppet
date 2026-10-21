@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   Agent,
   AgentError,
+  ExternalTools,
   AgentLive,
   Pages,
   WebSearch,
@@ -31,6 +32,7 @@ import { TestClock } from "effect/testing";
 
 import { ChatTasksLive } from "#src/chat-tools";
 import { TaskDestinations, executeTaskCommand } from "#src/commands";
+import { monitorTools, monitorInstructions } from "#src/monitor-tools";
 import { executeOccurrence, reconcileTasks, makeTaskWorker } from "#src/scheduler";
 import { TaskError, type NewTask } from "#src/task-schema";
 import { remoteTaskCommand, taskResponse } from "#src/task-socket";
@@ -130,6 +132,18 @@ const fixture = async (
         store,
         memory,
         settings,
+        Layer.effect(
+          ExternalTools,
+          Effect.gen(function* () {
+            const repo = yield* TaskRepository;
+
+            return {
+              instructions: monitorInstructions,
+              snapshot: (scheduled, run) =>
+                Effect.sync(() => monitorTools(repo, scheduled, run, defaultPolicy.toolBytes)),
+            };
+          }),
+        ).pipe(Layer.provide(tasks)),
         ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
         Layer.succeed(WebSearch, webSearch),
         Layer.succeed(Pages, pages),
@@ -172,6 +186,79 @@ const fixture = async (
 };
 
 describe.concurrent("task worker", () => {
+  test("monitoring captures fresh note evidence through the agent while retaining scheduled restrictions", async () => {
+    const state = await fixture((request) => {
+      expect(request.tools.some((tool) => tool.namespace === "poppet_monitor")).toBe(true);
+      expect(
+        request.tools.some((tool) => ["save_note", "memory", "manage_tasks"].includes(tool.name)),
+      ).toBe(false);
+      const last = request.messages.at(-1);
+
+      if (last?.role !== "tool")
+        return response([
+          {
+            type: "tool-call",
+            name: "read_note",
+            namespace: "poppet_notes",
+            callId: "source",
+            arguments: JSON.stringify({ path: "project.md" }),
+          },
+        ]);
+
+      if (last.callId === "source")
+        return response([
+          {
+            type: "tool-call",
+            name: "report_observation",
+            namespace: "poppet_monitor",
+            callId: "observe",
+            arguments: JSON.stringify({
+              value: JSON.parse(last.output).content,
+              summary: "Current project",
+              sourceCallIds: ["source"],
+            }),
+          },
+        ]);
+
+      return final();
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+
+          const job = repo.add(
+            { ...state.task, schedule: { type: "cron", expression: "* * * * *", timezone: "UTC" } },
+            0,
+            null,
+            null,
+            undefined,
+            true,
+          );
+
+          const decisions: string[] = [];
+
+          for (const [index, value] of ["v1", "v1", "v2"].entries()) {
+            yield* Effect.promise(() => writeFile(join(state.notesDirectory, "project.md"), value));
+            repo.reconcile((index + 1) * 60_000);
+            const active = repo.claim((index + 1) * 60_000)!;
+            yield* executeOccurrence(repo, active.occurrence, active.task);
+            decisions.push(repo.monitoring.result(active.occurrence.id)!.decision);
+          }
+
+          expect(decisions).toEqual(["baseline", "unchanged", "changed"]);
+          expect(repo.monitoring.latest(job.id)?.notificationText).toContain(
+            "Previous: v1\nCurrent: v2",
+          );
+          expect(state.requests).toHaveLength(9);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each(["page", "note", "memory", "task"])(
     "recalled text cannot authorize a scheduled %s action",
     async (kind) => {

@@ -29,17 +29,19 @@ creation provenance, confirmed and pending remote names, the last title consider
 for synchronization, and whether external edits or failures disabled naming.
 
 `@poppet/store` provides a scoped Effect `Store` service backed by
-[Bun SQLite](https://bun.sh/docs/runtime/sqlite). One initial migration creates
-the complete schema. Migration SQL lives in timestamped TypeScript files under
+[Bun SQLite](https://bun.sh/docs/runtime/sqlite). The initial migration creates the
+base schema; migration 2 adds change-aware monitoring without resetting version-1
+data. Migration SQL lives in timestamped TypeScript files under
 `packages/store/src/migrations/`, registered in order by `migrations.ts`.
 A checksummed migration ledger rejects newer schemas and changed migration
 history. All pending migrations commit together; a failure rolls back the pending
 batch.
 
-The unreleased migration history has been consolidated into schema version 1.
-Development databases created with the former 14-step history are rejected.
-Stop Poppet and use a fresh data directory to start with the new schema; existing
-databases are never reset automatically.
+The unreleased base migration history was consolidated into schema version 1;
+the current schema is version 2. Existing version-1 databases upgrade in place.
+Development databases created with the former 14-step history are still rejected.
+Those legacy databases require a fresh data directory; databases are never reset
+automatically.
 
 Sessions retain their selected provider, model, and workload. Sessions and runs
 default to the `assistant` workload. Messages preserve order, tool call IDs, tool
@@ -48,6 +50,28 @@ inputs before execution, then transition through running to completed, failed,
 or interrupted. Successful completion writes its assistant message and result
 in one transaction. The store validates continuation identity on write and read.
 It permits one pending or running run across all sessions.
+
+## Monitoring observations
+
+`jobs.monitor` distinguishes recurring monitors from reporting tasks and defaults
+to false for existing jobs. `job_monitor_results` records one successful decision
+per occurrence, with the stable value, summary, source-call references, original
+observation time, previous value, and `baseline`, `unchanged`, or `changed`
+decision. Changed decisions also save the notification payload. Commit order
+selects the most recent successful observation even when timestamps tie or move
+backward. No separate baseline store or raw-source copy is maintained.
+
+The decision and completed occurrence commit in one transaction after the linked
+model run completes. Recovery uses the same validation and comparison against
+saved tool calls, without invoking the model or reading sources again. A missing
+or invalid observation fails the occurrence while retaining the completed run
+for inspection. Failed, interrupted, and cancelled checks cannot advance the
+baseline. Repeated finalization cannot create another decision.
+
+Only changed monitor results enter the existing gateway queue. The unique
+occurrence identity prevents duplicate enqueueing. Baseline advancement and
+remote delivery success remain separate. Clearing tasks cascades to monitoring
+results while retaining saved runs and queued gateway replies.
 
 ## Scheduled delivery destinations
 

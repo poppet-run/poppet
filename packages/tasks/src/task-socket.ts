@@ -50,7 +50,9 @@ export const taskResponse = <E extends { readonly message: string }>(
 
     // Leave time to report failure before the ten-second transport deadline.
     const exit = yield* Effect.exit(
-      command.action === "add" ? operation.pipe(Effect.timeout("8 seconds")) : operation,
+      command.action === "add" || command.action === "add-monitor"
+        ? operation.pipe(Effect.timeout("8 seconds"))
+        : operation,
     );
 
     if (Exit.isSuccess(exit)) return Response.json({ ok: true, value: exit.value });

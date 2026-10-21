@@ -5,6 +5,7 @@ import { Schema } from "effect";
 
 import { StoreError } from "#src/errors";
 import { initialSchema } from "#src/migrations/20261018165445_initial-schema";
+import { changeAwareMonitoring } from "#src/migrations/20261021120000_change-aware-monitoring";
 
 export interface Migration {
   readonly version: number;
@@ -16,6 +17,7 @@ export const applicationId = 0x504f5054;
 
 export const migrations: ReadonlyArray<Migration> = [
   { version: 1, name: "initial-schema", sql: initialSchema },
+  { version: 2, name: "change-aware-monitoring", sql: changeAwareMonitoring },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

@@ -109,7 +109,9 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) 
 
           const outcome = yield* taskOperation(() => {
             if (Exit.isSuccess(exit) && modelFailure === null) {
-              return { ...repo.finish(item.id, "completed", null, now), reason: null };
+              const finished = repo.finish(item.id, "completed", null, now);
+
+              return { ...finished, reason: finished.occurrence.reason };
             }
 
             const failure = Exit.isFailure(exit)

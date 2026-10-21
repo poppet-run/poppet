@@ -37,6 +37,59 @@ bun run start tasks pause <task-id>
 bun run start tasks resume <task-id>
 ```
 
+## Change-aware monitoring
+
+Use `--monitor` with a recurring cron schedule and an explicit timezone. Name a
+specific source, watched field, and stable representation in the prompt:
+
+```fish
+bun run start tasks add release-watch --monitor --cron "0 9 * * *" --tz Europe/London "Read https://example.com/releases.txt and report the latest stable release tag exactly as published. Ignore prereleases and publication timestamps."
+```
+
+The first successful check saves a quiet baseline. Later checks compare the
+exact, case-sensitive observed value with the previous successful value. An
+unchanged value stays quiet even if the model writes a different summary. A
+changed value saves one notification with the old/new values, observation time,
+summary, and source references. An observed `A → B → A` creates two notifications.
+One-off monitoring is rejected. Each check uses normal provider quota.
+
+Add an existing Discord, Telegram, or WhatsApp destination flag to deliver
+changes there. Without a destination, decisions remain local. A combined worker
+runs checks and delivery. Restart an older worker before using monitoring; an
+unsupported worker rejects creation rather than creating an ordinary report.
+
+Tool-capable models receive `poppet_monitor.report_observation` only inside the
+bound active monitor run. Each check must read fresh evidence, submit exactly
+one value, and complete successfully. Evidence can be a note read, a protected
+page read, or an explicitly allowed scheduled MCP read. Recalled conversations
+and search snippets alone are insufficient. Failed, empty, truncated, omitted,
+or redacted evidence cannot establish the watched value. Use small source
+files or focused endpoints. Missing fields are a failed check, not an empty value.
+Values fit 1024 UTF-8 bytes, summaries 2048 bytes, and the complete submission
+must fit `POPPET_TOOL_BYTES`.
+
+Inspect `tasks show <task-id>` for `lastObservation`, each occurrence's
+`monitoring` decision and evidence, failure reason, and delivery state. Failures
+preserve the baseline and appear in status/logs. A completed model answer can
+still leave a failed monitoring occurrence if it supplied no valid observation.
+There are no automatic failure or recovery messages; silence alone does not
+prove the monitor is healthy. The next successful check compares with the last
+successful value, including after a pause or restart.
+
+Existing pause/resume/cancel/retry behavior applies. Pausing preserves the
+baseline and leaves active work and queued alerts intact. Explicit retries use
+fresh runs and evidence. A failed or uncertain send does not roll back the
+baseline or generate a replacement alert on the next unchanged check. Existing
+queued delivery retries remain separate from checking; uncertain sends are
+never automatically reposted. Clearing tasks removes observation history while
+retaining saved sessions and already queued replies.
+
+The host compares validated values and records decisions transactionally. The
+model still extracts those values, so extraction mistakes or unstable formatting
+can cause false alerts or missed changes. Polling cannot capture every change
+between checks. Monitoring adds no browser/computer access, background mutations,
+semantic importance judgments, thresholds, or cooldowns.
+
 ## Manage tasks through chat
 
 Tool-capable models can create, list, inspect, pause, and resume tasks when you
@@ -49,6 +102,12 @@ Show task <task-id>.
 Pause task <task-id>.
 Resume task <task-id>.
 ```
+
+Ask explicitly to monitor a precise value to use `create_monitor`, for example:
+"Every day at 09:00 Europe/London, read https://example.com/releases.txt and
+notify me here only when its latest stable release tag changes." Monitoring
+creation uses a recurring schedule and saves a quiet first baseline. List, show,
+pause, and resume handle both reporting tasks and monitors.
 
 The `poppet_tasks.manage_tasks` tool uses the existing scheduler. New tasks retain
 the current session's provider, model, and workload, with a self-contained prompt

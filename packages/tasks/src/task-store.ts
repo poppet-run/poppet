@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { DeliveryDestination, StoreDatabase, SkillSnapshot } from "@poppet/store";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 
+import { monitoringRecords } from "#src/monitoring";
 import {
   NewTask,
   Occurrence,
@@ -26,7 +27,7 @@ interface TaskSkip {
 export const recurringExpiry = 24 * 60 * 60 * 1000;
 
 const taskSql = `SELECT id, name, prompt, provider, model, workload, schedule,
-  skill, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
+  monitor, skill, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
 
 const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, status,
   destination, session_id AS sessionId, run_id AS runId, finished_at AS finishedAt, reason FROM job_occurrences`;
@@ -34,6 +35,7 @@ const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, 
 /** Builds synchronous task operations on the caller's owned database; failures are thrown. */
 export const makeTaskStore = (database: Database) => {
   const commandLock = Semaphore.makeUnsafe(1);
+  const monitoring = monitoringRecords(database);
 
   const list = () => {
     using statement = database.prepare(`${taskSql} ORDER BY created_at, id`);
@@ -96,14 +98,25 @@ export const makeTaskStore = (database: Database) => {
       WHERE occurrences.status = 'running' AND runs.failure_reason = 'provider:quota'
       ON CONFLICT (provider) DO UPDATE SET reason = 'quota', resume_at = NULL`);
 
-        // A completed run may have committed just before the owner died. Preserve it.
-        database.run(
-          `UPDATE job_occurrences SET
-      status = CASE WHEN run_id IN (SELECT id FROM runs WHERE status = 'completed') THEN 'completed' ELSE 'interrupted' END,
-      finished_at = ?, reason = CASE WHEN run_id IN (SELECT id FROM runs WHERE status = 'completed') THEN NULL ELSE 'owner-stopped' END
-      WHERE status = 'running'`,
-          [now],
+        // Monitoring recovery uses the same comparison and validation as normal completion.
+        const running = Schema.decodeUnknownSync(Schema.Array(Occurrence))(
+          database.query(`${occurrenceSql} WHERE status = 'running'`).all(),
         );
+
+        for (const item of running) {
+          const completed =
+            item.runId !== null &&
+            database
+              .query("SELECT id FROM runs WHERE id = ? AND status = 'completed'")
+              .get(item.runId) !== null;
+
+          finish(
+            item.id,
+            completed ? "completed" : "interrupted",
+            completed ? null : "owner-stopped",
+            now,
+          );
+        }
       })
       .immediate();
 
@@ -180,6 +193,7 @@ export const makeTaskStore = (database: Database) => {
     skill: SkillSnapshot | null = null,
     destination: DeliveryDestination | null = null,
     source?: { readonly runId: string; readonly callId: string },
+    monitor = false,
   ) => {
     if (source) {
       const existing = Schema.decodeUnknownSync(
@@ -196,13 +210,16 @@ export const makeTaskStore = (database: Database) => {
     if (destination !== null) Schema.decodeUnknownSync(DeliveryDestination)(destination);
     const valid = Schema.decodeUnknownSync(NewTask)(input);
 
+    if (monitor && valid.schedule.type !== "cron")
+      throw new TaskError({ message: "Monitoring requires --cron and an explicit timezone." });
+
     const nextAt =
       valid.schedule.type === "once" ? valid.schedule.at : nextOccurrence(valid.schedule, now);
 
     const id = randomUUID();
 
     using statement = database.prepare(
-      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id, monitor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
 
     statement.run(
@@ -219,6 +236,7 @@ export const makeTaskStore = (database: Database) => {
       destination === null ? null : JSON.stringify(destination),
       source?.runId ?? null,
       source?.callId ?? null,
+      monitor ? 1 : 0,
     );
 
     return task(id);
@@ -355,6 +373,19 @@ export const makeTaskStore = (database: Database) => {
     database
       .transaction(() => {
         // Explicit cancellation wins over the run's cleanup callback.
+        const item = occurrence(id);
+        const job = task(item.jobId);
+
+        if (item.status === "running" && status === "completed" && job.monitor) {
+          try {
+            monitoring.finish(id, job);
+          } catch (cause) {
+            if (!(cause instanceof TaskError)) throw cause;
+            status = "failed";
+            reason = cause.message;
+          }
+        }
+
         database.run(
           "UPDATE job_occurrences SET status = ?, reason = ?, finished_at = ? WHERE id = ? AND status = 'running'",
           [status, reason, now, id],
@@ -421,7 +452,7 @@ export const makeTaskStore = (database: Database) => {
     using recent =
       database.prepare(`SELECT occurrences.id, jobs.id AS jobId, jobs.provider, jobs.name, occurrences.status,
       occurrences.scheduled_at AS scheduledAt, occurrences.run_id AS runId,
-      runs.failure_reason AS failureReason
+      CASE WHEN occurrences.reason LIKE 'monitor:%' THEN occurrences.reason ELSE runs.failure_reason END AS failureReason
       FROM job_occurrences AS occurrences JOIN jobs ON jobs.id = occurrences.job_id
       LEFT JOIN runs ON runs.id = occurrences.run_id
       ORDER BY COALESCE(occurrences.finished_at, occurrences.scheduled_at) DESC, occurrences.id DESC LIMIT 5`);
@@ -477,6 +508,7 @@ export const makeTaskStore = (database: Database) => {
 
   return {
     commandLock,
+    monitoring,
     list,
     listPage: (after: string | null) => {
       if (after !== null) task(after);

@@ -8,6 +8,7 @@ import { TaskRepository } from "#src/task-store";
 const summary = (task: Task) => ({
   id: task.id,
   name: task.name,
+  monitor: task.monitor,
   schedule:
     task.schedule.type === "once"
       ? { type: "once", at: new Date(task.schedule.at).toISOString() }
@@ -95,13 +96,18 @@ export const ChatTasksLive = Layer.effect(
           let skill: SkillSnapshot | null = null;
           let destination: DeliveryDestination | null = null;
 
-          if (action.action === "create") {
+          if ("schedule" in action) {
             input = yield* Effect.try({
               try: () => {
                 const schedule =
                   action.schedule.type === "once"
                     ? { type: "once" as const, at: parseTimestamp(action.schedule.at) }
                     : action.schedule;
+
+                if (action.action === "create_monitor" && schedule.type !== "cron")
+                  throw new TaskError({
+                    message: "Monitoring requires a recurring cron schedule and timezone.",
+                  });
 
                 if (schedule.type === "once" && schedule.at <= clock.currentTimeMillisUnsafe())
                   throw new TaskError({
@@ -159,7 +165,7 @@ export const ChatTasksLive = Layer.effect(
             .commitToolCall(context.runId, context.callId, () => {
               const now = clock.currentTimeMillisUnsafe();
 
-              if (action.action === "create") {
+              if ("schedule" in action) {
                 const valid = input!;
 
                 if (valid.schedule.type === "once" && valid.schedule.at <= now)
@@ -168,13 +174,25 @@ export const ChatTasksLive = Layer.effect(
                     message: "The requested one-off time has passed. Choose a future time.",
                   });
 
-                const task = repo.add(valid, now, skill, destination, {
-                  runId: context.runId,
-                  callId: context.callId,
-                });
+                const task = repo.add(
+                  valid,
+                  now,
+                  skill,
+                  destination,
+                  {
+                    runId: context.runId,
+                    callId: context.callId,
+                  },
+                  action.action === "create_monitor",
+                );
 
                 return bounded(
-                  JSON.stringify({ action: "create", task: summary(task), truncated: false }),
+                  JSON.stringify({
+                    action: action.action,
+                    task: summary(task),
+                    baseline: task.monitor ? "pending-first-success" : null,
+                    truncated: false,
+                  }),
                   toolBytes,
                 );
               }
@@ -236,8 +254,11 @@ export const ChatTasksLive = Layer.effect(
                 status: item.status,
                 scheduledAt: item.scheduledAt,
                 finishedAt: item.finishedAt,
+                reason: item.reason,
+                monitoring: repo.monitoring.result(item.id),
               }));
 
+              let lastObservation = repo.monitoring.latest(task.id);
               let prompt = [...task.prompt];
               let truncated = rows.length > 5;
 
@@ -252,17 +273,19 @@ export const ChatTasksLive = Layer.effect(
                     skill: task.skill?.name ?? null,
                   },
                   occurrences,
+                  lastObservation,
                   truncated,
                 });
 
               while (
                 Buffer.byteLength(output()) > toolBytes &&
-                (prompt.length > 0 || occurrences.length > 0)
+                (prompt.length > 0 || occurrences.length > 0 || lastObservation !== null)
               ) {
                 truncated = true;
 
                 if (prompt.length > 0) prompt = prompt.slice(0, Math.floor(prompt.length / 2));
-                else occurrences = occurrences.slice(0, -1);
+                else if (occurrences.length > 0) occurrences = occurrences.slice(0, -1);
+                else lastObservation = null;
               }
 
               return bounded(output(), toolBytes);

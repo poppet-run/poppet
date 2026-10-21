@@ -82,7 +82,7 @@ export type NewTask = typeof NewTask.Type;
 /** Commands accepted by both the local task store and the worker endpoint. */
 export const TaskCommand = Schema.Union([
   Schema.Struct({
-    action: Schema.Literal("add"),
+    action: Schema.Literals(["add", "add-monitor"]),
     task: NewTask,
     skill: Schema.optionalKey(SkillName),
     delivery: Schema.optionalKey(
@@ -105,6 +105,7 @@ export type TaskCommand = typeof TaskCommand.Type;
 /** A persisted task row whose JSON schedule is decoded on read; times are Unix milliseconds. */
 export const Task = Schema.Struct({
   ...NewTask.fields,
+  monitor: Schema.BooleanFromBit,
   destination: Schema.NullOr(Schema.fromJsonString(DeliveryDestination)),
   skill: Schema.NullOr(Schema.fromJsonString(SkillSnapshot)),
   schedule: Schema.fromJsonString(Schedule),

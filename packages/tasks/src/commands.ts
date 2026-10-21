@@ -44,20 +44,24 @@ export const executeTaskCommand = (
           return {
             ...item,
             delivery,
+            monitoring: yield* taskOperation(() => repo.monitoring.result(item.id)),
             output: run?.result?.output ?? null,
-            failureReason: run?.failureReason ?? null,
+            failureReason: item.reason?.startsWith("monitor:")
+              ? item.reason
+              : (run?.failureReason ?? null),
           };
         }),
       );
 
       return {
         task: job,
+        lastObservation: yield* taskOperation(() => repo.monitoring.latest(job.id)),
         occurrences: results,
         skipped: yield* taskOperation(() => repo.skips(job.id)),
       };
     }
 
-    if (command.action === "add") {
+    if (command.action === "add" || command.action === "add-monitor") {
       const name = command.skill;
 
       const skill =
@@ -84,7 +88,18 @@ export const executeTaskCommand = (
         );
       }
 
-      return yield* taskOperation(() => repo.add(command.task, now, skill, destination));
+      return yield* taskOperation(() => {
+        const task = repo.add(
+          command.task,
+          now,
+          skill,
+          destination,
+          undefined,
+          command.action === "add-monitor",
+        );
+
+        return task.monitor ? { ...task, baseline: "pending-first-success" } : task;
+      });
     }
 
     return yield* taskOperation(() => {

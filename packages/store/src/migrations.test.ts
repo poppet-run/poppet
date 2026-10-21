@@ -3,7 +3,31 @@ import { describe, expect, test } from "bun:test";
 
 import { applyMigrations, migrations } from "#src/migrations";
 
+const initial = migrations.slice(0, 1);
+
 describe("store migrations", () => {
+  test("upgrades version 1 without changing existing tasks or making past reports into monitors", () => {
+    using database = new Database(":memory:");
+    applyMigrations(database, initial);
+    database.run(`INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, created_at)
+      VALUES ('report', 'Report', 'Saved prompt', 'openrouter', 'model', 'assistant', '{"type":"cron","expression":"0 9 * * *","timezone":"UTC"}', 1)`);
+    database.run(
+      "INSERT INTO job_occurrences (id, job_id, scheduled_at, status, finished_at) VALUES ('saved', 'report', 2, 'completed', 3)",
+    );
+    expect(applyMigrations(database)).toBe(2);
+    expect(database.query("SELECT id, prompt, monitor FROM jobs").get()).toEqual({
+      id: "report",
+      prompt: "Saved prompt",
+      monitor: 0,
+    });
+    expect(database.query("SELECT id, status FROM job_occurrences").get()).toEqual({
+      id: "saved",
+      status: "completed",
+    });
+    expect(database.query("SELECT * FROM job_monitor_results").all()).toEqual([]);
+    expect(applyMigrations(database)).toBe(2);
+  });
+
   test("rolls back initial schema creation when a later migration fails", () => {
     using database = new Database(":memory:");
 
@@ -13,18 +37,18 @@ describe("store migrations", () => {
       sql: "CREATE TABLE partial (id INTEGER); invalid SQL;",
     };
 
-    expect(() => applyMigrations(database, [...migrations, broken])).toThrow(
+    expect(() => applyMigrations(database, [...initial, broken])).toThrow(
       "No pending migrations were committed",
     );
     expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 0 });
     expect(database.query("PRAGMA application_id").get()).toEqual({ application_id: 0 });
     expect(database.query("SELECT name FROM sqlite_master").all()).toEqual([]);
-    expect(applyMigrations(database)).toBe(1);
+    expect(applyMigrations(database)).toBe(migrations.length);
   });
 
   test("rolls back every pending migration and ledger entry while preserving saved data", () => {
     using database = new Database(":memory:");
-    applyMigrations(database, migrations, 10);
+    applyMigrations(database, initial, 10);
     database.run(
       "INSERT INTO sessions (id, provider, model, created_at, updated_at) VALUES ('saved', 'openrouter', 'model', 1, 1)",
     );
@@ -41,7 +65,7 @@ describe("store migrations", () => {
       sql: "CREATE TABLE partial (id INTEGER); invalid SQL;",
     };
 
-    expect(() => applyMigrations(database, [...migrations, next, broken], 20)).toThrow(
+    expect(() => applyMigrations(database, [...initial, next, broken], 20)).toThrow(
       "No pending migrations were committed",
     );
     expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 1 });
@@ -54,8 +78,8 @@ describe("store migrations", () => {
         .all(),
     ).toEqual([]);
     expect(database.query("SELECT id FROM sessions").get()).toEqual({ id: "saved" });
-    expect(applyMigrations(database, [...migrations, next], 20)).toBe(2);
-    expect(applyMigrations(database, [...migrations, next], 30)).toBe(2);
+    expect(applyMigrations(database, [...initial, next], 20)).toBe(2);
+    expect(applyMigrations(database, [...initial, next], 30)).toBe(2);
     expect(
       database.query("SELECT version, applied_at FROM schema_migrations ORDER BY version").all(),
     ).toEqual([

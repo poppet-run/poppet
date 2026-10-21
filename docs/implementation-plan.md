@@ -14,10 +14,14 @@ implemented.
 agent-browser and text snapshots. [Computer use](#phase-22-computer-use)
 starts with a separately scoped accessibility-only trial.
 
+[Change-aware monitoring](#phase-23-change-aware-monitoring) is implemented with
+automated checks. Real-model monitoring and live change delivery remain manual.
+
 Updated: 2026-10-21
 
-Storage history: the unreleased migrations are now consolidated into schema
-version 1 in one timestamped initial migration. Migration numbers and
+Storage history: the unreleased base schema is consolidated into version 1 in
+one timestamped initial migration. Phase 23 adds migration 2 without resetting
+version-1 data. Migration numbers and
 upgrade/backfill checks in the phase notes below describe the original work,
 not a supported upgrade path. See [storage](storage.md#schema-and-saved-records)
 and [development](development.md#store-migrations) for the current setup.
@@ -1779,6 +1783,314 @@ with real user data. Screenshot control is a later decision requiring
 image-capable provider requests and model checks, bounded image storage/context,
 retention, pixel grounding, and focus/input policy. No VM runtime, image pipeline,
 generic mouse/keyboard tool, or general approval UI is part of the trial.
+
+## Phase 23: Change-aware monitoring
+
+Implemented with automated checks. Real-model monitoring and live messaging
+completion remain manual. This phase adds an optional behavior to recurring tasks.
+It depends on phases 7–11 for scheduling, recovery, and delivery, and phase 18 for creation
+through chat. Page and MCP sources reuse phases 15 and 20. It can proceed
+independently of computer use. Automated fixtures do not establish live
+monitoring reliability; the manual completion path below remains outstanding.
+
+Automated validation on 2026-10-21 passed `bun run check`: formatting, lint,
+types, and 900 tests across 64 files, with zero failures. Integration checks used
+isolated state and local socket access. No live provider or messaging validation
+was performed.
+
+### Goal and first version
+
+Support requests such as "Check this release page every morning and tell me when
+the latest stable version changes." Each successful check extracts one small,
+stable value from fresh source data. The host compares that value with the last
+successful observation and decides whether to publish a notification.
+
+Reuse the existing task worker, fresh occurrence sessions, read-only tools,
+SQLite owner, provider budgets and pauses, destination snapshots, and gateway
+queue. Keep monitoring in `@poppet/tasks`; add no package, dependency, second
+scheduler, or general event framework. Ordinary scheduled reports keep their
+current behavior.
+
+The first version monitors one scalar value per task, such as a release tag,
+status, or explicitly ordered list encoded as text. The saved prompt must name
+the source, the field to watch, and its stable representation. Compare the exact
+validated value, never the final answer or a prose summary. The model extracts
+the value; it does not choose whether an alert should be sent.
+
+| Check result                                                     | Saved behavior                                                               | Notification                     |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------- |
+| First successful observation                                     | Establish the baseline                                                       | None                             |
+| Same value as the previous successful check                      | Record an unchanged check                                                    | None                             |
+| Different value                                                  | Record the transition and advance the baseline                               | One saved change notification    |
+| Fetch, extraction, validation, provider, or cancellation failure | Preserve the last successful baseline and record the unsuccessful occurrence | No change notification           |
+| First success after failures                                     | Compare with the last successful value                                       | Notify only if the value differs |
+
+Compare consecutive observations. An observed `A → B → A` produces two alerts;
+repeated `B` observations produce none. Changes that happen entirely between
+checks cannot be recovered. A monitor that has never succeeded is uninitialized,
+not unchanged or healthy.
+
+### Creation and inspection
+
+`--monitor` on `tasks add` is valid only with `--cron` plus an explicit timezone.
+Reject `--at --monitor` at both CLI and host validation boundaries. Reuse the
+existing skill and destination flags. For example:
+
+```fish
+bun run start tasks add release-watch --monitor --cron "0 9 * * *" --tz Europe/London "Read https://example.com/releases.txt and report the latest stable release tag exactly as published. Ignore prereleases and publication timestamps."
+```
+
+This example keeps results local. Adding an existing messaging destination flag
+selects normal authorized delivery. Creation returns the task ID, monitoring
+mode, saved schedule, destination, and the fact that the first
+successful check establishes a quiet baseline. It does not perform a check or
+claim that the source works.
+
+Use an explicit `add-monitor` action on the existing `/tasks` command endpoint,
+with the same creation fields as `add`. An older worker must reject the unknown
+action rather than silently create a reporting task and send every result. Do
+not fall back to `add` after a rejection or ambiguous response. Share the actual
+creation workflow, destination validation, deadline, and repository operations.
+
+Extend `poppet_tasks.manage_tasks` with `create_monitor`, reusing the existing
+creation arguments and atomic task/receipt transaction. Preserve ordinary
+`create`. Monitoring creation needs the owner's current explicit request and a
+clear watched value, source, schedule, and destination. Ask about missing details
+rather than guessing whether every page edit matters. `here` retains its existing
+meaning. Saved content and tool results cannot create monitors.
+
+Existing list/show/pause/resume commands and chat actions also handle monitors.
+Expose the mode in receipts and listings. In `tasks show`, include the last
+successful value and observation time, latest check status and failure reason,
+per-occurrence decision, previous/current values for changes, evidence references,
+and notification delivery state. Include occurrence-level monitoring failures in
+worker status even when the underlying model run completed successfully. Keep
+chat inspection bounded under the existing tool-result budget.
+
+Pausing keeps the baseline and cancels pending checks using current semantics.
+Resuming compares the next successful check with that baseline and skips missed
+recurring times. Pausing does not cancel an active check or retract queued alerts;
+use the existing occurrence cancellation command for active work. Provider
+selection and skill snapshots remain fixed as for ordinary tasks. No editing,
+baseline-reset, snooze, or run-now commands are added in this phase.
+
+### Observation contract and tool permissions
+
+Add a task-owned `poppet_monitor.report_observation` tool through the existing
+`ExternalTools` contract. Offer it only when the host resolves the current
+session/run to a running monitoring occurrence in the owned database. Check that
+binding again before accepting a submission. The scheduler already links the
+run on its `started` event before the tool catalog is assembled; preserve and
+test that ordering.
+
+Compose this tool alongside allowed scheduled MCP reads in
+`apps/cli/src/mcp.ts` and `runtime.ts`. Its host-owned instructions explain stable
+values, fresh evidence, and quiet baseline behavior. Ordinary chats, ordinary
+scheduled reports, naming requests, and resumed occurrence sessions receive no
+observation tool. The model cannot supply a task ID, occurrence ID, destination,
+previous value, notification decision, or permission flag.
+
+A successful submission contains:
+
+- `value`: a nonempty, trimmed string of at most 1024 UTF-8 bytes. Comparison is
+  exact and case-sensitive, with no implicit case folding, numeric conversion,
+  JSON canonicalization, or fuzzy matching.
+- `summary`: a nonempty, trimmed explanation of the current observation, at most
+  2048 UTF-8 bytes. It is display text and never participates in comparison.
+- `sourceCallIds`: one to four distinct IDs of completed source reads earlier in
+  the same run. Validate IDs against the durable tool journal, not model claims.
+
+The serialized submission must also fit `POPPET_TOOL_BYTES`. Reject oversized
+values instead of truncating the comparison input. Use strict schemas, existing
+whole-batch preflight, durable tool identities, tool/model-turn limits, context
+budgets, and run deadlines. Require exactly one completed observation submission
+per successful monitoring check; duplicate, missing, or invalid submissions make
+the check fail. Do not parse JSON out of the model's final prose or make another
+model request to judge whether the text changed.
+
+Accept evidence from `read_note`, `fetch_page`, or an explicitly allowed scheduled
+MCP read. History recall and search snippets alone are not fresh source evidence.
+A source call must precede the submission, belong to the current run, and have a
+successful recorded result. Reject failed, uncertain, empty, or explicitly
+truncated/omitted evidence in this first version. Inspect the existing result
+envelopes, including MCP omission flags, rather than counting a transport reply
+as sufficient evidence. Small source documents or focused endpoints are the
+intended starting point. Do not interpret a missing field or unreadable source
+as a legitimate empty value. A sentinel such as `none` is valid only when the
+saved prompt defines it and the source establishes that state.
+
+The journal proves which tools returned data, not that the model extracted the
+right fact or that a remote service returned current information. Keep this
+limitation explicit. Model variability can still cause false alerts or missed
+changes; a precise source and stable field reduce that risk. The first version
+does not provide arbitrary semantic judgments such as "tell me anything important".
+
+Submission only records a candidate in the existing tool journal. Its receipt
+must say that acceptance is pending successful check finalization. It does not
+advance the baseline, enqueue delivery, or change external state. A later failed,
+interrupted, or cancelled run discards the candidate for comparison purposes.
+Persist the candidate through the normal call/result recording, not a separate
+in-memory callback that would be lost on restart.
+
+Scheduled tools retain their existing permissions. Notes, memory, and task
+mutations stay blocked; browser and computer tools stay absent. MCP reads still
+require `scheduledTools` approval. Source URLs retain the current supplied-URL
+and completed-search grants and public-address checks. An evidence reference or
+previous observation grants no new URL access. Treat source data, summaries,
+and saved observations as untrusted data throughout.
+
+### Storage, finalization, and crash recovery
+
+Append the next timestamped migration and registration using the current
+version-1 schema as the starting point. Do not rewrite the applied initial
+migration or require a database reset. Add:
+
+- A persisted monitoring flag on `jobs`, defaulting to false for all existing
+  tasks. Validate recurring-only monitoring when creating tasks.
+- One `job_monitor_results` table with a monotonically increasing integer key,
+  a unique occurrence ID, job ID, observed value, summary, evidence references,
+  observation time, previous value, decision `baseline` / `unchanged` / `changed`,
+  and nullable saved notification text. Add foreign keys, bounds/checks, and an
+  index for the latest result per job. Use commit order to find the previous
+  successful observation; timestamps can tie or move backward.
+
+The latest committed result is the baseline, so no second mutable baseline table
+or hash is needed. Existing occurrence state represents unsuccessful checks.
+Keep raw source bodies in the existing journal only. Define cascading deletion
+or explicit deletion order so `tasks clear` removes monitoring state while
+retaining saved sessions and already queued gateway replies as it does today.
+
+Before finalizing a successful monitoring occurrence, validate that its linked
+run completed and has exactly one eligible recorded candidate. In one immediate
+SQLite transaction, verify the occurrence is still running, compare with the
+latest result for that job, insert its unique decision and saved notification,
+and mark the occurrence completed. Cancellation wins if it committed first.
+Only a completed, validated monitoring occurrence can advance the baseline.
+A repeated finalization returns the saved decision without comparing again.
+
+Use a bounded host-rendered notification containing the task name, previous and
+current values, observation time, summary, and source references resolved from
+the journal. Store this text with the decision before it can become deliverable.
+Keep the notification within 16 KiB and the normal channel chunking rules;
+comparison values must remain intact. The model's final answer stays available
+in `chat show` but is not the monitoring notification payload.
+
+Extend both normal `finish` and repository `recover` paths. Today recovery marks
+a running occurrence completed when its linked run completed. Monitoring must
+instead run the same idempotent validation/comparison transaction. If the run
+completed but the candidate is missing or invalid, mark the occurrence failed
+with a monitoring reason, leaving the baseline intact. This can legitimately
+leave a completed model run attached to a failed monitoring occurrence. A crash
+before model completion leaves interrupted work and never advances the baseline.
+Storage failure must roll back the decision and completion together and stop the
+owner using the existing failure behavior.
+
+Explicit retries reuse current task rules, create a fresh run/session, and
+compare a new successful observation with the last committed result. Old failed
+run candidates are never reused. Recovery may project a completed saved run;
+it must never repeat inference or source reads to reconstruct a decision.
+
+### Notification gating and failure behavior
+
+Change `packages/gateway/src/repository.ts` so scheduled delivery selects ordinary
+completed reports as before, and monitoring occurrences only when they have a
+committed `changed` decision and saved notification text. Baseline and unchanged
+checks must be filtered in SQL before the existing 64-row delivery limit, so
+quiet checks cannot starve real alerts. A monitor with no committed decision
+must never fall back to sending its model answer.
+
+Update `scheduleResults` in `packages/gateway/src/service.ts` to use saved monitor
+notification text while retaining ordinary report output. Continue using the
+unique occurrence enqueue identity, existing chunk order, account/owner/channel
+rechecks, bounded delivery retries, and uncertain-send handling. No channel
+adapter or new outbound transport is needed.
+
+Advancing the observation baseline does not mean delivery succeeded. If enqueue
+has not happened, a restart finds the saved changed result and queues it. If
+sending fails, the existing durable delivery remains inspectable and retries only
+where already allowed. Repeated unchanged checks do not create replacement
+alerts or roll back the baseline. Uncertain sends remain uncertain without
+automatic reposting. Promise one queued notification per observed transition,
+not exactly-once remote receipt.
+
+An unchanged check is a successful completed occurrence with an explicit
+`unchanged` decision, not an empty answer, failure, or skipped interval. Failed
+checks preserve the baseline, appear in task inspection/status, and use normal
+failure logs. Provider quota pauses and temporary backoff remain unchanged.
+Recurring source failures do not stop future scheduled checks or trigger automatic
+retries of the failed occurrence.
+
+This version sends no automatic failure or recovery messages. It also adds no
+quiet hours, cooldowns, cross-task deduplication, threshold language, multi-field
+rules, webhooks, browser login state, or automatic corrective actions. Operators
+must inspect failures and the last successful observation time; silence alone
+does not prove that a monitor is working. Every scheduled check still uses normal
+provider quota even when no notification is sent.
+
+### Implementation order and reach
+
+Keep the work in focused, independently reviewable steps:
+
+| Step                            | Files and responsibilities                                                                                                             | Completion evidence                                                                                                          |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 1. Durable decisions            | New store migration and registration/tests; task schemas, repository finalization/recovery/clear, and exports                          | Existing tasks migrate unchanged; baseline/comparison/recovery work against temporary SQLite databases                       |
+| 2. Observation capture          | Task-owned observation module and instructions; host composition in `apps/cli/src/mcp.ts` and `runtime.ts`; scheduler integration      | Injected-model checks extract a value from fresh evidence and save one validated decision with existing read-only boundaries |
+| 3. Delivery                     | Gateway repository eligibility and service payload selection; existing gateway tests                                                   | Quiet checks never enqueue; changes enqueue once and survive restart without new inference                                   |
+| 4. User commands                | CLI task flag/parser, explicit worker action, task commands/socket decoding, chat tool/action decoding and receipts, status/inspection | CLI and authorized chat create and inspect the same monitor; an old worker rejects creation safely                           |
+| 5. Documentation and live check | Tasks, CLI, chat, storage, architecture, development, documentation index, and this phase's status                                     | Document proposed commands as implemented only after code lands; complete the manual path below                              |
+
+Update affected task factories, injected model responses, strict tool schemas,
+command fixtures, repository decoders, host layers, and public exports alongside
+each step. Keep the provider message format and adapters unchanged. Reuse existing
+channel and text-tool coverage rather than adding another suite per provider or
+messaging adapter. No global monitoring configuration is required.
+
+### Verification and completion gate
+
+Use the existing isolated test runner, injected models, temporary SQLite stores,
+controlled page/MCP/note fixtures, and a controllable clock. Cover these distinct
+behaviors:
+
+1. Quiet first observation, same-value suppression despite different summaries,
+   one alert on change, and both transitions in `A → B → A`.
+2. Missing, duplicate, malformed, oversized, stale, foreign-run, or incomplete
+   evidence fails the check. A successful read followed by model failure or
+   cancellation never commits its candidate. A valid value differing only in
+   case is a change under the documented exact comparison.
+3. Crash after run completion but before decision commit, after decision commit
+   but before enqueue, and after enqueue. Recovery preserves the original
+   decision, creates no duplicate queue entry, and makes no new provider call.
+4. Cancellation versus finalization, retry with fresh evidence, pause/resume,
+   baseline persistence after restart, and failure between successful checks.
+   Quota pauses and missed/DST schedule behavior reuse existing scheduler tests.
+5. Ordinary reports still deliver. More than 64 quiet monitor results cannot
+   block a changed result. Failed/uncertain delivery does not undo the baseline
+   or cause another alert on the next unchanged check.
+6. Observation tools are absent outside active monitor runs. Forged IDs, source
+   prompt injection, and old candidates grant no tool, mutation, destination,
+   or page-fetch authority. Read-only scheduling and existing access rechecks
+   remain effective.
+7. Local and worker-backed creation, authorized chat creation/receipts, recurring
+   validation, old-worker rejection, bounded inspection, version-1 migration
+   with existing tasks/results, and task clearing with queued replies retained.
+
+Run focused `bun run test <path>` commands as each step lands, then
+`bun run check` for the completed implementation. Keep real inference, external
+sites, and messaging accounts out of automated fixtures.
+
+For manual completion, use disposable state and a small controlled source with
+an editable release tag. Create one real-model monitor with an authorized
+messaging destination. Observe a quiet baseline, a quiet unchanged check, then
+one delivered alert after changing the tag. Restart the worker and confirm that
+another unchanged check stays quiet. Make the source unavailable, inspect the
+failed check and preserved baseline, restore it, and verify comparison resumes
+against the last successful value. Inspect saved decisions, evidence, and queue
+states throughout. Record provider and channel evidence separately from tests.
+
+The phase is complete when the automated checks and this real-model delivery
+path pass. Until then, mark implementation, fixture coverage, and live validation
+separately. Model extraction accuracy, incomplete source visibility, polling gaps,
+and uncertain remote delivery remain explicit limits after completion.
 
 ## Validation
 

@@ -106,7 +106,12 @@ for provenance, limits, cancellation, and uncertain outcomes.
 ## Manage scheduled tasks
 
 Ask a tool-capable model to create, list, show, pause, or resume a task through
-`poppet_tasks.manage_tasks`. New tasks keep this session's provider, model, and
+`poppet_tasks.manage_tasks`. Use `create_monitor` for an explicit request to watch a specific source value
+and notify only when it changes. Monitoring requires a recurring schedule and
+starts with a quiet successful baseline; failed checks leave that baseline
+intact. See [change-aware monitoring](tasks.md#change-aware-monitoring).
+
+New tasks keep this session's provider, model, and
 workload. Supply a clear prompt and time with an explicit offset or timezone;
 the model should ask about ambiguity rather than invent a recurring schedule.
 In messaging, request delivery here to use the current authorized conversation.

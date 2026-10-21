@@ -505,6 +505,13 @@ export const makeCLI = (
         "add",
         {
           name: Argument.String("name"),
+          monitor: Flag.Boolean("monitor").pipe(
+            Flag.withDescription(
+              "Establish a quiet baseline, then notify only on observed value changes; requires --cron",
+            ),
+            Flag.atMost(1),
+            Flag.map(([value = false]) => value),
+          ),
           at: Flag.String("at").pipe(
             Flag.withDescription("One-off timestamp with timezone"),
             Flag.atMost(1),
@@ -548,6 +555,7 @@ export const makeCLI = (
         },
         ({
           name,
+          monitor,
           at,
           cron,
           tz,
@@ -578,7 +586,15 @@ export const makeCLI = (
                     ? { adapter: "whatsapp", conversationId: whatsappChat }
                     : undefined;
 
-            const command = yield* prepareTask(name, schedule, coding, prompt, skill, delivery);
+            const command = yield* prepareTask(
+              name,
+              schedule,
+              coding,
+              prompt,
+              skill,
+              delivery,
+              monitor,
+            );
 
             yield* runTasks(command);
           }).pipe(Effect.provide(runtime.config)),

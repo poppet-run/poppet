@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   Agent,
   AgentLive,
+  ExternalTools,
   ChatSettings,
   defaultPolicy,
   ModelResolver,
@@ -21,6 +22,8 @@ import { ProviderError, type ModelOperations, type ModelRequest } from "@poppet/
 import { DeliveryDestination, Store, StoreDatabase, StoreLive } from "@poppet/store";
 import {
   ChatTasksLive,
+  monitorTools,
+  monitorInstructions,
   TaskRepository,
   TaskRepositoryLive,
   TaskDestinations,
@@ -119,6 +122,18 @@ const fixture = async (
         store,
         LocalMemoryLive.pipe(Layer.provide(store)),
         settings,
+        Layer.effect(
+          ExternalTools,
+          Effect.gen(function* () {
+            const repo = yield* TaskRepository;
+
+            return {
+              instructions: monitorInstructions,
+              snapshot: (scheduled, run) =>
+                Effect.sync(() => monitorTools(repo, scheduled, run, defaultPolicy.toolBytes)),
+            };
+          }),
+        ).pipe(Layer.provide(tasks)),
         ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
         Layer.succeed(WebSearch, { search: null }),
         Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
@@ -210,6 +225,174 @@ const scheduled = (destination: DeliveryDestination | null) =>
   });
 
 describe.concurrent("messaging gateway", () => {
+  test("quiet monitors cannot starve alerts; changed payloads survive restart and uncertain sends are not repeated", async () => {
+    let uncertain = false;
+    const attempts: string[] = [];
+
+    const state = await fixture(
+      {
+        send: (_destination, text) =>
+          Effect.gen(function* () {
+            attempts.push(text);
+
+            if (uncertain)
+              return yield* Effect.fail(
+                new ChannelError({ reason: "uncertain", message: "Lost acknowledgement" }),
+              );
+
+            return "remote-id";
+          }),
+      },
+      (request) => {
+        const last = request.messages.at(-1);
+        let output: ModelRequest["messages"][number] | null = null;
+
+        if (last?.role !== "tool")
+          output = {
+            role: "assistant",
+            continuation: null,
+            output: [
+              {
+                type: "tool-call",
+                name: "read_note",
+                namespace: "poppet_notes",
+                callId: "source",
+                arguments: '{"path":"release.md"}',
+              },
+            ],
+          };
+        else if (last.callId === "source")
+          output = {
+            role: "assistant",
+            continuation: null,
+            output: [
+              {
+                type: "tool-call",
+                name: "report_observation",
+                namespace: "poppet_monitor",
+                callId: "observation",
+                arguments: JSON.stringify({
+                  value: JSON.parse(last.output).content,
+                  summary: "Release checked",
+                  sourceCallIds: ["source"],
+                }),
+              },
+            ],
+          };
+
+        if (output?.role !== "assistant") return response("Final prose is not an alert");
+
+        return Stream.make({
+          type: "completed" as const,
+          response: {
+            output: output.output,
+            continuation: {
+              version: 1 as const,
+              provider: "test-provider",
+              model: "test-model",
+              data: {},
+            },
+            finishReason: "tool-calls" as const,
+            usage: null,
+          },
+        });
+      },
+      true,
+    );
+
+    await mkdir(join(state.directory, "notes"));
+    await writeFile(join(state.directory, "notes/release.md"), "v1");
+
+    try {
+      const saved = await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const destination = yield* (yield* Gateway).resolveDestination("scheduled-thread");
+
+          const job = repo.add(
+            {
+              name: "Release",
+              prompt: "Read release.md and report the tag",
+              provider: "test-provider",
+              model: "test-model",
+              workload: "assistant",
+              schedule: { type: "cron", expression: "* * * * *", timezone: "UTC" },
+            },
+            0,
+            null,
+            destination,
+            undefined,
+            true,
+          );
+
+          for (let index = 1; index <= 66; index++) {
+            if (index === 66)
+              yield* Effect.promise(() =>
+                writeFile(join(state.directory, "notes/release.md"), "v2"),
+              );
+            repo.reconcile(index * 60_000);
+            const active = repo.claim(index * 60_000)!;
+            yield* executeOccurrence(repo, active.occurrence, active.task);
+          }
+
+          const alerts = (yield* GatewayRepository).scheduled("discord");
+          expect(alerts).toHaveLength(1);
+          expect(alerts[0]?.notificationText).toContain("Previous: v1\nCurrent: v2");
+          expect(attempts).toEqual([]);
+
+          return { jobId: job.id, occurrenceId: alerts[0]!.id, calls: state.requests.length };
+        }),
+      );
+
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.recover;
+          expect(yield* gateway.deliverNext).toBe(true);
+          expect(yield* gateway.deliverNext).toBe(false);
+          expect((yield* GatewayRepository).scheduled("discord")).toEqual([]);
+          expect((yield* TaskRepository).deliveries(saved.occurrenceId)).toMatchObject([
+            { state: "sent" },
+          ]);
+          expect(state.requests).toHaveLength(saved.calls);
+          const repo = yield* TaskRepository;
+          yield* Effect.promise(() => writeFile(join(state.directory, "notes/release.md"), "v3"));
+          repo.reconcile(67 * 60_000);
+          const active = repo.claim(67 * 60_000)!;
+          yield* executeOccurrence(repo, active.occurrence, active.task);
+          uncertain = true;
+          expect(yield* gateway.deliverNext).toBe(true);
+          expect(repo.deliveries(active.occurrence.id)).toMatchObject([{ state: "uncertain" }]);
+          repo.reconcile(68 * 60_000);
+          const unchanged = repo.claim(68 * 60_000)!;
+          yield* executeOccurrence(repo, unchanged.occurrence, unchanged.task);
+          expect(repo.monitoring.latest(saved.jobId)).toMatchObject({
+            value: "v3",
+            decision: "unchanged",
+          });
+          expect(yield* gateway.deliverNext).toBe(false);
+        }),
+      );
+
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.recover;
+          expect(yield* gateway.deliverNext).toBe(false);
+          expect((yield* GatewayRepository).status()).toMatchObject({ uncertainDelivery: 1 });
+          expect((yield* TaskRepository).clear()).toBe(1);
+          expect((yield* GatewayRepository).status()).toMatchObject({ uncertainDelivery: 1 });
+        }),
+      );
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0]).toContain("Previous: v1\nCurrent: v2");
+      expect(attempts[1]).toContain("Previous: v2\nCurrent: v3");
+      expect(attempts.join("\n")).not.toContain("Final prose");
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each([false, true])(
     "chat task delivery uses the current checked conversation, revoked: %s",
     async (revoked) => {

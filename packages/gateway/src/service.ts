@@ -142,7 +142,7 @@ const gateway = Effect.gen(function* () {
           item.id,
           item.runId,
           destination,
-          chunks(answer(run), channel.textLimit),
+          chunks(item.notificationText ?? answer(run), channel.textLimit),
           enabled,
         ),
       );

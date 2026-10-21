@@ -52,7 +52,8 @@ named `YYYYMMDDHHMMSS_description.ts` with a UTC timestamp. Import its SQL in
 version and a stable name. Keep applied files and registrations unchanged;
 the ledger checks their names and SQL checksums before applying pending steps.
 
-The unreleased schema starts at version 1 with one initial migration. Databases
+The unreleased base schema starts at version 1 with one initial migration.
+Migration 2 adds monitoring to existing version-1 databases without a reset. Databases
 from the former 14-step history need a fresh data directory. See
 [storage](storage.md#schema-and-saved-records).
 
@@ -102,6 +103,9 @@ packages/
     src/memory-tools.ts   Validated memory changes with budget checks and source runs
     src/context.ts        Complete-exchange context assembly and limits
     src/settings.ts       Validated chat budgets
+  tasks/                  @poppet/tasks
+    src/monitoring.ts     Validated evidence, durable comparisons, recovery projections
+    src/monitor-tools.ts  Run-bound observation tool and host-owned instructions
   mcp/                    @poppet/mcp
     src/service.ts        MCP contract, scoped clients, permissions, discovery, invocation
     src/config.ts         Server schemas and environment/file configuration

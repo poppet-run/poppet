@@ -143,6 +143,11 @@ See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and wha
 `clear` deletes or retains. Tasks execute while a worker with scheduling enabled
 is running. Choose at most one messaging destination flag.
 
+`tasks add --monitor` selects [change-aware monitoring](tasks.md#change-aware-monitoring).
+It requires `--cron` and `--tz`, saves a quiet first baseline, and delivers only
+later value changes. It reuses the existing destination flags and task controls.
+`tasks show` includes the last successful observation and per-check decisions.
+
 ## Messaging
 
 | Command                                                                                   | Action                                                                  |
