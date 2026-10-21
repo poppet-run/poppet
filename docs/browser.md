@@ -52,9 +52,19 @@ section to your existing `<data directory>/config.json`:
 
 `command` defaults to `agent-browser` on `PATH`; prefer an absolute path for the
 worker. File command paths containing `/` resolve beside `config.json`.
-`chromiumExecutable` must be absolute. Allow 1–32 exact lowercase hostnames,
-without schemes, ports, paths, or wildcards. Include required CDN hosts explicitly.
-An allowed hostname covers its ports.
+`chromiumExecutable` must be absolute. For restricted browsing, allow 1–32 exact
+lowercase hostnames without schemes, ports, paths, or wildcards. Include required
+CDN hosts explicitly. An allowed hostname covers its ports.
+
+Set `"allowedDomains": ["*"]` to allow every HTTP(S) hostname, including localhost
+and private networks. This also removes hostname filtering for redirects, new
+tabs, and subresources. Other wildcard patterns such as `*.example.com` remain
+unsupported. Missing or empty lists never enable unrestricted browsing.
+HTTP(S)-only navigation, rejection of embedded URL credentials, isolated browser
+state, fixed actions, WebRTC blocking, and output limits still apply. Wildcard
+mode preserves WebRTC blocking with a fixed host-owned startup script and
+Chrome's restriction on non-proxied UDP; it exposes no script or launch options
+to the model.
 
 `POPPET_BROWSER` replaces the complete file section. `{"enabled":false}` disables
 access. `bun run start config` shows the invoking process's settings without
@@ -101,8 +111,9 @@ those actions explicitly. Page text is untrusted and cannot authorize actions,
 expand domains, mutate notes/memory/tasks, or grant `fetch_page` access. Model
 instructions preserve these boundaries; they do not prove a click is harmless.
 
-The daemon receives a deny-by-default action policy and hostname restrictions
-before navigation. Redirects, new tabs, and subresources obey those restrictions.
+The daemon receives a deny-by-default action policy before navigation. When
+`allowedDomains` has no `"*"` entry, it also receives hostname restrictions that
+apply to redirects, new tabs, and subresources.
 Poppet supplies private settings and a minimal environment without provider keys,
 channel tokens, ambient plugins, saved profiles, or inherited launch flags. Model
 arguments cannot change the session, executable, domains, or policy.
@@ -123,8 +134,8 @@ run the standalone local-site self-check:
 bun packages/browser/src/test/browser-check.ts /absolute/path/to/agent-browser /absolute/path/to/chromium
 ```
 
-It checks JavaScript rendering, a form action, denied navigation/redirect/
-subresource requests, isolated runs, and daemon cleanup. Local socket access is
-required; it does not call an inference provider. Live-model CLI and authorized
+It checks JavaScript rendering, a form action, restricted and wildcard navigation,
+redirects and subresources, WebRTC blocking, isolated runs, and daemon cleanup.
+Local socket access is required; it does not call an inference provider. Live-model CLI and authorized
 messaging completion remain manual. Use a disposable allowed site, inspect saved
 calls, cancel a running workflow, and stop the worker to verify cleanup.

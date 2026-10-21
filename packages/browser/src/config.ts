@@ -15,12 +15,14 @@ const Domain = Schema.String.check(
   ),
 );
 
-/** Browser access is an owner-configured, interactive capability with exact allowed hostnames. */
+/** Browser access uses owner-selected hostnames, or "*" for all HTTP(S) hosts. */
 export const BrowserSettings = Schema.Struct({
   enabled: Schema.Boolean,
   command: Schema.optionalKey(Executable),
   chromiumExecutable: Schema.optionalKey(Executable),
-  allowedDomains: Schema.optionalKey(Schema.Array(Domain).check(Schema.isMaxLength(32))),
+  allowedDomains: Schema.optionalKey(
+    Schema.Array(Schema.Union([Domain, Schema.Literal("*")])).check(Schema.isMaxLength(32)),
+  ),
 }).check(
   Schema.makeFilter((settings) =>
     !settings.enabled ||

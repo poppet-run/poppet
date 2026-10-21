@@ -230,6 +230,90 @@ describe.concurrent("browser tools", () => {
     }
   });
 
+  test("wildcard domains allow HTTP(S) hosts without relaxing URL, action, or process restrictions", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const tools = yield* browserTools(
+            { ...settings, allowedDomains: ["*"] },
+            crypto.randomUUID(),
+            4096,
+            state.launch,
+          );
+
+          for (const url of [
+            "https://outside.example/",
+            "http://localhost:1234/",
+            "http://127.0.0.1/",
+            "http://[::1]/",
+          ])
+            expect(JSON.parse(yield* call(tools, "open", { url })).url).toBe(url);
+
+          for (const url of [
+            "file:///etc/passwd",
+            "ftp://example.com/",
+            "data:text/plain,hello",
+            "javascript:alert(1)",
+            "https://user:pass@example.com/",
+          ])
+            expect(yield* call(tools, "open", { url }).pipe(Effect.flip)).toHaveProperty(
+              "reason",
+              "tool-arguments",
+            );
+
+          expect(
+            yield* call(tools, "click", { reference: "@e1" }).pipe(Effect.flip),
+          ).toHaveProperty("reason", "tool-arguments");
+          expect(
+            yield* call(tools, "press", { key: "Control+v" }).pipe(Effect.flip),
+          ).toHaveProperty("reason", "tool-arguments");
+          expect(
+            yield* call(tools, "open", {
+              url: "https://example.com/",
+              initScripts: ["/untrusted.js"],
+            }).pipe(Effect.flip),
+          ).toHaveProperty("reason", "tool-arguments");
+          yield* call(tools, "snapshot");
+          yield* call(tools, "fill", { reference: "@e1", text: "Tom" });
+          yield* call(tools, "close");
+
+          const environment = state.environments.find((env) => env.AGENT_BROWSER_DAEMON === "1")!;
+          expect(environment).not.toHaveProperty("AGENT_BROWSER_ALLOWED_DOMAINS");
+          expect(environment.AGENT_BROWSER_NO_WEBMCP).toBe("1");
+
+          const guardPath = join(environment.HOME!, "webrtc.js");
+          expect((yield* Effect.promise(() => stat(guardPath))).mode & 0o777).toBe(0o600);
+
+          const policy = JSON.parse(
+            yield* Effect.promise(() => readFile(environment.AGENT_BROWSER_ACTION_POLICY!, "utf8")),
+          );
+
+          expect(policy.default).toBe("deny");
+          expect(policy.allow).not.toContain("eval");
+        }),
+      );
+
+      const trace = (await readFile(state.trace, "utf8"))
+        .split("\n")
+        .find((line) => line.includes('"action":"launch"'))!;
+
+      const launch = JSON.parse(trace);
+      expect(launch).not.toHaveProperty("allowedDomains");
+      expect(launch).toMatchObject({
+        headless: true,
+        engine: "chrome",
+        webmcp: false,
+        initScripts: [expect.stringMatching(/\/webrtc\.js$/)],
+        args: ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
+      });
+      await state.cleaned();
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each(["invalid", "overflow", "stale", "uncertain"])(
     "sanitizes %s failures and never retries an action",
     async (mode) => {

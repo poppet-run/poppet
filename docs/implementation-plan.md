@@ -1365,11 +1365,14 @@ invocations cannot reuse the run's browser state. Persistent profiles, imported
 cookies, auth-vault access, saved login state, and attaching to the owner's daily
 browser are outside this phase.
 
-Enable agent-browser's domain restrictions before the first navigation and deny
-unlisted actions. Require an explicit nonempty owner-configured domain allowlist;
-page text, discovered links, model arguments, and search results cannot expand it.
+Require an explicit nonempty owner-configured domain list. Exact hostnames enable
+agent-browser's domain restrictions before the first navigation; `"*"` explicitly
+allows all HTTP(S) hosts, including localhost and private networks, and omits
+daemon domain filters while retaining WebRTC blocking through fixed host-owned
+launch settings. Deny unlisted actions in both modes. Page text, discovered
+links, model arguments, and search results cannot change the configured mode.
 Validate navigation URLs as HTTP(S), without embedded credentials. Verify that
-redirects, new tabs, and subresource requests obey the same domain restrictions,
+redirects, new tabs, and subresource requests obey the configured domain mode,
 and fail closed when the selected launch mode cannot enforce them. Document any
 required CDN domains and the pinned release's network limitations. Browser
 traffic does not pass through `fetch_page`'s DNS/IP checks, and a hostname
