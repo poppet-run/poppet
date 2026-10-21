@@ -8,6 +8,43 @@ import { applyMigrations, migrations } from "#src/migrations";
 const initial = migrations.slice(0, 1);
 
 describe("store migrations", () => {
+  test("upgrades text-only inbox records in place and rolls back the attachment migration atomically", () => {
+    using database = new Database(":memory:");
+    database.run("PRAGMA foreign_keys = ON");
+    const prior = migrations.slice(0, 3);
+    applyMigrations(database, prior);
+
+    const payload = JSON.stringify({
+      messageId: "1",
+      scopeId: "owner",
+      parentId: "owner",
+      conversationId: "owner",
+      senderId: "owner",
+      text: "Legacy text",
+      mentioned: false,
+    });
+
+    database
+      .query(
+        "INSERT INTO gateway_inbox (adapter, account, external_id, payload, conversation_id, run_id, state) VALUES ('telegram', 'bot', '1', ?, 'owner', 'reserved-run', 'queued')",
+      )
+      .run(payload);
+    const next = migrations[3]!;
+    expect(() =>
+      applyMigrations(database, [...prior, { ...next, sql: `${next.sql}\ninvalid SQL;` }]),
+    ).toThrow("No pending migrations");
+    expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 3 });
+    expect(
+      database.query("SELECT name FROM sqlite_master WHERE name = 'gateway_attachments'").get(),
+    ).toBeNull();
+    applyMigrations(database);
+    expect(database.query("SELECT payload, run_id, state FROM gateway_inbox").get()).toEqual({
+      payload,
+      run_id: "reserved-run",
+      state: "queued",
+    });
+    expect(database.query("PRAGMA foreign_key_check").all()).toEqual([]);
+  });
   test("backfills immutable occurrence definitions and preserves monitor children/order under foreign keys, including rollback", () => {
     using database = new Database(":memory:");
     database.run("PRAGMA foreign_keys = ON");
@@ -45,7 +82,7 @@ describe("store migrations", () => {
     );
     expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 2 });
     expect(database.query("SELECT * FROM job_monitor_results ORDER BY id").all()).toEqual(results);
-    expect(applyMigrations(database)).toBe(3);
+    expect(applyMigrations(database)).toBe(migrations.length);
     expect(database.query("PRAGMA foreign_key_check").all()).toEqual([]);
     expect(database.query("SELECT * FROM job_monitor_results ORDER BY id").all()).toEqual(results);
     expect(database.query("SELECT revision, monitor_baseline_after FROM jobs").get()).toEqual({

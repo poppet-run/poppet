@@ -294,3 +294,18 @@ assistant-capable provider and model for messaging and scheduled tasks.
 - [ ] Schedule a one-off task, sleep across its due time, then wake. Expect one
       execution. Restart the worker and confirm it does not repeat; check that logs
       append without exposing secrets.
+
+### Attachment checks
+
+Attachment fixtures cover strict UTF-8, PDF page/excerpt labels, encryption,
+malformed/empty PDFs, actual streamed limits, redirect/path rejection, process
+output/deadlines/cancellation, private-file cleanup, owner checks, restart reuse,
+context overflow, source-aware recall and URL permissions, and voice write-tool
+exclusion. The encrypted fixture uses an empty user password so rejection also
+covers encrypted files a parser can open without prompting.
+
+Tests inject downloads and local transcription commands; they do not contact
+Telegram or require FFmpeg, a speech model, or a live inference provider. The
+[compatibility probe](attachment-probe.md) separately records a real local
+Ogg/Opus-to-transcript check. For live validation, follow
+[Telegram's document and voice checklist](gateways/telegram.md#manual-validation).

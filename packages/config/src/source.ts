@@ -7,6 +7,8 @@ import { BrowserSettings, browserFileValue } from "@poppet/browser/config";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
 
+import { VoiceSettings, voiceFileValue } from "#src/voice";
+
 export const ConfigText = Schema.NonEmptyString.check(Schema.isTrimmed());
 
 export const dataDirectory = Config.schema(ConfigText, "POPPET_DATA_DIR").pipe(
@@ -22,6 +24,7 @@ const FileSettings = Schema.Struct({
   webSearch: Schema.optionalKey(Schema.Boolean),
   browser: Schema.optionalKey(BrowserSettings),
   mcpServers: Schema.optionalKey(MCPServers),
+  voice: Schema.optionalKey(VoiceSettings),
   chat: Schema.optionalKey(
     Schema.Struct({
       logReasoning: Schema.optionalKey(Schema.Boolean),
@@ -107,6 +110,7 @@ export const loadConfigSource = Effect.gen(function* () {
     POPPET_WEB_SEARCH: file.webSearch,
     POPPET_BROWSER: browserFileValue(file.browser, directory),
     POPPET_MCP_SERVERS: mcpFileValue(file.mcpServers, directory),
+    POPPET_VOICE: voiceFileValue(file.voice),
     POPPET_LOG_REASONING: file.chat?.logReasoning,
     POPPET_LOG_TIMINGS: file.chat?.logTimings,
     POPPET_CONTEXT_BYTES: file.chat?.contextBytes,

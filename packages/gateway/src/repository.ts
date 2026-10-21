@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { TextSource } from "@poppet/provider";
 import { DeliveryDestination, StoreDatabase, StoreError } from "@poppet/store";
 import { Context, Effect, Layer, Schema } from "effect";
 
@@ -42,6 +43,12 @@ const Binding = Schema.Struct({
   creationMessageId: Schema.NullOr(Schema.String),
 });
 
+const AttachmentResult = Schema.Struct({
+  state: Schema.Literals(["processing", "accepted", "failed"]),
+  result: Schema.NullOr(Schema.fromJsonString(TextSource)),
+  failure: Schema.NullOr(Schema.String),
+});
+
 export const gatewayStorage = <A>(operation: () => A) =>
   Effect.try({
     try: operation,
@@ -76,6 +83,30 @@ const repository = Effect.gen(function* () {
     );
 
   return {
+    attachment: (id: number) =>
+      Schema.decodeUnknownSync(Schema.NullOr(AttachmentResult))(
+        database
+          .query("SELECT state, result, failure FROM gateway_attachments WHERE inbox_id = ?")
+          .get(id),
+      ),
+    processing: (id: number) =>
+      database
+        .query(
+          "INSERT INTO gateway_attachments (inbox_id, state) VALUES (?, 'processing') ON CONFLICT DO NOTHING",
+        )
+        .run(id),
+    extracted: (id: number, result: TextSource) =>
+      database
+        .query(
+          "UPDATE gateway_attachments SET state = 'accepted', result = ?, failure = NULL WHERE inbox_id = ?",
+        )
+        .run(JSON.stringify(Schema.decodeUnknownSync(TextSource)(result)), id),
+    extractionFailed: (id: number, failure: string) =>
+      database
+        .query(
+          "UPDATE gateway_attachments SET state = 'failed', result = NULL, failure = ? WHERE inbox_id = ?",
+        )
+        .run(failure.slice(0, 256), id),
     cursor: (adapter: string, account: string) =>
       Schema.decodeUnknownSync(Schema.NullOr(Schema.Struct({ cursor: Schema.String })))(
         database

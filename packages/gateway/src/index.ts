@@ -1,6 +1,8 @@
 export {
   ChannelError,
   IncomingMessage,
+  Attachment,
+  safeAttachmentName,
   MessagingChannel,
   type PolledMessage,
   type ChannelPolicy,
@@ -11,5 +13,7 @@ export { ChannelEnvironment, ChannelInput, type ChannelRegistration } from "#src
 export { GatewayRepository, GatewayRepositoryLive } from "#src/repository";
 
 export { Gateway, GatewayLive } from "#src/service";
+
+export { AttachmentProcessor, AttachmentProcessorLive } from "#src/attachments";
 
 export { loadChannelSettings, saveChannelSettings } from "#src/settings";

@@ -1,5 +1,7 @@
 import { Schema } from "effect";
 
+import { TextSource } from "#src/source";
+
 /** A bounded, path-safe provider name, also used in credential filenames. */
 export const ProviderId = Schema.NonEmptyString.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,63}$/));
 
@@ -38,7 +40,11 @@ export const Continuation = Schema.Struct({
 
 /** Shared conversation history that each provider translates into its own request format. */
 export const Message = Schema.Union([
-  Schema.Struct({ role: Schema.Literal("user"), text: Schema.String }),
+  Schema.Struct({
+    role: Schema.Literal("user"),
+    text: Schema.String,
+    source: Schema.optionalKey(TextSource),
+  }),
   Schema.Struct({
     role: Schema.Literal("assistant"),
     output: Schema.Array(Output),

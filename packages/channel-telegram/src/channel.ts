@@ -1,12 +1,14 @@
 import {
   ChannelError,
   MessagingChannel,
+  safeAttachmentName,
+  type Attachment,
   type IncomingMessage,
   type PolledMessage,
 } from "@poppet/gateway";
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 
-import { telegramApi, type HttpFetch } from "#src/api";
+import { telegramApi, telegramDownload, type HttpFetch } from "#src/api";
 import type { TelegramSettings } from "#src/settings";
 
 const Integer = Schema.Int.check(Schema.makeFilter(Number.isSafeInteger));
@@ -21,9 +23,82 @@ const Message = Schema.Struct({
   message_id: PositiveId,
   from: User,
   chat: Chat,
-  text: Schema.String.check(Schema.isMaxLength(8192)),
+  text: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(8192))),
+  caption: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(8192))),
+  document: Schema.optionalKey(Schema.Json),
+  voice: Schema.optionalKey(Schema.Json),
+  photo: Schema.optionalKey(Schema.Json),
+  audio: Schema.optionalKey(Schema.Json),
+  video: Schema.optionalKey(Schema.Json),
+  animation: Schema.optionalKey(Schema.Json),
+  video_note: Schema.optionalKey(Schema.Json),
+  sticker: Schema.optionalKey(Schema.Json),
+  media_group_id: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
+  forward_origin: Schema.optionalKey(Schema.Json),
   message_thread_id: Schema.optionalKey(PositiveId),
 });
+
+const File = Schema.Struct({
+  file_id: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
+  file_name: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+  mime_type: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
+  file_size: Schema.optionalKey(Schema.Natural),
+  duration: Schema.optionalKey(Schema.Natural),
+});
+
+interface FileMetadata {
+  size?: number;
+  duration?: number;
+}
+
+const attachmentFrom = (input: typeof Message.Type): Attachment | undefined => {
+  const media = [
+    input.document,
+    input.voice,
+    input.photo,
+    input.audio,
+    input.video,
+    input.animation,
+    input.video_note,
+    input.sticker,
+  ].filter((value) => value !== undefined);
+
+  if (media.length === 0) return undefined;
+
+  const unsupported: Attachment = {
+    kind: "unsupported",
+    fileId: "unsupported",
+    name: "Unsupported attachment",
+    mime: "",
+  };
+
+  if (
+    media.length !== 1 ||
+    input.media_group_id !== undefined ||
+    input.forward_origin !== undefined ||
+    (input.document === undefined && input.voice === undefined)
+  )
+    return unsupported;
+  const file = Option.getOrNull(Schema.decodeUnknownOption(File)(input.document ?? input.voice));
+
+  if (file === null) return unsupported;
+
+  const optional: FileMetadata = {};
+
+  if (file.file_size !== undefined) optional.size = file.file_size;
+
+  if (file.duration !== undefined) optional.duration = file.duration;
+
+  return {
+    kind: input.voice === undefined ? "document" : "voice",
+    fileId: file.file_id,
+    name: safeAttachmentName(
+      input.voice === undefined ? (file.file_name ?? "Document") : "Voice message",
+    ),
+    mime: (file.mime_type ?? "").toLowerCase(),
+    ...optional,
+  };
+};
 
 const Updates = Schema.Array(
   Schema.Struct({
@@ -144,18 +219,29 @@ export const telegramChannelLayer = (settings: TelegramSettings, http: HttpFetch
                 !input.from.is_bot &&
                 String(input.from.id) === owner &&
                 String(input.chat.id) === owner &&
-                input.message_thread_id === undefined &&
-                input.text.trim()
-              )
-                message = {
-                  messageId: String(update.update_id),
-                  scopeId: owner,
-                  parentId: owner,
-                  conversationId: owner,
-                  senderId: owner,
-                  text: input.text.trim(),
-                  mentioned: false,
-                };
+                input.message_thread_id === undefined
+              ) {
+                const attachment = attachmentFrom(input);
+
+                const text =
+                  input.forward_origin !== undefined && attachment !== undefined
+                    ? ""
+                    : (input.text ?? input.caption ?? "").trim();
+
+                if (text || attachment !== undefined) {
+                  const normalized: IncomingMessage = {
+                    messageId: String(update.update_id),
+                    scopeId: owner,
+                    parentId: owner,
+                    conversationId: owner,
+                    senderId: owner,
+                    text,
+                    mentioned: false,
+                  };
+
+                  message = attachment === undefined ? normalized : { ...normalized, attachment };
+                }
+              }
 
               if (message === null) ignored++;
               polled.push({ cursor: String(update.update_id + 1), message });
@@ -183,6 +269,26 @@ export const telegramChannelLayer = (settings: TelegramSettings, http: HttpFetch
           }),
         ),
       destination: (id) => observe(privateChat(id).pipe(Effect.as(owner))),
+      download: (message, maxBytes) =>
+        Effect.gen(function* () {
+          if (
+            message.senderId !== owner ||
+            message.scopeId !== owner ||
+            message.parentId !== owner ||
+            message.conversationId !== owner ||
+            message.attachment === undefined ||
+            message.attachment.kind === "unsupported"
+          )
+            return yield* Effect.fail(
+              new ChannelError({
+                reason: "permission",
+                message: "Only the original owner's private Telegram attachment can be downloaded.",
+              }),
+            );
+          yield* privateChat(owner);
+
+          return yield* telegramDownload(settings, http, message.attachment, maxBytes);
+        }),
       typing: (id) =>
         observe(
           Effect.gen(function* () {

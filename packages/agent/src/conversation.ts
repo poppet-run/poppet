@@ -7,6 +7,7 @@ import type {
   ModelOperations,
   Output,
   ProviderError,
+  TextSource,
 } from "@poppet/provider";
 import {
   Store,
@@ -154,11 +155,20 @@ export const conversation = Effect.gen(function* () {
     prompt: string,
     readOnlyTools: boolean,
     here: Effect.Effect<DeliveryDestination, AgentError> | null = null,
+    source?: TextSource,
   ) =>
     Stream.unwrap(
       Effect.gen(function* () {
+        const attachmentHistory =
+          source !== undefined ||
+          history.some(
+            (entry) => entry.message.role === "user" && entry.message.source !== undefined,
+          );
+
         const catalog =
-          model.description.capabilities.tools && external !== null
+          model.description.capabilities.tools &&
+          external !== null &&
+          !(source !== undefined && readOnlyTools)
             ? yield* measureTiming(
                 "external-tools",
                 external.snapshot(readOnlyTools, { sessionId: run.sessionId, runId: run.id }),
@@ -195,13 +205,13 @@ export const conversation = Effect.gen(function* () {
           identities.add(identity);
         }
 
-        const allowedURLs = suppliedPageURLs(text);
+        const allowedURLs = source?.kind === "voice" ? new Set<string>() : suppliedPageURLs(text);
 
         const baseInstructions =
           external?.instructions === undefined ? prompt : `${prompt}\n\n${external.instructions}`;
 
         const instructions =
-          tasks !== null && !readOnlyTools
+          (tasks !== null && !readOnlyTools) || source?.kind === "voice"
             ? `${baseInstructions}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
             : baseInstructions;
 
@@ -250,7 +260,10 @@ export const conversation = Effect.gen(function* () {
             return { callId: call.callId, plan };
           });
 
-        const current: Message[] = [{ role: "user", text }];
+        const current: Message[] = [
+          source === undefined ? { role: "user", text } : { role: "user", text, source },
+        ];
+
         let turns = 0;
         let callsUsed = 0;
         let outputBytes = 0;
@@ -308,9 +321,10 @@ export const conversation = Effect.gen(function* () {
                   instructions,
                   messages,
                   tools,
-                  settings: policy.logReasoning
-                    ? { ...settings, reasoningSummary: true }
-                    : settings,
+                  settings:
+                    policy.logReasoning && !attachmentHistory
+                      ? { ...settings, reasoningSummary: true }
+                      : settings,
                 },
                 run,
               ).pipe(

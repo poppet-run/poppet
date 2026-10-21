@@ -8,8 +8,8 @@ not scheduled work or authorization to implement them. Recheck current
 capabilities and the relevant phase's compatibility gates before implementation.
 
 Change-aware monitoring already has a [Phase 23 plan](implementation-plan.md#phase-23-change-aware-monitoring).
-Task controls are also implemented in Phase 24. The later priorities remain
-planned work.
+Task controls are implemented in Phase 24, and Telegram documents/local voice in
+Phase 25. Priorities after those remain planned work.
 
 ## 1. Editable tasks and snoozing
 
@@ -28,18 +28,15 @@ Starting points: [scheduled tasks](tasks.md), `packages/tasks/src/task-schema.ts
 
 ## 2. Documents and voice messages
 
-Planning is captured in [Phase 25](implementation-plan.md#phase-25-documents-and-voice-messages),
-with authorized text attachments first, PDF extraction next, and opt-in voice
-transcription afterward.
+Implemented in [Phase 25](implementation-plan.md#phase-25-documents-and-voice-messages):
+authorized Telegram text/PDF attachments and opt-in local voice transcription.
+See [Telegram usage](gateways/telegram.md#documents-and-voice) and the
+[compatibility probe](attachment-probe.md). Live Telegram/model checks remain manual.
 
-Let the owner send a document for summarization or dictate a reminder from a
-phone. Start with text attachments and text-based PDFs in one messaging adapter.
-Plan voice transcription afterward; screenshots and scanned-document OCR can wait.
-
-Define bounded downloads, file-type validation, temporary-file cleanup, saved
-content retention, and how extracted text reaches the existing agent. Extracted
-document text stays untrusted. Voice transcription needs an explicit service or
-local-runtime choice and a decision about where audio is sent and retained.
+The owner can send a document for summarization or dictate a reminder proposal.
+Extracted text stays untrusted, temporary raw files are removed, and voice-derived
+actions require a subsequent text confirmation. Screenshots and scanned-document
+OCR remain outside this phase.
 
 Starting points: [Telegram](gateways/telegram.md), [gateway architecture](architecture.md#messaging-gateway),
 `packages/gateway/src/channel.ts`, and `packages/channel-telegram/src/`.

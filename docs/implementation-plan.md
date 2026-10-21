@@ -2430,10 +2430,10 @@ implemented stages, automated validation, and manual evidence separately.
 
 ## Phase 25: Documents and voice messages
 
-Planned only. Start with one attachment in the configured owner's private
-Telegram chat. This phase builds on the durable gateway inbox and text-only
-agent from phases 4, 10, and 12. Deliver text files, PDF extraction, and voice
-transcription separately. Other adapters can adopt the shared contract later.
+Implemented for one attachment in the configured owner's private Telegram chat.
+Local transcription was explicitly selected by the owner and stays opt-in. This
+phase builds on the durable gateway inbox and text-only agent from phases 4, 10,
+and 12, with text files, PDF extraction and voice transcription sharing intake. Other adapters can adopt the shared contract later.
 
 ### Goal and first version
 
@@ -2446,10 +2446,10 @@ clear reply without starting inference on an empty substitute.
 Keep provider messages text-only. Reuse the existing agent context budget,
 conversation storage, cancellation, and answer delivery. Do not add native model
 file uploads, images, OCR, archives, remote-link ingestion, generated attachments,
-or a document search index. Do not select a transcription dependency or assume
-existing provider credentials include audio access before the voice probe.
+or a document search index. The compatibility probe selected a local speech
+runtime; existing provider credentials are not used for transcription.
 
-Use these proposed initial limits, checked again during the compatibility probes:
+The implemented initial limits, checked during the compatibility probes:
 
 | Input          | Download limit | Processing limit                                         | Text supplied to the agent       |
 | -------------- | -------------- | -------------------------------------------------------- | -------------------------------- |
@@ -2528,19 +2528,19 @@ retention, and delivery path rather than adding another upload system.
 
 ### Stage 25c: Opt-in voice transcription
 
-Before implementation, compare one local runtime and one explicitly configured
-service using short disposable audio samples. Record supported formats, pinned
-runtime/API, installation requirements, measured latency and resource use, cost
-where applicable, and the service's audio retention terms. Choose one route for
-the first version. Do not silently reuse subscription auth or introduce a new
-general provider interface for a single transcriber.
+The owner selected local transcription. The implemented route uses configured
+FFmpeg and whisper.cpp executables with a local model, validated against a
+disposable Ogg/Opus sample. The [compatibility record](attachment-probe.md) gives
+pinned tested versions, formats, installation requirements, and latency/resource
+measurements. A cloud-service comparison was superseded by that explicit choice.
+No subscription auth or general provider interface is used for transcription.
 
 Voice processing is disabled until the owner configures that route and is told
 where audio goes. Reuse authorized attachment intake, validate actual audio format
 and duration, and bind the transcript to the original owner/message identity.
-Store the accepted transcript before inference. A timed-out remote transcription
-has an unknown billing outcome and is not automatically resubmitted; inspection
-and an explicit retry must make that uncertainty visible.
+Store the accepted transcript before inference. Local subprocesses are terminated
+on cancellation or deadline. No audio service, remote billing or automatic model
+download is involved.
 
 For the first version, show the transcript before any consequential mutation.
 Ordinary questions can receive a transcript and answer together. A dictated
@@ -2564,7 +2564,7 @@ output excludes captions, extracted text, transcripts, tokens, and file URLs.
 | Gateway         | `packages/gateway/src/channel.ts`, inbox decoding/storage, acceptance and processing, run binding, cancellation and error replies                 |
 | Telegram        | `packages/channel-telegram/src/channel.ts` and `api.ts`: owner-first metadata parsing and protected, bounded downloads                            |
 | Agent and store | Structured source provenance beside text-only messages, context assembly, title/recall handling, append-only migration and legacy-record fixtures |
-| Host and config | Worker-owned extraction, temporary-file lifetime, explicit voice configuration/credentials, composition in `apps/cli/src/runtime.ts`              |
+| Host and config | Worker-owned extraction, temporary-file lifetime, explicit local voice configuration, composition in `apps/cli/src/channels.ts`                   |
 | Documentation   | Telegram, chat, storage, configuration, architecture, development, and this phase's actual validation status                                      |
 
 Use injected download/transcription functions and local fixture documents. Prove
@@ -2581,6 +2581,23 @@ Telegram chat to send a text file, a short PDF, an unsupported file, and, after
 voice is enabled, a short recording. Check restart/deduplication, answer grounding,
 and a dictated reminder's confirmation. Parser fixtures do not establish live
 Telegram download behavior, real transcription accuracy, or model intent handling.
+
+### Implementation and validation status
+
+Stages 25a–25c are implemented with shared durable intake, optional structured
+source provenance, schema migration 4, text-only provider requests, cancellable
+PDF parsing and opt-in local voice. Voice runs cannot call write or external
+tools; replies include the exact accepted transcript and request a subsequent
+text confirmation for actions. See [Telegram usage](gateways/telegram.md#documents-and-voice),
+[configuration](configuration.md#local-voice-transcription), and
+[local compatibility evidence](attachment-probe.md).
+
+Automated checks cover intake, download/extraction boundaries, migration rollback,
+restart/deduplication, retention cleanup, URL authority, context overflow and voice
+tool restrictions. `bun run check` passed with 937 tests across 65 files, including
+formatting, lint and workspace type checks. Live Telegram downloads, model grounding/intent handling and
+phone-recording accuracy still require the documented manual checks. Owner worker
+configuration and permanent tool/model installation were not changed.
 
 ## Phase 26: Context for individual projects
 

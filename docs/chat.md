@@ -30,6 +30,13 @@ and omitted from this display. Inspection needs no selected model or login.
 With `chat.logReasoning` enabled, `chat new` streams thinking to stderr using the
 [interactive prompt's formatting](#interactive-prompt). Stdout contains only the answer.
 
+Telegram can submit [documents and local voice transcripts](gateways/telegram.md#documents-and-voice).
+The saved user message keeps its caption/request separate from structured source
+metadata and text. Model context and recall label that source as untrusted JSON;
+only text reaches inference providers. Attachment data counts against the existing
+context budget. Titles use the caption or a safe attachment label. Voice replies
+show the accepted transcript and require a later text confirmation for mutations.
+
 ## Interactive prompt
 
 Start a new session or resume one in a terminal:

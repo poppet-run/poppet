@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { MessagingChannel, type PolledMessage } from "@poppet/gateway";
-import { Deferred, Effect, Fiber, Match, Redacted, Schema } from "effect";
+import { Deferred, Effect, Fiber, Match, Redacted, Result, Schema } from "effect";
 
 import type { HttpFetch } from "#src/api";
 import { telegramChannelLayer } from "#src/channel";
@@ -386,6 +386,202 @@ describe.concurrent("Telegram adapter", () => {
             expect(aborted).toBe(true);
           }),
         ).pipe(Effect.provide(telegramChannelLayer(settings, http))),
+      );
+    },
+  );
+});
+
+describe.concurrent("Telegram attachments", () => {
+  test("normalizes owner captions/attachment-only messages without downloading, and rejects downloads outside that private chat", async () => {
+    const calls: string[] = [];
+
+    const file = {
+      file_id: "original-file",
+      file_name: "../../dir/notes\n.md",
+      mime_type: "text/plain",
+      file_size: 5,
+    };
+
+    const owner = incoming(1).message;
+
+    const http: HttpFetch = async (url) => {
+      const method = url.split("/").at(-1)!;
+      calls.push(method);
+
+      return Response.json({
+        ok: true,
+        result:
+          method === "getMe"
+            ? { id: 100, is_bot: true }
+            : [
+                {
+                  update_id: 1,
+                  message: { ...owner, text: undefined, caption: "Explain this", document: file },
+                },
+                {
+                  update_id: 2,
+                  message: {
+                    ...owner,
+                    text: undefined,
+                    voice: { file_id: "voice", mime_type: "audio/ogg", duration: 4 },
+                  },
+                },
+                {
+                  update_id: 3,
+                  message: {
+                    ...owner,
+                    text: undefined,
+                    document: file,
+                    from: { id: 999, is_bot: false },
+                  },
+                },
+                { update_id: 4, message: { ...owner, text: undefined, photo: [] } },
+                {
+                  update_id: 5,
+                  message: { ...owner, text: undefined, document: file, media_group_id: "album" },
+                },
+                {
+                  update_id: 6,
+                  message: {
+                    ...owner,
+                    text: undefined,
+                    document: file,
+                    caption: "/cancel",
+                    forward_origin: { type: "hidden_user", sender_user_name: "Someone", date: 1 },
+                  },
+                },
+              ],
+      });
+    };
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const channel = yield* MessagingChannel;
+        const updates = yield* channel.poll!(null);
+        expect(updates[0]?.message).toMatchObject({
+          text: "Explain this",
+          attachment: { kind: "document", fileId: "original-file", name: "notes.md" },
+        });
+        expect(updates[1]?.message).toMatchObject({
+          text: "",
+          attachment: { kind: "voice", duration: 4 },
+        });
+        expect(updates[2]?.message).toBeNull();
+        expect(updates[3]?.message?.attachment?.kind).toBe("unsupported");
+        expect(updates[4]?.message?.attachment?.kind).toBe("unsupported");
+        expect(updates[5]?.message?.attachment?.kind).toBe("unsupported");
+        expect(updates[5]?.message?.text).toBe("");
+        expect(calls).toEqual(["getMe", "getUpdates"]);
+
+        const blocked = yield* channel.download!(
+          { ...updates[0]!.message!, senderId: "999" },
+          65536,
+        ).pipe(Effect.result);
+
+        expect(Result.isFailure(blocked)).toBe(true);
+        expect(calls).toEqual(["getMe", "getUpdates"]);
+      }).pipe(Effect.provide(telegramChannelLayer(settings, http))),
+    );
+  });
+
+  test.each(["valid", "oversized-stream", "unsafe-path", "redirect", "expired"])(
+    "protects binary downloads: %s",
+    async (scenario) => {
+      const calls: string[] = [];
+      let cancelled = false;
+
+      const http: HttpFetch = async (url, init) => {
+        calls.push(url);
+        expect(init.redirect).toBe("error");
+
+        if (url.includes("/file/bot")) {
+          if (scenario === "redirect")
+            return new Response(null, {
+              status: 302,
+              headers: { location: "https://other.example/secret" },
+            });
+
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(
+                  Buffer.from(scenario === "oversized-stream" ? "x".repeat(65537) : "Hello"),
+                );
+
+                if (scenario === "valid") controller.close();
+              },
+              cancel() {
+                cancelled = true;
+              },
+            }),
+            { headers: { "content-length": "1" } },
+          );
+        }
+
+        const method = url.split("/").at(-1)!;
+
+        if (method === "getFile" && scenario === "expired")
+          return Response.json({
+            ok: false,
+            error_code: 400,
+            description: "100:secret-token remote diagnostic",
+          });
+
+        const result = Match.value(method).pipe(
+          Match.when("getMe", () => ({ id: 100, is_bot: true })),
+          Match.when("getChat", () => ({ id: 200, type: "private" })),
+          Match.orElse(() => ({
+            file_id: "original-file",
+            file_size: 1,
+            file_path: scenario === "unsafe-path" ? "../private" : "documents/file_1.txt",
+          })),
+        );
+
+        return Response.json({ ok: true, result });
+      };
+
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const channel = yield* MessagingChannel;
+
+          const message = {
+            messageId: "1",
+            scopeId: "200",
+            parentId: "200",
+            conversationId: "200",
+            senderId: "200",
+            text: "",
+            mentioned: false,
+            attachment: {
+              kind: "document" as const,
+              fileId: "original-file",
+              name: "notes.txt",
+              mime: "text/plain",
+              size: 1,
+            },
+          };
+
+          const result = yield* channel.download!(message, 65536).pipe(Effect.result);
+
+          if (scenario === "valid") {
+            expect(Result.isSuccess(result) && Buffer.from(result.success).toString()).toBe(
+              "Hello",
+            );
+          } else {
+            expect(Result.isFailure(result)).toBe(true);
+
+            if (Result.isFailure(result)) {
+              expect(result.failure.message).not.toContain("secret-token");
+              expect(result.failure.message).not.toContain("https://");
+            }
+          }
+
+          expect(calls.every((url) => new URL(url).hostname === "api.telegram.org")).toBe(true);
+
+          if (scenario === "unsafe-path" || scenario === "expired") expect(calls).toHaveLength(3);
+
+          if (scenario === "oversized-stream") expect(cancelled).toBe(true);
+        }).pipe(Effect.provide(telegramChannelLayer(settings, http))),
       );
     },
   );

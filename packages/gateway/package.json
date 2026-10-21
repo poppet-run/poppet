@@ -20,7 +20,8 @@
     "@poppet/credentials": "workspace:*",
     "@poppet/provider": "workspace:*",
     "@poppet/store": "workspace:*",
-    "effect": "4.0.4"
+    "effect": "4.0.4",
+    "unpdf": "1.9.1"
   },
   "devDependencies": {
     "@poppet/memory": "workspace:*",

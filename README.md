@@ -6,7 +6,9 @@ Poppet streams chat through ChatGPT, OpenCode Go, or OpenRouter and saves sessio
 locally. It can read, search, and save notes, use an editable profile and saved
 facts, follow explicitly selected local Markdown skills, read supplied URLs, search
 the web when configured, use explicitly allowed local MCP tools, recall saved discussions, manage scheduled tasks through chat, and reply in Discord threads or
-private Telegram and WhatsApp chats. A shared worker runs scheduling and messaging; on macOS it can start at login.
+private Telegram and WhatsApp chats. Telegram also accepts bounded text/PDF documents
+and optional local voice transcription. A shared worker runs scheduling and messaging;
+on macOS it can start at login.
 
 ## Quick start
 

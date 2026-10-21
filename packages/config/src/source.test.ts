@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
-import { browserSettings, loadConfig, webSearchEnabled } from "#src/config";
+import { browserSettings, loadConfig, webSearchEnabled, voiceSettings } from "#src/config";
 import { ConfigSource, loadConfigSource } from "#src/source";
 
 const load = (environment: Record<string, string>) =>
@@ -28,6 +28,56 @@ const load = (environment: Record<string, string>) =>
   );
 
 describe("configuration sources", () => {
+  test("local voice defaults off, requires absolute explicit paths, and environment settings replace file settings", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-voice-config-"));
+
+    try {
+      const defaults = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(await Effect.runPromise(voiceSettings.pipe(Effect.provide(defaults.context)))).toEqual(
+        { enabled: false },
+      );
+
+      const configured = {
+        enabled: true,
+        ffmpeg: "/local/ffmpeg",
+        whisper: "/local/whisper-cli",
+        model: "/local/ggml-tiny.bin",
+      };
+
+      await writeFile(join(directory, "config.json"), JSON.stringify({ voice: configured }));
+      const file = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(await Effect.runPromise(voiceSettings.pipe(Effect.provide(file.context)))).toEqual(
+        configured,
+      );
+
+      const overridden = await Effect.runPromise(
+        load({ POPPET_DATA_DIR: directory, POPPET_VOICE: '{"enabled":false}' }),
+      );
+
+      expect(
+        await Effect.runPromise(voiceSettings.pipe(Effect.provide(overridden.context))),
+      ).toEqual({ enabled: false });
+      expect(overridden.source.environmentOverrides).toContain("POPPET_VOICE");
+      await Promise.all(
+        [
+          "",
+          '{"enabled":true}',
+          JSON.stringify({ ...configured, model: "relative-model" }),
+          '{"enabled":false,"service":"cloud"}',
+        ].map(async (json) => {
+          const invalid = await Effect.runPromise(
+            load({ POPPET_DATA_DIR: directory, POPPET_VOICE: json }),
+          );
+
+          await expect(
+            Effect.runPromise(voiceSettings.pipe(Effect.provide(invalid.context))),
+          ).rejects.toThrow("Invalid POPPET_VOICE");
+        }),
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   test("browser defaults off, resolves a file executable, and honors complete environment replacement", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-browser-config-"));
 

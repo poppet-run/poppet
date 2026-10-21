@@ -1064,8 +1064,8 @@ slash commands. Live Discord checks remain manual.
 
 `@poppet/channel-telegram` implements the same channel contract using Bun HTTP
 and the Bot API. Bot identity is verified before polling or sending. Only the
-configured owner's ordinary private-chat text is normalized. Groups, channels,
-private topics, edits, attachments, and other users are ignored. Telegram uses
+configured owner's private-chat text and supported attachments are normalized. Groups, channels,
+private topics, edits, and other users are ignored. Single supported attachments use the bounded processing path below. Telegram uses
 its own adapter/account identities for inbox deduplication and session bindings.
 
 Telegram requests up to ten updates per poll under a two MiB response limit.
@@ -1221,3 +1221,27 @@ The CLI adapts browser tools and `BrowserError` to the generic agent contract.
 Browser calls use the existing external-tool identity and durable
 uncertain outcomes. Scheduled catalogs omit every browser operation. See
 [browser automation](browser.md) for setup, bounds, permissions, and live checks.
+
+### Telegram attachment processing
+
+`IncomingMessage` optionally carries one bounded attachment descriptor. Telegram
+checks bot identity and owner/private-chat IDs before resolving that descriptor
+through `getFile`; only the fixed Telegram file endpoint can supply bytes.
+Streaming byte counts, redirect rejection and actual format checks precede use.
+Other adapters retain their text-only behavior.
+
+The host composes a shared `AttachmentProcessor` with the gateways. It performs
+strict UTF-8 decoding or owned PDF/audio subprocess work outside SQLite
+transactions and the agent's model permit. PDF parsing is text-only with network
+and evaluation disabled. Optional voice uses configured local FFmpeg and
+whisper.cpp paths. Scoped private temporary files and bounded process output,
+duration, deadlines and accepted text apply independently of remote metadata.
+
+`gateway_attachments` records a result before `Agent.send` starts the inbox's
+reserved run. Recovery reuses accepted text and completed replies. Agent/store
+user messages retain a structured `TextSource` separately from the caption;
+context assembly renders it to labelled untrusted JSON text for any provider.
+The same label survives recall/search. Current URL grants come only from the
+caption. Voice runs remove write and external tools regardless of model output;
+confirmation comes from a subsequent owner text message. See
+[compatibility evidence](attachment-probe.md) and [retention](storage.md#attachment-retention).

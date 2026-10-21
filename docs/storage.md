@@ -30,8 +30,9 @@ for synchronization, and whether external edits or failures disabled naming.
 
 `@poppet/store` provides a scoped Effect `Store` service backed by
 [Bun SQLite](https://bun.sh/docs/runtime/sqlite). The initial migration creates the
-base schema; migration 2 adds change-aware monitoring and migration 3 adds task
-controls and immutable occurrence definitions without resetting saved data.
+base schema; migration 2 adds change-aware monitoring, migration 3 adds task
+controls and immutable occurrence definitions, and migration 4 adds attachment
+processing results and source-aware recall without resetting saved data.
 Migration SQL lives in timestamped TypeScript files under
 `packages/store/src/migrations/`, registered in order by `migrations.ts`.
 A checksummed migration ledger rejects newer schemas and changed migration
@@ -39,7 +40,7 @@ history. All pending migrations commit together; a failure rolls back the pendin
 batch.
 
 The unreleased base migration history was consolidated into schema version 1;
-the current schema is version 3. Existing version-1 and version-2 databases upgrade in place.
+the current schema is version 4. Existing version-1 through version-3 databases upgrade in place.
 Development databases created with the former 14-step history are still rejected.
 Those legacy databases require a fresh data directory; databases are never reset
 automatically.
@@ -185,3 +186,28 @@ Tests cover persistent tool exchanges for all providers, migration ordering and
 rollback, transaction rollback, invalid records, run transitions, competing
 owners, and scoped cleanup. Live ChatGPT token renewal
 remains a separate phase 3 follow-up.
+
+## Attachment retention
+
+`gateway_attachments` is keyed to the accepted inbox entry and records processing,
+accepted, or failed state. Accepted results contain a SHA-256 content hash,
+extraction version, safe filename/MIME, completeness label and bounded text;
+failures retain a bounded reason. The inbox keeps the original opaque Telegram
+file reference and caption. No token-bearing download URL is saved.
+
+Accepted text commits before the reserved run ID is started. Restart reuses it;
+interruptions before acceptance can retry local processing at most three times.
+Completed runs and deliveries retain the existing deduplication and uncertain-send
+rules. Existing text-only inbox/message records need no attachment fields.
+
+User message payloads keep the owner's request in `text` and extracted provenance
+in optional `source`. Context assembly converts the source to labelled untrusted
+JSON text; recall and the existing FTS projection preserve that label and include
+accepted source text for completed runs. No separate document index is created.
+
+Raw PDF/audio files live under private generated directories in
+`<data directory>/attachment-tmp`, with `0700` directories and `0600` input files.
+Scoped cleanup removes them on completion, failure or cancellation; worker startup
+removes only this feature's abandoned directories. UTF-8 documents can be processed
+in memory. Saved transcripts, extracted text, source metadata, answers and provider
+records are separate from temporary raw files and follow existing history retention.

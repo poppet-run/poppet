@@ -7,6 +7,7 @@ import {
   recordTiming,
   type ModelOperations,
   type ProviderId,
+  type TextSource,
 } from "@poppet/provider";
 import {
   Store,
@@ -72,6 +73,7 @@ export class Agent extends Context.Service<
       text: string,
       options?: {
         readonly readOnlyTools?: boolean;
+        readonly source?: TextSource | undefined;
         readonly runId?: string;
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
         readonly timingLog?: (line: string) => Effect.Effect<void>;
@@ -119,6 +121,7 @@ export const AgentLive = Layer.effect(
       text: string,
       options: {
         readonly readOnlyTools?: boolean;
+        readonly source?: TextSource | undefined;
         readonly runId?: string;
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
         readonly timingLog?: (line: string) => Effect.Effect<void>;
@@ -130,6 +133,7 @@ export const AgentLive = Layer.effect(
         let settled = false;
         let startedAt: number | null = null;
         let firstText = false;
+        let attachmentHistory = options.source !== undefined;
 
         const timing: RequestTiming["Service"] = {
           record: (entry) =>
@@ -164,7 +168,11 @@ export const AgentLive = Layer.effect(
               Effect.gen(function* () {
                 const pending = yield* store.queueRun(
                   sessionId,
-                  [{ role: "user", text }],
+                  [
+                    options.source === undefined
+                      ? { role: "user", text }
+                      : { role: "user", text, source: options.source },
+                  ],
                   options.runId,
                   sessionTitle(text),
                 );
@@ -181,6 +189,12 @@ export const AgentLive = Layer.effect(
 
             const flushReasoning = (final = false) =>
               Effect.gen(function* () {
+                if (attachmentHistory) {
+                  reasoning = "";
+
+                  return;
+                }
+
                 while (reasoning.length > 0) {
                   const newline = reasoning.indexOf("\n");
 
@@ -226,6 +240,9 @@ export const AgentLive = Layer.effect(
                     }),
                   );
                 const history = yield* store.messages(sessionId);
+                attachmentHistory ||= history.some(
+                  (entry) => entry.message.role === "user" && entry.message.source !== undefined,
+                );
                 const runs = yield* store.runs(sessionId);
 
                 return converse(
@@ -235,8 +252,9 @@ export const AgentLive = Layer.effect(
                   history,
                   runs,
                   prompt,
-                  options.readOnlyTools ?? false,
+                  options.source?.kind === "voice" || (options.readOnlyTools ?? false),
                   options.taskDestination ?? null,
+                  options.source,
                 );
               }),
             ).pipe(

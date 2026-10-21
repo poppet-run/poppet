@@ -7,6 +7,7 @@ import { StoreError } from "#src/errors";
 import { initialSchema } from "#src/migrations/20261018165445_initial-schema";
 import { changeAwareMonitoring } from "#src/migrations/20261021120000_change-aware-monitoring";
 import { taskControls } from "#src/migrations/20261021210000_task-controls";
+import { attachments } from "#src/migrations/20261021220000_attachments";
 
 export interface Migration {
   readonly version: number;
@@ -20,6 +21,7 @@ export const migrations: ReadonlyArray<Migration> = [
   { version: 1, name: "initial-schema", sql: initialSchema },
   { version: 2, name: "change-aware-monitoring", sql: changeAwareMonitoring },
   { version: 3, name: "task-controls", sql: taskControls },
+  { version: 4, name: "attachments", sql: attachments },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

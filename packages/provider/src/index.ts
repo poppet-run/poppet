@@ -26,6 +26,8 @@ export { verifyModel } from "#src/verification";
 
 export { RequestTiming, measureTiming, recordTiming } from "#src/timing";
 
+export { TextSource, sourceText } from "#src/source";
+
 export {
   ProviderEnvironment,
   CredentialInput,
