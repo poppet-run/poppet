@@ -314,8 +314,34 @@ describe.concurrent("browser tools", () => {
     }
   });
 
+  test.each([
+    ["navigation", "net::ERR_NAME_NOT_RESOLVED at https://example.com/"],
+    ["missing-error", "Browser action failed."],
+    ["empty-error", "Browser action failed."],
+  ])("reports %s failures when opening a URL", async (mode, message) => {
+    const state = await fixture(mode);
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const tools = yield* state.tools();
+
+          const error = yield* call(tools, "open", { url: "https://example.com/" }).pipe(
+            Effect.flip,
+          );
+
+          expect(error).toMatchObject({ reason: "tool-reported", message });
+        }),
+      );
+      await state.cleaned();
+      expect((await readFile(state.trace, "utf8")).match(/"action":"navigate"/g)).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each(["invalid", "overflow", "stale", "uncertain"])(
-    "sanitizes %s failures and never retries an action",
+    "handles %s failures and never retries an action",
     async (mode) => {
       const state = await fixture(mode);
 
@@ -341,7 +367,13 @@ describe.concurrent("browser tools", () => {
                 Match.orElse(() => "tool-uncertain" as const),
               ),
             );
-            expect(error.message).not.toContain("private-fixture-value");
+
+            if (mode === "stale") expect(error.message).toBe("Element @e2 is stale.");
+            else if (mode === "uncertain")
+              expect(error.message).toBe(
+                "Click outcome is unknown. Its effects may be unknown; no action was retried.",
+              );
+            else expect(error.message).not.toContain("private-fixture-value");
           }),
         );
         await state.cleaned();

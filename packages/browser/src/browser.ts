@@ -57,6 +57,7 @@ const Reply = Schema.Struct({
   success: Schema.Boolean,
   data: Schema.optionalKey(Schema.NullOr(Schema.JsonObject)),
   code: Schema.optionalKey(Schema.String),
+  error: Schema.optionalKey(Schema.String),
 });
 
 export const browserInstructions = [
@@ -276,11 +277,16 @@ export const browserTools = (
                   "Browser response does not match its request.",
                 );
 
-              if (!reply.success)
+              if (!reply.success) {
+                const message = reply.error?.trim() || "Browser action failed.";
+
                 throw browserFailure(
                   reply.code === "outcome_unknown" ? "tool-uncertain" : "tool-reported",
-                  "Browser action failed. Its effects may be unknown; no action was retried. Stale references require a new snapshot.",
+                  reply.code === "outcome_unknown"
+                    ? `${message} Its effects may be unknown; no action was retried.`
+                    : message,
                 );
+              }
 
               return reply.data ?? {};
             },

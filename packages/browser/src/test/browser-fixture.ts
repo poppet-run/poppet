@@ -28,6 +28,12 @@ if (process.env.AGENT_BROWSER_DAEMON === "1") {
   const respond = async (request: Schema.JsonObject) => {
     await appendFile(trace, `${JSON.stringify(request)}\n`);
 
+    if (
+      request.action === "navigate" &&
+      ["navigation", "missing-error", "empty-error"].includes(mode ?? "")
+    )
+      return `${JSON.stringify({ id: request.id, success: false, ...(mode === "missing-error" ? undefined : { error: mode === "empty-error" ? "  " : `net::ERR_NAME_NOT_RESOLVED at ${request.url}` }) })}\n`;
+
     if (request.action === "navigate") url = Schema.decodeUnknownSync(Schema.String)(request.url);
 
     if (request.action === "fill") text = Schema.decodeUnknownSync(Schema.String)(request.value);
@@ -40,7 +46,7 @@ if (process.env.AGENT_BROWSER_DAEMON === "1") {
     if (request.action === "click" && mode === "stall") await Bun.sleep(60000);
 
     if (request.action === "click" && ["stale", "uncertain"].includes(mode ?? ""))
-      return `${JSON.stringify({ id: request.id, success: false, code: mode === "uncertain" ? "outcome_unknown" : "stale_element", error: "private-fixture-value" })}\n`;
+      return `${JSON.stringify({ id: request.id, success: false, code: mode === "uncertain" ? "outcome_unknown" : "stale_element", error: mode === "uncertain" ? "Click outcome is unknown." : "Element @e2 is stale." })}\n`;
 
     let data: Schema.JsonObject = { changed: true };
 
