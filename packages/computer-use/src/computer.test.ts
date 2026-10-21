@@ -74,6 +74,10 @@ test("a scoped observation exposes one argument-free tool, strips native tokens/
             ]);
             const first = JSON.parse(yield* (yield* tools[0]!.prepare("{}")).execute);
             const second = JSON.parse(yield* (yield* tools[0]!.prepare("{}")).execute);
+            expect(first).toMatchObject({ truncated: false, completeness: "unknown" });
+            expect(
+              first.elements.every((element: { reference: null }) => element.reference === null),
+            ).toBe(true);
             expect(first.elements[0]).toMatchObject({
               role: "AXStaticText",
               label: "Edit field",
@@ -126,7 +130,7 @@ test("a scoped observation exposes one argument-free tool, strips native tokens/
   }
 });
 
-test.each(["truncated", "large", "native-default"])(
+test.each(["truncated", "large"])(
   "%s observations stay bounded and contain no actionable references",
   async (mode) => {
     const state = await fixture(mode);
@@ -142,6 +146,7 @@ test.each(["truncated", "large", "native-default"])(
               expect(Buffer.byteLength(result)).toBeLessThanOrEqual(1024);
               expect(result).not.toContain("�");
               expect(data.truncated).toBe(true);
+              expect(data.completeness).toBe("incomplete");
               expect(
                 data.elements.every((element: { reference: null }) => element.reference === null),
               ).toBe(true);
@@ -155,6 +160,29 @@ test.each(["truncated", "large", "native-default"])(
   },
 );
 
+test("missing native truncation metadata leaves completeness unknown and references unavailable", async () => {
+  const state = await fixture("native-default");
+
+  try {
+    await Effect.runPromise(
+      state.run(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const [tool] = yield* state.tools();
+            const data = JSON.parse(yield* (yield* tool!.prepare("{}")).execute);
+            expect(data).toMatchObject({ truncated: false, completeness: "unknown" });
+            expect(
+              data.elements.every((element: { reference: null }) => element.reference === null),
+            ).toBe(true);
+          }),
+        ),
+      ),
+    );
+  } finally {
+    await state.close();
+  }
+});
+
 test.each([
   "input-discovery",
   "permission-denied",
@@ -163,6 +191,7 @@ test.each([
   "screen-locked",
   "media",
   "invalid-output",
+  "complete-claim",
   "refusal",
   "disconnect",
   "oversized",
@@ -184,6 +213,12 @@ test.each([
     );
 
     expect(result.message).not.toContain("private-fixture");
+
+    if (mode === "complete-claim") {
+      expect(result.reason).toBe("tool-uncertain");
+      expect(result.message).toContain("unsupported completeness claim");
+    }
+
     expect(() => process.kill(state.pid(), 0)).toThrow();
     expect(await Bun.file(`${state.directory()}/manifest.json`).exists()).toBe(false);
   } finally {

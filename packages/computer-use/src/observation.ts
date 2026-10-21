@@ -50,8 +50,13 @@ export const computerObservation = (
   if (indices.size !== state.elements.length || state.elements.length === 0)
     throw computerFailure("tool-uncertain", "Calculator returned an invalid element set.");
 
-  // The native contract can omit truncated; an unproven tree must not yield references.
-  let truncated = state.truncated === true || state.elements_complete !== true;
+  // Cua 0.38.0 hardcodes false: its AX walker cannot prove a complete projection.
+  if (state.elements_complete === true)
+    throw computerFailure(
+      "tool-uncertain",
+      "The pinned Calculator driver made an unsupported completeness claim. No references were issued.",
+    );
+  let truncated = state.truncated === true;
 
   const text = (value: string | null | undefined, maximum = 2048) => {
     if (value == null) return null;
@@ -81,8 +86,8 @@ export const computerObservation = (
       "Calculator's display is missing or ambiguous. Use an English basic-mode Calculator window.",
     );
 
-  const elements = [...displays, ...state.elements].slice(0, 128).map((element, index) => ({
-    reference: truncated ? null : `${snapshotId}:e${index}`,
+  const elements = [...displays, ...state.elements].slice(0, 128).map((element) => ({
+    reference: null,
     role: text(element.role, 64),
     label: text(element.label),
     value: text(element.value),
@@ -99,14 +104,13 @@ export const computerObservation = (
   const window = { id: target.windowId, title: text(state.window_title, 256) };
 
   const serialize = (count: number) => {
-    if (truncated) for (const element of elements) element.reference = null;
-
     return JSON.stringify({
       snapshotId,
       app,
       window,
       elements: elements.slice(0, count),
       truncated,
+      completeness: truncated ? "incomplete" : "unknown",
     });
   };
 

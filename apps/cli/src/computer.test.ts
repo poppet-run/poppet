@@ -254,6 +254,10 @@ test("fresh local opt-in offers only snapshot, saves normalized observations, an
       status: "completed",
     });
     expect(saved.toolCalls[0].output).toContain('"value":"19"');
+    expect(JSON.parse(saved.toolCalls[0].output)).toMatchObject({
+      truncated: false,
+      completeness: "unknown",
+    });
     expect(JSON.stringify(saved)).not.toContain("element_token");
     expect(saved.session.computer).toBeUndefined();
     await state.invoke(["chat", "send", sessions[0].id, "Look again"]);

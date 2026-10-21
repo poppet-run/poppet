@@ -109,7 +109,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     window_id: mode === "wrong-window" ? 201 : 200,
     snapshot_id: `s${sequence.toString(16).padStart(8, "0")}`,
     window_title: "Calculator",
-    elements_complete: mode !== "native-default",
+    elements_complete: mode === "complete-claim",
     degraded: null,
     degraded_reason: mode === "screen-locked" ? "screen_locked: locked" : null,
     tree_markdown: `- AXStaticText = "${mode === "large" ? "🌻".repeat(10000) : "19"}" (Edit field)`,

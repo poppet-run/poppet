@@ -2,7 +2,7 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–21 implemented with automated checks. Phase 21 also has a pinned local-browser check; live-model CLI and messaging browser completion remain manual. Phase 22's Stage 22a compatibility probe is implemented and passed the attended accessibility-only Calculator trial without inference, including the owner-run permission scenarios. Stage 22b's read-only Calculator adapter passed fixture checks and its attended real-model observation; completeness remained unproven and all references were null. Stage 22c remains unimplemented. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
+Status: Phases 1–21 implemented with automated checks. Phase 21 also has a pinned local-browser check; live-model CLI and messaging browser completion remain manual. Phase 22's Stage 22a compatibility probe is implemented and passed the attended accessibility-only Calculator trial without inference, including the owner-run permission scenarios. Stage 22b's read-only Calculator adapter passed fixture checks and its attended real-model observation. It now distinguishes unknown completeness from actual truncation and keeps all references null. Stage 22c is explicitly blocked by Cua 0.38.0's missing completeness proof and remains unimplemented. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
@@ -1429,7 +1429,8 @@ Stage 22a's isolated compatibility probe is implemented and passed its attended
 Calculator checks. See the [probe guide](computer-use-probe.md) for commands,
 boundaries, and verified results. Stage 22b's read-only adapter is implemented;
 see the [trial guide](computer-use.md) for its passing attended real-model check.
-The observation yielded no usable action references. Stage 22c is planned only.
+The observation yielded no usable action references. Stage 22c is blocked by the
+pinned runtime's missing completeness proof and remains planned only.
 No driver installation, permission changes, or action
 implementation are authorized by this plan alone.
 The first deliverable is an attended macOS accessibility trial, not general
@@ -1623,9 +1624,12 @@ must not be configured in the trial. Ordinary chats must not start the driver.
 Expose `poppet_computer.snapshot` with no model arguments. The host supplies the
 bound window, screenshot-free options, and limits. Return one normalized JSON
 observation with `snapshotId`, app/window identity, bounded element references,
-roles, labels, values, enabled state, supported actions, and `truncated`. Strip
+roles, labels, values, enabled state, supported actions, `truncated`, and
+`completeness`. The current pin yields `unknown` completeness without clipping
+and `incomplete` when the native or host result is clipped. All references are
+null; an unsupported native positive completeness claim fails the observation. Strip
 unneeded geometry and metadata. No raw provider image or attachment is produced.
-Use fresh complete observations rather than upstream diff merging in this trial.
+Use fresh observations rather than upstream diff merging in this trial.
 
 First ask a real model to identify Calculator's display and available arithmetic
 buttons. Inspect saved calls and the actual window; no action tool is offered in
@@ -1634,13 +1638,22 @@ that tool-capable text models can consume the result without image support.
 
 ### Stage 22c: Bounded AX button actions
 
-The Stage 22b live result was readable but marked truncated with all references
-null because tree completeness was unproven. Resolve completeness and safe
-reference issuance before enabling actions. Keep the existing prohibition on
-references from incomplete observations; the passing read-only check does not
-waive it. Stage 22c remains unimplemented.
+Stage 22c is explicitly blocked. Cua 0.38.0 hardcodes `elements_complete: false`
+and lacks the traversal evidence needed to prove a complete projection. The
+Stage 22b adapter now reports unknown completeness separately from truncation
+and always returns null references with this pin. It rejects an unexpected
+positive completeness claim. See the [source findings and runtime gate](computer-use.md#completeness-block-before-stage-22c).
 
-After the observation check passes, add `poppet_computer.press` accepting only a
+An audited, pinned runtime must provide positive evidence covering failed child
+reads and node/depth/time cuts for the exact AX window and projection before
+reference issuance can be enabled. Preserve executable/signature and original
+schema validation, resource restrictions, and permission/cleanup checks. Repeated
+snapshots, expected labels, and larger budgets do not substitute for proof.
+The passing read-only check does not waive this prerequisite; no input actions
+are implemented or authorized by this completeness correction.
+
+After the runtime completeness gate and observation check pass, add
+`poppet_computer.press` accepting only a
 reference from the latest returned snapshot. The host maps it to a driver token
 and fixes the window, left button, AX `press`, and background delivery. Never
 accept model-selected PIDs, window IDs, sessions, coordinates, alternate actions,

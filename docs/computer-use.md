@@ -5,8 +5,8 @@
 Stage 22b lets a tool-capable text model observe one owner-prepared macOS
 Calculator window through accessibility. The only tool is
 `poppet_computer.snapshot`, which accepts `{}`. It cannot launch Calculator,
-press buttons, type, capture images, or select another target. Stage 22c actions
-remain unimplemented.
+press buttons, type, capture images, or select another target. Stage 22c is
+blocked by the pinned runtime's missing completeness proof.
 
 `@poppet/computer-use` owns settings, the fixed window binding, driver policy,
 process lifetime, and normalization. It reuses the existing MCP transport and
@@ -96,11 +96,30 @@ Confirm the answer matches the actual display and buttons. Calls should have
 `serverId: "computer"`, `toolName: "snapshot"`, empty arguments, and normalized
 JSON output. Each observation includes a fresh `snapshotId`, app/window identity,
 element references, roles, labels, values, enabled state, supported AX actions,
-and `truncated`. Native tokens, geometry, raw tree text, and images are excluded.
-Supported AX actions are descriptive; no action tool exists. Partial or
-host-truncated observations contain no usable references.
-The native contract can omit `truncated` and may not prove tree completeness.
-Such observations remain readable but are marked truncated with null references.
+`truncated`, and `completeness`. Native tokens, geometry, raw tree text, and images
+are excluded. Supported AX actions are descriptive; no action tool exists.
+
+`truncated` reports native or host clipping. `completeness` is `incomplete` when
+clipping occurred and `unknown` otherwise. A false or missing truncation flag
+does not establish completeness. All references remain null with the current
+pin, and an unexpected native `elements_complete: true` claim fails the observation.
+
+## Completeness block before Stage 22c
+
+Cua Driver 0.38.0 deliberately sets
+[`elements_complete` to false](https://github.com/trycua/cua/blob/85e2b1318bd77ccf3cfa88ccdf875a4bb7eaed19/libs/cua-driver/rust/crates/platform-macos/src/tools/get_window_state.rs#L643).
+Its structured elements are a projection, and AX child reads can fail separately
+from node/time limits. The [pinned walker](https://github.com/trycua/cua/blob/85e2b1318bd77ccf3cfa88ccdf875a4bb7eaed19/libs/cua-driver/rust/crates/platform-macos/src/ax/tree.rs#L444) also omits nodes beyond its depth limit
+without producing a completeness proof. Increasing budgets, matching expected
+button labels, comparing two snapshots, or inspecting element counts cannot
+establish that omitted nodes are absent.
+
+The reviewed pin stays unchanged. Stage 22c is blocked until an audited, pinned
+runtime provides positive completeness evidence for the exact AX window and
+projection, accounting for failed child reads and every traversal cut. That
+runtime must pass the existing executable/signature, original-schema, resource,
+permission, and cleanup checks. The current pin cannot satisfy this gate; no
+action references or input tools are enabled as a workaround.
 
 These observations remain in normal chat history under its existing retention
 rules. Removing private runtime files does not delete saved accessibility text.
@@ -162,9 +181,24 @@ Single-run timings were 153 ms for driver startup, 347 ms for the snapshot, and
 3,118 ms title request. These are measurements from this trial, not performance
 guarantees.
 
-The snapshot was marked truncated and every reference was null because tree
-completeness was unproven. The model correctly reported this limitation. This
-passes read-only observation; it does not establish action readiness. Stage 22c
-must resolve completeness and safe reference issuance before adding presses,
-while preserving validation and the prohibition on references from incomplete
-observations. No Stage 22c action behavior was exercised.
+At the time of this trial, the adapter marked unproven completeness as truncated
+and every reference was null. The model correctly reported that returned limit.
+The adapter now distinguishes unknown completeness from actual clipping, while
+keeping references unavailable. The successful read-only observation does not
+establish action readiness. Stage 22c remains blocked by the pinned runtime's
+missing completeness proof. No Stage 22c action behavior was exercised.
+
+## Verified completeness correction
+
+A separate owner-run native check passed on 2026-10-21 from Terminal with
+Accessibility enabled and Screen Recording disabled. It used the production
+adapter, pinned executable, and original schema validation without inference.
+The native result reported `truncated: false` and `elements_complete: false`;
+the normalized result reported `truncated: false`, `completeness: "unknown"`,
+and zero references. It observed the existing display of 19 in 35 elements
+and 4,181 UTF-8 bytes.
+
+The only native calls were two permission checks, one fixed-window observation,
+and session revocation. All completed, the child was reaped, private runtime
+files were removed, and the desktop lease was released. No input was sent.
+This verifies the corrected classification, not completeness or action readiness.
