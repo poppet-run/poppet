@@ -88,17 +88,23 @@ Enable `webSearch` separately and restart any running worker. See
 
 ## Chat
 
-| Command                                                  | Action                                                      |
-| -------------------------------------------------------- | ----------------------------------------------------------- |
-| `chat interactive [session] [--coding] [--skill <name>]` | Open a terminal prompt for a new or saved session.          |
-| `chat new [--coding] [--skill <name>] <message>`         | Start a session with the configured provider and model.     |
-| `chat send <session> <message>`                          | Continue a saved session.                                   |
-| `chat search <query>`                                    | Search completed conversation text without inference.       |
-| `chat sessions`                                          | List saved sessions.                                        |
-| `chat show <session>`                                    | Print saved messages, tool calls, and run outcomes as JSON. |
+| Command                                                           | Action                                                                    |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `chat interactive [session] [--coding] [--skill <name>]`          | Open a terminal prompt for a new or saved session.                        |
+| `chat new [--coding] [--skill <name>] <message>`                  | Start a session with the configured provider and model.                   |
+| `chat new --computer --computer-target <PID:WINDOW_ID> <message>` | Observe the owner's prepared Calculator window in a fresh standalone run. |
+| `chat send <session> <message>`                                   | Continue a saved session.                                                 |
+| `chat search <query>`                                             | Search completed conversation text without inference.                     |
+| `chat sessions`                                                   | List saved sessions.                                                      |
+| `chat show <session>`                                             | Print saved messages, tool calls, and run outcomes as JSON.               |
 
 See [chat](chat.md) for session selection, streaming, cancellation, and limits,
 and [notes](notes.md) for the tools available during a run.
+
+The [Calculator trial](computer-use.md) requires enabled computer settings,
+separate empty trial data, manual Accessibility permission, and Screen Recording
+disabled. The target is host-supplied and the model receives only an argument-free
+snapshot tool. It cannot combine with `--coding` or `--skill` or route through a worker.
 
 ## Skills
 

@@ -23,7 +23,7 @@ export class ExternalTools extends Context.Service<
     readonly instructions?: string;
     readonly snapshot: (
       scheduled: boolean,
-      run: { readonly sessionId: string; readonly runId: string },
+      run: { readonly sessionId: string; readonly runId: string; readonly computer?: boolean },
     ) => Effect.Effect<ReadonlyArray<ExternalTool>, AgentError, Scope.Scope>;
   }
 >()("poppet/ExternalTools") {}

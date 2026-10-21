@@ -7,6 +7,11 @@
   "imports": {
     "#src/*": "./src/*.ts"
   },
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts",
+    "./runtime": "./src/runtime.ts"
+  },
   "scripts": {
     "typecheck": "bun --check",
     "test": "bun --no-env-file ../../tools/testing/run.ts"
@@ -15,6 +20,7 @@
     "@modelcontextprotocol/client": "2.3.1",
     "@poppet/credentials": "workspace:*",
     "@poppet/mcp": "workspace:*",
+    "@poppet/provider": "workspace:*",
     "effect": "4.0.4"
   }
 }

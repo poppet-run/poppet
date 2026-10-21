@@ -154,31 +154,39 @@ export const conversation = Effect.gen(function* () {
     prompt: string,
     readOnlyTools: boolean,
     here: Effect.Effect<DeliveryDestination, AgentError> | null = null,
+    computer = false,
   ) =>
     Stream.unwrap(
       Effect.gen(function* () {
+        const externalRun = { sessionId: run.sessionId, runId: run.id };
+
         const catalog =
           model.description.capabilities.tools && external !== null
             ? yield* measureTiming(
                 "external-tools",
-                external.snapshot(readOnlyTools, { sessionId: run.sessionId, runId: run.id }),
+                external.snapshot(
+                  readOnlyTools,
+                  computer ? { ...externalRun, computer: true } : externalRun,
+                ),
               )
             : [];
 
-        const tools = model.description.capabilities.tools
-          ? [
-              ...noteTools,
-              ...catalog.map((entry) => entry.definition),
-              sessionSearchTool,
-              sessionReadTool,
-              fetchPageTool,
-              memoryTool,
-              ...(webSearch.search === null ? [] : [webSearchTool]),
-              ...(tasks === null || readOnlyTools ? [] : [taskTool]),
-            ].filter(
-              (tool) => !readOnlyTools || (tool.name !== "save_note" && tool.name !== "memory"),
-            )
-          : [];
+        const tools = computer
+          ? catalog.map((entry) => entry.definition)
+          : model.description.capabilities.tools
+            ? [
+                ...noteTools,
+                ...catalog.map((entry) => entry.definition),
+                sessionSearchTool,
+                sessionReadTool,
+                fetchPageTool,
+                memoryTool,
+                ...(webSearch.search === null ? [] : [webSearchTool]),
+                ...(tasks === null || readOnlyTools ? [] : [taskTool]),
+              ].filter(
+                (tool) => !readOnlyTools || (tool.name !== "save_note" && tool.name !== "memory"),
+              )
+            : [];
 
         const identities = new Set<string>();
 
@@ -201,7 +209,7 @@ export const conversation = Effect.gen(function* () {
           external?.instructions === undefined ? prompt : `${prompt}\n\n${external.instructions}`;
 
         const instructions =
-          tasks !== null && !readOnlyTools
+          tasks !== null && !readOnlyTools && !computer
             ? `${baseInstructions}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
             : baseInstructions;
 

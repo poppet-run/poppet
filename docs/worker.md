@@ -2,6 +2,12 @@
 
 [Documentation index](index.md)
 
+Computer observation trials require a fresh standalone run and separate empty
+trial storage. Workers and their messaging requests cannot carry a computer
+permit; forged fields are rejected. If a worker endpoint exists for the selected
+data directory, `chat new --computer` stops before opening its store. See the
+[read-only Calculator trial](computer-use.md).
+
 ## Foreground modes
 
 Choose one foreground mode for a data directory:

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { BrowserSettings, browserFileValue } from "@poppet/browser/config";
+import { ComputerSettings, computerFileValue } from "@poppet/computer-use/config";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
 
@@ -21,6 +22,7 @@ const FileSettings = Schema.Struct({
   model: Schema.optionalKey(ConfigText),
   webSearch: Schema.optionalKey(Schema.Boolean),
   browser: Schema.optionalKey(BrowserSettings),
+  computer: Schema.optionalKey(ComputerSettings),
   mcpServers: Schema.optionalKey(MCPServers),
   chat: Schema.optionalKey(
     Schema.Struct({
@@ -106,6 +108,7 @@ export const loadConfigSource = Effect.gen(function* () {
     POPPET_MODEL: file.model,
     POPPET_WEB_SEARCH: file.webSearch,
     POPPET_BROWSER: browserFileValue(file.browser, directory),
+    POPPET_COMPUTER: computerFileValue(file.computer),
     POPPET_MCP_SERVERS: mcpFileValue(file.mcpServers, directory),
     POPPET_LOG_REASONING: file.chat?.logReasoning,
     POPPET_LOG_TIMINGS: file.chat?.logTimings,

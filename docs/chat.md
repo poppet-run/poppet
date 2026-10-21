@@ -2,6 +2,12 @@
 
 [Documentation index](index.md)
 
+For the accessibility-only Stage 22b trial, use
+`chat new --computer --computer-target PID:WINDOW_ID` with separately prepared
+trial data. It offers only a read-only Calculator snapshot for that fresh
+standalone run. The permit is not saved or restored by `chat send`; no button
+input is available. See [setup and inspection](computer-use.md).
+
 ## Start and continue a session
 
 After signing in and choosing a model, start a session:

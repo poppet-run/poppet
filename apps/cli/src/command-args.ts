@@ -19,8 +19,14 @@ export const commandArgs = (
     while (offset < args.length) {
       const token = args[offset]!;
 
-      if (token === "--skill") offset += 2;
-      else if (token === "--coding" || token.startsWith("--skill=")) offset++;
+      if (token === "--skill" || token === "--computer-target") offset += 2;
+      else if (
+        token === "--coding" ||
+        token === "--computer" ||
+        token.startsWith("--skill=") ||
+        token.startsWith("--computer-target=")
+      )
+        offset++;
       else break;
     }
   } else if (args[0] === "chat" && ["send", "rename"].includes(args[1] ?? "")) {

@@ -72,6 +72,8 @@ export class Agent extends Context.Service<
       text: string,
       options?: {
         readonly readOnlyTools?: boolean;
+        /** Host-only opt-in for a fresh standalone observation trial; never saved on the session. */
+        readonly computer?: boolean;
         readonly runId?: string;
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
         readonly timingLog?: (line: string) => Effect.Effect<void>;
@@ -119,6 +121,7 @@ export const AgentLive = Layer.effect(
       text: string,
       options: {
         readonly readOnlyTools?: boolean;
+        readonly computer?: boolean;
         readonly runId?: string;
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
         readonly timingLog?: (line: string) => Effect.Effect<void>;
@@ -156,6 +159,22 @@ export const AgentLive = Layer.effect(
                 new AgentError({
                   reason: "invalid-request",
                   message: "The session does not exist. Use chat sessions to find a session.",
+                }),
+              );
+
+            if (
+              options.computer &&
+              (options.readOnlyTools ||
+                session.skill !== null ||
+                session.workload !== "assistant" ||
+                (yield* store.messages(sessionId)).length !== 0 ||
+                (yield* store.runs(sessionId)).length !== 0)
+            )
+              return yield* Effect.fail(
+                new AgentError({
+                  reason: "invalid-request",
+                  message:
+                    "Computer observation requires a fresh standalone assistant chat without a skill or scheduled policy.",
                 }),
               );
 
@@ -225,6 +244,14 @@ export const AgentLive = Layer.effect(
                         "The resolved model does not match this session. No fallback is allowed.",
                     }),
                   );
+
+                if (options.computer && !model.description.capabilities.tools)
+                  return yield* Effect.fail(
+                    new AgentError({
+                      reason: "invalid-request",
+                      message: "Computer observation requires a tool-capable text model.",
+                    }),
+                  );
                 const history = yield* store.messages(sessionId);
                 const runs = yield* store.runs(sessionId);
 
@@ -237,6 +264,7 @@ export const AgentLive = Layer.effect(
                   prompt,
                   options.readOnlyTools ?? false,
                   options.taskDestination ?? null,
+                  options.computer ?? false,
                 );
               }),
             ).pipe(

@@ -22,6 +22,7 @@
         "@poppet/channel-discord": "workspace:*",
         "@poppet/channel-telegram": "workspace:*",
         "@poppet/channel-whatsapp": "workspace:*",
+        "@poppet/computer-use": "workspace:*",
         "@poppet/config": "workspace:*",
         "@poppet/credentials": "workspace:*",
         "@poppet/gateway": "workspace:*",
@@ -101,6 +102,7 @@
         "@modelcontextprotocol/client": "2.3.1",
         "@poppet/credentials": "workspace:*",
         "@poppet/mcp": "workspace:*",
+        "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
       },
     },
@@ -109,6 +111,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@poppet/browser": "workspace:*",
+        "@poppet/computer-use": "workspace:*",
         "@poppet/mcp": "workspace:*",
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",

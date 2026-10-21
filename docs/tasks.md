@@ -2,6 +2,10 @@
 
 [Documentation index](index.md)
 
+Scheduled runs receive no computer tools, even when computer access is enabled
+in configuration. The [read-only Calculator trial](computer-use.md) requires an
+explicit fresh standalone CLI opt-in and rejects trial data with scheduled tasks.
+
 Scheduled [MCP tools](mcp.md) are denied by default. A server's `scheduledTools`
 must be an explicitly reviewed read-only subset of its interactive `tools`.
 Annotations cannot grant permission. Restart the worker after changing these

@@ -34,5 +34,6 @@ Start with [getting started](getting-started.md) to install dependencies, connec
 
 - [Development](development.md): workspace layout, checks, tests, and adding providers or channels.
 - [Calculator compatibility probe](computer-use-probe.md): Stage 22a accessibility-only trial, permission scenarios, and verified results.
+- [Read-only Calculator trial](computer-use.md): Stage 22b setup, standalone opt-in, observation limits, and manual checks.
 - [Architecture](architecture.md): service boundaries, Effect conventions, storage, and execution contracts.
 - [Implementation plan](implementation-plan.md): completed phases, validation records, and planned work.

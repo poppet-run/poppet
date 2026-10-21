@@ -2,7 +2,7 @@
 
 [Documentation index](index.md)
 
-Status: Phases 1–21 implemented with automated checks. Phase 21 also has a pinned local-browser check; live-model CLI and messaging browser completion remain manual. Phase 22's Stage 22a compatibility probe is implemented and passed the attended accessibility-only Calculator trial without inference, including the owner-run permission scenarios. Stages 22b–22c remain unimplemented. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
+Status: Phases 1–21 implemented with automated checks. Phase 21 also has a pinned local-browser check; live-model CLI and messaging browser completion remain manual. Phase 22's Stage 22a compatibility probe is implemented and passed the attended accessibility-only Calculator trial without inference, including the owner-run permission scenarios. Stage 22b's read-only Calculator adapter is implemented with fixture coverage; its attended real-model observation remains manual. Stage 22c remains unimplemented. Phase 20 live MCP validation remains manual. macOS login startup, physical sleep/wake, live unattended inference, live title inference, live conversation recall, live skill-assisted chat and scheduling, live URL-assisted chat and scheduling, live Discord behavior, live scheduled-result delivery, live Telegram behavior, live WhatsApp behavior, live web-search-assisted inference, live scheduled research delivery, and live chat task management require manual validation.
 
 Phase 12's Telegram and WhatsApp adapters are implemented with automated checks. Discord thread chat, scheduled-result delivery, conversation
 search, local Markdown skills, supplied-URL reading, and phase 16 naming are
@@ -1427,9 +1427,10 @@ checks remain manual and must pass before describing browser support as complete
 
 Stage 22a's isolated compatibility probe is implemented and passed its attended
 Calculator checks. See the [probe guide](computer-use-probe.md) for commands,
-boundaries, and verified results. Stages 22b–22c are planned only. No driver
-installation, permission changes, or further runtime integration are authorized
-by this plan alone.
+boundaries, and verified results. Stage 22b's read-only adapter is implemented;
+see the [trial guide](computer-use.md). Its real-model observation remains manual.
+Stage 22c is planned only. No driver installation, permission changes, or action
+implementation are authorized by this plan alone.
 The first deliverable is an attended macOS accessibility trial, not general
 desktop automation. Phase 21's outstanding live checks remain prerequisites for
 claiming the combined browser/computer feature set is ready. Planning and an
@@ -1581,25 +1582,28 @@ missing enforcement is a failed gate, not permission to expose the full driver.
 
 ### Stage 22b: Read-only Poppet trial
 
-Only after 22a passes, extend `@poppet/computer-use` with the smallest
-capability-owned adapter, following `@poppet/browser`'s package boundary. The
-package already owns the isolated compatibility probe. The adapter will own driver
-settings, the run-scoped client, the window binding, reference validation, and
-normalized text results. The CLI adapts its errors and tools to `ExternalTools`.
+Implemented after 22a passed, in `@poppet/computer-use`, following
+`@poppet/browser`'s package boundary. The package owns driver settings, the
+run-scoped client, the fixed window binding, bounded references, and normalized
+text results alongside the isolated compatibility probe. The CLI adapts its
+errors and tools to `ExternalTools`. Fixture coverage verifies the integration;
+the attended real-model observation remains pending.
 Keep the normal MCP catalog separate; do not expose raw driver tools as a second
 route around the adapter's fixed arguments.
 
-Configuration is disabled by default. The proposed `computer` section needs only
+Configuration is disabled by default. The `computer` section contains only
 `enabled` and an absolute installed `command`; Calculator and the permitted
 operations remain fixed for this trial. Preserve file defaults and complete
 `POPPET_COMPUTER` overrides, including explicit disablement, using the existing
 configuration pattern. No credentials, arbitrary arguments, endpoints, policy
 paths, or general app allowlist are needed in this first version.
 
-Add an explicit, proposed `chat new --computer` opt-in for one standalone run.
-This syntax does not exist yet. Forward a host-only permit through `Agent.send`
-and `ExternalTools.snapshot`; absent permits deny access. Never infer it from
-prompt text, saved history, a skill, or a model argument, and never persist it on
+Use `chat new --computer --computer-target PID:WINDOW_ID` to opt into one
+standalone run. The owner supplies the prepared Calculator identity; this stage
+never launches an app or enumerates windows. The target stays in the current
+host request, and the model receives no target arguments. A host-only permit
+passes through `Agent.send` and `ExternalTools.snapshot`; absent permits deny access.
+Never infer it from prompt text, saved history, a skill, or a model argument, and never persist it on
 the session. Worker request schemas must not accept it. If a worker owns the
 selected data directory, reject the trial with an actionable diagnostic; do not
 bypass storage ownership or silently route it through the worker.
@@ -1675,9 +1679,9 @@ desktop-capture grants before connecting. Manifest expiry and idle bounds must
 cover at most the existing five-minute chat deadline, without automatic renewal.
 Do not attach to an ambient socket or run a service at login.
 
-Reuse existing budget settings. Initial proposed bounds are 128 AX elements,
-depth 12, and a one-second tree walk; the compatibility probe must show Calculator
-fits. Cap protocol messages and each process pipe at 256 KiB and model arguments
+Reuse existing budget settings. The implemented observation bounds are 128 AX
+elements, depth 12, and a one-second tree walk, as used by the passing 22a probe.
+Cap protocol messages and cumulative stderr at 256 KiB and model arguments
 at 64 KiB. Keep each model-facing result within `POPPET_TOOL_BYTES`, preserve
 Unicode/valid JSON, and mark both upstream and host truncation. Do not expose
 action references from an incomplete observation. Bound startup and each MCP
@@ -1708,7 +1712,8 @@ out of diagnostics. Broader sensitive-app support needs a retention decision.
 
 ### Implementation reach and verification
 
-The following is the expected scope after the probe, not a request to implement:
+The table covers implemented Stage 22b work and the planned Stage 22c extension;
+it does not authorize action implementation:
 
 | Area                    | Required work                                                                                                                                 |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1745,10 +1750,11 @@ Manual completion path after implementation:
 1. Record the pinned driver/OS/app versions and sanitized 22a probe results. Confirm
    the narrow manifest, direct runtime identity, Accessibility grant, and absence
    of Screen Recording permission and screenshots.
-2. Use disposable Poppet state and the prepared Calculator window. Complete one
-   real-model read-only observation through the CLI.
-3. Explicitly request clear and `12 + 7`. Observe `19` in the actual app and saved
-   snapshot; check that only allowed AX presses were dispatched and the answer
+2. Use disposable Poppet state and the prepared Calculator PID/window ID. Complete
+   one real-model read-only observation through the CLI. This Stage 22b check
+   remains manual; fixture results do not establish live-model behavior.
+3. After Stage 22c is separately implemented, explicitly request clear and `12 + 7`.
+   Observe `19` in the actual app and saved snapshot; check that only allowed AX presses were dispatched and the answer
    reports the observed result.
 4. Exercise a stale reference, another-app request, denied screenshot/input forms,
    permission loss, and a second simultaneous trial. They must refuse without

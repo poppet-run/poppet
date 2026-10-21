@@ -1,11 +1,17 @@
 import { BunServices } from "@effect/platform-bun";
 import { ChatSettings, logChatDiagnostic, Skills } from "@poppet/agent";
 import {
+  ComputerTarget,
+  parseComputerTarget,
+  requireStandaloneComputer,
+} from "@poppet/computer-use";
+import {
   AppConfig,
   ConfigSource,
   dataDirectory as configuredDataDirectory,
   webSearchEnabled,
   browserSettings,
+  computerSettings,
 } from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
 import { inspectMCP, mcpServers, type MCPCommand } from "@poppet/mcp";
@@ -94,6 +100,7 @@ const showConfig = Effect.gen(function* () {
         ...(yield* AppConfig),
         webSearch: yield* webSearchEnabled,
         browser: yield* browserSettings,
+        computer: yield* computerSettings,
         mcpServers: yield* mcpServers,
         chat: yield* ChatSettings,
         ...(yield* ConfigSource),
@@ -300,6 +307,43 @@ export const makeCLI = (
 
     return Effect.scoped(
       Effect.gen(function* () {
+        const computer = command.action === "new" && command.computer === true;
+        const targetText = command.action === "new" ? command.computerTarget : undefined;
+
+        if (
+          computer !== (targetText !== undefined) ||
+          (computer &&
+            (interactive ||
+              (command.action === "new" && (command.coding || command.skill !== undefined))))
+        )
+          return yield* Effect.fail(
+            new UsageError({
+              message:
+                "Use chat new --computer --computer-target PID:WINDOW_ID without --coding or --skill.",
+            }),
+          );
+
+        const target =
+          targetText === undefined
+            ? null
+            : yield* Effect.try({
+                try: () => parseComputerTarget(targetText),
+                catch: () =>
+                  new UsageError({
+                    message: "--computer-target requires positive Calculator PID:WINDOW_ID values.",
+                  }),
+              });
+
+        if (computer) {
+          if (!(yield* computerSettings).enabled)
+            return yield* Effect.fail(
+              new UsageError({
+                message: "Enable computer in config.json or POPPET_COMPUTER before this trial.",
+              }),
+            );
+          yield* requireStandaloneComputer(workerSocketPath((yield* AppConfig).dataDirectory));
+        }
+
         const output =
           interactive || command.action === "new"
             ? yield* interactiveChatOutput(write, writeThinking)
@@ -307,24 +351,24 @@ export const makeCLI = (
 
         const submission = yield* prepareChat(command);
 
-        yield* throughWorker(
-          { kind: "chat", command: submission },
-          sendChat(
-            submission,
-            output?.answer ?? write,
-            (text, sessionId) =>
-              Effect.gen(function* () {
-                if (sessionId !== undefined) yield* onSession(sessionId);
-                yield* output?.announce(text) ?? logChatDiagnostic(text);
-              }),
-            output === undefined ? {} : { write: output.reasoning, log: () => Effect.void },
-            output === undefined
-              ? Console.error
-              : (line) => output.announce(line).pipe(Effect.ignore),
-          ).pipe(Effect.provide(runtime.chat)),
-          onSession,
-          output,
-        );
+        const local = sendChat(
+          submission,
+          output?.answer ?? write,
+          (text, sessionId) =>
+            Effect.gen(function* () {
+              if (sessionId !== undefined) yield* onSession(sessionId);
+              yield* output?.announce(text) ?? logChatDiagnostic(text);
+            }),
+          output === undefined ? {} : { write: output.reasoning, log: () => Effect.void },
+          output === undefined
+            ? Console.error
+            : (line) => output.announce(line).pipe(Effect.ignore),
+          computer,
+        ).pipe(Effect.provide(runtime.chat));
+
+        if (target !== null)
+          return yield* local.pipe(Effect.provideService(ComputerTarget, target));
+        yield* throughWorker({ kind: "chat", command: submission }, local, onSession, output);
       }).pipe(Effect.provide(runtime.config)),
     );
   };
@@ -427,11 +471,30 @@ export const makeCLI = (
           coding: codingFlag,
           skill: skillFlag,
           text: textArgument("message").pipe(Argument.withSchema(MessageText)),
+          computer: Flag.Boolean("computer").pipe(
+            Flag.withDescription(
+              "Observe only a prepared Calculator window in this standalone run",
+            ),
+            Flag.atMost(1),
+            Flag.map(([value = false]) => value),
+          ),
+          computerTarget: Flag.String("computer-target").pipe(
+            Flag.withDescription("Owner-prepared Calculator PID:WINDOW_ID"),
+            Flag.atMost(1),
+            Flag.map(([value]) => value),
+          ),
         },
-        ({ coding, text, skill }) => {
-          const command: ChatCommand = { action: "new", coding, text };
+        ({ coding, text, skill, computer, computerTarget }) => {
+          const command: ChatCommand = {
+            action: "new",
+            coding,
+            text,
+            computer,
+          };
 
-          return runChat(skill === undefined ? command : { ...command, skill });
+          const selected = computerTarget === undefined ? command : { ...command, computerTarget };
+
+          return runChat(skill === undefined ? selected : { ...selected, skill });
         },
       ).pipe(Command.withDescription("Start a session")),
       Command.make(

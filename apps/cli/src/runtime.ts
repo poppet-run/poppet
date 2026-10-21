@@ -169,7 +169,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
 
   const externalTools = ExternalAgentToolsLive.pipe(
     Layer.provideMerge(mcp),
-    Layer.provide([config, chatSettings]),
+    Layer.provide([config, chatSettings, memory, tasks]),
   );
 
   const chat = AgentLive.pipe(

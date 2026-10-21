@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
-import { browserSettings, loadConfig, webSearchEnabled } from "#src/config";
+import { browserSettings, computerSettings, loadConfig, webSearchEnabled } from "#src/config";
 import { ConfigSource, loadConfigSource } from "#src/source";
 
 const load = (environment: Record<string, string>) =>
@@ -28,6 +28,55 @@ const load = (environment: Record<string, string>) =>
   );
 
 describe("configuration sources", () => {
+  test("computer defaults off and complete overrides preserve strict installed-command validation", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-computer-config-"));
+
+    try {
+      const defaults = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(
+        await Effect.runPromise(computerSettings.pipe(Effect.provide(defaults.context))),
+      ).toEqual({ enabled: false });
+      expect(await readdir(directory)).toEqual([]);
+      await writeFile(
+        join(directory, "config.json"),
+        JSON.stringify({ computer: { enabled: true, command: "/opt/cua-driver" } }),
+      );
+      const file = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(await Effect.runPromise(computerSettings.pipe(Effect.provide(file.context)))).toEqual({
+        enabled: true,
+        command: "/opt/cua-driver",
+      });
+
+      const disabled = await Effect.runPromise(
+        load({ POPPET_DATA_DIR: directory, POPPET_COMPUTER: '{"enabled":false}' }),
+      );
+
+      expect(
+        await Effect.runPromise(computerSettings.pipe(Effect.provide(disabled.context))),
+      ).toEqual({ enabled: false });
+      expect(disabled.source.environmentOverrides).toContain("POPPET_COMPUTER");
+
+      for (const value of [
+        "",
+        '{"enabled":true}',
+        '{"enabled":true,"command":"cua-driver"}',
+        '{"enabled":false,"args":[]}',
+        '{"enabled":true,"command":"/driver","pid":100}',
+      ]) {
+        // eslint-disable-next-line no-await-in-loop
+        const invalid = await Effect.runPromise(
+          load({ POPPET_DATA_DIR: directory, POPPET_COMPUTER: value }),
+        );
+
+        // eslint-disable-next-line no-await-in-loop
+        await expect(
+          Effect.runPromise(computerSettings.pipe(Effect.provide(invalid.context))),
+        ).rejects.toHaveProperty("_tag", "ConfigError");
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   test("browser defaults off, resolves a file executable, and honors complete environment replacement", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-browser-config-"));
 

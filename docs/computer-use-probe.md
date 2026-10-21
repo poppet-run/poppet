@@ -7,7 +7,9 @@ Driver 0.38.0 and macOS Calculator (`com.apple.calculator`). It is separate from
 chat, workers, and configured MCP servers. It installs nothing and changes no
 macOS permissions. `@poppet/computer-use` owns the probe, driver policy, lifecycle
 checks, tests, and captured schemas. It reuses the compiler and scoped transport
-from `@poppet/mcp`. Stages 22b and 22c remain unimplemented.
+from `@poppet/mcp`. The [Stage 22b read-only adapter](computer-use.md) is implemented
+with fixture coverage; its real-model observation remains manual. Stage 22c actions
+remain unimplemented.
 
 ## Prepare and run
 

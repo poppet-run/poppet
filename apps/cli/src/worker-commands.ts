@@ -114,7 +114,9 @@ export const WorkerRequestsLive = Layer.effect(
           if (request.method !== "POST" || new URL(request.url).pathname !== "/commands")
             return new Response("Not found", { status: 404 });
 
-          const command = Schema.decodeUnknownOption(WorkerCommand)(payload);
+          const command = Schema.decodeUnknownOption(WorkerCommand, { onExcessProperty: "error" })(
+            payload,
+          );
 
           if (Option.isNone(command))
             return Response.json({ message: "Invalid worker command." }, { status: 400 });

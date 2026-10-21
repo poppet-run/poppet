@@ -20,6 +20,7 @@
     "@poppet/channel-discord": "workspace:*",
     "@poppet/channel-telegram": "workspace:*",
     "@poppet/channel-whatsapp": "workspace:*",
+    "@poppet/computer-use": "workspace:*",
     "@poppet/config": "workspace:*",
     "@poppet/credentials": "workspace:*",
     "@poppet/gateway": "workspace:*",

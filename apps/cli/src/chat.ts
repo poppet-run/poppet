@@ -27,6 +27,8 @@ export type ChatCommand =
       readonly text: string;
       readonly coding: boolean;
       readonly skill?: string;
+      readonly computer?: boolean;
+      readonly computerTarget?: string;
     }
   | { readonly action: "send"; readonly id: string; readonly text: string }
   | { readonly action: "rename"; readonly id: string; readonly text: string }
@@ -220,6 +222,7 @@ export const sendChat = (
   announce: ChatAnnouncer = logChatDiagnostic,
   reasoning: ChatReasoning = {},
   timingLog?: (line: string) => Effect.Effect<void>,
+  computer = false,
 ) =>
   Effect.gen(function* () {
     const sessionId = yield* resolveChatSession(command);
@@ -227,11 +230,12 @@ export const sendChat = (
     const agent = yield* Agent;
 
     const options = reasoning.log === undefined ? {} : { reasoningLog: reasoning.log };
+    const permitted = computer ? { ...options, computer: true } : options;
 
     const reply = agent.send(
       sessionId,
       command.text,
-      timingLog === undefined ? options : { ...options, timingLog },
+      timingLog === undefined ? permitted : { ...permitted, timingLog },
     );
 
     yield* Stream.runForEach(reply, (event) => {

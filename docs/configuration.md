@@ -51,6 +51,7 @@ channel settings stay in their existing protected stores.
 | `POPPET_MODEL`         | `model`             | Unset                    | Model ID for verification and new sessions and tasks                                          |
 | `POPPET_MCP_SERVERS`   | `mcpServers`        | `[]`                     | JSON server list replacing file values; local MCP tools and scheduled permissions             |
 | `POPPET_BROWSER`       | `browser`           | `{"enabled":false}`      | JSON object replacing browser settings, with native CLI, pinned Chromium, and allowed domains |
+| `POPPET_COMPUTER`      | `computer`          | `{"enabled":false}`      | Complete read-only Calculator settings: enabled flag and absolute pinned driver command       |
 | `POPPET_WEB_SEARCH`    | `webSearch`         | `false`                  | Enable Brave Search when a search key is available                                            |
 | `POPPET_LOG_REASONING` | `chat.logReasoning` | `false`                  | Log readable provider reasoning to CLI stderr and worker logs                                 |
 | `POPPET_LOG_TIMINGS`   | `chat.logTimings`   | `false`                  | Log request-stage durations to CLI stderr and worker logs                                     |
@@ -97,6 +98,14 @@ Browser automation uses an optional `browser` file section, replaced by
 `POPPET_BROWSER`. It defaults to disabled. See [browser setup](browser.md) for the
 pinned executables, allowed hostnames, settings, and limitations. Restart the
 worker after edits. Browser tools are unavailable to scheduled runs.
+
+## Read-only Calculator observation
+
+The optional `computer` section contains only `enabled` and an absolute installed
+`command`. `POPPET_COMPUTER` replaces it completely. Access defaults to disabled
+and also requires a fresh standalone `chat new --computer --computer-target
+PID:WINDOW_ID` request. See the [trial guide](computer-use.md) for the pinned
+driver, isolated data, manual permissions, and observation-only limits.
 
 ## Reasoning logs
 

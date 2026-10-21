@@ -111,7 +111,13 @@ packages/
     src/catalog.ts        Schema validation, stable names, bounded results
     src/transport.ts      Awaited SDK stdio teardown
   computer-use/           @poppet/computer-use
-    src/test/             Explicit Calculator compatibility probe, bounded policy, fixtures
+    src/computer.ts       Read-only Calculator tool and scoped runtime ownership
+    src/config.ts         Disabled-by-default settings and strict command validation
+    src/observation.ts    Bounded normalized accessibility JSON
+    src/policy.ts         Exact target/session policy, no launch or input tools
+    src/runtime.ts        Pinned direct driver startup and desktop lease
+    src/driver.ts         Shared capped MCP discovery, calls, and teardown
+    src/test/             Explicit 22a compatibility probe and synthetic stdio fixtures
   config/                 @poppet/config
     src/config.ts         Validated settings and AppConfig service/layer
   credentials/            @poppet/credentials
