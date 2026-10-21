@@ -56,6 +56,25 @@ describe("configuration sources", () => {
         allowedDomains: ["example.com"],
       });
 
+      const wildcard = {
+        enabled: true,
+        chromiumExecutable: "/opt/chromium",
+        allowedDomains: ["*"],
+      };
+
+      const wildcardEnvironment = await Effect.runPromise(
+        load({ POPPET_DATA_DIR: directory, POPPET_BROWSER: JSON.stringify(wildcard) }),
+      );
+
+      expect(
+        await Effect.runPromise(browserSettings.pipe(Effect.provide(wildcardEnvironment.context))),
+      ).toEqual(wildcard);
+      await writeFile(join(directory, "config.json"), JSON.stringify({ browser: wildcard }));
+      const wildcardFile = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(
+        await Effect.runPromise(browserSettings.pipe(Effect.provide(wildcardFile.context))),
+      ).toEqual(wildcard);
+
       const overridden = await Effect.runPromise(
         load({ POPPET_DATA_DIR: directory, POPPET_BROWSER: '{"enabled":false}' }),
       );
@@ -69,6 +88,8 @@ describe("configuration sources", () => {
         [
           "",
           '{"enabled":true}',
+          '{"enabled":true,"chromiumExecutable":"/chrome"}',
+          '{"enabled":true,"chromiumExecutable":"/chrome","allowedDomains":[]}',
           '{"enabled":true,"chromiumExecutable":"/chrome","allowedDomains":["*.example.com"]}',
           '{"enabled":false,"extraArgs":[]}',
         ].map(async (value) => {

@@ -13,7 +13,9 @@ assert(
   "Pass the pinned agent-browser and Chrome for Testing executable paths.",
 );
 
-let blockedRequests = 0;
+let localhostRequests = 0;
+
+let resourceRequests = 0;
 
 const site = Bun.serve({
   hostname: "127.0.0.1",
@@ -21,7 +23,11 @@ const site = Bun.serve({
   fetch: (request): Response => {
     const url = new URL(request.url);
 
-    if (url.hostname === "localhost") blockedRequests++;
+    if (url.hostname === "localhost") {
+      localhostRequests++;
+
+      if (url.pathname === "/resource") resourceRequests++;
+    }
 
     if (url.pathname === "/redirect")
       return Response.redirect(`http://localhost:${site.port}/blocked`);
@@ -29,11 +35,14 @@ const site = Bun.serve({
     return new Response(
       `<!doctype html><title>Browser fixture</title>
       <h1>Fixture page</h1><form><label>Name <input name="name"></label>
-      <button>Submit fixture</button></form><p id="result"></p>
-      <img src="http://localhost:${site.port}/blocked">
+      <button>Submit fixture</button></form><p id="result"></p><p id="rtc"></p>
+      <img src="http://localhost:${site.port}/resource">
       <script>document.querySelector('form').onsubmit=e=>{e.preventDefault();
       document.querySelector('#result').textContent='Saved '+new FormData(e.target).get('name')};
-      document.querySelector('h1').textContent='Rendered fixture';</script>`,
+      document.querySelector('h1').textContent='Rendered fixture';
+      try { const peer=new RTCPeerConnection(); peer.close();
+      document.querySelector('#rtc').textContent='WebRTC enabled'; }
+      catch { document.querySelector('#rtc').textContent='WebRTC blocked'; }</script>`,
       { headers: { "Content-Type": "text/html" } },
     );
   },
@@ -54,10 +63,15 @@ const launch: BrowserLauncher = (args, directory, environment) => {
 
 const settings = { enabled: true, command, chromiumExecutable, allowedDomains: ["127.0.0.1"] };
 
-const workflow = (redirect: boolean) =>
+const workflow = (scenario: "page" | "redirect" | "wildcard") =>
   Effect.scoped(
     Effect.gen(function* () {
-      const tools = yield* browserTools(settings, crypto.randomUUID(), 16384, launch);
+      const tools = yield* browserTools(
+        { ...settings, allowedDomains: scenario === "wildcard" ? ["*"] : settings.allowedDomains },
+        crypto.randomUUID(),
+        16384,
+        launch,
+      );
 
       const call = (name: string, input: Schema.JsonObject = {}) =>
         Effect.gen(function* () {
@@ -68,7 +82,23 @@ const workflow = (redirect: boolean) =>
           return yield* prepared.execute;
         });
 
-      if (redirect) {
+      if (scenario === "wildcard") {
+        yield* call("open", { url: `http://127.0.0.1:${site.port}/` });
+
+        const result = JSON.parse(
+          yield* call("open", { url: `http://127.0.0.1:${site.port}/redirect` }),
+        );
+
+        assert.equal(result.url, `http://localhost:${site.port}/blocked`);
+        const snapshot = JSON.parse(yield* call("snapshot"));
+        assert.match(snapshot.text, /Rendered fixture/);
+        assert.match(snapshot.text, /WebRTC blocked/);
+        yield* call("close");
+
+        return;
+      }
+
+      if (scenario === "redirect") {
         const failed = yield* call("open", { url: `http://127.0.0.1:${site.port}/redirect` }).pipe(
           Effect.flip,
         );
@@ -81,6 +111,7 @@ const workflow = (redirect: boolean) =>
       yield* call("open", { url: `http://127.0.0.1:${site.port}/` });
       const snapshot = JSON.parse(yield* call("snapshot"));
       assert.match(snapshot.text, /Rendered fixture/);
+      assert.match(snapshot.text, /WebRTC blocked/);
       assert.doesNotMatch(snapshot.text, /Saved Tom/);
       const reference = /textbox "Name" \[ref=(e\d+)\]/.exec(snapshot.text)?.[1];
       assert(reference, snapshot.text);
@@ -103,11 +134,14 @@ const workflow = (redirect: boolean) =>
   );
 
 try {
-  await Effect.runPromise(workflow(false));
-  await Effect.runPromise(workflow(true));
-  assert.equal(blockedRequests, 0, "A forbidden navigation or subresource reached the fixture.");
+  await Effect.runPromise(workflow("page"));
+  await Effect.runPromise(workflow("redirect"));
+  assert.equal(localhostRequests, 0, "A forbidden navigation or subresource reached the fixture.");
+  await Effect.runPromise(workflow("wildcard"));
+  assert(localhostRequests > 0, "Wildcard navigation did not reach the second host.");
+  assert(resourceRequests > 0, "Wildcard subresources did not reach the second host.");
   assert(
-    daemons.length === 2 &&
+    daemons.length === 3 &&
       daemons.every((child) => child.exitCode !== null || child.signalCode !== null),
   );
 
@@ -125,7 +159,7 @@ try {
   );
 
   console.log(
-    "Pinned browser check passed: JavaScript, form action, denied navigation/redirect/subresource, isolated runs, and daemon cleanup.",
+    "Pinned browser check passed: JavaScript, form action, restricted and wildcard navigation/redirect/subresource, WebRTC blocking, isolated runs, and daemon cleanup.",
   );
 } finally {
   site.stop(true);

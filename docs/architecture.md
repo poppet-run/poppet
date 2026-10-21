@@ -1152,12 +1152,19 @@ session/run IDs and runs in the conversation stream's resource scope. Browser
 resources therefore close with that run, including failure and cancellation,
 while general MCP connections retain worker ownership.
 
-`@poppet/browser` owns strict tool arguments, exact allowed hosts, snapshots,
+`@poppet/browser` owns strict tool arguments, configured host restrictions, snapshots,
 current references, result budgeting, and per-run state. `browser-process.ts`
 owns capped version probes, the pinned native daemon, and bounded requests over
 its private Unix socket. It never invokes a shell or creates another model loop.
 Native MCP schemas and handshake passed a compatibility probe, but unrestricted
 launch/session arguments and detached child ownership require this fixed adapter.
+
+`allowedDomains: ["*"]` explicitly allows all HTTP(S) hosts. This skips the host
+allowlist and omits domain filters from both daemon environment and launch
+arguments. URL credentials, other schemes, and arbitrary browser actions remain
+rejected; isolation, budgets, and lifecycle ownership still apply. Since the
+native domain filter also blocks WebRTC, wildcard launches retain that protection
+through a fixed private startup script and Chrome's non-proxied UDP restriction.
 
 The package exports its settings schema through `@poppet/browser/config`;
 `@poppet/config` reads it alongside other file settings and environment overrides.

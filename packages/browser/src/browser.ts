@@ -35,6 +35,18 @@ const Ref = Schema.String.check(Schema.isPattern(/^@e[0-9]{1,6}$/));
 
 const NoArguments = Schema.Record(Schema.String, Schema.Never);
 
+// The native hostname filter normally installs this protection before page scripts run.
+const webRTCGuard = `
+for (const name of ["RTCPeerConnection", "webkitRTCPeerConnection"]) {
+  if (typeof globalThis[name] !== "function") continue;
+  Object.defineProperty(globalThis, name, {
+    value: function () { throw new DOMException("WebRTC is disabled.", "SecurityError"); },
+    writable: false,
+    configurable: false
+  });
+}
+`;
+
 const Text = Schema.String.check(
   Schema.isMaxLength(8192),
   Schema.makeFilter((value) => !value.includes("\0")),
@@ -87,6 +99,7 @@ export const browserTools = (
     const executable = settings.command ?? "agent-browser";
     const chromium = settings.chromiumExecutable;
     const domains = settings.allowedDomains ?? [];
+    const allowAllDomains = domains.includes("*");
 
     if (chromium === undefined || domains.length === 0)
       return yield* Effect.fail(browserFailure("tool-network", "Invalid browser configuration."));
@@ -112,6 +125,7 @@ export const browserTools = (
 
     const configPath = join(directory, "agent-browser.json");
     const policyPath = join(directory, "policy.json");
+    const webRTCPath = join(directory, "webrtc.js");
 
     const environment = {
       HOME: directory,
@@ -122,7 +136,7 @@ export const browserTools = (
       AGENT_BROWSER_SESSION: "browser",
       AGENT_BROWSER_NAMESPACE: namespace,
       AGENT_BROWSER_SOCKET_DIR: directory,
-      AGENT_BROWSER_ALLOWED_DOMAINS: domains.join(","),
+      ...(allowAllDomains ? undefined : { AGENT_BROWSER_ALLOWED_DOMAINS: domains.join(",") }),
       AGENT_BROWSER_ACTION_POLICY: policyPath,
       AGENT_BROWSER_EXECUTABLE_PATH: chromium,
       AGENT_BROWSER_ENGINE: "chrome",
@@ -136,6 +150,9 @@ export const browserTools = (
       try: async () => {
         await chmod(directory, 0o700);
         await writeFile(configPath, "{}", { mode: 0o600 });
+
+        if (allowAllDomains) await writeFile(webRTCPath, webRTCGuard, { mode: 0o600 });
+
         await writeFile(
           policyPath,
           JSON.stringify({
@@ -192,7 +209,7 @@ export const browserTools = (
         !["http:", "https:"].includes(url.protocol) ||
         url.username ||
         url.password ||
-        !domains.includes(url.hostname)
+        (!allowAllDomains && !domains.includes(url.hostname))
       )
         throw browserFailure(
           "tool-permission",
@@ -300,10 +317,16 @@ export const browserTools = (
             action: "launch",
             headless: true,
             executablePath: chromium,
-            allowedDomains: domains,
+            ...(allowAllDomains
+              ? {
+                  initScripts: [webRTCPath],
+                  args: ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
+                }
+              : { allowedDomains: domains }),
             engine: "chrome",
             webmcp: false,
           });
+
         const data = yield* command(args);
 
         if (name === "close") {
