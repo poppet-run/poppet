@@ -18,7 +18,7 @@ export const toolIdentity = (server: string, tool: string): Pick<Tool, "name" | 
 
 const invalid = () =>
   new Error(
-    "Unsupported MCP schema. Use a JSON object schema of at most 16 KiB, depth 16 and 512 nodes, without references or regular expressions.",
+    "Unsupported MCP schema. Use a JSON object schema of at most 16 KiB, depth 16 and 512 nodes, without references or unreviewed regular expressions.",
   );
 
 const schemaMaps = new Set([
@@ -62,7 +62,9 @@ export const compileSchema = (input: Schema.JsonObject) => {
       for (const [key, item] of Object.entries(value)) {
         if (
           position === "schema" &&
-          ["$ref", "$dynamicRef", "$recursiveRef", "pattern", "patternProperties"].includes(key)
+          (["$ref", "$dynamicRef", "$recursiveRef", "patternProperties"].includes(key) ||
+            // The reviewed anchored token grammar is linear; other server patterns remain denied.
+            (key === "pattern" && item !== "^s[0-9a-f]{8}:[0-9]+$"))
         )
           throw invalid();
         let child: "schema" | "map" | "data" = "data";
@@ -79,7 +81,15 @@ export const compileSchema = (input: Schema.JsonObject) => {
   };
 
   visit(input, 0, "schema");
-  const options = { strict: true, allErrors: false, validateFormats: true, ownProperties: true };
+
+  // Required-only branches are valid JSON Schema; disabling this lint keeps required assertions intact.
+  const options = {
+    strict: true,
+    strictRequired: false,
+    allErrors: false,
+    validateFormats: true,
+    ownProperties: true,
+  };
 
   const ajv =
     input.$schema === "https://json-schema.org/draft/2020-12/schema"

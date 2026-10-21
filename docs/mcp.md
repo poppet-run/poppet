@@ -129,7 +129,9 @@ implementation. Resource links and media are marked omitted and never fetched.
   protocol messages close the connection.
 - Allowed descriptions are at most 4096 characters; input/output schemas are at
   most 16 KiB, depth 16, and 512 nodes. Draft-07 and 2020-12 schemas are validated
-  with AJV. References, regular expressions, and unsupported formats or keywords
+  with AJV. Valid required-only union branches retain their runtime assertions.
+  Only Cua's exact anchored snapshot-token pattern is supported; other
+  regular expressions, references, and unsupported formats or keywords
   fail discovery with a diagnostic. Required MCP task execution is unsupported.
 - Models receive a strict object containing one required `input` string. That
   string contains the original JSON arguments. Poppet validates the decoded object

@@ -9,7 +9,9 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./config": "./src/config.ts"
+    "./config": "./src/config.ts",
+    "./catalog": "./src/catalog.ts",
+    "./transport": "./src/transport.ts"
   },
   "scripts": {
     "typecheck": "bun --check",
