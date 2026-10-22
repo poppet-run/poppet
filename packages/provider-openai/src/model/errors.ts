@@ -2,7 +2,7 @@ import { ProviderError, type ProviderId } from "@poppet/provider";
 import {
   inferenceFailure as sharedInferenceFailure,
   safeIdentifier,
-} from "@poppet/provider-protocol";
+} from "@poppet/provider/protocol";
 import { APIError } from "openai";
 
 import { ConnectionError } from "#src/connection";

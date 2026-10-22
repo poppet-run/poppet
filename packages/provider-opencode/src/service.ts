@@ -14,7 +14,7 @@ import {
   inferenceFailure,
   chatCompletionsModel,
   responsesModel,
-} from "@poppet/provider-protocol";
+} from "@poppet/provider/protocol";
 import { Effect, Redacted, Schema, Stream } from "effect";
 
 import { sessionHeaders, goOptions } from "#src/protocol";

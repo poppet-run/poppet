@@ -1,4 +1,4 @@
-import { openAIClient } from "@poppet/provider-protocol";
+import { openAIClient } from "@poppet/provider/protocol";
 import { Redacted } from "effect";
 import { APIError } from "openai";
 

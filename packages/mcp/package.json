@@ -23,7 +23,6 @@
     "effect": "4.0.4"
   },
   "devDependencies": {
-    "@poppet/provider-protocol": "workspace:*",
     "openai": "7.32.0"
   }
 }

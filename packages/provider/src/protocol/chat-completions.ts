@@ -1,3 +1,11 @@
+import { Effect, Schema } from "effect";
+import type OpenAI from "openai";
+import type {
+  ChatCompletionAssistantMessageParam,
+  ChatCompletionMessageParam,
+  ChatCompletionCreateParamsStreaming,
+} from "openai/resources/chat/completions";
+
 import {
   Completion,
   ProviderError,
@@ -9,17 +17,9 @@ import {
   type ModelRequest,
   type Output,
   type Tool,
-} from "@poppet/provider";
-import { Effect, Schema } from "effect";
-import type OpenAI from "openai";
-import type {
-  ChatCompletionAssistantMessageParam,
-  ChatCompletionMessageParam,
-  ChatCompletionCreateParamsStreaming,
-} from "openai/resources/chat/completions";
-
-import { inferenceFailure, type InferenceOptions } from "#src/errors";
-import { modelStream } from "#src/scoped-stream";
+} from "#src/index";
+import { inferenceFailure, type InferenceOptions } from "#src/protocol/errors";
+import { modelStream } from "#src/protocol/scoped-stream";
 
 const Chunk = Schema.Struct({
   choices: Schema.Array(

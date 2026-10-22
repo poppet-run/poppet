@@ -7,7 +7,7 @@ import {
   type ModelDescription,
   type ProviderOperations,
 } from "@poppet/provider";
-import { openAIClient, fetchModelCatalog, chatCompletionsModel } from "@poppet/provider-protocol";
+import { openAIClient, fetchModelCatalog, chatCompletionsModel } from "@poppet/provider/protocol";
 import { Effect, Redacted, Schema } from "effect";
 
 import { routerFailure, routerOptions } from "#src/protocol";

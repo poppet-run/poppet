@@ -64,12 +64,7 @@ export default defineConfig({
           {
             patterns: [
               {
-                group: [
-                  "@poppet/provider-*",
-                  "@poppet/provider-*/**",
-                  "!@poppet/provider-protocol",
-                  "!@poppet/provider-protocol/**",
-                ],
+                group: ["@poppet/provider-*", "@poppet/provider-*/**"],
                 message:
                   "Use the shared provider interface. Concrete providers may only be imported by the registration list.",
               },

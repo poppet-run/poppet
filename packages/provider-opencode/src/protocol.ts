@@ -1,5 +1,5 @@
 import type { ModelRequest } from "@poppet/provider";
-import type { ChatOptions } from "@poppet/provider-protocol";
+import type { ChatOptions } from "@poppet/provider/protocol";
 import { Schema } from "effect";
 import type { ChatCompletionAssistantMessageParam } from "openai/resources/chat/completions";
 

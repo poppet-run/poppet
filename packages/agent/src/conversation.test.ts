@@ -13,7 +13,7 @@ import {
   type ModelRequest,
   type Output,
 } from "@poppet/provider";
-import { responsesModel } from "@poppet/provider-protocol";
+import { responsesModel } from "@poppet/provider/protocol";
 import { SessionReadResult, SessionSearchMatch, Store, StoreError, StoreLive } from "@poppet/store";
 import { WebSearch, WebSearchError, makeWebSearch } from "@poppet/web-search";
 import { Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect";
