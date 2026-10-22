@@ -193,8 +193,9 @@ The store directory uses `0700` permissions; the database and WAL sidecars use
 exclusive ownership until its SQLite connection closes, including on interruption
 and initialization failure. A shared helper uses an OS-held SQLite lock in
 `store/owner.lock.sqlite` and an atomic PID marker in `store/owner.lock`.
-A dead owner is recovered automatically. Unknown legacy markers still require
-manual removal after confirming no old Poppet process owns the storage.
+The OS releases the SQLite lock when an owner exits or crashes, so a leftover
+marker is replaced automatically, even if its PID now belongs to another process.
+The marker records the current owner for diagnostics only.
 Never remove a `.lock.sqlite` file while Poppet is running. These small lock
 databases contain no credentials and remain after logout. On reopening, unfinished runs become interrupted
 with a `process-exit` reason. Poppet does not automatically replay them.

@@ -61,7 +61,8 @@ export const CredentialStoreLive = Layer.effect(
           ? new ConnectionError({
               reason: "busy",
               code: "credential_store_busy",
-              message: `Another Poppet authentication command may be active. If an older command crashed, confirm it has stopped before removing ${lockPath}.`,
+              message:
+                "Another Poppet authentication command is active. Wait for it to finish, then try again.",
             })
           : storageError(),
       ),

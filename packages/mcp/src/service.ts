@@ -1,7 +1,7 @@
 import { Client, type Tool as ServerTool } from "@modelcontextprotocol/client";
 import { ApiKeyStore } from "@poppet/credentials";
 import type { Tool } from "@poppet/provider";
-import { Console, Context, Data, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
+import { Clock, Console, Context, Data, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
 
 import {
   compileSchema,
@@ -32,11 +32,23 @@ class MCPDiagnostic extends Data.TaggedError("MCPDiagnostic")<{ readonly message
 interface Connection {
   readonly client: Client;
   readonly transport: ScopedStdioTransport;
+  /** Reconnection attempts since this server last connected successfully. */
+  retries: number;
+  readonly now: () => number;
   state: "idle" | "connected" | "unavailable" | "disabled";
   diagnostic: string | null;
+  failedAt: number | null;
   tools: ReadonlyArray<MCPTool>;
   closing: Promise<void> | null;
 }
+
+// A failed server reconnects on a later request after this delay, doubling per attempt.
+const reconnectDelay = (retries: number) => Math.min(30_000 * 2 ** retries, 600_000);
+
+const retryAt = (connection: Connection) =>
+  connection.state === "unavailable" && connection.failedAt !== null
+    ? connection.failedAt + reconnectDelay(connection.retries)
+    : null;
 
 export class MCP extends Context.Service<
   MCP,
@@ -48,6 +60,8 @@ export class MCP extends Context.Service<
         readonly state: Connection["state"];
         readonly pid: number | null;
         readonly diagnostic: string | null;
+        /** When a failed server will reconnect on its next request, in epoch milliseconds. */
+        readonly retryAt: number | null;
         readonly tools: ReadonlyArray<string>;
         readonly scheduledTools: ReadonlyArray<string>;
         readonly availableTools: ReadonlyArray<string>;
@@ -85,6 +99,7 @@ const close = (connection: Connection): Promise<void> => {
 const invalidate = (connection: Connection, message: string) => {
   connection.state = "unavailable";
   connection.diagnostic ??= message;
+  connection.failedAt ??= connection.now();
 
   return close(connection);
 };
@@ -204,7 +219,7 @@ const makeTool = (
   const uncertain = () =>
     new MCPError({
       reason: "tool-uncertain",
-      message: `MCP ${config.id}/${tool.name}: Connection or protocol failed after dispatch; effects may be unknown. Restart to reconnect. No call was retried.`,
+      message: `MCP ${config.id}/${tool.name}: Connection or protocol failed after dispatch; effects may be unknown. No call was retried; Poppet reconnects on a later request.`,
     });
 
   const execute = (args: Schema.JsonObject) =>
@@ -271,6 +286,7 @@ export const makeMCPLive = (toolBytes: number) =>
       const servers = yield* mcpServers;
       const credentials = yield* ApiKeyStore;
       const lock = yield* Semaphore.make(1);
+      const clock = yield* Clock.Clock;
       const connections = new Map<string, Connection>();
 
       yield* Effect.addFinalizer(() =>
@@ -280,8 +296,18 @@ export const makeMCPLive = (toolBytes: number) =>
       const connect = (config: MCPServer) =>
         Effect.gen(function* () {
           const prior = connections.get(config.id);
+          let retries = 0;
 
-          if (prior !== undefined) return prior;
+          if (prior !== undefined) {
+            const due = retryAt(prior);
+
+            if (due === null || clock.currentTimeMillisUnsafe() < due) return prior;
+            // Replace the failed client only after its process has been reaped.
+            yield* Effect.promise(() => close(prior).catch(() => {}));
+            connections.delete(config.id);
+            retries = prior.retries + 1;
+          }
+
           const env: Record<string, string> = {};
 
           const client = new Client(
@@ -301,8 +327,11 @@ export const makeMCPLive = (toolBytes: number) =>
           const connection: Connection = {
             client,
             transport,
+            retries,
+            now: () => clock.currentTimeMillisUnsafe(),
             state: config.enabled ? "idle" : "disabled",
             diagnostic: null,
+            failedAt: null,
             tools: [],
             closing: null,
           };
@@ -311,7 +340,7 @@ export const makeMCPLive = (toolBytes: number) =>
             // The owner finalizer awaits this same teardown and reports any cleanup failure.
             void invalidate(
               connection,
-              `MCP ${config.id}: disconnected or invalid protocol. Restart to reconnect; dispatched calls may have unknown effects.`,
+              `MCP ${config.id}: disconnected or invalid protocol. Dispatched calls may have unknown effects; Poppet reconnects on a later request.`,
             ).catch(() => {});
           };
 
@@ -350,6 +379,7 @@ export const makeMCPLive = (toolBytes: number) =>
               );
             connection.tools = tools;
             connection.state = "connected";
+            connection.retries = 0;
           }).pipe(Effect.timeout("8 seconds"));
 
           yield* startup.pipe(
@@ -358,7 +388,7 @@ export const makeMCPLive = (toolBytes: number) =>
                 yield* Effect.promise(() =>
                   invalidate(
                     connection,
-                    `${error instanceof MCPError ? error.message : `MCP ${config.id}: startup timed out.`} Restart to reconnect.`,
+                    `${error instanceof MCPError ? error.message : `MCP ${config.id}: startup timed out.`} Poppet retries on a later request.`,
                   ),
                 );
                 yield* Console.error(connection.diagnostic);
@@ -368,7 +398,7 @@ export const makeMCPLive = (toolBytes: number) =>
               Effect.promise(() =>
                 invalidate(
                   connection,
-                  `MCP ${config.id}: startup interrupted. Restart to reconnect.`,
+                  `MCP ${config.id}: startup interrupted. Poppet retries on a later request.`,
                 ),
               ),
             ),
@@ -388,6 +418,7 @@ export const makeMCPLive = (toolBytes: number) =>
               connection?.state ?? (config.enabled ? ("idle" as const) : ("disabled" as const)),
             pid: connection?.transport.pid ?? null,
             diagnostic: connection?.diagnostic ?? null,
+            retryAt: connection === undefined ? null : retryAt(connection),
             tools: config.tools,
             scheduledTools: config.scheduledTools ?? [],
             availableTools:

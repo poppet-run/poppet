@@ -522,7 +522,7 @@ describe("CLI", () => {
       expect(new TextDecoder().decode(ready.value)).toContain("Worker running.");
       const second = await invoke(["tasks", "work"], environment);
       expect(second.exitCode).toBe(1);
-      expect(second.stderr).toContain("Another Poppet store may be open");
+      expect(second.stderr).toContain("Another Poppet process has the store open");
 
       const added = await invoke(
         [

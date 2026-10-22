@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open, rename, unlink } from "node:fs/promises";
 
-import { Data, Effect, Option, Schema } from "effect";
+import { Data, Effect, Schema } from "effect";
 
 /** Reports an existing storage owner or a failure to protect the ownership files. */
 export class OwnerLockError extends Data.TaggedError("OwnerLockError")<{
@@ -13,16 +13,10 @@ export class OwnerLockError extends Data.TaggedError("OwnerLockError")<{
 
 const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 
-const MissingProcess = Schema.Struct({ code: Schema.Literal("ESRCH") });
-
 const BusyDatabase = Schema.Struct({ code: Schema.Literal("SQLITE_BUSY") });
 
-const Owner = Schema.fromJsonString(
-  Schema.Struct({ pid: Schema.Int.check(Schema.isGreaterThan(0)) }),
-);
-
 // SQLite keeps an exclusive lock until close, and the OS releases it after a crash.
-// The PID marker also prevents taking storage from an older, file-lock-only owner.
+// The PID marker only records the current owner for diagnostics.
 export const acquireOwnerLock = (path: string) =>
   Effect.acquireRelease(
     Effect.tryPromise({
@@ -47,6 +41,8 @@ export const acquireOwnerLock = (path: string) =>
           database.run("BEGIN EXCLUSIVE");
           database.run("COMMIT");
 
+          // The exclusive SQLite lock proves no current owner is running. A marker left by a
+          // crashed owner is replaced even if its PID now belongs to an unrelated process.
           const previous = await open(
             path,
             constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
@@ -55,35 +51,14 @@ export const acquireOwnerLock = (path: string) =>
             throw cause;
           });
 
-          let saved: string | null = null;
-
           if (previous !== null) {
             try {
               const info = await previous.stat();
 
               if (!info.isFile() || info.size > 512) throw new Error("Invalid owner marker");
-              saved = await previous.readFile("utf8");
             } finally {
               await previous.close();
             }
-          }
-
-          if (saved !== null) {
-            const owner = Schema.decodeUnknownOption(Owner)(saved);
-            const pid = Option.isSome(owner) ? owner.value.pid : null;
-            let alive = true;
-
-            if (pid !== null) {
-              try {
-                process.kill(pid, 0);
-              } catch (cause) {
-                if (Schema.is(MissingProcess)(cause)) alive = false;
-                else throw cause;
-              }
-            }
-
-            if (alive)
-              throw new OwnerLockError({ reason: "busy", message: "Another owner may be active." });
           }
 
           // Replace the marker atomically, so a crash cannot leave an empty PID file.

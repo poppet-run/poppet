@@ -13,7 +13,18 @@ import {
   GatewayRepositoryLive,
 } from "@poppet/gateway";
 import { DeliveryDestination, StoreError } from "@poppet/store";
-import { Console, Context, Effect, Layer, Redacted, Result, Schema } from "effect";
+import {
+  Cause,
+  Clock,
+  Console,
+  Context,
+  Effect,
+  Layer,
+  Option,
+  Redacted,
+  Result,
+  Schema,
+} from "effect";
 
 /** Runs configured messaging gateways and combines their connection and delivery status. */
 export class MessagingWorker extends Context.Service<
@@ -57,6 +68,60 @@ const counts = (repo: GatewayRepository["Service"]) =>
     catch: () => new StoreError({ reason: "storage", message: "Cannot read messaging status." }),
   });
 
+/** Restart counts and the latest failure an adapter recovered from, for status output. */
+export interface AdapterHealth {
+  restarts: number;
+  lastError: string | null;
+}
+
+const maxRestartDelay = 300_000;
+
+// An adapter that ran this long is considered healthy again, so its backoff starts over.
+const healthyAfter = 600_000;
+
+/**
+ * Restarts one adapter after failures with exponential backoff, so it cannot stop other
+ * adapters or the scheduler. Interruption and storage failures still stop the worker.
+ */
+export const superviseAdapter = <E>(
+  id: string,
+  run: Effect.Effect<void, E>,
+  health: AdapterHealth,
+) => {
+  const attempt = (failures: number): Effect.Effect<void, E> =>
+    Effect.gen(function* () {
+      const startedAt = yield* Clock.currentTimeMillis;
+
+      return yield* run.pipe(
+        Effect.catchCause((cause) =>
+          Effect.gen(function* () {
+            const error = Option.getOrNull(Cause.findErrorOption(cause));
+
+            if (Cause.hasInterrupts(cause) || error instanceof StoreError)
+              return yield* Effect.failCause(cause);
+            const ranFor = (yield* Clock.currentTimeMillis) - startedAt;
+            const attempts = ranFor >= healthyAfter ? 0 : failures;
+            const delay = Math.min(1000 * 2 ** attempts, maxRestartDelay);
+
+            health.restarts++;
+            health.lastError =
+              error instanceof Error ? error.message : "The adapter stopped unexpectedly.";
+
+            if (error === null) yield* Console.error(Cause.pretty(cause));
+            yield* Console.error(
+              `Messaging adapter ${id} stopped: ${health.lastError} Restarting in ${delay / 1000} seconds.`,
+            );
+            yield* Effect.sleep(delay);
+
+            return yield* attempt(attempts + 1);
+          }),
+        ),
+      );
+    });
+
+  return attempt(0);
+};
+
 const disabledWorker = (entry: ChannelRegistration, error?: string) => {
   const status = { id: entry.id, name: entry.name, enabled: false };
 
@@ -93,16 +158,19 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
           if (Result.isFailure(context)) return disabledWorker(entry, context.failure.message);
 
           const gateway = Context.get(context.success, Gateway);
+          const health: AdapterHealth = { restarts: 0, lastError: null };
 
           return {
             resolveDestination: gateway.resolveDestination,
-            run: gateway.run,
+            run: superviseAdapter(entry.id, gateway.run, health),
             status: gateway.connectionStatus.pipe(
               Effect.map((status) => ({
                 ...status,
                 id: entry.id,
                 name: entry.name,
                 enabled: true,
+                restarts: health.restarts,
+                lastError: health.lastError,
               })),
             ),
           };
