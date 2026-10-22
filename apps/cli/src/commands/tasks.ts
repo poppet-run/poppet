@@ -256,14 +256,13 @@ export const tasksCommand = (context: CLIContext) => {
           },
         ]),
       ),
-      ...(["list", "providers", "clear", "status"] as const).map((action) =>
+      ...(["list", "providers", "clear"] as const).map((action) =>
         Command.make(action, {}, () => runTasks({ action })).pipe(
           Command.withDescription(
             {
               list: "List saved tasks",
               providers: "Show provider quota pauses and temporary backoff",
               clear: "Interrupt active work and remove all tasks and task history",
-              status: "Show task counts, recent outcomes, and worker status",
             }[action],
           ),
         ),

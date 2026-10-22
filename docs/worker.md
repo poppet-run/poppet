@@ -22,7 +22,7 @@ through `store/tasks.sock`, protected by the `0700` store directory and `0600`
 socket. Commands use the worker when it is running and execute locally when it
 is stopped. Inspecting saved data needs no model or provider credentials.
 Task commands remain available in gateway-only mode, but no scheduled work is
-executed. Task-only mode does not initialize messaging adapters. `tasks status`
+executed. Task-only mode does not initialize messaging adapters. `worker status`
 reports the host's selected services; `gateway status` reports whether messaging
 is running. Only one mode can own a data directory at a time.
 Interactive, scheduled, and messaging model requests share one runner. Chat streams to the
@@ -105,7 +105,8 @@ Running and stopped status include providers assigned to saved tasks, even when
 the current CLI default provider differs.
 Connection metadata is not a live provider verification. During an active
 credential-owning request, the last observed metadata is labelled `cached` with
-its observation time. `tasks status` works for the foreground worker too.
+its observation time. `worker status` works for the foreground worker too.
+On other platforms, `launchAgent` is `null`; worker status remains available.
 
 Inspect full task results using the existing commands:
 
