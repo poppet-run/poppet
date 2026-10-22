@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { AppConfig } from "@poppet/config";
+import { CommandTemplate } from "@poppet/store";
 import {
   TaskCommand,
   TaskControl,
@@ -63,6 +64,7 @@ export const prepareTask = (
   monitor = false,
   project?: string,
   proposalNote?: string,
+  proposalCommand?: typeof CommandTemplate.Type,
 ) =>
   Effect.gen(function* () {
     yield* taskOperation(() => {
@@ -95,7 +97,10 @@ export const prepareTask = (
     const selected = delivery === undefined ? command : { ...command, delivery };
 
     const scoped = project === undefined ? selected : { ...selected, project };
-    const permitted = proposalNote === undefined ? scoped : { ...scoped, proposalNote };
+    const notePermission = proposalNote === undefined ? scoped : { ...scoped, proposalNote };
+
+    const permitted =
+      proposalCommand === undefined ? notePermission : { ...notePermission, proposalCommand };
 
     return yield* Schema.decodeUnknownEffect(TaskCommand)(
       skill === undefined ? permitted : { ...permitted, skill },

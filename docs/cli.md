@@ -174,11 +174,17 @@ later value changes. It reuses the existing destination flags and task controls.
 | ------------------------------ | -------------------------------------------------------------------- |
 | `approvals list`               | Summarize the 50 most recent proposals.                              |
 | `approvals show <proposal>`    | Display the exact saved payload, source, expiry, state, and outcome. |
-| `approvals approve <proposal>` | Claim and execute that saved create-only note once.                  |
+| `approvals approve <proposal>` | Claim and execute that saved note or enabled command once.           |
 | `approvals cancel <proposal>`  | Cancel still-pending work.                                           |
 
 These commands need no model. Approval and cancellation are CLI-only and use the
 worker when running. See [owner approvals](approvals.md) for preparation and recovery.
+
+CLI `chat new` and `chat send <session>` accept `--commands-root <directory>` and
+`--command-receipt <proposal>`, before the message. Roots grant command requests
+for that run only; receipts supply selected finished output without granting
+execution. `tasks add` accepts `--proposal-command <json>` for one fixed proposal
+capability, never scheduled execution. See [command execution](commands.md).
 
 ## Messaging
 

@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { styleText } from "node:util";
 
 import {
@@ -30,8 +31,16 @@ export type ChatCommand =
       readonly coding: boolean;
       readonly skill?: string;
       readonly project?: string;
+      readonly commandsRoot?: string;
+      readonly commandReceipt?: string;
     }
-  | { readonly action: "send"; readonly id: string; readonly text: string }
+  | {
+      readonly action: "send";
+      readonly id: string;
+      readonly text: string;
+      readonly commandsRoot?: string;
+      readonly commandReceipt?: string;
+    }
   | { readonly action: "rename"; readonly id: string; readonly text: string }
   | { readonly action: "sessions" }
   | { readonly action: "search"; readonly query: string }
@@ -52,8 +61,16 @@ export const ChatRequest = Schema.Union([
     workload: Session.fields.workload,
     skill: Schema.optionalKey(SkillName),
     project: Schema.optionalKey(ProjectName),
+    commandsRoot: Schema.optionalKey(Schema.NonEmptyString),
+    commandReceipt: Schema.optionalKey(Session.fields.id),
   }),
-  Schema.Struct({ action: Schema.Literal("send"), id: Session.fields.id, text: MessageText }),
+  Schema.Struct({
+    action: Schema.Literal("send"),
+    id: Session.fields.id,
+    text: MessageText,
+    commandsRoot: Schema.optionalKey(Schema.NonEmptyString),
+    commandReceipt: Schema.optionalKey(Session.fields.id),
+  }),
   Schema.Struct({ action: Schema.Literal("rename"), id: Session.fields.id, text: MessageText }),
   Schema.Struct({ action: Schema.Literal("show"), id: Session.fields.id }),
   Schema.Struct({ action: Schema.Literal("sessions") }),
@@ -176,6 +193,9 @@ export const prepareChat = (
   command: Extract<ChatCommand, { action: "new" | "send" }>,
 ): Effect.Effect<ChatSubmission, AgentError, AppConfig> =>
   Effect.gen(function* () {
+    if (command.commandsRoot !== undefined)
+      command = { ...command, commandsRoot: resolve(command.commandsRoot) };
+
     if (command.action === "send") return command;
     const config = yield* AppConfig;
     const model = config.model;
@@ -188,13 +208,19 @@ export const prepareChat = (
         }),
       );
 
-    const request: ChatSubmission = {
+    let request: ChatSubmission = {
       action: "new",
       text: command.text,
       provider: config.provider,
       model,
       workload: command.coding ? "coding" : "assistant",
     };
+
+    if (command.commandsRoot !== undefined)
+      request = { ...request, commandsRoot: command.commandsRoot };
+
+    if (command.commandReceipt !== undefined)
+      request = { ...request, commandReceipt: command.commandReceipt };
 
     const selected = command.skill === undefined ? request : { ...request, skill: command.skill };
 
@@ -238,7 +264,15 @@ export const sendChat = (
     yield* announce(`Session: ${sessionId}`, sessionId);
     const agent = yield* Agent;
 
-    const options = reasoning.log === undefined ? {} : { reasoningLog: reasoning.log };
+    let options: NonNullable<Parameters<Agent["Service"]["send"]>[2]> = {};
+
+    if (reasoning.log !== undefined) options = { ...options, reasoningLog: reasoning.log };
+
+    if (command.commandsRoot !== undefined)
+      options = { ...options, commandsRoot: command.commandsRoot };
+
+    if (command.commandReceipt !== undefined)
+      options = { ...options, commandReceipt: command.commandReceipt };
 
     const reply = agent.send(
       sessionId,

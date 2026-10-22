@@ -8,6 +8,7 @@ import {
   SkillSnapshot,
   ProjectSnapshot,
   ProposalPath,
+  CommandProposal,
 } from "@poppet/store";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 
@@ -39,7 +40,7 @@ export const recurringExpiry = 24 * 60 * 60 * 1000;
 
 const taskSql = `SELECT id, name, prompt, provider, model, workload, schedule,
   monitor, revision, monitor_revision AS monitorRevision, monitor_baseline_after AS monitorBaselineAfter,
-  skill, project, proposal_note AS proposalNote, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
+  skill, project, proposal_note AS proposalNote, proposal_command AS proposalCommand, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
 
 const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, status,
   revision, definition, available_at AS availableAt, origin,
@@ -278,6 +279,7 @@ export const makeTaskStore = (database: Database) => {
     monitor = false,
     project: ProjectSnapshot | null = null,
     proposalNote: string | null = null,
+    proposalCommand: CommandProposal | null = null,
   ) => {
     if (source) {
       const existing = Schema.decodeUnknownSync(
@@ -300,6 +302,16 @@ export const makeTaskStore = (database: Database) => {
       if (monitor) throw new TaskError({ message: "Monitoring tasks cannot prepare proposals." });
     }
 
+    if (proposalCommand !== null) {
+      Schema.decodeUnknownSync(CommandProposal)(proposalCommand);
+
+      if (monitor || source !== undefined || proposalNote !== null)
+        throw new TaskError({
+          message:
+            "Command proposals require an owner-created reporting task without note proposal permission.",
+        });
+    }
+
     if (monitor && valid.schedule.type !== "cron")
       throw new TaskError({ message: "Monitoring requires --cron and an explicit timezone." });
 
@@ -309,7 +321,7 @@ export const makeTaskStore = (database: Database) => {
     const id = randomUUID();
 
     using statement = database.prepare(
-      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id, monitor, project, proposal_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id, monitor, project, proposal_note, proposal_command) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
 
     statement.run(
@@ -329,6 +341,9 @@ export const makeTaskStore = (database: Database) => {
       monitor ? 1 : 0,
       project === null ? null : Schema.encodeSync(Schema.fromJsonString(ProjectSnapshot))(project),
       proposalNote,
+      proposalCommand === null
+        ? null
+        : Schema.encodeSync(Schema.fromJsonString(CommandProposal))(proposalCommand),
     );
 
     return task(id);

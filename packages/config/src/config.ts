@@ -15,6 +15,8 @@ export { BrowserSettings, browserSettings } from "@poppet/browser/config";
 
 export { VoiceSettings, voiceSettings } from "#src/voice";
 
+export { CommandSettings, commandSettings } from "#src/commands";
+
 /** Search stays opt-in independently of the selected inference provider. */
 export const webSearchEnabled = Config.Boolean("POPPET_WEB_SEARCH").pipe(Config.withDefault(false));
 

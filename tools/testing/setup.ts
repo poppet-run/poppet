@@ -1,5 +1,6 @@
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const home = process.env.POPPET_TEST_HOME;
@@ -37,6 +38,17 @@ const protectSpawn = <T extends typeof Bun.spawn | typeof Bun.spawnSync>(spawn: 
 
       if (entry !== "--eval" && entry !== "-e" && !entry?.endsWith(".ts"))
         throw new Error("Test subprocesses must run a TypeScript entry point or --eval directly.");
+      let isolated = home;
+
+      try {
+        if (
+          settings.env?.HOME &&
+          realpathSync(settings.env.HOME).startsWith(`${realpathSync(home)}${sep}`)
+        )
+          isolated = settings.env.HOME;
+      } catch {
+        /* Replace unavailable or out-of-scope homes with the test home. */
+      }
 
       // SAFETY: both native spawn APIs accept this options object; the Proxy preserves their overloads.
       return (target as typeof Bun.spawn)({
@@ -51,13 +63,13 @@ const protectSpawn = <T extends typeof Bun.spawn | typeof Bun.spawnSync>(spawn: 
         ],
         env: {
           ...(settings.env ?? process.env),
-          HOME: home,
-          USERPROFILE: home,
-          XDG_CONFIG_HOME: join(home, ".config"),
-          TMPDIR: home,
-          TEMP: home,
-          TMP: home,
-          POPPET_TEST_HOME: home,
+          HOME: isolated,
+          USERPROFILE: isolated,
+          XDG_CONFIG_HOME: join(isolated, ".config"),
+          TMPDIR: isolated,
+          TEMP: isolated,
+          TMP: isolated,
+          POPPET_TEST_HOME: isolated,
           BUN_OPTIONS: "",
           NODE_OPTIONS: "",
           DO_NOT_TRACK: "1",
@@ -69,3 +81,5 @@ const protectSpawn = <T extends typeof Bun.spawn | typeof Bun.spawnSync>(spawn: 
 Bun.spawn = protectSpawn(Bun.spawn);
 
 Bun.spawnSync = protectSpawn(Bun.spawnSync);
+
+// The pinned Bun Node process API delegates to Bun.spawn; isolation tests cover both APIs.

@@ -43,7 +43,7 @@ history. All pending migrations commit together; a failure rolls back the pendin
 batch.
 
 The unreleased base migration history was consolidated into schema version 1;
-the current schema is version 6. Existing version-1 through version-5 databases upgrade in place.
+the current schema is version 7. Existing version-1 through version-6 databases upgrade in place.
 Development databases created with the former 14-step history are still rejected.
 Those legacy databases require a fresh data directory; databases are never reset
 automatically.
@@ -173,6 +173,13 @@ proposal records or completed receipts. `gateway_inbox.proposal_id` uniquely
 identifies a separate review notification. Its reserved delivery identity is
 distinct from the source report; no model run is created for approval execution.
 See [owner approvals](approvals.md).
+
+Migration 7 adds immutable run-scoped command grants and nullable fixed command
+proposal capabilities on tasks/occurrence definitions. Existing tasks gain no
+command permission. Approval payloads now decode a versioned note/command union,
+preserving existing note payload bytes, digests, and receipts. Command execution
+stores its authority and bounded outcome in the same approval lifecycle. See
+[command receipts and recovery](commands.md#review-and-execute-once).
 
 ## Conversation search index
 

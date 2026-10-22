@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +15,8 @@ test("live network requests and system subprocesses are rejected", () => {
     "guarded Bun",
   );
   expect(() => Bun.spawn([process.execPath, "run", "start"])).toThrow("entry point");
+  expect(() => spawn("/poppet-test-nonexistent/open", [])).toThrow("guarded Bun");
+  expect(() => spawn(process.execPath, ["run", "start"])).toThrow("entry point");
 });
 
 test("local redirects cannot bypass the network guard", async () => {

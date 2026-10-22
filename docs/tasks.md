@@ -354,6 +354,15 @@ automatically. `retry` creates a fresh session for an unsuccessful occurrence;
 earlier runs remain available through chat inspection. Resume a paused task before
 retrying it. A cancelled one-off needs `retry`, since it has no future occurrences.
 
+## Scheduled command proposals
+
+Owner-created reporting tasks can also receive a fixed command proposal
+capability through `--proposal-command <json>`. It never permits scheduled
+execution, even for an interactive automatic read. The model cannot grant or
+change this capability. Monitor tasks and combined note/command capabilities
+are rejected; source edits/clearing invalidate pending proposals. See
+[scheduled command proposals](commands.md#scheduled-proposals).
+
 ## Clear tasks
 
 To remove every task and its occurrence/skip history:

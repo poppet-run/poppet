@@ -205,6 +205,7 @@ const repository = Effect.gen(function* () {
             runId: Schema.String,
             destination: Schema.fromJsonString(DeliveryDestination),
             path: Schema.String,
+            type: Schema.Literals(["create_note", "execute_command"]),
             digest: Schema.String,
             expiresAt: Schema.Natural,
           }),
@@ -212,10 +213,13 @@ const repository = Effect.gen(function* () {
       )(
         database
           .query(`SELECT p.id, p.source_run_id AS runId, p.destination,
-      json_extract(p.payload, '$.path') AS path, p.digest, p.expires_at AS expiresAt
+      COALESCE(json_extract(p.payload, '$.path'), json_extract(p.payload, '$.executable.path')) AS path,
+      json_extract(p.payload, '$.type') AS type, p.digest, p.expires_at AS expiresAt
       FROM action_proposals p JOIN jobs j ON j.id = p.job_id
       WHERE p.state = 'pending' AND p.expires_at > ? AND j.revision = p.revision
-        AND j.monitor = 0 AND j.proposal_note = json_extract(p.payload, '$.path')
+        AND j.monitor = 0 AND (
+          (json_extract(p.payload, '$.type') = 'create_note' AND j.proposal_note = json_extract(p.payload, '$.path'))
+          OR (json_extract(p.payload, '$.type') = 'execute_command' AND j.proposal_command = p.payload))
         AND json_extract(p.destination, '$.adapter') = ?
         AND NOT EXISTS (SELECT 1 FROM gateway_inbox i WHERE i.proposal_id = p.id)
       ORDER BY p.created_at, p.id LIMIT 64`)

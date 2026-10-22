@@ -232,6 +232,17 @@ proposal notices use a separate durable gateway identity with existing access
 and uncertain-send checks. External integration actions remain gated. See
 [owner approvals](approvals.md).
 
+The command service extends this lifecycle with typed local invocations. CLI
+request options create immutable grants for one run; session/project context
+cannot create or inherit them. Deterministic policy either denies, requires
+local owner approval, or permits an exact opt-in system read. The executor uses
+direct argv and an owned POSIX process group, private temporary environment,
+bounded output/time, and durable uncertain outcomes. Advisory model review has
+no execution authority. Scheduled tasks can only propose their fixed capability.
+These controls provide approval and lifecycle management, without OS isolation.
+Existing MCP integrations retain their independent permissions and are not
+mediated by this executor. See [command execution](commands.md).
+
 ## Provider interface
 
 The shared interface is implemented before durable conversation storage so

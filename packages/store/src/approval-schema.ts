@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 
+import { CommandProposal } from "#src/command-schema";
 import { DeliveryDestination, Id, ProjectNotes } from "#src/schema";
 
 export const ProposalPath = Schema.NonEmptyString.check(
@@ -41,6 +42,10 @@ export const NoteProposal = Schema.Struct({
 
 export type NoteProposal = typeof NoteProposal.Type;
 
+export const ActionProposal = Schema.Union([NoteProposal, CommandProposal]);
+
+export type ActionProposal = typeof ActionProposal.Type;
+
 export const ApprovalState = Schema.Literals([
   "pending",
   "executing",
@@ -56,7 +61,7 @@ export type ApprovalState = typeof ApprovalState.Type;
 export const Approval = Schema.Struct({
   id: Id,
   owner: Schema.NonEmptyString,
-  payload: Schema.fromJsonString(NoteProposal),
+  payload: Schema.fromJsonString(ActionProposal),
   digest: Schema.NonEmptyString,
   sessionId: Id,
   runId: Id,

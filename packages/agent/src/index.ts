@@ -19,6 +19,10 @@ export { Notes, NotesLive } from "#src/notes";
 
 export { Approvals, ApprovalsLive, LocalApprovalsLive, ApprovalCommand } from "#src/approvals";
 
+export { Commands, CommandsLive, CommandRunner, CommandReviewer } from "#src/commands";
+
+export { CommandReviewerLive } from "#src/command-reviewer";
+
 export { ChatSettings, ChatSettingsLive, defaultPolicy, type ChatPolicy } from "#src/settings";
 
 export { sessionTitle } from "#src/title";

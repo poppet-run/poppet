@@ -10,6 +10,7 @@ import { taskControls } from "#src/migrations/20261021210000_task-controls";
 import { attachments } from "#src/migrations/20261021220000_attachments";
 import { projects } from "#src/migrations/20261021230000_projects";
 import { approvals } from "#src/migrations/20261022110000_approvals";
+import { commands } from "#src/migrations/20261022130000_commands";
 
 export interface Migration {
   readonly version: number;
@@ -26,6 +27,7 @@ export const migrations: ReadonlyArray<Migration> = [
   { version: 4, name: "attachments", sql: attachments },
   { version: 5, name: "projects", sql: projects },
   { version: 6, name: "approvals", sql: approvals },
+  { version: 7, name: "commands", sql: commands },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

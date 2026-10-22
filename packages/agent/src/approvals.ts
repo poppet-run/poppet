@@ -9,8 +9,9 @@ import {
   StoreDatabase,
   StoreError,
 } from "@poppet/store";
-import { Clock, Context, Effect, Layer, Result, Schema } from "effect";
+import { Clock, Context, Effect, Layer, Option, Result, Schema } from "effect";
 
+import { Commands, commandJSON } from "#src/commands";
 import { AgentError } from "#src/errors";
 import { Notes } from "#src/notes";
 import { ChatSettings } from "#src/settings";
@@ -89,6 +90,7 @@ export const ApprovalsLive = Layer.effect(
     const notes = yield* Notes;
     const clock = yield* Clock.Clock;
     const { toolBytes } = yield* ChatSettings;
+    const commands = Option.getOrNull(yield* Effect.serviceOption(Commands));
 
     const now = () => clock.currentTimeMillisUnsafe();
 
@@ -173,29 +175,41 @@ export const ApprovalsLive = Layer.effect(
       command: (command) =>
         Effect.gen(function* () {
           if (command.action === "list")
-            return JSON.stringify(
+            return commandJSON(
               yield* operation(() =>
-                repo.list(now()).map((value) => ({
-                  id: value.id,
-                  state: value.state,
-                  path: value.payload.path,
-                  digest: value.digest,
-                  createdAt: value.createdAt,
-                  expiresAt: value.expiresAt,
-                  runId: value.runId,
-                  fullReview: `approvals show ${value.id}`,
-                })),
+                repo.list(now()).map((value) =>
+                  Object.assign(
+                    {
+                      id: value.id,
+                      state: value.state,
+                      type: value.payload.type,
+                      digest: value.digest,
+                      createdAt: value.createdAt,
+                      expiresAt: value.expiresAt,
+                      runId: value.runId,
+                      fullReview: `approvals show ${value.id}`,
+                    },
+                    value.payload.type === "create_note"
+                      ? { path: value.payload.path }
+                      : { command: value.payload.request },
+                  ),
+                ),
               ),
-              null,
-              2,
+              true,
             );
 
           if (command.action === "cancel")
-            return JSON.stringify(yield* operation(() => repo.cancel(command.id, now())), null, 2);
+            return commandJSON(yield* operation(() => repo.cancel(command.id, now())), true);
           const proposal = yield* operation(() => repo.show(command.id, now()));
 
           if (command.action === "show" || proposal.state !== "pending")
-            return JSON.stringify(proposal, null, 2);
+            return commandJSON(proposal, true);
+
+          if (proposal.payload.type === "execute_command") {
+            if (commands === null) return yield* Effect.fail(invalid());
+
+            return commandJSON(yield* commands.approve(proposal), true);
+          }
 
           if (notes.prepareCreate === undefined || notes.createOnly === undefined)
             return yield* Effect.fail(invalid());
@@ -228,6 +242,8 @@ export const ApprovalsLive = Layer.effect(
             const claimed = yield* operation(() => repo.claim(proposal.id, now()));
 
             if (!claimed.claimed) return JSON.stringify(claimed.value, null, 2);
+
+            if (claimed.value.payload.type !== "create_note") return yield* Effect.fail(invalid());
             const result = yield* notes.createOnly!(claimed.value.payload).pipe(Effect.result);
 
             const state = Result.isSuccess(result)

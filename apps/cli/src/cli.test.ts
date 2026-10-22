@@ -799,7 +799,7 @@ describe("CLI", () => {
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
         path: join(directory, "store/poppet.sqlite"),
-        schemaVersion: 6,
+        schemaVersion: 7,
         sessions: 0,
         messages: 0,
         runs: 0,
@@ -1222,6 +1222,7 @@ describe("CLI", () => {
         webSearch: false,
         browser: { enabled: false },
         voice: { enabled: false },
+        commands: { enabled: false, executables: [] },
         mcpServers: [],
         chat: defaultPolicy,
         configFile: { path: join(directory, "config.json"), exists: false },
@@ -1280,6 +1281,7 @@ describe("CLI", () => {
         webSearch: false,
         browser: { enabled: false },
         voice: { enabled: false },
+        commands: { enabled: false, executables: [] },
         mcpServers: [],
         chat: { ...chat, outputTokens: 512 },
         configFile: { path: join(directory, "config.json"), exists: true },

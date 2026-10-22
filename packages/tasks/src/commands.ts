@@ -1,4 +1,4 @@
-import { Skills, loadProject } from "@poppet/agent";
+import { Skills, Commands, loadProject } from "@poppet/agent";
 import { DeliveryDestination, Store } from "@poppet/store";
 import { Context, Effect, Option } from "effect";
 
@@ -107,6 +107,27 @@ export const executeTaskCommand = (
         );
       }
 
+      const commands = Option.getOrNull(yield* Effect.serviceOption(Commands));
+      const template = command.proposalCommand;
+
+      if (template !== undefined && commands === null)
+        return yield* Effect.fail(
+          new TaskError({
+            message: "Command proposals are unavailable. Restart with current command support.",
+          }),
+        );
+
+      const proposalCommand =
+        template === undefined
+          ? null
+          : yield* commands!
+              .template(
+                { executable: template.executable, args: template.args, cwd: template.cwd },
+                template.root,
+                project?.name ?? null,
+              )
+              .pipe(Effect.mapError((error) => new TaskError({ message: error.message })));
+
       return yield* taskOperation(() => {
         const task = repo.add(
           command.task,
@@ -117,6 +138,7 @@ export const executeTaskCommand = (
           command.action === "add-monitor",
           project,
           command.proposalNote ?? null,
+          proposalCommand,
         );
 
         return task.monitor ? { ...task, baseline: "pending-first-success" } : task;

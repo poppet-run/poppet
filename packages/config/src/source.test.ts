@@ -6,7 +6,13 @@ import { join, resolve } from "node:path";
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
-import { browserSettings, loadConfig, webSearchEnabled, voiceSettings } from "#src/config";
+import {
+  browserSettings,
+  loadConfig,
+  webSearchEnabled,
+  voiceSettings,
+  commandSettings,
+} from "#src/config";
 import { ConfigSource, loadConfigSource } from "#src/source";
 
 const load = (environment: Record<string, string>) =>
@@ -28,6 +34,49 @@ const load = (environment: Record<string, string>) =>
   );
 
 describe("configuration sources", () => {
+  test("command settings default off, replace file policy through the environment, and reject unsupported policy fields", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-command-config-"));
+
+    try {
+      const defaults = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(
+        await Effect.runPromise(commandSettings.pipe(Effect.provide(defaults.context))),
+      ).toEqual({ enabled: false, executables: [] });
+      const commands = { enabled: true, executables: ["/not-executed/bun"], automaticReads: true };
+      await writeFile(join(directory, "config.json"), JSON.stringify({ commands }));
+      const configured = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(
+        await Effect.runPromise(commandSettings.pipe(Effect.provide(configured.context))),
+      ).toEqual(commands);
+
+      const override = await Effect.runPromise(
+        load({ POPPET_DATA_DIR: directory, POPPET_COMMANDS: '{"enabled":false,"executables":[]}' }),
+      );
+
+      expect(
+        await Effect.runPromise(commandSettings.pipe(Effect.provide(override.context))),
+      ).toEqual({ enabled: false, executables: [] });
+      expect(override.source.environmentOverrides).toContain("POPPET_COMMANDS");
+
+      await Promise.all(
+        [
+          { enabled: true, executables: ["relative"] },
+          { ...commands, mode: "off" },
+          { ...commands, reviewer: { provider: "test", model: "m", autoApprove: true } },
+        ].map(async (invalid) => {
+          const context = await Effect.runPromise(
+            load({ POPPET_DATA_DIR: directory, POPPET_COMMANDS: JSON.stringify(invalid) }),
+          );
+
+          await expect(
+            Effect.runPromise(commandSettings.pipe(Effect.provide(context.context))),
+          ).rejects.toThrow("Invalid POPPET_COMMANDS");
+        }),
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   test("local voice defaults off, requires absolute explicit paths, and environment settings replace file settings", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-voice-config-"));
 

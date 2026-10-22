@@ -12,14 +12,16 @@ import type {
 import {
   Store,
   StoreError,
+  CommandArguments,
   type Run,
   type ProjectSnapshot,
   type StoredMessage,
   type DeliveryDestination,
 } from "@poppet/store";
-import { Cause, Clock, Effect, Exit, Match, Option, Stream } from "effect";
+import { Cause, Clock, Effect, Exit, Match, Option, Schema, Stream } from "effect";
 
 import { Approvals, decodeProposalCall, proposalTool, type PreparedProposal } from "#src/approvals";
+import { Commands, commandTool } from "#src/commands";
 import { assembleContext, byteSize, outputBudget } from "#src/context";
 import { AgentError } from "#src/errors";
 import { ExternalTools, type PreparedExternalCall } from "#src/external-tools";
@@ -62,6 +64,7 @@ export const conversation = Effect.gen(function* () {
   const policy = yield* ChatSettings;
   const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
   const approvals = Option.getOrNull(yield* Effect.serviceOption(Approvals));
+  const commands = Option.getOrNull(yield* Effect.serviceOption(Commands));
   const external = Option.getOrNull(yield* Effect.serviceOption(ExternalTools));
   const clock = yield* Clock.Clock;
 
@@ -77,7 +80,11 @@ export const conversation = Effect.gen(function* () {
       | WebSearchCall
       | PreparedTaskCall
       | PreparedProposal
-      | PreparedExternalCall,
+      | PreparedExternalCall
+      | {
+          readonly name: "request_command";
+          readonly execute: Effect.Effect<string, AgentError | StoreError>;
+        },
     project: ProjectSnapshot | null,
   ) => {
     const operation = Effect.gen(function* () {
@@ -98,6 +105,7 @@ export const conversation = Effect.gen(function* () {
         Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
         Match.when({ name: "manage_tasks" }, (plan) => plan.execute),
         Match.when({ name: "propose_note" }, (plan) => plan.execute),
+        Match.when({ name: "request_command" }, (plan) => plan.execute),
         Match.when({ name: "external" }, (plan) => plan.execute),
         Match.when({ name: "search_web" }, (plan) =>
           webSearch.search === null
@@ -132,6 +140,7 @@ export const conversation = Effect.gen(function* () {
             .finishToolCall(run.id, callId, {
               status:
                 (call.name === "external" && error.reason !== "tool-reported") ||
+                (call.name === "request_command" && error instanceof StoreError) ||
                 call.name === "save_note" ||
                 (call.name === "manage_tasks" &&
                   error instanceof StoreError &&
@@ -145,7 +154,11 @@ export const conversation = Effect.gen(function* () {
         ),
       );
 
-      if (call.name !== "manage_tasks" && call.name !== "propose_note")
+      if (
+        call.name !== "manage_tasks" &&
+        call.name !== "propose_note" &&
+        call.name !== "request_command"
+      )
         yield* store.finishToolCall(run.id, callId, { status: "completed", output });
 
       return { output, urls };
@@ -192,6 +205,11 @@ export const conversation = Effect.gen(function* () {
           source?.kind !== "voice" &&
           (yield* approvals.available(run.id, readOnlyTools));
 
+        const commandAccess =
+          commands !== null && source === undefined
+            ? yield* commands.available(run.id, readOnlyTools)
+            : null;
+
         const tools = model.description.capabilities.tools
           ? [
               ...noteTools,
@@ -201,6 +219,7 @@ export const conversation = Effect.gen(function* () {
               fetchPageTool,
               memoryTool,
               ...(proposalsAllowed ? [proposalTool] : []),
+              ...(commandAccess === null ? [] : [commandTool]),
               ...(webSearch.search === null ? [] : [webSearchTool]),
               ...(tasks === null || readOnlyTools ? [] : [taskTool]),
             ].filter(
@@ -225,8 +244,13 @@ export const conversation = Effect.gen(function* () {
 
         const allowedURLs = source?.kind === "voice" ? new Set<string>() : suppliedPageURLs(text);
 
-        const baseInstructions =
+        const externalInstructions =
           external?.instructions === undefined ? prompt : `${prompt}\n\n${external.instructions}`;
+
+        const baseInstructions =
+          commandAccess === null
+            ? externalInstructions
+            : `${externalInstructions}\n\nHost-granted command capability for this run only. This permits requesting review; only an exact enabled read rule executes without local owner approval. Host-account access is not sandboxed.\n${JSON.stringify(commandAccess)}`;
 
         const instructions =
           (tasks !== null && !readOnlyTools) || source?.kind === "voice"
@@ -260,6 +284,22 @@ export const conversation = Effect.gen(function* () {
                 decodeProposalCall(proposalCall).pipe(
                   Effect.flatMap((args) =>
                     approvals!.prepare(args, run.id, proposalCall.callId, readOnlyTools),
+                  ),
+                ),
+              ),
+              Match.when({ name: "request_command" }, (commandCall) =>
+                Schema.decodeUnknownEffect(Schema.fromJsonString(CommandArguments), {
+                  onExcessProperty: "error",
+                })(commandCall.arguments).pipe(
+                  Effect.mapError(
+                    () =>
+                      new AgentError({
+                        reason: "tool-arguments",
+                        message: "Invalid command request.",
+                      }),
+                  ),
+                  Effect.flatMap((input) =>
+                    commands!.prepare(input, run.id, commandCall.callId, readOnlyTools),
                   ),
                 ),
               ),

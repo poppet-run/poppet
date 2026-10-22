@@ -1,5 +1,10 @@
 # Configuration
 
+Local command execution is separately opt-in through `commands` or the complete
+`POPPET_COMMANDS` JSON override. It defaults to disabled with no executables.
+Optional automatic reads and advisory model review grant no general execution
+authority. See [command settings and permissions](commands.md).
+
 [Documentation index](index.md)
 
 ## Configuration file

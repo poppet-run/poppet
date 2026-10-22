@@ -78,6 +78,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     useTools: false,
     memoryChange: false,
     proposalChange: false,
+    commandChange: false,
     taskAction: null as "create" | "list" | "show" | "pause" | "resume" | null,
     taskId: null as string | null,
     hold: false,
@@ -186,21 +187,38 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                                   taskCall ?? {
                                     type: "tool-call" as const,
                                     callId: "save",
-                                    name: state.proposalChange
-                                      ? "propose_note"
-                                      : state.memoryChange
-                                        ? "memory"
-                                        : "save_note",
-                                    namespace: state.proposalChange
-                                      ? "poppet_approvals"
-                                      : state.memoryChange
-                                        ? "poppet_memory"
-                                        : "poppet_notes",
-                                    arguments: state.proposalChange
-                                      ? '{"path":"review.md","content":"Exact proposed note"}'
-                                      : state.memoryChange
-                                        ? '{"action":"remember","key":"answer.style","value":"Keep answers concise"}'
-                                        : '{"path":"summary.md","content":"A saved summary"}',
+                                    name: state.commandChange
+                                      ? "request_command"
+                                      : state.proposalChange
+                                        ? "propose_note"
+                                        : state.memoryChange
+                                          ? "memory"
+                                          : "save_note",
+                                    namespace: state.commandChange
+                                      ? "poppet_commands"
+                                      : state.proposalChange
+                                        ? "poppet_approvals"
+                                        : state.memoryChange
+                                          ? "poppet_memory"
+                                          : "poppet_notes",
+                                    arguments: state.commandChange
+                                      ? JSON.stringify({
+                                          executable: process.execPath,
+                                          args: [
+                                            join(
+                                              import.meta.dir,
+                                              "../../../packages/agent/src/test/command-fixture.ts",
+                                            ),
+                                            "report",
+                                            "literal arg",
+                                          ],
+                                          cwd: ".",
+                                        })
+                                      : state.proposalChange
+                                        ? '{"path":"review.md","content":"Exact proposed note"}'
+                                        : state.memoryChange
+                                          ? '{"action":"remember","key":"answer.style","value":"Keep answers concise"}'
+                                          : '{"path":"summary.md","content":"A saved summary"}',
                                   },
                                 ]
                               : [{ type: "text" as const, text: "Answer" }],
@@ -399,6 +417,96 @@ const exampleChannel = (id: string) => {
 };
 
 describe("chat CLI", () => {
+  test.each([false, true])(
+    "command grant, exact execution and explicit receipt follow-up through CLI, worker: %s",
+    async (worker) => {
+      const chat = await fixture();
+      let running: Fiber.Fiber<unknown, unknown> | null = null;
+      const output = () => JSON.parse(worker ? chat.chunks.join("") : chat.lines.at(-1)!);
+
+      try {
+        await writeFile(
+          join(chat.directory, "config.json"),
+          JSON.stringify({ commands: { enabled: true, executables: [process.execPath] } }),
+        );
+        chat.state.useTools = true;
+        chat.state.commandChange = true;
+
+        if (worker) running = await chat.startWorker();
+        await chat.invoke([
+          "chat",
+          "new",
+          "--commands-root",
+          chat.directory,
+          "Request the fixture command for review",
+        ]);
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        await chat.invoke(["approvals", "list"]);
+        const [proposal] = output();
+        expect(proposal).toMatchObject({ type: "execute_command", state: "pending" });
+        const calls = chat.requests.length;
+
+        if (worker) {
+          chat.state.writeFails = true;
+          await expect(chat.invoke(["approvals", "approve", proposal.id])).rejects.toThrow(
+            "Output closed",
+          );
+          chat.state.writeFails = false;
+        }
+
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        await chat.invoke(["approvals", "approve", proposal.id]);
+        const completed = output();
+        expect(completed.state).toBe("completed");
+        expect(completed.receipt.authority).toBe("owner");
+        expect(JSON.parse(completed.receipt.stdout).args).toEqual(["literal arg"]);
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        await chat.invoke(["approvals", "approve", proposal.id]);
+        expect(output()).toEqual(completed);
+        expect(chat.requests).toHaveLength(calls);
+        chat.state.useTools = false;
+        await chat.invoke([
+          "chat",
+          "send",
+          completed.sessionId,
+          "--command-receipt",
+          proposal.id,
+          "Explain the selected output",
+        ]);
+        expect(chat.requests.at(-1)!.instructions).toContain("commandReceipt");
+        expect(
+          chat.requests.at(-1)!.tools.some((tool) => tool.namespace === "poppet_commands"),
+        ).toBe(false);
+        await chat.invoke([
+          "tasks",
+          "add",
+          "Command review",
+          "--at",
+          "2099-10-22T09:00:00Z",
+          "--proposal-command",
+          JSON.stringify({
+            root: chat.directory,
+            executable: process.execPath,
+            args: ["--version"],
+            cwd: ".",
+          }),
+          "Propose the saved command",
+        ]);
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        await chat.invoke(["tasks", "list"]);
+        expect(JSON.parse(chat.lines.at(-1)!)[0].proposalCommand.request.args).toEqual([
+          "--version",
+        ]);
+      } finally {
+        if (running !== null) await Effect.runPromise(Fiber.interrupt(running));
+        await chat.close();
+      }
+    },
+  );
   test.each([false, true])(
     "review and approval use the saved payload without inference, worker: %s",
     async (worker) => {
@@ -1791,11 +1899,44 @@ describe("chat CLI", () => {
           "Review",
         ]),
       ).rejects.toThrow("outdated");
+      await expect(
+        chat.invoke(["chat", "new", "--commands-root", chat.directory, "Review command"]),
+      ).rejects.toThrow("outdated");
+      await expect(
+        chat.invoke([
+          "chat",
+          "send",
+          "saved-session",
+          "--command-receipt",
+          "saved-proposal",
+          "Review receipt",
+        ]),
+      ).rejects.toThrow("outdated");
+      await expect(
+        chat.invoke([
+          "tasks",
+          "add",
+          "Commands",
+          "--at",
+          "2099-01-01T00:00:00Z",
+          "--proposal-command",
+          JSON.stringify({
+            root: chat.directory,
+            executable: process.execPath,
+            args: ["--version"],
+            cwd: ".",
+          }),
+          "Review",
+        ]),
+      ).rejects.toThrow("outdated");
       expect(received).toEqual([
         "/project-commands",
         "/project-commands",
-        "/approval-commands",
+        "/command-execution",
         "/project-tasks",
+        "/command-execution",
+        "/command-execution",
+        "/command-tasks",
       ]);
       expect(await readdir(directory)).toEqual(["tasks.sock"]);
       expect(chat.state.built).toBe(0);

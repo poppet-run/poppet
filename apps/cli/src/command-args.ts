@@ -19,12 +19,25 @@ export const commandArgs = (
     while (offset < args.length) {
       const token = args[offset]!;
 
-      if (token === "--skill" || token === "--project") offset += 2;
-      else if (token === "--coding" || /^--(?:skill|project)=/.test(token)) offset++;
+      if (["--skill", "--project", "--commands-root", "--command-receipt"].includes(token))
+        offset += 2;
+      else if (
+        token === "--coding" ||
+        /^--(?:skill|project|commands-root|command-receipt)=/.test(token)
+      )
+        offset++;
       else break;
     }
   } else if (args[0] === "chat" && ["send", "rename"].includes(args[1] ?? "")) {
     offset = 3;
+
+    if (args[1] === "send") {
+      while (offset < args.length) {
+        if (["--commands-root", "--command-receipt"].includes(args[offset]!)) offset += 2;
+        else if (/^--(?:commands-root|command-receipt)=/.test(args[offset]!)) offset++;
+        else break;
+      }
+    }
   } else if (args[0] === "memory" && ["remember", "replace"].includes(args[1] ?? "")) {
     offset = 2;
 
@@ -48,6 +61,7 @@ export const commandArgs = (
           "--skill",
           "--project",
           "--proposal-note",
+          "--proposal-command",
           "--discord-thread",
           "--telegram-chat",
           "--whatsapp-chat",
@@ -57,7 +71,7 @@ export const commandArgs = (
       else if (
         token === "--coding" ||
         token === "--monitor" ||
-        /^--(?:at|cron|tz|skill|project|proposal-note|discord-thread|telegram-chat|whatsapp-chat)=/.test(
+        /^--(?:at|cron|tz|skill|project|proposal-note|proposal-command|discord-thread|telegram-chat|whatsapp-chat)=/.test(
           token,
         )
       )

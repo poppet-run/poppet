@@ -7,11 +7,21 @@ export { ApprovalRepository, ApprovalRepositoryLive, makeApprovalStore } from "#
 export {
   Approval,
   ApprovalState,
+  ActionProposal,
   NoteProposal,
   NoteTarget,
   ProposalPath,
   ProposalContent,
 } from "#src/approval-schema";
+
+export {
+  CommandArguments,
+  CommandTemplate,
+  CommandDirectory,
+  CommandExecutable,
+  CommandGrant,
+  CommandProposal,
+} from "#src/command-schema";
 
 export { StoreDatabase, StoreDatabaseLive } from "#src/database";
 

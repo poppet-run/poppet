@@ -137,9 +137,12 @@ export const WorkerRequestsLive = Layer.effect(
         Effect.gen(function* () {
           if (
             request.method !== "POST" ||
-            !["/commands", "/project-commands", "/approval-commands"].includes(
-              new URL(request.url).pathname,
-            )
+            ![
+              "/commands",
+              "/project-commands",
+              "/approval-commands",
+              "/command-execution",
+            ].includes(new URL(request.url).pathname)
           )
             return new Response("Not found", { status: 404 });
 
@@ -241,12 +244,15 @@ export const remoteWorkerCommand = (
           requestWorker(
             path,
             command.kind === "approvals"
-              ? "/approval-commands"
-              : (command.kind === "chat" || command.kind === "memory") &&
-                  "project" in command.command &&
-                  command.command.project !== undefined
-                ? "/project-commands"
-                : "/commands",
+              ? "/command-execution"
+              : command.kind === "chat" &&
+                  ("commandsRoot" in command.command || "commandReceipt" in command.command)
+                ? "/command-execution"
+                : (command.kind === "chat" || command.kind === "memory") &&
+                    "project" in command.command &&
+                    command.command.project !== undefined
+                  ? "/project-commands"
+                  : "/commands",
             command.kind === "chat" && writeReasoning !== undefined
               ? { ...command, streamReasoning: true }
               : command,

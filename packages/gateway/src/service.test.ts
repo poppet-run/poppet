@@ -19,11 +19,19 @@ import {
   ProjectsLive,
   Approvals,
   LocalApprovalsLive,
+  Commands,
+  CommandsLive,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive } from "@poppet/memory";
 import { ProviderError, type ModelOperations, type ModelRequest } from "@poppet/provider";
-import { DeliveryDestination, Store, StoreDatabase, StoreLive } from "@poppet/store";
+import {
+  DeliveryDestination,
+  Store,
+  StoreDatabase,
+  StoreLive,
+  ApprovalRepositoryLive,
+} from "@poppet/store";
 import {
   ChatTasksLive,
   monitorTools,
@@ -34,7 +42,7 @@ import {
   executeTaskCommand,
   executeOccurrence,
 } from "@poppet/tasks";
-import { Console, Deferred, Effect, Fiber, Layer, Queue, Stream } from "effect";
+import { ConfigProvider, Console, Deferred, Effect, Fiber, Layer, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { AttachmentProcessor, makeAttachmentProcessor } from "#src/attachments";
@@ -79,6 +87,7 @@ const fixture = async (
   stream: ModelOperations["stream"] = () => response(),
   tools = false,
   processor?: AttachmentProcessor["Service"],
+  commandProposals = false,
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-gateway-"));
   const requests: ModelRequest[] = [];
@@ -122,7 +131,27 @@ const fixture = async (
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
   const skills = Layer.merge(SkillsLive, ProjectsLive).pipe(Layer.provide(config));
   const notes = NotesLive.pipe(Layer.provide([config, settings]));
-  const approvals = LocalApprovalsLive.pipe(Layer.provideMerge([store, config, settings, notes]));
+
+  const commands = CommandsLive.pipe(
+    Layer.provideMerge([
+      store,
+      settings,
+      ApprovalRepositoryLive.pipe(Layer.provide([store, config])),
+      ConfigProvider.layer(
+        ConfigProvider.fromUnknown({
+          POPPET_COMMANDS: JSON.stringify({
+            enabled: commandProposals,
+            executables: ["/usr/bin/uname"],
+            automaticReads: true,
+          }),
+        }),
+      ),
+    ]),
+  );
+
+  const approvals = LocalApprovalsLive.pipe(
+    Layer.provideMerge([store, config, settings, notes, commands]),
+  );
 
   const agent = AgentLive.pipe(
     Layer.provideMerge(
@@ -209,6 +238,7 @@ const fixture = async (
         | Skills
         | Projects
         | Approvals
+        | Commands
       >,
     ) =>
       Effect.runPromise(
@@ -246,6 +276,124 @@ const scheduled = (destination: DeliveryDestination | null) =>
   });
 
 describe.concurrent("messaging gateway", () => {
+  test("scheduled command notices stay separate, do not execute automatic reads, and are not resent after an uncertain acknowledgement", async () => {
+    const delivered: string[] = [];
+
+    const state = await fixture(
+      {
+        send: (_destination, text) =>
+          Effect.gen(function* () {
+            delivered.push(text);
+
+            if (text.startsWith("Command proposal"))
+              return yield* Effect.fail(
+                new ChannelError({ reason: "uncertain", message: "Fixture lost acknowledgement" }),
+              );
+
+            return "sent";
+          }),
+      },
+      (request) => {
+        if (request.messages.at(-1)?.role === "tool")
+          return response("Command pending owner review");
+
+        return Stream.make({
+          type: "completed" as const,
+          response: {
+            output: [
+              {
+                type: "tool-call" as const,
+                callId: "command-proposal",
+                namespace: "poppet_commands",
+                name: "request_command",
+                arguments: '{"executable":"/usr/bin/uname","args":["-s"],"cwd":"."}',
+              },
+            ],
+            continuation: {
+              version: 1 as const,
+              provider: "test-provider",
+              model: "test-model",
+              data: {},
+            },
+            finishReason: "tool-calls" as const,
+            usage: null,
+          },
+        });
+      },
+      true,
+      undefined,
+      true,
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const gateway = yield* Gateway;
+          const approvals = yield* Approvals;
+          const destination = yield* gateway.resolveDestination("command-thread");
+
+          const capability = yield* (yield* Commands).template(
+            { executable: "/usr/bin/uname", args: ["-s"], cwd: "." },
+            state.directory,
+            null,
+          );
+
+          const task = repo.add(
+            {
+              name: "Command review",
+              prompt: "Propose the saved command",
+              provider: "test-provider",
+              model: "test-model",
+              workload: "assistant",
+              schedule: { type: "once", at: 1 },
+            },
+            0,
+            null,
+            destination,
+            undefined,
+            false,
+            null,
+            null,
+            capability,
+          );
+
+          repo.reconcile(1);
+          const claimed = repo.claim(1)!;
+          yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
+          const [proposal] = JSON.parse(yield* approvals.command({ action: "list" }));
+          expect(proposal).toMatchObject({ type: "execute_command", state: "pending" });
+
+          while (yield* gateway.deliverNext) {
+            /* Drain only the disposable fixture queue. */
+          }
+
+          expect(delivered.filter((text) => text.includes(`ID: ${proposal.id}`))).toHaveLength(1);
+          const notice = delivered.find((text) => text.includes(`ID: ${proposal.id}`))!;
+          expect(notice).toContain("Nothing has executed");
+          expect(notice).not.toContain("HOME");
+          yield* gateway.recover;
+          expect(yield* gateway.deliverNext).toBe(false);
+          expect((yield* GatewayRepository).status()).toMatchObject({ uncertainDelivery: 1 });
+          repo.control(
+            {
+              action: "edit",
+              id: task.id,
+              revision: 0,
+              operationId: "revoke-command",
+              patch: { name: "Changed" },
+            },
+            2,
+          );
+          expect(
+            JSON.parse(yield* approvals.command({ action: "approve", id: proposal.id })).state,
+          ).toBe("cancelled");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
   test.each([false, true])(
     "scheduled proposals require a saved capability, notify separately, and survive source cleanup, repeated proposal: %s",
     async (repeat) => {

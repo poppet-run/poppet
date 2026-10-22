@@ -56,10 +56,17 @@ The unreleased base schema starts at version 1 with one initial migration.
 Migration 2 adds monitoring; migration 3 adds task revisions, occurrence snapshots,
 ready times and mutation receipts; migration 4 adds attachments; migration 5 adds
 project snapshots and scoped facts; migration 6 adds immutable proposals and
-scheduled capabilities. Upgrades from versions 1 through 5 retain saved
+scheduled note capabilities; migration 7 adds command grants and fixed scheduled
+command capabilities. Upgrades from versions 1 through 6 retain saved
 data, including monitoring children during occurrence-table replacement. Databases
 from the former 14-step history need a fresh data directory. See
 [storage](storage.md#schema-and-saved-records).
+
+Command fixtures use the guarded Node process API for POSIX group handling.
+The test preload protects both spawn APIs, injects the network guard, and permits
+temporary HOME directories only inside the isolated test home. The disposable
+[command compatibility probe](commands.md#validation) runs in the suite and can
+also be run directly against the pinned runtime without inference.
 
 ## Lint rules
 

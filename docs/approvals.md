@@ -1,5 +1,9 @@
 # Owner-reviewed actions
 
+This guide describes create-only notes. Opt-in commands share these owner
+commands and durable lifecycle; see [command execution](commands.md) for their
+separate permissions, process limits, receipts, and recovery.
+
 [Documentation index](index.md)
 
 Ask Poppet to prepare an exact note for review when you want to inspect it before

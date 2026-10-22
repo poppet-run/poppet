@@ -8,6 +8,38 @@ import { applyMigrations, migrations } from "#src/migrations";
 const initial = migrations.slice(0, 1);
 
 describe("store migrations", () => {
+  test("command migration preserves approval bytes and receipts, grants nothing, and rolls back atomically", () => {
+    using database = new Database(":memory:");
+    const prior = migrations.slice(0, 6);
+    applyMigrations(database, prior);
+
+    const payload =
+      '{"version":1,"type":"create_note","path":"saved.md","content":"Preserve bytes","target":{"root":"/notes","device":1,"inode":2},"selected":null}';
+
+    database
+      .query(`INSERT INTO action_proposals (id, owner, payload, digest, source_session_id, source_run_id, source_call_id, created_at, expires_at, state, receipt)
+      VALUES ('saved', 'owner', ?, 'unchanged-digest', 'session', 'run', 'call', 1, 2, 'uncertain', '{"reason":"Preserve receipt"}')`)
+      .run(payload);
+    const next = migrations[6]!;
+    expect(() =>
+      applyMigrations(database, [...prior, { ...next, sql: `${next.sql}\ninvalid SQL;` }]),
+    ).toThrow("No pending migrations");
+    expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 6 });
+    expect(() => database.query("SELECT * FROM command_run_grants").all()).toThrow();
+    applyMigrations(database);
+    expect(
+      database.query("SELECT payload, digest, state, receipt FROM action_proposals").get(),
+    ).toEqual({
+      payload,
+      digest: "unchanged-digest",
+      state: "uncertain",
+      receipt: '{"reason":"Preserve receipt"}',
+    });
+    expect(database.query("SELECT * FROM command_run_grants").all()).toEqual([]);
+    expect(() =>
+      database.query("UPDATE action_proposals SET payload = '{}' WHERE id = 'saved'").run(),
+    ).toThrow("immutable");
+  });
   test("approval migration preserves existing definitions without granting capability and rolls back atomically", () => {
     using database = new Database(":memory:");
     database.run("PRAGMA foreign_keys = ON");
@@ -28,7 +60,7 @@ describe("store migrations", () => {
     applyMigrations(database);
     expect(database.query("SELECT proposal_note FROM jobs").get()).toEqual({ proposal_note: null });
     expect(database.query("SELECT definition FROM job_occurrences").get()).toEqual({
-      definition: '{"name":"Old","project":null,"proposalNote":null}',
+      definition: '{"name":"Old","project":null,"proposalNote":null,"proposalCommand":null}',
     });
     expect(database.query("SELECT * FROM action_proposals").all()).toEqual([]);
     expect(database.query("PRAGMA foreign_key_check").all()).toEqual([]);
@@ -204,6 +236,7 @@ describe("store migrations", () => {
       skill: { name: "release", content: "Read the current tag" },
       project: null,
       proposalNote: null,
+      proposalCommand: null,
       schedule: { type: "cron", expression: "0 9 * * *", timezone: "Europe/London" },
     });
     database.run("DELETE FROM job_occurrences WHERE id = 'first'");

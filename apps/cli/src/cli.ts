@@ -7,6 +7,7 @@ import {
   webSearchEnabled,
   browserSettings,
   voiceSettings,
+  commandSettings,
 } from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
 import { inspectMCP, mcpServers, type MCPCommand } from "@poppet/mcp";
@@ -26,6 +27,7 @@ import {
   SkillName,
   ProjectName,
   ProposalPath,
+  CommandTemplate,
   Store,
 } from "@poppet/store";
 import {
@@ -114,6 +116,7 @@ const showConfig = Effect.gen(function* () {
         webSearch: yield* webSearchEnabled,
         browser: yield* browserSettings,
         voice: yield* voiceSettings,
+        commands: yield* commandSettings,
         mcpServers: yield* mcpServers,
         chat: yield* ChatSettings,
         ...(yield* ConfigSource),
@@ -324,7 +327,7 @@ export const makeCLI = (
                 prepare(Schema.decodeUnknownSync(TaskInspection)(inspected)),
               ),
             );
-      }).pipe(Effect.provide(runtime.tasks));
+      }).pipe(Effect.provide([runtime.tasks, runtime.commands]));
 
       yield* Console.log(JSON.stringify(result, null, 2));
     }).pipe(Effect.provide(runtime.config));
@@ -485,9 +488,24 @@ export const makeCLI = (
           skill: skillFlag,
           project: projectFlag,
           text: textArgument("message").pipe(Argument.withSchema(MessageText)),
+          commandsRoot: Flag.String("commands-root").pipe(Flag.optional),
+          commandReceipt: Flag.String("command-receipt").pipe(
+            Flag.withSchema(Session.fields.id),
+            Flag.optional,
+          ),
         },
-        ({ coding, text, skill, project }) => {
-          const command: ChatCommand = { action: "new", coding, text };
+        ({ coding, text, skill, project, commandsRoot, commandReceipt }) => {
+          let command: ChatCommand = {
+            action: "new",
+            coding,
+            text,
+          };
+
+          if (Option.isSome(commandsRoot))
+            command = { ...command, commandsRoot: commandsRoot.value };
+
+          if (Option.isSome(commandReceipt))
+            command = { ...command, commandReceipt: commandReceipt.value };
 
           const selected = skill === undefined ? command : { ...command, skill };
 
@@ -499,8 +517,23 @@ export const makeCLI = (
         {
           id: Argument.String("session").pipe(Argument.withSchema(Session.fields.id)),
           text: textArgument("message").pipe(Argument.withSchema(MessageText)),
+          commandsRoot: Flag.String("commands-root").pipe(Flag.optional),
+          commandReceipt: Flag.String("command-receipt").pipe(
+            Flag.withSchema(Session.fields.id),
+            Flag.optional,
+          ),
         },
-        ({ id, text }) => runChat({ action: "send", id, text }),
+        ({ id, text, commandsRoot, commandReceipt }) => {
+          let command: ChatCommand = { action: "send", id, text };
+
+          if (Option.isSome(commandsRoot))
+            command = { ...command, commandsRoot: commandsRoot.value };
+
+          if (Option.isSome(commandReceipt))
+            command = { ...command, commandReceipt: commandReceipt.value };
+
+          return runChat(command);
+        },
       ).pipe(Command.withDescription("Continue a saved session")),
       Command.make(
         "rename",
@@ -712,6 +745,12 @@ export const makeCLI = (
               "Allow one create-only proposal per report occurrence at this exact notes path",
             ),
           ),
+          proposalCommand: Flag.String("proposal-command").pipe(
+            Flag.optional,
+            Flag.withDescription(
+              "Fixed command proposal as JSON with root, executable, args and cwd; never grants scheduled execution",
+            ),
+          ),
           discordThread: Flag.String("discord-thread").pipe(
             Flag.withSchema(Schema.NonEmptyString.check(Schema.isPattern(/^[0-9]{1,20}$/))),
             Flag.withDescription("Send each completed result to this authorized Discord thread"),
@@ -747,6 +786,7 @@ export const makeCLI = (
           skill,
           project,
           proposalNote,
+          proposalCommand,
           discordThread,
           telegramChat,
           whatsappChat,
@@ -781,6 +821,13 @@ export const makeCLI = (
               monitor,
               project,
               Option.getOrUndefined(proposalNote),
+              Option.isNone(proposalCommand)
+                ? undefined
+                : yield* taskOperation(() =>
+                    Schema.decodeUnknownSync(Schema.fromJsonString(CommandTemplate), {
+                      onExcessProperty: "error",
+                    })(proposalCommand.value),
+                  ),
             );
 
             yield* runTasks(command);

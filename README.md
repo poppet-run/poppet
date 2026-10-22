@@ -45,6 +45,7 @@ The [documentation index](docs/index.md) links to all guides and references.
 - [Command line](docs/cli.md)
 - [Notes](docs/notes.md), [memory](docs/memory.md), [projects](docs/projects.md), and [MCP tools](docs/mcp.md)
 - [Scheduled tasks](docs/tasks.md), [owner approvals](docs/approvals.md), and [worker](docs/worker.md)
+- [Command execution](docs/commands.md) with explicit per-run grants and one-time owner approval
 - [Discord](docs/gateways/discord.md), [Telegram](docs/gateways/telegram.md), and [WhatsApp](docs/gateways/whatsapp.md)
 - [Development](docs/development.md)
 

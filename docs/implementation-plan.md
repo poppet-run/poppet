@@ -21,8 +21,9 @@ automated checks. Real-model monitoring and live change delivery remain manual.
 through editing, skip-next, snooze, and run-now, with automated checks. Real-model
 intent handling and live messaging validation remain manual.
 
-The other saved priorities have detailed plans below. They remain planned work;
-these notes do not authorize implementation.
+Command execution and approval are implemented in [Phase 31](#phase-31-command-execution-and-approval),
+with explicit per-run grants and separate opt-ins. Browser login state, doctor
+and the workflow trials remain planned work. Their notes do not authorize implementation.
 
 | Phase                                                                      | First deliverable                                          | Follow-up stages                                                   |
 | -------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------ |
@@ -3302,10 +3303,12 @@ or useful weekly review quality.
 
 ## Phase 31: Command execution and approval
 
-Planned on 2026-10-22. No command executor, command permission, or automatic
-approval is implemented by this plan. Depend on Phase 27's local approval
-lifecycle, not its gated external-action stage. Browser login state, doctor,
-and the workflow trials are independent of this phase.
+Implemented on 2026-10-22 with separate opt-ins for commands, automatic reads,
+fixed scheduled proposals and advisory review. The Bun 1.4.3 macOS compatibility
+probe passed. Real-model behavior, live delivery and reviewer usefulness remain
+manual checks; Linux CI remains unverified for this branch. See
+[command execution](commands.md). This phase reuses Phase 27's local lifecycle;
+its external-action stage remains gated.
 
 ### Goal and delivery boundaries
 
@@ -3646,7 +3649,29 @@ checks for automatic reads, scheduled delivery, and the advisory reviewer.
 Record source/fixture, pinned-runtime, real-model, and live-messaging evidence
 separately. Passing command fixtures does not prove safe arbitrary code execution,
 OS isolation, or reliable model risk judgments. Implementation and live checks
-remain unstarted until separately authorized.
+remain separate validation layers; see the validation record below.
+
+### Validation record
+
+`bun run check` passed on 2026-10-22: formatting, lint, workspace type checks,
+and 985 tests across 70 files. Command coverage includes real fixture processes,
+the pinned macOS process-group probe, local and worker CLI paths, lost worker
+responses, exact source/payload binding, grant expiry between runs, argument/path
+and preview limits, cancellation, executable replacement, uncertainty/restart,
+and preservation of authorization after a failed completion receipt.
+
+Automatic-read tests distinguish rule authority from owner approval. Scheduled
+tests prove fixed capabilities cannot execute automatic reads, stale task
+permissions invalidate proposals, and separate notices preserve deduplication
+and uncertain-send behavior. Advisory review fixtures have no tools or execution
+authority and malformed advice leaves manual approval. Migration checks preserve
+existing note payload bytes/receipts and roll back the new schema atomically.
+
+The test preload still isolates HOME, environment and network for both process
+APIs through the pinned Bun implementation. The owner's live configuration and
+database were not changed. Linux CI, real-model command preparation, a live
+scheduled notice, and reviewer usefulness/cost remain separate manual or remote
+checks. See [command validation](commands.md#validation).
 
 ### Design references
 

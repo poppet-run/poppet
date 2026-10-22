@@ -9,6 +9,8 @@ import {
   SkillsLive,
   ProjectsLive,
   LocalApprovalsLive,
+  CommandsLive,
+  CommandReviewerLive,
 } from "@poppet/agent";
 import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import { ApiKeyStoreLive } from "@poppet/credentials";
@@ -24,7 +26,7 @@ import {
   type ProviderRegistration,
   type ProviderError,
 } from "@poppet/provider";
-import { StoreLive } from "@poppet/store";
+import { StoreLive, ApprovalRepositoryLive } from "@poppet/store";
 import { ChatTasksLive, TaskRepositoryLive, WorkerConnections } from "@poppet/tasks";
 import { Context, Effect, Layer, Schema } from "effect";
 
@@ -164,8 +166,14 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   const webSearch = WebSearchLive.pipe(Layer.provide([config, chatSettings, searchCredentials]));
   const notes = NotesLive.pipe(Layer.provide([config, chatSettings]));
 
+  const commands = CommandsLive.pipe(
+    Layer.provide(CommandReviewerLive.pipe(Layer.provide([resolver, config]))),
+    Layer.provideMerge(ApprovalRepositoryLive.pipe(Layer.provide([store, config]))),
+    Layer.provide([store, config, chatSettings]),
+  );
+
   const approvals = LocalApprovalsLive.pipe(
-    Layer.provideMerge([store, config, notes, chatSettings]),
+    Layer.provideMerge([store, config, notes, chatSettings, commands]),
   );
 
   const chatTasks = ChatTasksLive.pipe(Layer.provide([tasks, store, skills, chatSettings]));
@@ -208,6 +216,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     tasks,
     skills,
     approvals,
+    commands,
     chat,
     connections,
     searchCredentials,

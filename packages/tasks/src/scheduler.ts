@@ -1,4 +1,4 @@
-import { Agent, AgentError, Skills, Projects, sessionTitle } from "@poppet/agent";
+import { Agent, AgentError, Skills, Projects, Commands, sessionTitle } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { ProviderError } from "@poppet/provider";
 import { Store, type StoreError } from "@poppet/store";
@@ -181,6 +181,11 @@ export const makeTaskWorker = Effect.gen(function* () {
   const config = yield* AppConfig;
   const skills = yield* Skills;
   const projects = yield* Effect.serviceOption(Projects);
+  const hostCommands = yield* Effect.serviceOption(Commands);
+
+  const commandContext = Option.isSome(hostCommands)
+    ? Context.make(Commands, hostCommands.value)
+    : Context.empty();
 
   const projectContext = Option.isSome(projects)
     ? Context.make(Projects, projects.value)
@@ -293,6 +298,7 @@ export const makeTaskWorker = Effect.gen(function* () {
       Effect.provideService(Console.Console, output),
       Effect.provideService(Skills, skills),
       Effect.provide(projectContext),
+      Effect.provide(commandContext),
     );
 
   const run = Effect.scoped(

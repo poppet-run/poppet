@@ -168,7 +168,12 @@ const gateway = Effect.gen(function* () {
         destination.scopeId === channel.policy.scopeId &&
         channel.policy.parentIds.includes(destination.parentId);
 
-      const text = `Note proposal prepared for owner review. This is not an execution receipt.\nID: ${item.id}\nPath: ${item.path}\nPayload SHA-256: ${item.digest}\nExpires: ${new Date(item.expiresAt).toISOString()}\nReview full content and current state locally: approvals show ${item.id}\nApprove or cancel using the local approvals CLI. Chat replies and reactions cannot approve it.`;
+      const summary =
+        item.type === "create_note"
+          ? `Note proposal prepared for owner review. This is not an execution receipt.\nID: ${item.id}\nPath: ${item.path}`
+          : `Command proposal prepared for owner review. Nothing has executed.\nID: ${item.id}\nExecutable: ${JSON.stringify(item.path)}`;
+
+      const text = `${summary}\nPayload SHA-256: ${item.digest}\nExpires: ${new Date(item.expiresAt).toISOString()}\nReview full content and current state locally: approvals show ${item.id}\nApprove or cancel using the local approvals CLI. Chat replies and reactions cannot approve it.`;
       yield* gatewayStorage(() =>
         repo.scheduleResult(
           item.id,

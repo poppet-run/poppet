@@ -10,8 +10,9 @@ capabilities and the relevant phase's compatibility gates before implementation.
 Change-aware monitoring already has a [Phase 23 plan](implementation-plan.md#phase-23-change-aware-monitoring).
 Task controls are implemented in Phase 24, and Telegram documents/local voice in
 Phase 25. Project context is implemented in Phase 26. Local and scheduled note
-approvals are implemented in Phase 27; external actions remain gated. Later
-priorities remain planned work.
+approvals are implemented in Phase 27; external actions remain gated. Command
+execution is implemented in Phase 31. Browser login state, doctor and the
+workflow trials remain planned work.
 
 ## 1. Editable tasks and snoozing
 
@@ -120,19 +121,19 @@ Starting points: [worker status](worker.md#status-and-logs),
 
 ## 7. Command execution and approval
 
-Planning is captured in [Phase 31](implementation-plan.md#phase-31-command-execution-and-approval).
-The first delivery adds opt-in CLI commands with structured arguments, an explicit
-per-run working-directory grant, exact one-time owner approval, bounded process
-lifetime/output, and durable receipts. It reuses Phase 27's local approval lifecycle.
+Implemented with automated checks in [Phase 31](implementation-plan.md#phase-31-command-execution-and-approval).
+Opt-in CLI commands use structured arguments, an explicit per-run working-directory
+grant, exact one-time owner approval, bounded process lifetime/output, and durable
+receipts. See [command execution](commands.md) for configuration and remaining live checks.
 
-Separate follow-ups cover narrowly defined automatic reads, fixed scheduled
+Separate opt-ins cover narrowly defined automatic reads, fixed scheduled
 command proposals without execution, and optional advisory model review. Model
 review cannot approve commands. External action adapters remain gated, and command
 approval does not provide OS isolation or permission to run untrusted code.
 
 Starting points: [owner approvals](approvals.md), `packages/agent/src/approvals.ts`,
 `packages/store/src/approval-schema.ts`, `approval-store.ts`, and the existing
-browser/MCP subprocess lifecycle code. No command executor is implemented yet.
+browser/MCP subprocess lifecycle code. Commands remain disabled by default.
 
 ## Workflows to try with existing tools
 

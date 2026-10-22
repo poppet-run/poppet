@@ -129,6 +129,12 @@ locally. Approval executes that payload without inference. Chat replies and mode
 tools cannot approve it. Voice-derived requests cannot prepare proposals. See
 [owner approvals](approvals.md).
 
+CLI command requests have a separate, disabled-by-default capability. Supply
+`--commands-root <directory>` for each eligible `chat new` or `chat send` request.
+It does not persist in the session or project. Approval executes without another
+model turn; a later `--command-receipt <id>` request can discuss selected output.
+Messaging and voice cannot obtain this grant. See [command execution](commands.md).
+
 ## Manage scheduled tasks
 
 Ask a tool-capable model to create, inspect, edit, pause, resume, skip, snooze,
