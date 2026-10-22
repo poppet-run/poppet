@@ -120,6 +120,15 @@ the interactive prompt, and authorized messaging use the same memory tool.
 Scheduled runs cannot change memory. See [memory](memory.md#ask-the-model-to-change-a-fact)
 for provenance, limits, cancellation, and uncertain outcomes.
 
+## Prepare a note for review
+
+Ask a tool-capable model to prepare a create-only note proposal and wait for your
+approval. It returns a complete saved preview and ID. Inspect with
+`approvals show <id>`, then use `approvals approve <id>` or `approvals cancel <id>`
+locally. Approval executes that payload without inference. Chat replies and model
+tools cannot approve it. Voice-derived requests cannot prepare proposals. See
+[owner approvals](approvals.md).
+
 ## Manage scheduled tasks
 
 Ask a tool-capable model to create, inspect, edit, pause, resume, skip, snooze,

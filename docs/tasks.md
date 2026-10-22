@@ -244,6 +244,17 @@ international phone digits without `+`. The adapter validates the connected
 account and private chat, then uses the same saved destination and delivery queue.
 Ambiguous sends remain uncertain without automatic replay.
 
+## Prepare proposals for review
+
+Reporting tasks may explicitly opt in with `--proposal-note <relative-path>`
+before the prompt. This host permission allows one pending create-only proposal
+per occurrence at the selected path. It grants no note-write or execution tool;
+monitoring and chat-created tasks cannot opt themselves in. Task edits invalidate
+pending proposals from the old revision; clearing tasks cancels pending proposals
+and retains completed receipts. Existing messaging destinations receive separate
+review notices through the durable queue. Approval remains local. See
+[scheduled proposals](approvals.md#scheduled-proposals) for setup and path limits.
+
 ## Select a skill
 
 Pass `--skill <name>` before the prompt to save a [local Markdown procedure](skills.md)

@@ -158,10 +158,27 @@ See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and wha
 `clear` deletes or retains. Tasks execute while a worker with scheduling enabled
 is running. Choose at most one messaging destination flag.
 
+`tasks add --proposal-note <relative-path>` explicitly permits one create-only
+note proposal per reporting occurrence at that exact path. It cannot be combined
+with `--monitor`. Existing messaging destination flags also route the separate
+proposal notice. See [scheduled proposals](approvals.md#scheduled-proposals).
+
 `tasks add --monitor` selects [change-aware monitoring](tasks.md#change-aware-monitoring).
 It requires `--cron` and `--tz`, saves a quiet first baseline, and delivers only
 later value changes. It reuses the existing destination flags and task controls.
 `tasks show` includes the last successful observation and per-check decisions.
+
+## Owner approvals
+
+| Command                        | Action                                                               |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `approvals list`               | Summarize the 50 most recent proposals.                              |
+| `approvals show <proposal>`    | Display the exact saved payload, source, expiry, state, and outcome. |
+| `approvals approve <proposal>` | Claim and execute that saved create-only note once.                  |
+| `approvals cancel <proposal>`  | Cancel still-pending work.                                           |
+
+These commands need no model. Approval and cancellation are CLI-only and use the
+worker when running. See [owner approvals](approvals.md) for preparation and recovery.
 
 ## Messaging
 

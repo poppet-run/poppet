@@ -2,7 +2,13 @@ import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
-import { DeliveryDestination, StoreDatabase, SkillSnapshot, ProjectSnapshot } from "@poppet/store";
+import {
+  DeliveryDestination,
+  StoreDatabase,
+  SkillSnapshot,
+  ProjectSnapshot,
+  ProposalPath,
+} from "@poppet/store";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 
 import { monitoringRecords } from "#src/monitoring";
@@ -33,7 +39,7 @@ export const recurringExpiry = 24 * 60 * 60 * 1000;
 
 const taskSql = `SELECT id, name, prompt, provider, model, workload, schedule,
   monitor, revision, monitor_revision AS monitorRevision, monitor_baseline_after AS monitorBaselineAfter,
-  skill, project, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
+  skill, project, proposal_note AS proposalNote, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
 
 const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, status,
   revision, definition, available_at AS availableAt, origin,
@@ -271,6 +277,7 @@ export const makeTaskStore = (database: Database) => {
     source?: { readonly runId: string; readonly callId: string },
     monitor = false,
     project: ProjectSnapshot | null = null,
+    proposalNote: string | null = null,
   ) => {
     if (source) {
       const existing = Schema.decodeUnknownSync(
@@ -287,6 +294,12 @@ export const makeTaskStore = (database: Database) => {
     if (destination !== null) Schema.decodeUnknownSync(DeliveryDestination)(destination);
     const valid = Schema.decodeUnknownSync(NewTask)(input);
 
+    if (proposalNote !== null) {
+      Schema.decodeUnknownSync(ProposalPath)(proposalNote);
+
+      if (monitor) throw new TaskError({ message: "Monitoring tasks cannot prepare proposals." });
+    }
+
     if (monitor && valid.schedule.type !== "cron")
       throw new TaskError({ message: "Monitoring requires --cron and an explicit timezone." });
 
@@ -296,7 +309,7 @@ export const makeTaskStore = (database: Database) => {
     const id = randomUUID();
 
     using statement = database.prepare(
-      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id, monitor, project) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id, monitor, project, proposal_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
 
     statement.run(
@@ -315,6 +328,7 @@ export const makeTaskStore = (database: Database) => {
       source?.callId ?? null,
       monitor ? 1 : 0,
       project === null ? null : Schema.encodeSync(Schema.fromJsonString(ProjectSnapshot))(project),
+      proposalNote,
     );
 
     return task(id);
@@ -434,6 +448,11 @@ export const makeTaskStore = (database: Database) => {
                 baselineReset ? boundary : job.monitorBaselineAfter,
                 job.id,
               );
+            database
+              .query(
+                "UPDATE action_proposals SET state = 'cancelled', receipt = json_object('id', id, 'digest', digest, 'state', 'cancelled', 'reason', 'Source task edited') WHERE job_id = ? AND state = 'pending'",
+              )
+              .run(job.id);
 
             if (pending !== undefined) {
               database.run(
@@ -638,6 +657,9 @@ export const makeTaskStore = (database: Database) => {
           throw new TaskError({ message: "Interrupt active work before clearing tasks." });
 
         // Task history references conversations; deleting it leaves those conversations intact.
+        database.run(
+          "UPDATE action_proposals SET state = 'cancelled', receipt = json_object('id', id, 'digest', digest, 'state', 'cancelled', 'reason', 'Source tasks cleared') WHERE job_id IS NOT NULL AND state = 'pending'",
+        );
         database.run("DELETE FROM job_operations");
         database.run("DELETE FROM job_skips");
         database.run("DELETE FROM job_occurrences");

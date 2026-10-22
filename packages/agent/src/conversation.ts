@@ -19,6 +19,7 @@ import {
 } from "@poppet/store";
 import { Cause, Clock, Effect, Exit, Match, Option, Stream } from "effect";
 
+import { Approvals, decodeProposalCall, proposalTool, type PreparedProposal } from "#src/approvals";
 import { assembleContext, byteSize, outputBudget } from "#src/context";
 import { AgentError } from "#src/errors";
 import { ExternalTools, type PreparedExternalCall } from "#src/external-tools";
@@ -60,6 +61,7 @@ export const conversation = Effect.gen(function* () {
   const webSearch = yield* WebSearch;
   const policy = yield* ChatSettings;
   const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
+  const approvals = Option.getOrNull(yield* Effect.serviceOption(Approvals));
   const external = Option.getOrNull(yield* Effect.serviceOption(ExternalTools));
   const clock = yield* Clock.Clock;
 
@@ -74,6 +76,7 @@ export const conversation = Effect.gen(function* () {
       | MemoryCall
       | WebSearchCall
       | PreparedTaskCall
+      | PreparedProposal
       | PreparedExternalCall,
     project: ProjectSnapshot | null,
   ) => {
@@ -94,6 +97,7 @@ export const conversation = Effect.gen(function* () {
         ),
         Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
         Match.when({ name: "manage_tasks" }, (plan) => plan.execute),
+        Match.when({ name: "propose_note" }, (plan) => plan.execute),
         Match.when({ name: "external" }, (plan) => plan.execute),
         Match.when({ name: "search_web" }, (plan) =>
           webSearch.search === null
@@ -141,14 +145,14 @@ export const conversation = Effect.gen(function* () {
         ),
       );
 
-      if (call.name !== "manage_tasks")
+      if (call.name !== "manage_tasks" && call.name !== "propose_note")
         yield* store.finishToolCall(run.id, callId, { status: "completed", output });
 
       return { output, urls };
     });
 
     // Keep an atomic write and its durable result together on graceful cancellation.
-    return call.name === "save_note" || call.name === "memory"
+    return call.name === "save_note" || call.name === "memory" || call.name === "propose_note"
       ? Effect.uninterruptible(operation)
       : operation;
   };
@@ -183,6 +187,11 @@ export const conversation = Effect.gen(function* () {
               )
             : [];
 
+        const proposalsAllowed =
+          approvals !== null &&
+          source?.kind !== "voice" &&
+          (yield* approvals.available(run.id, readOnlyTools));
+
         const tools = model.description.capabilities.tools
           ? [
               ...noteTools,
@@ -191,6 +200,7 @@ export const conversation = Effect.gen(function* () {
               sessionReadTool,
               fetchPageTool,
               memoryTool,
+              ...(proposalsAllowed ? [proposalTool] : []),
               ...(webSearch.search === null ? [] : [webSearchTool]),
               ...(tasks === null || readOnlyTools ? [] : [taskTool]),
             ].filter(
@@ -246,6 +256,13 @@ export const conversation = Effect.gen(function* () {
               Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
               Match.when({ name: "read_session" }, decodeSessionReadCall),
               Match.when({ name: "memory" }, decodeMemoryCall),
+              Match.when({ name: "propose_note" }, (proposalCall) =>
+                decodeProposalCall(proposalCall).pipe(
+                  Effect.flatMap((args) =>
+                    approvals!.prepare(args, run.id, proposalCall.callId, readOnlyTools),
+                  ),
+                ),
+              ),
               Match.when({ name: "search_web" }, decodeWebSearchCall),
               Match.when({ name: "manage_tasks" }, (taskCall) =>
                 decodeTaskCall(taskCall).pipe(

@@ -43,7 +43,9 @@ export const runWorker = (mode: WorkerMode) =>
       };
 
       yield* serveWorker(workerSocketPath(config.dataDirectory), (request, body) => {
-        if (!["/tasks", "/project-tasks"].includes(new URL(request.url).pathname))
+        if (
+          !["/tasks", "/project-tasks", "/approval-tasks"].includes(new URL(request.url).pathname)
+        )
           return commands.handle(request, body);
 
         return taskResponse(body, (command) =>

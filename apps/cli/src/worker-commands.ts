@@ -1,4 +1,12 @@
-import { Agent, ChatSettings, logChatDiagnostic, Skills, type AgentError } from "@poppet/agent";
+import {
+  Agent,
+  Approvals,
+  ApprovalCommand,
+  ChatSettings,
+  logChatDiagnostic,
+  Skills,
+  type AgentError,
+} from "@poppet/agent";
 import { MCP, MCPCommand, inspectMCP } from "@poppet/mcp";
 import { Memory } from "@poppet/memory";
 import { Session, Store } from "@poppet/store";
@@ -24,6 +32,7 @@ const WorkerCommand = Schema.Union([
     streamReasoning: Schema.optionalKey(Schema.Boolean),
   }),
   Schema.Struct({ kind: Schema.Literal("memory"), command: MemoryCommand }),
+  Schema.Struct({ kind: Schema.Literal("approvals"), command: ApprovalCommand }),
   Schema.Struct({ kind: Schema.Literal("store") }),
   Schema.Struct({ kind: Schema.Literal("gateway") }),
   Schema.Struct({ kind: Schema.Literal("mcp"), command: MCPCommand }),
@@ -54,6 +63,21 @@ const execute = (
   timingLog: (line: string) => Effect.Effect<void>,
 ) =>
   Effect.gen(function* () {
+    if (request.kind === "approvals") {
+      const approvals = yield* Effect.serviceOption(Approvals);
+
+      if (Option.isNone(approvals))
+        return yield* Effect.fail(
+          new WorkerRequestError({
+            message: "Approvals are unavailable. Restart the worker with the current code.",
+          }),
+        );
+
+      return yield* approvals.value
+        .command(request.command)
+        .pipe(Effect.flatMap((text) => write(`${text}\n`)));
+    }
+
     if (request.kind === "mcp")
       return yield* inspectMCP(request.command).pipe(Effect.flatMap((text) => write(`${text}\n`)));
 
@@ -113,7 +137,9 @@ export const WorkerRequestsLive = Layer.effect(
         Effect.gen(function* () {
           if (
             request.method !== "POST" ||
-            !["/commands", "/project-commands"].includes(new URL(request.url).pathname)
+            !["/commands", "/project-commands", "/approval-commands"].includes(
+              new URL(request.url).pathname,
+            )
           )
             return new Response("Not found", { status: 404 });
 
@@ -214,11 +240,13 @@ export const remoteWorkerCommand = (
         try: (signal) =>
           requestWorker(
             path,
-            (command.kind === "chat" || command.kind === "memory") &&
-              "project" in command.command &&
-              command.command.project !== undefined
-              ? "/project-commands"
-              : "/commands",
+            command.kind === "approvals"
+              ? "/approval-commands"
+              : (command.kind === "chat" || command.kind === "memory") &&
+                  "project" in command.command &&
+                  command.command.project !== undefined
+                ? "/project-commands"
+                : "/commands",
             command.kind === "chat" && writeReasoning !== undefined
               ? { ...command, streamReasoning: true }
               : command,

@@ -14,6 +14,7 @@ Start with [getting started](getting-started.md) to install dependencies, connec
 - [Browser automation](browser.md): agent-browser setup, isolated runs, website permissions, and limits.
 - [Skills](skills.md): explicitly selected local procedures saved with chats and tasks.
 - [Memory](memory.md): an editable profile and explicitly saved facts shared across sessions.
+- [Owner approvals](approvals.md): exact create-only note proposals, local review, expiry, and scheduled notices.
 - [Projects](projects.md): saved instructions, scoped facts and recall, and selected notes for chats and tasks.
 - [Storage](storage.md): the local database, permissions, ownership, and recovery.
 - [Scheduled tasks](tasks.md): one-off and recurring work, change-aware monitoring, results, pauses, and retries.

@@ -55,7 +55,8 @@ the ledger checks their names and SQL checksums before applying pending steps.
 The unreleased base schema starts at version 1 with one initial migration.
 Migration 2 adds monitoring; migration 3 adds task revisions, occurrence snapshots,
 ready times and mutation receipts; migration 4 adds attachments; migration 5 adds
-project snapshots and scoped facts. Upgrades from versions 1 through 4 retain saved
+project snapshots and scoped facts; migration 6 adds immutable proposals and
+scheduled capabilities. Upgrades from versions 1 through 5 retain saved
 data, including monitoring children during occurrence-table replacement. Databases
 from the former 14-step history need a fresh data directory. See
 [storage](storage.md#schema-and-saved-records).
@@ -297,6 +298,15 @@ assistant-capable provider and model for messaging and scheduled tasks.
 - [ ] Schedule a one-off task, sleep across its due time, then wake. Expect one
       execution. Restart the worker and confirm it does not repeat; check that logs
       append without exposing secrets.
+
+### Approval checks
+
+Approval tests use real temporary stores, note publication, worker sockets and
+gateway queues with injected inference. They cover immutable previews and receipt
+rollback, owner/expiry/policy boundaries, concurrent claims, competing files,
+lost replies, crash uncertainty after publication, scheduled permissions and
+notification deduplication. Follow the [manual approval path](approvals.md#validation)
+for real model and messaging behavior. No external mutation adapter is enabled.
 
 ### Project context checks
 

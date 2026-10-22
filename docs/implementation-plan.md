@@ -32,12 +32,13 @@ these notes do not authorize implementation.
 | [28: Browser login state](#phase-28-browser-login-state-across-requests)   | One explicitly selected, protected browser profile         | Attended login, reuse, inspection, and clearing                    |
 | [29: Doctor](#phase-29-a-useful-poppet-doctor)                             | Read-only local health report with next steps              | Worker observations and stable JSON output                         |
 | [30: Workflow trials](#phase-30-calendar-briefings-and-weekly-reviews)     | Existing-tool capability checks                            | Calendar briefings and weekly reviews without a native integration |
+| [31: Command execution](#phase-31-command-execution-and-approval)          | Opt-in commands with exact, one-time owner approval        | Narrow automatic reads, scheduled proposals, advisory model review |
 
 See [future priorities](future-priorities.md) for the priority order and workflows
 to try using existing tools. The phase numbers organize delivery; independent
 work such as doctor need not wait for every earlier phase.
 
-Updated: 2026-10-21
+Updated: 2026-10-22
 
 Storage history: the unreleased base schema is consolidated into version 1 in
 one timestamped initial migration. Phase 23 adds migration 2 without resetting
@@ -2763,10 +2764,12 @@ quality, and platform messaging selection remain the
 
 ## Phase 27: Actions the owner can review and approve
 
-Planned only. Start with one concrete action: creating a new note inside the
-existing notes root. Reuse note validation, protected worker ownership, durable
-tool-call provenance, and existing inspection patterns. Broaden to one external
-integration only after the local approval lifecycle is proven.
+Stages 27a and 27c are implemented on 2026-10-22. They reuse note validation,
+protected worker ownership, tool-call provenance and inspection patterns.
+Stage 27b remains gated by the owner's explicit choice after the configured Apple
+Notes create operation failed its destination-identity gate. See
+[owner approvals](approvals.md). The sections below record the implemented local
+scope and the separate external compatibility requirements.
 
 ### Goal and first version
 
@@ -2799,7 +2802,7 @@ Deduplicate proposal creation by the host's source run/call identity, with the
 creation receipt committed in the same transaction. Editing a proposal means
 cancelling it and creating a new ID, never changing an already reviewed payload.
 
-Proposed local owner commands:
+Local owner commands:
 
 ```fish
 bun run start approvals list
@@ -2917,6 +2920,26 @@ Cancel and expire separate proposals. Only then validate the chosen external
 action with a disposable target and a live authorized account. Scheduled proposals
 also need one live notification check. Local fixtures cannot prove an external
 service's idempotency or a real model's ability to prepare useful proposals.
+
+### Validation record
+
+`bun run check` passed on 2026-10-22: formatting, lint, workspace type checks,
+and 968 tests across 67 files. Approval cases cover exact source-call binding,
+immutable complete previews without publication, owner boundaries, expiry,
+cancel/claim races, atomic create-only publication, receipt rollback and crash
+uncertainty, lost worker responses, migration rollback, scheduled permissions and
+revision binding, source-task cleanup, and separate notification deduplication
+and uncertain-send recovery.
+
+Tests use injected inference, temporary stores and real local note publication,
+worker sockets and delivery queues. The owner's live database was not opened or
+migrated. Live model behavior and a real scheduled messaging notice remain the
+[manual approval checks](approvals.md#validation).
+
+The configured `apple-notes-mcp` 2.15.1 create operation was inspected locally.
+Its account/folder-name resolution cannot enforce the exact reviewed folder
+identity at mutation time, so no external adapter was enabled. The owner explicitly
+chose to retain that gate; Stage 27b remains separate future work.
 
 ## Phase 28: Browser login state across requests
 
@@ -3276,6 +3299,364 @@ time source is supported, two scheduled windows have been inspected. Live accoun
 and delivery checks require the owner's chosen integration/destination. Planning
 these trials or writing the skills does not establish live calendar correctness
 or useful weekly review quality.
+
+## Phase 31: Command execution and approval
+
+Planned on 2026-10-22. No command executor, command permission, or automatic
+approval is implemented by this plan. Depend on Phase 27's local approval
+lifecycle, not its gated external-action stage. Browser login state, doctor,
+and the workflow trials are independent of this phase.
+
+### Goal and delivery boundaries
+
+Let the owner ask Poppet to run a local command, review the exact invocation,
+and approve it once. Add deterministic automatic permission for a small set of
+read-only invocations only after the manual path works. Reuse existing proposal
+records, protected worker ownership, tool-call provenance, and durable receipts.
+Approval executes saved arguments directly without another model turn.
+
+The first delivery is CLI-only, disabled by default, and runs trusted local
+programs under the owner's OS account. It supports one executable and argument
+array in a selected working directory. Shell strings, pipelines, redirections,
+PTYs, interactive stdin, background services, privilege elevation, remote
+mutations, secret-bearing arguments, session-wide approval, and permanent
+approval are outside this delivery. Build/test commands can execute project
+code and always require owner approval. Do not classify them as read-only.
+
+This is approval for an invocation, not proof of its complete effects. The
+working directory does not restrict filesystem or network access. Removing
+credential environment variables does not prevent an owner-account process
+from reading credential files. Admit only owner-trusted programs and workspace
+code. Untrusted-code execution requires a separately verified OS isolation
+design; process timeouts and command classification do not provide one.
+
+Phase 27's external adapters remain gated. Do not add shell-based routes for
+external actions as part of this phase or claim that command rules enforce
+network isolation. Initial messaging and voice requests cannot obtain command
+access. Scheduled runs get no execution permission, including automatic reads.
+
+Deliver Stages 31a-31c first. Stages 31d-31f are separate follow-ups, each with
+its own acceptance gate. No Tirith dependency, policy language, shell parser,
+general workflow engine, or additional approval UI is required.
+
+### Stage 31a: Execution contract and runtime compatibility
+
+Inspect the pinned Bun version, currently 1.4.3, and existing browser/MCP child
+process handling. Verify supported behavior on macOS and Linux CI with
+disposable fixtures before exposing a model tool. Prefer the existing runtime
+and built-in process APIs. If `Bun.spawn` cannot meet the lifecycle requirements,
+probe the built-in `node:child_process` API before considering another dependency.
+Do not implement a shell launcher to work around missing process controls.
+
+The probe must establish argument preservation, explicit cwd/environment,
+ignored stdin, concurrent stdout/stderr draining, spawn failures, normal and
+nonzero exits, timeout, cancellation, and reaping. Include a child that ignores
+SIGTERM, one that spawns a descendant holding a pipe open, and a launcher that
+exits before its descendant. Establish process-group cleanup where supported;
+killing the direct child alone is insufficient for ordinary build/test tools.
+Record the selected API, platform behavior, cleanup deadline, and limitations.
+An unsupported platform must refuse command access with an actionable reason.
+
+Start with one active command per owner process, a 60-second execution deadline,
+and bounded cleanup: two seconds for graceful termination, then three seconds
+for forced termination and reaping. Count bytes while reading both pipes.
+Retain at most 64 KiB combined and fit model-facing results within the existing
+`toolBytes` budget, reserving space for status and truncation metadata. Stop a
+command that exceeds the capture limit. Never use unbounded `.text()` or wait
+forever for a descendant to close an output stream. Tune these initial limits
+only from the probe's evidence, and document any change before implementation.
+
+Process groups cannot contain deliberately escaping code. Worker death can also
+leave processes alive unless a verified runtime mechanism prevents that. Report
+these limits explicitly; recovery must not signal an old saved PID that the OS
+may have reused. If cleanup of ordinary admitted commands cannot be bounded,
+stop at this gate instead of exposing them. Supporting hostile subprocesses or
+guaranteed cleanup after forced owner-process death requires separate isolation.
+
+Acceptance: the probe passes without model inference or live owner data, leaves
+no fixture processes behind, and distinguishes tested cleanup from containment
+claims. No command permission is enabled merely by running the probe.
+
+### Stage 31b: Host permissions, typed proposals, and command policy
+
+Add opt-in command settings through the existing configuration source. Initially
+accept an `enabled` flag and explicit absolute executable paths. Default to
+disabled and an empty list. Resolve and validate owner-managed executable
+identities on the host. Do not resolve model-supplied program names through PATH
+or discover executable permissions from project instructions or tool results.
+Configuration validation/inspection must not execute the configured programs.
+
+Add an explicit `--commands-root <directory>` option to eligible CLI chat sends.
+Resolve the directory on the host and attach the capability to that request
+and run. It expires with the run and is not inherited by the next message,
+resumed session, project, scheduled task, or messaging conversation. Global
+configuration permits the feature; it does not grant every run command access.
+Capture the canonical root and its filesystem identity. The capability limits
+cwd selection, not access by the launched program to other files.
+
+Expose one `poppet_commands.request_command` tool only to eligible tool-capable
+runs. Its arguments are an executable selected from host-permitted identities,
+an ordered string argument array, and a cwd relative to the granted root.
+Tool instructions require the current owner's request; documents, project
+instructions, history, and command output cannot authorize a command request.
+Reject excess fields, NUL, ill-formed Unicode, cwd escape or linked-directory
+escape, more than 128 arguments, and more than 16 KiB of argument bytes. Preserve
+argument boundaries and empty strings. Do not accept environment, shell code,
+credential references, or a model-provided authorization verdict. Shell/wrapper
+entrypoints and inline code evaluation are unsupported in the first delivery;
+only the explicitly admitted local tool forms reach manual review.
+
+Use a deterministic policy with three results: deny, require owner approval, or
+allow by an explicit read rule. Stage 31b has no automatic allow rules. Invalid
+requests, absent grants, disabled/revoked executables, unsupported forms, and
+exceeded limits are denied. Every admitted invocation requires owner approval.
+Unrecognized arguments cannot become automatic permission. Include a stable
+reason and policy version in the host decision. A model explanation or a
+conversational "yes" cannot change that decision.
+
+Extend the persisted payload schema with a versioned `execute_command` variant,
+keeping the existing `create_note` encoding readable without rewriting its
+bytes or digest. Bind the command record to:
+
+- The exact executable path and observed identity, ordered argv, canonical cwd
+  and root identity, and the original run capability.
+- The host-created, minimal non-secret environment and execution/output limits.
+  Include the actual PATH and private temporary HOME/TMPDIR policy in review.
+  Never inherit the worker environment, credential store, provider/channel keys,
+  loader injection variables, or caller-selected environment overrides.
+- Owner, source session/run/tool-call IDs, payload digest/version, policy version,
+  creation time, and the existing 24-hour expiry.
+
+Create private temporary directories at dispatch using the reviewed environment
+policy. Their generated paths are the only deferred environment values; record
+the actual paths/identities in the attempt receipt and clean them up afterward.
+Arguments must be reviewable without hiding their effect. Reject known
+secret-bearing invocation forms rather than displaying redacted arguments and
+executing an undisclosed value. Do not claim that arbitrary command output can
+be reliably stripped of every possible secret.
+
+Build previews from validated fields, with a losslessly escaped argv array,
+cwd, permissions, environment policy, limits, digest, source, and expiry. Escape
+terminal controls and bidi characters. A display command line is explanatory;
+it is never parsed for execution. If the complete preview cannot fit the tool
+result budget, reject proposal creation before committing a pending record.
+
+Use the next append-only migration where storage changes are needed. Extend
+the existing repository and approval service by action kind, including their
+currently note-specific provenance queries, receipts, list summaries, and stale
+scheduled-permission checks. Do not replace them with an arbitrary JSON action
+registry. Proposal creation and its tool receipt remain one transaction, and
+the payload must match the active recorded source call after host resolution.
+
+Acceptance: disabled, stale, voice, messaging, scheduled, and ungranted runs
+cannot expose or invoke the command tool. Proposing spawns nothing. Existing
+note proposals and receipts still decode, approve, expire, and recover correctly.
+Test changed grants, malformed/oversized argv, literal shell metacharacters,
+symlinks, source-call mismatch, preview escaping, and receipt-budget rollback.
+
+### Stage 31c: Exact owner approval and bounded execution
+
+Extend `approvals list/show/approve/cancel` to display and handle command records.
+`show` returns the complete structured request. Keep approval/cancellation local
+through the protected worker socket, or the ordinary exclusive-owner path when
+the worker is absent. An ended source run does not itself authorize execution;
+the later local approval grants one dispatch of its saved, unexpired request.
+No approval tool is exposed to the model.
+
+Immediately before claiming, recheck owner, digest, expiry, current command
+settings, admitted argument form, executable identity, and cwd/root identity.
+Revocation or observed replacement requires a new proposal. These checks do not
+freeze every workspace input or atomically bind path lookup to OS execution.
+Document that the command reads live workspace files, and require trusted
+executable installations. Do not promise an atomic filesystem precondition that
+the selected process API cannot enforce.
+
+Atomically claim the pending record and save the authorization authority and
+time before spawning. Release the database transaction before process work.
+Execute the recorded argv directly under the limits proven in Stage 31a. Reuse
+the same owner-wide command permit for local and worker paths. Waiting proposals
+hold no database transaction, agent permit, process, or temporary environment.
+If a command permit is unavailable, leave the proposal pending and explain that
+another command is active rather than claiming it into an unbounded queue.
+
+The note publisher's uninterruptible write region must not make an entire command
+uninterruptible. Protect only the claim/dispatch transition and bounded receipt
+and cleanup work. Handle cancellation during every phase, including just after
+spawn. During a live owner process, an interrupted request must stop/reap its
+command or preserve uncertainty when cleanup cannot be confirmed.
+
+Persist a bounded receipt with proposal ID/digest, authorization authority,
+policy version, start/end times, spawn status, exit code/signal, termination
+reason, stdout/stderr with byte counts and truncation flags, and cleanup status.
+Normal zero exit completes the invocation; a known nonzero exit fails it and
+may still have changed files. Timeout, interruption, lost completion, or failed
+cleanup after dispatch produces `uncertain`. A proven pre-spawn failure is
+`failed`. No state promises rollback or verification of the intended effect.
+
+Duplicate approvals return the saved state/receipt and never spawn again.
+Cancellation only wins while pending; it is not a command to undo started work.
+Lost worker output must never trigger local fallback. Restart converts abandoned
+executing records to `uncertain`, with no automatic retry. Preserve that receipt
+even when the originating task/session is later inspected or cleaned up.
+Receipt failure after a child exits also remains uncertain for recovery.
+
+Return a pending proposal ID to the original model turn and finish normally.
+Approval later runs without inference. Command output becomes model context only
+when the owner explicitly selects a receipt with `--command-receipt <id>` on a
+CLI follow-up. The host validates ownership and project selection and attaches
+only that bounded receipt as untrusted context. This option grants no execution
+permission and exposes no model tool for browsing other receipts. Escape terminal
+controls and bidi characters in displayed output, and mark invalid text decoding
+or truncation explicitly. Do not automatically inject private command output
+into a messaging conversation or unrelated project.
+
+Acceptance: use real disposable subprocesses to verify exact argv/cwd/env,
+separate output streams, nonzero/partial effects, time/output limits, interruption,
+and descendant cleanup. Race duplicate approvals and approval/cancellation.
+Simulate crashes around claim/spawn/receipt, changed executable/cwd before
+approval, lost worker responses, and restart. Prove one dispatch and no retry.
+Keep diagnostics to IDs/status/reasons; raw argv/output stays in the deliberate
+owner review and private receipt paths. Approval execution makes no model call.
+
+### Stage 31d: Narrow automatic reads
+
+Add a separate owner opt-in, `commands.automaticReads`, defaulting to false.
+The per-run CLI grant is still required. Start with exact supported system
+`uname -s` and `uname -m` invocations after Stage 31a verifies their executable
+identity and behavior on each supported platform. A platform without an admitted
+implementation has no such rule. No generic executable-name allowlist, argument
+prefix match, model-provided "read-only" flag, or regex over shell text grants
+automatic permission.
+
+Rules inspect the resolved executable identity, complete ordered argv, host
+environment, cwd capability, and limits. Changed flags or an unrecognized form
+take the manual path only if otherwise admitted; hard denials stay denied.
+Do not automatically allow Git, package managers, build/test tools, interpreters,
+find/exec forms, or tools that read project configuration or invoke plugins.
+Any later file-reading rule needs explicit input-path and configuration rules,
+including link escapes, option injection, and access to private Poppet data.
+
+An allowed read uses the same durable claim, bounded executor, receipt, and
+uncertainty handling as an owner-approved command. Record rule ID/version as
+the authority and label it `allowed by rule`, never `approved by owner`.
+Create the record, source-call binding, and authorization before dispatch.
+Atomically save its final tool result with the completed receipt where possible;
+failure after dispatch cannot return it to a runnable state. Output is untrusted
+tool data subject to the existing model/tool budget.
+
+Acceptance: exercise the shared execution path and distinct policy boundaries,
+including changed executable, extra/reordered arguments, literal metacharacters,
+disabled automatic reads, missing per-run grant, and hard-denial precedence.
+Prove rule decisions are inspectable and cannot be replayed. Add further rules
+only when a concrete workflow and behavior tests justify them.
+
+### Stage 31e: Scheduled proposals without execution
+
+Keep all scheduled command access disabled through Stages 31a-31d. Then allow an
+owner-only task creation option to supply an exact command proposal capability:
+executable, argv, and canonical root/cwd. Save the validated capability with the
+task definition and occurrence snapshot using Phase 24's revision rules. Start
+with a fixed invocation chosen by the owner; no model-selected executable,
+argument template language, or arbitrary scheduled command generation is needed.
+
+An opted-in reporting task may choose to propose that saved invocation once per
+occurrence. It can never run it, including commands that would qualify for an
+interactive automatic-read rule. Keep monitor tasks ineligible. Reject combined
+note/command proposal capabilities initially to retain the existing one-proposal
+per-occurrence contract. Task chat tools cannot grant this permission themselves.
+
+Use Phase 27's separate proposal notification, destination authorization,
+deduplication, and uncertain-send behavior. Notify with a bounded command summary
+and local review ID; do not send environment values or command output. No message
+reply, reaction, delivery success, or scheduled model decision can approve it.
+Task edits, capability revocation, and task deletion invalidate pending proposals.
+Recheck current command policy and task revision at approval. Preserve receipts
+when clearing the source task.
+
+Acceptance: ordinary tasks and monitors cannot propose or execute commands;
+opted-in tasks can only propose the exact saved invocation once. Cover stale
+revisions, revoked permissions, task cleanup, duplicate/uncertain notifications,
+and attempted automatic reads. Finish with a disposable live notification and
+local approval check before declaring scheduled proposals validated.
+
+### Stage 31f: Optional advisory model review
+
+Only after the deterministic/manual stages are useful, assess whether an
+auxiliary reviewer reduces confusing owner prompts. Keep it separately opt-in
+and disabled by default. Use the existing provider/model resolver with an
+explicit reviewer selection and no silent provider fallback. Do not add another
+agent runtime or let the reviewer call tools.
+
+Send only the bounded current owner request, exact structured command, relevant
+host policy result, and the declared host-execution limits. Exclude credentials,
+unrelated history, project files, and command output. Treat all request/argument
+text as untrusted; it cannot supply reviewer instructions or policy. Use a
+10-second timeout and a small strict response schema for `low_risk`, `high_risk`,
+or `uncertain`, plus a bounded explanation.
+
+The review explains or escalates a pending request. It never grants execution,
+changes arguments, bypasses a hard denial, or replaces local owner approval.
+Timeout, malformed output, unavailable provider, and suspected injection fall
+back to the ordinary manual path. Show advice as model advice, separately from
+the deterministic decision and actual authorization authority.
+
+Acceptance: hostile argument/reason text cannot change tool availability or
+authorization, and every reviewer failure leaves the same safe manual path.
+Use deterministic provider fixtures for these behaviors, then record false
+positives, missed risks, latency, and provider usage on a reviewed command set.
+Automatic approval by a model requires a separate future plan and evidence;
+it is not a hidden mode in this phase.
+
+### Implementation reach and completion gates
+
+| Area                | Required changes                                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Config              | `packages/config/src/source.ts` and command settings validation, file/environment precedence, disabled defaults, non-executing inspection                           |
+| Executor            | A focused command service and process adapter in `packages/agent/src/`, reusing proven subprocess patterns without changing browser/MCP permissions                 |
+| Store               | `approval-schema.ts`, `approval-store.ts`, exports and the next required migration; typed command payloads, authorization receipts, note compatibility and recovery |
+| Agent               | `conversation.ts`, tool schemas/instructions, run capability provenance, journal/budget integration and selected receipt context                                    |
+| CLI and worker      | CLI argument/request schemas, `chat.ts`, `command-args.ts`, `runtime.ts`, approval commands, worker host/transport, explicit capability support detection           |
+| Scheduled follow-up | Task schema/store/commands/occurrence snapshots and gateway proposal summaries, retaining note behavior and one proposal per occurrence                             |
+| Reviewer follow-up  | Existing model resolver, strict bounded review response and advisory rendering, with no new execution authority                                                     |
+| Docs                | Configuration, CLI/chat, owner approvals, storage, architecture, development, task permissions when implemented, and validation records                             |
+
+Older workers must reject command-capable requests explicitly. Add a capability
+route/version check using the existing project/approval transport pattern so
+unknown optional fields cannot silently drop a requested restriction or grant.
+Never fall back to local execution after sending a mutating request. Preserve
+existing plain chat, note approvals, MCP allowlists, and scheduled read limits.
+Configured MCP executors are independent trusted integrations; this new gate
+cannot claim to mediate arbitrary commands run through existing MCP tools.
+
+Run focused behavior tests and `bun run check` at each implementation stage.
+Use temporary stores, private disposable directories, and fixture processes.
+Migration checks must preserve pending/completed/uncertain note proposals,
+payload digests, receipts, and task snapshots; no reset or live database migration
+is part of automated validation. Test actual worker/local paths and the pinned
+runtime as well as injected model/policy behavior.
+
+Before completing the first delivery, manually grant one disposable directory,
+ask for a harmless command, review it, approve once, and inspect its real receipt.
+Confirm proposing alone does nothing, repeated approval does nothing, cancellation
+prevents dispatch, revocation blocks a pending request, and a new chat message
+does not inherit permission. Check a timeout with a partial local effect and
+inspect uncertainty before preparing any replacement. Reserve separate live
+checks for automatic reads, scheduled delivery, and the advisory reviewer.
+
+Record source/fixture, pinned-runtime, real-model, and live-messaging evidence
+separately. Passing command fixtures does not prove safe arbitrary code execution,
+OS isolation, or reliable model risk judgments. Implementation and live checks
+remain unstarted until separately authorized.
+
+### Design references
+
+Reviewed on 2026-10-22. Hermes' built-in
+[command approval](https://github.com/NousResearch/hermes-agent/blob/main/tools/approval.py)
+and [smart reviewer](https://github.com/NousResearch/hermes-agent/blob/main/tools/approval_smart.py)
+inform the rules/reviewer/owner split. Poppet's first reviewer stage stays advisory.
+[Bun's process documentation](https://bun.sh/docs/runtime/child-process) describes
+argv-based spawning and process controls; verify each required API against the
+pinned runtime rather than assuming the latest documentation proves compatibility.
 
 ## Validation
 

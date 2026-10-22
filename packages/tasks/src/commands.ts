@@ -116,6 +116,7 @@ export const executeTaskCommand = (
           undefined,
           command.action === "add-monitor",
           project,
+          command.proposalNote ?? null,
         );
 
         return task.monitor ? { ...task, baseline: "pending-first-success" } : task;

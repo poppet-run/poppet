@@ -8,6 +8,31 @@ import { applyMigrations, migrations } from "#src/migrations";
 const initial = migrations.slice(0, 1);
 
 describe("store migrations", () => {
+  test("approval migration preserves existing definitions without granting capability and rolls back atomically", () => {
+    using database = new Database(":memory:");
+    database.run("PRAGMA foreign_keys = ON");
+    const prior = migrations.slice(0, 5);
+    applyMigrations(database, prior);
+    database.run(`INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, created_at)
+      VALUES ('existing', 'Old', 'Report', 'test', 'model', 'assistant', '{"type":"once","at":1}', 0)`);
+    database
+      .query(`INSERT INTO job_occurrences (id, job_id, revision, definition, scheduled_at, available_at, origin, status)
+      VALUES ('existing-occurrence', 'existing', 0, ?, 1, 1, 'scheduled', 'pending')`)
+      .run(JSON.stringify({ name: "Old", project: null }));
+    const next = migrations[5]!;
+    expect(() =>
+      applyMigrations(database, [...prior, { ...next, sql: `${next.sql}\ninvalid SQL;` }]),
+    ).toThrow("No pending migrations");
+    expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 5 });
+    expect(() => database.query("SELECT proposal_note FROM jobs").get()).toThrow();
+    applyMigrations(database);
+    expect(database.query("SELECT proposal_note FROM jobs").get()).toEqual({ proposal_note: null });
+    expect(database.query("SELECT definition FROM job_occurrences").get()).toEqual({
+      definition: '{"name":"Old","project":null,"proposalNote":null}',
+    });
+    expect(database.query("SELECT * FROM action_proposals").all()).toEqual([]);
+    expect(database.query("PRAGMA foreign_key_check").all()).toEqual([]);
+  });
   test("project migration preserves global facts and legacy snapshots and rolls back atomically", () => {
     using database = new Database(":memory:");
     database.run("PRAGMA foreign_keys = ON");
@@ -178,6 +203,7 @@ describe("store migrations", () => {
       monitor: true,
       skill: { name: "release", content: "Read the current tag" },
       project: null,
+      proposalNote: null,
       schedule: { type: "cron", expression: "0 9 * * *", timezone: "Europe/London" },
     });
     database.run("DELETE FROM job_occurrences WHERE id = 'first'");

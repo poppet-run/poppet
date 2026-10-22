@@ -17,6 +17,8 @@ export { Projects, ProjectsLive, loadProject } from "#src/projects";
 
 export { Notes, NotesLive } from "#src/notes";
 
+export { Approvals, ApprovalsLive, LocalApprovalsLive, ApprovalCommand } from "#src/approvals";
+
 export { ChatSettings, ChatSettingsLive, defaultPolicy, type ChatPolicy } from "#src/settings";
 
 export { sessionTitle } from "#src/title";

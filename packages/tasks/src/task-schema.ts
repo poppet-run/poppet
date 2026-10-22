@@ -3,6 +3,7 @@ import {
   DeliveryDestination,
   ProjectName,
   ProjectSnapshot,
+  ProposalPath,
   Session,
   SkillName,
   SkillSnapshot,
@@ -158,6 +159,7 @@ export const TaskCommand = Schema.Union([
     task: NewTask,
     skill: Schema.optionalKey(SkillName),
     project: Schema.optionalKey(ProjectName),
+    proposalNote: Schema.optionalKey(ProposalPath),
     delivery: Schema.optionalKey(
       Schema.Struct({
         adapter: DeliveryDestination.fields.adapter,
@@ -185,6 +187,7 @@ export const Task = Schema.Struct({
   destination: Schema.NullOr(Schema.fromJsonString(DeliveryDestination)),
   skill: Schema.NullOr(Schema.fromJsonString(SkillSnapshot)),
   project: Schema.NullOr(Schema.fromJsonString(ProjectSnapshot)),
+  proposalNote: Schema.NullOr(ProposalPath),
   schedule: Schema.fromJsonString(Schedule),
   id: Session.fields.id,
   nextAt: Schema.NullOr(Schema.Natural),
@@ -200,6 +203,7 @@ export const TaskDefinition = Schema.Struct({
   monitor: Schema.Boolean,
   skill: Schema.NullOr(SkillSnapshot),
   project: Schema.NullOr(ProjectSnapshot),
+  proposalNote: Schema.NullOr(ProposalPath),
 });
 
 /** One scheduled execution, linked to its session and run as they are created. */

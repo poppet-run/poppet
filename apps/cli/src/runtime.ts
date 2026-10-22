@@ -8,6 +8,7 @@ import {
   PagesLive,
   SkillsLive,
   ProjectsLive,
+  LocalApprovalsLive,
 } from "@poppet/agent";
 import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import { ApiKeyStoreLive } from "@poppet/credentials";
@@ -162,6 +163,11 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   const searchCredentials = ApiKeyStoreLive.pipe(Layer.provide(environment), Layer.provide(config));
   const webSearch = WebSearchLive.pipe(Layer.provide([config, chatSettings, searchCredentials]));
   const notes = NotesLive.pipe(Layer.provide([config, chatSettings]));
+
+  const approvals = LocalApprovalsLive.pipe(
+    Layer.provideMerge([store, config, notes, chatSettings]),
+  );
+
   const chatTasks = ChatTasksLive.pipe(Layer.provide([tasks, store, skills, chatSettings]));
 
   const mcp = Layer.unwrap(
@@ -185,6 +191,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
       notes,
       webSearch,
       chatTasks,
+      approvals,
       externalTools,
     ]),
     Layer.provideMerge(config),
@@ -200,6 +207,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     memory,
     tasks,
     skills,
+    approvals,
     chat,
     connections,
     searchCredentials,

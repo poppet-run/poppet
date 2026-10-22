@@ -99,6 +99,14 @@ Model tool names use a stable hash of the server ID and original tool name under
 `poppet_mcp`. `chat show <session>` retains `serverId` and `toolName` separately,
 so inspection and recovery do not depend on a discovery catalog.
 
+## Reviewed actions
+
+[Owner approvals](approvals.md) currently support create-only local notes.
+Arbitrary MCP mutations cannot be approved through that path. The configured
+Apple Notes create operation failed the destination-identity compatibility gate,
+and external actions remain gated. Interactive MCP allowlists and scheduled
+read-only permissions retain their existing behavior.
+
 ## Permissions and untrusted content
 
 Only discovered names in `tools` are offered. Interactive mutations also need

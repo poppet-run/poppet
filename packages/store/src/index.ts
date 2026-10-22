@@ -2,6 +2,17 @@ export { Store, StoreLive } from "#src/service";
 
 export { StoreError } from "#src/errors";
 
+export { ApprovalRepository, ApprovalRepositoryLive, makeApprovalStore } from "#src/approval-store";
+
+export {
+  Approval,
+  ApprovalState,
+  NoteProposal,
+  NoteTarget,
+  ProposalPath,
+  ProposalContent,
+} from "#src/approval-schema";
+
 export { StoreDatabase, StoreDatabaseLive } from "#src/database";
 
 export {

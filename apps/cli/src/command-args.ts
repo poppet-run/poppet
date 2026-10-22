@@ -47,6 +47,7 @@ export const commandArgs = (
           "--tz",
           "--skill",
           "--project",
+          "--proposal-note",
           "--discord-thread",
           "--telegram-chat",
           "--whatsapp-chat",
@@ -56,7 +57,9 @@ export const commandArgs = (
       else if (
         token === "--coding" ||
         token === "--monitor" ||
-        /^--(?:at|cron|tz|skill|project|discord-thread|telegram-chat|whatsapp-chat)=/.test(token)
+        /^--(?:at|cron|tz|skill|project|proposal-note|discord-thread|telegram-chat|whatsapp-chat)=/.test(
+          token,
+        )
       )
         offset++;
       else break;

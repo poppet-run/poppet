@@ -204,6 +204,34 @@ lazily. No selection preserves the notes-root policy and an empty selection
 allows no notes. Directory deletion retains facts and saved history. See
 [project context](projects.md) for the owner interface and retention rules.
 
+## Owner-reviewed note proposals
+
+`ApprovalRepositoryLive` uses the shared store connection and exclusive owner.
+Versioned payloads, owner identity, digests and provenance are immutable; source
+run/call and occurrence uniqueness prevent duplicate proposals. `ApprovalsLive`
+validates a recorded active tool call and its host-bound project selection,
+preflights a complete preview, and commits creation with the tool receipt.
+
+Only CLI commands can approve or cancel. New worker routes reject stale workers
+rather than discarding capabilities. Approval rechecks expiry, integrity, current
+notes-root identity, source-task permission and path preconditions, then claims
+execution atomically. It dispatches outside the transaction and persists a
+separate receipt without entering the agent or resolving a model. Waiting for
+review holds neither the agent permit nor a transaction. Unfinished execution
+recovers as uncertain, retaining single dispatch across restart or lost replies.
+
+`NotesLive` coordinates ordinary note tools and create-only publication with one
+permit. It reuses path/link checks and private synced temporary files. Atomic
+hard-link publication cannot replace a competing target; cleanup removes the
+private link before confirming durability. Project path selection still applies.
+
+Scheduled tool snapshots expose proposals only for a saved reporting capability.
+The repository rechecks the exact allowed path, occurrence and revision. Ordinary
+scheduled writes stay unavailable. Edits/clearing cancel pending approvals, and
+proposal notices use a separate durable gateway identity with existing access
+and uncertain-send checks. External integration actions remain gated. See
+[owner approvals](approvals.md).
+
 ## Provider interface
 
 The shared interface is implemented before durable conversation storage so

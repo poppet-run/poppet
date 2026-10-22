@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 /* eslint-disable no-await-in-loop -- Path checks and bounded filesystem traversal must run sequentially. */
 import { constants, type Dirent } from "node:fs";
-import { lstat, mkdir, open, opendir, realpath, rename, rm } from "node:fs/promises";
+import { link, lstat, mkdir, open, opendir, realpath, rename, rm } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { AppConfig } from "@poppet/config";
 import type { Output, Tool } from "@poppet/provider";
-import { Context, Effect, Layer, Schema } from "effect";
+import { NoteProposal, ProposalContent, ProposalPath } from "@poppet/store";
+import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 
 import { byteSize } from "#src/context";
 import { AgentError } from "#src/errors";
@@ -131,6 +132,12 @@ export class Notes extends Context.Service<
       call: NoteCall,
       selected?: ReadonlyArray<string> | null,
     ) => Effect.Effect<string, AgentError>;
+    readonly prepareCreate?: (
+      path: string,
+      content: string,
+      selected?: ReadonlyArray<string> | null,
+    ) => Effect.Effect<NoteProposal, AgentError>;
+    readonly createOnly?: (proposal: NoteProposal) => Effect.Effect<string, AgentError>;
   }
 >()("poppet/Notes") {}
 
@@ -157,7 +164,12 @@ const checkDirectory = async (path: string) => {
 };
 
 // Check every parent as well as the target so a nested link cannot escape the notes directory.
-const notePath = async (root: string, requested: string, createParents: boolean) => {
+const notePath = async (
+  root: string,
+  requested: string,
+  createParents: boolean,
+  allowMissingParents = false,
+) => {
   if (requested.includes("\0")) throw forbidden();
   const target = resolve(root, requested);
   const local = relative(root, target);
@@ -175,6 +187,8 @@ const notePath = async (root: string, requested: string, createParents: boolean)
 
   for (const component of local.split(sep).slice(0, -1)) {
     parent = join(parent, component);
+
+    if (allowMissingParents && !(await optionalInfo(parent))) continue;
 
     if (createParents && !(await optionalInfo(parent))) await mkdir(parent, { mode: 0o700 });
     await checkDirectory(parent);
@@ -439,7 +453,148 @@ export const NotesLive = Layer.effect(
   Effect.gen(function* () {
     const { notesDirectory } = yield* AppConfig;
     const { toolBytes } = yield* ChatSettings;
-    let root: string | null = null;
+    const mutations = yield* Semaphore.make(1);
+    let canonicalRoot: string | null = null;
+
+    const ensureRoot = async () => {
+      if (canonicalRoot === null) {
+        await mkdir(notesDirectory, { recursive: true, mode: 0o700 });
+        const info = await lstat(notesDirectory);
+
+        if (!info.isDirectory() || info.isSymbolicLink()) throw forbidden();
+        canonicalRoot = await realpath(notesDirectory);
+      }
+
+      // Check the configured path too, even when its canonical root was cached.
+      const configured = await lstat(notesDirectory);
+
+      if (
+        !configured.isDirectory() ||
+        configured.isSymbolicLink() ||
+        (await realpath(notesDirectory)) !== canonicalRoot
+      )
+        throw forbidden();
+
+      return canonicalRoot;
+    };
+
+    const prepareCreate = (
+      path: string,
+      content: string,
+      selected?: ReadonlyArray<string> | null,
+    ) =>
+      Effect.tryPromise({
+        try: async () => {
+          Schema.decodeUnknownSync(ProposalPath)(path);
+          Schema.decodeUnknownSync(ProposalContent)(content);
+
+          if (selected != null && !selected.includes(path)) throw forbidden();
+          const canonical = await ensureRoot();
+          const info = await checkDirectory(canonical);
+          const target = await notePath(canonical, path, false, true);
+
+          if (await optionalInfo(target))
+            throw new AgentError({
+              reason: "tool-permission",
+              message: "A create-only proposal cannot replace an existing note.",
+            });
+
+          return {
+            version: 1 as const,
+            type: "create_note" as const,
+            path,
+            content,
+            selected: selected ?? null,
+            target: { root: canonical, device: info.dev, inode: info.ino },
+          };
+        },
+        catch: (cause) =>
+          cause instanceof AgentError
+            ? cause
+            : new AgentError({
+                reason: "tool-arguments",
+                message:
+                  "The proposed note must have a safe relative note path and at most 65536 UTF-8 bytes.",
+              }),
+      });
+
+    const createOnly = (proposal: NoteProposal) =>
+      Effect.tryPromise({
+        try: async () => {
+          const input = Schema.decodeUnknownSync(NoteProposal)(proposal);
+          const canonical = await ensureRoot();
+          const info = await checkDirectory(canonical);
+
+          if (
+            canonical !== input.target.root ||
+            info.dev !== input.target.device ||
+            info.ino !== input.target.inode
+          )
+            throw forbidden();
+
+          if (input.selected !== null && !input.selected.includes(input.path)) throw forbidden();
+          const path = await notePath(canonical, input.path, true);
+          const parent = dirname(path);
+          const original = await checkDirectory(parent);
+          const temporary = join(parent, `.${basename(path)}.${randomUUID()}.tmp`);
+          let published = false;
+
+          try {
+            const file = await open(temporary, "wx", 0o600);
+
+            try {
+              await file.writeFile(input.content, "utf8");
+              await file.sync();
+            } finally {
+              await file.close();
+            }
+
+            await notePath(canonical, input.path, false);
+            const current = await checkDirectory(parent);
+
+            if (original.dev !== current.dev || original.ino !== current.ino) throw forbidden();
+            // link is an atomic create-if-absent; rename could overwrite a competing writer.
+            await link(temporary, path);
+            published = true;
+            await rm(temporary);
+
+            const directory = await open(
+              parent,
+              constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+            );
+
+            try {
+              await directory.sync();
+            } finally {
+              await directory.close();
+            }
+
+            return JSON.stringify({
+              path: input.path,
+              created: true,
+              bytes: byteSize(input.content),
+            });
+          } catch (cause) {
+            if (published)
+              throw new AgentError({
+                reason: "tool-uncertain",
+                message:
+                  "The note may have been created but publication was not fully confirmed. Inspect it before preparing another proposal.",
+              });
+            throw cause;
+          } finally {
+            await rm(temporary, { force: true }).catch(() => {});
+          }
+        },
+        catch: (cause) =>
+          cause instanceof AgentError
+            ? cause
+            : new AgentError({
+                reason: "tool-permission",
+                message:
+                  "The create-only note could not be published. The target may already exist or its path may have changed.",
+              }),
+      }).pipe(mutations.withPermit, Effect.uninterruptible);
 
     const execute = (call: NoteCall, selected?: ReadonlyArray<string> | null) =>
       Effect.tryPromise({
@@ -455,13 +610,7 @@ export const NotesLive = Layer.effect(
               message: "This note is outside the saved project selection.",
             });
 
-          if (root === null) {
-            await mkdir(notesDirectory, { recursive: true, mode: 0o700 });
-            const info = await lstat(notesDirectory);
-
-            if (!info.isDirectory() || info.isSymbolicLink()) throw forbidden();
-            root = await realpath(notesDirectory);
-          }
+          const root = await ensureRoot();
 
           switch (call.name) {
             case "read_note":
@@ -482,8 +631,8 @@ export const NotesLive = Layer.effect(
                 reason: "tool-storage",
                 message: "Poppet could not read, search or save the note.",
               }),
-      });
+      }).pipe(mutations.withPermit);
 
-    return { execute };
+    return { execute, prepareCreate, createOnly };
   }),
 );

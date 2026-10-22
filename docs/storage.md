@@ -33,7 +33,9 @@ for synchronization, and whether external edits or failures disabled naming.
 base schema; migration 2 adds change-aware monitoring, migration 3 adds task
 controls and immutable occurrence definitions, and migration 4 adds attachment
 processing results and source-aware recall. Migration 5 adds project snapshots
-and scoped facts without resetting saved data.
+and scoped facts. Migration 6 adds immutable action proposals, scheduled proposal
+capabilities, and distinct gateway notification identities without resetting saved
+data.
 Migration SQL lives in timestamped TypeScript files under
 `packages/store/src/migrations/`, registered in order by `migrations.ts`.
 A checksummed migration ledger rejects newer schemas and changed migration
@@ -41,7 +43,7 @@ history. All pending migrations commit together; a failure rolls back the pendin
 batch.
 
 The unreleased base migration history was consolidated into schema version 1;
-the current schema is version 5. Existing version-1 through version-4 databases upgrade in place.
+the current schema is version 6. Existing version-1 through version-5 databases upgrade in place.
 Development databases created with the former 14-step history are still rejected.
 Those legacy databases require a fresh data directory; databases are never reset
 automatically.
@@ -154,6 +156,23 @@ composite `(project, key)` primary key. An empty database scope denotes global
 facts; project names are nonempty validated identifiers. Every fact operation
 binds its host scope, and source-run provenance must match it. Deleting a project
 directory does not delete snapshots, history, or facts. See [projects](projects.md).
+
+## Owner action proposals
+
+`action_proposals` stores versioned immutable payloads and digests, owner/data
+directory identity, originating session/run/call, expiry, state, and separate
+outcome receipts. A database trigger rejects changes to reviewed fields. Source
+run/call uniqueness deduplicates creation in the same transaction as its completed
+tool receipt. Approval claims pending work before dispatch and records its outcome
+afterward. Recovery marks unfinished execution uncertain and never requeues it.
+
+Jobs save an optional `proposal_note` capability; legacy definitions and occurrence
+snapshots migrate to `proposalNote: null`. Scheduled proposals bind the occurrence
+and revision. Task edits or clearing cancel pending proposals without cascading
+proposal records or completed receipts. `gateway_inbox.proposal_id` uniquely
+identifies a separate review notification. Its reserved delivery identity is
+distinct from the source report; no model run is created for approval execution.
+See [owner approvals](approvals.md).
 
 ## Conversation search index
 

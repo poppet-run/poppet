@@ -9,8 +9,9 @@ capabilities and the relevant phase's compatibility gates before implementation.
 
 Change-aware monitoring already has a [Phase 23 plan](implementation-plan.md#phase-23-change-aware-monitoring).
 Task controls are implemented in Phase 24, and Telegram documents/local voice in
-Phase 25. Project context is implemented in Phase 26; priorities after it remain
-planned work.
+Phase 25. Project context is implemented in Phase 26. Local and scheduled note
+approvals are implemented in Phase 27; external actions remain gated. Later
+priorities remain planned work.
 
 ## 1. Editable tasks and snoozing
 
@@ -62,19 +63,22 @@ Starting points: [memory](memory.md), [skills](skills.md),
 
 ## 4. Actions the owner can review and approve
 
-Planning is captured in [Phase 27](implementation-plan.md#phase-27-actions-the-owner-can-review-and-approve),
-starting with an immutable proposal to create a note, followed by one supported
-external action and explicitly enabled scheduled proposals.
+Local note proposals and explicitly enabled scheduled proposals are implemented
+in [Phase 27](implementation-plan.md#phase-27-actions-the-owner-can-review-and-approve).
+See [owner approvals](approvals.md) for setup, recovery and remaining live checks.
+The owner chose to keep external actions gated after Apple Notes failed its
+destination-identity compatibility gate.
 
 Let Poppet prepare a concrete change, show the proposed action, and wait for
 approval before executing it. A scheduled review could propose a calendar
-change or draft a reply while execution waits for the owner.
+change or draft a reply only after a future external adapter passes its gate.
+Scheduled note reviews can prepare a proposal now, while execution waits for
+local owner approval.
 
-Start with one action type through an existing integration. Bind approval to
-the exact tool, arguments, owner, and destination, with expiry and duplicate
-execution protection. Define cancellation, changed external state, and uncertain
-outcomes. Keep scheduled execution permissions unchanged until that workflow has
-its own design and validation. Avoid a general workflow engine.
+Local approvals bind an immutable create-only note payload to its owner, source,
+expiry and destination, with one dispatch and durable uncertainty. Scheduled
+permission only prepares a proposal; execution still needs explicit local approval.
+External adapters require separate compatibility evidence.
 
 Starting points: [MCP permissions](mcp.md#permissions-and-untrusted-content),
 [browser permissions](browser.md#permissions-and-limits), and the durable tool journal.
@@ -113,6 +117,22 @@ credentials and private content out of diagnostic output.
 
 Starting points: [worker status](worker.md#status-and-logs),
 [CLI inspection commands](cli.md), and the existing task, auth, MCP, and config status paths.
+
+## 7. Command execution and approval
+
+Planning is captured in [Phase 31](implementation-plan.md#phase-31-command-execution-and-approval).
+The first delivery adds opt-in CLI commands with structured arguments, an explicit
+per-run working-directory grant, exact one-time owner approval, bounded process
+lifetime/output, and durable receipts. It reuses Phase 27's local approval lifecycle.
+
+Separate follow-ups cover narrowly defined automatic reads, fixed scheduled
+command proposals without execution, and optional advisory model review. Model
+review cannot approve commands. External action adapters remain gated, and command
+approval does not provide OS isolation or permission to run untrusted code.
+
+Starting points: [owner approvals](approvals.md), `packages/agent/src/approvals.ts`,
+`packages/store/src/approval-schema.ts`, `approval-store.ts`, and the existing
+browser/MCP subprocess lifecycle code. No command executor is implemented yet.
 
 ## Workflows to try with existing tools
 

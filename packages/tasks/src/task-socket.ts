@@ -13,7 +13,11 @@ export const remoteTaskCommand = (path: string, command: TaskCommand) =>
     try: async (signal) => {
       const response = await requestWorker(
         path,
-        "project" in command && command.project !== undefined ? "/project-tasks" : "/tasks",
+        "proposalNote" in command && command.proposalNote !== undefined
+          ? "/approval-tasks"
+          : "project" in command && command.project !== undefined
+            ? "/project-tasks"
+            : "/tasks",
         command,
         AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
       );

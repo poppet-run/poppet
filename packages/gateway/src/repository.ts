@@ -122,7 +122,7 @@ const repository = Effect.gen(function* () {
       database
         .query(`UPDATE gateway_deliveries
       SET state = 'failed' WHERE state = 'pending' AND inbox_id IN (
-        SELECT id FROM gateway_inbox WHERE adapter = ? AND account != ? AND occurrence_id IS NOT NULL
+        SELECT id FROM gateway_inbox WHERE adapter = ? AND account != ? AND (occurrence_id IS NOT NULL OR proposal_id IS NOT NULL)
       )`)
         .run(adapter, account),
     scheduled: (adapter: string) =>
@@ -153,11 +153,12 @@ const repository = Effect.gen(function* () {
       destination: DeliveryDestination,
       chunks: ReadonlyArray<string>,
       enabled: boolean,
+      proposal = false,
     ) =>
       database
         .transaction(() => {
           const message: IncomingMessage = {
-            messageId: `task-${id}`,
+            messageId: `${proposal ? "proposal" : "task"}-${id}`,
             senderId: destination.ownerId,
             scopeId: destination.scopeId,
             parentId: destination.parentId,
@@ -168,16 +169,17 @@ const repository = Effect.gen(function* () {
 
           const inserted = database
             .query(`INSERT INTO gateway_inbox
-          (adapter, account, external_id, payload, conversation_id, run_id, state, occurrence_id)
-          VALUES (?, ?, ?, ?, ?, ?, 'completed', ?) ON CONFLICT DO NOTHING`)
+          (adapter, account, external_id, payload, conversation_id, run_id, state, occurrence_id, proposal_id)
+          VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?) ON CONFLICT DO NOTHING`)
             .run(
               destination.adapter,
               destination.account,
               message.messageId,
               JSON.stringify(message),
               destination.conversationId,
-              runId,
-              id,
+              proposal ? `proposal-${id}` : runId,
+              proposal ? null : id,
+              proposal ? id : null,
             );
 
           if (!inserted.changes) return;
@@ -195,6 +197,30 @@ const repository = Effect.gen(function* () {
               );
         })
         .immediate(),
+    proposals: (adapter: string, at: number) =>
+      Schema.decodeUnknownSync(
+        Schema.Array(
+          Schema.Struct({
+            id: Schema.String,
+            runId: Schema.String,
+            destination: Schema.fromJsonString(DeliveryDestination),
+            path: Schema.String,
+            digest: Schema.String,
+            expiresAt: Schema.Natural,
+          }),
+        ),
+      )(
+        database
+          .query(`SELECT p.id, p.source_run_id AS runId, p.destination,
+      json_extract(p.payload, '$.path') AS path, p.digest, p.expires_at AS expiresAt
+      FROM action_proposals p JOIN jobs j ON j.id = p.job_id
+      WHERE p.state = 'pending' AND p.expires_at > ? AND j.revision = p.revision
+        AND j.monitor = 0 AND j.proposal_note = json_extract(p.payload, '$.path')
+        AND json_extract(p.destination, '$.adapter') = ?
+        AND NOT EXISTS (SELECT 1 FROM gateway_inbox i WHERE i.proposal_id = p.id)
+      ORDER BY p.created_at, p.id LIMIT 64`)
+          .all(at, adapter),
+      ),
     namedBinding,
     namingEntry: (adapter: string, account: string, conversation: string) =>
       Schema.decodeUnknownSync(Schema.NullOr(Inbox))(

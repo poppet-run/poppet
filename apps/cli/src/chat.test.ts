@@ -77,6 +77,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     writeFails: false,
     useTools: false,
     memoryChange: false,
+    proposalChange: false,
     taskAction: null as "create" | "list" | "show" | "pause" | "resume" | null,
     taskId: null as string | null,
     hold: false,
@@ -185,13 +186,21 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                                   taskCall ?? {
                                     type: "tool-call" as const,
                                     callId: "save",
-                                    name: state.memoryChange ? "memory" : "save_note",
-                                    namespace: state.memoryChange
-                                      ? "poppet_memory"
-                                      : "poppet_notes",
-                                    arguments: state.memoryChange
-                                      ? '{"action":"remember","key":"answer.style","value":"Keep answers concise"}'
-                                      : '{"path":"summary.md","content":"A saved summary"}',
+                                    name: state.proposalChange
+                                      ? "propose_note"
+                                      : state.memoryChange
+                                        ? "memory"
+                                        : "save_note",
+                                    namespace: state.proposalChange
+                                      ? "poppet_approvals"
+                                      : state.memoryChange
+                                        ? "poppet_memory"
+                                        : "poppet_notes",
+                                    arguments: state.proposalChange
+                                      ? '{"path":"review.md","content":"Exact proposed note"}'
+                                      : state.memoryChange
+                                        ? '{"action":"remember","key":"answer.style","value":"Keep answers concise"}'
+                                        : '{"path":"summary.md","content":"A saved summary"}',
                                   },
                                 ]
                               : [{ type: "text" as const, text: "Answer" }],
@@ -390,6 +399,74 @@ const exampleChannel = (id: string) => {
 };
 
 describe("chat CLI", () => {
+  test.each([false, true])(
+    "review and approval use the saved payload without inference, worker: %s",
+    async (worker) => {
+      const chat = await fixture();
+      let running: Fiber.Fiber<unknown, unknown> | null = null;
+      const output = () => JSON.parse(worker ? chat.chunks.join("") : chat.lines.at(-1)!);
+
+      try {
+        chat.state.useTools = true;
+        chat.state.proposalChange = true;
+
+        if (worker) running = await chat.startWorker();
+        await chat.invoke(["chat", "new", "Prepare a note for review, without saving it"]);
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        await chat.invoke(["approvals", "list"]);
+        const [proposal] = output();
+        expect(proposal.state).toBe("pending");
+        expect(await readdir(join(chat.directory, "notes"))).toEqual([]);
+        const calls = chat.requests.length;
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        await chat.invoke(["approvals", "show", proposal.id]);
+        expect(output()).toMatchObject({
+          payload: { path: "review.md", content: "Exact proposed note" },
+        });
+
+        if (worker) {
+          chat.state.writeFails = true;
+          await expect(chat.invoke(["approvals", "approve", proposal.id])).rejects.toThrow(
+            "Output closed",
+          );
+          chat.state.writeFails = false;
+        }
+
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        await chat.invoke(["approvals", "approve", proposal.id]);
+        const receipt = output();
+        expect(receipt.state).toBe("completed");
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        await chat.invoke(["approvals", "approve", proposal.id]);
+        expect(output()).toEqual(receipt);
+        expect(chat.requests).toHaveLength(calls);
+        expect(await readFile(join(chat.directory, "notes", "review.md"), "utf8")).toBe(
+          "Exact proposed note",
+        );
+        await chat.invoke([
+          "tasks",
+          "add",
+          "Review",
+          "--at",
+          "2099-10-22T09:00:00Z",
+          "--proposal-note",
+          "next.md",
+          "Prepare the next note",
+        ]);
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        await chat.invoke(["tasks", "list"]);
+        expect(JSON.parse(chat.lines.at(-1)!)[0]).toMatchObject({ proposalNote: "next.md" });
+      } finally {
+        if (running !== null) await Effect.runPromise(Fiber.interrupt(running));
+        await chat.close();
+      }
+    },
+  );
   test.each(["local", "worker"])(
     "manages tasks through %s chat using the current selection",
     async (mode) => {
@@ -1701,6 +1778,7 @@ describe("chat CLI", () => {
       await expect(
         chat.invoke(["memory", "remember", "--project", "acorn", "style", "Keep it short"]),
       ).rejects.toThrow("outdated");
+      await expect(chat.invoke(["approvals", "list"])).rejects.toThrow("outdated");
       await expect(
         chat.invoke([
           "tasks",
@@ -1713,7 +1791,12 @@ describe("chat CLI", () => {
           "Review",
         ]),
       ).rejects.toThrow("outdated");
-      expect(received).toEqual(["/project-commands", "/project-commands", "/project-tasks"]);
+      expect(received).toEqual([
+        "/project-commands",
+        "/project-commands",
+        "/approval-commands",
+        "/project-tasks",
+      ]);
       expect(await readdir(directory)).toEqual(["tasks.sock"]);
       expect(chat.state.built).toBe(0);
     } finally {

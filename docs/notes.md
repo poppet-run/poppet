@@ -25,6 +25,14 @@ line numbers, and snippets. It scans at most 128 files and 128 directories,
 returns at most 100 matches, and rejects directories exceeding 1000 entries.
 The per-tool result budget can truncate read/search results further.
 
+## Create after owner approval
+
+Ask for a proposal when you want to inspect a note before saving.
+`poppet_approvals.propose_note` saves an exact create-only payload and a pending
+receipt. The local `approvals` commands inspect, approve, or cancel it. Approval
+cannot replace an existing note, including a file created by another writer
+during execution. See [owner approvals](approvals.md) for limits and recovery.
+
 ## Project note selections
 
 A [project](projects.md#select-notes) can save up to eight relative paths in

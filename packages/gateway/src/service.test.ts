@@ -17,6 +17,8 @@ import {
   SkillsLive,
   Projects,
   ProjectsLive,
+  Approvals,
+  LocalApprovalsLive,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive } from "@poppet/memory";
@@ -119,6 +121,8 @@ const fixture = async (
   const settings = Layer.succeed(ChatSettings, defaultPolicy);
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
   const skills = Layer.merge(SkillsLive, ProjectsLive).pipe(Layer.provide(config));
+  const notes = NotesLive.pipe(Layer.provide([config, settings]));
+  const approvals = LocalApprovalsLive.pipe(Layer.provideMerge([store, config, settings, notes]));
 
   const agent = AgentLive.pipe(
     Layer.provideMerge(
@@ -141,7 +145,8 @@ const fixture = async (
         ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
         Layer.succeed(WebSearch, { search: null }),
         Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
-        NotesLive.pipe(Layer.provide(Layer.merge(config, settings))),
+        notes,
+        approvals,
         Layer.succeed(ModelResolver, {
           resolve: (provider, model) => {
             expect([provider, model]).toEqual(["test-provider", "test-model"]);
@@ -203,6 +208,7 @@ const fixture = async (
         | Agent
         | Skills
         | Projects
+        | Approvals
       >,
     ) =>
       Effect.runPromise(
@@ -240,6 +246,192 @@ const scheduled = (destination: DeliveryDestination | null) =>
   });
 
 describe.concurrent("messaging gateway", () => {
+  test.each([false, true])(
+    "scheduled proposals require a saved capability, notify separately, and survive source cleanup, repeated proposal: %s",
+    async (repeat) => {
+      const delivered: string[] = [];
+
+      const state = await fixture(
+        {
+          send: (_destination, text) =>
+            Effect.gen(function* () {
+              delivered.push(text);
+
+              if (repeat && text.startsWith("Note proposal"))
+                return yield* Effect.fail(
+                  new ChannelError({
+                    reason: "uncertain",
+                    message: "Lost proposal notification acknowledgement",
+                  }),
+                );
+
+              return "remote-id";
+            }),
+        },
+        (request) => {
+          const enabled = request.tools.some((tool) => tool.name === "propose_note");
+          const results = request.messages.filter((entry) => entry.role === "tool").length;
+
+          if (!enabled || results >= (repeat ? 2 : 1)) return response("Scheduled report");
+
+          return Stream.make({
+            type: "completed" as const,
+            response: {
+              output: [
+                {
+                  type: "tool-call" as const,
+                  callId: `proposal-${results}`,
+                  name: "propose_note",
+                  namespace: "poppet_approvals",
+                  arguments: '{"path":"scheduled.md","content":"Owner review required"}',
+                },
+              ],
+              continuation: {
+                version: 1 as const,
+                provider: "test-provider",
+                model: "test-model",
+                data: {},
+              },
+              finishReason: "tool-calls" as const,
+              usage: null,
+            },
+          });
+        },
+        true,
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const repo = yield* TaskRepository;
+            const approvals = yield* Approvals;
+            const gateway = yield* Gateway;
+            const destination = yield* gateway.resolveDestination("scheduled-thread");
+
+            const input = {
+              name: "Review",
+              prompt: "Prepare a note for review",
+              provider: "test-provider",
+              model: "test-model",
+              workload: "assistant" as const,
+              schedule: { type: "once" as const, at: 1 },
+            };
+
+            repo.add(input, 0);
+
+            const enabled = repo.add(
+              { ...input, schedule: { type: "once", at: 2 } },
+              0,
+              null,
+              destination,
+              undefined,
+              false,
+              null,
+              "scheduled.md",
+            );
+
+            expect(() =>
+              repo.add(
+                { ...input, schedule: { type: "cron", expression: "* * * * *", timezone: "UTC" } },
+                0,
+                null,
+                null,
+                undefined,
+                true,
+                null,
+                "scheduled.md",
+              ),
+            ).toThrow("Monitoring tasks");
+            repo.reconcile(1);
+            const ordinary = repo.claim(1)!;
+            yield* executeOccurrence(repo, ordinary.occurrence, ordinary.task);
+            expect(state.requests[0]!.tools.some((tool) => tool.name === "propose_note")).toBe(
+              false,
+            );
+            repo.reconcile(2);
+            const permitted = repo.claim(2)!;
+            yield* executeOccurrence(repo, permitted.occurrence, permitted.task);
+
+            const scoped = state.requests.find(
+              (request) => request.sessionId === repo.occurrence(permitted.occurrence.id).sessionId,
+            );
+
+            expect(scoped!.tools.map((tool) => tool.name)).not.toContain("save_note");
+            expect(scoped!.tools.map((tool) => tool.name)).not.toContain("memory");
+            expect(repo.occurrence(permitted.occurrence.id).status).toBe(
+              repeat ? "failed" : "completed",
+            );
+            const [proposal] = JSON.parse(yield* approvals.command({ action: "list" }));
+            expect(proposal).toMatchObject({ path: "scheduled.md", state: "pending" });
+            const full = JSON.parse(yield* approvals.command({ action: "show", id: proposal.id }));
+            expect(full).toMatchObject({
+              jobId: enabled.id,
+              revision: 0,
+              occurrenceId: permitted.occurrence.id,
+            });
+
+            // The report and the separately keyed proposal notice each use the durable delivery queue.
+            while (yield* gateway.deliverNext) {
+              /* Drain a bounded fixture queue. */
+            }
+
+            expect(delivered.filter((text) => text.includes(`ID: ${proposal.id}`))).toHaveLength(1);
+            expect(delivered.find((text) => text.includes(`ID: ${proposal.id}`))).toContain(
+              "not an execution receipt",
+            );
+            yield* gateway.recover;
+            expect(yield* gateway.deliverNext).toBe(false);
+            expect((yield* GatewayRepository).status()).toMatchObject({
+              uncertainDelivery: repeat ? 1 : 0,
+            });
+            repo.control(
+              {
+                action: "edit",
+                id: enabled.id,
+                revision: 0,
+                operationId: "edit-proposal-source",
+                patch: { name: "Changed source" },
+              },
+              3,
+            );
+            expect(
+              JSON.parse(yield* approvals.command({ action: "approve", id: proposal.id })).state,
+            ).toBe("cancelled");
+            repo.add(
+              { ...input, schedule: { type: "once", at: 4 } },
+              3,
+              null,
+              destination,
+              undefined,
+              false,
+              null,
+              "scheduled.md",
+            );
+            repo.reconcile(4);
+            const replacement = repo.claim(4)!;
+            yield* executeOccurrence(repo, replacement.occurrence, replacement.task);
+
+            const pending = JSON.parse(yield* approvals.command({ action: "list" })).find(
+              (entry: { state: string }) => entry.state === "pending",
+            );
+
+            expect(
+              JSON.parse(yield* approvals.command({ action: "approve", id: pending.id })).state,
+            ).toBe("completed");
+            expect(repo.clear()).toBe(3);
+            expect(
+              JSON.parse(yield* approvals.command({ action: "show", id: pending.id })).state,
+            ).toBe("completed");
+            expect(
+              JSON.parse(yield* approvals.command({ action: "show", id: proposal.id })).state,
+            ).toBe("cancelled");
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
   test("explicit project and skill selection persists across restart, rejects invalid replacements, and resets only with new", async () => {
     const state = await fixture();
 

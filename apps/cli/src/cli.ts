@@ -1,5 +1,5 @@
 import { BunServices } from "@effect/platform-bun";
-import { ChatSettings, logChatDiagnostic, Skills, Projects } from "@poppet/agent";
+import { Approvals, ChatSettings, logChatDiagnostic, Skills, Projects } from "@poppet/agent";
 import {
   AppConfig,
   ConfigSource,
@@ -20,7 +20,14 @@ import {
   type ProviderRegistration,
   ProviderId,
 } from "@poppet/provider";
-import { Session, SessionSearchQuery, SkillName, ProjectName, Store } from "@poppet/store";
+import {
+  Session,
+  SessionSearchQuery,
+  SkillName,
+  ProjectName,
+  ProposalPath,
+  Store,
+} from "@poppet/store";
 import {
   WorkerConnections,
   remoteTaskCommand,
@@ -559,6 +566,35 @@ export const makeCLI = (
     ]),
   );
 
+  const approvals = Command.make("approvals").pipe(
+    Command.withDescription("Review and execute immutable create-only note proposals"),
+    Command.withSubcommands([
+      Command.make("list", {}, () =>
+        throughWorker(
+          { kind: "approvals", command: { action: "list" } },
+          Approvals.use((service) => service.command({ action: "list" })).pipe(
+            Effect.provide(runtime.approvals),
+            Effect.flatMap(Console.log),
+          ),
+        ),
+      ),
+      ...(["show", "approve", "cancel"] as const).map((action) =>
+        Command.make(
+          action,
+          { id: Argument.String("proposal").pipe(Argument.withSchema(Session.fields.id)) },
+          ({ id }) =>
+            throughWorker(
+              { kind: "approvals", command: { action, id } },
+              Approvals.use((service) => service.command({ action, id })).pipe(
+                Effect.provide(runtime.approvals),
+                Effect.flatMap(Console.log),
+              ),
+            ),
+        ),
+      ),
+    ]),
+  );
+
   const tasks = Command.make("tasks").pipe(
     Command.withDescription("Schedule and manage requests"),
     Command.withSubcommands([
@@ -669,6 +705,13 @@ export const makeCLI = (
           coding: codingFlag,
           skill: skillFlag,
           project: projectFlag,
+          proposalNote: Flag.String("proposal-note").pipe(
+            Flag.withSchema(ProposalPath),
+            Flag.optional,
+            Flag.withDescription(
+              "Allow one create-only proposal per report occurrence at this exact notes path",
+            ),
+          ),
           discordThread: Flag.String("discord-thread").pipe(
             Flag.withSchema(Schema.NonEmptyString.check(Schema.isPattern(/^[0-9]{1,20}$/))),
             Flag.withDescription("Send each completed result to this authorized Discord thread"),
@@ -703,6 +746,7 @@ export const makeCLI = (
           prompt,
           skill,
           project,
+          proposalNote,
           discordThread,
           telegramChat,
           whatsappChat,
@@ -736,6 +780,7 @@ export const makeCLI = (
               delivery,
               monitor,
               project,
+              Option.getOrUndefined(proposalNote),
             );
 
             yield* runTasks(command);
@@ -987,6 +1032,7 @@ export const makeCLI = (
       ),
       chat,
       memory,
+      approvals,
       tasks,
       gateway,
       workerCommand,

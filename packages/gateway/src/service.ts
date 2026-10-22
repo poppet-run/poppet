@@ -156,6 +156,30 @@ const gateway = Effect.gen(function* () {
         ),
       );
     }
+
+    for (const item of yield* gatewayStorage(() =>
+      repo.proposals(channel.id, clock.currentTimeMillisUnsafe()),
+    )) {
+      const destination = item.destination;
+
+      const enabled =
+        destination.account === account &&
+        destination.ownerId === channel.policy.ownerId &&
+        destination.scopeId === channel.policy.scopeId &&
+        channel.policy.parentIds.includes(destination.parentId);
+
+      const text = `Note proposal prepared for owner review. This is not an execution receipt.\nID: ${item.id}\nPath: ${item.path}\nPayload SHA-256: ${item.digest}\nExpires: ${new Date(item.expiresAt).toISOString()}\nReview full content and current state locally: approvals show ${item.id}\nApprove or cancel using the local approvals CLI. Chat replies and reactions cannot approve it.`;
+      yield* gatewayStorage(() =>
+        repo.scheduleResult(
+          item.id,
+          item.runId,
+          destination,
+          chunks(text, channel.textLimit),
+          enabled,
+          true,
+        ),
+      );
+    }
   });
 
   const finish = (id: number, text: string, state = "completed") =>
