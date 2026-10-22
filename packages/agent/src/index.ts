@@ -38,3 +38,5 @@ export {
   webSearchResult,
   type WebSearchResult,
 } from "#src/web-search";
+
+export { toolArguments, BoundedText } from "#src/tool-schema";

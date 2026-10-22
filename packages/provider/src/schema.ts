@@ -18,6 +18,16 @@ export const Tool = Schema.Struct({
   parameters: Schema.JsonObject,
 });
 
+/** Strict JSON Schema parameters for a tool's arguments. */
+export const toolParameters = (schema: Schema.Constraint): Schema.JsonObject =>
+  Schema.decodeUnknownSync(Schema.JsonObject)(
+    Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" }).schema,
+  );
+
+/** Decodes a tool call's JSON arguments strictly; callers map the error. */
+export const decodeToolArguments = <S extends Schema.Constraint>(schema: S) =>
+  Schema.decodeUnknownEffect(Schema.fromJsonString(schema), { onExcessProperty: "error" });
+
 /** One ordered part of an assistant response; tool arguments remain JSON text until validated. */
 export const Output = Schema.Union([
   Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }),

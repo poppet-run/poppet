@@ -1,4 +1,5 @@
 import { AgentError, type ExternalTool } from "@poppet/agent";
+import { toolParameters } from "@poppet/provider";
 import { Effect, Option, Schema } from "effect";
 
 import { Observation } from "#src/monitoring";
@@ -30,9 +31,7 @@ export const monitorTools = (
         name: "report_observation",
         description:
           "Submit one current stable value from completed source reads in this monitoring run. Use value, summary, and sourceCallIds. This is a pending candidate, not an alert or a saved baseline. Do not submit if the source is incomplete or the watched field is missing.",
-        parameters: Schema.decodeUnknownSync(Schema.JsonObject)(
-          Schema.toJsonSchemaDocument(Observation, { onExcessProperty: "error" }).schema,
-        ),
+        parameters: toolParameters(Observation),
       },
       serverId: "monitor",
       toolName: "report_observation",

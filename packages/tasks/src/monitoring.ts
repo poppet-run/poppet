@@ -1,20 +1,15 @@
 import type { Database } from "bun:sqlite";
 
+import { BoundedText } from "@poppet/agent";
 import { ToolCall } from "@poppet/store";
 import { Option, Schema } from "effect";
 
 import { TaskError, type Task } from "#src/task-schema";
 
-const text = (bytes: number) =>
-  Schema.NonEmptyString.check(
-    Schema.isTrimmed(),
-    Schema.makeFilter((value) => Buffer.byteLength(value) <= bytes),
-  );
-
 export const Observation = Schema.Struct({
-  value: text(1024),
-  summary: text(2048),
-  sourceCallIds: Schema.Array(text(128)).check(Schema.isMinLength(1), Schema.isMaxLength(4)),
+  value: BoundedText(1024),
+  summary: BoundedText(2048),
+  sourceCallIds: Schema.Array(BoundedText(128)).check(Schema.isMinLength(1), Schema.isMaxLength(4)),
 });
 
 const sourceText = Schema.String.check(Schema.makeFilter((value) => value.trim().length > 0));
@@ -40,7 +35,9 @@ const MCPEvidence = Schema.Struct({
   redacted: Schema.Literal(false),
 });
 
-const Sources = Schema.Array(Schema.Struct({ callId: text(128), source: text(2048) }));
+const Sources = Schema.Array(
+  Schema.Struct({ callId: BoundedText(128), source: BoundedText(2048) }),
+);
 
 const MonitorResult = Schema.Struct({
   occurrenceId: Schema.String,

@@ -2,6 +2,8 @@ export {
   ProviderId,
   GenerationSetting,
   Tool,
+  toolParameters,
+  decodeToolArguments,
   Output,
   Continuation,
   Message,
