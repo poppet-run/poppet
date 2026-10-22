@@ -48,10 +48,11 @@ const fixture = async (
     directory,
     server,
     layer,
+    // The child appends while the test polls, so a read may end mid-line; keep complete lines only.
     events: async () =>
       (await readFile(join(directory, "events"), "utf8"))
-        .trim()
         .split("\n")
+        .slice(0, -1)
         .map((line) => Schema.decodeUnknownSync(Schema.fromJsonString(Schema.JsonObject))(line)),
     run: <A, E>(program: Effect.Effect<A, E, MCP>) =>
       Effect.runPromise(program.pipe(Effect.provide(layer))),
