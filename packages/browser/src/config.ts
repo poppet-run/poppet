@@ -26,11 +26,10 @@ export const BrowserSettings = Schema.Struct({
 }).check(
   Schema.makeFilter((settings) =>
     !settings.enabled ||
-    (settings.chromiumExecutable !== undefined &&
-      isAbsolute(settings.chromiumExecutable) &&
+    ((settings.chromiumExecutable === undefined || isAbsolute(settings.chromiumExecutable)) &&
       (settings.allowedDomains?.length ?? 0) > 0)
       ? true
-      : "Enabled browser access requires an absolute chromiumExecutable and nonempty allowedDomains.",
+      : "Enabled browser access requires nonempty allowedDomains and an absolute chromiumExecutable when provided.",
   ),
 );
 

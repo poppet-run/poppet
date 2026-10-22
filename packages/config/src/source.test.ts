@@ -140,10 +140,18 @@ describe("configuration sources", () => {
       ).toEqual({ enabled: false });
       expect(overridden.source.environmentOverrides).toContain("POPPET_BROWSER");
 
+      const discovered = { enabled: true, allowedDomains: ["example.com"] };
+      await writeFile(join(directory, "config.json"), JSON.stringify({ browser: discovered }));
+      const discoveredFile = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(
+        await Effect.runPromise(browserSettings.pipe(Effect.provide(discoveredFile.context))),
+      ).toEqual(discovered);
+
       await Promise.all(
         [
           "",
           '{"enabled":true}',
+          '{"enabled":true,"chromiumExecutable":"relative/chrome","allowedDomains":["example.com"]}',
           '{"enabled":true,"chromiumExecutable":"/chrome"}',
           '{"enabled":true,"chromiumExecutable":"/chrome","allowedDomains":[]}',
           '{"enabled":true,"chromiumExecutable":"/chrome","allowedDomains":["*.example.com"]}',

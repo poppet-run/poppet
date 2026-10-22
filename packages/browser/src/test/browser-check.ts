@@ -8,11 +8,6 @@ import { launchBrowserProcess, type BrowserLauncher } from "#src/browser-process
 
 const [command, chromiumExecutable] = Bun.argv.slice(2);
 
-assert(
-  command && chromiumExecutable,
-  "Pass the pinned agent-browser and Chrome for Testing executable paths.",
-);
-
 let localhostRequests = 0;
 
 let resourceRequests = 0;
@@ -61,7 +56,12 @@ const launch: BrowserLauncher = (args, directory, environment) => {
   return child;
 };
 
-const settings = { enabled: true, command, chromiumExecutable, allowedDomains: ["127.0.0.1"] };
+const settings = {
+  enabled: true,
+  ...(command === undefined ? undefined : { command }),
+  ...(chromiumExecutable === undefined ? undefined : { chromiumExecutable }),
+  allowedDomains: ["127.0.0.1"],
+};
 
 const workflow = (scenario: "page" | "redirect" | "wildcard") =>
   Effect.scoped(
