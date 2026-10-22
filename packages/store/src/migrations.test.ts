@@ -8,6 +8,25 @@ import { applyMigrations, migrations } from "#src/migrations";
 const initial = migrations.slice(0, 1);
 
 describe("store migrations", () => {
+  test("rejects edits to previously applied SQL", () => {
+    using database = new Database(":memory:");
+    applyMigrations(database, initial);
+
+    const migration = initial[0]!;
+
+    const edited = {
+      ...migration,
+      sql: `${migration.sql}\nCREATE TABLE unexpected (id INTEGER);`,
+    };
+
+    expect(() => applyMigrations(database, [edited])).toThrow(
+      "unsupported or changed migration history",
+    );
+    expect(
+      database.query("SELECT name FROM sqlite_master WHERE name = 'unexpected'").get(),
+    ).toBeNull();
+  });
+
   test("project migration preserves global facts and legacy snapshots and rolls back atomically", () => {
     using database = new Database(":memory:");
     database.run("PRAGMA foreign_keys = ON");
