@@ -6,13 +6,18 @@ import { join } from "node:path";
 import { AppConfig } from "@poppet/config";
 import { Effect, Layer } from "effect";
 
+import { contextFiles } from "#src/context-files";
 import { Skills, SkillsLive } from "#src/skills";
 
-const fixture = async () => {
+const fixture = async (withFallback = false) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-skills-"));
   const root = join(directory, "skills");
 
-  const layer = SkillsLive.pipe(
+  const fallback = join(directory, ".agent");
+
+  const layer = (
+    withFallback ? Layer.effect(Skills, contextFiles("skills", "SKILL.md", fallback)) : SkillsLive
+  ).pipe(
     Layer.provide(
       Layer.succeed(AppConfig, {
         applicationName: "Test",
@@ -27,6 +32,7 @@ const fixture = async () => {
   return {
     directory,
     root,
+    fallbackRoot: join(fallback, "skills"),
     load: (name: string) =>
       Effect.runPromise(Skills.use((skills) => skills.load(name)).pipe(Effect.provide(layer))),
     list: () => Effect.runPromise(Skills.use((skills) => skills.list).pipe(Effect.provide(layer))),
@@ -54,6 +60,36 @@ describe.concurrent("local Markdown skills", () => {
       await rm(state.root, { recursive: true });
       await rm(state.directory, { recursive: true });
       expect(await state.list()).toEqual([]);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("merges skill roots and prefers data-directory entries without hiding invalid files", async () => {
+    const state = await fixture(true);
+
+    try {
+      expect(await state.list()).toEqual([]);
+      await mkdir(join(state.fallbackRoot, "shared"), { recursive: true });
+      await writeFile(join(state.fallbackRoot, "shared", "SKILL.md"), "Home procedure");
+      expect(await state.list()).toEqual(["shared"]);
+      expect(await state.load("shared")).toEqual({ name: "shared", content: "Home procedure" });
+      await state.save("local", "Local procedure");
+      await state.save("shared", "Local override");
+      expect(await state.list()).toEqual(["local", "shared"]);
+      expect((await state.load("shared")).content).toBe("Local override");
+      await state.save("shared", "x".repeat(8193));
+      await expect(state.load("shared")).rejects.toMatchObject({ reason: "invalid-request" });
+      await rm(join(state.root, "shared", "SKILL.md"));
+      await expect(state.load("shared")).rejects.toMatchObject({ reason: "invalid-request" });
+      await rm(state.root, { recursive: true });
+      await rm(join(state.fallbackRoot, "shared"), { recursive: true });
+      await symlink(state.directory, join(state.fallbackRoot, "shared"));
+      await expect(state.load("shared")).rejects.toMatchObject({ reason: "invalid-request" });
+      await rm(state.fallbackRoot, { recursive: true });
+      await symlink(state.directory, state.fallbackRoot);
+      await expect(state.list()).rejects.toMatchObject({ reason: "invalid-request" });
+      await expect(state.load("shared")).rejects.toMatchObject({ reason: "invalid-request" });
     } finally {
       await state.close();
     }

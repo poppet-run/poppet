@@ -4,8 +4,10 @@
 
 A skill is an owner-written procedure selected when creating a chat or scheduled
 task. It uses Poppet's existing tools and permissions. Create one file at
-`<POPPET_DATA_DIR>/skills/<name>/SKILL.md`, using UTF-8 Markdown of at most 8192
-bytes. Names contain 1–128 letters, digits, underscores, or hyphens.
+`<POPPET_DATA_DIR>/skills/<name>/SKILL.md` or
+`$HOME/.agent/skills/<name>/SKILL.md`, using UTF-8 Markdown of at most 8192 bytes.
+Listings combine both locations without duplicate names. A matching directory in
+the Poppet data directory takes precedence, even if its file is missing or invalid. Names contain 1–128 letters, digits, underscores, or hyphens.
 
 For example, save this as `skills/weekly-review/SKILL.md` under your data directory:
 
@@ -40,7 +42,7 @@ only new sessions and tasks. Create a replacement session or task to refresh it.
 `content`; old records and ordinary sessions have `skill: null`.
 
 The process owning the store loads the file. Commands sent through a running worker
-use its data directory and the same validation as local commands. Skills join the
+use its data directory and home directory with the same validation as local commands. Skills join the
 run's instructions below the base rules and count toward the existing context
 budget. They cannot override explicit user requests or grant tool permissions.
 Scheduled notes and memory remain read-only. A skill cannot authorize memory

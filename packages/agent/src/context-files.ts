@@ -17,7 +17,7 @@ const invalid = () =>
   new AgentError({
     reason: "invalid-request",
     message:
-      "Skills must be UTF-8 SKILL.md files and projects must be UTF-8 PROJECT.md/context files of at most 8192 bytes in named directories under <data directory>/skills or projects. Symlinks, hard links, and paths are not allowed.",
+      "Skills must be UTF-8 SKILL.md files and projects must be UTF-8 PROJECT.md/context files of at most 8192 bytes in named directories under <data directory>/skills, $HOME/.agent/skills, or <data directory>/projects. Symlinks, hard links, and paths are not allowed.",
   });
 
 const failure = (cause: unknown) => (cause instanceof AgentError ? cause : invalid());
@@ -34,18 +34,54 @@ const directoryInfo = async (path: string) => {
 export const contextFiles = (
   collection: "skills" | "projects",
   filename: "SKILL.md" | "PROJECT.md",
+  fallbackDirectory?: string,
 ) =>
   Effect.gen(function* () {
     const { dataDirectory } = yield* AppConfig;
+
     // Canonicalize the configured parent, but never follow a link at the context root or below it.
-    const rootPath = async () => join(await realpath(dataDirectory), collection);
+    const rootPaths = async () => {
+      const roots: string[] = [];
+
+      for (const directory of [dataDirectory, ...(fallbackDirectory ? [fallbackDirectory] : [])]) {
+        const parent = await realpath(directory).catch((cause: unknown) => {
+          if (Schema.is(MissingFile)(cause)) return null;
+          throw cause;
+        });
+
+        if (parent !== null) roots.push(join(parent, collection));
+      }
+
+      return roots;
+    };
+
+    const findRoot = async (name: string) => {
+      for (const root of await rootPaths()) {
+        const exists = await lstat(root).catch((cause: unknown) => {
+          if (Schema.is(MissingFile)(cause)) return null;
+          throw cause;
+        });
+
+        if (exists === null) continue;
+        await directoryInfo(root);
+
+        const entry = await lstat(join(root, name)).catch((cause: unknown) => {
+          if (Schema.is(MissingFile)(cause)) return null;
+          throw cause;
+        });
+
+        if (entry !== null) return root;
+      }
+
+      throw invalid();
+    };
 
     const read = (name: string, file: "SKILL.md" | "PROJECT.md" | "notes.json", optional = false) =>
       Effect.tryPromise({
         try: async (signal) => {
           Schema.decodeUnknownSync(SkillName)(name);
           signal.throwIfAborted();
-          const root = await rootPath();
+          const root = await findRoot(name);
           await directoryInfo(root);
           const parent = join(root, name);
           const original = await directoryInfo(parent);
@@ -104,37 +140,33 @@ export const contextFiles = (
 
     const list = Effect.tryPromise({
       try: async (signal) => {
-        const root = await rootPath().catch((cause: unknown) => {
-          if (Schema.is(MissingFile)(cause)) return null;
-          throw cause;
-        });
-
-        if (root === null) return [];
-
-        const info = await lstat(root).catch((cause: unknown) => {
-          if (Schema.is(MissingFile)(cause)) return null;
-          throw cause;
-        });
-
-        if (info === null) return [];
-        await directoryInfo(root);
         const names: string[] = [];
         let visited = 0;
 
-        for await (const entry of await opendir(root)) {
-          signal.throwIfAborted();
+        for (const root of await rootPaths()) {
+          const info = await lstat(root).catch((cause: unknown) => {
+            if (Schema.is(MissingFile)(cause)) return null;
+            throw cause;
+          });
 
-          if (++visited > 1000)
-            throw new AgentError({
-              reason: "invalid-request",
-              message: "The context directory exceeds the 1000 entry listing limit.",
-            });
+          if (info === null) continue;
+          await directoryInfo(root);
 
-          if (entry.isDirectory() && !entry.isSymbolicLink() && Schema.is(SkillName)(entry.name))
-            names.push(entry.name);
+          for await (const entry of await opendir(root)) {
+            signal.throwIfAborted();
+
+            if (++visited > 1000)
+              throw new AgentError({
+                reason: "invalid-request",
+                message: "The context directory exceeds the 1000 entry listing limit.",
+              });
+
+            if (entry.isDirectory() && !entry.isSymbolicLink() && Schema.is(SkillName)(entry.name))
+              names.push(entry.name);
+          }
         }
 
-        return names.toSorted();
+        return [...new Set(names)].toSorted();
       },
       catch: failure,
     });

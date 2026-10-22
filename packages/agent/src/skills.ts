@@ -1,3 +1,6 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import { SkillSnapshot } from "@poppet/store";
 import { Context, Effect, Layer } from "effect";
 
@@ -13,4 +16,7 @@ export class Skills extends Context.Service<
   }
 >()("poppet/Skills") {}
 
-export const SkillsLive = Layer.effect(Skills, contextFiles("skills", "SKILL.md"));
+export const SkillsLive = Layer.effect(
+  Skills,
+  contextFiles("skills", "SKILL.md", join(homedir(), ".agent")),
+);

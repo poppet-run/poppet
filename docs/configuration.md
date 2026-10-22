@@ -219,8 +219,9 @@ See [OpenCode Go](providers/opencode-go.md) and [OpenRouter](providers/openroute
 
 ## Skill files
 
-Skills use `<POPPET_DATA_DIR>/skills/<name>/SKILL.md`. There is no separate path
-setting. Each file is limited to 8192 UTF-8 bytes, and its saved text counts
+Skills use `<POPPET_DATA_DIR>/skills/<name>/SKILL.md` and
+`$HOME/.agent/skills/<name>/SKILL.md`. The data directory takes precedence for
+duplicate names. There is no separate path setting. Each file is limited to 8192 UTF-8 bytes, and its saved text counts
 against `POPPET_CONTEXT_BYTES`. Skill inspection needs only configuration;
 new chats and tasks load skills in the process owning the store.
 See [skills](skills.md) for naming, selection, and snapshot behavior.
