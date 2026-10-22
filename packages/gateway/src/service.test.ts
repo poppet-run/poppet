@@ -463,7 +463,7 @@ describe.concurrent("messaging gateway", () => {
     } finally {
       await state.close();
     }
-  }, 15_000);
+  });
 
   test.each([false, true])(
     "chat task delivery uses the current checked conversation, revoked: %s",

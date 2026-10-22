@@ -338,7 +338,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
           Effect.gen(function* () {
             while (!lines.some((line) => line.includes("Worker running.")))
               yield* Effect.sleep("5 millis");
-          }).pipe(Effect.timeout("5 seconds")),
+          }).pipe(Effect.timeout("2 seconds")),
         );
       } catch (error) {
         await Effect.runPromise(Fiber.interrupt(worker));
@@ -358,6 +358,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
 const exampleChannel = (id: string) => {
   const incoming = Effect.runSync(Queue.make<IncomingMessage>());
   const sent: string[] = [];
+  const replies = Effect.runSync(Queue.make<string>());
   const state = { configured: false, built: 0, closed: 0, directory: "", sent };
 
   const registration: ChannelRegistration = {
@@ -394,8 +395,9 @@ const exampleChannel = (id: string) => {
               typing: () => Effect.void,
               mark: () => Effect.void,
               send: (_conversation, text) =>
-                Effect.sync(() => {
+                Effect.gen(function* () {
                   state.sent.push(text);
+                  yield* Queue.offer(replies, text);
 
                   return "sent";
                 }),
@@ -412,7 +414,7 @@ const exampleChannel = (id: string) => {
     }),
   };
 
-  return { registration, state, incoming };
+  return { registration, state, incoming, replies };
 };
 
 describe("chat CLI", () => {
@@ -543,7 +545,7 @@ describe("chat CLI", () => {
           Effect.gen(function* () {
             while (!chat.thinkingChunks.includes(chat.state.reasoning))
               yield* Effect.sleep("5 millis");
-          }).pipe(Effect.timeout("5 seconds")),
+          }).pipe(Effect.timeout("2 seconds")),
         );
         expect(chat.thinkingChunks).toEqual(["Thinking:\n", chat.state.reasoning]);
         expect(chat.chunks).toEqual([]);
@@ -566,7 +568,6 @@ describe("chat CLI", () => {
         await chat.close();
       }
     },
-    15_000,
   );
 
   test("streams reasoning without sending a second diagnostic copy to the client", async () => {
@@ -1267,7 +1268,7 @@ describe("chat CLI", () => {
         await Effect.runPromise(
           Effect.gen(function* () {
             while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
-          }).pipe(Effect.timeout("5 seconds")),
+          }).pipe(Effect.timeout("2 seconds")),
         );
         await Effect.runPromise(Fiber.interrupt(prompt));
         prompt = undefined;
@@ -1276,7 +1277,7 @@ describe("chat CLI", () => {
         await Effect.runPromise(
           Effect.gen(function* () {
             while (chat.state.active > 0) yield* Effect.sleep("5 millis");
-          }).pipe(Effect.timeout("5 seconds")),
+          }).pipe(Effect.timeout("2 seconds")),
         );
         expect(reads).toBe(1);
 
@@ -1390,12 +1391,9 @@ describe("chat CLI", () => {
         ),
       );
       await Effect.runPromise(
-        Effect.gen(function* () {
-          while (first.state.sent.length + second.state.sent.length < 2) {
-            yield* Effect.promise(() => chat.clock.runPromise(TestClock.adjust("1 second")));
-            yield* Effect.sleep("5 millis");
-          }
-        }).pipe(Effect.timeout("15 seconds")),
+        Effect.all([Queue.take(first.replies), Queue.take(second.replies)]).pipe(
+          Effect.timeout("2 seconds"),
+        ),
       );
       expect(first.state.sent).toEqual(["Answer"]);
       expect(second.state.sent).toEqual(["Answer"]);
@@ -1423,14 +1421,7 @@ describe("chat CLI", () => {
           mentioned: false,
         }),
       );
-      await Effect.runPromise(
-        Effect.gen(function* () {
-          while (first.state.sent.length < 2) {
-            yield* Effect.promise(() => chat.clock.runPromise(TestClock.adjust("1 second")));
-            yield* Effect.sleep("5 millis");
-          }
-        }).pipe(Effect.timeout("15 seconds")),
-      );
+      await Effect.runPromise(Queue.take(first.replies).pipe(Effect.timeout("2 seconds")));
       expect(first.state.sent[1]).toBe("Answer");
       expect(chat.requests.at(-1)?.instructions).toContain("Messaging host project preferences");
       chat.chunks.length = 0;
@@ -1455,7 +1446,7 @@ describe("chat CLI", () => {
       if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
       await chat.close();
     }
-  }, 15_000);
+  });
 
   test.each(["all", "tasks", "gateway"] as const)(
     "%s worker mode starts only selected services and keeps shared commands available",
@@ -1513,7 +1504,7 @@ describe("chat CLI", () => {
           await Effect.runPromise(
             Effect.gen(function* () {
               while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
-            }).pipe(Effect.timeout("5 seconds")),
+            }).pipe(Effect.timeout("2 seconds")),
           );
           expect(chat.requests).toHaveLength(1);
         }
@@ -1761,7 +1752,7 @@ describe("chat CLI", () => {
             chat.errors.filter((line) => line.startsWith("Session:")).length < 2
           )
             yield* Effect.sleep("5 millis");
-        }).pipe(Effect.timeout("5 seconds")),
+        }).pipe(Effect.timeout("2 seconds")),
       );
       await Effect.runPromise(Fiber.interrupt(worker));
       await expect(Effect.runPromise(Fiber.join(client))).rejects.toThrow("not retried");
@@ -1792,7 +1783,7 @@ describe("chat CLI", () => {
       await Effect.runPromise(
         Effect.gen(function* () {
           while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
-        }).pipe(Effect.timeout("5 seconds")),
+        }).pipe(Effect.timeout("2 seconds")),
       );
       const second = Effect.runFork(chat.program(["chat", "new", "Queued"]));
       await chat.invoke([
@@ -1812,7 +1803,7 @@ describe("chat CLI", () => {
       await Effect.runPromise(
         Effect.gen(function* () {
           while (chat.requests.length < 2) yield* Effect.sleep("5 millis");
-        }).pipe(Effect.timeout("5 seconds")),
+        }).pipe(Effect.timeout("2 seconds")),
       );
       expect(chat.state.peak).toBe(1);
       chat.state.hold = false;
@@ -1822,7 +1813,7 @@ describe("chat CLI", () => {
         Effect.gen(function* () {
           while (chat.requests.length < 3 || chat.state.active !== 0)
             yield* Effect.sleep("5 millis");
-        }).pipe(Effect.timeout("5 seconds")),
+        }).pipe(Effect.timeout("2 seconds")),
       );
       expect(chat.state.peak).toBe(1);
       chat.chunks.length = 0;

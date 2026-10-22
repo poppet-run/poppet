@@ -207,7 +207,7 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
           Effect.gen(function* () {
             while (!lines.some((line) => line.includes("Worker running.")))
               yield* Effect.sleep("5 millis");
-          }).pipe(Effect.timeout("5 seconds")),
+          }).pipe(Effect.timeout("2 seconds")),
         );
 
         return fiber;

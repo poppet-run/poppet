@@ -580,7 +580,7 @@ describe("CLI", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   test("task, memory, and inspection clients reach the worker and a second worker cannot acquire ownership", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-cli-"));
@@ -678,7 +678,7 @@ describe("CLI", () => {
       expect(await readdir(join(directory, "store"))).not.toContain("tasks.sock");
       await rm(directory, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   test("manages explicit facts across CLI invocations without a provider connection or model", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-memory-cli-"));
@@ -725,7 +725,7 @@ describe("CLI", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   test("rejects invalid memory commands before creating a store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-memory-args-"));
@@ -992,7 +992,7 @@ describe("CLI", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   test("uses environment credentials without writing them until login and rejects invalid overrides", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-env-"));
