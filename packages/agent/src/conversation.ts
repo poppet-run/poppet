@@ -190,6 +190,9 @@ export const conversation = Effect.gen(function* () {
                 }),
               )
             : webSearch.search(plan.query).pipe(
+                Effect.mapError(
+                  (error) => new AgentError({ reason: error.reason, message: error.message }),
+                ),
                 Effect.map((value) => {
                   urls = value.results.map((item) => item.url);
 

@@ -36,6 +36,7 @@
         "@poppet/provider-openrouter": "workspace:*",
         "@poppet/store": "workspace:*",
         "@poppet/tasks": "workspace:*",
+        "@poppet/web-search": "workspace:*",
         "@poppet/worker": "workspace:*",
         "effect": "4.0.4",
       },
@@ -49,6 +50,7 @@
         "@poppet/memory": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/store": "workspace:*",
+        "@poppet/web-search": "workspace:*",
         "effect": "4.0.4",
         "entities": "8.1.0",
       },
@@ -253,6 +255,15 @@
       },
       "devDependencies": {
         "@poppet/memory": "workspace:*",
+        "@poppet/web-search": "workspace:*",
+      },
+    },
+    "packages/web-search": {
+      "name": "@poppet/web-search",
+      "version": "0.0.0",
+      "dependencies": {
+        "@poppet/io": "workspace:*",
+        "effect": "4.0.4",
       },
     },
     "packages/worker": {
@@ -480,6 +491,8 @@
     "@poppet/store": ["@poppet/store@workspace:packages/store"],
 
     "@poppet/tasks": ["@poppet/tasks@workspace:packages/tasks"],
+
+    "@poppet/web-search": ["@poppet/web-search@workspace:packages/web-search"],
 
     "@poppet/worker": ["@poppet/worker@workspace:packages/worker"],
 

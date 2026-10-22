@@ -6,49 +6,20 @@ Depends on [Bounded I/O package](bounded-io.md).
 
 ## Implementation
 
-Implemented. The HTTP client and transport tests live in `@poppet/agent`; the
-CLI retains credential loading and commands. The client uses `readBoundedText`
-from the shared `@poppet/io` package.
+Implemented as `@poppet/web-search`. The package owns the search service, Brave
+HTTP client, response parsing, source filtering, and result budgeting. It depends
+on `@poppet/io` and Effect, without importing the agent or credential storage.
 
-## Goal
+The agent keeps the model-tool definition and argument validation, and converts
+search failures into agent errors with the same reason and message. The CLI keeps
+credential loading, the opt-in configuration layer, and `web login|status|logout`.
 
-Keep the Brave Search HTTP client in `@poppet/agent` next to the result parsing
-it already owns. Leave only credential handling and CLI commands in the app.
-
-## Current state
-
-`apps/cli/src/web-search.ts` contains three things:
-
-- `makeWebSearch`: the Brave HTTP request, status-to-error mapping, content-type
-  check, bounded body read, and 15-second timeout.
-- `WebSearchLive`: reads the config flag, loads the key from the environment or
-  `ApiKeyStore`, and builds the service.
-- `manageWebSearch`: the `web login|status|logout` commands.
-
-`BraveSearchResponse` and `webSearchResult` are exported from `@poppet/agent`
-only so this file can use them.
-
-## Design
-
-Move `makeWebSearch` to `packages/agent/src/web-search.ts`, using
-`readBoundedText` from `@poppet/io`. `WebSearchLive` stays in the CLI because it
-needs `@poppet/credentials`, which `agent` doesn't depend on.
-
-Once moved, `BraveSearchResponse` and `webSearchResult` no longer need to be
-exported from `packages/agent/src/index.ts`. Export `makeWebSearch` instead.
-(`conversation.test.ts` imports `webSearchResult` through `#src`, so it doesn't
-depend on the package export.)
-
-## Steps
-
-1. Add `@poppet/io` to `packages/agent` dependencies.
-2. Move `makeWebSearch` and `maxSearchBytes` into `agent/src/web-search.ts`, and
-   replace the read loop with `readBoundedText`.
-3. Move the `makeWebSearch` cases from `apps/cli/src/web-search.test.ts` into
-   `packages/agent/src/web-search.test.ts`. Keep the `WebSearchLive` and
-   `manageWebSearch` cases in the CLI.
-4. Update the `@poppet/agent` exports.
+Search and page fetching share URL validation and public-address policy in
+`@poppet/io`. The search client uses `readBoundedText` for its 1 MiB response limit.
 
 ## Verification
 
-Both `web-search.test.ts` files pass. Error reasons and messages are unchanged.
+Existing result and HTTP behavior tests move with the package. Argument validation
+and conversation tests stay in the agent; configuration and command tests stay in
+the CLI. Search errors, result budgets, cancellation, and the 15-second deadline
+remain unchanged. No new tests are added for the package extraction.

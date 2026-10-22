@@ -34,6 +34,7 @@
     "@poppet/provider-openrouter": "workspace:*",
     "@poppet/store": "workspace:*",
     "@poppet/tasks": "workspace:*",
+    "@poppet/web-search": "workspace:*",
     "@poppet/worker": "workspace:*",
     "effect": "4.0.4"
   }

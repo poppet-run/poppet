@@ -559,14 +559,20 @@ failure without replay, and unchanged read-only notes permissions.
 
 ## Web search
 
-`agent/web-search.ts` owns `poppet_web.search_web`, the `WebSearch` service contract,
-response schemas, URL filtering, and Unicode-safe result budgeting. A null search
-operation means disabled or missing credentials, so the tool is not advertised.
-`cli/web-search.ts` implements the single Brave backend using platform fetch and
-the existing API-key store. Configuration layers provide the opt-in flag with
+`@poppet/web-search` owns the `WebSearch` service contract, Brave HTTP client,
+response schemas, URL filtering, and Unicode-safe result budgeting. It depends on
+`@poppet/io` and Effect, with no dependency on the agent or credential storage.
+`agent/web-search.ts` defines `poppet_web.search_web` and validates model arguments.
+The conversation maps `WebSearchError` into `AgentError` while preserving its
+reason and message. A null search operation means disabled or missing credentials,
+so the tool is not advertised.
+
+`cli/web-search.ts` loads credentials and provides the service, and owns the web
+setup commands. Configuration layers provide the opt-in flag with
 environment-over-file precedence; keys stay outside normal configuration and
 inference-provider packages. CLI setup and the local/worker runtime share these
-layers. No dependency or database migration is added.
+layers. Search and page fetching share URL validation and public-address policy
+from `@poppet/io`. No database migration is needed.
 
 Requests use Brave's fixed HTTPS endpoint, query-only context, and a separate
 authentication header with redirect rejection. An Effect deadline bounds the

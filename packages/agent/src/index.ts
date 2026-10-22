@@ -32,6 +32,6 @@ export {
   type PreparedTaskCall,
 } from "#src/task-tools";
 
-export { WebSearch, makeWebSearch, type WebSearchResult } from "#src/web-search";
+export { WebSearch, type WebSearchResult } from "@poppet/web-search";
 
 export { toolArguments, BoundedText } from "#src/tool-schema";

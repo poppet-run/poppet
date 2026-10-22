@@ -15,7 +15,8 @@ import {
 } from "@poppet/provider";
 import { responsesModel } from "@poppet/provider-protocol";
 import { SessionReadResult, SessionSearchMatch, Store, StoreError, StoreLive } from "@poppet/store";
-import { Effect, Fiber, Layer, Schema, Stream } from "effect";
+import { WebSearch, WebSearchError, makeWebSearch } from "@poppet/web-search";
+import { Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect";
 import OpenAI from "openai";
 
 import { toolFailureKind } from "#src/conversation";
@@ -26,7 +27,6 @@ import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
 import { ChatTasks } from "#src/task-tools";
-import { WebSearch, webSearchResult } from "#src/web-search";
 
 const tool = (
   name: string,
@@ -539,20 +539,23 @@ describe.concurrent("notes conversation", () => {
     async (budget) => {
       const omitted = budget ? `https://example.com/${"x".repeat(2000)}` : "https://example.com/5";
 
-      const result = webSearchResult(
-        {
-          type: "search",
-          web: {
-            results: budget
-              ? [{ title: "Too long", url: omitted }]
-              : Array.from({ length: 6 }, (_, i) => ({
-                  title: "Source",
-                  url: `https://example.com/${i}`,
-                })),
-          },
+      const searchResponse = {
+        type: "search",
+        web: {
+          results: budget
+            ? [{ title: "Too long", url: omitted }]
+            : Array.from({ length: 6 }, (_, i) => ({
+                title: "Source",
+                url: `https://example.com/${i}`,
+              })),
         },
-        1024,
-      );
+      };
+
+      const http = Object.assign(async () => Response.json(searchResponse), {
+        preconnect: () => {},
+      });
+
+      const search = makeWebSearch(Redacted.make("test-key"), 1024, http);
 
       let turns = 0;
 
@@ -566,7 +569,7 @@ describe.concurrent("notes conversation", () => {
         {},
         undefined,
         undefined,
-        { search: () => Effect.succeed(result) },
+        search,
       );
 
       try {
@@ -743,7 +746,9 @@ describe.concurrent("notes conversation", () => {
       undefined,
       {
         search: () =>
-          Effect.fail(new AgentError({ reason: "tool-rate-limit", message: "Search rate limit" })),
+          Effect.fail(
+            new WebSearchError({ reason: "tool-rate-limit", message: "Search rate limit" }),
+          ),
       },
     );
 
