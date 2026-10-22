@@ -16,8 +16,8 @@ export const DiscordSettings = Schema.Struct({
 
 export type DiscordSettings = typeof DiscordSettings.Type;
 
-const store = channelSettings("discord", "Discord", DiscordSettings);
+export const discordSettings = channelSettings("discord", "Discord", DiscordSettings);
 
-export const loadDiscordSettings = store.load;
+export const loadDiscordSettings = discordSettings.load;
 
-export const saveDiscordSettings = store.save;
+export const saveDiscordSettings = discordSettings.save;

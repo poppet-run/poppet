@@ -12,8 +12,8 @@ export const WhatsAppSettings = Schema.Struct({
 
 export type WhatsAppSettings = typeof WhatsAppSettings.Type;
 
-const store = channelSettings("whatsapp", "WhatsApp", WhatsAppSettings);
+export const whatsappSettings = channelSettings("whatsapp", "WhatsApp", WhatsAppSettings);
 
-export const loadWhatsAppSettings = store.load;
+export const loadWhatsAppSettings = whatsappSettings.load;
 
-export const saveWhatsAppSettings = store.save;
+export const saveWhatsAppSettings = whatsappSettings.save;
