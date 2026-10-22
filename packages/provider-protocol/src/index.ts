@@ -7,4 +7,9 @@ export {
   type ChatOptions,
 } from "#src/chat-completions";
 
-export { inferenceFailure, remoteFailure, type InferenceOptions } from "#src/errors";
+export {
+  inferenceFailure,
+  remoteFailure,
+  safeIdentifier,
+  type InferenceOptions,
+} from "#src/errors";

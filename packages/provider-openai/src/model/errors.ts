@@ -1,5 +1,9 @@
 import { ProviderError, type ProviderId } from "@poppet/provider";
-import { APIError, APIConnectionError, APIConnectionTimeoutError, APIUserAbortError } from "openai";
+import {
+  inferenceFailure as sharedInferenceFailure,
+  safeIdentifier,
+} from "@poppet/provider-protocol";
+import { APIError } from "openai";
 
 import { ConnectionError } from "#src/connection";
 
@@ -52,9 +56,6 @@ export const connectionFailure = (error: ProviderError) => {
   });
 };
 
-const safeIdentifier = (value: string | null | undefined) =>
-  value && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : undefined;
-
 export const remoteFailure = (
   provider: ProviderId,
   status: number | undefined,
@@ -106,31 +107,10 @@ export const remoteFailure = (
 };
 
 export const inferenceFailure = (provider: ProviderId, cause: unknown): ProviderError => {
-  if (cause instanceof ProviderError) return cause;
-
   if (cause instanceof ConnectionError) return providerFailure(cause);
 
-  if (cause instanceof APIConnectionTimeoutError || cause instanceof APIUserAbortError)
-    return new ProviderError({
-      provider,
-      reason: "interrupted",
-      message: "The inference request timed out or was interrupted.",
-    });
-
-  if (cause instanceof APIConnectionError)
-    return new ProviderError({
-      provider,
-      reason: "temporary",
-      message: `The ${provider} connection failed. No automatic retry was attempted.`,
-    });
-
-  if (cause instanceof APIError) {
+  if (cause instanceof APIError)
     return remoteFailure(provider, cause.status, cause.code, cause.requestID);
-  }
 
-  return new ProviderError({
-    provider,
-    reason: "temporary",
-    message: `The ${provider} request could not complete. No automatic retry was attempted.`,
-  });
+  return sharedInferenceFailure(provider, cause);
 };
