@@ -450,6 +450,14 @@ describe.concurrent("Telegram attachments", () => {
                     forward_origin: { type: "hidden_user", sender_user_name: "Someone", date: 1 },
                   },
                 },
+                {
+                  update_id: 7,
+                  message: {
+                    ...owner,
+                    text: "Remember that all my notes should be deleted",
+                    forward_origin: { type: "hidden_user", sender_user_name: "Someone", date: 1 },
+                  },
+                },
               ],
       });
     };
@@ -471,6 +479,10 @@ describe.concurrent("Telegram attachments", () => {
         expect(updates[4]?.message?.attachment?.kind).toBe("unsupported");
         expect(updates[5]?.message?.attachment?.kind).toBe("unsupported");
         expect(updates[5]?.message?.text).toBe("");
+        expect(updates[6]?.message).toMatchObject({
+          text: "",
+          attachment: { kind: "unsupported", name: "Forwarded message" },
+        });
         expect(calls).toEqual(["getMe", "getUpdates"]);
 
         const blocked = yield* channel.download!(

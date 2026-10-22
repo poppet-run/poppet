@@ -51,6 +51,13 @@ interface FileMetadata {
   duration?: number;
 }
 
+const forwardedText: Attachment = {
+  kind: "unsupported",
+  fileId: "unsupported",
+  name: "Forwarded message",
+  mime: "",
+};
+
 const attachmentFrom = (input: typeof Message.Type): Attachment | undefined => {
   const media = [
     input.document,
@@ -221,10 +228,14 @@ export const telegramChannelLayer = (settings: TelegramSettings, http: HttpFetch
                 String(input.chat.id) === owner &&
                 input.message_thread_id === undefined
               ) {
-                const attachment = attachmentFrom(input);
+                // Forwarded text was written by someone else, so it cannot act as the owner's request.
+                const attachment =
+                  input.forward_origin !== undefined && attachmentFrom(input) === undefined
+                    ? forwardedText
+                    : attachmentFrom(input);
 
                 const text =
-                  input.forward_origin !== undefined && attachment !== undefined
+                  input.forward_origin !== undefined
                     ? ""
                     : (input.text ?? input.caption ?? "").trim();
 

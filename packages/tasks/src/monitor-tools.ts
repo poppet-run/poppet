@@ -36,6 +36,8 @@ export const monitorTools = (
       },
       serverId: "monitor",
       toolName: "report_observation",
+      // Monitoring reports what this run read; the host validates the cited source calls.
+      availableAfterUntrusted: true,
       prepare: (argumentsJSON) =>
         Effect.gen(function* () {
           const input = Option.getOrNull(

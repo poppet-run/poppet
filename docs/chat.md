@@ -344,6 +344,13 @@ a batch is invalid, none of the batch runs and each call reports why. A failure
 whose effects are unknown, such as an interrupted note save or an MCP call lost
 after dispatch, is saved as uncertain and ends the run without replay. Budgets
 still bound repeated attempts.
+
+Once a fetched page, web search result, attachment, or MCP result enters a run,
+task management, memory changes, and MCP tools are withdrawn for the rest of that
+run. Note tools, reading tools, browser tools, and monitoring observations remain.
+The model proposes withdrawn actions instead, and a new message from you can
+confirm them. Attachments and voice transcripts start their run with these tools
+withdrawn.
 Recorded usage sums all model turns when every turn reports usage, otherwise it
 is null. Live account chat remains a manual check and consumes provider usage.
 
