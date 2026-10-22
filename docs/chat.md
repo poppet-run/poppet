@@ -249,8 +249,9 @@ fetched pages grant no permission to retrieve another page.
 Reading supports UTF-8 plain text and static HTML. It removes scripts, styles,
 common site navigation and hidden elements, and does not execute JavaScript.
 PDFs, authenticated pages, downloads, and crawling are unsupported.
-An empty or unsupported page fails the run clearly; there is no automatic retry.
-`chat show` retains the tool call and failure or bounded result.
+An empty or unsupported page is reported to the model as a failed tool call, so
+it can explain the problem; there is no automatic retry. `chat show` retains the
+tool call and failure or bounded result.
 
 Destinations must resolve entirely to public addresses on standard HTTP(S) ports.
 Credentials in URLs are rejected. Each read has a 15-second overall deadline,
@@ -323,8 +324,10 @@ tool records. Ctrl-C closes the run's resources. Scheduled runs have no browser 
 Context retains recent complete exchanges, including tool pairs and continuation,
 up to the configured turn and byte budgets. When model capacity is known,
 Poppet also reserves room for output and request overhead. UTF-8 bytes are a
-conservative estimate rather than an exact tokenizer; providers can still reject
-oversized context. A new message that cannot fit fails clearly. Trimming changes
+conservative estimate rather than an exact tokenizer, counting three bytes per
+token of reported capacity; providers can still reject oversized context. A new
+message that cannot fit fails clearly. A read result that would not fit the
+remaining budget is refused and reported to the model, which can ask for less. Trimming changes
 only the request, not saved history. Answers are limited to 128 KiB of text and
 1 MiB including continuation. The runner has a five-minute absolute deadline;
 provider inference also retains its 60-second deadline.
@@ -333,6 +336,14 @@ Tool-capable models receive the three [notes tools](notes.md), conversation sear
 page reading, explicit memory, interactive task management, and web search when configured. Models without tool
 support continue to answer text requests. The runner checks complete tool
 requests before execution and keeps one provider/model throughout the exchange.
+
+A tool failure that left nothing unconfirmed, such as invalid arguments, a missing
+note, a refused URL, an unreachable page, or a stale task revision, becomes that
+call's result so the model can explain it or correct the request. When any call in
+a batch is invalid, none of the batch runs and each call reports why. A failure
+whose effects are unknown, such as an interrupted note save or an MCP call lost
+after dispatch, is saved as uncertain and ends the run without replay. Budgets
+still bound repeated attempts.
 Recorded usage sums all model turns when every turn reports usage, otherwise it
 is null. Live account chat remains a manual check and consumes provider usage.
 

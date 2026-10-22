@@ -171,7 +171,8 @@ describe("note filesystem boundary", () => {
       ).rejects.toMatchObject({ reason: "tool-limit" });
       expect(await readFile(join(state.notesDirectory, "existing.md"), "utf8")).toBe("Original");
       await expect(state.execute({ name: "read_note", path: "missing.md" })).rejects.toMatchObject({
-        reason: "tool-storage",
+        reason: "tool-arguments",
+        message: "The note does not exist. Use search_notes to find its path.",
       });
       await expect(
         state.execute({ name: "save_note", path: "script.sh", content: "No" }),

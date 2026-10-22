@@ -521,7 +521,9 @@ describe.concurrent("persisted agent", () => {
           const agent = yield* Agent;
           const session = yield* store.createSession("test-provider", "test-model");
           expect(
-            yield* failure(Stream.runDrain(agent.send(session.id, "x".repeat(65536)))),
+            yield* failure(
+              Stream.runDrain(agent.send(session.id, "x".repeat(defaultPolicy.contextBytes))),
+            ),
           ).toMatchObject({ reason: "context-limit" });
           expect((yield* store.runs(session.id))[0]).toMatchObject({
             status: "failed",

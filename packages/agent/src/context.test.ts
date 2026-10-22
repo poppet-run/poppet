@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { Message, ModelDescription } from "@poppet/provider";
 import type { StoredMessage } from "@poppet/store";
 
-import { assembleContext, byteSize, instructions } from "#src/context";
+import { assembleContext, byteSize, contextAvailable, instructions } from "#src/context";
 import { defaultPolicy } from "#src/settings";
 
 const model: ModelDescription = {
@@ -85,15 +85,21 @@ describe("chat context", () => {
     ).toEqual([incoming]);
   });
 
-  test("uses model capacity and UTF-8 bytes and never drops an oversized new message silently", () => {
+  test("converts model capacity from tokens and never drops an oversized new message silently", () => {
+    // Leaves 512 bytes beyond the instructions after output and overhead tokens, at 3 bytes per token.
     const smallModel: ModelDescription = {
       ...model,
       capabilities: {
         ...model.capabilities,
-        contextWindow: byteSize(instructions) + 2560,
+        contextWindow: Math.ceil((byteSize(instructions) + 512) / 3) + 2048,
         maxOutputTokens: 1024,
       },
     };
+
+    expect(contextAvailable(smallModel, defaultPolicy)).toBeGreaterThanOrEqual(
+      byteSize(instructions) + 512,
+    );
+    expect(contextAvailable(smallModel, defaultPolicy)).toBeLessThan(byteSize(instructions) + 516);
 
     const bigOld: Message = { role: "user", text: "x".repeat(3000) };
     expect(

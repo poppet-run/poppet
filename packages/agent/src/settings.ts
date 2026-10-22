@@ -23,7 +23,7 @@ export class ChatSettings extends Context.Service<ChatSettings, ChatPolicy>()(
 export const defaultPolicy: ChatPolicy = {
   logReasoning: false,
   logTimings: false,
-  contextBytes: 65536,
+  contextBytes: 262144,
   historyTurns: 20,
   outputTokens: 2048,
   modelTurns: 8,
