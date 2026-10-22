@@ -16,7 +16,7 @@ export const skillsCommand = (context: CLIContext) => {
           Effect.flatMap((names) => Console.log(JSON.stringify(names, null, 2))),
           Effect.provide(runtime.skills),
         ),
-      ),
+      ).pipe(Command.withDescription("List local skills")),
       Command.make(
         "show",
         { name: Argument.String("name").pipe(Argument.withSchema(SkillName)) },
@@ -25,7 +25,7 @@ export const skillsCommand = (context: CLIContext) => {
             Effect.flatMap((skill) => Console.log(skill.content)),
             Effect.provide(runtime.skills),
           ),
-      ),
+      ).pipe(Command.withDescription("Show a skill's Markdown instructions")),
     ]),
   );
 };

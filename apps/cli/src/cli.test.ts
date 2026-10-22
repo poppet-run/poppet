@@ -1119,6 +1119,9 @@ describe("CLI", () => {
       "projects",
       "projects list",
       "projects show",
+      "skills",
+      "skills list",
+      "skills show",
       "chat new",
       "tasks add",
       "tasks run",
@@ -1152,6 +1155,10 @@ describe("CLI", () => {
       const projectsHelp = await invoke(["projects", "--help"], environment);
       expect(projectsHelp.stdout).toMatch(/list +List local projects/);
       expect(projectsHelp.stdout).toMatch(/show +Show project instructions and note selection/);
+
+      const skillsHelp = await invoke(["skills", "--help"], environment);
+      expect(skillsHelp.stdout).toMatch(/list +List local skills/);
+      expect(skillsHelp.stdout).toMatch(/show +Show a skill's Markdown instructions/);
 
       for (const action of ["login", "logout", "status", "models"])
         expect(providerHelp.stdout).toContain(`  ${action} `);
