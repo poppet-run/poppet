@@ -19,8 +19,8 @@ export const TelegramSettings = Schema.Struct({
 
 export type TelegramSettings = typeof TelegramSettings.Type;
 
-const store = channelSettings("telegram", "Telegram", TelegramSettings);
+export const telegramSettings = channelSettings("telegram", "Telegram", TelegramSettings);
 
-export const loadTelegramSettings = store.load;
+export const loadTelegramSettings = telegramSettings.load;
 
-export const saveTelegramSettings = store.save;
+export const saveTelegramSettings = telegramSettings.save;

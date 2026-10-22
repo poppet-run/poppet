@@ -4,9 +4,9 @@ import {
   ChannelInput,
   type ChannelRegistration,
 } from "@poppet/gateway";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Redacted, Schema } from "effect";
 
-import { TelegramSettings, loadTelegramSettings, saveTelegramSettings } from "#src/settings";
+import { TelegramSettings, telegramSettings, saveTelegramSettings } from "#src/settings";
 
 export const telegram: ChannelRegistration = {
   id: "telegram",
@@ -44,25 +44,7 @@ export const telegram: ChannelRegistration = {
 
       return "Telegram settings saved. Restart the worker to apply them. Only the configured owner can chat with Poppet in a private Telegram chat.";
     }),
-  load: Effect.gen(function* () {
-    const environment = yield* ChannelEnvironment;
-
-    const settings = yield* loadTelegramSettings(environment.dataDirectory).pipe(
-      Effect.mapError(
-        () =>
-          new ChannelError({
-            reason: "configuration",
-            message: "Invalid Telegram settings. Run gateway telegram setup again.",
-          }),
-      ),
-    );
-
-    if (settings === null) return null;
-
-    return Layer.unwrap(
-      Effect.promise(() => import("#src/channel")).pipe(
-        Effect.map(({ telegramChannelLayer }) => telegramChannelLayer(settings)),
-      ),
-    );
-  }),
+  load: telegramSettings.loader((settings) =>
+    import("#src/channel").then(({ telegramChannelLayer }) => telegramChannelLayer(settings)),
+  ),
 };

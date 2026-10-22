@@ -4,9 +4,9 @@ import {
   ChannelInput,
   type ChannelRegistration,
 } from "@poppet/gateway";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Redacted, Schema } from "effect";
 
-import { DiscordSettings, loadDiscordSettings, saveDiscordSettings } from "#src/settings";
+import { DiscordSettings, discordSettings, saveDiscordSettings } from "#src/settings";
 
 export const discord: ChannelRegistration = {
   id: "discord",
@@ -46,25 +46,7 @@ export const discord: ChannelRegistration = {
 
       return "Discord settings saved. Restart the worker to apply them. Only the configured owner can invoke Poppet; channel members can read its replies.";
     }),
-  load: Effect.gen(function* () {
-    const environment = yield* ChannelEnvironment;
-
-    const settings = yield* loadDiscordSettings(environment.dataDirectory).pipe(
-      Effect.mapError(
-        () =>
-          new ChannelError({
-            reason: "configuration",
-            message: "Invalid Discord settings. Run gateway discord setup again.",
-          }),
-      ),
-    );
-
-    if (settings === null) return null;
-
-    return Layer.unwrap(
-      Effect.promise(() => import("#src/channel")).pipe(
-        Effect.map(({ discordChannelLayer }) => discordChannelLayer(settings)),
-      ),
-    );
-  }),
+  load: discordSettings.loader((settings) =>
+    import("#src/channel").then(({ discordChannelLayer }) => discordChannelLayer(settings)),
+  ),
 };

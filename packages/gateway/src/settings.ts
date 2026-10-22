@@ -4,9 +4,10 @@ import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import { acquireOwnerLock } from "@poppet/credentials/lock";
-import { Effect, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 
-import { ChannelError } from "#src/channel";
+import { ChannelError, type MessagingChannel } from "#src/channel";
+import { ChannelEnvironment } from "#src/registration";
 
 const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 
@@ -125,17 +126,34 @@ export const channelSettings = <S extends Schema.Top>(
       message: `Cannot read or write protected ${label} settings. Run gateway ${adapter} setup again.`,
     });
 
+  const load = (dataDirectory: string) =>
+    Effect.gen(function* () {
+      const contents = yield* loadChannelSettings(dataDirectory, adapter);
+
+      if (contents === null) return null;
+
+      return yield* Schema.decodeUnknownEffect(SavedSettings, { onExcessProperty: "error" })(
+        contents,
+      );
+    }).pipe(Effect.mapError(failure));
+
   return {
-    load: (dataDirectory: string) =>
+    load,
+    /** Loads settings now and defers the adapter import until the layer is built. */
+    loader: (
+      createLayer: (
+        settings: S["Type"],
+        dataDirectory: string,
+      ) => Promise<Layer.Layer<MessagingChannel, ChannelError>>,
+    ) =>
       Effect.gen(function* () {
-        const contents = yield* loadChannelSettings(dataDirectory, adapter);
+        const { dataDirectory } = yield* ChannelEnvironment;
+        const settings = yield* load(dataDirectory);
 
-        if (contents === null) return null;
+        if (settings === null) return null;
 
-        return yield* Schema.decodeUnknownEffect(SavedSettings, { onExcessProperty: "error" })(
-          contents,
-        );
-      }).pipe(Effect.mapError(failure)),
+        return Layer.unwrap(Effect.promise(() => createLayer(settings, dataDirectory)));
+      }),
     save: (dataDirectory: string, settings: S["Type"]) =>
       Schema.encodeEffect(SavedSettings)(settings).pipe(
         Effect.flatMap((contents) => saveChannelSettings(dataDirectory, adapter, contents)),

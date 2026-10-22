@@ -1,7 +1,12 @@
 import { ChannelEnvironment, ChannelError, type ChannelRegistration } from "@poppet/gateway";
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Schema } from "effect";
 
-import { WhatsAppSettings, loadWhatsAppSettings, saveWhatsAppSettings } from "#src/settings";
+import {
+  WhatsAppSettings,
+  loadWhatsAppSettings,
+  saveWhatsAppSettings,
+  whatsappSettings,
+} from "#src/settings";
 
 const usage = () =>
   new ChannelError({
@@ -48,18 +53,9 @@ export const whatsapp: ChannelRegistration = {
 
       return "WhatsApp linked. Start the worker to enable owner-only text chat.";
     }),
-  load: Effect.gen(function* () {
-    const environment = yield* ChannelEnvironment;
-    const settings = yield* loadWhatsAppSettings(environment.dataDirectory);
-
-    if (settings === null) return null;
-
-    return Layer.unwrap(
-      Effect.promise(() => import("#src/channel")).pipe(
-        Effect.map(({ whatsappChannelLayer }) =>
-          whatsappChannelLayer(environment.dataDirectory, settings),
-        ),
-      ),
-    );
-  }),
+  load: whatsappSettings.loader((settings, dataDirectory) =>
+    import("#src/channel").then(({ whatsappChannelLayer }) =>
+      whatsappChannelLayer(dataDirectory, settings),
+    ),
+  ),
 };
