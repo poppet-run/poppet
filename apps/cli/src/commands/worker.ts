@@ -6,6 +6,7 @@ import { Console, Effect } from "effect";
 import { Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
+import { runTaskCommand } from "#src/tasks";
 
 export const workerCommand = (context: CLIContext) => {
   const { runtime, worker, startWorker } = context;
@@ -63,6 +64,9 @@ export const workerCommand = (context: CLIContext) => {
   return Command.make("worker").pipe(
     Command.withDescription("Run and manage the background worker"),
     Command.withSubcommands([
+      Command.make("providers", {}, () => runTaskCommand(runtime, { action: "providers" })).pipe(
+        Command.withDescription("Show provider quota pauses and temporary backoff"),
+      ),
       Command.make(
         "run",
         {

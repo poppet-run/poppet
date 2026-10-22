@@ -161,7 +161,6 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 | `tasks cancel <occurrence>`                                                                                                                                                             | Cancel pending or active work.                                     |
 | `tasks retry <occurrence>`                                                                                                                                                              | Explicitly retry an unsuccessful occurrence.                       |
 | `tasks clear`                                                                                                                                                                           | Interrupt active work and remove all tasks and task history.       |
-| `tasks providers`                                                                                                                                                                       | Show provider quota pauses and temporary backoff.                  |
 | `tasks resume-provider <provider>`                                                                                                                                                      | Allow scheduled requests for a provider again.                     |
 
 See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what
@@ -197,6 +196,7 @@ controls, and uncertain deliveries. The bot token is never accepted as a command
 | `worker stop`               | Stop it until the next login or explicit start.       |
 | `worker status`             | Show launch agent, scheduling, and connection status. |
 | `worker logs`               | Print the last 64 KiB of worker logs.                 |
+| `worker providers`          | Show provider quota pauses and temporary backoff.     |
 | `worker uninstall`          | Stop and remove login startup, retaining saved data.  |
 
 See [worker](worker.md) for foreground modes, macOS lifecycle commands, logs,

@@ -345,7 +345,7 @@ explicit cancellation:
 ```sh
 poppet tasks cancel <occurrence-id>
 poppet tasks retry <occurrence-id>
-poppet tasks providers
+poppet worker providers
 poppet tasks resume-provider openai-chatgpt
 ```
 
