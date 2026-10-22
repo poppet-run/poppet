@@ -58,7 +58,7 @@ poppet tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
 poppet tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
 poppet tasks skip-next <task-id>
 poppet tasks snooze <task-id> --until 2099-10-22T10:00:00+01:00
-poppet tasks run-now <task-id>
+poppet tasks run <task-id>
 ```
 
 Edits change only supplied name, prompt, or schedule fields. A cron replacement
@@ -82,7 +82,7 @@ prompt change starts a fresh quiet baseline; name/schedule changes preserve it.
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `skip-next` | Consume exactly the selected pending occurrence or next slot. A recurring task keeps its cadence; a one-off has no next execution.                                                                                                  |
 | `snooze`    | Delay that execution until a later future instant. `scheduledAt` keeps its original slot; `availableAt` is its effective ready time. The hold survives restart, and intervening cron slots do not build a backlog.                  |
-| `run-now`   | Queue through the normal read-only runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
+| `run`       | Queue through the normal read-only runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
 
 The CLI inspects the revision and exact target before sending a mutation. The
 worker rechecks both when committing and rejects stale requests instead of

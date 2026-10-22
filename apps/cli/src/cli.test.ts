@@ -257,11 +257,11 @@ describe("CLI", () => {
       const skipped = await invoke(["tasks", "skip-next", id], offline);
       expect(skipped.exitCode).toBe(0);
       const nextAt = JSON.parse(skipped.stdout).nextAt;
-      const immediate = await invoke(["tasks", "run-now", id], offline);
+      const immediate = await invoke(["tasks", "run", id], offline);
       expect(immediate.exitCode).toBe(0);
       const queued = JSON.parse(immediate.stdout);
       expect(queued.nextAt).toBe(nextAt);
-      const replay = await invoke(["tasks", "run-now", id], offline);
+      const replay = await invoke(["tasks", "run", id], offline);
       expect(replay.exitCode).toBe(0);
       expect(JSON.parse(replay.stdout).occurrenceId).toBe(queued.occurrenceId);
       const shown = await invoke(["tasks", "show", id], offline);
@@ -1110,7 +1110,16 @@ describe("CLI", () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-help-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "invalid/provider" };
 
-    const paths = ["config", "chat new", "tasks add", "worker stop"];
+    const paths = [
+      "config",
+      "chat new",
+      "tasks add",
+      "tasks run",
+      "worker run",
+      "worker providers",
+      "worker resume-provider",
+      "worker stop",
+    ];
 
     try {
       for (const args of [[], ["-h"], ...paths.map((path) => path.split(" ").concat("--help"))]) {
@@ -1139,6 +1148,7 @@ describe("CLI", () => {
 
     const commands = [
       ["config", "unexpected-argument"],
+      ["tasks", "run-now", "saved-task"],
       ["tasks", "status"],
       ["tasks", "work"],
       ["tasks", "providers"],
