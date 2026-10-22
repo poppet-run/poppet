@@ -76,13 +76,14 @@ See [MCP tools](mcp.md) for configuration, permissions, and process ownership.
 
 ## Web search setup
 
-| Command                   | Action                                                                            |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| `web login [--key-stdin]` | Save a Brave Search key from the environment, hidden prompt, or explicit stdin.   |
-| `web status`              | Show whether search is enabled and a key is configured, without a remote request. |
-| `web logout`              | Remove the saved search key.                                                      |
+| Command                   | Action                                                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------------------- |
+| `web login [--key-stdin]` | Save the selected search provider's key from the environment, hidden prompt, or explicit stdin. |
+| `web status`              | Show whether search is enabled and a key is configured, without a remote request.               |
+| `web logout`              | Remove the saved search key.                                                                    |
 
-These commands do not change inference credentials or require a selected model.
+These commands use `webSearchProvider`, which defaults to `brave` and also accepts
+`kagi`. They do not change inference credentials or require a selected model.
 Enable `webSearch` separately and restart any running worker. See
 [configuration](configuration.md#web-search) for credentials and query handling.
 

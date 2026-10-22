@@ -40,7 +40,7 @@ The Bun monorepo uses private workspaces:
 | `@poppet/mcp`                 | Scoped stdio clients, bounded discovery, original-schema validation, result limits | Credentials, provider contract                                               |
 | `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                    | Config, I/O helpers, memory, store, web search, provider contract            |
 | `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation   | None                                                                         |
-| `@poppet/web-search`          | Brave search service, response validation, and bounded source results              | I/O helpers, Effect                                                          |
+| `@poppet/web-search`          | Brave/Kagi search adapters, validation, and bounded source results                 | I/O helpers, Effect                                                          |
 | `@poppet/config`              | Validated settings and the `AppConfig` service                                     | Provider contract, browser and MCP configuration schemas                     |
 | `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                        | Provider contract                                                            |
 | `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle              | Config, credentials, provider contract                                       |
@@ -536,7 +536,7 @@ failure without replay, and unchanged read-only notes permissions.
 
 ## Web search
 
-`@poppet/web-search` owns the `WebSearch` service contract, Brave HTTP client,
+`@poppet/web-search` owns the `WebSearch` service contract, Brave and Kagi v1 HTTP clients,
 response schemas, URL filtering, and Unicode-safe result budgeting. It depends on
 `@poppet/io` and Effect, with no dependency on the agent or credential storage.
 `agent/web-search.ts` defines `poppet_web.search_web` and validates model arguments.
@@ -545,13 +545,14 @@ reason and message. A null search operation means disabled or missing credential
 so the tool is not advertised.
 
 `cli/web-search.ts` loads credentials and provides the service, and owns the web
-setup commands. Configuration layers provide the opt-in flag with
+setup commands for the selected provider. Configuration layers provide the opt-in flag
+and provider selection with
 environment-over-file precedence; keys stay outside normal configuration and
 inference-provider packages. CLI setup and the local/worker runtime share these
 layers. Search and page fetching share URL validation and public-address policy
 from `@poppet/io`. No database migration is needed.
 
-Requests use Brave's fixed HTTPS endpoint, query-only context, and a separate
+Requests use the selected provider's fixed HTTPS endpoint, query-only context, and a separate
 authentication header with redirect rejection. An Effect deadline bounds the
 request and body to 15 seconds. Streaming reads enforce a 1 MiB response limit;
 invalid UTF-8, malformed JSON/schema, unsupported content types, and HTTP failures

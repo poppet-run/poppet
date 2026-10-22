@@ -288,7 +288,7 @@ Enable [web search](configuration.md#web-search) to let tool-capable models use
 poppet chat new "Search for recent Bun releases, read a source, and cite it"
 ```
 
-Search sends the model's query to Brave Search and returns at most five sources
+Search sends the model's query to the configured Brave or Kagi search provider and returns at most five sources
 with `title`, `url`, and `snippet`, plus a `truncated` flag. Queries must be trimmed,
 nonempty, and at most 512 UTF-8 bytes. Results keep backend order and fit
 `POPPET_TOOL_BYTES`; long text is shortened and URLs that cannot fit are omitted.

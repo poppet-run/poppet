@@ -6,7 +6,7 @@ import { ConfigProvider, Effect, Layer, Redacted } from "effect";
 
 import { WebSearchLive } from "#src/web-search";
 
-describe("web search configuration", () => {
+describe.each(["brave", "kagi"])("%s search configuration", (provider) => {
   test.each([
     [false, true],
     [true, false],
@@ -20,8 +20,9 @@ describe("web search configuration", () => {
         Layer.provide([
           Layer.succeed(ChatSettings, defaultPolicy),
           Layer.succeed(ApiKeyStore, {
-            read: () =>
+            read: (id) =>
               Effect.sync(() => {
+                expect(id).toBe(`${provider}-search`);
                 reads++;
 
                 return stored ? Redacted.make("test-key") : null;
@@ -37,7 +38,9 @@ describe("web search configuration", () => {
           Effect.provide(layer),
           Effect.provideService(
             ConfigProvider.ConfigProvider,
-            ConfigProvider.fromEnv({ env: { POPPET_WEB_SEARCH: String(enabled) } }),
+            ConfigProvider.fromEnv({
+              env: { POPPET_WEB_SEARCH: String(enabled), POPPET_WEB_SEARCH_PROVIDER: provider },
+            }),
           ),
         ),
       );

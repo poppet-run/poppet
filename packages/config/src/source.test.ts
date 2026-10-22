@@ -11,6 +11,7 @@ import {
   loadConfig,
   taskCatchUpMinutes,
   webSearchEnabled,
+  webSearchProvider,
   voiceSettings,
 } from "#src/config";
 import { ConfigSource, loadConfigSource } from "#src/source";
@@ -255,6 +256,36 @@ describe("configuration sources", () => {
       await expect(
         Effect.runPromise(webSearchEnabled.pipe(Effect.provide(invalid.context))),
       ).rejects.toHaveProperty("_tag", "ConfigError");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("search provider defaults to Brave, accepts Kagi, and rejects unknown providers", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-search-provider-"));
+
+    const read = (environment: Record<string, string> = {}) =>
+      Effect.runPromise(
+        load({ POPPET_DATA_DIR: directory, ...environment }).pipe(
+          Effect.flatMap(({ context }) => webSearchProvider.pipe(Effect.provide(context))),
+        ),
+      );
+
+    try {
+      expect(await read()).toBe("brave");
+      await writeFile(join(directory, "config.json"), '{"webSearchProvider":"kagi"}');
+      expect(await read()).toBe("kagi");
+      expect(await read({ POPPET_WEB_SEARCH_PROVIDER: "brave" })).toBe("brave");
+      await expect(read({ POPPET_WEB_SEARCH_PROVIDER: "unknown" })).rejects.toHaveProperty(
+        "_tag",
+        "ConfigError",
+      );
+      await expect(read({ POPPET_WEB_SEARCH_PROVIDER: "" })).rejects.toHaveProperty(
+        "_tag",
+        "ConfigError",
+      );
+      await writeFile(join(directory, "config.json"), '{"webSearchProvider":"unknown"}');
+      await expect(read()).rejects.toHaveProperty("_tag", "ConfigError");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

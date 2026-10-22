@@ -1,48 +1,69 @@
 import { AgentError, ChatSettings } from "@poppet/agent";
-import { webSearchEnabled } from "@poppet/config";
+import { webSearchEnabled, webSearchProvider } from "@poppet/config";
 import { ApiKeyStore, environmentApiKey } from "@poppet/credentials";
-import { WebSearch, makeWebSearch } from "@poppet/web-search";
+import { WebSearch, makeBraveSearch, makeKagiSearch } from "@poppet/web-search";
 import { Console, Effect, Layer, Option } from "effect";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
 
-const credentialId = "brave-search";
+const searchProvider = Effect.gen(function* () {
+  const provider = yield* webSearchProvider;
 
-const keyEnvironment = "POPPET_BRAVE_SEARCH_API_KEY";
-
-const searchKey = Effect.gen(function* () {
-  const environment = yield* environmentApiKey(credentialId, keyEnvironment);
-
-  if (Option.isSome(environment)) return { key: environment.value, source: "environment" };
-  const key = yield* ApiKeyStore.use((store) => store.read(credentialId));
-
-  return { key, source: key === null ? null : "stored" };
+  return provider === "kagi"
+    ? {
+        id: provider,
+        name: "Kagi Search",
+        credentialId: "kagi-search",
+        keyEnvironment: "POPPET_KAGI_SEARCH_API_KEY",
+        make: makeKagiSearch,
+      }
+    : {
+        id: provider,
+        name: "Brave Search",
+        credentialId: "brave-search",
+        keyEnvironment: "POPPET_BRAVE_SEARCH_API_KEY",
+        make: makeBraveSearch,
+      };
 });
+
+const searchKey = (provider: { credentialId: string; keyEnvironment: string }) =>
+  Effect.gen(function* () {
+    const environment = yield* environmentApiKey(provider.credentialId, provider.keyEnvironment);
+
+    if (Option.isSome(environment)) return { key: environment.value, source: "environment" };
+    const key = yield* ApiKeyStore.use((store) => store.read(provider.credentialId));
+
+    return { key, source: key === null ? null : "stored" };
+  });
 
 export const WebSearchLive = Layer.effect(
   WebSearch,
   Effect.gen(function* () {
+    const provider = yield* searchProvider;
+
     if (!(yield* webSearchEnabled)) return { search: null };
 
-    const { key } = yield* searchKey.pipe(
+    const { key } = yield* searchKey(provider).pipe(
       Effect.mapError(
         () =>
           new AgentError({
             reason: "tool-authentication",
-            message: "Cannot load Brave Search credentials. Run web status to check setup.",
+            message: `Cannot load ${provider.name} credentials. Run web status to check setup.`,
           }),
       ),
     );
 
     const { toolBytes } = yield* ChatSettings;
 
-    return key === null ? { search: null } : makeWebSearch(key, toolBytes);
+    return key === null ? { search: null } : provider.make(key, toolBytes);
   }),
 );
 
 export const manageWebSearch = (action: "login" | "status" | "logout", keyStdin = false) =>
   Effect.gen(function* () {
     const store = yield* ApiKeyStore;
+    const provider = yield* searchProvider;
+    const { credentialId, keyEnvironment } = provider;
 
     if (action === "login") {
       let key = keyStdin
@@ -53,17 +74,22 @@ export const manageWebSearch = (action: "login" | "status" | "logout", keyStdin 
 
       yield* store.write(credentialId, key);
       yield* Console.log(
-        "Brave Search key saved. Enable webSearch in config.json and restart the worker.",
+        `${provider.name} key saved. Enable webSearch in config.json and restart the worker.`,
       );
     } else if (action === "logout") {
       yield* store.remove(credentialId);
       yield* Console.log(
-        "Saved Brave Search key removed. An environment key still overrides storage. Restart the worker; remote keys are not revoked.",
+        `Saved ${provider.name} key removed. An environment key still overrides storage. Restart the worker; remote keys are not revoked.`,
       );
     } else {
-      const { key, source } = yield* searchKey;
+      const { key, source } = yield* searchKey(provider);
       yield* Console.log(
-        JSON.stringify({ enabled: yield* webSearchEnabled, configured: key !== null, source }),
+        JSON.stringify({
+          provider: provider.id,
+          enabled: yield* webSearchEnabled,
+          configured: key !== null,
+          source,
+        }),
       );
     }
   });

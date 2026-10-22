@@ -24,6 +24,11 @@ export const taskCatchUpMinutes = Config.schema(
 /** Search stays opt-in independently of the selected inference provider. */
 export const webSearchEnabled = Config.Boolean("POPPET_WEB_SEARCH").pipe(Config.withDefault(false));
 
+export const webSearchProvider = Config.schema(
+  Schema.Literals(["brave", "kagi"]),
+  "POPPET_WEB_SEARCH_PROVIDER",
+).pipe(Config.withDefault("brave"));
+
 /** Resolved host paths and default model selection for new sessions. */
 export interface Settings {
   readonly applicationName: string;
