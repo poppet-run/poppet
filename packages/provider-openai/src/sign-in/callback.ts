@@ -60,12 +60,13 @@ export const startCallback = (selectedClientId: string | null) =>
                 return callbackResponse(false);
               };
 
-              // Check state before accepting either a code or a reported sign-in error.
+              // Check state before accepting either a code or a reported sign-in error. A request
+              // without this attempt's state is ignored, so another local caller cannot end it.
               if (
                 callback.searchParams.getAll("state").length !== 1 ||
                 callback.searchParams.get("state") !== state
               )
-                return reject("The sign-in callback state did not match. Start a new sign-in.");
+                return new Response("Invalid sign-in state.", { status: 400, headers });
 
               if (callback.searchParams.has("error"))
                 return reject("ChatGPT sign-in was declined or could not be completed.", "denied");

@@ -63,8 +63,8 @@ addresses must resolve through the SDK's saved phone mapping; unresolved identit
 are ignored. Groups, broadcasts, edits, forwarded messages, attachments, voice,
 and reactions do not start model work. Forwarded text was written by someone else,
 so it cannot act as your request; write the request in your own message instead. Full history synchronization is disabled. Incoming text is
-limited to 8192 UTF-16 units; replies are split at 4096 units without splitting a
-Unicode character. Replies are plain text with link previews disabled.
+limited to 8192 UTF-16 units; replies are split into chunks of at most 4096 units,
+preferring paragraph, line, then word breaks, without splitting a Unicode character. Replies are plain text with link previews disabled.
 
 Self-chat accepts human messages sent from your own devices. Poppet records each
 outgoing identity before sending, so its echoed replies cannot start another run,

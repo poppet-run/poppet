@@ -13,6 +13,7 @@ import { DeliveryDestination, Store, StoreError, type Run } from "@poppet/store"
 import {
   Cause,
   Clock,
+  type Duration,
   Console,
   Context,
   Effect,
@@ -20,6 +21,7 @@ import {
   Fiber,
   Layer,
   Option,
+  Queue,
   Result,
   Schema,
   Stream,
@@ -30,23 +32,51 @@ import { ChannelError, IncomingMessage, MessagingChannel } from "#src/channel";
 import { GatewayRepository, gatewayStorage, type Inbox } from "#src/repository";
 import { messagingRequest } from "#src/request";
 
-const chunks = (text: string, limit: number) => {
-  const result: string[] = [];
-  let part = "";
+// Prefer paragraph, line, then word breaks in the second half of a chunk, so replies stay
+// readable without producing tiny fragments.
+const breakAt = (window: string) => {
+  for (const separator of ["\n\n", "\n", " "]) {
+    const index = window.lastIndexOf(separator);
 
-  for (const character of text) {
-    if (part.length + character.length > limit) {
-      result.push(part);
-      part = "";
-    }
-
-    part += character;
+    if (index >= window.length / 2) return index + separator.length;
   }
 
-  if (part) result.push(part);
+  return window.length;
+};
+
+/** Splits text into chunks of at most limit UTF-16 units without splitting a code point. */
+export const chunks = (text: string, limit: number) => {
+  const result: string[] = [];
+  let rest = text;
+
+  while (rest.length > limit) {
+    let end = breakAt(rest.slice(0, limit));
+
+    // Keep a surrogate pair together when the chunk ends mid-character.
+    if (end === limit && /[\uD800-\uDBFF]/.test(rest[end - 1] ?? "")) end--;
+    result.push(rest.slice(0, end));
+    rest = rest.slice(end);
+  }
+
+  if (rest) result.push(rest);
 
   return result;
 };
+
+const wake = (queue: Queue.Queue<void>) => Queue.offer(queue, undefined).pipe(Effect.asVoid);
+
+// Repeat immediately after useful work; otherwise wait for a signal or the fallback timer.
+const loop = <E>(
+  step: Effect.Effect<boolean | void, E>,
+  signal: Queue.Queue<void>,
+  fallback: Duration.Input,
+) =>
+  step.pipe(
+    Effect.flatMap((worked) =>
+      worked === true ? Effect.void : Effect.raceFirst(Queue.take(signal), Effect.sleep(fallback)),
+    ),
+    Effect.forever,
+  );
 
 const answer = (run: Run) =>
   run.status === "completed" && run.result !== null
@@ -73,6 +103,12 @@ const gateway = Effect.gen(function* () {
     : undefined;
 
   let active: { entry: Inbox; fiber: Fiber.Fiber<void, ChatFailure | ChannelError> } | null = null;
+
+  // Loops wait for these signals instead of polling storage; timers still cover retries
+  // and results committed by the task worker.
+  const inboxWake = yield* Queue.make<void>({ capacity: 1, strategy: "dropping" });
+  const deliveryWake = yield* Queue.make<void>({ capacity: 1, strategy: "dropping" });
+  const namingWake = yield* Queue.make<void>({ capacity: 1, strategy: "dropping" });
   let rejected = 0;
 
   const authorized = (message: IncomingMessage) =>
@@ -170,7 +206,7 @@ const gateway = Effect.gen(function* () {
             : `Document ${JSON.stringify(source.name)}: ${source.completeness}\n\n`;
 
       repo.complete(id, chunks(`${receipt}${text}`, channel.textLimit), state);
-    });
+    }).pipe(Effect.andThen(wake(deliveryWake)));
 
   // shortcut: Reactions are best effort; add durable reconciliation if stale markers after crashes matter.
   const mark = (message: IncomingMessage, state: "working" | "completed" | "stopped") =>
@@ -236,6 +272,7 @@ const gateway = Effect.gen(function* () {
       );
 
       if (entry === null) return;
+      yield* wake(inboxWake);
 
       if (message.text !== "/status" && message.text !== "/cancel") return;
       // Controls never create sessions or wait behind the model they may need to cancel.
@@ -581,6 +618,7 @@ const gateway = Effect.gen(function* () {
       );
 
       yield* gatewayStorage(() => repo.delivered(delivery, id));
+      yield* wake(namingWake);
     }).pipe(
       Effect.catchTag("ChannelError", (error) =>
         gatewayStorage(() =>
@@ -761,9 +799,9 @@ const gateway = Effect.gen(function* () {
     yield* Effect.all(
       [
         receive,
-        processNext.pipe(Effect.andThen(Effect.sleep("100 millis")), Effect.forever),
-        deliverNext.pipe(Effect.andThen(Effect.sleep("250 millis")), Effect.forever),
-        nameNext.pipe(Effect.andThen(Effect.sleep("1 second")), Effect.forever),
+        loop(processNext, inboxWake, "5 seconds"),
+        loop(deliverNext, deliveryWake, "1 second"),
+        loop(nameNext, namingWake, "5 seconds"),
         channel.naming
           ? Stream.runForEach(channel.naming.changes, externalNameChange)
           : Effect.never,
