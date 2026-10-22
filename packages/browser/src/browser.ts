@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { access, chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { Tool } from "@poppet/provider";
+import { toolParameters, type Tool } from "@poppet/provider";
 import { Effect, Schema } from "effect";
 
 import {
@@ -395,9 +395,7 @@ export const browserTools = (
           // Empty records omit these fields, which strict function schemas require.
           properties: {},
           required: [],
-          ...Schema.decodeUnknownSync(Schema.JsonObject)(
-            Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" }).schema,
-          ),
+          ...toolParameters(schema),
         },
       },
       prepare: (json) =>

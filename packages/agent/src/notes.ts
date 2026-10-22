@@ -5,12 +5,13 @@ import { lstat, mkdir, open, opendir, realpath, rename, rm } from "node:fs/promi
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { AppConfig } from "@poppet/config";
-import type { Output, Tool } from "@poppet/provider";
+import { toolParameters, type Output, type Tool } from "@poppet/provider";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { byteSize } from "#src/context";
 import { AgentError } from "#src/errors";
 import { ChatSettings } from "#src/settings";
+import { toolArguments } from "#src/tool-schema";
 
 const Path = Schema.NonEmptyString.check(Schema.isMaxLength(1024));
 
@@ -32,35 +33,28 @@ const maxNoteBytes = 65536;
 // ChatGPT reserves "notes" for its own tools.
 const namespace = "poppet_notes";
 
-const definition = (
-  name: string,
-  description: string,
-  argumentsSchema: Schema.Constraint,
-): Tool => ({
-  name,
-  namespace,
-  description,
-  parameters: Schema.decodeUnknownSync(Schema.JsonObject)(
-    Schema.toJsonSchemaDocument(argumentsSchema, { onExcessProperty: "error" }).schema,
-  ),
-});
-
 export const noteTools: ReadonlyArray<Tool> = [
-  definition(
-    "read_note",
-    "Read a UTF-8 .md, .markdown or .txt note within the notes directory. Large notes are truncated explicitly.",
-    ReadArguments,
-  ),
-  definition(
-    "search_notes",
-    "Find literal text in UTF-8 notes. Returns relative paths, line numbers and matching text. Search is bounded and may be truncated.",
-    SearchArguments,
-  ),
-  definition(
-    "save_note",
-    "Create or atomically replace a UTF-8 note within the notes directory. Use only when the user requests a note to be saved. Existing content is replaced.",
-    SaveArguments,
-  ),
+  {
+    name: "read_note",
+    namespace,
+    description:
+      "Read a UTF-8 .md, .markdown or .txt note within the notes directory. Large notes are truncated explicitly.",
+    parameters: toolParameters(ReadArguments),
+  },
+  {
+    name: "search_notes",
+    namespace,
+    description:
+      "Find literal text in UTF-8 notes. Returns relative paths, line numbers and matching text. Search is bounded and may be truncated.",
+    parameters: toolParameters(SearchArguments),
+  },
+  {
+    name: "save_note",
+    namespace,
+    description:
+      "Create or atomically replace a UTF-8 note within the notes directory. Use only when the user requests a note to be saved. Existing content is replaced.",
+    parameters: toolParameters(SaveArguments),
+  },
 ];
 
 /** Validated arguments for one of the agent's allowed note operations. */
@@ -80,39 +74,23 @@ export const decodeNoteCall = (
         message: "The requested tool is not allowed in this run.",
       }),
     );
-  const options = { onExcessProperty: "error" } as const;
-
-  const invalid = () =>
-    new AgentError({
-      reason: "tool-arguments",
-      message: `Invalid arguments for ${namespace}.${call.name}.`,
-    });
 
   switch (call.name) {
     case "read_note":
-      return Schema.decodeUnknownEffect(
-        Schema.fromJsonString(ReadArguments),
-        options,
-      )(call.arguments).pipe(
-        Effect.map((args): NoteCall => ({ name: "read_note", ...args })),
-        Effect.mapError(invalid),
-      );
+      return toolArguments(
+        noteTools[0]!,
+        ReadArguments,
+      )(call.arguments).pipe(Effect.map((args): NoteCall => ({ name: "read_note", ...args })));
     case "search_notes":
-      return Schema.decodeUnknownEffect(
-        Schema.fromJsonString(SearchArguments),
-        options,
-      )(call.arguments).pipe(
-        Effect.map((args): NoteCall => ({ name: "search_notes", ...args })),
-        Effect.mapError(invalid),
-      );
+      return toolArguments(
+        noteTools[1]!,
+        SearchArguments,
+      )(call.arguments).pipe(Effect.map((args): NoteCall => ({ name: "search_notes", ...args })));
     case "save_note":
-      return Schema.decodeUnknownEffect(
-        Schema.fromJsonString(SaveArguments),
-        options,
-      )(call.arguments).pipe(
-        Effect.map((args): NoteCall => ({ name: "save_note", ...args })),
-        Effect.mapError(invalid),
-      );
+      return toolArguments(
+        noteTools[2]!,
+        SaveArguments,
+      )(call.arguments).pipe(Effect.map((args): NoteCall => ({ name: "save_note", ...args })));
     default:
       return Effect.fail(
         new AgentError({
