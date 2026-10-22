@@ -43,7 +43,7 @@ const documentType = (attachment: Attachment) => {
 const limit = (attachment: Attachment, voice: VoiceSettings) => {
   if (attachment.kind === "unsupported")
     throw attachmentFailure(
-      "Unsupported attachment. Send one text file, PDF, or voice message directly, outside an album or forwarded message.",
+      "Forwarded messages and this attachment type are not accepted. Send one text file, PDF, or voice message directly, outside an album, and write any request in your own message.",
     );
   let maxBytes = 8 * 1024 * 1024;
 

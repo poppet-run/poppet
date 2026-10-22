@@ -86,7 +86,7 @@ describe("attachment processing", () => {
     ).rejects.toThrow("Send one UTF-8");
     await expect(
       Effect.runPromise(processor.limit({ ...document, kind: "unsupported" })),
-    ).rejects.toThrow("Unsupported");
+    ).rejects.toThrow("Forwarded messages and this attachment type are not accepted.");
   });
 
   test("extracts page-labelled Unicode PDF text, marks omissions, rejects invalid/image-only/over-page-limit input, and removes raw files", async () => {

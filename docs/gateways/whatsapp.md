@@ -60,8 +60,9 @@ file edits or deletion. Selection errors leave the active session unchanged.
 
 Only ordinary private text from the configured owner is accepted. WhatsApp's LID
 addresses must resolve through the SDK's saved phone mapping; unresolved identities
-are ignored. Groups, broadcasts, edits, attachments, voice, and reactions do not
-start model work. Full history synchronization is disabled. Incoming text is
+are ignored. Groups, broadcasts, edits, forwarded messages, attachments, voice,
+and reactions do not start model work. Forwarded text was written by someone else,
+so it cannot act as your request; write the request in your own message instead. Full history synchronization is disabled. Incoming text is
 limited to 8192 UTF-16 units; replies are split at 4096 units without splitting a
 Unicode character. Replies are plain text with link previews disabled.
 

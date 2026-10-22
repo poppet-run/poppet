@@ -8,6 +8,8 @@ export interface ExternalTool {
   readonly definition: Tool;
   readonly serverId: string;
   readonly toolName: string;
+  /** Host-owned tools may stay after untrusted content enters a run; others are withdrawn. */
+  readonly availableAfterUntrusted?: boolean;
   readonly prepare: (argumentsJSON: string) => Effect.Effect<PreparedExternalCall, AgentError>;
 }
 

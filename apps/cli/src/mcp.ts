@@ -32,10 +32,15 @@ export const ExternalAgentToolsLive = Layer.effect(
                   ),
                 );
 
-          const adapted = [...external, ...browserCatalog].map((tool) => ({
+          // Browsing reads untrusted pages by design; MCP servers are withdrawn after untrusted input.
+          const adapted = [
+            ...external.map((tool) => ({ tool, availableAfterUntrusted: false })),
+            ...browserCatalog.map((tool) => ({ tool, availableAfterUntrusted: true })),
+          ].map(({ tool, availableAfterUntrusted }) => ({
             definition: tool.definition,
             serverId: tool.serverId,
             toolName: tool.toolName,
+            availableAfterUntrusted,
             prepare: (argumentsJSON: string) =>
               Effect.gen(function* () {
                 const call = yield* tool.prepare(argumentsJSON);

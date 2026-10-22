@@ -187,7 +187,10 @@ const makeWhatsAppClient = (
               const content = message.message;
               const text = content?.conversation ?? content?.extendedTextMessage?.text;
 
-              if (!text?.trim() || text.length > 8192 || content?.protocolMessage) {
+              // Forwarded text was written by someone else, so it cannot act as the owner's request.
+              const forwarded = content?.extendedTextMessage?.contextInfo?.isForwarded === true;
+
+              if (!text?.trim() || text.length > 8192 || content?.protocolMessage || forwarded) {
                 ignored++;
 
                 return null;

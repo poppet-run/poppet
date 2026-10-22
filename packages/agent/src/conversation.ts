@@ -8,6 +8,7 @@ import type {
   Output,
   ProviderError,
   TextSource,
+  Tool,
 } from "@poppet/provider";
 import {
   Store,
@@ -129,6 +130,9 @@ const failureReason = (error: AgentError | StoreError) =>
 
 const failureReply = (reason: string, message: string) =>
   JSON.stringify({ error: { reason, message } });
+
+// Results from these tools carry content the owner did not write.
+const untrustedSources: ReadonlySet<string> = new Set(["fetch_page", "search_web", "external"]);
 
 // Results from these tools only add context, so an oversized one can be refused without loss.
 const contextOnlyTools: ReadonlySet<string> = new Set([
@@ -312,6 +316,21 @@ export const conversation = Effect.gen(function* () {
 
         const allowedURLs = source?.kind === "voice" ? new Set<string>() : suppliedPageURLs(text);
 
+        // Once untrusted content enters the run, withdraw tools that act beyond its notes.
+        let untrusted = source !== undefined;
+
+        const withdrawn = (tool: Tool) =>
+          tool.name === taskTool.name ||
+          tool.name === memoryTool.name ||
+          catalog.some(
+            (entry) =>
+              entry.availableAfterUntrusted !== true &&
+              entry.definition.name === tool.name &&
+              entry.definition.namespace === tool.namespace,
+          );
+
+        const activeTools = () => (untrusted ? tools.filter((tool) => !withdrawn(tool)) : tools);
+
         const baseInstructions =
           external?.instructions === undefined ? prompt : `${prompt}\n\n${external.instructions}`;
 
@@ -322,11 +341,24 @@ export const conversation = Effect.gen(function* () {
 
         const prepareTool = (call: Extract<Output, { type: "tool-call" }>) =>
           Effect.gen(function* () {
-            if (!tools.some((tool) => tool.name === call.name && tool.namespace === call.namespace))
+            const requested = tools.find(
+              (tool) => tool.name === call.name && tool.namespace === call.namespace,
+            );
+
+            if (requested === undefined)
               return yield* Effect.fail(
                 new AgentError({
                   reason: "tool-permission",
                   message: "The requested tool is not allowed in this run.",
+                }),
+              );
+
+            if (untrusted && withdrawn(requested))
+              return yield* Effect.fail(
+                new AgentError({
+                  reason: "tool-permission",
+                  message:
+                    "This tool is disabled after untrusted content entered this run. Propose the action and ask the owner to confirm it in a new message.",
                 }),
               );
 
@@ -398,7 +430,7 @@ export const conversation = Effect.gen(function* () {
                     current,
                     model.description,
                     policy,
-                    tools,
+                    activeTools(),
                     instructions,
                   ),
                 catch: (cause) =>
@@ -426,7 +458,7 @@ export const conversation = Effect.gen(function* () {
                   workload: run.workload,
                   instructions,
                   messages,
-                  tools,
+                  tools: activeTools(),
                   settings:
                     policy.logReasoning && !attachmentHistory
                       ? { ...settings, reasoningSummary: true }
@@ -593,7 +625,7 @@ export const conversation = Effect.gen(function* () {
                         const guard = (output: string) => {
                           const needed = contextSize(
                             [...current, { role: "tool", callId, output }],
-                            tools,
+                            activeTools(),
                             instructions,
                           );
 
@@ -616,6 +648,8 @@ export const conversation = Effect.gen(function* () {
                         );
 
                         for (const url of urls) allowedURLs.add(url);
+
+                        if (untrustedSources.has(plan.name)) untrusted = true;
                         current.push({ role: "tool", callId, output });
                         callsUsed++;
                       }

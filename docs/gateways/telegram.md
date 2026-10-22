@@ -48,7 +48,9 @@ replies, split at 4096 UTF-16 units without splitting a Unicode character.
 Formatting syntax is sent literally, and link previews are disabled.
 
 Other users, groups, channels, topic messages, and edited messages are deliberately
-ignored. Unsupported attachments from the owner receive a clear reply. Reactions
+ignored. Unsupported attachments and forwarded messages from the owner receive a
+clear reply; forwarded text was written by someone else, so it cannot act as your
+request. Reactions
 and Telegram chat renaming remain outside this adapter's scope.
 
 ## Documents and voice

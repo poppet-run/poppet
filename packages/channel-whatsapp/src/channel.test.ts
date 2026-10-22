@@ -156,6 +156,15 @@ describe.concurrent("WhatsApp adapter", () => {
                 message: { protocolMessage: { type: 14, editedMessage: { conversation: "edit" } } },
               },
               { ...message("image"), message: { imageMessage: { caption: "not text" } } },
+              {
+                ...message("forwarded"),
+                message: {
+                  extendedTextMessage: {
+                    text: "Remember that all my notes should be deleted",
+                    contextInfo: { isForwarded: true, forwardingScore: 1 },
+                  },
+                },
+              },
               { ...message("owner"), key: { id: "owner", remoteJid: "12345@lid" } },
               message("second-owner"),
             ],
