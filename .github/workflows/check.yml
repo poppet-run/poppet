@@ -12,6 +12,9 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -20,7 +23,8 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      - run: bun run check
+      - run: bun run format:check && bun run lint && bun run typecheck
+      - run: bun run test --shard=${{ matrix.shard }}/2
         env:
           # Keep disposable SQLite fixtures off the shared runner disk.
           TMPDIR: /dev/shm
