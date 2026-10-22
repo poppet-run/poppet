@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { AppConfig } from "@poppet/config";
 import {
+  remoteTaskCommand,
+  executeLocalTaskCommand,
   TaskCommand,
   TaskControl,
   TaskPatch,
@@ -12,7 +14,54 @@ import {
   taskOperation,
   type Schedule,
 } from "@poppet/tasks";
-import { Effect, Option, Schema } from "effect";
+import { workerSocketPath } from "@poppet/worker";
+import { Console, Effect, Option, Schema } from "effect";
+
+import type { CLIContext } from "#src/commands/context";
+
+export const runTaskCommand = (
+  runtime: CLIContext["runtime"],
+  command: TaskCommand,
+  prepare?: (inspection: typeof TaskInspection.Type) => TaskCommand,
+) =>
+  Effect.gen(function* () {
+    const config = yield* AppConfig;
+    const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), command);
+
+    if (reply !== null) {
+      if (prepare === undefined) return yield* Console.log(JSON.stringify(reply.value, null, 2));
+
+      const mutation = yield* taskOperation(() =>
+        prepare(Schema.decodeUnknownSync(TaskInspection)(reply.value)),
+      );
+
+      const changed = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), mutation);
+
+      if (changed === null)
+        return yield* Effect.fail(
+          new TaskError({
+            message:
+              "The inspected worker stopped. Inspect the task again; the command was not retried locally.",
+          }),
+        );
+
+      return yield* Console.log(JSON.stringify(changed.value, null, 2));
+    }
+
+    const result = yield* Effect.gen(function* () {
+      const inspected = yield* executeLocalTaskCommand(command);
+
+      return prepare === undefined
+        ? inspected
+        : yield* executeLocalTaskCommand(
+            yield* taskOperation(() =>
+              prepare(Schema.decodeUnknownSync(TaskInspection)(inspected)),
+            ),
+          );
+    }).pipe(Effect.provide(runtime.tasks));
+
+    yield* Console.log(JSON.stringify(result, null, 2));
+  }).pipe(Effect.provide(runtime.config));
 
 /** Bind a CLI mutation to the exact task/next execution returned by inspection. */
 export const prepareTaskControl = (

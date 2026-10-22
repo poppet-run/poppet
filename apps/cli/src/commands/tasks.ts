@@ -1,70 +1,15 @@
-import { AppConfig } from "@poppet/config";
 import { ProviderId } from "@poppet/provider";
 import { Session } from "@poppet/store";
-import {
-  remoteTaskCommand,
-  executeLocalTaskCommand,
-  TaskCommand,
-  TaskPatch,
-  NewTask,
-  TaskInspection,
-  parseTimestamp,
-  TaskError,
-  taskOperation,
-} from "@poppet/tasks";
-import { workerSocketPath } from "@poppet/worker";
-import { Console, Effect, Option, Schema } from "effect";
+import { TaskPatch, NewTask, parseTimestamp, TaskError, taskOperation } from "@poppet/tasks";
+import { Effect, Option, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
 import { codingFlag, projectFlag, skillFlag, textArgument } from "#src/commands/flags";
-import { parseTaskSchedule, prepareTask, prepareTaskControl } from "#src/tasks";
+import { parseTaskSchedule, prepareTask, prepareTaskControl, runTaskCommand } from "#src/tasks";
 
 export const tasksCommand = (context: CLIContext) => {
   const { runtime } = context;
-
-  const runTasks = (
-    command: TaskCommand,
-    prepare?: (inspection: typeof TaskInspection.Type) => TaskCommand,
-  ) =>
-    Effect.gen(function* () {
-      const config = yield* AppConfig;
-      const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), command);
-
-      if (reply !== null) {
-        if (prepare === undefined) return yield* Console.log(JSON.stringify(reply.value, null, 2));
-
-        const mutation = yield* taskOperation(() =>
-          prepare(Schema.decodeUnknownSync(TaskInspection)(reply.value)),
-        );
-
-        const changed = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), mutation);
-
-        if (changed === null)
-          return yield* Effect.fail(
-            new TaskError({
-              message:
-                "The inspected worker stopped. Inspect the task again; the command was not retried locally.",
-            }),
-          );
-
-        return yield* Console.log(JSON.stringify(changed.value, null, 2));
-      }
-
-      const result = yield* Effect.gen(function* () {
-        const inspected = yield* executeLocalTaskCommand(command);
-
-        return prepare === undefined
-          ? inspected
-          : yield* executeLocalTaskCommand(
-              yield* taskOperation(() =>
-                prepare(Schema.decodeUnknownSync(TaskInspection)(inspected)),
-              ),
-            );
-      }).pipe(Effect.provide(runtime.tasks));
-
-      yield* Console.log(JSON.stringify(result, null, 2));
-    }).pipe(Effect.provide(runtime.config));
 
   return Command.make("tasks").pipe(
     Command.withDescription("Schedule and manage requests"),
@@ -106,7 +51,7 @@ export const tasksCommand = (context: CLIContext) => {
               return Schema.decodeUnknownSync(TaskPatch)(fields);
             });
 
-            yield* runTasks({ action: "inspect", id }, (value) =>
+            yield* runTaskCommand(runtime, { action: "inspect", id }, (value) =>
               prepareTaskControl(value, "edit", patch),
             );
           }),
@@ -116,7 +61,9 @@ export const tasksCommand = (context: CLIContext) => {
           action,
           { id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)) },
           ({ id }) =>
-            runTasks({ action: "inspect", id }, (value) => prepareTaskControl(value, action)),
+            runTaskCommand(runtime, { action: "inspect", id }, (value) =>
+              prepareTaskControl(value, action),
+            ),
         ).pipe(
           Command.withDescription(
             action === "skip-next"
@@ -142,7 +89,7 @@ export const tasksCommand = (context: CLIContext) => {
               return parseTimestamp(until[0]);
             });
 
-            yield* runTasks({ action: "inspect", id }, (value) =>
+            yield* runTaskCommand(runtime, { action: "inspect", id }, (value) =>
               prepareTaskControl(value, "snooze", undefined, at),
             );
           }),
@@ -245,7 +192,7 @@ export const tasksCommand = (context: CLIContext) => {
               project,
             );
 
-            yield* runTasks(command);
+            yield* runTaskCommand(runtime, command);
           }).pipe(Effect.provide(runtime.config)),
       ).pipe(
         Command.withDescription("Schedule a request"),
@@ -256,12 +203,11 @@ export const tasksCommand = (context: CLIContext) => {
           },
         ]),
       ),
-      ...(["list", "providers", "clear"] as const).map((action) =>
-        Command.make(action, {}, () => runTasks({ action })).pipe(
+      ...(["list", "clear"] as const).map((action) =>
+        Command.make(action, {}, () => runTaskCommand(runtime, { action })).pipe(
           Command.withDescription(
             {
               list: "List saved tasks",
-              providers: "Show provider quota pauses and temporary backoff",
               clear: "Interrupt active work and remove all tasks and task history",
             }[action],
           ),
@@ -275,7 +221,7 @@ export const tasksCommand = (context: CLIContext) => {
               action === "cancel" || action === "retry" ? "occurrence" : "task",
             ).pipe(Argument.withSchema(Session.fields.id)),
           },
-          ({ id }) => runTasks({ action, id }),
+          ({ id }) => runTaskCommand(runtime, { action, id }),
         ).pipe(
           Command.withDescription(
             {
@@ -293,7 +239,7 @@ export const tasksCommand = (context: CLIContext) => {
         {
           provider: Argument.String("provider").pipe(Argument.withSchema(ProviderId)),
         },
-        ({ provider }) => runTasks({ action: "resume-provider", provider }),
+        ({ provider }) => runTaskCommand(runtime, { action: "resume-provider", provider }),
       ).pipe(Command.withDescription("Allow scheduled requests again")),
     ]),
   );

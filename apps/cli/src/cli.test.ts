@@ -432,6 +432,9 @@ describe("CLI", () => {
       expect(added.exitCode).toBe(0);
       const result = await invoke(["worker", "status"], { POPPET_DATA_DIR: directory });
       expect(result.exitCode).toBe(0);
+      expect(
+        JSON.parse((await invoke(["worker", "providers"], { POPPET_DATA_DIR: directory })).stdout),
+      ).toEqual([]);
       expect(JSON.parse(result.stdout).worker).toMatchObject({
         running: false,
         taskCount: 1,
@@ -644,6 +647,7 @@ describe("CLI", () => {
       expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toMatchObject([
         { id: task.id },
       ]);
+      expect(JSON.parse((await invoke(["worker", "providers"], environment)).stdout)).toEqual([]);
       expect((await invoke(["tasks", "pause", task.id], environment)).exitCode).toBe(0);
       expect((await invoke(["tasks", "show", "missing"], environment)).stderr).toContain(
         "does not exist",
@@ -1123,6 +1127,7 @@ describe("CLI", () => {
       ["config", "unexpected-argument"],
       ["tasks", "status"],
       ["tasks", "work"],
+      ["tasks", "providers"],
       ["tasks", "add", "Later", "--at", at, "--cron", "0 9 * * *", "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--cron", "0 9 * * *", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],
