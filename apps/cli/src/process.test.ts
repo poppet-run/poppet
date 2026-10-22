@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -106,6 +106,42 @@ test.concurrent("unattended key input fails without creating credentials", async
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("interactive terminal");
     expect(await readdir(directory)).toEqual([]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test.concurrent("gateway status reports unreadable channel settings without exposing secrets", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-channel-status-"));
+
+  const channels = [
+    { id: "discord", name: "Discord" },
+    { id: "telegram", name: "Telegram" },
+    { id: "whatsapp", name: "WhatsApp" },
+  ];
+
+  try {
+    await mkdir(join(directory, "channels"), { mode: 0o700 });
+    await Promise.all(
+      channels.map(({ id }) =>
+        writeFile(join(directory, `channels/${id}.json`), "invalid-channel-secret", {
+          mode: 0o600,
+        }),
+      ),
+    );
+    const status = await invokeProcess(["gateway", "status"], { POPPET_DATA_DIR: directory });
+
+    expect(status.exitCode).toBe(0);
+    expect(JSON.parse(status.stdout)).toMatchObject({
+      running: false,
+      enabled: false,
+      channels: channels.map(({ id, name }) => ({
+        id,
+        enabled: false,
+        error: `Cannot read or write protected ${name} settings. Run gateway ${id} setup again.`,
+      })),
+    });
+    expect(status.stdout + status.stderr).not.toContain("invalid-channel-secret");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
