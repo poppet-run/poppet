@@ -19,7 +19,7 @@ Save the review only if the user explicitly asks and note writes are permitted.
 
 Inspect and select it:
 
-```fish
+```sh
 poppet skills list
 poppet skills show weekly-review
 poppet chat new --skill weekly-review "Review my Acorn project"

@@ -6,7 +6,7 @@
 
 Use Bun 1.4.3, pinned in `mise.toml` and `package.json`.
 
-```fish
+```sh
 bun install --frozen-lockfile
 bun run start --help
 bun run start config

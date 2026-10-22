@@ -74,7 +74,7 @@ and avoids logging raw protocol failures, which may contain credentials.
 
 ## Inspect and use tools
 
-```fish
+```sh
 poppet mcp servers
 poppet mcp status
 poppet mcp tools reference

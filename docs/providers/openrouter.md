@@ -5,6 +5,18 @@
 For OpenRouter, discovery uses its public catalog without an API key. Select a
 concrete model ID returned by `provider models` and save a key through login:
 
+Bash / POSIX sh:
+
+```sh
+export POPPET_PROVIDER=openrouter
+poppet provider models
+export POPPET_MODEL='replace-with-model-id'
+poppet auth login openrouter
+poppet provider verify
+```
+
+fish:
+
 ```fish
 set -lx POPPET_PROVIDER openrouter
 poppet provider models

@@ -6,6 +6,17 @@
 
 After signing in, choose a model ID returned by `auth models` and start a session:
 
+Bash / POSIX sh:
+
+```sh
+export POPPET_PROVIDER=openai-chatgpt
+export POPPET_MODEL='replace-with-model-id'
+poppet chat new "Help me plan a small TypeScript project"
+poppet chat sessions
+```
+
+fish:
+
 ```fish
 set -lx POPPET_PROVIDER openai-chatgpt
 set -lx POPPET_MODEL 'replace-with-model-id'
@@ -15,6 +26,16 @@ poppet chat sessions
 
 The answer streams to stdout. The session and run IDs print to stderr. Copy the
 session ID to continue or inspect it in a later invocation:
+
+Bash / POSIX sh:
+
+```sh
+session_id='paste-session-id-here'
+poppet chat send "$session_id" "What should I build first?"
+poppet chat show "$session_id"
+```
+
+fish:
 
 ```fish
 set session_id 'paste-session-id-here'
@@ -41,7 +62,7 @@ show the accepted transcript and require a later text confirmation for mutations
 
 Start a new session or resume one in a terminal:
 
-```fish
+```sh
 poppet chat interactive
 poppet chat interactive $session_id
 ```
@@ -93,7 +114,7 @@ one request and inspect it with `chat show`.
 
 ## Select a skill
 
-```fish
+```sh
 poppet chat new --skill weekly-review "Review my Acorn project"
 ```
 
@@ -165,7 +186,7 @@ attempted, and separate `titleUsage`. A null usage value means unknown. Chat run
 usage excludes naming. Old sessions remain unnamed and retain their IDs.
 Titles can repeat; commands always use session IDs.
 
-```fish
+```sh
 poppet chat rename $session_id "Weekly project review"
 ```
 
@@ -175,7 +196,7 @@ Title changes do not change activity timestamps or saved message order.
 
 ## Search past conversations
 
-```fish
+```sh
 poppet chat search "project TypeScript"
 poppet chat show <session-id-from-search>
 ```
@@ -236,7 +257,7 @@ behavior; there is no extra CLI or worker command for model recall.
 
 ## Read a supplied URL
 
-```fish
+```sh
 poppet chat new "Summarize https://example.com/ and cite the source"
 ```
 
@@ -263,7 +284,7 @@ Results fit `POPPET_TOOL_BYTES`; truncation keeps the source URL and flag.
 Enable [web search](configuration.md#web-search) to let tool-capable models use
 `poppet_web.search_web` in local, interactive, worker, and messaging chat:
 
-```fish
+```sh
 poppet chat new "Search for recent Bun releases, read a source, and cite it"
 ```
 
@@ -294,6 +315,16 @@ New sessions use the configured `provider` and required `model`, with
 sessions keep their saved provider, model, and workload when configuration
 changes. Start a new session to change that selection. OpenCode Go requires a
 coding session:
+
+Bash / POSIX sh:
+
+```sh
+export POPPET_PROVIDER=opencode-go
+export POPPET_MODEL=glm-5.3
+poppet chat new --coding "Explain how to structure a TypeScript CLI"
+```
+
+fish:
 
 ```fish
 set -lx POPPET_PROVIDER opencode-go

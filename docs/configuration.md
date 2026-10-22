@@ -67,7 +67,17 @@ channel settings stay in their existing protected stores.
 | `POPPET_RUN_DEADLINE_SECONDS`  | `chat.runDeadlineSeconds` | `300`                    | Absolute deadline for one chat or task run; range `30–3600`                                        |
 | `POPPET_TASK_CATCH_UP_MINUTES` | `tasks.catchUpMinutes`    | `60`                     | How late a missed recurring task time may still run once; `0` skips at startup; range `0–1440`     |
 
-For a temporary override in fish:
+For a temporary override:
+
+Bash / POSIX sh:
+
+```sh
+export POPPET_DATA_DIR="$HOME/.local/share/poppet"
+export POPPET_NOTES_DIR="$HOME/Documents/Notes"
+poppet config
+```
+
+fish:
 
 ```fish
 set -lx POPPET_DATA_DIR "$HOME/.local/share/poppet"
@@ -118,7 +128,16 @@ worker's configuration.
 }
 ```
 
-For a temporary local override in fish:
+For a temporary local override:
+
+Bash / POSIX sh:
+
+```sh
+export POPPET_LOG_REASONING=true
+poppet chat new "Review my notes"
+```
+
+fish:
 
 ```fish
 set -lx POPPET_LOG_REASONING true
@@ -149,7 +168,16 @@ milliseconds. It defaults to `false` and covers CLI, scheduled, and messaging
 runs. Worker-backed CLI requests also receive the diagnostics on stderr.
 Restart a running worker after changing its configuration.
 
-For a temporary local override in fish:
+For a temporary local override:
+
+Bash / POSIX sh:
+
+```sh
+export POPPET_LOG_TIMINGS=true
+poppet chat interactive
+```
+
+fish:
 
 ```fish
 set -lx POPPET_LOG_TIMINGS true
@@ -211,7 +239,7 @@ Web search uses [Brave's Web Search API](https://api-dashboard.search.brave.com/
 Save its API key with an interactive prompt, or pipe a key to
 `poppet web login --key-stdin`:
 
-```fish
+```sh
 poppet web login
 poppet web status
 ```

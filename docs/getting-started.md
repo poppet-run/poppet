@@ -2,6 +2,9 @@
 
 [Documentation index](README.md)
 
+Shell commands work in Bash, POSIX sh, and fish unless separate examples are shown.
+Replace angle-bracket placeholders such as `<task-id>` before running a command.
+
 ## Requirements
 
 - Bun 1.4.3, pinned in `mise.toml` and `package.json`.
@@ -13,7 +16,7 @@
 
 From the repository root:
 
-```fish
+```sh
 bun install --frozen-lockfile
 bun link
 poppet --help
@@ -21,8 +24,24 @@ poppet config
 ```
 
 `bun link` adds `poppet` to Bun's global bin directory. Make sure that directory
-is on `PATH`, using `fish_add_path (bun pm bin -g)` if needed. The command points
-at this checkout and uses its installed dependencies, so keep both available.
+is on `PATH`. If needed, add it for your shell:
+
+Bash / POSIX sh:
+
+```sh
+export PATH="$(bun pm bin -g):$PATH"
+```
+
+fish:
+
+```fish
+fish_add_path (bun pm bin -g)
+```
+
+Add the `export` line to your shell's startup file to keep it across sessions.
+`fish_add_path` persists the path for future fish sessions.
+
+The command points at this checkout and uses its installed dependencies, so keep both available.
 Source changes take effect without rebuilding or linking again. Run `bun unlink`
 from the repository root to remove the command.
 
@@ -39,7 +58,7 @@ directory is `~/.config/poppet`; see [configuration](configuration.md) to change
 For ChatGPT, sign in through the system browser and list the models available to
 your account:
 
-```fish
+```sh
 poppet auth login openai-chatgpt
 poppet auth models openai-chatgpt
 poppet auth status openai-chatgpt
@@ -57,6 +76,17 @@ use ChatGPT or OpenRouter for general assistant chat, notes, and summaries.
 
 Replace the example value with a model ID returned by `auth models`:
 
+Bash / POSIX sh:
+
+```sh
+export POPPET_PROVIDER=openai-chatgpt
+export POPPET_MODEL='replace-with-model-id'
+poppet chat new "Help me plan a small TypeScript project"
+poppet chat sessions
+```
+
+fish:
+
 ```fish
 set -lx POPPET_PROVIDER openai-chatgpt
 set -lx POPPET_MODEL 'replace-with-model-id'
@@ -66,6 +96,16 @@ poppet chat sessions
 
 The answer streams to stdout; session and run IDs print to stderr. These one-shot
 commands send one message at a time. Copy the session ID to continue or inspect it:
+
+Bash / POSIX sh:
+
+```sh
+session_id='paste-session-id-here'
+poppet chat send "$session_id" "What should I build first?"
+poppet chat show "$session_id"
+```
+
+fish:
 
 ```fish
 set session_id 'paste-session-id-here'
@@ -77,7 +117,7 @@ For a terminal prompt, run `poppet chat interactive`, or append a saved
 session ID to resume it. Enter one message per line and use `/exit` to leave.
 See the [interactive prompt guide](chat.md#interactive-prompt) for cancellation.
 
-These `set -lx` values apply within the current shell scope. New sessions use the
+These environment overrides apply within the current shell scope. New sessions use the
 configured provider and model; saved sessions retain their original selection.
 Chat consumes provider usage. You can also run `poppet provider verify`
 to check the selected model with two requests and a local tool round trip.
@@ -95,7 +135,7 @@ run. [Scheduled tasks](tasks.md) execute one-off or recurring prompts while a
 
 Start the combined foreground worker after configuring the services you need:
 
-```fish
+```sh
 poppet worker run
 ```
 

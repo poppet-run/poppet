@@ -6,7 +6,7 @@
 
 Sign in through the system browser, then verify subscription access:
 
-```fish
+```sh
 poppet auth login openai-chatgpt
 poppet auth models openai-chatgpt
 poppet auth verify --provider openai-chatgpt

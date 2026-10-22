@@ -16,10 +16,10 @@ The integration pins agent-browser **0.39.1** and Chrome for Testing
 **155.0.8059.84**, on macOS and Linux. For example, install the CLI with Node 24 or
 later and npm:
 
-```fish
+```sh
 npm install -g agent-browser@0.39.1
 agent-browser --version
-command -s agent-browser
+command -v agent-browser
 ```
 
 Use the native binary, not the JavaScript launcher. Global npm installation
@@ -74,7 +74,7 @@ chat and MCP tools remain available. Poppet never installs or upgrades software.
 
 ## Use and lifecycle
 
-```fish
+```sh
 poppet chat new "Use the browser to open https://example.com and summarize its rendered page"
 ```
 
@@ -131,7 +131,7 @@ general approval workflow remain outside this phase.
 Run `bun run check` for fixture and injected-model tests. With pinned executables,
 run the standalone local-site self-check:
 
-```fish
+```sh
 bun packages/browser/src/test/browser-check.ts /absolute/path/to/agent-browser /absolute/path/to/chromium
 ```
 

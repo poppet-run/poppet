@@ -32,6 +32,17 @@ Pass a provider after `login`, `status`, `models`, or `logout`, or use
 without changing the configured inference provider. Login and status work before
 model selection. General provider commands use the configured provider:
 
+Bash / POSIX sh:
+
+```sh
+export POPPET_PROVIDER=openai-chatgpt
+poppet provider models
+export POPPET_MODEL='replace-with-model-id'
+poppet provider verify
+```
+
+fish:
+
 ```fish
 set -lx POPPET_PROVIDER openai-chatgpt
 poppet provider models

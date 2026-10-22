@@ -6,7 +6,7 @@
 
 Save preferences and facts with stable keys:
 
-```fish
+```sh
 poppet memory remember answer.style "Keep answers concise"
 poppet memory list
 poppet chat new "How should you answer my questions?"
@@ -31,7 +31,7 @@ Tool-capable models can call `poppet_memory.memory` during ordinary chat,
 including the interactive prompt and authorized messaging conversations. Restart
 an existing worker after updating so its agent advertises the new tool:
 
-```fish
+```sh
 poppet chat new "Remember that I prefer concise answers, under answer.style"
 poppet chat send $session_id "Replace answer.style with Explain the reasoning"
 poppet chat send $session_id "Forget the saved fact answer.style"

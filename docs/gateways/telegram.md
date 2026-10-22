@@ -11,6 +11,25 @@ text and single supported attachments only in the private chat between that owne
 
 Select an assistant-capable provider and model, then save the token through stdin:
 
+Bash / POSIX sh:
+
+```sh
+(
+    saved_tty=$(stty -g) || exit 1
+    trap 'stty "$saved_tty"' 0
+    trap 'exit 1' 1 2 3 15
+    printf '%s' 'Telegram bot token: '
+    stty -echo || exit 1
+    IFS= read -r telegram_token || exit 1
+    stty "$saved_tty"
+    printf '\n'
+    printf '%s\n' "$telegram_token" | poppet gateway telegram setup <bot-id> <owner-id> --key-stdin
+)
+poppet gateway work
+```
+
+fish:
+
 ```fish
 read --silent --prompt-str 'Telegram bot token: ' telegram_token
 printf '%s\n' $telegram_token | poppet gateway telegram setup <bot-id> <owner-id> --key-stdin
@@ -123,7 +142,7 @@ manually reposting an answer. A failed delivery does not rerun inference.
 Run `poppet worker run` to enable scheduling and messaging together, then
 select the configured owner's private chat before the prompt:
 
-```fish
+```sh
 poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --telegram-chat <owner-id> "Summarize my notes"
 ```
 

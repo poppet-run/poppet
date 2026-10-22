@@ -16,7 +16,26 @@ configured user is the only person who can invoke Poppet, but everyone with
 channel access can read replies containing personal memory and notes.
 
 Select an assistant-capable provider and model, then save the bot token through
-stdin. The token is never accepted as an argument. For fish:
+stdin. The token is never accepted as an argument.
+
+Bash / POSIX sh:
+
+```sh
+(
+    saved_tty=$(stty -g) || exit 1
+    trap 'stty "$saved_tty"' 0
+    trap 'exit 1' 1 2 3 15
+    printf '%s' 'Discord bot token: '
+    stty -echo || exit 1
+    IFS= read -r discord_token || exit 1
+    stty "$saved_tty"
+    printf '\n'
+    printf '%s\n' "$discord_token" | poppet gateway discord setup <bot-id> <your-user-id> <server-id> <parent-channel-id> --key-stdin
+)
+poppet gateway work
+```
+
+fish:
 
 ```fish
 read --silent --prompt-str 'Discord bot token: ' discord_token

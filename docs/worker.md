@@ -6,7 +6,7 @@
 
 Choose one foreground mode for a data directory:
 
-```fish
+```sh
 poppet worker run    # Scheduling and messaging
 poppet tasks work    # Scheduling only
 poppet gateway work  # Messaging only
@@ -50,7 +50,7 @@ closes those resources. Browser tools are omitted from scheduled tasks.
 On macOS, stop any foreground worker, then install a user LaunchAgent to start
 the combined `worker run` host at login and keep it running while you are logged in:
 
-```fish
+```sh
 poppet worker install
 poppet worker status
 poppet worker logs
@@ -109,7 +109,7 @@ its observation time. `tasks status` works for the foreground worker too.
 
 Inspect full task results using the existing commands:
 
-```fish
+```sh
 poppet tasks list
 poppet tasks show <task-id>
 ```
@@ -132,7 +132,7 @@ worker rather than allowing it to run without captured diagnostics.
 
 ## Stop, start, and uninstall
 
-```fish
+```sh
 poppet worker stop
 poppet worker start
 poppet worker uninstall
@@ -158,7 +158,7 @@ Task changes are durable even when their final chat reply fails.
 
 Chat, memory, session inspection, and `store status` work while it is running:
 
-```fish
+```sh
 poppet memory remember project.name Acorn
 poppet chat new "What is the project called?"
 poppet chat interactive
@@ -195,6 +195,20 @@ interrupted requests are never automatically replayed.
 
 To manually test background execution, first save your provider and model in
 `config.json`:
+
+Bash / POSIX sh:
+
+```sh
+when=$(date -u -v+1M +%Y-%m-%dT%H:%M:%SZ)
+poppet tasks add background-summary --at "$when" "Read project.md and summarize it"
+poppet worker install
+poppet worker status
+# After the scheduled time, inspect the task ID returned by tasks add:
+poppet tasks show <task-id>
+poppet worker logs
+```
+
+fish:
 
 ```fish
 set when (date -u -v+1M +%Y-%m-%dT%H:%M:%SZ)

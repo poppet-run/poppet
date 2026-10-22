@@ -17,7 +17,7 @@ numbers to your number and use WhatsApp's chat with yourself.
 Select an assistant-capable provider and model, stop any running Poppet worker,
 then run these commands in an interactive terminal:
 
-```fish
+```sh
 poppet gateway whatsapp setup <account-phone> <owner-phone>
 poppet gateway whatsapp pair
 poppet worker run
@@ -92,7 +92,7 @@ manually reposting an answer.
 With `worker run` active and WhatsApp connected, select the owner's phone before
 the task prompt:
 
-```fish
+```sh
 poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --whatsapp-chat <owner-phone> "Summarize my notes"
 ```
 

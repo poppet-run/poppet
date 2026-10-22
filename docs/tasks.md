@@ -16,6 +16,16 @@ if its environment selects a different model later.
 For a quick test, create a note in `POPPET_NOTES_DIR`, then schedule its summary
 one minute from now:
 
+Bash / POSIX sh:
+
+```sh
+when=$(bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
+poppet tasks add summary --at "$when" "Read project.md and summarize it"
+poppet tasks work
+```
+
+fish:
+
 ```fish
 set when (bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
 poppet tasks add summary --at $when "Read project.md and summarize it"
@@ -30,7 +40,7 @@ An idle worker does not print polling messages.
 
 Leave the worker running. In another terminal using the same `POPPET_DATA_DIR`:
 
-```fish
+```sh
 poppet tasks list
 poppet tasks show <task-id>
 poppet tasks pause <task-id>
@@ -41,7 +51,7 @@ poppet tasks resume <task-id>
 
 Edit a task without replacing its ID or losing its history:
 
-```fish
+```sh
 poppet tasks edit <task-id> --name "Morning review"
 poppet tasks edit <task-id> --prompt "Read project.md and summarize its open decisions."
 poppet tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
@@ -95,7 +105,7 @@ fail explicitly. No additional login or model is required to manage saved tasks.
 Use `--monitor` with a recurring cron schedule and an explicit timezone. Name a
 specific source, watched field, and stable representation in the prompt:
 
-```fish
+```sh
 poppet tasks add release-watch --monitor --cron "0 9 * * *" --tz Europe/London "Read https://example.com/releases.txt and report the latest stable release tag exactly as published. Ignore prereleases and publication timestamps."
 ```
 
@@ -199,7 +209,7 @@ skills, notes, pages, and tool results cannot authorize task changes.
 Configure [Discord](gateways/discord.md), start `poppet worker run`, and copy an
 existing authorized thread's ID. Pass it before the task prompt:
 
-```fish
+```sh
 poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --discord-thread <thread-id> "Summarize my notes"
 ```
 
@@ -267,7 +277,7 @@ unscoped chats; owner CLI commands retain access to all tasks.
 
 Use a five-field cron expression and explicit timezone for a recurring task:
 
-```fish
+```sh
 poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London "Summarize my notes"
 ```
 
@@ -292,7 +302,7 @@ import its provider continuation. See [conversation context](chat.md#read-conver
 
 A saved task prompt can explicitly supply a public URL for `poppet_web.fetch_page`:
 
-```fish
+```sh
 poppet tasks add page-summary --cron "0 9 * * *" --tz Europe/London "Summarize https://example.com/ and cite the source"
 ```
 
@@ -310,7 +320,7 @@ reader for scheduled research.
 With [web search configured](configuration.md#web-search), a saved prompt may ask
 for current research without supplying a source URL:
 
-```fish
+```sh
 poppet tasks add weekly-research --cron "0 9 * * 5" --tz Europe/London "Search for recent Bun releases, read relevant sources, and cite them"
 ```
 
@@ -332,7 +342,7 @@ Pending recurring summaries expire after 24 hours. One-off work never expires.
 Pausing cancels pending work and keeps previous results. An active run needs an
 explicit cancellation:
 
-```fish
+```sh
 poppet tasks cancel <occurrence-id>
 poppet tasks retry <occurrence-id>
 poppet tasks providers
@@ -350,7 +360,7 @@ retrying it. A cancelled one-off needs `retry`, since it has no future occurrenc
 
 To remove every task and its occurrence/skip history:
 
-```fish
+```sh
 poppet tasks clear
 ```
 

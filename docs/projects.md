@@ -12,7 +12,7 @@ access.
 Create `<POPPET_DATA_DIR>/projects/acorn/PROJECT.md`. With the default data
 directory:
 
-```fish
+```sh
 mkdir -p ~/.config/poppet/projects/acorn
 printf '%s\n' '# Acorn' 'Use concise milestone reviews. Flag unresolved decisions.' > ~/.config/poppet/projects/acorn/PROJECT.md
 poppet projects list
@@ -52,7 +52,7 @@ Tasks created through a project chat inherit its snapshot through the host.
 
 Manage facts separately:
 
-```fish
+```sh
 poppet memory remember --project acorn review.format "List decisions first"
 poppet memory list --project acorn
 poppet memory replace --project acorn review.format "List blockers first"

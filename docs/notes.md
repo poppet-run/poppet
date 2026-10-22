@@ -9,6 +9,15 @@ and file symlinks are rejected, as are hard-linked files. Searches skip symlinks
 
 Try the complete flow with an existing notes directory and a tool-capable model:
 
+Bash / POSIX sh:
+
+```sh
+export POPPET_NOTES_DIR="$HOME/Documents/Notes"
+poppet chat new "Find notes about Acorn, read them, and save a summary as acorn-summary.md."
+```
+
+fish:
+
 ```fish
 set -lx POPPET_NOTES_DIR "$HOME/Documents/Notes"
 poppet chat new "Find notes about Acorn, read them, and save a summary as acorn-summary.md."
