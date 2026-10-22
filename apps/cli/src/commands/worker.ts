@@ -3,7 +3,7 @@ import type { WorkerAction } from "@poppet/platform";
 import { WorkerConnections, remoteTaskCommand, readLocalTaskStatus } from "@poppet/tasks";
 import { workerSocketPath } from "@poppet/worker";
 import { Console, Effect } from "effect";
-import { Command } from "effect/cli";
+import { Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
 
@@ -63,9 +63,17 @@ export const workerCommand = (context: CLIContext) => {
   return Command.make("worker").pipe(
     Command.withDescription("Run and manage the background worker"),
     Command.withSubcommands([
-      Command.make("run", {}, () => startWorker("all")).pipe(
-        Command.withDescription("Run scheduling and messaging in one foreground worker"),
-      ),
+      Command.make(
+        "run",
+        {
+          tasksOnly: Flag.Boolean("tasks-only").pipe(
+            Flag.withDescription("Run scheduling without messaging"),
+            Flag.atMost(1),
+            Flag.map(([value = false]) => value),
+          ),
+        },
+        ({ tasksOnly }) => startWorker(tasksOnly ? "tasks" : "all"),
+      ).pipe(Command.withDescription("Run scheduling and messaging in one foreground worker")),
       ...(["install", "start", "stop", "status", "logs", "uninstall"] as const).map((action) =>
         Command.make(action, {}, () => runWorkerCommand(action)).pipe(
           Command.withDescription(

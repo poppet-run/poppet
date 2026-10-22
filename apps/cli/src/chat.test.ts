@@ -326,7 +326,11 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     program,
     invoke: (args: ReadonlyArray<string>) => Effect.runPromise(program(args)),
     startWorker: async (mode: "all" | "tasks" | "gateway" = "all", consoleOutput = output) => {
-      const args = mode === "all" ? ["worker", "run"] : [mode, "work"];
+      const args =
+        mode === "gateway"
+          ? ["gateway", "work"]
+          : ["worker", "run", ...(mode === "tasks" ? ["--tasks-only"] : [])];
+
       const worker = clock.runFork(program(args, readChatLine, consoleOutput));
 
       try {
@@ -1519,7 +1523,7 @@ describe("chat CLI", () => {
         expect(chat.requests).toHaveLength(count + 1);
         expect(chat.state.peak).toBe(1);
         await expect(
-          chat.invoke([mode === "gateway" ? "tasks" : "gateway", "work"]),
+          chat.invoke(mode === "gateway" ? ["worker", "run", "--tasks-only"] : ["gateway", "work"]),
         ).rejects.toHaveProperty("reason", "busy");
         await Effect.runPromise(Fiber.interrupt(worker));
         worker = undefined;

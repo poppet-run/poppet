@@ -21,7 +21,7 @@ Bash / POSIX sh:
 ```sh
 when=$(bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
 poppet tasks add summary --at "$when" "Read project.md and summarize it"
-poppet tasks work
+poppet worker run --tasks-only
 ```
 
 fish:
@@ -29,7 +29,7 @@ fish:
 ```fish
 set when (bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
 poppet tasks add summary --at $when "Read project.md and summarize it"
-poppet tasks work
+poppet worker run --tasks-only
 ```
 
 The worker prints timestamped lifecycle messages for starts, completed or failed
@@ -218,7 +218,7 @@ Creation through the worker must finish within eight seconds, including queue
 waiting and destination validation. An expired lookup cannot save a task afterward.
 
 `gateway work` can validate new destinations but does not execute scheduled work;
-`tasks work` executes tasks but does not deliver their results. The combined
+`worker run --tasks-only` executes tasks but does not deliver their results. The combined
 worker runs both. Tasks without a messaging destination keep their results local.
 
 Each occurrence saves its destination independently of later task or channel

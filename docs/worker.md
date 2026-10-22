@@ -8,7 +8,7 @@ Choose one foreground mode for a data directory:
 
 ```sh
 poppet worker run    # Scheduling and messaging
-poppet tasks work    # Scheduling only
+poppet worker run --tasks-only    # Scheduling only
 poppet gateway work  # Messaging only
 ```
 
