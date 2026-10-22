@@ -39,6 +39,12 @@ loading disabled. It blocks external HTTP requests and system commands, and pass
 the same guards to CLI subprocesses. Workspace test scripts use this runner too.
 Direct `bun test` is rejected unless the isolation runner started it.
 
+Prefer testing behaviour through package services with explicit inputs and local
+fixtures. CLI tests call `makeCLI` in-process for command routing and output.
+Keep subprocess tests for process behaviour such as stdin, terminal requirements,
+exit codes, signals, and worker ownership. The isolation runner applies to all
+tests, including package tests that launch subprocesses.
+
 The root test command records file durations in `.bun-test-timings.json` so later
 runs can start slower files first. This local cache is ignored by Git and can be
 deleted to reset the timings. Tests still use four workers and at most two

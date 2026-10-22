@@ -70,6 +70,70 @@ const invoke = async (
 };
 
 describe("CLI", () => {
+  test.each([false, true])(
+    "gateway status redacts channel settings, unreadable: %s",
+    async (unreadable) => {
+      const directory = await mkdtemp(join(tmpdir(), "poppet-channel-status-"));
+
+      const channels = [
+        {
+          id: "discord",
+          name: "Discord",
+          settings: {
+            version: 1,
+            botId: "100",
+            ownerId: "200",
+            guildId: "300",
+            channelIds: ["400"],
+            token: "discord-secret",
+          },
+        },
+        {
+          id: "telegram",
+          name: "Telegram",
+          settings: { version: 1, botId: "100", ownerId: "200", token: "100:telegram-secret" },
+        },
+        {
+          id: "whatsapp",
+          name: "WhatsApp",
+          settings: { version: 1, accountPhone: "447700900001", ownerPhone: "447700900002" },
+        },
+      ];
+
+      try {
+        await mkdir(join(directory, "channels"), { mode: 0o700 });
+        await Promise.all(
+          channels.map(({ id, settings }) =>
+            writeFile(
+              join(directory, `channels/${id}.json`),
+              unreadable ? "invalid-channel-secret" : JSON.stringify(settings),
+              { mode: 0o600 },
+            ),
+          ),
+        );
+        const result = await invoke(["gateway", "status"], { POPPET_DATA_DIR: directory });
+
+        expect(result.exitCode).toBe(0);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          running: false,
+          enabled: !unreadable,
+          channels: channels.map(({ id, name }) =>
+            unreadable
+              ? {
+                  id,
+                  enabled: false,
+                  error: `Cannot read or write protected ${name} settings. Run gateway ${id} setup again.`,
+                }
+              : { id, enabled: true },
+          ),
+        });
+        expect(result.stdout + result.stderr).not.toContain("secret");
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
   test("concurrent invocations keep configuration separate without changing the process environment", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-config-"));
     const previous = { ...process.env };
@@ -1047,6 +1111,7 @@ describe("CLI", () => {
     const at = "2099-10-15T09:00:00Z";
 
     const commands = [
+      ["config", "unexpected-argument"],
       ["tasks", "add", "Later", "--at", at, "--cron", "0 9 * * *", "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--cron", "0 9 * * *", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],
