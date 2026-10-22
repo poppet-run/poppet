@@ -23,9 +23,8 @@ export class CredentialInput extends Context.Service<
   }
 >()("poppet/CredentialInput") {}
 
-/** Consent and key-input choices supplied by the host's login command. */
+/** Key-input choices supplied by the host's login command. */
 export interface LoginOptions {
-  readonly consent: boolean;
   readonly keyStdin: boolean;
 }
 
@@ -48,7 +47,6 @@ export interface ProviderRegistration {
   readonly id: ProviderId;
   readonly name: string;
   readonly authentication: {
-    readonly consent: boolean;
     readonly apiKey: boolean;
     readonly help: string;
   };

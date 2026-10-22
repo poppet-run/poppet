@@ -50,7 +50,7 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
   const registration: ProviderRegistration = {
     id: "fixture",
     name: "Fixture",
-    authentication: { consent: false, apiKey: false, help: "Test" },
+    authentication: { apiKey: false, help: "Test" },
     layer: Layer.merge(
       Layer.succeed(ProviderConnection, {
         login: () => Effect.succeed("Connected"),

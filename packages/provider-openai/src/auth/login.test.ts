@@ -13,6 +13,8 @@ describe.concurrent("ChatGPT sign-in", () => {
       await harness.run(login);
       expect(harness.authorizations[0]?.searchParams.get("client_id")).toBe("dynamic_agent_client");
       expect(harness.authorizations[1]?.searchParams.get("client_id")).toBe("oaiapp_test");
+      expect(harness.authorizations[0]?.searchParams.get("prompt")).toBe("consent");
+      expect(harness.authorizations[1]?.searchParams.has("prompt")).toBe(false);
       expect(harness.authorizations[1]?.searchParams.has("agent_name_hint")).toBe(false);
       expect(harness.authorizations[1]?.searchParams.get("ext_agent_host_id")).toBe(
         harness.authorizations[0]?.searchParams.get("ext_agent_host_id"),
@@ -35,6 +37,21 @@ describe.concurrent("ChatGPT sign-in", () => {
       expect(await harness.run(login)).toMatchObject({ connected: true, planUsage: false });
       await expect(harness.run(verify)).rejects.toMatchObject({ reason: "plan_disabled" });
       expect(harness.requests).toHaveLength(0);
+    } finally {
+      await harness.close();
+    }
+  });
+  test("requests consent again when saved credentials lack plan permission", async () => {
+    const harness = await createHarness();
+
+    try {
+      harness.controls.scopes = "openid email profile";
+      await harness.run(login);
+      harness.controls.scopes =
+        "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
+      expect(await harness.run(login)).toMatchObject({ connected: true, planUsage: true });
+      expect(harness.authorizations[1]?.searchParams.get("client_id")).toBe("oaiapp_test");
+      expect(harness.authorizations[1]?.searchParams.get("prompt")).toBe("consent");
     } finally {
       await harness.close();
     }

@@ -34,9 +34,10 @@ future quota or eligibility.
 [Subscription inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
 
 If identity sign-in succeeds without plan-usage permission, status reports
-`planUsage: false`. Run `poppet auth login openai-chatgpt --consent` to request consent
-again. Usage limits, ineligible accounts, temporary failures, and interrupted
-streams produce separate errors. Model requests are not automatically retried.
+`planUsage: false`. Run `poppet auth login openai-chatgpt` again. Login automatically
+requests consent when saved credentials lack plan-usage permission. Returning
+sign-ins with plan permission do not force another consent prompt. Usage limits,
+ineligible accounts, temporary failures, and interrupted streams produce separate errors. Model requests are not automatically retried.
 The flow uses OAuth credentials and requires no API key or client secret.
 
 Model resolution reuses a successful catalog lookup for up to one minute within

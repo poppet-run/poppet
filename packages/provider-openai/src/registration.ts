@@ -21,13 +21,13 @@ const connection = Layer.effect(
     const model = yield* ChatGPTModel;
 
     return {
-      login: (options) =>
-        auth.login(options.consent).pipe(
+      login: () =>
+        auth.login.pipe(
           Effect.mapError(providerFailure),
           Effect.map((status) =>
             status.planUsage
               ? "Connected to ChatGPT. Plan usage is enabled; run auth verify --provider openai-chatgpt to check inference."
-              : "Connected to ChatGPT. Plan usage was not granted; run auth login openai-chatgpt --consent to enable it.",
+              : "Connected to ChatGPT. Plan usage was not granted; run auth login openai-chatgpt to enable it.",
           ),
         ),
       status: auth.status.pipe(
@@ -51,9 +51,8 @@ export const chatGPT: ProviderRegistration = {
   id: "openai-chatgpt",
   name: "ChatGPT",
   authentication: {
-    consent: true,
     apiKey: false,
-    help: "Browser sign-in; --consent enables ChatGPT plan usage.",
+    help: "Browser sign-in with ChatGPT plan-usage consent.",
   },
   layer: Layer.effectContext(
     Layer.build(

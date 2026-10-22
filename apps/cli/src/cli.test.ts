@@ -1023,7 +1023,7 @@ describe("CLI", () => {
         },
         {
           args: ["auth", "login", "openrouter", "--consent"],
-          message: "OpenRouter does not support --consent",
+          message: "Unrecognized flag: --consent",
         },
         {
           args: ["auth", "login", "openai-chatgpt", "--key-stdin"],
@@ -1117,7 +1117,7 @@ describe("CLI", () => {
       ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--at", at, "Hello"],
       ["auth", "status", "--provider", "openrouter", "--provider", "opencode-go"],
-      ["auth", "login", "--consent", "--consent"],
+      ["auth", "login", "--key-stdin", "--key-stdin"],
       ["worker", "start", "extra"],
       ["worker", "install", "--unknown"],
       ["worker", "unknown"],

@@ -8,7 +8,7 @@ import type { ConnectionError } from "#src/connection";
 import { OAuthClient } from "#src/oauth/client";
 
 interface AuthOperations {
-  readonly login: (consent: boolean) => Effect.Effect<ConnectionStatus, ConnectionError>;
+  readonly login: Effect.Effect<ConnectionStatus, ConnectionError>;
   readonly status: Effect.Effect<ConnectionStatus, ConnectionError>;
   /** Reads current credentials and refreshes near expiry while holding the auth permit. */
   readonly accessToken: Effect.Effect<Redacted.Redacted<string>, ConnectionError>;
@@ -75,7 +75,7 @@ export const ChatGPTAuthLive = Layer.effect(
       );
 
     return {
-      login: (consent) => semaphore.withPermit(login(consent)),
+      login: semaphore.withPermit(login),
       accessToken: semaphore.withPermit(accessToken),
       signOut,
       recordVerification,

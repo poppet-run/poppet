@@ -321,7 +321,6 @@ export const apiKeyProvider = (options: {
       id: options.id,
       name: options.name,
       authentication: {
-        consent: false,
         apiKey: true,
         help: `API key from hidden input, --key-stdin, or ${options.environment}.`,
       },

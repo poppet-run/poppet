@@ -38,7 +38,7 @@ const catalogFixture = () => {
         ? Effect.fail(new ConnectionError({ reason: "reconnect", message: "Sign in again." }))
         : Effect.succeed(Redacted.make(state.token)),
     ),
-    login: () => Effect.die("Unexpected login"),
+    login: Effect.die("Unexpected login"),
     status: Effect.die("Unexpected status"),
     signOut: Effect.die("Unexpected sign-out"),
     recordVerification: () => Effect.die("Unexpected verification"),
@@ -229,7 +229,7 @@ describe("ChatGPT provider inference", () => {
 
       const auth: ChatGPTAuth["Service"] = {
         accessToken: Effect.succeed(Redacted.make("test-token")),
-        login: () => Effect.die("Login must not run."),
+        login: Effect.die("Login must not run."),
         status: Effect.die("Status must not run."),
         signOut: Effect.die("Sign-out must not run."),
         recordVerification: () => Effect.die("Verification must not be recorded."),

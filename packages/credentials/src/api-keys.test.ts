@@ -267,7 +267,7 @@ test("login saves a key for inference and logout removes access", async () => {
 
     expect(await Effect.runPromise(connection.status)).toMatchObject({ connected: false });
     await Effect.runPromise(
-      connection.login({ consent: false, keyStdin: true }).pipe(
+      connection.login({ keyStdin: true }).pipe(
         Effect.provideService(CredentialInput, {
           readKey: () => Effect.succeed(Redacted.make("saved-key")),
         }),

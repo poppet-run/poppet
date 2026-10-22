@@ -57,19 +57,19 @@ the selected provider's dependencies and never falls back to another model.
 
 To verify a provider without changing `POPPET_PROVIDER`, use
 `poppet auth verify <model-id> --provider openrouter`. ChatGPT's browser
-login and `--consent` remain available through `auth login openai-chatgpt`.
+login handles plan-usage consent through `auth login openai-chatgpt`.
 
-| Command                                            | Action                                             |
-| -------------------------------------------------- | -------------------------------------------------- |
-| `auth login [provider] [--consent \| --key-stdin]` | Sign in or save an API key.                        |
-| `auth status [provider]`                           | Show connection status without secrets.            |
-| `auth models [provider]`                           | List available models.                             |
-| `auth verify [model]`                              | Verify inference and a local tool round trip.      |
-| `auth logout [provider]`                           | Clear that provider's saved connection.            |
-| `provider models`                                  | List supported models for the configured provider. |
-| `provider verify`                                  | Verify the configured provider and model.          |
+| Command                               | Action                                             |
+| ------------------------------------- | -------------------------------------------------- |
+| `auth login [provider] [--key-stdin]` | Sign in or save an API key.                        |
+| `auth status [provider]`              | Show connection status without secrets.            |
+| `auth models [provider]`              | List available models.                             |
+| `auth verify [model]`                 | Verify inference and a local tool round trip.      |
+| `auth logout [provider]`              | Clear that provider's saved connection.            |
+| `provider models`                     | List supported models for the configured provider. |
+| `provider verify`                     | Verify the configured provider and model.          |
 
-`--consent` applies to ChatGPT; `--key-stdin` applies to API-key providers.
+`--key-stdin` applies to API-key providers.
 See [ChatGPT](providers/openai-chatgpt.md), [OpenCode Go](providers/opencode-go.md),
 [OpenRouter](providers/openrouter.md), and [API-key handling](configuration.md#api-keys)
 for provider-specific setup and logout behavior.

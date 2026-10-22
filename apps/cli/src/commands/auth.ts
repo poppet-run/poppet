@@ -31,13 +31,6 @@ export const authCommand = (context: CLIContext) => {
           }),
         );
 
-      if (command.consent && !entry.authentication.consent)
-        return yield* Effect.fail(
-          new UsageError({
-            message: `${entry.name} does not support --consent. ${entry.authentication.help}`,
-          }),
-        );
-
       return yield* Effect.gen(function* () {
         if (command.action === "models") return yield* showModels;
 
@@ -81,11 +74,6 @@ export const authCommand = (context: CLIContext) => {
           ? {
               target: targetArgument,
               provider: providerFlag,
-              consent: Flag.Boolean("consent").pipe(
-                Flag.withDescription("Request ChatGPT consent"),
-                Flag.atMost(1),
-                Flag.map(([value = false]) => value),
-              ),
               keyStdin: Flag.Boolean("key-stdin").pipe(
                 Flag.withDescription("Read an API key from stdin"),
                 Flag.atMost(1),
@@ -113,7 +101,6 @@ export const authCommand = (context: CLIContext) => {
             action,
             provider: selected,
             model: action === "verify" ? target : null,
-            consent: input.consent ?? false,
             keyStdin: input.keyStdin ?? false,
           });
         }).pipe(Effect.provide(runtime.config)),

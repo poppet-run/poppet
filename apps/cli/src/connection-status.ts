@@ -25,11 +25,8 @@ export const createConnectionStatus = () => {
           source: metadata.source ?? null,
           observedAt: Date.now(),
           cached: false,
-          action: !metadata.connected
-            ? `Run auth login ${id}.`
-            : metadata.planUsage === false
-              ? `Run auth login ${id} --consent.`
-              : null,
+          action:
+            !metadata.connected || metadata.planUsage === false ? `Run auth login ${id}.` : null,
         };
 
         observed.set(id, snapshot);

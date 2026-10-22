@@ -256,7 +256,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
   const registration: ProviderRegistration = {
     id: description.provider,
     name: "Chat provider",
-    authentication: { consent: false, apiKey: false, help: "Test" },
+    authentication: { apiKey: false, help: "Test" },
     layer: Layer.merge(provider, connection),
   };
 

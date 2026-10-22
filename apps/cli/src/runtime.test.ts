@@ -56,7 +56,7 @@ const fakeModel = (provider: ProviderId, id: string): ModelOperations => ({
 const register = (id: ProviderId, provider: Layer.Layer<Provider>): ProviderRegistration => ({
   id,
   name: id,
-  authentication: { consent: false, apiKey: false, help: "Test connection" },
+  authentication: { apiKey: false, help: "Test connection" },
   layer: Layer.merge(
     provider,
     Layer.succeed(ProviderConnection, {
@@ -188,7 +188,7 @@ test("running services retain their startup configuration when the file is edite
     {
       id,
       name: "Test",
-      authentication: { apiKey: false, consent: false, help: "Test" },
+      authentication: { apiKey: false, help: "Test" },
       layer: Layer.effectContext(
         Effect.gen(function* () {
           expect((yield* ProviderEnvironment).applicationName).toBe("Startup name");
@@ -270,7 +270,7 @@ test("worker connection status strips secrets, identifies consent and login acti
     {
       id,
       name: "Test",
-      authentication: { apiKey: false, consent: true, help: "Test" },
+      authentication: { apiKey: false, help: "Test" },
       layer: Layer.merge(
         layer,
         Layer.succeed(Provider, {
@@ -290,7 +290,7 @@ test("worker connection status strips secrets, identifies consent and login acti
         account: "person@example.com",
         planUsage: false,
         cached: false,
-        action: `Run auth login ${id} --consent.`,
+        action: `Run auth login ${id}.`,
       });
       expect(JSON.stringify(first)).not.toContain("must-not-appear");
       busy = true;
@@ -325,7 +325,7 @@ test("model resolution shares connection metadata with status queries within one
     {
       id,
       name: "Test",
-      authentication: { apiKey: false, consent: false, help: "Test" },
+      authentication: { apiKey: false, help: "Test" },
       layer: Layer.merge(
         Layer.succeed(Provider, {
           id,

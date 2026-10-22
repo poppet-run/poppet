@@ -8,6 +8,5 @@ export interface AuthCommand {
   readonly action: typeof Action.Type;
   readonly provider: ProviderId | null;
   readonly model: string | null;
-  readonly consent: boolean;
   readonly keyStdin: boolean;
 }
