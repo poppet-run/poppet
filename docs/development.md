@@ -80,7 +80,8 @@ apps/
   cli/                    @poppet/cli
     src/
       main.ts             Bun process entry point and Effect runtime
-      cli.ts              Command routing and terminal output
+      cli.ts              Command tree assembly and CLI parsing
+      commands/           Per-area command trees, runners, shared context, and flags
       chat.ts             Chat commands, streaming output, session inspection
       runtime.ts          Generic selection and host configuration layers
       providers.ts        Provider registrations; first entry is the default
