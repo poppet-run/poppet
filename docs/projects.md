@@ -1,6 +1,6 @@
 # Project context
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 Select a project explicitly to give a chat or task its own instructions, facts,
 and note selection. Poppet never infers a project from your working directory or

@@ -1,6 +1,6 @@
 # Poppet architecture
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 The CLI runs chat locally when no worker owns the data directory. A running
 worker handles CLI requests, scheduled tasks, and messaging through one store

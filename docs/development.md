@@ -1,6 +1,6 @@
 # Development
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 ## Commands and tooling
 

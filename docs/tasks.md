@@ -1,6 +1,6 @@
 # Scheduled tasks
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 Scheduled [MCP tools](mcp.md) are denied by default. A server's `scheduledTools`
 must be an explicitly reviewed read-only subset of its interactive `tools`.

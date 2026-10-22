@@ -1,6 +1,6 @@
 # Getting started
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 ## Requirements
 

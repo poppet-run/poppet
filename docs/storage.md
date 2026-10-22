@@ -1,6 +1,6 @@
 # Storage
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 Open or inspect the local database:
 

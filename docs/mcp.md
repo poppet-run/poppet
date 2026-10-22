@@ -1,6 +1,6 @@
 # MCP tools
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 Poppet can connect to local stdio MCP servers and offer explicitly allowed tools
 in CLI, messaging, and scheduled runs. MCP is disabled until you add an enabled

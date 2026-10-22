@@ -1,6 +1,6 @@
 # OpenRouter
 
-[Documentation index](../index.md)
+[Documentation index](../README.md)
 
 For OpenRouter, discovery uses its public catalog without an API key. Select a
 concrete model ID returned by `provider models` and save a key through login:

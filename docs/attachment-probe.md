@@ -1,6 +1,6 @@
 # Documents and local voice compatibility
 
-[Documentation index](index.md) · [Telegram usage](gateways/telegram.md#documents-and-voice)
+[Documentation index](README.md) · [Telegram usage](gateways/telegram.md#documents-and-voice)
 
 Probed on macOS arm64 with Bun 1.4.3 on 2026-10-21. These measurements cover local
 processing of disposable fixtures, independently of Telegram and model inference.

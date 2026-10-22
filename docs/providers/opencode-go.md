@@ -1,6 +1,6 @@
 # OpenCode Go
 
-[Documentation index](../index.md)
+[Documentation index](../README.md)
 
 For OpenCode Go, discovery uses its public catalog without an API key. Log in
 with a hidden key prompt, then select a model:

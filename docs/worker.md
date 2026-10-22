@@ -1,6 +1,6 @@
 # Worker
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 ## Foreground modes
 

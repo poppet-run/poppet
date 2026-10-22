@@ -1,6 +1,6 @@
 # Browser automation
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 Poppet uses agent-browser to navigate websites, read rendered text and
 accessibility snapshots, and perform explicitly requested form interactions.

@@ -1,6 +1,6 @@
 # Poppet implementation plan
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 Phases 1–21 and 23–26 are implemented with automated checks. Live validation
 remains outstanding where listed in each phase.

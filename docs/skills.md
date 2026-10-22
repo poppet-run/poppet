@@ -1,6 +1,6 @@
 # Local Markdown skills
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 A skill is an owner-written procedure selected when creating a chat or scheduled
 task. It uses Poppet's existing tools and permissions. Create one file at

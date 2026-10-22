@@ -1,6 +1,6 @@
 # Command line
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 After [installing the command](getting-started.md#install-the-command), run `poppet` from any directory. Run
 `poppet --help` for the current command syntax. Angle-bracket values below

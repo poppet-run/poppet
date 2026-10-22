@@ -1,6 +1,6 @@
 # WhatsApp
 
-[Documentation index](../index.md)
+[Documentation index](../README.md)
 
 ## Account setup and pairing
 

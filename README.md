@@ -35,11 +35,11 @@ workloads only.
 Save persistent settings in `~/.config/poppet/config.json`; environment variables
 override file values. See [configuration](docs/configuration.md) for supported fields.
 See [getting started](docs/getting-started.md) for setup and session continuation,
-or choose another [provider](docs/index.md#providers).
+or choose another [provider](docs/README.md#providers).
 
 ## Documentation
 
-The [documentation index](docs/index.md) links to all guides and references.
+The [documentation index](docs/README.md) links to all guides and references.
 
 - [Configuration](docs/configuration.md)
 - [Command line](docs/cli.md)

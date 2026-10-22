@@ -1,6 +1,6 @@
 # ChatGPT
 
-[Documentation index](../index.md)
+[Documentation index](../README.md)
 
 ## Sign in and verify
 

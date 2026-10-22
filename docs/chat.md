@@ -1,6 +1,6 @@
 # Chat
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 ## Start and continue a session
 

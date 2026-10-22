@@ -1,6 +1,6 @@
 # Notes
 
-[Documentation index](index.md)
+[Documentation index](README.md)
 
 `read_note`, `search_notes`, and `save_note` operate within `POPPET_NOTES_DIR`.
 Use UTF-8 `.md`, `.markdown`, or `.txt` files. Relative paths are preferred;
