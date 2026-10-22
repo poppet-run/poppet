@@ -85,7 +85,7 @@ are retained. Restarting that old installation alone keeps its saved command and
 now runs scheduling only.
 
 API keys are excluded from the launch agent's environment. Save them first with
-`auth login openrouter` or `auth login opencode-go`; ChatGPT uses its existing
+`provider login openrouter` or `provider login opencode-go`; ChatGPT uses its existing
 protected sign-in storage. The worker refreshes credentials through the same
 provider code as chat. Installation does not verify live inference.
 

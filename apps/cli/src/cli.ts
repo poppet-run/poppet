@@ -8,7 +8,6 @@ import { channels } from "#src/channel-registry";
 import { type ChatWriter, writeChatText, writeChatThinking } from "#src/chat";
 import { readChatLine } from "#src/chat-prompt";
 import { commandArgs } from "#src/command-args";
-import { authCommand, describeProviders } from "#src/commands/auth";
 import { chatCommand } from "#src/commands/chat";
 import { configCommand } from "#src/commands/config";
 import { createCLIContext } from "#src/commands/context";
@@ -17,7 +16,7 @@ import { gatewayCommand } from "#src/commands/gateway";
 import { mcpCommand } from "#src/commands/mcp";
 import { memoryCommand } from "#src/commands/memory";
 import { projectsCommand } from "#src/commands/projects";
-import { providerCommand } from "#src/commands/provider";
+import { describeProviders, providerCommand } from "#src/commands/provider";
 import { skillsCommand } from "#src/commands/skills";
 import { storeCommand } from "#src/commands/store";
 import { tasksCommand } from "#src/commands/tasks";
@@ -48,7 +47,6 @@ export const makeCLI = (
     Command.withSubcommands([
       configCommand(context),
       storeCommand(context),
-      authCommand(context),
       mcpCommand(context),
       webCommand(context),
       providerCommand(context),

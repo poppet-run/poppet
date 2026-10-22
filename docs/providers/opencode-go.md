@@ -10,9 +10,8 @@ Bash / POSIX sh:
 ```sh
 export POPPET_PROVIDER=opencode-go
 export POPPET_MODEL=glm-5.3
-poppet auth login opencode-go
+poppet provider login opencode-go
 poppet provider models
-poppet provider verify
 ```
 
 fish:
@@ -20,9 +19,8 @@ fish:
 ```fish
 set -lx POPPET_PROVIDER opencode-go
 set -lx POPPET_MODEL glm-5.3
-poppet auth login opencode-go
+poppet provider login opencode-go
 poppet provider models
-poppet provider verify
 ```
 
 ## Models and workloads
@@ -44,6 +42,6 @@ See [API keys](../configuration.md#api-keys) for protected storage, environment
 overrides, stdin input, and logout. OpenCode Go uses `POPPET_OPENCODE_GO_API_KEY`
 and `<POPPET_DATA_DIR>/auth/opencode-go.json`.
 
-Use `chat new --coding` for a coding session; see [chat](../chat.md). Verification
+Use `chat new --coding` for a coding session; see [chat](../chat.md). Chat
 consumes provider usage. Local tests do not establish live account access; see
 [development and validation](../development.md#validation).

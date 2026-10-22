@@ -169,8 +169,8 @@ allows no notes. Directory deletion retains facts and saved history. See
 The shared interface defines normalized messages and provider continuation
 data independently of durable conversation storage.
 The agent depends on `ModelResolver`, supplied by the CLI runtime, and calls the
-resolved model through the shared contract. `provider models` and
-`provider verify` also exercise this boundary.
+resolved model through the shared contract. `provider models` lists normalized model descriptions through the same provider
+interface.
 
 | Workspace                     | Responsibility                                                                       |
 | ----------------------------- | ------------------------------------------------------------------------------------ |

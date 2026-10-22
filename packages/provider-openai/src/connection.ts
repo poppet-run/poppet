@@ -105,7 +105,7 @@ export const requestFailure = (
     ].includes(code ?? "")
   ) {
     reason = "reconnect";
-    message = "The ChatGPT connection needs a new sign-in. Run bun run start auth login.";
+    message = "The ChatGPT connection needs a new sign-in. Run bun run start provider login.";
   } else if (
     status >= 500 ||
     status === 429 ||

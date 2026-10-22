@@ -450,7 +450,7 @@ describe("CLI", () => {
         providers: ["openrouter"],
         connections: [
           { provider: "openai-chatgpt", connected: false },
-          { provider: "openrouter", connected: false, action: "Run auth login openrouter." },
+          { provider: "openrouter", connected: false, action: "Run provider login openrouter." },
         ],
       });
     } finally {
@@ -649,7 +649,7 @@ describe("CLI", () => {
           {
             provider: "openai-chatgpt",
             connected: false,
-            action: "Run auth login openai-chatgpt.",
+            action: "Run provider login openai-chatgpt.",
           },
         ],
       });
@@ -905,11 +905,11 @@ describe("CLI", () => {
         const unrelated = join(directory, "auth/other-provider.json");
         await writeFile(unrelated, "other-provider-details");
 
-        const logout = await invoke(["auth", "logout"], environment);
+        const logout = await invoke(["provider", "logout"], environment);
         expect(logout.exitCode).toBe(0);
         expect(logout.stdout).toContain("All local ChatGPT connection details were deleted");
         expect(await Bun.file(path).exists()).toBe(false);
-        const status = await invoke(["auth", "status"], environment);
+        const status = await invoke(["provider", "status"], environment);
         expect(status.exitCode).toBe(0);
         expect(JSON.parse(status.stdout)).toMatchObject({
           connected: false,
@@ -918,7 +918,7 @@ describe("CLI", () => {
           verification: null,
         });
         expect(await Bun.file(path).exists()).toBe(false);
-        expect((await invoke(["auth", "logout"], environment)).exitCode).toBe(0);
+        expect((await invoke(["provider", "logout"], environment)).exitCode).toBe(0);
         expect((await readdir(join(directory, "auth"))).toSorted()).toEqual([
           "other-provider.json",
           "owner.lock.sqlite",
@@ -935,12 +935,12 @@ describe("CLI", () => {
     const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "opencode-go" };
 
     try {
-      const router = await invoke(["auth", "login", "openrouter"], {
+      const router = await invoke(["provider", "login", "openrouter"], {
         ...environment,
         POPPET_OPENROUTER_API_KEY: "router-test-secret",
       });
 
-      const go = await invoke(["auth", "login"], {
+      const go = await invoke(["provider", "login"], {
         ...environment,
         POPPET_OPENCODE_GO_API_KEY: "go-test-secret",
       });
@@ -950,11 +950,11 @@ describe("CLI", () => {
       expect(router.stdout).toContain("openrouter");
 
       const routerStatus = await invoke(
-        ["auth", "status", "--provider", "openrouter"],
+        ["provider", "status", "--provider", "openrouter"],
         environment,
       );
 
-      const goStatus = await invoke(["auth", "status"], environment);
+      const goStatus = await invoke(["provider", "status"], environment);
       expect(JSON.parse(routerStatus.stdout)).toEqual({
         provider: "openrouter",
         connected: true,
@@ -977,15 +977,16 @@ describe("CLI", () => {
         "openrouter.json",
         "openrouter.lock.sqlite",
       ]);
-      const logout = await invoke(["auth", "logout", "openrouter"], environment);
+      const logout = await invoke(["provider", "logout", "openrouter"], environment);
       expect(logout.exitCode).toBe(0);
       expect(
-        JSON.parse((await invoke(["auth", "status", "openrouter"], environment)).stdout).connected,
+        JSON.parse((await invoke(["provider", "status", "openrouter"], environment)).stdout)
+          .connected,
       ).toBe(false);
-      expect(JSON.parse((await invoke(["auth", "status"], environment)).stdout).connected).toBe(
+      expect(JSON.parse((await invoke(["provider", "status"], environment)).stdout).connected).toBe(
         true,
       );
-      const chatGPT = await invoke(["auth", "status", "openai-chatgpt"], environment);
+      const chatGPT = await invoke(["provider", "status", "openai-chatgpt"], environment);
       expect(chatGPT.exitCode).toBe(0);
       expect(JSON.parse(chatGPT.stdout)).toMatchObject({ connected: false, planUsage: false });
     } finally {
@@ -1003,20 +1004,20 @@ describe("CLI", () => {
     };
 
     try {
-      const status = await invoke(["auth", "status"], environment);
+      const status = await invoke(["provider", "status"], environment);
       expect(JSON.parse(status.stdout)).toEqual({
         provider: "openrouter",
         connected: true,
         source: "environment",
       });
       expect(await readdir(directory)).toEqual([]);
-      const login = await invoke(["auth", "login"], environment);
+      const login = await invoke(["provider", "login"], environment);
       expect(login.exitCode).toBe(0);
       expect(login.stdout + login.stderr).not.toContain("env-test-secret");
       expect(
         JSON.parse(
           (
-            await invoke(["auth", "status"], {
+            await invoke(["provider", "status"], {
               POPPET_DATA_DIR: directory,
               POPPET_PROVIDER: "openrouter",
             })
@@ -1024,7 +1025,7 @@ describe("CLI", () => {
         ).source,
       ).toBe("stored");
 
-      const invalid = await invoke(["auth", "status"], {
+      const invalid = await invoke(["provider", "status"], {
         ...environment,
         POPPET_OPENROUTER_API_KEY: "",
       });
@@ -1036,27 +1037,27 @@ describe("CLI", () => {
     }
   });
 
-  test("rejects bad auth options before creating credentials", async () => {
+  test("rejects bad provider options before creating credentials", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-invalid-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "openrouter" };
 
     try {
       const cases = [
-        { args: ["auth", "login", "unknown"], message: "Unknown provider unknown" },
-        { args: ["auth", "login", "--provider"], message: "Missing value for flag --provider" },
+        { args: ["provider", "login", "unknown"], message: "Unknown provider unknown" },
+        { args: ["provider", "login", "--provider"], message: "Missing value for flag --provider" },
         {
-          args: ["auth", "login", "openrouter", "--provider", "opencode-go"],
+          args: ["provider", "login", "openrouter", "--provider", "opencode-go"],
           message: "Choose a provider either positionally or with --provider, not both",
         },
         {
-          args: ["auth", "login", "openrouter", "--consent"],
+          args: ["provider", "login", "openrouter", "--consent"],
           message: "Unrecognized flag: --consent",
         },
         {
-          args: ["auth", "login", "openai-chatgpt", "--key-stdin"],
+          args: ["provider", "login", "openai-chatgpt", "--key-stdin"],
           message: "ChatGPT does not support --key-stdin",
         },
-        { args: ["auth", "status", "--key-stdin"], message: "Unrecognized flag: --key-stdin" },
+        { args: ["provider", "status", "--key-stdin"], message: "Unrecognized flag: --key-stdin" },
       ];
 
       for (const { args, message } of cases) {
@@ -1112,6 +1113,9 @@ describe("CLI", () => {
 
     const paths = [
       "config",
+      "provider",
+      "provider login",
+      "provider models",
       "chat new",
       "tasks add",
       "tasks run",
@@ -1131,6 +1135,13 @@ describe("CLI", () => {
         expect(result.stdout).toContain("poppet");
       }
 
+      const providerHelp = await invoke(["provider", "--help"], environment);
+
+      for (const action of ["login", "logout", "status", "models"])
+        expect(providerHelp.stdout).toContain(`  ${action} `);
+
+      expect(providerHelp.stdout).not.toContain("verify");
+
       const taskHelp = await invoke(["tasks", "add", "--help"], environment);
       expect(taskHelp.stdout).toContain("--cron");
       expect(taskHelp.stdout).toContain("--tz");
@@ -1148,6 +1159,9 @@ describe("CLI", () => {
 
     const commands = [
       ["config", "unexpected-argument"],
+      ["auth", "status"],
+      ["auth", "verify"],
+      ["provider", "verify"],
       ["tasks", "run-now", "saved-task"],
       ["tasks", "status"],
       ["tasks", "work"],
@@ -1158,8 +1172,8 @@ describe("CLI", () => {
       ["tasks", "add", "Later", "--cron", "0 9 * * *", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--at", at, "Hello"],
-      ["auth", "status", "--provider", "openrouter", "--provider", "opencode-go"],
-      ["auth", "login", "--key-stdin", "--key-stdin"],
+      ["provider", "status", "--provider", "openrouter", "--provider", "opencode-go"],
+      ["provider", "login", "--key-stdin", "--key-stdin"],
       ["worker", "start", "extra"],
       ["worker", "install", "--unknown"],
       ["worker", "unknown"],
@@ -1349,7 +1363,7 @@ describe("CLI", () => {
         };
 
         const settings = await invoke(["config"], environment);
-        const missingModel = await invoke(["provider", "verify"], environment);
+        const missingModel = await invoke(["chat", "new", "Hello"], environment);
 
         expect(settings.exitCode).toBe(0);
         expect(JSON.parse(settings.stdout)).toMatchObject({ provider, model: null });
@@ -1363,24 +1377,20 @@ describe("CLI", () => {
     },
   );
 
-  test("shows disconnected auth status and requires sign-in before verification", async () => {
+  test("shows disconnected provider status without creating credentials", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-test-"));
 
     try {
       const environment = { POPPET_DATA_DIR: directory };
-      const status = await invoke(["auth", "status"], environment);
+      const status = await invoke(["provider", "status"], environment);
       expect(status.exitCode).toBe(0);
       expect(JSON.parse(status.stdout)).toMatchObject({
         connected: false,
         planUsage: false,
         verification: null,
       });
-      const verification = await invoke(["auth", "verify"], environment);
-      expect(verification.exitCode).toBe(1);
-      expect(verification.stdout).toBe("");
-      expect(verification.stderr).toContain("auth login");
       expect(await Bun.file(join(directory, "auth/connection.json")).exists()).toBe(false);
-      const invalid = await invoke(["auth", "login", "--unknown"], environment);
+      const invalid = await invoke(["provider", "login", "--unknown"], environment);
       expect(invalid.exitCode).toBe(1);
       expect(invalid.stderr).toContain("Unrecognized flag: --unknown");
     } finally {

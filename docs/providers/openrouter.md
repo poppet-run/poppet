@@ -11,8 +11,7 @@ Bash / POSIX sh:
 export POPPET_PROVIDER=openrouter
 poppet provider models
 export POPPET_MODEL='replace-with-model-id'
-poppet auth login openrouter
-poppet provider verify
+poppet provider login openrouter
 ```
 
 fish:
@@ -21,8 +20,7 @@ fish:
 set -lx POPPET_PROVIDER openrouter
 poppet provider models
 set -lx POPPET_MODEL 'replace-with-model-id'
-poppet auth login openrouter
-poppet provider verify
+poppet provider login openrouter
 ```
 
 ## Credentials
@@ -33,8 +31,7 @@ and `<POPPET_DATA_DIR>/auth/openrouter.json`.
 
 ## Models and requests
 
-Verification requires a catalog model with tool support and makes two requests
-that consume OpenRouter credits. The key is redacted and omitted from `config`.
+Chat requests consume OpenRouter credits. The key is redacted and omitted from `config`.
 The adapter accepts both assistant and coding workloads through Chat Completions.
 It derives tools, temperature, output limits, and context size from catalog
 metadata. Models that generate images or audio and dynamic model routers such as
@@ -49,4 +46,4 @@ requests are not automatically retried.
 [reasoning continuation](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens),
 and [stream errors](https://openrouter.ai/docs/api/reference/streaming).
 
-See [provider selection](../cli.md#providers-and-models) for verification with an explicit provider and [development and validation](../development.md#validation) for test coverage and live-check limits.
+See [provider selection](../cli.md#providers-and-models) for model configuration and [development and validation](../development.md#validation) for test coverage and live-check limits.

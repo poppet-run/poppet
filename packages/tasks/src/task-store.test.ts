@@ -675,7 +675,7 @@ describe.concurrent("task schedules", () => {
                 jobId: job.id,
                 runId: run.id,
                 failureReason: "provider:authentication",
-                action: `Run auth login test-provider, then tasks retry ${active.occurrence.id}.`,
+                action: `Run provider login test-provider, then tasks retry ${active.occurrence.id}.`,
               },
             ],
           });

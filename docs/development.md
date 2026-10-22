@@ -217,7 +217,7 @@ to shared schemas, storage, or command routing. Lint enforces the import boundar
 See [provider registration and ownership](architecture.md#provider-registration-and-ownership)
 for the contract and integration steps.
 
-`auth models` now returns normalized model descriptions for every provider,
+`provider models` now returns normalized model descriptions for every provider,
 including ChatGPT. Wire protocol names are internal and omitted from those descriptions.
 Existing credential files and conversation records keep their formats.
 
@@ -282,9 +282,8 @@ phase-specific validation and remaining work.
 Use small prompts and the same `POPPET_DATA_DIR` throughout. Select an
 assistant-capable provider and model for messaging and scheduled tasks.
 
-- [ ] Sign in to each provider you use, select a supported model, and run
-      `poppet provider verify`. Expect inference and the tool round trip to
-      succeed.
+- [ ] Sign in to each provider you use, select a supported model, and start a
+      chat. Ask it to use a local read-only tool and expect inference and the tool round trip to succeed.
 - [ ] Run `poppet chat interactive`. Send two messages, confirm context is
       retained, then cancel a longer request with Ctrl-C. Start another chat and confirm
       it works.

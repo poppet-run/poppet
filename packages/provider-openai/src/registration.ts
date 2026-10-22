@@ -26,8 +26,8 @@ const connection = Layer.effect(
           Effect.mapError(providerFailure),
           Effect.map((status) =>
             status.planUsage
-              ? "Connected to ChatGPT. Plan usage is enabled; run auth verify --provider openai-chatgpt to check inference."
-              : "Connected to ChatGPT. Plan usage was not granted; run auth login openai-chatgpt to enable it.",
+              ? "Connected to ChatGPT. Plan usage is enabled."
+              : "Connected to ChatGPT. Plan usage was not granted; run provider login openai-chatgpt to enable it.",
           ),
         ),
       status: auth.status.pipe(

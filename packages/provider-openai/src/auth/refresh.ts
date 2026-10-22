@@ -25,7 +25,7 @@ export const accessTokenWorkflow = Effect.gen(function* () {
         new ConnectionError({
           reason: "plan_disabled",
           message:
-            "ChatGPT plan usage was not granted. Run auth login openai-chatgpt to enable it.",
+            "ChatGPT plan usage was not granted. Run provider login openai-chatgpt to enable it.",
         }),
       );
     const now = (yield* DateTime.nowAsDate).getTime();
@@ -90,7 +90,7 @@ export const accessTokenWorkflow = Effect.gen(function* () {
         new ConnectionError({
           reason: "plan_disabled",
           message:
-            "The renewed connection no longer permits ChatGPT plan usage. Run auth login openai-chatgpt to enable it.",
+            "The renewed connection no longer permits ChatGPT plan usage. Run provider login openai-chatgpt to enable it.",
         }),
       );
 
