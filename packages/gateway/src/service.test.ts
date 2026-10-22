@@ -396,16 +396,25 @@ describe.concurrent("messaging gateway", () => {
             true,
           );
 
-          // Exercise more than the delivery queue's 64-row page through scheduled runs.
-          for (let index = 1; index <= 66; index++) {
-            if (index === 66)
-              yield* Effect.promise(() =>
-                writeFile(join(state.directory, "notes/release.md"), "v2"),
-              );
+          repo.reconcile(60_000);
+          const first = repo.claim(60_000)!;
+          yield* executeOccurrence(repo, first.occurrence, first.task);
+          const baseline = repo.occurrence(first.occurrence.id);
+
+          // Reuse the completed journal to fill a 64-row page without replaying the agent.
+          for (let index = 2; index <= 65; index++) {
             repo.reconcile(index * 60_000);
-            const active = repo.claim(index * 60_000)!;
-            yield* executeOccurrence(repo, active.occurrence, active.task);
+            const quiet = repo.claim(index * 60_000)!;
+            repo.link(quiet.occurrence.id, baseline.sessionId!, baseline.runId!);
+            repo.finish(quiet.occurrence.id, "completed", null, index * 60_000);
           }
+
+          expect(repo.occurrences(job.id)).toHaveLength(65);
+          expect(repo.monitoring.latest(job.id)?.decision).toBe("unchanged");
+          yield* Effect.promise(() => writeFile(join(state.directory, "notes/release.md"), "v2"));
+          repo.reconcile(66 * 60_000);
+          const changed = repo.claim(66 * 60_000)!;
+          yield* executeOccurrence(repo, changed.occurrence, changed.task);
 
           const alerts = (yield* GatewayRepository).scheduled("discord");
           expect(alerts).toHaveLength(1);
