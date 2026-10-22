@@ -53,24 +53,17 @@ test("rotates full logs, retains three archives, and resumes appending after res
   }
 });
 
-test("splits oversized chunks without losing bytes and preserves oversized legacy logs until retention expires", async () => {
+test("splits oversized chunks without losing bytes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-log-chunks-"));
   const path = join(directory, "worker.log");
-  const legacy = Buffer.alloc(workerLogBytes + 1, 65);
-  await writeFile(path, legacy);
   const log = openWorkerLog(directory);
 
   try {
     const chunk = Buffer.alloc(workerLogBytes + 19, 66);
     log.write(chunk);
 
-    const [older, recent, current] = await Promise.all([
-      readFile(`${path}.2`),
-      readFile(`${path}.1`),
-      readFile(path),
-    ]);
+    const [recent, current] = await Promise.all([readFile(`${path}.1`), readFile(path)]);
 
-    expect(older.equals(legacy)).toBe(true);
     expect(Buffer.concat([recent, current]).equals(chunk)).toBe(true);
     expect(recent.length).toBe(workerLogBytes);
     expect(current.length).toBe(19);

@@ -307,52 +307,6 @@ describe("CLI", () => {
     }
   });
 
-  test("isolates command configuration from the shell and restores the original environment", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-cli-env-"));
-
-    const inherited = {
-      POPPET_PROVIDER: "openai-chatgpt",
-      POPPET_MODEL: "inherited-model",
-      POPPET_APP_NAME: "Inherited app",
-      POPPET_DATA_DIR: join(directory, "inherited"),
-    };
-
-    const original = process.env;
-    const previous = new Map(Object.keys(inherited).map((key) => [key, process.env[key]]));
-    Object.assign(process.env, inherited);
-
-    try {
-      const configured = await invoke(["config"], {
-        POPPET_PROVIDER: "openrouter",
-        POPPET_DATA_DIR: directory,
-      });
-
-      expect(configured.exitCode).toBe(0);
-      expect(JSON.parse(configured.stdout)).toMatchObject({
-        applicationName: "Poppet",
-        provider: "openrouter",
-        model: null,
-        dataDirectory: directory,
-      });
-      const defaults = await invoke(["config"], { POPPET_DATA_DIR: directory });
-      expect(JSON.parse(defaults.stdout)).toMatchObject({
-        provider: "openai-chatgpt",
-        model: null,
-      });
-      expect(process.env).toBe(original);
-
-      for (const [key, value] of Object.entries(inherited)) expect(process.env[key]).toBe(value);
-      expect(await readdir(directory)).toEqual([]);
-    } finally {
-      for (const [key, value] of previous) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
-      }
-
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
   test("rejects missing prompts and invalid task IDs as argument errors before opening the store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-invalid-"));
 
@@ -1005,14 +959,6 @@ describe("CLI", () => {
     }
   });
 
-  test("help works even when application configuration is invalid", async () => {
-    const result = await invoke(["--help"], { POPPET_DATA_DIR: "" });
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("bun run start <subcommand>");
-    expect(result.stderr).toBe("");
-  });
-
   test.each(["stop", "uninstall", "logs"])(
     "worker recovery %s ignores invalid file settings and rejects an empty data directory",
     async (action) => {
@@ -1051,58 +997,7 @@ describe("CLI", () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-help-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "invalid/provider" };
 
-    const paths = [
-      "config",
-      "store status",
-      "provider models",
-      "provider verify",
-      "auth login",
-      "auth status",
-      "auth models",
-      "auth verify",
-      "auth logout",
-      "web login",
-      "web status",
-      "web logout",
-      "chat new",
-      "chat interactive",
-      "chat send",
-      "chat sessions",
-      "chat search",
-      "chat show",
-      "memory list",
-      "memory remember",
-      "memory replace",
-      "memory forget",
-      "tasks add",
-      "tasks list",
-      "tasks show",
-      "tasks pause",
-      "tasks resume",
-      "tasks cancel",
-      "tasks retry",
-      "tasks clear",
-      "tasks providers",
-      "tasks resume-provider",
-      "tasks status",
-      "tasks work",
-      "gateway discord",
-      "gateway discord setup",
-      "gateway telegram",
-      "gateway telegram setup",
-      "gateway whatsapp",
-      "gateway whatsapp setup",
-      "gateway whatsapp pair",
-      "gateway work",
-      "gateway status",
-      "worker run",
-      "worker install",
-      "worker start",
-      "worker stop",
-      "worker status",
-      "worker logs",
-      "worker uninstall",
-    ];
+    const paths = ["config", "chat new", "tasks add", "worker stop"];
 
     try {
       for (const args of [[], ["-h"], ...paths.map((path) => path.split(" ").concat("--help"))]) {

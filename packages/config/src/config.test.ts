@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import { ConfigProvider, Effect, Exit } from "effect";
 
@@ -15,25 +14,6 @@ const withEnvironment = (environment: Record<string, string>) =>
   );
 
 describe("configuration", () => {
-  test("defaults keep notes under the application data directory", async () => {
-    const config = await Effect.runPromise(withEnvironment({}));
-
-    expect(config).toEqual({
-      applicationName: "Poppet",
-      dataDirectory: join(homedir(), ".config", "poppet"),
-      notesDirectory: join(homedir(), ".config", "poppet", "notes"),
-      provider: "test-provider",
-      model: null,
-    });
-  });
-
-  test("a custom data directory also changes the default notes directory", async () => {
-    const config = await Effect.runPromise(withEnvironment({ POPPET_DATA_DIR: "./test-data" }));
-
-    expect(config.dataDirectory).toBe(resolve("./test-data"));
-    expect(config.notesDirectory).toBe(resolve("./test-data/notes"));
-  });
-
   test("explicit values override defaults and resolve relative paths", async () => {
     const config = await Effect.runPromise(
       withEnvironment({

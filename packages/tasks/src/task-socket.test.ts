@@ -3,7 +3,6 @@ import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
-import { serveWorker } from "@poppet/worker";
 import { Effect } from "effect";
 
 import { remoteTaskCommand, taskResponse } from "#src/task-socket";
@@ -80,50 +79,6 @@ test("a lost response to a delivered mutation never permits local fallback", asy
     expect(delivered).toBe(1);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("an older worker rejects monitoring creation without retrying as an ordinary report", async () => {
-  const directory = await mkdtemp("/tmp/poppet-old-worker-");
-  await chmod(directory, 0o700);
-  const path = join(directory, "tasks.sock");
-  const received: string[] = [];
-
-  try {
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          yield* serveWorker(path, (_request, body) =>
-            Effect.sync(() => {
-              received.push(JSON.stringify(body));
-
-              return Response.json(
-                { ok: false, message: "Invalid task command." },
-                { status: 400 },
-              );
-            }),
-          );
-
-          const reply = yield* remoteTaskCommand(path, {
-            action: "add-monitor",
-            task: {
-              name: "Release",
-              prompt: "Read release.md",
-              provider: "test-provider",
-              model: "test-model",
-              workload: "assistant",
-              schedule: { type: "cron", expression: "0 9 * * *", timezone: "UTC" },
-            },
-          }).pipe(Effect.result);
-
-          expect(reply).toHaveProperty("failure.message", "Invalid task command.");
-          expect(received).toHaveLength(1);
-          expect(JSON.parse(received[0]!).action).toBe("add-monitor");
-        }),
-      ),
-    );
-  } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });

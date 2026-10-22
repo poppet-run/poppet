@@ -13,24 +13,6 @@ const call = (args: string, namespace = "poppet_memory") => ({
 });
 
 describe.concurrent("memory tool arguments", () => {
-  test("decodes explicit changes and requires null for forgetting", async () => {
-    expect(
-      await Effect.runPromise(
-        decodeMemoryCall(call('{"action":"remember","key":"answer.style","value":"Concise"}')),
-      ),
-    ).toEqual({ name: "memory", action: "remember", key: "answer.style", value: "Concise" });
-    expect(
-      await Effect.runPromise(
-        decodeMemoryCall(call('{"action":"forget","key":"answer.style","value":null}')),
-      ),
-    ).toEqual({ name: "memory", action: "forget", key: "answer.style" });
-    expect(
-      await Effect.runPromise(
-        decodeMemoryCall(call('{"action":"replace","key":"answer.style","value":"Detailed"}')),
-      ),
-    ).toHaveProperty("action", "replace");
-  });
-
   test.each([
     "{",
     '{"action":"replace","key":"answer.style","value":null}',

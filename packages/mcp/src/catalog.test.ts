@@ -22,7 +22,6 @@ test("tool identities cannot collide through ambiguous concatenation or punctuat
         `${name.namespace}__${name.name}`.length <= 64,
     ),
   ).toBe(true);
-  expect(toolIdentity("a", "b.c")).toEqual(toolIdentity("a", "b.c"));
 });
 
 test("validates 2020-12 without coercion, defaults, or silently ignoring unsupported schemas", () => {

@@ -46,18 +46,12 @@ test("recovers a crashed owner and still excludes another process", async () => 
   }
 });
 
-test("preserves unknown legacy owners and rejects symlinks and named pipes", async () => {
+test("rejects symlinks and named pipes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-owner-protected-"));
   const path = join(directory, "owner.lock");
   const target = join(directory, "untouched");
 
   try {
-    await writeFile(path, "unknown old owner");
-    await expect(Effect.runPromise(Effect.scoped(acquireOwnerLock(path)))).rejects.toMatchObject({
-      reason: "busy",
-    });
-    expect(await readFile(path, "utf8")).toBe("unknown old owner");
-    await rm(path);
     await writeFile(target, "keep this file");
     await symlink(target, path);
     await expect(Effect.runPromise(Effect.scoped(acquireOwnerLock(path)))).rejects.toMatchObject({

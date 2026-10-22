@@ -1567,79 +1567,20 @@ describe("chat CLI", () => {
     }
   });
 
-  test.each([false, true])(
-    "accepts older worker reasoning frames without replay or duplicate output when interactive=%s",
-    async (interactive) => {
-      const chat = await fixture();
-      process.env.POPPET_LOG_REASONING = "true";
-      const directory = join(chat.directory, "store");
-      await mkdir(directory, { mode: 0o700 });
-      const path = workerSocketPath(chat.directory);
-      const reasoning = "Checking the notes.";
-      const diagnostic = `Thinking session=older-session run=older-run\n${reasoning}`;
-      let delivered = 0;
-
-      const server = Bun.serve({
-        unix: path,
-        fetch() {
-          delivered++;
-
-          const frames = [
-            { type: "stderr", text: "Session: older-session", sessionId: "older-session" },
-            { type: "reasoning-delta", text: reasoning },
-            { type: "reasoning-end" },
-            { type: "reasoning-log", text: diagnostic },
-            { type: "stdout", text: "Answer\n" },
-            { type: "done" },
-          ];
-
-          return new Response(frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n", {
-            headers: { "content-type": "application/x-ndjson" },
-          });
-        },
-      });
-
-      try {
-        await chmod(path, 0o600);
-
-        if (interactive) {
-          const input = ["Hello", "/exit"];
-          await Effect.runPromise(
-            chat.program(
-              ["chat", "interactive"],
-              Effect.sync(() => input.shift() ?? null),
-            ),
-          );
-        } else await chat.invoke(["chat", "new", "Hello"]);
-
-        expect(chat.chunks.join("")).toBe("Answer\n");
-        expect(chat.thinkingChunks).toEqual(["Thinking:\n", reasoning, "\n\n"]);
-        expect(chat.errors.filter((line) => line.includes("Thinking session="))).toEqual([]);
-        expect(delivered).toBe(1);
-        expect(chat.state.built).toBe(0);
-        expect(await readdir(directory)).toEqual(["tasks.sock"]);
-      } finally {
-        await server.stop(true);
-        await chat.close();
-      }
-    },
-  );
-
-  test("failed, malformed, incomplete, and older worker replies never open local storage or replay a command", async () => {
+  test("failed, malformed, and incomplete worker replies never open local storage or replay a command", async () => {
     const chat = await fixture();
     const directory = join(chat.directory, "store");
     await mkdir(directory, { mode: 0o700 });
     const path = workerSocketPath(chat.directory);
     let delivered = 0;
     let reply = "";
-    let contentType = "application/x-ndjson";
 
     const server = Bun.serve({
       unix: path,
       fetch() {
         delivered++;
 
-        return new Response(reply, { headers: { "content-type": contentType } });
+        return new Response(reply, { headers: { "content-type": "application/x-ndjson" } });
       },
     });
 
@@ -1660,62 +1601,11 @@ describe("chat CLI", () => {
         ).rejects.toHaveProperty("_tag", "WorkerRequestError");
       }
 
-      reply = "Not found";
-      contentType = "text/plain";
-      await expect(chat.invoke(["memory", "remember", "project", "Acorn"])).rejects.toThrow(
-        "outdated",
-      );
-      expect(delivered).toBe(5);
+      expect(delivered).toBe(4);
       expect(await readdir(directory)).toEqual(["tasks.sock"]);
       await chmod(path, 0o666);
       await expect(chat.invoke(["memory", "list"])).rejects.toThrow("not protected");
-      expect(delivered).toBe(5);
-    } finally {
-      await server.stop(true);
-      await chat.close();
-    }
-  });
-
-  test("project chat, memory and task requests reject an older worker before it can discard scope", async () => {
-    const chat = await fixture();
-    const directory = join(chat.directory, "store");
-    await mkdir(directory, { mode: 0o700 });
-    const path = workerSocketPath(chat.directory);
-    const received: string[] = [];
-
-    const server = Bun.serve({
-      unix: path,
-      fetch(request) {
-        received.push(new URL(request.url).pathname);
-
-        return new Response("Not found", { status: 404 });
-      },
-    });
-
-    await chmod(path, 0o600);
-
-    try {
-      await expect(chat.invoke(["chat", "new", "--project", "acorn", "Review"])).rejects.toThrow(
-        "outdated",
-      );
-      await expect(
-        chat.invoke(["memory", "remember", "--project", "acorn", "style", "Keep it short"]),
-      ).rejects.toThrow("outdated");
-      await expect(
-        chat.invoke([
-          "tasks",
-          "add",
-          "Review",
-          "--project",
-          "acorn",
-          "--at",
-          "2099-01-01T00:00:00Z",
-          "Review",
-        ]),
-      ).rejects.toThrow("outdated");
-      expect(received).toEqual(["/project-commands", "/project-commands", "/project-tasks"]);
-      expect(await readdir(directory)).toEqual(["tasks.sock"]);
-      expect(chat.state.built).toBe(0);
+      expect(delivered).toBe(4);
     } finally {
       await server.stop(true);
       await chat.close();

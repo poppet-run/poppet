@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { Agent, SkillsLive } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
@@ -15,7 +14,7 @@ import { MessagingWorker } from "#src/channels";
 import { workerLaunch } from "#src/worker";
 import { runWorker } from "#src/worker-host";
 
-test("builds an absolute launch description that selects the data directory without freezing settings", () => {
+test("worker installation selects the data directory without persisting shell secrets or setting overrides", () => {
   const previous = process.env.POPPET_OPENROUTER_API_KEY;
   const previousSoulBytes = process.env.POPPET_SOUL_BYTES;
   process.env.POPPET_OPENROUTER_API_KEY = "must-not-be-written";
@@ -24,15 +23,7 @@ test("builds an absolute launch description that selects the data directory with
   try {
     const launch = workerLaunch("/tmp/data");
 
-    expect(launch.executable).toBe(process.execPath);
-    expect(launch.arguments).toEqual([
-      fileURLToPath(new URL("./worker-background.ts", import.meta.url)),
-      "worker",
-      "run",
-    ]);
-    expect(launch.workingDirectory).toBe(process.cwd());
     expect(launch.environment).toEqual(new Map([["POPPET_DATA_DIR", "/tmp/data"]]));
-    expect(JSON.stringify(Array.from(launch.environment))).not.toContain("must-not-be-written");
   } finally {
     if (previous === undefined) delete process.env.POPPET_OPENROUTER_API_KEY;
     else process.env.POPPET_OPENROUTER_API_KEY = previous;

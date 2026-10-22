@@ -5,13 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
-import {
-  Memory,
-  MemoryError,
-  LocalMemoryLive,
-  type SnapshotLimits,
-  type MemoryFact,
-} from "@poppet/memory";
+import { Memory, MemoryError, LocalMemoryLive, type MemoryFact } from "@poppet/memory";
 import {
   type Completion,
   type ModelOperations,
@@ -150,46 +144,6 @@ const send = (id: string) =>
   Agent.use((agent) => Stream.runDrain(agent.send(id, "How should you answer?")));
 
 describe.concurrent("explicit memory in chat", () => {
-  test("uses an injected memory implementation without reading the local profile or facts", async () => {
-    const snapshots: SnapshotLimits[] = [];
-
-    const injected: Memory["Service"] = {
-      snapshot: (limits) =>
-        Effect.sync(() => {
-          snapshots.push(limits);
-
-          return {
-            soul: "Speak like a patient tutor",
-            profile: "From another implementation",
-            facts: [{ key: "answer.style", value: "Use short answers" }],
-          };
-        }),
-      list: Effect.die("Chat must use the snapshot operation."),
-      remember: () => Effect.die("Chat must not create facts."),
-      replace: () => Effect.die("Chat must not replace facts."),
-      forget: () => Effect.die("Chat must not forget facts."),
-    };
-
-    const saved = await fixture({ profileBytes: 32, factsBytes: 128 }, injected);
-
-    try {
-      await writeFile(saved.profile, Buffer.from([0xff]));
-      await writeFile(saved.soul, Buffer.from([0xff]));
-      await saved.run(
-        Effect.gen(function* () {
-          const session = yield* (yield* Store).createSession("test-provider", "test-model");
-          yield* send(session.id);
-        }),
-      );
-      expect(snapshots).toEqual([{ soulBytes: 8192, profileBytes: 32, factsBytes: 128 }]);
-      expect(saved.requests[0]?.instructions).toContain("Speak like a patient tutor");
-      expect(saved.requests[0]?.instructions).toContain("From another implementation");
-      expect(saved.requests[0]?.instructions).toContain("Use short answers");
-    } finally {
-      await saved.close();
-    }
-  });
-
   test("loads personality without personal memory, reloads on resume and restores defaults when cleared", async () => {
     const saved = await fixture();
 

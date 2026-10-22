@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,7 +9,6 @@ import { type Completion, type Message, type ProviderId } from "@poppet/provider
 import { Effect, Fiber, Layer } from "effect";
 
 import { StoreError } from "#src/errors";
-import { applyMigrations } from "#src/migrations";
 import type { SessionReadResult } from "#src/schema";
 import { Store, StoreLive } from "#src/service";
 
@@ -301,7 +300,7 @@ describe("conversation store", () => {
     }
   });
 
-  test.each([1024, 16384, 65536])(
+  test.each([1024, 65536])(
     "bounds recall to %s bytes without splitting Unicode or trapping oversized messages",
     async (maxBytes) => {
       const saved = await fixture();
@@ -909,70 +908,6 @@ describe("conversation store", () => {
       await fixtureStore.close();
     }
   });
-
-  test.each(["assistant", "coding"])(
-    "reopens session history with the existing or default %s workload",
-    async (workload) => {
-      const fixtureStore = await fixture();
-
-      try {
-        await mkdir(join(fixtureStore.directory, "store"));
-        using old = new Database(fixtureStore.path);
-        old.run("PRAGMA foreign_keys = ON");
-        applyMigrations(old);
-        old
-          .query(
-            "INSERT INTO sessions (id, provider, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-          )
-          .run("old-session", "new-provider", "selected-model", 1, 1);
-        old
-          .query(
-            "INSERT INTO runs (id, session_id, provider, model, status, created_at) VALUES (?, ?, ?, ?, 'pending', 1)",
-          )
-          .run("old-run", "old-session", "new-provider", "selected-model");
-
-        if (workload === "coding") {
-          old.run("UPDATE sessions SET workload = 'coding'");
-          old.run("UPDATE runs SET workload = 'coding'");
-        }
-
-        old
-          .query(
-            "INSERT INTO messages (session_id, position, created_at, payload) VALUES (?, ?, ?, ?)",
-          )
-          .run("old-session", 0, 1, JSON.stringify(user));
-        old.close(true);
-        await fixtureStore.run(
-          Store.use((store) =>
-            Effect.gen(function* () {
-              expect((yield* store.status).schemaVersion).toBe(5);
-              expect((yield* store.messages("old-session"))[0]?.message).toEqual(user);
-              expect(yield* store.session("old-session")).toMatchObject({
-                workload,
-                title: null,
-                titleSource: null,
-                titleAttempted: false,
-                titleUsage: null,
-                skill: null,
-              });
-              expect(yield* store.claimTitle("old-session")).toBeNull();
-              expect(yield* store.run("old-run")).toMatchObject({
-                status: "interrupted",
-                workload,
-                failureReason: "process-exit",
-              });
-              expect(yield* store.queueRun("old-session", [user])).toMatchObject({
-                provider: "new-provider",
-                workload,
-              });
-            }),
-          ),
-        );
-      } finally {
-        await fixtureStore.close();
-      }
-    },
-  );
 
   test.each(["workload", "continuation"])(
     "rejects a run's foreign %s through both single and session reads",

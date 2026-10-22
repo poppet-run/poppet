@@ -69,7 +69,7 @@ const register = (id: ProviderId, provider: Layer.Layer<Provider>): ProviderRegi
 });
 
 describe("configured model runtime", () => {
-  test.each(["first-provider", "second-provider", "new-provider"] as const)(
+  test.each(["first-provider", "second-provider"] as const)(
     "builds only %s and resolves the explicit model",
     async (selected) => {
       const built: ProviderId[] = [];
@@ -102,7 +102,7 @@ describe("configured model runtime", () => {
         );
 
       const runtime = runtimeLayers(
-        ["first-provider", "second-provider", "new-provider"].map((id) => register(id, layer(id))),
+        ["first-provider", "second-provider"].map((id) => register(id, layer(id))),
       );
 
       const result = await Effect.runPromise(

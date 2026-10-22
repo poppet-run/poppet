@@ -15,7 +15,7 @@ const description: ModelDescription = {
 };
 
 test.each(["responses", "chat-completions"] as const)(
-  "MCP optional-field schemas remain compatible with %s wire requirements",
+  "encodes optional MCP arguments for %s tool calls",
   async (protocol) => {
     const tool = definition("server", "a-long.tool/name", "Fixture", {
       type: "object",

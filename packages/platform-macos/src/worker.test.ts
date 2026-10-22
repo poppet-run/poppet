@@ -12,8 +12,8 @@ test("installs, starts, stops, and removes a login worker with the supplied laun
 
   const launch = {
     dataDirectory: join(home, "data & notes"),
-    executable: process.execPath,
-    arguments: ["/custom path/entry.ts", "tasks", "work"],
+    executable: "/custom path/poppet",
+    arguments: ["worker", "run"],
     workingDirectory: home,
     environment: new Map([["POPPET_APP_NAME", "Poppet & Acorn"]]),
   };
@@ -39,8 +39,8 @@ test("installs, starts, stops, and removes a login worker with the supplied laun
     const plist = await readFile(paths.plist, "utf8");
     expect(plist).toContain("Poppet &amp; Acorn");
     expect(plist).toContain("<key>KeepAlive</key><true/>");
-    expect(plist).toContain("<string>tasks</string><string>work</string>");
-    expect(plist).toContain("<string>/custom path/entry.ts</string>");
+    expect(plist).toContain("<string>worker</string><string>run</string>");
+    expect(plist).toContain("<string>/custom path/poppet</string>");
     expect((await stat(paths.plist)).mode & 0o777).toBe(0o600);
     expect((await stat(paths.logs)).mode & 0o777).toBe(0o700);
     expect((await stat(paths.log)).mode & 0o777).toBe(0o600);
@@ -73,8 +73,8 @@ test("reports launch failure without discarding the installed configuration", as
 
   const launch = {
     dataDirectory: join(home, "data"),
-    executable: process.execPath,
-    arguments: ["/custom path/entry.ts", "tasks", "work"],
+    executable: "/custom path/poppet",
+    arguments: ["worker", "run"],
     workingDirectory: home,
     environment: new Map<string, string>(),
   };
@@ -94,7 +94,7 @@ test("reads recent logs across rotation boundaries within one 64 KiB budget", as
 
   const launch = {
     dataDirectory: home,
-    executable: process.execPath,
+    executable: "/custom path/poppet",
     arguments: [],
     workingDirectory: home,
     environment: new Map<string, string>(),
@@ -129,8 +129,8 @@ test("inspection errors preserve the installed worker and never report successfu
 
   const launch = {
     dataDirectory: join(home, "data"),
-    executable: process.execPath,
-    arguments: ["/custom/entry.ts"],
+    executable: "/custom path/poppet",
+    arguments: ["worker", "run"],
     workingDirectory: home,
     environment: new Map<string, string>(),
   };
@@ -177,8 +177,8 @@ test("interruption waits for installation to finish instead of leaving mutations
 
   const launch = {
     dataDirectory: join(home, "data"),
-    executable: process.execPath,
-    arguments: ["/custom/entry.ts"],
+    executable: "/custom path/poppet",
+    arguments: ["worker", "run"],
     workingDirectory: home,
     environment: new Map<string, string>(),
   };

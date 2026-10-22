@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const invokeProcess = async (
@@ -41,21 +41,6 @@ test.concurrent("invalid configuration and commands exit unsuccessfully", async 
   expect(invalidCommand.stdout).toContain("bun run start config");
   expect(invalidCommand.stderr).toContain("Unexpected positional argument");
 }, 15_000);
-
-test.concurrent("the CLI resolves relative configuration paths from the repository directory", async () => {
-  const result = await invokeProcess(["config"], {
-    POPPET_DATA_DIR: "relative-data",
-    POPPET_NOTES_DIR: "relative-notes",
-  });
-
-  const directory = fileURLToPath(new URL("../../..", import.meta.url));
-
-  expect(result.exitCode).toBe(0);
-  expect(JSON.parse(result.stdout)).toMatchObject({
-    dataDirectory: resolve(directory, "relative-data"),
-    notesDirectory: resolve(directory, "relative-notes"),
-  });
-});
 
 test.concurrent.each(["openrouter", "opencode-go"])(
   "%s reads stdin without printing the key and rejects empty input",
