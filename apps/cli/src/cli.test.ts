@@ -328,18 +328,93 @@ describe("CLI", () => {
     }
   });
 
+  test("Kagi setup uses separate credentials and leaves Brave credentials intact", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-kagi-cli-"));
+    const environment = { POPPET_DATA_DIR: directory, POPPET_WEB_SEARCH_PROVIDER: "kagi" };
+
+    try {
+      expect(
+        (
+          await invoke(["web", "login"], {
+            POPPET_DATA_DIR: directory,
+            POPPET_BRAVE_SEARCH_API_KEY: "brave-only-key",
+          })
+        ).exitCode,
+      ).toBe(0);
+      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+        provider: "kagi",
+        enabled: false,
+        configured: false,
+        source: null,
+      });
+
+      const login = await invoke(["web", "login"], {
+        ...environment,
+        POPPET_KAGI_SEARCH_API_KEY: "kagi-only-key",
+      });
+
+      expect(login.exitCode).toBe(0);
+      expect(login.stdout).toContain("Kagi Search key saved");
+      expect(login.stdout).not.toContain("kagi-only-key");
+      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+        provider: "kagi",
+        enabled: false,
+        configured: true,
+        source: "stored",
+      });
+
+      const overridden = await invoke(["web", "status"], {
+        ...environment,
+        POPPET_KAGI_SEARCH_API_KEY: "kagi-override-key",
+      });
+
+      expect(JSON.parse(overridden.stdout).source).toBe("environment");
+      expect(overridden.stdout).not.toContain("kagi-override-key");
+
+      const invalid = await invoke(["web", "status"], {
+        ...environment,
+        POPPET_KAGI_SEARCH_API_KEY: "",
+      });
+
+      expect(invalid.exitCode).not.toBe(0);
+
+      const config = await invoke(["config"], {
+        ...environment,
+        POPPET_KAGI_SEARCH_API_KEY: "kagi-only-key",
+      });
+
+      expect(JSON.parse(config.stdout).webSearchProvider).toBe("kagi");
+      expect(config.stdout).not.toContain("kagi-only-key");
+      expect((await invoke(["web", "logout"], environment)).exitCode).toBe(0);
+      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout).configured).toBe(
+        false,
+      );
+      expect(
+        JSON.parse((await invoke(["web", "status"], { POPPET_DATA_DIR: directory })).stdout),
+      ).toMatchObject({
+        provider: "brave",
+        configured: true,
+        source: "stored",
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("manages search credentials independently of inference and keeps config and status secret-free", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-web-cli-"));
     const environment = { POPPET_DATA_DIR: directory };
 
     try {
       expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+        provider: "brave",
         enabled: false,
         configured: false,
         source: null,
       });
       await writeFile(join(directory, "config.json"), '{"webSearch":true}');
       expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+        provider: "brave",
         enabled: true,
         configured: false,
         source: null,
@@ -353,6 +428,7 @@ describe("CLI", () => {
       expect(login.exitCode).toBe(0);
       expect(login.stdout).not.toContain("search-only-key");
       expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+        provider: "brave",
         enabled: true,
         configured: true,
         source: "stored",
@@ -1285,6 +1361,7 @@ describe("CLI", () => {
         provider: "openai-chatgpt",
         model: null,
         webSearch: false,
+        webSearchProvider: "brave",
         browser: { enabled: false },
         voice: { enabled: false },
         mcpServers: [],
@@ -1344,6 +1421,7 @@ describe("CLI", () => {
         provider: "openrouter",
         model: "override-model",
         webSearch: false,
+        webSearchProvider: "brave",
         browser: { enabled: false },
         voice: { enabled: false },
         mcpServers: [],

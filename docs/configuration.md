@@ -52,7 +52,8 @@ channel settings stay in their existing protected stores.
 | `POPPET_MCP_SERVERS`           | `mcpServers`              | `[]`                     | JSON server list replacing file values; local MCP tools and scheduled permissions                  |
 | `POPPET_BROWSER`               | `browser`                 | `{"enabled":false}`      | JSON object replacing browser settings, with native CLI, pinned Chromium, and allowed domains      |
 | `POPPET_VOICE`                 | `voice`                   | `{"enabled":false}`      | JSON object replacing local voice settings; explicit absolute decoder, transcriber and model paths |
-| `POPPET_WEB_SEARCH`            | `webSearch`               | `false`                  | Enable Brave Search when a search key is available                                                 |
+| `POPPET_WEB_SEARCH`            | `webSearch`               | `false`                  | Enable web search when the selected provider has a key                                             |
+| `POPPET_WEB_SEARCH_PROVIDER`   | `webSearchProvider`       | `"brave"`                | Search provider, `brave` or `kagi`                                                                 |
 | `POPPET_LOG_REASONING`         | `chat.logReasoning`       | `false`                  | Log readable provider reasoning to CLI stderr and worker logs                                      |
 | `POPPET_LOG_TIMINGS`           | `chat.logTimings`         | `false`                  | Log request-stage durations to CLI stderr and worker logs                                          |
 | `POPPET_CONTEXT_BYTES`         | `chat.contextBytes`       | `262144`                 | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576`        |
@@ -235,8 +236,20 @@ forwarded. TLS certificate and source-hostname checks remain enabled.
 
 ## Web search
 
-Web search uses [Brave's Web Search API](https://api-dashboard.search.brave.com/app/documentation/web-search).
-Save its API key with an interactive prompt, or pipe a key to
+Web search supports [Brave's Web Search API](https://api-dashboard.search.brave.com/app/documentation/web-search)
+and [Kagi's v1 Search API](https://kagi.com/api/docs). Brave is the default.
+Select the provider in `<data directory>/config.json` before saving its key. For Kagi, set:
+
+```json
+{
+  "webSearch": true,
+  "webSearchProvider": "kagi"
+}
+```
+
+Create a Kagi API key in the [API dashboard](https://kagi.com/api/keys).
+Poppet uses the v1 API with Bearer authentication, not a legacy v0 token or session link.
+Save the selected provider's API key with an interactive prompt, or pipe a key to
 `poppet web login --key-stdin`:
 
 ```sh
@@ -244,30 +257,28 @@ poppet web login
 poppet web status
 ```
 
-Enable it in `<data directory>/config.json`:
+For Brave, enable `webSearch` and omit `webSearchProvider`, or set it to `"brave"`.
 
-```json
-{
-  "webSearch": true
-}
-```
-
-`POPPET_WEB_SEARCH` overrides that file value. Search is disabled by default.
-`POPPET_BRAVE_SEARCH_API_KEY` overrides the saved key; an empty or invalid override
-fails without falling back. Login saves that environment key when present,
+`POPPET_WEB_SEARCH` overrides the enable flag. Search is disabled by default.
+`POPPET_WEB_SEARCH_PROVIDER` overrides the provider selection, accepting only `brave`
+or `kagi`. `web login`, `web status`, and `web logout` operate on that selected provider.
+`POPPET_BRAVE_SEARCH_API_KEY` or `POPPET_KAGI_SEARCH_API_KEY` overrides its saved key;
+an empty or invalid override fails without falling back. Login saves that environment key when present,
 otherwise prompts without echo. `--key-stdin` explicitly reads stdin instead.
 Keys are never accepted as command-line arguments or general configuration fields.
 
-The existing credential store keeps the key in `auth/brave-search.json` with owner-only
-permissions, separate from inference credentials. `web status` reports `enabled`,
-`configured`, and credential `source` without secrets or remote requests. Missing
-credentials omit the search tool while ordinary chat and page reading remain
+The existing credential store keeps keys in `auth/brave-search.json` and
+`auth/kagi-search.json` with owner-only permissions, separate from each other and
+inference credentials. Switching providers preserves both saved keys.
+`web status` reports `provider`, `enabled`, `configured`, and credential `source`
+without secrets or remote requests. Missing credentials omit the search tool while ordinary chat and page reading remain
 available. `web logout` removes only the saved search key; it does not revoke the
 remote key or unset an environment override. Restart an existing worker after
 changing search settings or credentials. Keys are not copied into LaunchAgents.
 
-Queries go to the fixed `https://api.search.brave.com/res/v1/web/search` endpoint
-with the search key in its authentication header. Redirects are rejected.
+Queries go to the selected provider's fixed endpoint,
+`https://api.search.brave.com/res/v1/web/search` or `https://kagi.com/api/v1/search`,
+with its search key in the authentication header. Redirects are rejected.
 Poppet sends the query and fixed search options, without adding conversation,
 notes, profile, skills, or inference credentials as extra context. The model can
 include details in its query, so review requests involving private information.

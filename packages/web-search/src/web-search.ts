@@ -1,7 +1,7 @@
 import { isIP } from "node:net";
 
 import { readBoundedText, publicHttpURL, urlHostname, publicAddress } from "@poppet/io";
-import { Context, Effect, Redacted, Schema } from "effect";
+import { Context, Effect } from "effect";
 
 import { WebSearchError } from "#src/errors";
 
@@ -22,29 +22,11 @@ export class WebSearch extends Context.Service<
   }
 >()("poppet/WebSearch") {}
 
-const BraveSearchResponse = Schema.Struct({
-  type: Schema.Literal("search"),
-  web: Schema.optionalKey(
-    Schema.NullOr(
-      Schema.Struct({
-        results: Schema.Array(
-          Schema.Struct({
-            title: Schema.NonEmptyString,
-            url: Schema.String,
-            description: Schema.optionalKey(Schema.NullOr(Schema.String)),
-          }),
-        ),
-      }),
-    ),
-  ),
-});
-
 /** Keep source URLs intact; only results visible in this budget can grant page access. */
 export const webSearchResult = (
-  response: typeof BraveSearchResponse.Type,
+  candidates: WebSearchResult["results"],
   limit: number,
 ): WebSearchResult => {
-  const candidates = response.web?.results ?? [];
   const results: Array<WebSearchResult["results"][number]> = [];
   let truncated = candidates.length > 5;
 
@@ -52,7 +34,7 @@ export const webSearchResult = (
     let url: URL;
 
     try {
-      url = publicHttpURL(candidate.url, searchFailure);
+      url = publicHttpURL(candidate.url, () => new Error("Invalid source URL"));
       const hostname = urlHostname(url);
 
       if (isIP(hostname) && !publicAddress(hostname)) throw new Error("Non-public address");
@@ -62,7 +44,7 @@ export const webSearchResult = (
     }
 
     let title = [...candidate.title];
-    let snippet = [...(candidate.description ?? "")];
+    let snippet = [...candidate.snippet];
     const result = () => ({ title: title.join(""), url: url.href, snippet: snippet.join("") });
 
     const fits = () =>
@@ -83,33 +65,20 @@ export const webSearchResult = (
   return { results, truncated };
 };
 
-const maxSearchBytes = 1048576;
-
-const searchFailure = () =>
-  new WebSearchError({ reason: "tool-network", message: "Could not search Brave Search." });
-
-/** Fixed endpoint and explicit redirect rejection keep the search key at Brave. */
-export const makeWebSearch = (
-  key: Redacted.Redacted<string>,
+/** Providers supply fixed endpoints and map validated responses into common source results. */
+export const searchRequest = (
+  provider: string,
+  request: (query: string, signal: AbortSignal) => Promise<Response>,
+  decode: (text: string) => WebSearchResult["results"],
   toolBytes: number,
-  httpFetch: typeof fetch = fetch,
-): WebSearch["Service"] => ({
-  search: (query) =>
+): NonNullable<WebSearch["Service"]["search"]> => {
+  const searchFailure = () =>
+    new WebSearchError({ reason: "tool-network", message: `Could not search ${provider}.` });
+
+  return (query) =>
     Effect.tryPromise({
       try: async (signal) => {
-        const url = new URL("https://api.search.brave.com/res/v1/web/search");
-        url.search = new URLSearchParams({
-          q: query,
-          count: "5",
-          result_filter: "web",
-          text_decorations: "false",
-        }).toString();
-
-        const response = await httpFetch(url, {
-          signal,
-          redirect: "error",
-          headers: { Accept: "application/json", "X-Subscription-Token": Redacted.value(key) },
-        });
+        const response = await request(query, signal);
 
         try {
           if (!response.ok)
@@ -120,7 +89,7 @@ export const makeWebSearch = (
                   : response.status === 429
                     ? "tool-rate-limit"
                     : "tool-network",
-              message: `Brave Search returned HTTP ${response.status}.`,
+              message: `${provider} returned HTTP ${response.status}.`,
             });
 
           if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? ""))
@@ -130,7 +99,7 @@ export const makeWebSearch = (
 
           const text = await readBoundedText(
             response.body,
-            maxSearchBytes,
+            1048576,
             () =>
               new WebSearchError({
                 reason: "tool-limit",
@@ -138,10 +107,7 @@ export const makeWebSearch = (
               }),
           );
 
-          return webSearchResult(
-            Schema.decodeUnknownSync(Schema.fromJsonString(BraveSearchResponse))(text),
-            toolBytes,
-          );
+          return webSearchResult(decode(text), toolBytes);
         } finally {
           await response.body?.cancel().catch(() => undefined);
         }
@@ -158,5 +124,5 @@ export const makeWebSearch = (
             }),
           ),
       }),
-    ),
-});
+    );
+};

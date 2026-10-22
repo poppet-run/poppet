@@ -8,7 +8,7 @@ export const webCommand = (context: CLIContext) => {
   const { runtime } = context;
 
   return Command.make("web").pipe(
-    Command.withDescription("Manage Brave Search credentials"),
+    Command.withDescription("Manage credentials for the configured search provider"),
     Command.withSubcommands([
       Command.make(
         "login",
@@ -23,7 +23,7 @@ export const webCommand = (context: CLIContext) => {
           manageWebSearch("login", keyStdin).pipe(
             Effect.provide([runtime.searchCredentials, runtime.config]),
           ),
-      ).pipe(Command.withDescription("Save a Brave Search API key")),
+      ).pipe(Command.withDescription("Save an API key for the configured search provider")),
       ...(["status", "logout"] as const).map((action) =>
         Command.make(action, {}, () =>
           manageWebSearch(action).pipe(Effect.provide([runtime.searchCredentials, runtime.config])),

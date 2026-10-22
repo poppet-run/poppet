@@ -117,7 +117,9 @@ packages/
     src/settings.ts       Validated chat budgets
     src/web-search.ts     Search tool definition and model argument validation
   web-search/             @poppet/web-search
-    src/web-search.ts     Search service, Brave HTTP client, bounded results
+    src/web-search.ts     Search service, shared HTTP handling, bounded results
+    src/brave.ts          Brave Search adapter
+    src/kagi.ts           Kagi v1 Search adapter
     src/errors.ts         Search failures adapted by the agent
   io/                     @poppet/io
     src/io.ts             Bounded stream reads and subprocess cleanup

@@ -4,6 +4,7 @@ import {
   ConfigSource,
   taskCatchUpMinutes,
   webSearchEnabled,
+  webSearchProvider,
   browserSettings,
   voiceSettings,
 } from "@poppet/config";
@@ -22,6 +23,7 @@ export const configCommand = (context: CLIContext) => {
         {
           ...(yield* AppConfig),
           webSearch: yield* webSearchEnabled,
+          webSearchProvider: yield* webSearchProvider,
           browser: yield* browserSettings,
           voice: yield* voiceSettings,
           mcpServers: yield* mcpServers,

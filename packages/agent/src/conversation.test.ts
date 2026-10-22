@@ -15,7 +15,7 @@ import {
 } from "@poppet/provider";
 import { responsesModel } from "@poppet/provider/protocol";
 import { SessionReadResult, SessionSearchMatch, Store, StoreError, StoreLive } from "@poppet/store";
-import { WebSearch, WebSearchError, makeWebSearch } from "@poppet/web-search";
+import { WebSearch, WebSearchError, makeBraveSearch } from "@poppet/web-search";
 import { Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect";
 import OpenAI from "openai";
 
@@ -555,7 +555,7 @@ describe.concurrent("notes conversation", () => {
         preconnect: () => {},
       });
 
-      const search = makeWebSearch(Redacted.make("test-key"), 1024, http);
+      const search = makeBraveSearch(Redacted.make("test-key"), 1024, http);
 
       let turns = 0;
 
