@@ -115,6 +115,8 @@ export const AgentLive = Layer.effect(
     const readMemoryPrompt = yield* memoryPrompt;
     const policy = yield* ChatSettings;
     const requests = yield* Semaphore.make(1);
+    // Naming is optional and short, so it does not wait behind a running request.
+    const naming = yield* Semaphore.make(1);
 
     const send = (
       sessionId: string,
@@ -301,7 +303,7 @@ export const AgentLive = Layer.effect(
           }),
         ).pipe(
           Stream.interruptWhen(
-            Effect.sleep("5 minutes").pipe(
+            Effect.sleep(`${policy.runDeadlineSeconds} seconds`).pipe(
               Effect.andThen(
                 Effect.fail(
                   new AgentError({
@@ -366,7 +368,7 @@ export const AgentLive = Layer.effect(
 
         yield* store.finishTitle(session.id, result.title, result.usage);
       }).pipe(
-        requests.withPermit,
+        naming.withPermit,
         Effect.provideService(RequestTiming, {
           record: (timing) =>
             policy.logTimings

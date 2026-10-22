@@ -183,9 +183,12 @@ an older worker with `worker stop` followed by `worker start` after updating cod
 ## Sleep and missed schedules
 
 The worker does not keep the Mac awake. After sleep, it runs an overdue one-off
-once. For a delayed recurring task, it runs the earliest due occurrence once and
-records later missed occurrences as skipped. Summaries older than 24 hours expire.
-Restart skips recurring work missed while the process was stopped. Failed or
+once. After sleep or a restart, a recurring task runs its most recent missed time
+once if that time is within the catch-up window (`tasks.catchUpMinutes`, default
+60), and records earlier missed times as skipped. Missed times older than the
+window are all skipped. Setting the window to `0` restores the earlier policy:
+restarts skip missed recurring work, and a delayed timer runs the earliest due
+time. Summaries older than 24 hours expire. Failed or
 interrupted requests are never automatically replayed.
 
 ## Manual validation

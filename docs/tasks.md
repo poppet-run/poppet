@@ -322,8 +322,10 @@ existing destination flags to deliver completed research through messaging.
 
 ## Missed work, pauses, and retries
 
-The worker executes one occurrence at a time. Recurring times missed while stopped
-are skipped. An overdue one-off runs once. A recurring task keeps at most one pending
+The worker executes one occurrence at a time. A recurring task whose most recent
+due time is within the catch-up window, 60 minutes by default, runs that time once;
+earlier and older missed times are skipped (see [worker](worker.md#sleep-and-missed-schedules)).
+An overdue one-off runs once. A recurring task keeps at most one pending
 or running occurrence; additional due times are recorded as skipped intervals.
 Pending recurring summaries expire after 24 hours. One-off work never expires.
 Pausing cancels pending work and keeps previous results. An active run needs an

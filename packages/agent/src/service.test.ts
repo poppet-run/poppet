@@ -22,7 +22,7 @@ import { AgentError } from "#src/errors";
 import { Notes } from "#src/notes";
 import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver, type ChatEvent } from "#src/service";
-import { ChatSettings, defaultPolicy } from "#src/settings";
+import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
 import { WebSearch } from "#src/web-search";
 
 test.each([false, true])(
@@ -88,7 +88,11 @@ const description: ModelOperations["description"] = {
   },
 };
 
-const fixture = async (resolve: ModelResolver["Service"]["resolve"], logReasoning = false) => {
+const fixture = async (
+  resolve: ModelResolver["Service"]["resolve"],
+  logReasoning = false,
+  policy: Partial<ChatPolicy> = {},
+) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-agent-"));
 
   const store = StoreLive.pipe(
@@ -117,7 +121,7 @@ const fixture = async (resolve: ModelResolver["Service"]["resolve"], logReasonin
             ),
         }),
         Layer.succeed(ModelResolver, { resolve }),
-        Layer.succeed(ChatSettings, { ...defaultPolicy, logReasoning }),
+        Layer.succeed(ChatSettings, { ...defaultPolicy, logReasoning, ...policy }),
       ),
     ),
   );
@@ -133,6 +137,84 @@ const failure = <A, E, R>(program: Effect.Effect<A, E, R>) =>
   program.pipe(Effect.match({ onSuccess: () => null, onFailure: (error) => error }));
 
 describe.concurrent("persisted agent", () => {
+  test("names a finished session while another request holds the shared runner", async () => {
+    const state = await fixture(() =>
+      Effect.succeed({
+        description,
+        stream: (request) => {
+          if (request.settings.toolChoice === "none")
+            return Stream.make({
+              type: "completed" as const,
+              response: response("A concise conversation title"),
+            });
+
+          const last = request.messages.at(-1);
+
+          return last?.role === "user" && last.text === "Wait"
+            ? Stream.never
+            : Stream.make({ type: "completed" as const, response: response() });
+        },
+      }),
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const agent = yield* Agent;
+          const finished = yield* store.createSession("test-provider", "test-model");
+          yield* Stream.runDrain(agent.send(finished.id, "First question"));
+          const waiting = yield* store.createSession("test-provider", "test-model");
+          const started = yield* Deferred.make<void>();
+
+          const running = yield* agent.send(waiting.id, "Wait").pipe(
+            Stream.runForEach(() => Deferred.succeed(started, undefined)),
+            Effect.forkChild,
+          );
+
+          yield* Deferred.await(started);
+          yield* agent.nameSession(finished.id).pipe(Effect.timeout("2 seconds"));
+          expect((yield* store.session(finished.id))?.title).toBe("A concise conversation title");
+          yield* Fiber.interrupt(running);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("interrupts a run at the configured deadline", async () => {
+    const state = await fixture(
+      () => Effect.succeed({ description, stream: () => Stream.never }),
+      false,
+      { runDeadlineSeconds: 30 },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("test-provider", "test-model");
+
+          const running = yield* failure(
+            Stream.runDrain((yield* Agent).send(session.id, "Wait")),
+          ).pipe(Effect.forkChild);
+
+          yield* TestClock.adjust("29 seconds");
+          expect(running.pollUnsafe()).toBeUndefined();
+          yield* TestClock.adjust("1 second");
+          expect(yield* Fiber.join(running)).toMatchObject({
+            reason: "interrupted",
+            message: "The chat request deadline expired.",
+          });
+          expect((yield* store.runs(session.id))[0]?.status).toBe("interrupted");
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("keeps attachment reasoning out of diagnostics, including later turns with saved source history", async () => {
     const logs: string[] = [];
     const requests: ModelRequest[] = [];
