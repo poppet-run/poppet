@@ -1,9 +1,10 @@
 import { AppConfig, dataDirectory as configuredDataDirectory } from "@poppet/config";
 import type { WorkerAction } from "@poppet/platform";
+import { ProviderId } from "@poppet/provider";
 import { WorkerConnections, remoteTaskCommand, readLocalTaskStatus } from "@poppet/tasks";
 import { workerSocketPath } from "@poppet/worker";
 import { Console, Effect } from "effect";
-import { Command, Flag } from "effect/cli";
+import { Argument, Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
 import { runTaskCommand } from "#src/tasks";
@@ -64,6 +65,13 @@ export const workerCommand = (context: CLIContext) => {
   return Command.make("worker").pipe(
     Command.withDescription("Run and manage the background worker"),
     Command.withSubcommands([
+      Command.make(
+        "resume-provider",
+        {
+          provider: Argument.String("provider").pipe(Argument.withSchema(ProviderId)),
+        },
+        ({ provider }) => runTaskCommand(runtime, { action: "resume-provider", provider }),
+      ).pipe(Command.withDescription("Allow scheduled requests again")),
       Command.make("providers", {}, () => runTaskCommand(runtime, { action: "providers" })).pipe(
         Command.withDescription("Show provider quota pauses and temporary backoff"),
       ),
