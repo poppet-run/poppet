@@ -57,7 +57,7 @@ export const tasksCommand = (context: CLIContext) => {
       ).pipe(Command.withDescription("Edit a task's name, prompt or complete schedule")),
       ...(["skip-next", "run-now"] as const).map((action) =>
         Command.make(
-          action,
+          action === "run-now" ? "run" : action,
           { id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)) },
           ({ id }) =>
             runTaskCommand(runtime, { action: "inspect", id }, (value) =>
