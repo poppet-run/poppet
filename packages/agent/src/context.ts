@@ -61,8 +61,28 @@ const validateExchange = (messages: ReadonlyArray<Message>) => {
 export const outputBudget = (model: ModelDescription, policy: ChatPolicy) =>
   Math.min(policy.outputTokens, model.capabilities.maxOutputTokens ?? policy.outputTokens);
 
-const size = (messages: ReadonlyArray<Message>, tools: ReadonlyArray<Tool>, prompt: string) =>
-  byteSize(JSON.stringify({ instructions: prompt, messages, tools }));
+/** Serialized request size, used as a conservative stand-in for provider token counts. */
+export const contextSize = (
+  messages: ReadonlyArray<Message>,
+  tools: ReadonlyArray<Tool>,
+  prompt: string,
+) => byteSize(JSON.stringify({ instructions: prompt, messages, tools }));
+
+// Context windows are reported in tokens. Dense text such as CJK or JSON can approach three
+// UTF-8 bytes per token, so this keeps the byte estimate within the model's capacity.
+const bytesPerToken = 3;
+
+/** The request byte budget, leaving room for the answer and wire-format overhead when known. */
+export const contextAvailable = (model: ModelDescription, policy: ChatPolicy) =>
+  model.capabilities.contextWindow === null
+    ? policy.contextBytes
+    : Math.min(
+        policy.contextBytes,
+        Math.max(
+          0,
+          (model.capabilities.contextWindow - outputBudget(model, policy) - 1024) * bytesPerToken,
+        ),
+      );
 
 const materialize = (message: Message): Message =>
   message.role === "user" && message.source !== undefined
@@ -108,19 +128,11 @@ export const assembleContext = (
     exchanges.push(current);
   }
 
-  // UTF-8 bytes provide a conservative size estimate without a provider-specific
-  // tokenizer. Keep room for the answer and wire-format overhead when metadata exists.
-  const available =
-    model.capabilities.contextWindow === null
-      ? policy.contextBytes
-      : Math.min(
-          policy.contextBytes,
-          Math.max(0, model.capabilities.contextWindow - outputBudget(model, policy) - 1024),
-        );
+  const available = contextAvailable(model, policy);
 
   let selected: ReadonlyArray<Message> = incoming.map(materialize);
 
-  if (size(selected, tools, prompt) > available)
+  if (contextSize(selected, tools, prompt) > available)
     throw new AgentError({
       reason: "context-limit",
       message:
@@ -130,7 +142,7 @@ export const assembleContext = (
   for (const exchange of exchanges.slice(-policy.historyTurns).toReversed()) {
     const candidate = [...exchange, ...selected];
 
-    if (size(candidate, tools, prompt) > available) break;
+    if (contextSize(candidate, tools, prompt) > available) break;
     selected = candidate;
   }
 

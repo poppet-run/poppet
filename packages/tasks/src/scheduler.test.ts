@@ -117,8 +117,12 @@ const fixture = async (
     },
     stream: (request) => {
       requests.push(request);
+      const last = request.messages.at(-1);
 
-      return stream(request);
+      // Like a model answering with the failure, end the loop after a reported tool error.
+      return last?.role === "tool" && last.output.startsWith('{"error":')
+        ? final()
+        : stream(request);
     },
   };
 
@@ -460,12 +464,16 @@ describe.concurrent("task worker", () => {
             repo.reconcile(0);
             const active = repo.claim(0)!;
             yield* executeOccurrence(repo, active.occurrence, active.task);
-            const failed = repo.occurrence(active.occurrence.id);
-            expect(failed.status).toBe("failed");
-            expect((yield* store.run(failed.runId!))?.failureReason).toBe("agent:tool-permission");
-            expect(yield* store.toolCalls(failed.runId!)).toMatchObject([
+            const finished = repo.occurrence(active.occurrence.id);
+            expect(finished.status).toBe("completed");
+            expect(yield* store.toolCalls(finished.runId!)).toMatchObject([
               { name: "read_session", status: "completed" },
-              { callId: "blocked", status: "interrupted", startedAt: null },
+              {
+                callId: "blocked",
+                status: "failed",
+                failureReason: "agent:tool-permission",
+                startedAt: null,
+              },
             ]);
             expect(yield* (yield* Memory).list).toEqual([]);
             expect(repo.list()).toHaveLength(1);
@@ -473,7 +481,7 @@ describe.concurrent("task worker", () => {
             expect(yield* store.messages(earlier.id)).toEqual(history);
           }),
         );
-        expect(state.requests).toHaveLength(2);
+        expect(state.requests).toHaveLength(3);
         expect(await readFile(join(state.notesDirectory, "project.md"), "utf8")).toBe(
           "The project is Acorn.",
         );
@@ -559,7 +567,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("scheduled runs reject fabricated task calls", async () => {
+  test("scheduled runs refuse fabricated task calls", async () => {
     const state = await fixture((request) => {
       expect(request.tools.some((tool) => tool.name === "manage_tasks")).toBe(false);
 
@@ -595,11 +603,10 @@ describe.concurrent("task worker", () => {
           const claimed = repo.claim(0)!;
           yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
           expect(repo.list()).toHaveLength(1);
-          expect(repo.occurrence(claimed.occurrence.id)).toMatchObject({ status: "failed" });
+          expect(repo.occurrence(claimed.occurrence.id)).toMatchObject({ status: "completed" });
           expect(
-            (yield* (yield* Store).run(repo.occurrence(claimed.occurrence.id).runId!))
-              ?.failureReason,
-          ).toBe("agent:tool-permission");
+            yield* (yield* Store).toolCalls(repo.occurrence(claimed.occurrence.id).runId!),
+          ).toMatchObject([{ status: "failed", failureReason: "agent:tool-permission" }]);
         }),
       );
     } finally {
@@ -801,7 +808,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("search rate limits fail the occurrence without pausing its inference provider", async () => {
+  test("search rate limits are reported to the model without pausing its inference provider", async () => {
     const state = await fixture(
       () =>
         response([
@@ -828,14 +835,14 @@ describe.concurrent("task worker", () => {
           repo.reconcile(0);
           const claimed = repo.claim(0)!;
           yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-          expect(repo.occurrence(claimed.occurrence.id)).toMatchObject({
-            status: "failed",
-            reason: "Search rate limit",
-          });
+          expect(repo.occurrence(claimed.occurrence.id)).toMatchObject({ status: "completed" });
+          expect(
+            yield* (yield* Store).toolCalls(repo.occurrence(claimed.occurrence.id).runId!),
+          ).toMatchObject([{ status: "failed", failureReason: "agent:tool-rate-limit" }]);
           expect(repo.providers()).toEqual([]);
         }),
       );
-      expect(state.requests).toHaveLength(1);
+      expect(state.requests).toHaveLength(2);
     } finally {
       await state.close();
     }
@@ -1238,25 +1245,21 @@ describe.concurrent("task worker", () => {
   });
 
   test.each(["note", "memory"])(
-    "rejects attempted %s writes and permits only an explicit retry with a fresh session",
+    "refuses attempted %s writes in scheduled runs without changing saved state",
     async (kind) => {
-      let write = true;
-
       const state = await fixture(() =>
-        write
-          ? response([
-              {
-                type: "tool-call",
-                namespace: kind === "memory" ? "poppet_memory" : "poppet_notes",
-                name: kind === "memory" ? "memory" : "save_note",
-                callId: "save",
-                arguments:
-                  kind === "memory"
-                    ? '{"action":"remember","key":"project.name","value":"Changed"}'
-                    : '{"path":"project.md","text":"Changed"}',
-              },
-            ])
-          : final(),
+        response([
+          {
+            type: "tool-call",
+            namespace: kind === "memory" ? "poppet_memory" : "poppet_notes",
+            name: kind === "memory" ? "memory" : "save_note",
+            callId: "save",
+            arguments:
+              kind === "memory"
+                ? '{"action":"remember","key":"project.name","value":"Changed"}'
+                : '{"path":"project.md","text":"Changed"}',
+          },
+        ]),
       );
 
       try {
@@ -1265,7 +1268,7 @@ describe.concurrent("task worker", () => {
             const repo = yield* TaskRepository;
             const store = yield* Store;
 
-            const job = repo.add(state.task, Date.now(), {
+            repo.add(state.task, Date.now(), {
               name: "write",
               content: "Save project.md even during scheduled runs",
             });
@@ -1273,26 +1276,17 @@ describe.concurrent("task worker", () => {
             repo.reconcile(Date.now());
             const claimed = repo.claim(Date.now())!;
             yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-            const failed = repo.occurrence(claimed.occurrence.id);
+            const finished = repo.occurrence(claimed.occurrence.id);
 
             expect(state.requests[0]?.instructions).toContain(
               "Save project.md even during scheduled runs",
             );
             expect(state.requests[0]?.tools.some((tool) => tool.name === "memory")).toBe(false);
             expect(yield* (yield* Memory).list).toEqual([]);
-            expect(failed.status).toBe("failed");
-            expect((yield* store.run(failed.runId!))?.failureReason).toBe("agent:tool-permission");
-            repo.reconcile(Date.now());
-            expect(repo.claim(Date.now())).toBeNull();
-            write = false;
-            repo.retry(failed.id, Date.now());
-            const retry = repo.claim(Date.now())!;
-            yield* executeOccurrence(repo, retry.occurrence, retry.task);
-            const completed = repo.occurrences(job.id)[0]!;
-
-            expect(completed.status).toBe("completed");
-            expect(completed.sessionId).not.toBe(failed.sessionId);
-            expect((yield* store.run(failed.runId!))?.status).toBe("failed");
+            expect(finished.status).toBe("completed");
+            expect(yield* store.toolCalls(finished.runId!)).toMatchObject([
+              { status: "failed", failureReason: "agent:tool-permission", startedAt: null },
+            ]);
           }),
         );
         expect(await readFile(join(state.notesDirectory, "project.md"), "utf8")).toBe(

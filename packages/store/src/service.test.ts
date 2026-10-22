@@ -54,6 +54,15 @@ const responseFor = (provider: ProviderId, text = "Complete"): Completion => ({
 
 const user: Message = { role: "user", text: "Hello" };
 
+const toolCall = (callId: string) =>
+  ({
+    type: "tool-call",
+    callId,
+    name: "read_note",
+    namespace: "notes",
+    arguments: "{}",
+  }) as const;
+
 const reject = <A>(operation: Effect.Effect<A, StoreError>, reason: StoreError["reason"]) =>
   operation.pipe(
     Effect.match({
@@ -715,6 +724,73 @@ describe("conversation store", () => {
       expect((await stat(join(fixtureStore.directory, "store"))).mode & 0o777).toBe(0o700);
       expect((await stat(fixtureStore.path)).mode & 0o777).toBe(0o600);
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
+    } finally {
+      await fixtureStore.close();
+    }
+  });
+
+  test("completes a run whose failed calls replied to the model, but not one with a silent failure", async () => {
+    const provider = "new-provider";
+    const fixtureStore = await fixture();
+
+    try {
+      await fixtureStore.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const response = responseFor(provider);
+
+          const request: Completion = {
+            ...response,
+            output: [toolCall("reported"), toolCall("skipped")],
+            finishReason: "tool-calls",
+          };
+
+          const session = yield* store.createSession(provider, "selected-model");
+          const first = yield* store.queueRun(session.id, [user]);
+          yield* store.startRun(first.id);
+          yield* store.recordToolCalls(first.id, request);
+          yield* store.startToolCall(first.id, "reported");
+
+          for (const callId of ["reported", "skipped"])
+            yield* store.finishToolCall(first.id, callId, {
+              status: "failed",
+              reason: "agent:tool-arguments",
+              output: `{"error":"${callId}"}`,
+            });
+
+          expect(yield* store.toolCalls(first.id)).toMatchObject([
+            { status: "failed", failureReason: "agent:tool-arguments", output: null },
+            {
+              status: "failed",
+              failureReason: "agent:tool-arguments",
+              output: null,
+              startedAt: null,
+            },
+          ]);
+          expect((yield* store.finishRun(first.id, { status: "completed", response })).status).toBe(
+            "completed",
+          );
+          expect((yield* store.messages(session.id)).map((entry) => entry.message)).toEqual([
+            user,
+            { role: "assistant", output: request.output, continuation: request.continuation },
+            { role: "tool", callId: "reported", output: '{"error":"reported"}' },
+            { role: "tool", callId: "skipped", output: '{"error":"skipped"}' },
+            { role: "assistant", output: response.output, continuation: response.continuation },
+          ]);
+
+          const second = yield* store.queueRun(session.id, [user]);
+          yield* store.startRun(second.id);
+          yield* store.recordToolCalls(second.id, {
+            ...request,
+            output: [toolCall("silent")],
+          });
+          yield* store.finishToolCall(second.id, "silent", {
+            status: "failed",
+            reason: "agent:tool-network",
+          });
+          yield* reject(store.finishRun(second.id, { status: "completed", response }), "conflict");
+        }),
+      );
     } finally {
       await fixtureStore.close();
     }

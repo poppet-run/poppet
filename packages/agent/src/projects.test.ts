@@ -328,12 +328,15 @@ describe.concurrent("project context boundaries", () => {
             response?.role === "tool" &&
               JSON.parse(response.output).matches.map((match: { path: string }) => match.path),
           ).toEqual(["selected.md"]);
-          state.state.output = () => [call("read_note", "poppet_notes", { path: "other.md" })];
-          expect(
-            yield* Stream.runDrain((yield* Agent).send(session.id, "Read other.md")).pipe(
-              Effect.result,
-            ),
-          ).toMatchObject({ failure: { reason: "tool-permission" } });
+          state.state.output = (request) =>
+            toolThenDone(request, call("read_note", "poppet_notes", { path: "other.md" }));
+          yield* Stream.runDrain((yield* Agent).send(session.id, "Read other.md"));
+          const store = yield* Store;
+          const run = (yield* store.runs(session.id)).at(-1)!;
+          expect(run.status).toBe("completed");
+          expect(yield* store.toolCalls(run.id)).toMatchObject([
+            { status: "failed", failureReason: "agent:tool-permission" },
+          ]);
         }),
       );
       await rm(join(state.directory, "notes", "selected.md"));
@@ -343,7 +346,7 @@ describe.concurrent("project context boundaries", () => {
             yield* (yield* Notes)
               .execute({ name: "read_note", path: "selected.md" }, ["selected.md"])
               .pipe(Effect.result),
-          ).toMatchObject({ failure: { reason: "tool-storage" } });
+          ).toMatchObject({ failure: { reason: "tool-arguments" } });
         }),
       );
     } finally {

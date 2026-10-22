@@ -478,10 +478,15 @@ export const NotesLive = Layer.effect(
         catch: (cause) =>
           cause instanceof AgentError
             ? cause
-            : new AgentError({
-                reason: "tool-storage",
-                message: "Poppet could not read, search or save the note.",
-              }),
+            : call.name !== "save_note" && Schema.is(MissingFile)(cause)
+              ? new AgentError({
+                  reason: "tool-arguments",
+                  message: "The note does not exist. Use search_notes to find its path.",
+                })
+              : new AgentError({
+                  reason: "tool-storage",
+                  message: "Poppet could not read, search or save the note.",
+                }),
       });
 
     return { execute };

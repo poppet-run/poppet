@@ -77,8 +77,12 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Mem
     },
     stream: (request) => {
       requests.push(request);
+      const last = request.messages.at(-1);
 
-      return state.stream(request);
+      // Like a model answering with the failure, end the loop after a reported tool error.
+      return last?.role === "tool" && last.output.startsWith('{"error":')
+        ? Stream.make({ type: "completed" as const, response: completion() })
+        : state.stream(request);
     },
   };
 
@@ -142,6 +146,17 @@ const toolReply = (...calls: ReadonlyArray<Output>) =>
 
 const send = (id: string) =>
   Agent.use((agent) => Stream.runDrain(agent.send(id, "How should you answer?")));
+
+/** Sends a request that must complete, returning the failures its tools reported to the model. */
+const reportedFailures = (id: string) =>
+  Effect.gen(function* () {
+    const store = yield* Store;
+    yield* send(id);
+    const run = (yield* store.runs(id)).at(-1)!;
+    expect(run.status).toBe("completed");
+
+    return (yield* store.toolCalls(run.id)).map((call) => [call.status, call.failureReason]);
+  });
 
 describe.concurrent("explicit memory in chat", () => {
   test("loads personality without personal memory, reloads on resume and restores defaults when cleared", async () => {
@@ -487,17 +502,14 @@ describe.concurrent("explicit memory in chat", () => {
         Effect.gen(function* () {
           const store = yield* Store;
           const session = yield* store.createSession("test-provider", "test-model");
-          const result = yield* send(session.id).pipe(Effect.result);
-          expect(result).toHaveProperty("failure.reason", "tool-arguments");
+          expect(yield* reportedFailures(session.id)).toEqual([
+            ["failed", "agent:not-executed"],
+            ["failed", "agent:tool-arguments"],
+          ]);
           expect(yield* (yield* Memory).list).toEqual([]);
-          expect(
-            (yield* store.toolCalls((yield* store.runs(session.id))[0]!.id)).map(
-              (call) => call.status,
-            ),
-          ).toEqual(["interrupted", "interrupted"]);
         }),
       );
-      expect(saved.requests).toHaveLength(1);
+      expect(saved.requests).toHaveLength(2);
     } finally {
       await saved.close();
     }
@@ -517,19 +529,13 @@ describe.concurrent("explicit memory in chat", () => {
             yield* memory.remember("keep", "Original");
             const store = yield* Store;
             const session = yield* store.createSession("test-provider", "test-model");
-            expect(yield* send(session.id).pipe(Effect.result)).toHaveProperty(
-              "failure.reason",
-              "memory-limit",
-            );
+            expect(yield* reportedFailures(session.id)).toEqual([["failed", "agent:memory-limit"]]);
             expect(yield* memory.list).toMatchObject([
               { key: "keep", value: "Original", sourceRunId: null },
             ]);
-            expect(
-              (yield* store.toolCalls((yield* store.runs(session.id))[0]!.id))[0]!.status,
-            ).toBe("failed");
           }),
         );
-        expect(saved.requests).toHaveLength(1);
+        expect(saved.requests).toHaveLength(2);
       } finally {
         await saved.close();
       }
@@ -552,19 +558,11 @@ describe.concurrent("explicit memory in chat", () => {
           const first = (yield* store.toolCalls((yield* store.runs(session.id))[0]!.id))[0]!;
           expect(Buffer.byteLength(first.output!, "utf8")).toBeLessThan(1024);
           const initial = yield* (yield* Memory).list;
-          expect(yield* send(session.id).pipe(Effect.result)).toHaveProperty(
-            "failure.reason",
-            "tool-arguments",
-          );
+          expect(yield* reportedFailures(session.id)).toEqual([["failed", "agent:tool-arguments"]]);
           expect(yield* (yield* Memory).list).toEqual(initial);
-          expect(
-            (yield* store.toolCalls(
-              (yield* store.runs(session.id)).find((run) => run.status === "failed")!.id,
-            ))[0]!.status,
-          ).toBe("failed");
         }),
       );
-      expect(saved.requests).toHaveLength(3);
+      expect(saved.requests).toHaveLength(4);
     } finally {
       await saved.close();
     }

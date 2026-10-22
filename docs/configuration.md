@@ -13,7 +13,7 @@ Save persistent settings in `<data directory>/config.json`, which defaults to
   "model": "replace-with-model-id",
   "notesDirectory": "notes",
   "chat": {
-    "contextBytes": 65536,
+    "contextBytes": 262144,
     "outputTokens": 2048,
     "modelTurns": 8
   }
@@ -55,7 +55,7 @@ channel settings stay in their existing protected stores.
 | `POPPET_WEB_SEARCH`    | `webSearch`         | `false`                  | Enable Brave Search when a search key is available                                                 |
 | `POPPET_LOG_REASONING` | `chat.logReasoning` | `false`                  | Log readable provider reasoning to CLI stderr and worker logs                                      |
 | `POPPET_LOG_TIMINGS`   | `chat.logTimings`   | `false`                  | Log request-stage durations to CLI stderr and worker logs                                          |
-| `POPPET_CONTEXT_BYTES` | `chat.contextBytes` | `65536`                  | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576`        |
+| `POPPET_CONTEXT_BYTES` | `chat.contextBytes` | `262144`                 | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576`        |
 | `POPPET_HISTORY_TURNS` | `chat.historyTurns` | `20`                     | Previous complete exchanges sent to the model; maximum `100`                                       |
 | `POPPET_OUTPUT_TOKENS` | `chat.outputTokens` | `2048`                   | Requested output limit when supported, capped by model metadata; maximum `32768`                   |
 | `POPPET_MODEL_TURNS`   | `chat.modelTurns`   | `8`                      | Model requests per run; range `1–32`                                                               |

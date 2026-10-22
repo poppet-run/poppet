@@ -17,9 +17,15 @@ import {
   type StoredMessage,
   type DeliveryDestination,
 } from "@poppet/store";
-import { Cause, Clock, Effect, Exit, Match, Option, Stream } from "effect";
+import { Cause, Clock, Effect, Exit, Match, Option, Result, Stream } from "effect";
 
-import { assembleContext, byteSize, outputBudget } from "#src/context";
+import {
+  assembleContext,
+  byteSize,
+  contextAvailable,
+  contextSize,
+  outputBudget,
+} from "#src/context";
 import { AgentError } from "#src/errors";
 import { ExternalTools, type PreparedExternalCall } from "#src/external-tools";
 import {
@@ -51,6 +57,89 @@ import { WebSearch, decodeWebSearchCall, webSearchTool, type WebSearchCall } fro
 
 type ConversationEvent = ModelEvent | { readonly type: "reasoning-end" };
 
+type ToolPlan =
+  | NoteCall
+  | SessionSearchCall
+  | SessionReadCall
+  | FetchPageCall
+  | MemoryCall
+  | WebSearchCall
+  | PreparedTaskCall
+  | PreparedExternalCall;
+
+// Failures the model can see and recover from, because no effect is left unconfirmed.
+const reportedReasons: ReadonlySet<string> = new Set([
+  "tool-arguments",
+  "tool-permission",
+  "tool-network",
+  "tool-authentication",
+  "tool-rate-limit",
+  "tool-storage",
+  "tool-limit",
+  "tool-reported",
+  "memory-limit",
+]);
+
+const reportedStoreReasons: ReadonlySet<string> = new Set([
+  "invalid-request",
+  "not-found",
+  "conflict",
+]);
+
+// Note saves commit by renaming; these reasons are raised before that point.
+const unsavedNoteReasons: ReadonlySet<string> = new Set([
+  "tool-arguments",
+  "tool-permission",
+  "tool-limit",
+]);
+
+/**
+ * Reported failures become the call's reply. Uncertain failures may have changed state, so
+ * they end the run without replay; other failures end the run as before.
+ */
+export const toolFailureKind = (
+  name: ToolPlan["name"],
+  error: AgentError | StoreError,
+): "reported" | "uncertain" | "fatal" => {
+  if (error instanceof StoreError) {
+    if (name !== "manage_tasks") return "fatal";
+
+    if (error.reason === "storage") return "uncertain";
+
+    return reportedStoreReasons.has(error.reason) ? "reported" : "fatal";
+  }
+
+  if (name === "external") return error.reason === "tool-reported" ? "reported" : "uncertain";
+
+  if (name === "save_note") return unsavedNoteReasons.has(error.reason) ? "reported" : "uncertain";
+
+  if (name === "memory" && error.reason === "memory-storage") return "uncertain";
+
+  return reportedReasons.has(error.reason) ? "reported" : "fatal";
+};
+
+/** Preparation runs before any effect, so its failures are reportable unless storage failed. */
+const preflightReported = (error: AgentError | StoreError) =>
+  error instanceof StoreError
+    ? reportedStoreReasons.has(error.reason)
+    : reportedReasons.has(error.reason);
+
+const failureReason = (error: AgentError | StoreError) =>
+  `${error instanceof AgentError ? "agent" : "store"}:${error.reason}`;
+
+const failureReply = (reason: string, message: string) =>
+  JSON.stringify({ error: { reason, message } });
+
+// Results from these tools only add context, so an oversized one can be refused without loss.
+const contextOnlyTools: ReadonlySet<string> = new Set([
+  "read_note",
+  "search_notes",
+  "search_sessions",
+  "read_session",
+  "fetch_page",
+  "search_web",
+]);
+
 /** Builds the bounded model/tool loop; the caller owns the run's final outcome. */
 export const conversation = Effect.gen(function* () {
   const store = yield* Store;
@@ -66,16 +155,9 @@ export const conversation = Effect.gen(function* () {
   const executeTool = (
     run: Run,
     callId: string,
-    call:
-      | NoteCall
-      | SessionSearchCall
-      | SessionReadCall
-      | FetchPageCall
-      | MemoryCall
-      | WebSearchCall
-      | PreparedTaskCall
-      | PreparedExternalCall,
+    call: ToolPlan,
     project: ProjectSnapshot | null,
+    guard: (output: string) => Effect.Effect<void, AgentError>,
   ) => {
     const operation = Effect.gen(function* () {
       yield* store.startToolCall(run.id, callId);
@@ -112,39 +194,54 @@ export const conversation = Effect.gen(function* () {
               ),
         ),
         Match.when({ name: "memory" }, (plan) =>
-          executeMemoryCall(
-            project === null ? memory : memory.forProject!(project.name),
-            plan,
-            run.id,
-            project === null ? policy.factsBytes : 8192,
-          ),
+          project === null
+            ? executeMemoryCall(memory, plan, run.id, policy.factsBytes)
+            : memory.forProject === undefined
+              ? Effect.fail(
+                  new AgentError({
+                    reason: "invalid-request",
+                    message: "This host does not support project memory.",
+                  }),
+                )
+              : executeMemoryCall(memory.forProject(project.name), plan, run.id, 8192),
         ),
         Match.orElse((plan) => notes.execute(plan, project?.notes)),
       );
 
-      const output = yield* measureTiming("tool", result).pipe(
-        Effect.catch((error) =>
-          store
+      const outcome = yield* measureTiming("tool", result).pipe(
+        Effect.tap((output) => (contextOnlyTools.has(call.name) ? guard(output) : Effect.void)),
+        Effect.map((output) => ({ output, reported: false })),
+        Effect.catch((error) => {
+          const kind = toolFailureKind(call.name, error);
+
+          if (kind === "reported") {
+            const output = failureReply(error.reason, error.message);
+
+            return store
+              .finishToolCall(run.id, callId, {
+                status: "failed",
+                reason: failureReason(error),
+                output,
+              })
+              .pipe(Effect.as({ output, reported: true }));
+          }
+
+          return store
             .finishToolCall(run.id, callId, {
-              status:
-                (call.name === "external" && error.reason !== "tool-reported") ||
-                call.name === "save_note" ||
-                (call.name === "manage_tasks" &&
-                  error instanceof StoreError &&
-                  error.reason === "storage") ||
-                (call.name === "memory" && error.reason === "memory-storage")
-                  ? "uncertain"
-                  : "failed",
-              reason: `${error instanceof AgentError ? "agent" : "store"}:${error.reason}`,
+              status: kind === "uncertain" ? "uncertain" : "failed",
+              reason: failureReason(error),
             })
-            .pipe(Effect.andThen(Effect.fail(error))),
-        ),
+            .pipe(Effect.andThen(Effect.fail(error)));
+        }),
       );
 
-      if (call.name !== "manage_tasks")
-        yield* store.finishToolCall(run.id, callId, { status: "completed", output });
+      if (!outcome.reported && call.name !== "manage_tasks")
+        yield* store.finishToolCall(run.id, callId, {
+          status: "completed",
+          output: outcome.output,
+        });
 
-      return { output, urls };
+      return { output: outcome.output, urls: outcome.reported ? [] : urls };
     });
 
     // Keep an atomic write and its durable result together on graceful cancellation.
@@ -272,6 +369,7 @@ export const conversation = Effect.gen(function* () {
           source === undefined ? { role: "user", text } : { role: "user", text, source },
         ];
 
+        const available = contextAvailable(model.description, policy);
         let turns = 0;
         let callsUsed = 0;
         let outputBytes = 0;
@@ -440,7 +538,9 @@ export const conversation = Effect.gen(function* () {
                         );
 
                       // Validate the whole batch before any call can change notes or memory.
-                      const planned = yield* Effect.forEach(calls, prepareTool);
+                      const planned = yield* Effect.forEach(calls, (call) =>
+                        prepareTool(call).pipe(Effect.result),
+                      );
 
                       current.push({
                         role: "assistant",
@@ -448,8 +548,72 @@ export const conversation = Effect.gen(function* () {
                         continuation: response.continuation,
                       });
 
-                      for (const { callId, plan } of planned) {
-                        const { output, urls } = yield* executeTool(run, callId, plan, project);
+                      const rejected = planned.flatMap((entry) =>
+                        Result.isFailure(entry) ? [entry.failure] : [],
+                      );
+
+                      if (rejected.length > 0) {
+                        const fatal = rejected.find((error) => !preflightReported(error));
+
+                        if (fatal !== undefined) return yield* Effect.fail(fatal);
+
+                        // No call in a rejected batch runs; each one reports why.
+                        for (const [index, call] of calls.entries()) {
+                          const entry = planned[index]!;
+
+                          const [reason, output] = Result.isFailure(entry)
+                            ? [
+                                failureReason(entry.failure),
+                                failureReply(entry.failure.reason, entry.failure.message),
+                              ]
+                            : [
+                                "agent:not-executed",
+                                failureReply(
+                                  "not-executed",
+                                  "Not run because another call in this batch was invalid. Correct that call, then request this one again.",
+                                ),
+                              ];
+
+                          yield* store.finishToolCall(run.id, call.callId, {
+                            status: "failed",
+                            reason,
+                            output,
+                          });
+                          current.push({ role: "tool", callId: call.callId, output });
+                          callsUsed++;
+                        }
+
+                        return turn();
+                      }
+
+                      for (const entry of planned) {
+                        if (Result.isFailure(entry)) continue;
+                        const { callId, plan } = entry.success;
+
+                        const guard = (output: string) => {
+                          const needed = contextSize(
+                            [...current, { role: "tool", callId, output }],
+                            tools,
+                            instructions,
+                          );
+
+                          return needed <= available
+                            ? Effect.void
+                            : Effect.fail(
+                                new AgentError({
+                                  reason: "tool-limit",
+                                  message: `The result is ${needed - available} bytes larger than the space left in this run's context budget. Request less, such as a narrower query or a specific section.`,
+                                }),
+                              );
+                        };
+
+                        const { output, urls } = yield* executeTool(
+                          run,
+                          callId,
+                          plan,
+                          project,
+                          guard,
+                        );
 
                         for (const url of urls) allowedURLs.add(url);
                         current.push({ role: "tool", callId, output });

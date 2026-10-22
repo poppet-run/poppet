@@ -159,6 +159,23 @@ const activeTool = (database: Database, runId: string, callId: string) => {
   return { run, call };
 };
 
+const CallReply = Schema.Struct({ callId: Schema.NonEmptyString });
+
+// Call IDs with a saved tool reply in this run, whether the call completed or reported failure.
+const repliedCalls = (database: Database, runId: string) =>
+  readRecord(() => {
+    using statement = database.prepare(
+      `SELECT json_extract(payload, '$.callId') AS callId FROM messages
+      WHERE run_id = ? AND json_extract(payload, '$.role') = 'tool'`,
+    );
+
+    return new Set(
+      Schema.decodeUnknownSync(Schema.Array(CallReply))(statement.all(runId)).map(
+        (reply) => reply.callId,
+      ),
+    );
+  });
+
 const interruptTools = (database: Database, runId: string, at: number, reason: string) => {
   // Finalize this update before later run transitions and database shutdown.
   using statement =
@@ -451,10 +468,19 @@ export const StoreLive = Layer.effect(
             const finishedAt = Math.max(at, run.createdAt, run.startedAt ?? 0);
 
             if (terminal.status === "completed") {
-              if (toolCallsFor(database, id).some((call) => call.status !== "completed"))
+              const replied = repliedCalls(database, id);
+
+              if (
+                toolCallsFor(database, id).some(
+                  (call) =>
+                    call.status !== "completed" &&
+                    !(call.status === "failed" && replied.has(call.callId)),
+                )
+              )
                 throw new StoreError({
                   reason: "conflict",
-                  message: "All tool calls must complete before the run succeeds.",
+                  message:
+                    "All tool calls must complete or report their failure before the run succeeds.",
                 });
               append(
                 database,
@@ -634,12 +660,14 @@ export const StoreLive = Layer.effect(
 
       const finishedAt = Math.max(at, call.startedAt ?? call.createdAt);
 
-      if (decoded.status === "completed") {
-        if (call.status !== "running")
-          throw new StoreError({
-            reason: "conflict",
-            message: "Only a started tool call can complete.",
-          });
+      if (decoded.status === "completed" && call.status !== "running")
+        throw new StoreError({
+          reason: "conflict",
+          message: "Only a started tool call can complete.",
+        });
+
+      // A reported failure keeps its reply in history only; the call row stores its reason.
+      if ("output" in decoded)
         append(
           database,
           requireSession(database, run.sessionId),
@@ -647,7 +675,6 @@ export const StoreLive = Layer.effect(
           [{ role: "tool", callId, output: decoded.output }],
           finishedAt,
         );
-      }
 
       using statement = database.prepare(
         "UPDATE tool_calls SET status = ?, finished_at = ?, output = ?, failure_reason = ? WHERE run_id = ? AND call_id = ?",

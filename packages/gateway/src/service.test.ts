@@ -9,6 +9,7 @@ import {
   ExternalTools,
   ChatSettings,
   defaultPolicy,
+  type ChatPolicy,
   ModelResolver,
   NotesLive,
   Pages,
@@ -77,6 +78,7 @@ const fixture = async (
   stream: ModelOperations["stream"] = () => response(),
   tools = false,
   processor?: AttachmentProcessor["Service"],
+  policy: Partial<ChatPolicy> = {},
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-gateway-"));
   const requests: ModelRequest[] = [];
@@ -116,7 +118,7 @@ const fixture = async (
   });
 
   const store = StoreLive.pipe(Layer.provideMerge(config));
-  const settings = Layer.succeed(ChatSettings, defaultPolicy);
+  const settings = Layer.succeed(ChatSettings, { ...defaultPolicy, ...policy });
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
   const skills = Layer.merge(SkillsLive, ProjectsLive).pipe(Layer.provide(config));
 
@@ -160,8 +162,12 @@ const fixture = async (
               },
               stream: (request) => {
                 requests.push(request);
+                const last = request.messages.at(-1);
 
-                return stream(request);
+                // Like a model answering with the failure, end the loop after a reported tool error.
+                return last?.role === "tool" && last.output.startsWith('{"error":')
+                  ? response()
+                  : stream(request);
               },
             });
           },
@@ -524,8 +530,15 @@ describe.concurrent("messaging gateway", () => {
             yield* gateway.processNext;
             const tasks = (yield* TaskRepository).list();
 
-            if (revoked) expect(tasks).toEqual([]);
-            else
+            if (revoked) {
+              expect(tasks).toEqual([]);
+              const store = yield* Store;
+              const run = (yield* store.runs((yield* store.sessions)[0]!.id))[0]!;
+              expect(run.status).toBe("completed");
+              expect(yield* store.toolCalls(run.id)).toMatchObject([
+                { status: "failed", failureReason: "agent:tool-permission" },
+              ]);
+            } else
               expect(tasks[0]).toMatchObject({
                 name: "Weekly review",
                 provider: "test-provider",
@@ -542,6 +555,7 @@ describe.concurrent("messaging gateway", () => {
           }),
         );
         expect(calls).toBe(revoked ? 1 : 2);
+        expect(state.requests).toHaveLength(2);
       } finally {
         await state.close();
       }
@@ -1976,9 +1990,11 @@ describe.concurrent("attachment gateway", () => {
           });
           yield* gateway.processNext;
           const store = yield* Store;
-          expect((yield* store.runs((yield* store.sessions)[0]!.id))[0]?.failureReason).toBe(
-            "agent:tool-permission",
-          );
+          const run = (yield* store.runs((yield* store.sessions)[0]!.id))[0]!;
+          expect(run.status).toBe("completed");
+          expect(yield* store.toolCalls(run.id)).toMatchObject([
+            { status: "failed", failureReason: "agent:tool-permission", startedAt: null },
+          ]);
         }),
       );
     } finally {
@@ -2056,14 +2072,20 @@ describe.concurrent("attachment gateway", () => {
   test("reuses an extraction saved before inference and rejects overflow/disabled voice without inference", async () => {
     let downloads = 0;
 
-    const state = await fixture({
-      download: () =>
-        Effect.sync(() => {
-          downloads++;
+    const state = await fixture(
+      {
+        download: () =>
+          Effect.sync(() => {
+            downloads++;
 
-          return Buffer.from(`x${"\n".repeat(32767)}`);
-        }),
-    });
+            return Buffer.from(`x${"\n".repeat(32767)}`);
+          }),
+      },
+      undefined,
+      false,
+      undefined,
+      { contextBytes: 65536 },
+    );
 
     try {
       await state.run(

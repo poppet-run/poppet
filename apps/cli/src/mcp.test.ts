@@ -98,7 +98,11 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
                         },
                       ];
 
-                    if (after && followup !== "done") {
+                    const answered = request.messages.some(
+                      (message) => message.role === "tool" && message.callId === "injected",
+                    );
+
+                    if (after && !answered && followup !== "done") {
                       const mutations = {
                         fetch: {
                           name: "fetch_page",
@@ -360,13 +364,18 @@ describe("MCP host integration", () => {
             const store = yield* Store;
             const session = yield* store.createSession("fixture", "fixture");
 
-            const error = yield* (yield* Agent)
+            yield* (yield* Agent)
               .send(session.id, "Read the fixture", { readOnlyTools: true })
-              .pipe(Stream.runDrain, Effect.flip);
+              .pipe(Stream.runDrain);
 
-            expect(error).toHaveProperty("reason", "tool-permission");
-            const calls = yield* store.toolCalls((yield* store.runs(session.id))[0]!.id);
-            expect(calls.map((call) => call.status)).toEqual(["completed", "interrupted"]);
+            const run = (yield* store.runs(session.id))[0]!;
+            expect(run.status).toBe("completed");
+            expect(
+              (yield* store.toolCalls(run.id)).map((call) => [call.status, call.failureReason]),
+            ).toEqual([
+              ["completed", null],
+              ["failed", "agent:tool-permission"],
+            ]);
           }).pipe(Effect.provide(state.chat)),
         );
         expect(await readdir(state.directory)).not.toContain("notes");

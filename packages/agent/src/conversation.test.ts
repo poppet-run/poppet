@@ -14,10 +14,11 @@ import {
   type Output,
 } from "@poppet/provider";
 import { responsesModel } from "@poppet/provider-protocol";
-import { SessionReadResult, SessionSearchMatch, Store, StoreLive } from "@poppet/store";
+import { SessionReadResult, SessionSearchMatch, Store, StoreError, StoreLive } from "@poppet/store";
 import { Effect, Fiber, Layer, Schema, Stream } from "effect";
 import OpenAI from "openai";
 
+import { toolFailureKind } from "#src/conversation";
 import { AgentError } from "#src/errors";
 import { ExternalTools, type ExternalTool } from "#src/external-tools";
 import { Notes, NotesLive, noteTools } from "#src/notes";
@@ -56,6 +57,30 @@ const completed = (output: ReadonlyArray<Output>, turn = 1) =>
   Stream.make({ type: "completed" as const, response: response(output, turn) });
 
 const final = () => completed([{ type: "text", text: "Done" }]);
+
+// Like a model answering with the failure, fixtures end the loop after a reported tool error.
+const reportedError = (request: ModelRequest) => {
+  const last = request.messages.at(-1);
+
+  return last?.role === "tool" && last.output.startsWith('{"error":');
+};
+
+/** Sends a request that must complete, returning the failures its tools reported to the model. */
+const reportedFailures = (
+  sessionId: string,
+  text: string,
+  options?: Parameters<Agent["Service"]["send"]>[2],
+) =>
+  Effect.gen(function* () {
+    const store = yield* Store;
+    yield* Stream.runDrain((yield* Agent).send(sessionId, text, options));
+    const run = (yield* store.runs(sessionId)).at(-1)!;
+    expect(run.status).toBe("completed");
+
+    return (yield* store.toolCalls(run.id)).flatMap((call) =>
+      call.status === "failed" ? [call.failureReason] : [],
+    );
+  });
 
 const fixture = async (
   stream: ModelOperations["stream"],
@@ -100,7 +125,7 @@ const fixture = async (
     stream: (request) => {
       requests.push(request);
 
-      return stream(request);
+      return reportedError(request) ? final() : stream(request);
     },
   };
 
@@ -135,6 +160,35 @@ const fixture = async (
 
 const failure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.match({ onFailure: (error) => error, onSuccess: () => null }));
+
+const agentFailure = (reason: AgentError["reason"]) => new AgentError({ reason, message: reason });
+
+const storeFailure = (reason: StoreError["reason"]) => new StoreError({ reason, message: reason });
+
+describe("tool failure classification", () => {
+  test.each([
+    ["read_note", agentFailure("tool-storage"), "reported"],
+    ["fetch_page", agentFailure("tool-network"), "reported"],
+    ["search_web", agentFailure("tool-rate-limit"), "reported"],
+    ["read_note", agentFailure("budget"), "fatal"],
+    ["read_note", storeFailure("storage"), "fatal"],
+    ["save_note", agentFailure("tool-permission"), "reported"],
+    ["save_note", agentFailure("tool-limit"), "reported"],
+    ["save_note", agentFailure("tool-storage"), "uncertain"],
+    ["memory", agentFailure("memory-limit"), "reported"],
+    ["memory", agentFailure("memory-storage"), "uncertain"],
+    ["manage_tasks", storeFailure("conflict"), "reported"],
+    ["manage_tasks", storeFailure("invalid-request"), "reported"],
+    ["manage_tasks", storeFailure("storage"), "uncertain"],
+    ["manage_tasks", storeFailure("corrupt"), "fatal"],
+    ["manage_tasks", agentFailure("tool-permission"), "reported"],
+    ["external", agentFailure("tool-reported"), "reported"],
+    ["external", agentFailure("tool-network"), "uncertain"],
+    ["external", agentFailure("tool-uncertain"), "uncertain"],
+  ] as const)("%s failing with %o is %s", (name, error, kind) => {
+    expect(toolFailureKind(name, error)).toBe(kind);
+  });
+});
 
 describe.concurrent("notes conversation", () => {
   test.each([false, true])(
@@ -182,7 +236,7 @@ describe.concurrent("notes conversation", () => {
     },
   );
 
-  test("external preflight rejects an invalid batch before its first call executes", async () => {
+  test("external preflight reports an invalid batch before its first call executes", async () => {
     let executed = 0;
 
     const entry: ExternalTool = {
@@ -228,13 +282,12 @@ describe.concurrent("notes conversation", () => {
         Effect.gen(function* () {
           const store = yield* Store;
           const session = yield* store.createSession("test-provider", "test-model");
-          expect(
-            yield* (yield* Agent)
-              .send(session.id, "Run both tools")
-              .pipe(Stream.runDrain, Effect.flip),
-          ).toHaveProperty("reason", "tool-arguments");
+          expect(yield* reportedFailures(session.id, "Run both tools")).toEqual([
+            "agent:not-executed",
+            "agent:tool-arguments",
+          ]);
           const calls = yield* store.toolCalls((yield* store.runs(session.id))[0]!.id);
-          expect(calls.map((call) => call.status)).toEqual(["interrupted", "interrupted"]);
+          expect(calls.map((call) => call.status)).toEqual(["failed", "failed"]);
           expect(
             calls.every((call) => call.serverId === "fixture" && call.toolName === "original-tool"),
           ).toBe(true);
@@ -246,7 +299,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test.each(["collision", "unknown"])("rejects external %s tools before dispatch", async (mode) => {
+  test.each(["collision", "unknown"])("reports external %s tools before dispatch", async (mode) => {
     const entry: ExternalTool = {
       serverId: "fixture",
       toolName: "original-tool",
@@ -269,11 +322,17 @@ describe.concurrent("notes conversation", () => {
         Effect.gen(function* () {
           const store = yield* Store;
           const session = yield* store.createSession("test-provider", "test-model");
-          expect(
-            yield* (yield* Agent)
-              .send(session.id, "Run the tool")
-              .pipe(Stream.runDrain, Effect.flip),
-          ).toHaveProperty("reason", "tool-permission");
+
+          if (mode === "collision")
+            expect(
+              yield* (yield* Agent)
+                .send(session.id, "Run the tool")
+                .pipe(Stream.runDrain, Effect.flip),
+            ).toHaveProperty("reason", "tool-permission");
+          else
+            expect(yield* reportedFailures(session.id, "Run the tool")).toEqual([
+              "agent:tool-permission",
+            ]);
         }),
       );
 
@@ -323,11 +382,10 @@ describe.concurrent("notes conversation", () => {
       await state.run(
         Effect.gen(function* () {
           const session = yield* (yield* Store).createSession("test-provider", "test-model");
-          expect(
-            yield* failure(
-              Stream.runDrain((yield* Agent).send(session.id, "Save a note and schedule a task")),
-            ),
-          ).toMatchObject({ reason: "tool-arguments" });
+          expect(yield* reportedFailures(session.id, "Save a note and schedule a task")).toEqual([
+            "agent:not-executed",
+            "agent:tool-arguments",
+          ]);
         }),
       );
       expect(await readdir(state.directory)).not.toContain("notes");
@@ -375,9 +433,9 @@ describe.concurrent("notes conversation", () => {
         await state.run(
           Effect.gen(function* () {
             const session = yield* (yield* Store).createSession("test-provider", "test-model");
-            expect(
-              yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Research"))),
-            ).toMatchObject({ reason: "tool-permission" });
+            expect(yield* reportedFailures(session.id, "Research")).toEqual([
+              "agent:tool-permission",
+            ]);
           }),
         );
       } finally {
@@ -445,11 +503,9 @@ describe.concurrent("notes conversation", () => {
               ["search_web", "completed"],
               ["fetch_page", "completed"],
             ]);
-            expect(
-              yield* failure(
-                Stream.runDrain(agent.send(session.id, "Continue", { readOnlyTools })),
-              ),
-            ).toMatchObject({ reason: "tool-permission" });
+            expect(yield* reportedFailures(session.id, "Continue", { readOnlyTools })).toEqual([
+              "agent:tool-permission",
+            ]);
           }),
         );
         expect(fetched).toEqual(["https://example.com/source"]);
@@ -485,9 +541,10 @@ describe.concurrent("notes conversation", () => {
       await state.run(
         Effect.gen(function* () {
           const session = yield* (yield* Store).createSession("test-provider", "test-model");
-          expect(
-            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Research"))),
-          ).toMatchObject({ reason: "tool-permission" });
+          expect(yield* reportedFailures(session.id, "Research")).toEqual([
+            "agent:not-executed",
+            "agent:tool-permission",
+          ]);
         }),
       );
       expect(searched).toBe(false);
@@ -528,9 +585,9 @@ describe.concurrent("notes conversation", () => {
       await state.run(
         Effect.gen(function* () {
           const session = yield* (yield* Store).createSession("test-provider", "test-model");
-          expect(
-            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Research"))),
-          ).toMatchObject({ reason: "tool-permission" });
+          expect(yield* reportedFailures(session.id, "Research")).toEqual([
+            "agent:tool-permission",
+          ]);
         }),
       );
     } finally {
@@ -538,7 +595,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("a search failure is durable and stops the run without another model request", async () => {
+  test("a search failure is durable and reported to the model without an automatic retry", async () => {
     const state = await fixture(
       () => completed([tool("search_web", '{"query":"topic"}', "search", "poppet_web")]),
       {},
@@ -555,18 +612,25 @@ describe.concurrent("notes conversation", () => {
         Effect.gen(function* () {
           const store = yield* Store;
           const session = yield* store.createSession("test-provider", "test-model");
-          expect(
-            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Research"))),
-          ).toMatchObject({ reason: "tool-rate-limit" });
+          expect(yield* reportedFailures(session.id, "Research")).toEqual([
+            "agent:tool-rate-limit",
+          ]);
           const run = (yield* store.runs(session.id))[0]!;
-          expect(run.failureReason).toBe("agent:tool-rate-limit");
           expect((yield* store.toolCalls(run.id))[0]).toMatchObject({
             status: "failed",
             failureReason: "agent:tool-rate-limit",
+            output: null,
           });
         }),
       );
-      expect(state.requests).toHaveLength(1);
+      expect(state.requests).toHaveLength(2);
+      expect(state.requests[1]?.messages.at(-1)).toEqual({
+        role: "tool",
+        callId: "search",
+        output: JSON.stringify({
+          error: { reason: "tool-rate-limit", message: "Search rate limit" },
+        }),
+      });
     } finally {
       await state.close();
     }
@@ -688,17 +752,12 @@ describe.concurrent("notes conversation", () => {
         Effect.gen(function* () {
           const store = yield* Store;
           const session = yield* store.createSession("test-provider", "test-model");
-          expect(
-            yield* failure(
-              Stream.runDrain((yield* Agent).send(session.id, "Read https://example.com/article")),
-            ),
-          ).toMatchObject({ reason: "tool-permission" });
-          const calls = yield* store.toolCalls((yield* store.runs(session.id))[0]!.id);
-          expect(calls.map((call) => call.status)).toEqual([
-            "completed",
-            "interrupted",
-            "interrupted",
+          expect(yield* reportedFailures(session.id, "Read https://example.com/article")).toEqual([
+            "agent:not-executed",
+            "agent:tool-permission",
           ]);
+          const calls = yield* store.toolCalls((yield* store.runs(session.id))[0]!.id);
+          expect(calls.map((call) => call.status)).toEqual(["completed", "failed", "failed"]);
         }),
       );
       expect(fetched).toEqual(["https://example.com/article"]);
@@ -708,7 +767,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("a failed page read records failure without a model follow-up or automatic retry", async () => {
+  test("a failed page read is reported to the model without an automatic retry", async () => {
     let fetches = 0;
 
     const state = await fixture(
@@ -731,20 +790,13 @@ describe.concurrent("notes conversation", () => {
         Effect.gen(function* () {
           const store = yield* Store;
           const session = yield* store.createSession("test-provider", "test-model");
-          expect(
-            yield* failure(
-              Stream.runDrain((yield* Agent).send(session.id, "Read https://example.com/")),
-            ),
-          ).toMatchObject({ reason: "tool-network" });
-          const run = (yield* store.runs(session.id))[0]!;
-          expect(run).toMatchObject({ status: "failed", failureReason: "agent:tool-network" });
-          expect(yield* store.toolCalls(run.id)).toEqual([
-            expect.objectContaining({ status: "failed", failureReason: "agent:tool-network" }),
+          expect(yield* reportedFailures(session.id, "Read https://example.com/")).toEqual([
+            "agent:tool-network",
           ]);
         }),
       );
       expect(fetches).toBe(1);
-      expect(state.requests).toHaveLength(1);
+      expect(state.requests).toHaveLength(2);
     } finally {
       await state.close();
     }
@@ -772,9 +824,9 @@ describe.concurrent("notes conversation", () => {
 
           const agent = yield* Agent;
           yield* Stream.runDrain(agent.send(session.id, "Remember https://example.com/old"));
-          expect(yield* failure(Stream.runDrain(agent.send(session.id, "Continue")))).toMatchObject(
-            { reason: "tool-permission" },
-          );
+          expect(yield* reportedFailures(session.id, "Continue")).toEqual([
+            "agent:tool-permission",
+          ]);
         }),
       );
     } finally {
@@ -1086,7 +1138,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("keeps the current tool exchange whole and fails clearly when its result exceeds context capacity", async () => {
+  test("reports a result that exceeds the remaining context budget instead of failing the run", async () => {
     const state = await fixture(() => completed([tool("read_note", '{"path":"large.md"}')]), {
       contextBytes: 8192,
     });
@@ -1098,23 +1150,22 @@ describe.concurrent("notes conversation", () => {
         Effect.gen(function* () {
           const store = yield* Store;
           const session = yield* store.createSession("test-provider", "test-model");
-          expect(
-            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Read large.md"))),
-          ).toMatchObject({ reason: "context-limit" });
-          const run = (yield* store.runs(session.id))[0];
-          expect(run).toMatchObject({ status: "failed", failureReason: "agent:context-limit" });
-          expect((yield* store.toolCalls(run?.id ?? ""))[0]).toMatchObject({
-            status: "completed",
-            name: "read_note",
-          });
+          expect(yield* reportedFailures(session.id, "Read large.md")).toEqual([
+            "agent:tool-limit",
+          ]);
           expect((yield* store.messages(session.id)).map((entry) => entry.message.role)).toEqual([
             "user",
             "assistant",
             "tool",
+            "assistant",
           ]);
         }),
       );
-      expect(state.requests).toHaveLength(1);
+      expect(state.requests).toHaveLength(2);
+      expect(state.requests[1]?.messages.at(-1)).toMatchObject({
+        role: "tool",
+        output: expect.stringContaining("context budget"),
+      });
     } finally {
       await state.close();
     }
@@ -1144,9 +1195,10 @@ describe.concurrent("notes conversation", () => {
           const first = (yield* store.runs(session.id))[0];
           expect(yield* store.toolCalls(first?.id ?? "")).toEqual([]);
           duplicate = false;
-          expect(yield* failure(Stream.runDrain(agent.send(session.id, "Second")))).toMatchObject({
-            reason: "tool-permission",
-          });
+          expect(yield* reportedFailures(session.id, "Second")).toEqual([
+            "agent:not-executed",
+            "agent:tool-permission",
+          ]);
         }),
       );
       expect(await readdir(state.directory)).toEqual(["store"]);
@@ -1155,7 +1207,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("a missing note records a failed tool and stops the model loop", async () => {
+  test("a missing note is reported to the model as a failed tool", async () => {
     const state = await fixture(() => completed([tool("read_note", '{"path":"missing.md"}')]));
 
     try {
@@ -1163,17 +1215,14 @@ describe.concurrent("notes conversation", () => {
         Effect.gen(function* () {
           const store = yield* Store;
           const session = yield* store.createSession("test-provider", "test-model");
-          expect(
-            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Read"))),
-          ).toMatchObject({ reason: "tool-storage" });
-          const run = (yield* store.runs(session.id))[0];
-          expect((yield* store.toolCalls(run?.id ?? ""))[0]).toMatchObject({
-            status: "failed",
-            failureReason: "agent:tool-storage",
-          });
+          expect(yield* reportedFailures(session.id, "Read")).toEqual(["agent:tool-arguments"]);
         }),
       );
-      expect(state.requests).toHaveLength(1);
+      expect(state.requests).toHaveLength(2);
+      expect(state.requests[1]?.messages.at(-1)).toMatchObject({
+        role: "tool",
+        output: expect.stringContaining("The note does not exist."),
+      });
     } finally {
       await state.close();
     }
@@ -1404,7 +1453,7 @@ describe.concurrent("notes conversation", () => {
       call: tool("read_note", '{"path":"a.md","other":true}'),
       reason: "tool-arguments",
     },
-  ])("rejects $name before any filesystem work", async ({ call, reason }) => {
+  ])("reports $name before any filesystem work", async ({ call, reason }) => {
     const state = await fixture(() => completed([call]));
 
     try {
@@ -1412,19 +1461,16 @@ describe.concurrent("notes conversation", () => {
         Effect.gen(function* () {
           const store = yield* Store;
           const session = yield* store.createSession("test-provider", "test-model");
-          expect(
-            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Hello"))),
-          ).toMatchObject({ reason });
+          expect(yield* reportedFailures(session.id, "Hello")).toEqual([`agent:${reason}`]);
           const run = (yield* store.runs(session.id))[0];
-          expect(run).toMatchObject({ status: "failed", failureReason: `agent:${reason}` });
           expect((yield* store.toolCalls(run?.id ?? ""))[0]).toMatchObject({
-            status: "interrupted",
+            status: "failed",
             startedAt: null,
           });
         }),
       );
       expect(await readdir(state.directory)).toEqual(["store"]);
-      expect(state.requests).toHaveLength(1);
+      expect(state.requests).toHaveLength(2);
     } finally {
       await state.close();
     }

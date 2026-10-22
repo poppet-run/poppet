@@ -212,9 +212,17 @@ export const ToolCall = Schema.Struct({
   failureReason: Schema.NullOr(Schema.NonEmptyString),
 });
 
-/** A tool's confirmed output or the reason execution failed, stopped, or became uncertain. */
+/**
+ * A tool's confirmed output or the reason execution failed, stopped, or became uncertain.
+ * A failure with output is returned to the model as the call's reply, so its run can continue.
+ */
 export const ToolOutcome = Schema.Union([
   Schema.Struct({ status: Schema.Literal("completed"), output: Schema.String }),
+  Schema.Struct({
+    status: Schema.Literal("failed"),
+    reason: Schema.NonEmptyString,
+    output: Schema.String,
+  }),
   Schema.Struct({
     status: Schema.Literals(["failed", "interrupted", "uncertain"]),
     reason: Schema.NonEmptyString,
