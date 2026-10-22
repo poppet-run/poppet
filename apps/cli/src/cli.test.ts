@@ -1122,6 +1122,7 @@ describe("CLI", () => {
       "skills",
       "skills list",
       "skills show",
+      "memory list",
       "chat new",
       "tasks add",
       "tasks run",
@@ -1159,6 +1160,9 @@ describe("CLI", () => {
       const skillsHelp = await invoke(["skills", "--help"], environment);
       expect(skillsHelp.stdout).toMatch(/list +List local skills/);
       expect(skillsHelp.stdout).toMatch(/show +Show a skill's Markdown instructions/);
+
+      const memoryHelp = await invoke(["memory", "list", "--help"], environment);
+      expect(memoryHelp.stdout).toContain("Use this project's saved facts instead of global facts");
 
       for (const action of ["login", "logout", "status", "models"])
         expect(providerHelp.stdout).toContain(`  ${action} `);

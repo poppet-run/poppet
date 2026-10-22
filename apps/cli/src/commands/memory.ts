@@ -1,6 +1,6 @@
 import { MemoryKey, MemoryValue } from "@poppet/memory";
 import { Console, Effect } from "effect";
-import { Argument, Command } from "effect/cli";
+import { Argument, Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
 import { projectFlag, textArgument } from "#src/commands/flags";
@@ -8,6 +8,10 @@ import { manageMemory, type MemoryCommand } from "#src/memory";
 
 export const memoryCommand = (context: CLIContext) => {
   const { runtime, throughWorker } = context;
+
+  const memoryProjectFlag = projectFlag.pipe(
+    Flag.withDescription("Use this project's saved facts instead of global facts"),
+  );
 
   const runMemory = (command: MemoryCommand) =>
     throughWorker(
@@ -22,14 +26,14 @@ export const memoryCommand = (context: CLIContext) => {
   return Command.make("memory").pipe(
     Command.withDescription("Manage explicitly saved facts"),
     Command.withSubcommands([
-      Command.make("list", { project: projectFlag }, ({ project }) =>
+      Command.make("list", { project: memoryProjectFlag }, ({ project }) =>
         runMemory(project === undefined ? { action: "list" } : { action: "list", project }),
       ).pipe(Command.withDescription("List saved facts")),
       ...(["remember", "replace"] as const).map((action) =>
         Command.make(
           action,
           {
-            project: projectFlag,
+            project: memoryProjectFlag,
             key: Argument.String("key").pipe(Argument.withSchema(MemoryKey)),
             value: textArgument("value").pipe(Argument.withSchema(MemoryValue)),
           },
@@ -47,7 +51,7 @@ export const memoryCommand = (context: CLIContext) => {
         "forget",
         {
           key: Argument.String("key").pipe(Argument.withSchema(MemoryKey)),
-          project: projectFlag,
+          project: memoryProjectFlag,
         },
         ({ key, project }) =>
           runMemory(
