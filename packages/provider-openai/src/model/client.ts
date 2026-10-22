@@ -1,5 +1,6 @@
+import { openAIClient } from "@poppet/provider-protocol";
 import { Redacted } from "effect";
-import OpenAI, { APIError } from "openai";
+import { APIError } from "openai";
 
 import { ConnectionError, requestFailure, resource } from "#src/connection";
 import type { HttpFetch } from "#src/oauth/http";
@@ -19,11 +20,4 @@ export const modelFailure = (cause: unknown): ConnectionError => {
 // The SDK puts this OAuth access token in the bearer header through its apiKey
 // option. Disable retries so one verification attempt cannot silently repeat inference.
 export const clientFor = (token: Redacted.Redacted<string>, http: HttpFetch) =>
-  new OpenAI({
-    apiKey: Redacted.value(token),
-    baseURL: resource,
-    maxRetries: 0,
-    logLevel: "off",
-    timeout: 45_000,
-    fetch: http,
-  });
+  openAIClient({ key: token, baseUrl: resource, http });

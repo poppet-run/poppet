@@ -1,28 +1,21 @@
+import { apiKeyProvider } from "@poppet/credentials";
 import {
-  ApiKeyStoreLive,
-  makeApiKeyConnection,
-  loadApiKey as storedApiKey,
-} from "@poppet/credentials";
-import {
-  Provider,
-  ProviderEnvironment,
-  ProviderConnection,
-  type ProviderRegistration,
-  ProviderError,
   invalidRequest,
+  userAgent,
+  type HttpFetch,
+  type ProviderError,
   type ModelDescription,
   type ProviderOperations,
 } from "@poppet/provider";
-import { chatCompletionsModel } from "@poppet/provider-protocol";
-import { Effect, Layer, Redacted, Schema } from "effect";
-import OpenAI, { APIError } from "openai";
+import { openAIClient, fetchModelCatalog, chatCompletionsModel } from "@poppet/provider-protocol";
+import { Effect, Redacted, Schema } from "effect";
 
 import { routerFailure, routerOptions } from "#src/protocol";
 
-export type HttpFetch = (input: Request | string | URL, init?: RequestInit) => Promise<Response>;
+export type { HttpFetch } from "@poppet/provider";
 
 const headers = {
-  "User-Agent": "poppet/0.0.0",
+  "User-Agent": userAgent,
   "HTTP-Referer": "https://poppet.run",
   "X-OpenRouter-Title": "Poppet",
 };
@@ -78,56 +71,20 @@ const describeModel = (model: typeof CatalogModel.Type): ModelDescription => {
   };
 };
 
-const apiKeyEnvironment = "POPPET_OPENROUTER_API_KEY";
-
-export const loadApiKey = storedApiKey("openrouter", apiKeyEnvironment);
-
 export const makeOpenRouterProvider = (
   key: Effect.Effect<Redacted.Redacted<string>, ProviderError>,
   http: HttpFetch = fetch,
   baseUrl = "https://openrouter.ai/api/v1",
 ): ProviderOperations => {
-  const catalog = Effect.gen(function* () {
-    // Keep the fetch and body read inside one cancellation boundary.
-    const body = yield* Effect.tryPromise({
-      try: async (signal) => {
-        const response = await http(`${baseUrl}/models`, { signal, headers });
-
-        if (!response.ok) {
-          await response.body?.cancel();
-          throw routerFailure(
-            new APIError(response.status, undefined, undefined, response.headers),
-          );
-        }
-
-        try {
-          return await response.json();
-        } catch {
-          throw invalidRequest("openrouter", "OpenRouter returned an invalid model catalog.");
-        }
-      },
-      catch: (cause) => routerFailure(cause),
-    });
-
-    return yield* Schema.decodeUnknownEffect(Catalog)(body).pipe(
-      Effect.mapError(() =>
-        invalidRequest("openrouter", "OpenRouter returned an unsupported model catalog."),
-      ),
-      Effect.map((value) => value.data.filter(supportsText)),
-    );
-  }).pipe(
-    Effect.timeoutOrElse({
-      duration: "30 seconds",
-      orElse: () =>
-        Effect.fail(
-          new ProviderError({
-            provider: "openrouter",
-            reason: "temporary",
-            message: "OpenRouter model discovery timed out.",
-          }),
-        ),
-    }),
-  );
+  const catalog = fetchModelCatalog({
+    provider: "openrouter",
+    label: "OpenRouter",
+    url: `${baseUrl}/models`,
+    http,
+    headers,
+    schema: Catalog,
+    failure: routerFailure,
+  }).pipe(Effect.map((value) => value.data.filter(supportsText)));
 
   return {
     id: "openrouter",
@@ -146,18 +103,7 @@ export const makeOpenRouterProvider = (
           );
 
         const client = key.pipe(
-          Effect.map(
-            (token) =>
-              new OpenAI({
-                apiKey: Redacted.value(token),
-                baseURL: baseUrl,
-                fetch: http,
-                maxRetries: 0,
-                logLevel: "off",
-                timeout: 45_000,
-                defaultHeaders: headers,
-              }),
-          ),
+          Effect.map((token) => openAIClient({ key: token, baseUrl, http, headers })),
         );
 
         return chatCompletionsModel(
@@ -172,29 +118,13 @@ export const makeOpenRouterProvider = (
   };
 };
 
-const inference = Layer.effect(
-  Provider,
-  Effect.gen(function* () {
-    const environment = yield* ProviderEnvironment;
-
-    return makeOpenRouterProvider(
-      loadApiKey.pipe(Effect.provideService(ProviderEnvironment, environment)),
-    );
-  }),
-);
-
-export const OpenRouterLive = Layer.effect(
-  ProviderConnection,
-  Provider.use((provider) => makeApiKeyConnection(provider, apiKeyEnvironment)),
-).pipe(Layer.provideMerge([inference, ApiKeyStoreLive]));
-
-export const openRouter: ProviderRegistration = {
+export const {
+  loadApiKey,
+  layer: OpenRouterLive,
+  registration: openRouter,
+} = apiKeyProvider({
   id: "openrouter",
   name: "OpenRouter",
-  authentication: {
-    consent: false,
-    apiKey: true,
-    help: "API key from hidden input, --key-stdin, or POPPET_OPENROUTER_API_KEY.",
-  },
-  layer: OpenRouterLive,
-};
+  environment: "POPPET_OPENROUTER_API_KEY",
+  make: makeOpenRouterProvider,
+});

@@ -36,3 +36,5 @@ export {
   type ConnectionOperations,
   type ProviderRegistration,
 } from "#src/registration";
+
+export { type HttpFetch, userAgent } from "#src/http";
