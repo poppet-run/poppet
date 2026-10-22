@@ -583,20 +583,53 @@ describe("OpenRouter", () => {
   });
 
   test.each([
-    Response.json({ data: [{ id: "missing-capabilities" }] }),
-    new Response("invalid JSON"),
-    Response.json({ error: "secret-provider-details" }, { status: 503 }),
-  ])("reports catalog failures without credentials or inference", async (response) => {
+    [() => Response.json({ data: [{ id: "secret-provider-details" }] }), "unsupported"],
+    [() => new Response("secret-provider-details"), "invalid"],
+  ] as const)(
+    "reports malformed catalogs without exposing response details",
+    async (response, kind) => {
+      const provider = makeOpenRouterProvider(Effect.die("Key must not be read"), async () =>
+        response(),
+      );
+
+      const failure = await Effect.runPromise(provider.models.pipe(Effect.flip));
+
+      expect(failure).toMatchObject({
+        provider: "openrouter",
+        reason: "invalid-request",
+        message: `OpenRouter returned an ${kind} model catalog.`,
+      });
+      expect(JSON.stringify(failure)).not.toContain("secret-provider-details");
+    },
+  );
+
+  test.each([
+    [401, "authentication"],
+    [402, "quota"],
+    [503, "temporary"],
+  ] as const)("reports catalog HTTP %i and releases its response body", async (status, reason) => {
+    let cancelled = false;
+
     const provider = makeOpenRouterProvider(
       Effect.die("Key must not be read"),
-      async () => response,
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("secret-provider-details"));
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { status },
+        ),
     );
 
-    const failure = await Effect.runPromise(
-      provider.models.pipe(Effect.match({ onSuccess: () => null, onFailure: (error) => error })),
-    );
+    const failure = await Effect.runPromise(provider.models.pipe(Effect.flip));
 
-    expect(failure).toMatchObject({ provider: "openrouter" });
+    expect(failure).toMatchObject({ provider: "openrouter", status, reason });
     expect(JSON.stringify(failure)).not.toContain("secret-provider-details");
+    expect(cancelled).toBe(true);
   });
 });

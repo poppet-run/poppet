@@ -13,10 +13,15 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ProviderEnvironment } from "@poppet/provider";
+import {
+  CredentialInput,
+  Provider,
+  ProviderConnection,
+  ProviderEnvironment,
+} from "@poppet/provider";
 import { ConfigProvider, Effect, Layer, Redacted } from "effect";
 
-import { ApiKeyStore, ApiKeyStoreLive, loadApiKey } from "#src/api-keys";
+import { ApiKeyStore, ApiKeyStoreLive, apiKeyProvider, loadApiKey } from "#src/api-keys";
 import { acquireOwnerLock } from "#src/lock";
 
 import { makeFIFO } from "../../../tools/testing/fifo";
@@ -229,4 +234,57 @@ describe("API-key storage", () => {
       }
     },
   );
+});
+
+test("login saves a key for inference and logout removes access", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-api-key-provider-"));
+  const keys: string[] = [];
+
+  const { registration } = apiKeyProvider({
+    id: "test-provider",
+    name: "Test provider",
+    environment: "TEST_PROVIDER_KEY",
+    make: (key) => ({
+      id: "test-provider",
+      models: key.pipe(
+        Effect.tap((value) => Effect.sync(() => keys.push(Redacted.value(value)))),
+        Effect.as([]),
+      ),
+      resolve: () => Effect.die("No model resolution expected"),
+    }),
+  });
+
+  try {
+    const [provider, connection] = await Effect.runPromise(
+      Effect.all([Provider, ProviderConnection]).pipe(
+        Effect.provide(registration.layer),
+        Effect.provideService(ProviderEnvironment, {
+          applicationName: "Test",
+          dataDirectory: directory,
+        }),
+      ),
+    );
+
+    expect(await Effect.runPromise(connection.status)).toMatchObject({ connected: false });
+    await Effect.runPromise(
+      connection.login({ consent: false, keyStdin: true }).pipe(
+        Effect.provideService(CredentialInput, {
+          readKey: () => Effect.succeed(Redacted.make("saved-key")),
+        }),
+      ),
+    );
+    expect(await Effect.runPromise(connection.status)).toMatchObject({
+      connected: true,
+      source: "stored",
+    });
+    await Effect.runPromise(provider.models);
+    expect(keys).toContain("saved-key");
+    await Effect.runPromise(connection.logout);
+    expect(await Effect.runPromise(connection.status)).toMatchObject({ connected: false });
+    await expect(Effect.runPromise(provider.models)).rejects.toMatchObject({
+      reason: "authentication",
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

@@ -1,8 +1,9 @@
+import type { HttpFetch } from "@poppet/provider";
 import { Effect } from "effect";
 
 import { ConnectionError } from "#src/connection";
 
-export type HttpFetch = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+export type { HttpFetch } from "@poppet/provider";
 
 export const networkError = () =>
   new ConnectionError({

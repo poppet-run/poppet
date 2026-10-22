@@ -13,3 +13,5 @@ export {
   safeIdentifier,
   type InferenceOptions,
 } from "#src/errors";
+
+export { openAIClient, fetchModelCatalog } from "#src/openai-compatible";

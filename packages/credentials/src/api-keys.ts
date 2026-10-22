@@ -5,6 +5,8 @@ import { join } from "node:path";
 
 import {
   CredentialInput,
+  Provider,
+  ProviderConnection,
   ProviderEnvironment,
   ProviderId,
   ProviderError,
@@ -12,6 +14,7 @@ import {
   invalidRequest,
   type ConnectionOperations,
   type ProviderOperations,
+  type ProviderRegistration,
 } from "@poppet/provider";
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 
@@ -286,3 +289,43 @@ export const makeApiKeyConnection = (provider: ProviderOperations, environment: 
         }),
     } satisfies ConnectionOperations;
   });
+
+export const apiKeyProvider = (options: {
+  readonly id: ProviderId;
+  readonly name: string;
+  readonly environment: string;
+  readonly make: (
+    key: Effect.Effect<Redacted.Redacted<string>, ProviderError>,
+  ) => ProviderOperations;
+}) => {
+  const key = loadApiKey(options.id, options.environment);
+
+  const inference = Layer.effect(
+    Provider,
+    Effect.gen(function* () {
+      const environment = yield* ProviderEnvironment;
+
+      return options.make(key.pipe(Effect.provideService(ProviderEnvironment, environment)));
+    }),
+  );
+
+  const layer = Layer.effect(
+    ProviderConnection,
+    Provider.use((provider) => makeApiKeyConnection(provider, options.environment)),
+  ).pipe(Layer.provideMerge([inference, ApiKeyStoreLive]));
+
+  return {
+    loadApiKey: key,
+    layer,
+    registration: {
+      id: options.id,
+      name: options.name,
+      authentication: {
+        consent: false,
+        apiKey: true,
+        help: `API key from hidden input, --key-stdin, or ${options.environment}.`,
+      },
+      layer,
+    } satisfies ProviderRegistration,
+  };
+};
