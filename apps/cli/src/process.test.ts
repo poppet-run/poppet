@@ -72,6 +72,7 @@ test.concurrent("invalid configuration exits unsuccessfully", async () => {
   expect(invalidConfig.stderr).toContain("POPPET_DATA_DIR");
 });
 
+// Two sequential CLI startups need headroom when CI runs process tests concurrently.
 test.concurrent("API-key login reads stdin without printing the key and rejects empty input", async () => {
   const provider = "openrouter";
   const directory = await mkdtemp(join(tmpdir(), "poppet-stdin-"));
@@ -96,7 +97,7 @@ test.concurrent("API-key login reads stdin without printing the key and rejects 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-});
+}, 15000);
 
 test.concurrent("web login reads stdin instead of an invalid environment key", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-web-stdin-"));
