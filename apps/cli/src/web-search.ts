@@ -1,6 +1,7 @@
-import { AgentError, ChatSettings, WebSearch, makeWebSearch } from "@poppet/agent";
+import { AgentError, ChatSettings } from "@poppet/agent";
 import { webSearchEnabled } from "@poppet/config";
 import { ApiKeyStore, environmentApiKey } from "@poppet/credentials";
+import { WebSearch, makeWebSearch } from "@poppet/web-search";
 import { Console, Effect, Layer, Option } from "effect";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";

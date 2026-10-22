@@ -5,7 +5,6 @@ import { join } from "node:path";
 
 import {
   Agent,
-  AgentError,
   ExternalTools,
   AgentLive,
   Pages,
@@ -28,6 +27,7 @@ import {
   type Output,
 } from "@poppet/provider";
 import { SessionReadResult, Store, StoreDatabase, StoreLive } from "@poppet/store";
+import { WebSearchError } from "@poppet/web-search";
 import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { Clock, Console, Deferred, Effect, Fiber, Layer, Match, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
@@ -823,7 +823,9 @@ describe.concurrent("task worker", () => {
       undefined,
       {
         search: () =>
-          Effect.fail(new AgentError({ reason: "tool-rate-limit", message: "Search rate limit" })),
+          Effect.fail(
+            new WebSearchError({ reason: "tool-rate-limit", message: "Search rate limit" }),
+          ),
       },
     );
 

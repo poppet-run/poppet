@@ -12,7 +12,7 @@ change with `bun run check` passing.
 | 2     | [Tool definitions](tool-definitions.md)                       | Tool parameter schemas, argument decoding, bounded text    | —                          |
 | 3     | [OpenAI-compatible providers](openai-compatible-providers.md) | OpenCode Go, OpenRouter, ChatGPT client setup              | —                          |
 | 4     | [Channel registration](channel-registration.md)               | Discord, Telegram, WhatsApp `load` and setup               | —                          |
-| 5     | [Web search client](web-search-client.md)                     | Move the Brave client out of the CLI                       | 1                          |
+| 5     | [Web search client](web-search-client.md)                     | Move the Brave client into `@poppet/web-search`            | 1                          |
 | 6     | [CLI command modules](cli-commands.md)                        | Split `makeCLI` into per-area modules                      | 5 (touches `web` commands) |
 
 ## Not yet planned

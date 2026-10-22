@@ -17,7 +17,7 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`,
 `@poppet/store`, `@poppet/agent`, `@poppet/io`, `@poppet/mcp`,
-`@poppet/memory`, `@poppet/tasks`,
+`@poppet/memory`, `@poppet/tasks`, `@poppet/web-search`,
 `@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`,
 `@poppet/channel-discord`, `@poppet/channel-telegram`, and `@poppet/channel-whatsapp`.
 Root `start` and `dev` commands run the CLI from the
@@ -109,9 +109,13 @@ packages/
     src/memory-tools.ts   Validated memory changes with budget checks and source runs
     src/context.ts        Complete-exchange context assembly and limits
     src/settings.ts       Validated chat budgets
-    src/web-search.ts     Brave HTTP client, result parsing, search tool contract
+    src/web-search.ts     Search tool definition and model argument validation
+  web-search/             @poppet/web-search
+    src/web-search.ts     Search service, Brave HTTP client, bounded results
+    src/errors.ts         Search failures adapted by the agent
   io/                     @poppet/io
     src/io.ts             Bounded stream reads and subprocess cleanup
+    src/public-url.ts     Shared HTTP URL validation and public-address policy
   tasks/                  @poppet/tasks
     src/monitoring.ts     Validated evidence, durable comparisons, recovery projections
     src/monitor-tools.ts  Run-bound observation tool and host-owned instructions
