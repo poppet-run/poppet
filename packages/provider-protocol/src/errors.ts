@@ -12,7 +12,7 @@ export interface InferenceOptions {
   readonly headers?: (request: ModelRequest) => Record<string, string>;
 }
 
-const safeIdentifier = (value: string | null | undefined) =>
+export const safeIdentifier = (value: string | null | undefined) =>
   value && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : undefined;
 
 export const remoteFailure = (
