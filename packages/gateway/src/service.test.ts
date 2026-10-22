@@ -390,6 +390,7 @@ describe.concurrent("messaging gateway", () => {
             true,
           );
 
+          // Exercise more than the delivery queue's 64-row page through scheduled runs.
           for (let index = 1; index <= 66; index++) {
             if (index === 66)
               yield* Effect.promise(() =>
@@ -456,7 +457,7 @@ describe.concurrent("messaging gateway", () => {
     } finally {
       await state.close();
     }
-  });
+  }, 15_000);
 
   test.each([false, true])(
     "chat task delivery uses the current checked conversation, revoked: %s",
