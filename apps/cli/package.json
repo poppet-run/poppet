@@ -23,6 +23,7 @@
     "@poppet/config": "workspace:*",
     "@poppet/credentials": "workspace:*",
     "@poppet/gateway": "workspace:*",
+    "@poppet/io": "workspace:*",
     "@poppet/mcp": "workspace:*",
     "@poppet/memory": "workspace:*",
     "@poppet/platform": "workspace:*",

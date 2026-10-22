@@ -1,4 +1,5 @@
 import { ChannelError, type Attachment } from "@poppet/gateway";
+import { readBounded } from "@poppet/io";
 import { Effect, Redacted, Schema } from "effect";
 
 import type { TelegramSettings } from "#src/settings";
@@ -64,33 +65,18 @@ export const telegramDownload = (
 
         if (!response.ok || response.redirected || (response.url && response.url !== url))
           throw new Error("Invalid download");
-        const reader = response.body?.getReader();
 
-        if (!reader) throw new Error("Missing file");
-        const chunks: Uint8Array[] = [];
-        let bytes = 0;
+        if (!response.body) throw new Error("Missing file");
 
-        try {
-          while (true) {
-            // eslint-disable-next-line no-await-in-loop -- Count actual streamed bytes regardless of metadata.
-            const item = await reader.read();
-
-            if (item.done) break;
-            bytes += item.value.byteLength;
-
-            if (bytes > maxBytes)
-              throw new ChannelError({
-                reason: "attachment",
-                message: "Attachment exceeds its download limit.",
-              });
-            chunks.push(item.value);
-          }
-
-          return new Uint8Array(Buffer.concat(chunks));
-        } finally {
-          await reader.cancel().catch(() => undefined);
-          reader.releaseLock();
-        }
+        return readBounded(
+          response.body,
+          maxBytes,
+          () =>
+            new ChannelError({
+              reason: "attachment",
+              message: "Attachment exceeds its download limit.",
+            }),
+        );
       },
       catch: (cause) =>
         cause instanceof ChannelError
@@ -137,29 +123,16 @@ export const telegramApi =
           },
         );
 
-        const reader = response.body?.getReader();
+        if (!response.body) throw new Error("Missing Telegram response");
 
-        if (!reader) throw new Error("Missing Telegram response");
-        const parts: Uint8Array[] = [];
-        let bytes = 0;
-
-        try {
-          while (true) {
-            // eslint-disable-next-line no-await-in-loop -- Response chunks arrive in order.
-            const item = await reader.read();
-
-            if (item.done) break;
-            bytes += item.value.length;
-
-            if (bytes > 2 * 1024 * 1024) throw new Error("Oversized Telegram response");
-            parts.push(item.value);
-          }
-        } finally {
-          await reader.cancel();
-        }
+        const bytes = await readBounded(
+          response.body,
+          2 * 1024 * 1024,
+          () => new Error("Oversized Telegram response"),
+        );
 
         const decoded = Schema.decodeUnknownSync(Schema.fromJsonString(Envelope))(
-          Buffer.concat(parts).toString("utf8"),
+          Buffer.from(bytes).toString("utf8"),
         );
 
         if (!decoded.ok) {

@@ -18,6 +18,7 @@
     "@poppet/agent": "workspace:*",
     "@poppet/config": "workspace:*",
     "@poppet/credentials": "workspace:*",
+    "@poppet/io": "workspace:*",
     "@poppet/provider": "workspace:*",
     "@poppet/store": "workspace:*",
     "effect": "4.0.4",

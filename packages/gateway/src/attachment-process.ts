@@ -1,3 +1,4 @@
+import { runBounded } from "@poppet/io";
 import { Effect } from "effect";
 
 import { ChannelError } from "#src/channel";
@@ -19,30 +20,6 @@ export const launchAttachmentProcess: AttachmentLauncher = (command, directory) 
     stdout: "pipe",
     stderr: "pipe",
   });
-
-const read = async (stream: ReadableStream<Uint8Array>) => {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let bytes = 0;
-
-  try {
-    while (true) {
-      // eslint-disable-next-line no-await-in-loop -- Count streamed bytes before reading more.
-      const item = await reader.read();
-
-      if (item.done) break;
-      bytes += item.value.byteLength;
-
-      if (bytes > 262144) throw attachmentFailure("Attachment processor output exceeds its limit.");
-      chunks.push(item.value);
-    }
-
-    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
-  } finally {
-    await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
-  }
-};
 
 /** Both pipes are bounded, and every exit kills and reaps the owned process. */
 export const attachmentCommand = (
@@ -68,42 +45,26 @@ export const attachmentCommand = (
           }),
       );
 
-      const abort = () => child.kill("SIGKILL");
-
       return yield* Effect.tryPromise({
         try: async (signal) => {
-          let expired = false;
-          signal.addEventListener("abort", abort, { once: true });
+          const { stdout, code, expired, aborted } = await runBounded(child, {
+            signal,
+            timeout,
+            maxBytes: 262144,
+            tooLarge: () => attachmentFailure("Attachment processor output exceeds its limit."),
+          });
 
-          const timer = setTimeout(() => {
-            expired = true;
-            abort();
-          }, timeout);
+          if (expired)
+            throw attachmentFailure(
+              "Attachment processing timed out. Try a shorter document or recording.",
+            );
 
-          try {
-            if (signal.aborted) abort();
+          if (code !== 0 || aborted)
+            throw attachmentFailure(
+              "The local attachment processor failed. Check the configured executables/model or try a different file.",
+            );
 
-            const [stdout, , code] = await Promise.all([
-              read(child.stdout),
-              read(child.stderr),
-              child.exited,
-            ]);
-
-            if (expired)
-              throw attachmentFailure(
-                "Attachment processing timed out. Try a shorter document or recording.",
-              );
-
-            if (code !== 0 || signal.aborted)
-              throw attachmentFailure(
-                "The local attachment processor failed. Check the configured executables/model or try a different file.",
-              );
-
-            return stdout;
-          } finally {
-            clearTimeout(timer);
-            signal.removeEventListener("abort", abort);
-          }
+          return stdout;
         },
         catch: (cause) =>
           cause instanceof ChannelError
