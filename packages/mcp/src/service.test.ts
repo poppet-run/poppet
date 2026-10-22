@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
+import { watch } from "node:fs";
 import { mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,6 +65,45 @@ const dead = (pid: number) => {
     return false;
   } catch {
     return true;
+  }
+};
+
+const expireRequest = async <A>(
+  state: Awaited<ReturnType<typeof fixture>>,
+  method: string,
+  request: () => Promise<A>,
+) => {
+  const activity = Promise.withResolvers<void>();
+  const watcher = watch(state.directory, () => activity.resolve());
+  jest.useFakeTimers();
+
+  try {
+    let settled = false;
+
+    const result = request().finally(() => {
+      settled = true;
+      activity.resolve();
+    });
+
+    await activity.promise;
+
+    // File IO lets the real subprocess progress while only its timers advance.
+    // eslint-disable-next-line no-unmodified-loop-condition -- The Promise settles during file IO.
+    for (let attempt = 0; attempt < 1000 && !settled; attempt++) {
+      // eslint-disable-next-line no-await-in-loop
+      if (!(await readdir(state.directory)).includes("events")) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const events = await state.events();
+
+      if (events.some((event) => event.method === method)) jest.advanceTimersToNextTimer();
+    }
+
+    expect(settled).toBe(true);
+
+    return await result;
+  } finally {
+    watcher.close();
+    jest.useRealTimers();
   }
 };
 
@@ -206,7 +246,9 @@ describe("MCP stdio client", () => {
             )
               yield* Effect.sleep("5 millis");
           }).pipe(Effect.timeout("2 seconds"));
-          yield* Fiber.interrupt(fiber);
+          yield* Effect.promise(() =>
+            expireRequest(state, "tools/call", () => Effect.runPromise(Fiber.interrupt(fiber))),
+          );
           expect(dead(pid)).toBe(true);
           expect((yield* (yield* MCP).status)[0]).toMatchObject({
             state: "unavailable",
@@ -430,10 +472,12 @@ test("bounds a dispatched timeout without retry and reaps a SIGTERM-resistant pr
       Effect.gen(function* () {
         const tool = (yield* (yield* MCP).snapshot(false))[0]!;
         pid = (yield* (yield* MCP).status)[0]!.pid!;
+        const call = yield* tool.prepare('{"input":"{}"}');
 
-        const error = yield* tool.prepare('{"input":"{}"}').pipe(
-          Effect.flatMap((call) => call.execute),
-          Effect.flip,
+        const error = yield* Effect.promise(() =>
+          expireRequest(state, "tools/call", () =>
+            Effect.runPromise(call.execute.pipe(Effect.flip)),
+          ),
         );
 
         expect(error.reason).toBe("tool-uncertain");
@@ -450,15 +494,17 @@ test("startup timeout releases the client and leaves an actionable status", asyn
   const state = await fixture("startup-hang");
 
   try {
-    await state.run(
-      Effect.gen(function* () {
-        expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
-        expect((yield* (yield* MCP).status)[0]).toMatchObject({
-          state: "unavailable",
-          pid: null,
-          diagnostic: expect.stringContaining("Restart"),
-        });
-      }),
+    await expireRequest(state, "initialize", () =>
+      state.run(
+        Effect.gen(function* () {
+          expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
+          expect((yield* (yield* MCP).status)[0]).toMatchObject({
+            state: "unavailable",
+            pid: null,
+            diagnostic: expect.stringContaining("Restart"),
+          });
+        }),
+      ),
     );
     expect(dead(Number(await readFile(join(state.directory, "pid"), "utf8")))).toBe(true);
   } finally {
