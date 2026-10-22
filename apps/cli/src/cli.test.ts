@@ -1135,6 +1135,10 @@ describe("CLI", () => {
         expect(result.stdout).toContain("poppet");
       }
 
+      const rootHelp = await invoke(["--help"], environment);
+      expect(rootHelp.stdout).toContain("A personal AI agent for local use");
+      expect(rootHelp.stdout).not.toContain("API key");
+
       const providerHelp = await invoke(["provider", "--help"], environment);
 
       for (const action of ["login", "logout", "status", "models"])

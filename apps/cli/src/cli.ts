@@ -16,7 +16,7 @@ import { gatewayCommand } from "#src/commands/gateway";
 import { mcpCommand } from "#src/commands/mcp";
 import { memoryCommand } from "#src/commands/memory";
 import { projectsCommand } from "#src/commands/projects";
-import { describeProviders, providerCommand } from "#src/commands/provider";
+import { providerCommand } from "#src/commands/provider";
 import { skillsCommand } from "#src/commands/skills";
 import { storeCommand } from "#src/commands/store";
 import { tasksCommand } from "#src/commands/tasks";
@@ -43,7 +43,7 @@ export const makeCLI = (
   );
 
   const app = Command.make("poppet").pipe(
-    Command.withDescription(`Poppet\n\nProviders:\n${describeProviders(registered)}`),
+    Command.withDescription("A personal AI agent for local use"),
     Command.withSubcommands([
       configCommand(context),
       storeCommand(context),
