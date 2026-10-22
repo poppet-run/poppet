@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@poppet/gateway": "workspace:*",
+    "@poppet/io": "workspace:*",
     "effect": "4.0.4"
   }
 }

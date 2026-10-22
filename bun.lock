@@ -25,6 +25,7 @@
         "@poppet/config": "workspace:*",
         "@poppet/credentials": "workspace:*",
         "@poppet/gateway": "workspace:*",
+        "@poppet/io": "workspace:*",
         "@poppet/mcp": "workspace:*",
         "@poppet/memory": "workspace:*",
         "@poppet/platform": "workspace:*",
@@ -59,6 +60,7 @@
       "name": "@poppet/browser",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/io": "workspace:*",
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
       },
@@ -77,6 +79,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@poppet/gateway": "workspace:*",
+        "@poppet/io": "workspace:*",
         "effect": "4.0.4",
       },
     },
@@ -119,6 +122,7 @@
         "@poppet/agent": "workspace:*",
         "@poppet/config": "workspace:*",
         "@poppet/credentials": "workspace:*",
+        "@poppet/io": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/store": "workspace:*",
         "effect": "4.0.4",
@@ -128,6 +132,10 @@
         "@poppet/memory": "workspace:*",
         "@poppet/tasks": "workspace:*",
       },
+    },
+    "packages/io": {
+      "name": "@poppet/io",
+      "version": "0.0.0",
     },
     "packages/mcp": {
       "name": "@poppet/mcp",
@@ -447,6 +455,8 @@
     "@poppet/credentials": ["@poppet/credentials@workspace:packages/credentials"],
 
     "@poppet/gateway": ["@poppet/gateway@workspace:packages/gateway"],
+
+    "@poppet/io": ["@poppet/io@workspace:packages/io"],
 
     "@poppet/mcp": ["@poppet/mcp@workspace:packages/mcp"],
 

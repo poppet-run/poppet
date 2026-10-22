@@ -1,5 +1,6 @@
 import { createConnection } from "node:net";
 
+import { readBoundedText, runBounded } from "@poppet/io";
 import { Effect, type Schema } from "effect";
 
 import { BrowserError } from "#src/errors";
@@ -29,31 +30,8 @@ export const launchBrowserProcess: BrowserLauncher = (command, directory, enviro
     stderr: "pipe",
   });
 
-const readOutput = async (stream: ReadableStream<Uint8Array>) => {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-
-  try {
-    while (true) {
-      // Count each chunk before requesting the next one.
-      // eslint-disable-next-line no-await-in-loop
-      const chunk = await reader.read();
-
-      if (chunk.done) break;
-      size += chunk.value.byteLength;
-
-      if (size > maxProcessBytes)
-        throw browserFailure("tool-limit", "Browser command output exceeds 256 KiB.");
-      chunks.push(chunk.value);
-    }
-
-    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
-  } finally {
-    await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
-  }
-};
+const outputTooLarge = () =>
+  browserFailure("tool-limit", "Browser command output exceeds 256 KiB.");
 
 /** Drains both pipes under a byte cap, kills a cancelled command, and always reaps it. */
 export const runBrowserCommand = (
@@ -65,40 +43,18 @@ export const runBrowserCommand = (
 ) =>
   Effect.tryPromise({
     try: async (signal) => {
-      const child = launch(command, directory, environment);
-      let timedOut = false;
-      const abort = () => child.kill("SIGKILL");
+      const { stdout, code, expired, aborted } = await runBounded(
+        launch(command, directory, environment),
+        { signal, timeout, maxBytes: maxProcessBytes, tooLarge: outputTooLarge },
+      );
 
-      signal.addEventListener("abort", abort, { once: true });
+      if (expired || aborted)
+        throw browserFailure("tool-uncertain", "Browser command stopped; effects may be unknown.");
 
-      const timer = setTimeout(() => {
-        timedOut = true;
-        abort();
-      }, timeout);
+      if (code !== 0 && stdout.length === 0)
+        throw browserFailure("tool-uncertain", "Browser command failed; effects may be unknown.");
 
-      try {
-        const [stdout, , code] = await Promise.all([
-          readOutput(child.stdout),
-          readOutput(child.stderr),
-          child.exited,
-        ]);
-
-        if (timedOut || signal.aborted)
-          throw browserFailure(
-            "tool-uncertain",
-            "Browser command stopped; effects may be unknown.",
-          );
-
-        if (code !== 0 && stdout.length === 0)
-          throw browserFailure("tool-uncertain", "Browser command failed; effects may be unknown.");
-
-        return stdout;
-      } finally {
-        clearTimeout(timer);
-        signal.removeEventListener("abort", abort);
-        child.kill("SIGKILL");
-        await child.exited;
-      }
+      return stdout;
     },
     catch: (cause) =>
       cause instanceof BrowserError
@@ -117,7 +73,10 @@ export const startBrowserDaemon = (
   let failed = false;
   let exited = false;
 
-  const pipes = Promise.all([readOutput(child.stdout), readOutput(child.stderr)]).catch(() => {
+  const pipes = Promise.all([
+    readBoundedText(child.stdout, maxProcessBytes, outputTooLarge),
+    readBoundedText(child.stderr, maxProcessBytes, outputTooLarge),
+  ]).catch(() => {
     failed = true;
     child.kill("SIGTERM");
   });

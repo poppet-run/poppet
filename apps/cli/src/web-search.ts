@@ -7,6 +7,7 @@ import {
 } from "@poppet/agent";
 import { webSearchEnabled } from "@poppet/config";
 import { ApiKeyStore, environmentApiKey } from "@poppet/credentials";
+import { readBoundedText } from "@poppet/io";
 import { Console, Effect, Layer, Option, Redacted, Schema } from "effect";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
@@ -66,34 +67,18 @@ export const makeWebSearch = (
 
           if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? ""))
             throw searchFailure();
-          const reader = response.body?.getReader();
 
-          if (reader === undefined) throw searchFailure();
-          const chunks: Uint8Array[] = [];
-          let size = 0;
+          if (!response.body) throw searchFailure();
 
-          try {
-            while (true) {
-              // Each chunk must be counted before reading more of the response.
-              // eslint-disable-next-line no-await-in-loop
-              const chunk = await reader.read();
-
-              if (chunk.done) break;
-              size += chunk.value.byteLength;
-
-              if (size > maxSearchBytes)
-                throw new AgentError({
-                  reason: "tool-limit",
-                  message: "The search response exceeds the 1 MiB body limit.",
-                });
-              chunks.push(chunk.value);
-            }
-          } finally {
-            await reader.cancel().catch(() => undefined);
-            reader.releaseLock();
-          }
-
-          const text = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
+          const text = await readBoundedText(
+            response.body,
+            maxSearchBytes,
+            () =>
+              new AgentError({
+                reason: "tool-limit",
+                message: "The search response exceeds the 1 MiB body limit.",
+              }),
+          );
 
           return webSearchResult(
             Schema.decodeUnknownSync(Schema.fromJsonString(BraveSearchResponse))(text),
