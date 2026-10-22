@@ -91,9 +91,10 @@ socket command.
 
 The first eligible agent run connects lazily. The worker retains its connections
 across requests; a standalone CLI request closes them when its scope ends. A
-server failure leaves built-in tools available. Failed connections remain
-unavailable until the owning process restarts. Calls are never automatically
-retried or replayed.
+server failure leaves built-in tools available. A failed server reconnects on a
+later eligible request after 30 seconds, doubling after each failed reconnection
+to at most 10 minutes; `mcp servers` shows the next `retryAt`. Calls are never
+automatically retried or replayed.
 
 Model tool names use a stable hash of the server ID and original tool name under
 `poppet_mcp`. `chat show <session>` retains `serverId` and `toolName` separately,

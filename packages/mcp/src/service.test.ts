@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ApiKeyStore } from "@poppet/credentials";
-import { ConfigProvider, Effect, Fiber, Layer, Redacted, Schema } from "effect";
+import { Clock, ConfigProvider, Effect, Fiber, Layer, Redacted, Schema } from "effect";
+import { TestClock } from "effect/testing";
 
 import { type MCPServer } from "#src/config";
 import { MCP, makeMCPLive } from "#src/service";
@@ -106,6 +107,14 @@ const expireRequest = async <A>(
     jest.useRealTimers();
   }
 };
+
+// Real time passes for the child process while the test clock controls backoff.
+const reaped = (pid: number) =>
+  Effect.promise(async () => {
+    // Exit is observed by polling the process table.
+    // eslint-disable-next-line no-await-in-loop
+    while (!dead(pid)) await new Promise((resolve) => setTimeout(resolve, 5));
+  });
 
 describe("MCP stdio client", () => {
   test("status never launches, discovery walks pages, calls validate original optional fields, and shutdown reaps the child", async () => {
@@ -299,6 +308,42 @@ describe("MCP stdio client", () => {
       await state.close();
     }
   });
+});
+
+test("a failed server reconnects on a later request after its backoff, without replaying calls", async () => {
+  const state = await fixture("protocol-idle", ["read"]);
+
+  try {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const mcp = yield* MCP;
+        yield* TestClock.setTime(1_000_000);
+        expect(yield* mcp.snapshot(false)).toHaveLength(1);
+        const first = (yield* mcp.status)[0]!.pid!;
+
+        // A successful reconnect resets the backoff, so each later failure waits 30 seconds.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const pid = (yield* mcp.status)[0]!.pid!;
+          process.kill(pid, "SIGUSR1");
+          yield* reaped(pid);
+          const failedAt = yield* Clock.currentTimeMillis;
+          expect((yield* mcp.status)[0]).toMatchObject({
+            state: "unavailable",
+            retryAt: failedAt + 30_000,
+          });
+          yield* TestClock.adjust(29_999);
+          expect(yield* mcp.snapshot(false)).toEqual([]);
+          yield* TestClock.adjust(1);
+          expect(yield* mcp.snapshot(false)).toHaveLength(1);
+          expect((yield* mcp.status)[0]).toMatchObject({ state: "connected", retryAt: null });
+          expect((yield* mcp.status)[0]!.pid).not.toBe(first);
+        }
+      }).pipe(Effect.provide(state.layer), Effect.provide(TestClock.layer())),
+    );
+    expect((await state.events()).filter((event) => event.method === "tools/call")).toHaveLength(0);
+  } finally {
+    await state.close();
+  }
 });
 
 test.each(["", "false"])(
@@ -501,7 +546,7 @@ test("startup timeout releases the client and leaves an actionable status", asyn
           expect((yield* (yield* MCP).status)[0]).toMatchObject({
             state: "unavailable",
             pid: null,
-            diagnostic: expect.stringContaining("Restart"),
+            diagnostic: expect.stringContaining("retries on a later request"),
           });
         }),
       ),

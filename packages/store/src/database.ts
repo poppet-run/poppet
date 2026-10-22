@@ -46,7 +46,8 @@ export const StoreDatabaseLive = Layer.effect(
         error.reason === "busy"
           ? new StoreError({
               reason: "busy",
-              message: `Another Poppet store may be open. If an older Poppet process crashed, confirm it has stopped before removing ${lockPath}.`,
+              message:
+                "Another Poppet process has the store open. Stop it, or run the command while the worker is running so it can serve the request.",
             })
           : storageFailure(error),
       ),

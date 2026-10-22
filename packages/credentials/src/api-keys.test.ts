@@ -17,6 +17,7 @@ import { ProviderEnvironment } from "@poppet/provider";
 import { ConfigProvider, Effect, Layer, Redacted } from "effect";
 
 import { ApiKeyStore, ApiKeyStoreLive, loadApiKey } from "#src/api-keys";
+import { acquireOwnerLock } from "#src/lock";
 
 import { makeFIFO } from "../../../tools/testing/fifo";
 
@@ -176,11 +177,23 @@ describe("API-key storage", () => {
       });
       expect(await readFile(target, "utf8")).toBe("leave this alone");
       expect((await stat(target)).mode & 0o777).toBe(0o644);
-      await writeFile(join(auth, "test-provider.lock"), "another owner");
-      await expect(
-        store.run((keys) => keys.write("test-provider", Redacted.make("replacement-key"))),
-      ).rejects.toMatchObject({ reason: "authentication" });
-      expect(await readFile(join(auth, "test-provider.lock"), "utf8")).toBe("another owner");
+      // A competing writer holds the exclusive lock for the whole write.
+      await Effect.runPromise(
+        Effect.scoped(
+          acquireOwnerLock(join(auth, "test-provider.lock")).pipe(
+            Effect.andThen(
+              Effect.promise(async () => {
+                await expect(
+                  store.run((keys) =>
+                    keys.write("test-provider", Redacted.make("replacement-key")),
+                  ),
+                ).rejects.toMatchObject({ reason: "authentication" });
+              }),
+            ),
+          ),
+        ),
+      );
+      expect(await readFile(target, "utf8")).toBe("leave this alone");
       await rm(auth, { recursive: true });
       await symlink(target, auth);
       await expect(store.run((keys) => keys.read("test-provider"))).rejects.toMatchObject({

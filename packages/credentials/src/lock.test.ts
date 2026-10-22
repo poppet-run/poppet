@@ -46,12 +46,36 @@ test("recovers a crashed owner and still excludes another process", async () => 
   }
 });
 
-test("rejects symlinks and named pipes", async () => {
+test("replaces stale markers, even with a reused live PID, and rejects symlinks and named pipes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-owner-protected-"));
   const path = join(directory, "owner.lock");
   const target = join(directory, "untouched");
 
   try {
+    // After a crash and reboot, the saved PID can belong to an unrelated live process.
+    await Effect.runPromise(
+      Effect.forEach([JSON.stringify({ pid: process.pid }), "unknown old owner"], (marker) =>
+        Effect.promise(() => writeFile(path, marker)).pipe(
+          Effect.andThen(
+            Effect.scoped(
+              acquireOwnerLock(path).pipe(
+                Effect.andThen(
+                  Effect.promise(async () => {
+                    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ pid: process.pid });
+                  }),
+                ),
+              ),
+            ),
+          ),
+          Effect.andThen(
+            Effect.promise(async () => {
+              expect(await Bun.file(path).exists()).toBe(false);
+            }),
+          ),
+        ),
+      ),
+    );
+
     await writeFile(target, "keep this file");
     await symlink(target, path);
     await expect(Effect.runPromise(Effect.scoped(acquireOwnerLock(path)))).rejects.toMatchObject({

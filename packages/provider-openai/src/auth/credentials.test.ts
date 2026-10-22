@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { link, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { acquireOwnerLock } from "@poppet/credentials/lock";
+import { Effect } from "effect";
+
 import { createHarness, login, status } from "#src/test/fixtures/chatgpt";
 
 import { makeFIFO } from "../../../../tools/testing/fifo";
@@ -16,8 +19,18 @@ describe("Credential storage", () => {
       await writeFile(path, "invalid-json");
       await expect(harness.run(status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readFile(path, "utf8")).toBe("invalid-json");
-      await writeFile(join(harness.directory, "auth/owner.lock"), "another owner");
-      await expect(harness.run(status)).rejects.toMatchObject({ reason: "busy" });
+      // A competing owner holds the exclusive lock while status runs.
+      await Effect.runPromise(
+        Effect.scoped(
+          acquireOwnerLock(join(harness.directory, "auth/owner.lock")).pipe(
+            Effect.andThen(
+              Effect.promise(async () => {
+                await expect(harness.run(status)).rejects.toMatchObject({ reason: "busy" });
+              }),
+            ),
+          ),
+        ),
+      );
     } finally {
       await harness.close();
     }

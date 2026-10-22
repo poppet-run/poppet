@@ -28,8 +28,11 @@ is running. Only one mode can own a data directory at a time.
 Interactive, scheduled, and messaging model requests share one runner. Chat streams to the
 invoking terminal; Ctrl-C cancels that request and leaves the worker running.
 Stopping the worker interrupts active requests and releases the socket and owner lock. After a crash,
-a new owner automatically reclaims storage from a dead process; unfinished work
-needs an explicit retry. Already queued work survives restart, and a committed
+a new owner automatically reclaims storage from a dead process, even if its PID has
+been reused; unfinished work needs an explicit retry. A messaging adapter that
+fails restarts on its own after a delay, from one second doubling to five minutes,
+without stopping other adapters or scheduling; `gateway status` reports each
+adapter's `restarts` and `lastError`. Storage failures still stop the worker. Already queued work survives restart, and a committed
 answer is recovered without repeating its request. Task commands can open the
 store even if a dead worker left its socket behind. A lost response to a delivered command does
 not trigger local fallback. Task outcomes and provider pauses commit together;
