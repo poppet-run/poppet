@@ -121,4 +121,4 @@ test("the installed launcher forwards shutdown, drains logs, and releases worker
     await Promise.all([stdout, stderr]);
     await rm(directory, { recursive: true, force: true });
   }
-}, 15_000);
+});

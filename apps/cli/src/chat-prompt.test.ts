@@ -53,7 +53,7 @@ test.concurrent("readline releases stdin error listeners after completed prompts
   try {
     const [exitCode, output] = await Effect.runPromise(
       Effect.promise(() => Promise.all([child.exited, finished.promise])).pipe(
-        Effect.timeout("5 seconds"),
+        Effect.timeout("2 seconds"),
       ),
     );
 
@@ -68,7 +68,7 @@ test.concurrent("readline releases stdin error listeners after completed prompts
     child.terminal?.close();
     await child.exited;
   }
-}, 15_000);
+});
 
 const fixture = (lines: (string | null)[]) => {
   let reads = 0;

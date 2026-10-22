@@ -70,7 +70,7 @@ test.concurrent("invalid configuration exits unsuccessfully", async () => {
   expect(invalidConfig.exitCode).toBe(1);
   expect(invalidConfig.stdout).toBe("");
   expect(invalidConfig.stderr).toContain("POPPET_DATA_DIR");
-}, 15_000);
+});
 
 test.concurrent("API-key login reads stdin without printing the key and rejects empty input", async () => {
   const provider = "openrouter";
@@ -96,7 +96,7 @@ test.concurrent("API-key login reads stdin without printing the key and rejects 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-}, 15_000);
+});
 
 test.concurrent("web login reads stdin instead of an invalid environment key", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-web-stdin-"));
@@ -159,7 +159,7 @@ test.concurrent("channel setup bounds stdin and saves its token without printing
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-}, 15_000);
+});
 
 test.concurrent("WhatsApp QR pairing rejects redirected output without creating credentials", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-whatsapp-terminal-"));
@@ -193,4 +193,4 @@ test.concurrent("interactive chat rejects redirected input without creating a se
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-}, 15_000);
+});
