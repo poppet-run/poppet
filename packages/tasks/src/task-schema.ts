@@ -32,6 +32,21 @@ export const Schedule = Schema.Union([
 
 export type Schedule = typeof Schedule.Type;
 
+/** Finds the latest cron time at or before the given Unix milliseconds. */
+export const latestOccurrence = (schedule: Schedule, atOrBefore: number): number | null => {
+  if (schedule.type === "once") return null;
+
+  try {
+    // Cron times fall on whole seconds and prev is strict, so search from the next second.
+    return Cron.prev(
+      Cron.parseUnsafe(schedule.expression, schedule.timezone),
+      atOrBefore + 1000,
+    ).getTime();
+  } catch {
+    throw new TaskError({ message: "Invalid cron expression or timezone." });
+  }
+};
+
 /** Finds the next cron time after the given Unix milliseconds; one-off schedules do not repeat. */
 export const nextOccurrence = (schedule: Schedule, after: number): number | null => {
   if (schedule.type === "once") return null;

@@ -6,7 +6,13 @@ import { join, resolve } from "node:path";
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
-import { browserSettings, loadConfig, webSearchEnabled, voiceSettings } from "#src/config";
+import {
+  browserSettings,
+  loadConfig,
+  taskCatchUpMinutes,
+  webSearchEnabled,
+  voiceSettings,
+} from "#src/config";
 import { ConfigSource, loadConfigSource } from "#src/source";
 
 const load = (environment: Record<string, string>) =>
@@ -241,6 +247,30 @@ describe("configuration sources", () => {
       await expect(
         Effect.runPromise(webSearchEnabled.pipe(Effect.provide(invalid.context))),
       ).rejects.toHaveProperty("_tag", "ConfigError");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("the task catch-up window defaults to an hour and accepts file and environment values", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-task-config-"));
+
+    const read = (environment: Record<string, string>) =>
+      Effect.runPromise(
+        load({ POPPET_DATA_DIR: directory, ...environment }).pipe(
+          Effect.flatMap(({ context }) => taskCatchUpMinutes.pipe(Effect.provide(context))),
+        ),
+      );
+
+    try {
+      expect(await read({})).toBe(60);
+      await writeFile(join(directory, "config.json"), '{"tasks":{"catchUpMinutes":0}}');
+      expect(await read({})).toBe(0);
+      expect(await read({ POPPET_TASK_CATCH_UP_MINUTES: "15" })).toBe(15);
+      await expect(read({ POPPET_TASK_CATCH_UP_MINUTES: "1441" })).rejects.toHaveProperty(
+        "_tag",
+        "ConfigError",
+      );
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

@@ -23,7 +23,12 @@ const recurring: NewTask = {
 
 const once: NewTask = { ...recurring, schedule: { type: "once", at: start } };
 
-const fixture = async () => {
+const morning: NewTask = {
+  ...recurring,
+  schedule: { type: "cron", expression: "0 9 * * *", timezone: "UTC" },
+};
+
+const fixture = async (catchUpMs = 0) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-tasks-"));
 
   const config = Layer.succeed(AppConfig, {
@@ -49,7 +54,7 @@ const fixture = async () => {
           const { database } = yield* StoreDatabase;
           const store = yield* Store;
 
-          return yield* body(makeTaskStore(database), store, database);
+          return yield* body(makeTaskStore(database, catchUpMs), store, database);
         }).pipe(Effect.provide(layer)),
       ),
     close: () => rm(directory, { recursive: true, force: true }),
@@ -915,6 +920,73 @@ describe.concurrent("task schedules", () => {
           repo.reconcile(start + 11 * 60_000);
           repo.reconcile(start + 11 * 60_000);
           expect(repo.occurrences(daily.id)).toHaveLength(1);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("runs the latest missed recurring time once within the catch-up window", async () => {
+    const state = await fixture(60 * 60_000);
+
+    try {
+      await state.run((repo) =>
+        Effect.sync(() => {
+          const job = repo.add(morning, start - 60_000);
+
+          // A worker that starts shortly after 09:00 still runs that morning's occurrence.
+          repo.reconcile(start + 5 * 60_000, true);
+          repo.reconcile(start + 5 * 60_000, true);
+          expect(repo.occurrences(job.id).map((item) => item.scheduledAt)).toEqual([start]);
+          expect(repo.skips(job.id)).toEqual([]);
+          expect(repo.task(job.id).nextAt).toBe(start + 24 * 60 * 60_000);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each([true, false])(
+    "skips recurring times older than the catch-up window, at startup: %s",
+    async (startup) => {
+      const state = await fixture(60 * 60_000);
+
+      try {
+        await state.run((repo) =>
+          Effect.sync(() => {
+            const job = repo.add(morning, start - 60_000);
+            const late = start + 2 * 60 * 60_000;
+
+            repo.reconcile(late, startup);
+            expect(repo.occurrences(job.id)).toEqual([]);
+            expect(repo.skips(job.id)).toEqual([
+              { firstAt: start, lastAt: late, reason: startup ? "downtime" : "worker-delayed" },
+            ]);
+            expect(repo.task(job.id).nextAt).toBe(start + 24 * 60 * 60_000);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("after a long outage runs only the most recent recurring time and records the rest", async () => {
+    const state = await fixture(60 * 60_000);
+
+    try {
+      await state.run((repo) =>
+        Effect.sync(() => {
+          const job = repo.add(morning, start - 60_000);
+          const twoDaysLater = start + 2 * 24 * 60 * 60_000;
+
+          repo.reconcile(twoDaysLater + 10 * 60_000, true);
+          expect(repo.occurrences(job.id).map((item) => item.scheduledAt)).toEqual([twoDaysLater]);
+          expect(repo.skips(job.id)).toEqual([
+            { firstAt: start, lastAt: twoDaysLater - 1, reason: "downtime" },
+          ]);
         }),
       );
     } finally {

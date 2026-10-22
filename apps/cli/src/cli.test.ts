@@ -1141,6 +1141,7 @@ describe("CLI", () => {
         voice: { enabled: false },
         mcpServers: [],
         chat: defaultPolicy,
+        tasks: { catchUpMinutes: 60 },
         configFile: { path: join(directory, "config.json"), exists: false },
         environmentOverrides: ["POPPET_DATA_DIR", "POPPET_APP_NAME"],
       });
@@ -1198,7 +1199,8 @@ describe("CLI", () => {
         browser: { enabled: false },
         voice: { enabled: false },
         mcpServers: [],
-        chat: { ...chat, outputTokens: 512 },
+        chat: { ...chat, outputTokens: 512, runDeadlineSeconds: 300 },
+        tasks: { catchUpMinutes: 60 },
         configFile: { path: join(directory, "config.json"), exists: true },
         environmentOverrides: ["POPPET_DATA_DIR", "POPPET_MODEL", "POPPET_OUTPUT_TOKENS"],
       });

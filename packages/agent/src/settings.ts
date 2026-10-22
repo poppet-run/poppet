@@ -13,6 +13,8 @@ export interface ChatPolicy {
   readonly soulBytes: number;
   readonly profileBytes: number;
   readonly factsBytes: number;
+  /** Absolute deadline for one chat request, including every model turn and tool call. */
+  readonly runDeadlineSeconds: number;
 }
 
 /** Supplies validated chat limits shared by context assembly and the tool loop. */
@@ -32,6 +34,7 @@ export const defaultPolicy: ChatPolicy = {
   soulBytes: 8192,
   profileBytes: 8192,
   factsBytes: 8192,
+  runDeadlineSeconds: 300,
 };
 
 const bounded = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }));
@@ -75,6 +78,10 @@ export const ChatSettingsLive = Layer.effect(
         factsBytes: Config.schema(bounded(65536), "POPPET_FACTS_BYTES").pipe(
           Config.withDefault(defaultPolicy.factsBytes),
         ),
+        runDeadlineSeconds: Config.schema(
+          Schema.Int.check(Schema.isBetween({ minimum: 30, maximum: 3600 })),
+          "POPPET_RUN_DEADLINE_SECONDS",
+        ).pipe(Config.withDefault(defaultPolicy.runDeadlineSeconds)),
       },
       { concurrency: 1 },
     ),

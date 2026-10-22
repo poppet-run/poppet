@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
+import { taskCatchUpMinutes } from "@poppet/config";
 import { DeliveryDestination, StoreDatabase, SkillSnapshot, ProjectSnapshot } from "@poppet/store";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 
@@ -17,6 +18,7 @@ import {
   ControlReceipt,
   TaskDefinition,
   type TaskTarget,
+  latestOccurrence,
   nextOccurrence,
 } from "#src/task-schema";
 
@@ -40,7 +42,11 @@ const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, 
   destination, session_id AS sessionId, run_id AS runId, finished_at AS finishedAt, reason FROM job_occurrences`;
 
 /** Builds synchronous task operations on the caller's owned database; failures are thrown. */
-export const makeTaskStore = (database: Database) => {
+/**
+ * catchUpMs is how late a missed recurring occurrence may still run once; older ones are
+ * skipped. Zero keeps the original policy of skipping at startup and running late otherwise.
+ */
+export const makeTaskStore = (database: Database, catchUpMs = 0) => {
   const commandLock = Semaphore.makeUnsafe(1);
   const monitoring = monitoringRecords(database);
 
@@ -117,6 +123,20 @@ export const makeTaskStore = (database: Database) => {
 
     return id;
   };
+
+  // Scheduled occurrences are idempotent per task revision and time.
+  const queue = (job: Task, scheduledAt: number) =>
+    insertOccurrence(
+      job,
+      scheduledAt,
+      scheduledAt,
+      "pending",
+      null,
+      null,
+      "scheduled",
+      job.destination,
+      true,
+    );
 
   const activeOccurrence = (id: string, status: "pending" | "running") => {
     const row = database
@@ -206,13 +226,18 @@ export const makeTaskStore = (database: Database) => {
       .transaction(() => {
         const skipped: TaskSkip[] = [];
 
-        const recordSkip = (job: Task, firstAt: number, reason: TaskSkip["reason"]) => {
+        const recordSkip = (
+          job: Task,
+          firstAt: number,
+          reason: TaskSkip["reason"],
+          lastAt = now,
+        ) => {
           using statement = database.prepare(
             "INSERT INTO job_skips (job_id, first_at, last_at, reason) VALUES (?, ?, ?, ?)",
           );
 
-          statement.run(job.id, firstAt, now, reason);
-          skipped.push({ jobId: job.id, name: job.name, firstAt, lastAt: now, reason });
+          statement.run(job.id, firstAt, lastAt, reason);
+          skipped.push({ jobId: job.id, name: job.name, firstAt, lastAt, reason });
         };
 
         if (startup) recover(now);
@@ -229,21 +254,22 @@ export const makeTaskStore = (database: Database) => {
           if (busy && job.schedule.type === "once") continue;
 
           const skip = job.schedule.type === "cron" && (startup || busy);
+          const missed = startup ? "downtime" : "worker-delayed";
 
-          if (skip) {
+          if (job.schedule.type === "cron" && !busy && catchUpMs > 0) {
+            // Run only the most recent missed time, and only while it is still recent.
+            const latest = Math.max(job.nextAt, latestOccurrence(job.schedule, now) ?? job.nextAt);
+
+            if (now - latest > catchUpMs) recordSkip(job, job.nextAt, missed);
+            else {
+              queue(job, latest);
+
+              if (latest > job.nextAt) recordSkip(job, job.nextAt, missed, latest - 1);
+            }
+          } else if (skip) {
             recordSkip(job, job.nextAt, startup ? "downtime" : "previous-occurrence-active");
           } else {
-            insertOccurrence(
-              job,
-              job.nextAt,
-              job.nextAt,
-              "pending",
-              null,
-              null,
-              "scheduled",
-              job.destination,
-              true,
-            );
+            queue(job, job.nextAt);
 
             // A delayed timer enqueues the earliest due occurrence and skips the rest.
             const following = nextOccurrence(job.schedule, job.nextAt);
@@ -973,5 +999,10 @@ export class TaskRepository extends Context.Service<TaskRepository, TaskStore>()
 
 export const TaskRepositoryLive = Layer.effect(
   TaskRepository,
-  Effect.map(StoreDatabase, ({ database }) => makeTaskStore(database)),
+  Effect.gen(function* () {
+    const { database } = yield* StoreDatabase;
+    const minutes = yield* taskCatchUpMinutes;
+
+    return makeTaskStore(database, minutes * 60_000);
+  }),
 );

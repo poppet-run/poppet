@@ -329,7 +329,8 @@ token of reported capacity; providers can still reject oversized context. A new
 message that cannot fit fails clearly. A read result that would not fit the
 remaining budget is refused and reported to the model, which can ask for less. Trimming changes
 only the request, not saved history. Answers are limited to 128 KiB of text and
-1 MiB including continuation. The runner has a five-minute absolute deadline;
+1 MiB including continuation. The runner has a five-minute absolute deadline by default
+(`chat.runDeadlineSeconds`);
 provider inference also retains its 60-second deadline.
 
 Tool-capable models receive the three [notes tools](notes.md), conversation search,

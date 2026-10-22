@@ -1093,8 +1093,10 @@ describe.concurrent("task worker", () => {
           yield* reconcileTasks(repo, start + 10 * 60_000);
           yield* reconcileTasks(repo, start + 10 * 60_000);
 
+          // Startup queues the latest missed minute; the queued work then blocks later minutes.
           expect(state.lines).toEqual([
-            `[2026-10-14T09:05:00.000Z] Task "Summary" task=${job.id} skipped 2026-10-14T09:01:00.000Z to 2026-10-14T09:05:00.000Z reason=downtime`,
+            `[2026-10-14T09:05:00.000Z] Task "Summary" task=${job.id} skipped 2026-10-14T09:01:00.000Z to 2026-10-14T09:04:59.999Z reason=downtime`,
+            `[2026-10-14T09:06:00.000Z] Task "Summary" task=${job.id} skipped 2026-10-14T09:06:00.000Z to 2026-10-14T09:06:00.000Z reason=previous-occurrence-active`,
             `[2026-10-14T09:10:00.000Z] Task "Summary" task=${job.id} skipped 2026-10-14T09:07:00.000Z to 2026-10-14T09:10:00.000Z reason=previous-occurrence-active`,
           ]);
           const broken = repo.add({ ...state.task, schedule }, start + 1);
@@ -1108,8 +1110,8 @@ describe.concurrent("task worker", () => {
           );
 
           expect(error).toMatchObject({ message: expect.stringContaining("Invalid cron") });
-          expect(state.lines).toHaveLength(2);
-          expect(repo.skips(job.id)).toHaveLength(2);
+          expect(state.lines).toHaveLength(3);
+          expect(repo.skips(job.id)).toHaveLength(3);
         }),
       );
     } finally {
@@ -1480,8 +1482,10 @@ describe.concurrent("task worker", () => {
           yield* TestClock.adjust("1 second");
           expect(repo.occurrences(recurring.id)).toHaveLength(1);
           expect(repo.occurrences(once.id)).toHaveLength(1);
+          // Waking within the catch-up window runs the latest missed minute, not the earliest.
+          expect(repo.occurrences(recurring.id)[0]?.scheduledAt).toBe(wallTime);
           expect(repo.skips(recurring.id)).toEqual([
-            { firstAt: 120_000, lastAt: wallTime, reason: "worker-delayed" },
+            { firstAt: 60_000, lastAt: wallTime - 1, reason: "worker-delayed" },
           ]);
           expect(state.requests).toHaveLength(3);
           expect(repo.status()).toMatchObject({ pendingCount: 0, nextScheduledAt: 3_660_000 });

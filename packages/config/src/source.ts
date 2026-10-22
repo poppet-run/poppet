@@ -25,6 +25,7 @@ const FileSettings = Schema.Struct({
   browser: Schema.optionalKey(BrowserSettings),
   mcpServers: Schema.optionalKey(MCPServers),
   voice: Schema.optionalKey(VoiceSettings),
+  tasks: Schema.optionalKey(Schema.Struct({ catchUpMinutes: Schema.optionalKey(Schema.Int) })),
   chat: Schema.optionalKey(
     Schema.Struct({
       logReasoning: Schema.optionalKey(Schema.Boolean),
@@ -38,6 +39,7 @@ const FileSettings = Schema.Struct({
       soulBytes: Schema.optionalKey(Schema.Int),
       profileBytes: Schema.optionalKey(Schema.Int),
       factsBytes: Schema.optionalKey(Schema.Int),
+      runDeadlineSeconds: Schema.optionalKey(Schema.Int),
     }),
   ),
 });
@@ -111,6 +113,7 @@ export const loadConfigSource = Effect.gen(function* () {
     POPPET_BROWSER: browserFileValue(file.browser, directory),
     POPPET_MCP_SERVERS: mcpFileValue(file.mcpServers, directory),
     POPPET_VOICE: voiceFileValue(file.voice),
+    POPPET_TASK_CATCH_UP_MINUTES: file.tasks?.catchUpMinutes,
     POPPET_LOG_REASONING: file.chat?.logReasoning,
     POPPET_LOG_TIMINGS: file.chat?.logTimings,
     POPPET_CONTEXT_BYTES: file.chat?.contextBytes,
@@ -122,6 +125,7 @@ export const loadConfigSource = Effect.gen(function* () {
     POPPET_SOUL_BYTES: file.chat?.soulBytes,
     POPPET_PROFILE_BYTES: file.chat?.profileBytes,
     POPPET_FACTS_BYTES: file.chat?.factsBytes,
+    POPPET_RUN_DEADLINE_SECONDS: file.chat?.runDeadlineSeconds,
   };
 
   const environmentOverrides = yield* Effect.filter(
