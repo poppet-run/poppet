@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { BunRuntime } from "@effect/platform-bun";
 import { ConfigProvider, Console, Effect } from "effect";
 

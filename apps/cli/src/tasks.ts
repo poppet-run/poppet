@@ -102,7 +102,7 @@ export const prepareTask = (
         () =>
           new TaskError({
             message:
-              "Use a nonempty task name up to 128 bytes, a prompt up to 16384 bytes, and a model ID up to 1024 bytes, with no surrounding whitespace. Run bun run start --help.",
+              "Use a nonempty task name up to 128 bytes, a prompt up to 16384 bytes, and a model ID up to 1024 bytes, with no surrounding whitespace. Run poppet --help.",
           }),
       ),
     );

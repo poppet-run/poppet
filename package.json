@@ -4,6 +4,9 @@
   "private": true,
   "description": "A small personal AI agent for local use.",
   "license": "BSD-3-Clause",
+  "bin": {
+    "poppet": "apps/cli/src/main.ts"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"

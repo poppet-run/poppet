@@ -1092,7 +1092,7 @@ describe("CLI", () => {
         expect(result.exitCode).toBe(0);
         expect(result.stderr).toBe("");
         expect(result.stdout).toContain("USAGE");
-        expect(result.stdout).toContain("bun run start");
+        expect(result.stdout).toContain("poppet");
       }
 
       const taskHelp = await invoke(["tasks", "add", "--help"], environment);

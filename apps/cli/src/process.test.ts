@@ -1,8 +1,43 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+test("CLI bin entry runs outside the checkout without loading configuration", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-entry-"));
+  const root = fileURLToPath(new URL("../../..", import.meta.url));
+  const { bin } = await Bun.file(join(root, "package.json")).json();
+  const entry = join(root, bin.poppet);
+  const command = join(directory, "poppet.ts");
+
+  try {
+    expect(await Bun.file(entry).text()).toStartWith("#!/usr/bin/env bun\n");
+    expect((await stat(entry)).mode & 0o111).not.toBe(0);
+    await symlink(entry, command);
+
+    const child = Bun.spawn([process.execPath, command, "--help"], {
+      cwd: directory,
+      env: { PATH: process.env.PATH ?? "", POPPET_DATA_DIR: "" },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("poppet <subcommand>");
+    expect(stderr).toBe("");
+    expect(await readdir(directory)).toEqual(["poppet.ts"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 const invokeProcess = async (
   args: ReadonlyArray<string>,

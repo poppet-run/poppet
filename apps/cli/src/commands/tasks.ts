@@ -250,10 +250,9 @@ export const tasksCommand = (context: CLIContext) => {
       ).pipe(
         Command.withDescription("Schedule a request"),
         Command.withExamples([
-          { command: 'bun run start tasks add Later --at 2099-10-15T09:00:00Z "Review notes"' },
+          { command: 'poppet tasks add Later --at 2099-10-15T09:00:00Z "Review notes"' },
           {
-            command:
-              'bun run start tasks add Daily --cron "0 9 * * *" --tz Europe/London "Review notes"',
+            command: 'poppet tasks add Daily --cron "0 9 * * *" --tz Europe/London "Review notes"',
           },
         ]),
       ),

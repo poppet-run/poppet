@@ -43,7 +43,7 @@ export const makeCLI = (
     writeThinking,
   );
 
-  const app = Command.make("bun run start").pipe(
+  const app = Command.make("poppet").pipe(
     Command.withDescription(`Poppet\n\nProviders:\n${describeProviders(registered)}`),
     Command.withSubcommands([
       configCommand(context),
