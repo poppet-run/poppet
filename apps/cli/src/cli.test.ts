@@ -1116,6 +1116,9 @@ describe("CLI", () => {
       "provider",
       "provider login",
       "provider models",
+      "projects",
+      "projects list",
+      "projects show",
       "chat new",
       "tasks add",
       "tasks run",
@@ -1145,6 +1148,10 @@ describe("CLI", () => {
         expect(providerHelp.stdout).toContain(provider.id);
         expect(providerHelp.stdout).toContain(provider.authentication.help);
       }
+
+      const projectsHelp = await invoke(["projects", "--help"], environment);
+      expect(projectsHelp.stdout).toMatch(/list +List local projects/);
+      expect(projectsHelp.stdout).toMatch(/show +Show project instructions and note selection/);
 
       for (const action of ["login", "logout", "status", "models"])
         expect(providerHelp.stdout).toContain(`  ${action} `);

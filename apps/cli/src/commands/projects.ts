@@ -16,7 +16,7 @@ export const projectsCommand = (context: CLIContext) => {
           Effect.flatMap((names) => Console.log(JSON.stringify(names, null, 2))),
           Effect.provide(runtime.skills),
         ),
-      ),
+      ).pipe(Command.withDescription("List local projects")),
       Command.make(
         "show",
         { name: Argument.String("name").pipe(Argument.withSchema(ProjectName)) },
@@ -25,7 +25,7 @@ export const projectsCommand = (context: CLIContext) => {
             Effect.flatMap((project) => Console.log(JSON.stringify(project, null, 2))),
             Effect.provide(runtime.skills),
           ),
-      ),
+      ).pipe(Command.withDescription("Show project instructions and note selection")),
     ]),
   );
 };
