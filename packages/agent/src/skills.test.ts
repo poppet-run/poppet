@@ -13,7 +13,7 @@ const fixture = async (withFallback = false) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-skills-"));
   const root = join(directory, "skills");
 
-  const fallback = join(directory, ".agent");
+  const fallback = join(directory, ".agents");
 
   const layer = (
     withFallback ? Layer.effect(Skills, contextFiles("skills", "SKILL.md", fallback)) : SkillsLive
@@ -50,12 +50,12 @@ describe.concurrent("local Markdown skills", () => {
 
     try {
       expect(await state.list()).toEqual([]);
-      await state.save("weekly-review", "😀".repeat(2048));
+      await state.save("weekly-review", "😀".repeat(16384));
       await state.save("alpha", "# A procedure\nUse existing tools.");
       expect(await state.list()).toEqual(["alpha", "weekly-review"]);
       expect(await state.load("weekly-review")).toEqual({
         name: "weekly-review",
-        content: "😀".repeat(2048),
+        content: "😀".repeat(16384),
       });
       await rm(state.root, { recursive: true });
       await rm(state.directory, { recursive: true });
@@ -78,7 +78,7 @@ describe.concurrent("local Markdown skills", () => {
       await state.save("shared", "Local override");
       expect(await state.list()).toEqual(["local", "shared"]);
       expect((await state.load("shared")).content).toBe("Local override");
-      await state.save("shared", "x".repeat(8193));
+      await state.save("shared", "x".repeat(65537));
       await expect(state.load("shared")).rejects.toMatchObject({ reason: "invalid-request" });
       await rm(join(state.root, "shared", "SKILL.md"));
       await expect(state.load("shared")).rejects.toMatchObject({ reason: "invalid-request" });
@@ -87,8 +87,15 @@ describe.concurrent("local Markdown skills", () => {
       await symlink(state.directory, join(state.fallbackRoot, "shared"));
       await expect(state.load("shared")).rejects.toMatchObject({ reason: "invalid-request" });
       await rm(state.fallbackRoot, { recursive: true });
-      await symlink(state.directory, state.fallbackRoot);
-      await expect(state.list()).rejects.toMatchObject({ reason: "invalid-request" });
+      const dotfiles = join(state.directory, "dotfiles", "skills");
+      await mkdir(join(dotfiles, "shared"), { recursive: true });
+      await writeFile(join(dotfiles, "shared", "SKILL.md"), "Dotfiles procedure");
+      await symlink(dotfiles, state.fallbackRoot);
+      expect(await state.list()).toEqual(["shared"]);
+      expect((await state.load("shared")).content).toBe("Dotfiles procedure");
+      await rm(join(dotfiles, "shared", "SKILL.md"));
+      await writeFile(join(state.directory, "outside.md"), "Outside procedure");
+      await symlink(join(state.directory, "outside.md"), join(dotfiles, "shared", "SKILL.md"));
       await expect(state.load("shared")).rejects.toMatchObject({ reason: "invalid-request" });
     } finally {
       await state.close();
@@ -108,7 +115,7 @@ describe.concurrent("local Markdown skills", () => {
     },
   );
 
-  test.each(["x".repeat(8193), "😀".repeat(2049), Buffer.from([0xff]), "nul\0text"])(
+  test.each(["x".repeat(65537), "😀".repeat(16385), Buffer.from([0xff]), "nul\0text"])(
     "rejects oversized or invalid UTF-8 content",
     async (content) => {
       const state = await fixture();

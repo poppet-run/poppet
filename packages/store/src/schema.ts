@@ -87,7 +87,7 @@ export const SkillName = Id;
 export const SkillSnapshot = Schema.Struct({
   name: SkillName,
   content: Schema.String.check(
-    Schema.makeFilter((text) => Buffer.byteLength(text) <= 8192 && !text.includes("\0")),
+    Schema.makeFilter((text) => Buffer.byteLength(text) <= 65536 && !text.includes("\0")),
   ),
 });
 
@@ -115,7 +115,9 @@ export const ProjectNotes = Schema.Array(
 /** Instructions and optional note selection saved at creation, never refreshed implicitly. */
 export const ProjectSnapshot = Schema.Struct({
   name: ProjectName,
-  content: SkillSnapshot.fields.content,
+  content: SkillSnapshot.fields.content.check(
+    Schema.makeFilter((text) => Buffer.byteLength(text) <= 8192),
+  ),
   notes: Schema.NullOr(ProjectNotes),
 });
 

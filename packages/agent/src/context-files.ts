@@ -11,13 +11,11 @@ import { AgentError } from "#src/errors";
 
 const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 
-const maxBytes = 8192;
-
 const invalid = () =>
   new AgentError({
     reason: "invalid-request",
     message:
-      "Skills must be UTF-8 SKILL.md files and projects must be UTF-8 PROJECT.md/context files of at most 8192 bytes in named directories under <data directory>/skills, $HOME/.agent/skills, or <data directory>/projects. Symlinks, hard links, and paths are not allowed.",
+      "Skills must be UTF-8 SKILL.md files of at most 65536 bytes and projects must be UTF-8 PROJECT.md/context files of at most 8192 bytes in named directories under <data directory>/skills, $HOME/.agents/skills, or <data directory>/projects. Only the shared skills root may be a symlink. Other symlinks, hard links, and paths are not allowed.",
   });
 
 const failure = (cause: unknown) => (cause instanceof AgentError ? cause : invalid());
@@ -38,8 +36,9 @@ export const contextFiles = (
 ) =>
   Effect.gen(function* () {
     const { dataDirectory } = yield* AppConfig;
+    const maxBytes = collection === "skills" ? 65536 : 8192;
 
-    // Canonicalize the configured parent, but never follow a link at the context root or below it.
+    // Resolve the shared skills root for dotfile setups; entries below each root stay link-free.
     const rootPaths = async () => {
       const roots: string[] = [];
 
@@ -49,7 +48,19 @@ export const contextFiles = (
           throw cause;
         });
 
-        if (parent !== null) roots.push(join(parent, collection));
+        if (parent === null) continue;
+
+        const root = join(parent, collection);
+
+        const resolved =
+          directory === fallbackDirectory
+            ? await realpath(root).catch((cause: unknown) => {
+                if (Schema.is(MissingFile)(cause)) return null;
+                throw cause;
+              })
+            : root;
+
+        if (resolved !== null) roots.push(resolved);
       }
 
       return roots;

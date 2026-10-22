@@ -5,9 +5,10 @@
 A skill is an owner-written procedure selected when creating a chat or scheduled
 task. It uses Poppet's existing tools and permissions. Create one file at
 `<POPPET_DATA_DIR>/skills/<name>/SKILL.md` or
-`$HOME/.agent/skills/<name>/SKILL.md`, using UTF-8 Markdown of at most 8192 bytes.
+`$HOME/.agents/skills/<name>/SKILL.md`, using UTF-8 Markdown of at most 65536 bytes.
 Listings combine both locations without duplicate names. A matching directory in
-the Poppet data directory takes precedence, even if its file is missing or invalid. Names contain 1–128 letters, digits, underscores, or hyphens.
+the Poppet data directory takes precedence, even if its file is missing or invalid.
+Names contain 1–128 letters, digits, underscores, or hyphens.
 
 For example, save this as `skills/weekly-review/SKILL.md` under your data directory:
 
@@ -31,8 +32,10 @@ poppet tasks add weekly-review --cron "0 9 * * 1" --tz Europe/London --skill wee
 Put `--skill` and other options before the message or prompt. Select at most one
 skill. `skills list` lists named directories; `skills show` reads and validates
 the selected file. A missing skills root lists as empty. Inspection needs no
-selected model, credentials, or database. Symlinks, hard links, non-regular files,
-invalid UTF-8, and oversized content are rejected. Names cannot be paths.
+selected model, credentials, or database. The shared `$HOME/.agents/skills` root
+may be a symlink, for example to a dotfiles checkout. Symlinks beneath that root
+and symlinks in the data-directory skills tree are rejected. Hard links,
+non-regular files, invalid UTF-8, and oversized content are also rejected. Names cannot be paths.
 
 Poppet reads the skill when creating the session or task and saves its name and
 full text in SQLite. Continuing a chat, restarting the worker, or running a task
@@ -42,8 +45,8 @@ only new sessions and tasks. Create a replacement session or task to refresh it.
 `content`; old records and ordinary sessions have `skill: null`.
 
 The process owning the store loads the file. Commands sent through a running worker
-use its data directory and home directory with the same validation as local commands. Skills join the
-run's instructions below the base rules and count toward the existing context
+use its data directory and home directory with the same validation as local
+commands. Skills join the run's instructions below the base rules and count toward the existing context
 budget. They cannot override explicit user requests or grant tool permissions.
 Scheduled notes and memory remain read-only. A skill cannot authorize memory
 changes; ordinary chat needs an explicit request in the current user message. Automatic session naming does not receive skills.

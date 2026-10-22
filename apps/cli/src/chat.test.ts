@@ -1287,7 +1287,7 @@ describe("chat CLI", () => {
 
     try {
       await mkdir(join(chat.directory, "skills", "large"), { recursive: true });
-      await writeFile(join(chat.directory, "skills", "large", "SKILL.md"), "x".repeat(8192));
+      await writeFile(join(chat.directory, "skills", "large", "SKILL.md"), "x".repeat(65536));
       chat.environment.POPPET_CONTEXT_BYTES = "4096";
       await expect(
         chat.invoke(["chat", "new", "--skill", "large", "Review"]),

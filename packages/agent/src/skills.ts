@@ -18,5 +18,5 @@ export class Skills extends Context.Service<
 
 export const SkillsLive = Layer.effect(
   Skills,
-  contextFiles("skills", "SKILL.md", join(homedir(), ".agent")),
+  contextFiles("skills", "SKILL.md", join(homedir(), ".agents")),
 );
