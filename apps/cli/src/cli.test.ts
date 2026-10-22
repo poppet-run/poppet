@@ -455,13 +455,16 @@ describe("CLI", () => {
       POPPET_MODEL: "saved-model",
     };
 
-    const worker = Bun.spawn([process.execPath, "apps/cli/src/main.ts", "tasks", "work"], {
-      cwd: fileURLToPath(new URL("../../..", import.meta.url)),
-      env: environment,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const worker = Bun.spawn(
+      [process.execPath, "apps/cli/src/main.ts", "worker", "run", "--tasks-only"],
+      {
+        cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+        env: environment,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
 
     const errors = new Response(worker.stderr).text();
 
@@ -571,20 +574,23 @@ describe("CLI", () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-cli-"));
     const environment = { PATH: process.env.PATH ?? "", POPPET_DATA_DIR: directory };
 
-    const worker = Bun.spawn([process.execPath, "apps/cli/src/main.ts", "tasks", "work"], {
-      cwd: fileURLToPath(new URL("../../..", import.meta.url)),
-      env: environment,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const worker = Bun.spawn(
+      [process.execPath, "apps/cli/src/main.ts", "worker", "run", "--tasks-only"],
+      {
+        cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+        env: environment,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
 
     const errors = new Response(worker.stderr).text();
 
     try {
       const ready = await worker.stdout.getReader().read();
       expect(new TextDecoder().decode(ready.value)).toContain("Worker running.");
-      const second = await invoke(["tasks", "work"], environment);
+      const second = await invoke(["worker", "run", "--tasks-only"], environment);
       expect(second.exitCode).toBe(1);
       expect(second.stderr).toContain("Another Poppet process has the store open");
 
@@ -626,6 +632,7 @@ describe("CLI", () => {
         running: true,
         pid: worker.pid,
         taskCount: 1,
+        services: { tasks: true, gateway: false },
         connections: [
           {
             provider: "openai-chatgpt",
@@ -1115,6 +1122,7 @@ describe("CLI", () => {
     const commands = [
       ["config", "unexpected-argument"],
       ["tasks", "status"],
+      ["tasks", "work"],
       ["tasks", "add", "Later", "--at", at, "--cron", "0 9 * * *", "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--cron", "0 9 * * *", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],

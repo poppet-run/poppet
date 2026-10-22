@@ -849,7 +849,7 @@ validation in addition to injected lifecycle and clock tests.
 ## Worker host
 
 `apps/cli/src/worker-host.ts` owns one scoped runtime and protected listener.
-`worker run` starts scheduling and messaging together, `tasks work` starts only
+`worker run` starts scheduling and messaging together, `worker run --tasks-only` starts only
 scheduling, and `gateway work` starts only messaging. Each uses the same store,
 agent, memory, provider resolver, and command functions. The store lock prevents
 starting another mode against that data directory. No separate processes or

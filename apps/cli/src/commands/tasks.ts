@@ -21,7 +21,7 @@ import { codingFlag, projectFlag, skillFlag, textArgument } from "#src/commands/
 import { parseTaskSchedule, prepareTask, prepareTaskControl } from "#src/tasks";
 
 export const tasksCommand = (context: CLIContext) => {
-  const { runtime, startWorker } = context;
+  const { runtime } = context;
 
   const runTasks = (
     command: TaskCommand,
@@ -295,9 +295,6 @@ export const tasksCommand = (context: CLIContext) => {
         },
         ({ provider }) => runTasks({ action: "resume-provider", provider }),
       ).pipe(Command.withDescription("Allow scheduled requests again")),
-      Command.make("work", {}, () => startWorker("tasks")).pipe(
-        Command.withDescription("Run scheduling only in the foreground"),
-      ),
     ]),
   );
 };
