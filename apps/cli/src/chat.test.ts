@@ -1353,6 +1353,7 @@ describe("chat CLI", () => {
 
     const chat = await fixture([first.registration, second.registration, broken, buildFailure]);
     let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
+    let stage = "setup";
 
     try {
       await chat.invoke(["gateway", "--help"]);
@@ -1372,6 +1373,7 @@ describe("chat CLI", () => {
       await chat.invoke(["gateway", "status"]);
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ running: false, enabled: true });
       expect([first.state.built, second.state.built]).toEqual([0, 0]);
+      stage = "worker startup";
       worker = await chat.startWorker("gateway");
       expect([first.state.built, second.state.built]).toEqual([1, 1]);
 
@@ -1390,6 +1392,7 @@ describe("chat CLI", () => {
           ),
         ),
       );
+      stage = "initial replies";
       await Effect.runPromise(
         Effect.all([Queue.take(first.replies), Queue.take(second.replies)]).pipe(
           Effect.timeout("2 seconds"),
@@ -1421,6 +1424,7 @@ describe("chat CLI", () => {
           mentioned: false,
         }),
       );
+      stage = "project reply";
       await Effect.runPromise(Queue.take(first.replies).pipe(Effect.timeout("2 seconds")));
       expect(first.state.sent[1]).toBe("Answer");
       expect(chat.requests.at(-1)?.instructions).toContain("Messaging host project preferences");
@@ -1442,6 +1446,16 @@ describe("chat CLI", () => {
       await Effect.runPromise(Fiber.interrupt(worker));
       worker = undefined;
       expect([first.state.closed, second.state.closed]).toEqual([1, 1]);
+    } catch (cause) {
+      throw new Error(
+        `Messaging fixture failed during ${stage}: ${JSON.stringify({
+          errors: chat.errors,
+          state: chat.state,
+          requests: chat.requests.map((request) => request.messages.at(-1)),
+          sent: [first.state.sent, second.state.sent],
+        })}`,
+        { cause },
+      );
     } finally {
       if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
       await chat.close();
