@@ -2,7 +2,7 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 
 const [executable, ...args] = Bun.argv.slice(2);
 

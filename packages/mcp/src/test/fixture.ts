@@ -2,7 +2,7 @@ import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 
 type FixtureTool = {
   name: string;
