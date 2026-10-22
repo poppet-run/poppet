@@ -667,7 +667,7 @@ describe.concurrent("task schedules", () => {
             providerPauses: [
               {
                 provider: "test-provider",
-                action: "Run tasks resume-provider test-provider when quota is available.",
+                action: "Run worker resume-provider test-provider when quota is available.",
               },
             ],
             recent: [

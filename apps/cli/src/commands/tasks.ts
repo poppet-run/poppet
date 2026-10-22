@@ -1,4 +1,3 @@
-import { ProviderId } from "@poppet/provider";
 import { Session } from "@poppet/store";
 import { TaskPatch, NewTask, parseTimestamp, TaskError, taskOperation } from "@poppet/tasks";
 import { Effect, Option, Schema } from "effect";
@@ -234,13 +233,6 @@ export const tasksCommand = (context: CLIContext) => {
           ),
         ),
       ),
-      Command.make(
-        "resume-provider",
-        {
-          provider: Argument.String("provider").pipe(Argument.withSchema(ProviderId)),
-        },
-        ({ provider }) => runTaskCommand(runtime, { action: "resume-provider", provider }),
-      ).pipe(Command.withDescription("Allow scheduled requests again")),
     ]),
   );
 };

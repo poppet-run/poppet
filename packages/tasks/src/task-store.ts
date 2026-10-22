@@ -891,7 +891,7 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
         Object.assign(held, {
           action:
             held.resumeAt === null
-              ? `Run tasks resume-provider ${held.provider} when quota is available.`
+              ? `Run worker resume-provider ${held.provider} when quota is available.`
               : `Future work can resume at ${new Date(held.resumeAt).toISOString()}.`,
         }),
       ),
