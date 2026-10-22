@@ -4,6 +4,12 @@
 
 Depends on [Bounded I/O package](bounded-io.md).
 
+## Implementation
+
+Implemented. The HTTP client and transport tests live in `@poppet/agent`; the
+CLI retains credential loading and commands. The client uses `readBoundedText`
+from the shared `@poppet/io` package.
+
 ## Goal
 
 Keep the Brave Search HTTP client in `@poppet/agent` next to the result parsing

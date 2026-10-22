@@ -16,7 +16,7 @@ bun run check
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`,
-`@poppet/store`, `@poppet/agent`, `@poppet/mcp`,
+`@poppet/store`, `@poppet/agent`, `@poppet/io`, `@poppet/mcp`,
 `@poppet/memory`, `@poppet/tasks`,
 `@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`,
 `@poppet/channel-discord`, `@poppet/channel-telegram`, and `@poppet/channel-whatsapp`.
@@ -109,6 +109,9 @@ packages/
     src/memory-tools.ts   Validated memory changes with budget checks and source runs
     src/context.ts        Complete-exchange context assembly and limits
     src/settings.ts       Validated chat budgets
+    src/web-search.ts     Brave HTTP client, result parsing, search tool contract
+  io/                     @poppet/io
+    src/io.ts             Bounded stream reads and subprocess cleanup
   tasks/                  @poppet/tasks
     src/monitoring.ts     Validated evidence, durable comparisons, recovery projections
     src/monitor-tools.ts  Run-bound observation tool and host-owned instructions
