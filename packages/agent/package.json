@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@poppet/config": "workspace:*",
+    "@poppet/io": "workspace:*",
     "@poppet/memory": "workspace:*",
     "@poppet/provider": "workspace:*",
     "@poppet/store": "workspace:*",
