@@ -39,7 +39,7 @@ import { TestClock } from "effect/testing";
 import { AttachmentProcessor, makeAttachmentProcessor } from "#src/attachments";
 import { ChannelError, MessagingChannel, type IncomingMessage } from "#src/channel";
 import { GatewayRepository, GatewayRepositoryLive } from "#src/repository";
-import { Gateway, GatewayLive } from "#src/service";
+import { Gateway, GatewayLive, chunks } from "#src/service";
 
 const quietConsole: Console.Console = { ...console, log: () => undefined, error: () => undefined };
 
@@ -1280,6 +1280,33 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
+  test("an accepted message is answered and delivered without waiting for a polling timer", async () => {
+    const incoming = Effect.runSync(Queue.make<IncomingMessage>());
+    const delivered = Deferred.makeUnsafe<void>();
+
+    const state = await fixture({
+      messages: Stream.fromQueue(incoming),
+      send: () => Deferred.succeed(delivered, undefined).pipe(Effect.as("sent")),
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const worker = yield* gateway.run.pipe(Effect.forkChild);
+          // Let every loop reach its idle wait; the test clock never advances after this.
+          yield* TestClock.adjust("0 millis");
+          yield* Queue.offer(incoming, message("prompt"));
+          yield* Deferred.await(delivered);
+          expect(state.requests).toHaveLength(1);
+          yield* Fiber.interrupt(worker);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("runs receive and delivery loops, and shutdown preserves queued work while interrupting an active run", async () => {
     const incoming = Effect.runSync(Queue.make<IncomingMessage>());
     const delivered = Deferred.makeUnsafe<void>();
@@ -1535,6 +1562,21 @@ describe.concurrent("messaging gateway", () => {
       }
     },
   );
+
+  test("splits replies at paragraph, line, then word boundaries without losing text", () => {
+    const paragraphs = `${"a".repeat(12)}\n\n${"b".repeat(5)} ${"c".repeat(4)}`;
+
+    expect(chunks(paragraphs, 20)).toEqual([
+      `${"a".repeat(12)}\n\n`,
+      `${"b".repeat(5)} ${"c".repeat(4)}`,
+    ]);
+    expect(chunks("one two\nthree four", 12)).toEqual(["one two\n", "three four"]);
+    expect(chunks("alpha beta gamma", 12)).toEqual(["alpha beta ", "gamma"]);
+    // A break in the first half would leave a tiny chunk, so the hard limit is used instead.
+    expect(chunks(`a ${"b".repeat(20)}`, 10)).toEqual(["a bbbbbbbb", "bbbbbbbbbb", "bb"]);
+    expect(chunks(`${"x".repeat(9)}😀y`, 10)).toEqual(["x".repeat(9), "😀y"]);
+    expect(chunks("", 10)).toEqual([]);
+  });
 
   test("preserves Unicode chunks and stops later chunks after an uncertain send", async () => {
     let attempts = 0;

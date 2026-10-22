@@ -96,6 +96,32 @@ describe("Browser sign-in", () => {
     expect(statuses).toEqual([400, 200, 410]);
   });
 
+  test("ignores callbacks with another state so the real callback still completes", async () => {
+    const statuses: number[] = [];
+
+    const browser = makeBrowserSignIn((url) =>
+      Effect.tryPromise({
+        try: async (signal) => {
+          const callback = callbackFor(url);
+          const forged = new URL(callback);
+          forged.searchParams.set("state", "forged");
+          statuses.push((await fetch(forged, { signal })).status);
+          forged.searchParams.delete("state");
+          statuses.push((await fetch(forged, { signal })).status);
+          statuses.push((await fetch(callback, { signal })).status);
+        },
+        catch: browserError,
+      }),
+    );
+
+    const result = await Effect.runPromise(
+      browser.authorize(request).pipe(Effect.provideService(Console.Console, quietConsole)),
+    );
+
+    expect(result.clientId).toBe("oaiapp_test");
+    expect(statuses).toEqual([400, 400, 200]);
+  });
+
   test.each(["missing", "placeholder", "changed", "duplicate"] as const)(
     "rejects a %s callback registration",
     async (failure) => {

@@ -44,7 +44,8 @@ local file edits. Selection errors leave the active session unchanged.
 After the first exchange, `/status` reports the session, skill, project, and latest run. `/cancel`
 interrupts active work and cancels queued input in this chat without waiting for
 inference. The adapter sends typing actions while processing and plain text
-replies, split at 4096 UTF-16 units without splitting a Unicode character.
+replies, split into chunks of at most 4096 UTF-16 units, preferring paragraph, line,
+then word breaks, without splitting a Unicode character.
 Formatting syntax is sent literally, and link previews are disabled.
 
 Other users, groups, channels, topic messages, and edited messages are deliberately

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { Redacted } from "effect";
+import { Effect, Redacted } from "effect";
 
 import { createHarness, login, verify } from "#src/test/fixtures/chatgpt";
 
@@ -73,12 +73,23 @@ describe.concurrent("ChatGPT sign-in", () => {
       }
     },
   );
-  test("rejects wrong callback state and declined authorization without redeeming a code", async () => {
+  test("ignores wrong callback state and rejects declined authorization without redeeming a code", async () => {
     const harness = await createHarness();
 
     try {
+      // A callback for another attempt is refused but cannot end this one, which keeps waiting.
       harness.controls.wrongState = true;
-      await expect(harness.run(login)).rejects.toMatchObject({ reason: "callback" });
+      expect(
+        await harness.run(
+          login.pipe(
+            Effect.as("completed"),
+            Effect.timeoutOrElse({
+              duration: "500 millis",
+              orElse: () => Effect.succeed("waiting"),
+            }),
+          ),
+        ),
+      ).toBe("waiting");
       harness.controls.wrongState = false;
       harness.controls.denied = true;
       await expect(harness.run(login)).rejects.toMatchObject({ reason: "denied" });
