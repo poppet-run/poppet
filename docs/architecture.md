@@ -37,7 +37,6 @@ The Bun monorepo uses private workspaces:
 | `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                 | Config, agent, browser, MCP, memory, tasks, store, platform, provider layers |
 | `@poppet/browser`             | Isolated browser tools, settings, pinned daemon lifecycle, bounded native requests | Provider contract, Effect                                                    |
 | `@poppet/mcp`                 | Scoped stdio clients, bounded discovery, original-schema validation, result limits | Credentials, provider contract                                               |
-| `@poppet/computer-use`        | Isolated Calculator compatibility probe, bounded driver policy, lifecycle checks   | MCP helpers, credentials, existing MCP SDK, Effect                           |
 | `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                    | Config, memory, store, provider contract                                     |
 | `@poppet/config`              | Validated settings and the `AppConfig` service                                     | Provider contract, browser and MCP configuration schemas                     |
 | `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                        | Provider contract                                                            |
@@ -60,7 +59,7 @@ The Bun monorepo uses private workspaces:
 The CLI lives in `apps/cli`; libraries live in `packages/config` and
 `packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
 `packages/provider-openrouter`, `packages/provider-protocol`, `packages/credentials`,
-`packages/store`, `packages/agent`, `packages/browser`, `packages/mcp`, `packages/computer-use`, `packages/memory`, `packages/tasks`,
+`packages/store`, `packages/agent`, `packages/browser`, `packages/mcp`, `packages/memory`, `packages/tasks`,
 `packages/platform`, `packages/platform-macos`, `packages/worker`, `packages/gateway`, and
 `packages/channel-discord`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
@@ -68,10 +67,6 @@ between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
 Provider workflow helpers and test fixtures remain internal. Bun and TypeScript
 resolve these package-local aliases without extra `tsconfig` path mappings.
-
-`@poppet/computer-use` currently contains only the explicitly invoked Stage 22a
-probe and its tests. It has no chat tools, configuration, or CLI integration. Its
-MCP compiler and transport imports use the shared package's exported helpers.
 
 Root scripts preserve `bun run start`, `bun run dev`, and `bun run check`.
 Start and dev run the CLI without changing the working directory. Root checks

@@ -18,7 +18,7 @@ export const toolIdentity = (server: string, tool: string): Pick<Tool, "name" | 
 
 const invalid = () =>
   new Error(
-    "Unsupported MCP schema. Use a JSON object schema of at most 16 KiB, depth 16 and 512 nodes, without references or unreviewed regular expressions.",
+    "Unsupported MCP schema. Use a JSON object schema of at most 16 KiB, depth 16 and 512 nodes, without references or regular expressions.",
   );
 
 const schemaMaps = new Set([
@@ -62,9 +62,7 @@ export const compileSchema = (input: Schema.JsonObject) => {
       for (const [key, item] of Object.entries(value)) {
         if (
           position === "schema" &&
-          (["$ref", "$dynamicRef", "$recursiveRef", "patternProperties"].includes(key) ||
-            // The reviewed anchored token grammar is linear; other server patterns remain denied.
-            (key === "pattern" && item !== "^s[0-9a-f]{8}:[0-9]+$"))
+          ["$ref", "$dynamicRef", "$recursiveRef", "pattern", "patternProperties"].includes(key)
         )
           throw invalid();
         let child: "schema" | "map" | "data" = "data";

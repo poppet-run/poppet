@@ -168,7 +168,7 @@ const compile = (input: Schema.JsonObject) => {
   } catch {
     throw new MCPDiagnostic({
       message:
-        "Unsupported tool schema. Use draft-07 or 2020-12 JSON Schema, at most 16 KiB, depth 16 and 512 nodes; references, unreviewed patterns and unknown formats or keywords are unsupported.",
+        "Unsupported tool schema. Use draft-07 or 2020-12 JSON Schema, at most 16 KiB, depth 16 and 512 nodes; references, patterns and unknown formats or keywords are unsupported.",
     });
   }
 };

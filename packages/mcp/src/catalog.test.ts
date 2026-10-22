@@ -79,31 +79,9 @@ test("distinguishes schema keywords from property names and literal data", () =>
   ).toThrow("Unsupported MCP schema");
 });
 
-test("validates the reviewed token pattern while rejecting other patterns and recursive schemas", () => {
-  const schema = {
-    type: "object",
-    properties: { token: { type: "string", pattern: "^s[0-9a-f]{8}:[0-9]+$" } },
-    required: ["token"],
-    additionalProperties: false,
-  };
-
-  const validate = compileSchema(schema);
-  expect(validate({ token: "s0123abcd:12" })).toBe(true);
-
-  for (const token of [
-    "s0123abcd:x",
-    "S0123abcd:12",
-    "s0123abc:12",
-    "s0123abcz:12",
-    "s0123abcd:",
-    12,
-  ])
-    expect(validate({ token })).toBe(false);
-  expect(validate({ token: "s0123abcd:1", extra: true })).toBe(false);
-
-  for (const pattern of ["(a+)+$", "^s[0-9a-f]{8}:[0-9]+", ".*", "^s[0-9a-f]{8}:[0-9]+$|"])
+test("rejects regular expressions in tool schemas", () => {
+  for (const pattern of ["(a+)+$", "^a+$", ".*"])
     expect(() => compileSchema({ type: "string", pattern })).toThrow("Unsupported MCP schema");
-  expect(() => compileSchema({ ...schema, $ref: "#/anything" })).toThrow("Unsupported MCP schema");
 });
 
 test("required-only output branches still enforce every original assertion", () => {

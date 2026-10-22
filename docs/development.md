@@ -16,7 +16,7 @@ bun run check
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`,
-`@poppet/store`, `@poppet/agent`, `@poppet/mcp`, `@poppet/computer-use`,
+`@poppet/store`, `@poppet/agent`, `@poppet/mcp`,
 `@poppet/memory`, `@poppet/tasks`,
 `@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`,
 `@poppet/channel-discord`, `@poppet/channel-telegram`, and `@poppet/channel-whatsapp`.
@@ -119,8 +119,6 @@ packages/
     src/instructions.ts   Host-owned MCP tool policy
     src/catalog.ts        Schema validation, stable names, bounded results
     src/transport.ts      Awaited SDK stdio teardown
-  computer-use/           @poppet/computer-use
-    src/test/             Explicit Calculator compatibility probe, bounded policy, fixtures
   config/                 @poppet/config
     src/config.ts         Validated settings and AppConfig service/layer
   credentials/            @poppet/credentials
