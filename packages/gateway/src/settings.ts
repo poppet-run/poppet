@@ -110,3 +110,36 @@ export const saveChannelSettings = (dataDirectory: string, adapter: string, cont
       });
     }),
   ).pipe(Effect.uninterruptible);
+
+/** Protected settings for one adapter, decoded strictly from its saved JSON text. */
+export const channelSettings = <S extends Schema.Top>(
+  adapter: string,
+  label: string,
+  schema: S,
+) => {
+  const SavedSettings = Schema.fromJsonString(schema);
+
+  const failure = () =>
+    new ChannelError({
+      reason: "configuration",
+      message: `Cannot read or write protected ${label} settings. Run gateway ${adapter} setup again.`,
+    });
+
+  return {
+    load: (dataDirectory: string) =>
+      Effect.gen(function* () {
+        const contents = yield* loadChannelSettings(dataDirectory, adapter);
+
+        if (contents === null) return null;
+
+        return yield* Schema.decodeUnknownEffect(SavedSettings, { onExcessProperty: "error" })(
+          contents,
+        );
+      }).pipe(Effect.mapError(failure)),
+    save: (dataDirectory: string, settings: S["Type"]) =>
+      Schema.encodeEffect(SavedSettings)(settings).pipe(
+        Effect.flatMap((contents) => saveChannelSettings(dataDirectory, adapter, contents)),
+        Effect.mapError(failure),
+      ),
+  };
+};

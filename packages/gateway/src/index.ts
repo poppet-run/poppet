@@ -16,4 +16,4 @@ export { Gateway, GatewayLive } from "#src/service";
 
 export { AttachmentProcessor, AttachmentProcessorLive } from "#src/attachments";
 
-export { loadChannelSettings, saveChannelSettings } from "#src/settings";
+export { channelSettings, loadChannelSettings, saveChannelSettings } from "#src/settings";

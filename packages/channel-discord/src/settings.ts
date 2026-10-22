@@ -1,5 +1,5 @@
-import { ChannelError, loadChannelSettings, saveChannelSettings } from "@poppet/gateway";
-import { Effect, Schema } from "effect";
+import { channelSettings } from "@poppet/gateway";
+import { Schema } from "effect";
 
 /** A Discord snowflake kept as text to preserve integer precision. */
 export const DiscordId = Schema.String.check(Schema.isPattern(/^\d{1,20}$/));
@@ -16,27 +16,8 @@ export const DiscordSettings = Schema.Struct({
 
 export type DiscordSettings = typeof DiscordSettings.Type;
 
-const SavedSettings = Schema.fromJsonString(DiscordSettings);
+const store = channelSettings("discord", "Discord", DiscordSettings);
 
-const settingsError = () =>
-  new ChannelError({
-    reason: "configuration",
-    message: "Cannot read or write protected Discord settings. Run gateway discord setup again.",
-  });
+export const loadDiscordSettings = store.load;
 
-export const loadDiscordSettings = (dataDirectory: string) =>
-  Effect.gen(function* () {
-    const contents = yield* loadChannelSettings(dataDirectory, "discord");
-
-    if (contents === null) return null;
-
-    return yield* Schema.decodeUnknownEffect(SavedSettings, { onExcessProperty: "error" })(
-      contents,
-    );
-  }).pipe(Effect.mapError(settingsError));
-
-export const saveDiscordSettings = (dataDirectory: string, settings: DiscordSettings) =>
-  Schema.encodeEffect(SavedSettings)(settings).pipe(
-    Effect.flatMap((contents) => saveChannelSettings(dataDirectory, "discord", contents)),
-    Effect.mapError(settingsError),
-  );
+export const saveDiscordSettings = store.save;
