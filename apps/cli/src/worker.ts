@@ -17,9 +17,11 @@ export const workerLaunch = (dataDirectory: string): WorkerLaunch => ({
 export const manageWorker = (action: WorkerAction, dataDirectory: string) =>
   process.platform === "darwin"
     ? manageMacOSWorker(action, workerLaunch(dataDirectory), homedir())
-    : Effect.fail(
-        new WorkerError({
-          message:
-            "Background worker management currently supports macOS. Use worker run and tasks status on other platforms.",
-        }),
-      );
+    : action === "status"
+      ? Effect.succeed(null)
+      : Effect.fail(
+          new WorkerError({
+            message:
+              "Background worker management currently supports macOS. Use worker run and worker status on other platforms.",
+          }),
+        );

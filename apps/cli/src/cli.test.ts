@@ -620,7 +620,9 @@ describe("CLI", () => {
       expect(JSON.parse((await invoke(["store", "status"], environment)).stdout)).toMatchObject({
         sessions: 0,
       });
-      expect(JSON.parse((await invoke(["tasks", "status"], environment)).stdout)).toMatchObject({
+      expect(
+        JSON.parse((await invoke(["worker", "status"], environment)).stdout).worker,
+      ).toMatchObject({
         running: true,
         pid: worker.pid,
         taskCount: 1,
@@ -1112,6 +1114,7 @@ describe("CLI", () => {
 
     const commands = [
       ["config", "unexpected-argument"],
+      ["tasks", "status"],
       ["tasks", "add", "Later", "--at", at, "--cron", "0 9 * * *", "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--cron", "0 9 * * *", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],

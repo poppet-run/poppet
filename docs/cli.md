@@ -163,7 +163,6 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 | `tasks clear`                                                                                                                                                                           | Interrupt active work and remove all tasks and task history.       |
 | `tasks providers`                                                                                                                                                                       | Show provider quota pauses and temporary backoff.                  |
 | `tasks resume-provider <provider>`                                                                                                                                                      | Allow scheduled requests for a provider again.                     |
-| `tasks status`                                                                                                                                                                          | Show task counts, recent outcomes, and worker status.              |
 | `tasks work`                                                                                                                                                                            | Run scheduling only in the foreground.                             |
 
 See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what

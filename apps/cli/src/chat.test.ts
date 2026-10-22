@@ -288,11 +288,21 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
   };
 
   const program = (args: ReadonlyArray<string>, read = readChatLine, consoleOutput = output) =>
-    makeCLI([unused, registration], write, undefined, registeredChannels, read, (text) =>
-      Effect.sync(() => {
-        thinkingChunks.push(text);
-        outputEvents.push(`thinking:${text}`);
-      }),
+    makeCLI(
+      [unused, registration],
+      write,
+      (action) => {
+        expect(action).toBe("status");
+
+        return Effect.succeed(null);
+      },
+      registeredChannels,
+      read,
+      (text) =>
+        Effect.sync(() => {
+          thinkingChunks.push(text);
+          outputEvents.push(`thinking:${text}`);
+        }),
     )(args).pipe(
       Effect.provideService(Console.Console, consoleOutput),
       Effect.provideService(
@@ -1464,8 +1474,8 @@ describe("chat CLI", () => {
         ]);
         const task = JSON.parse(chat.lines.at(-1)!);
         worker = await chat.startWorker(mode);
-        await chat.invoke(["tasks", "status"]);
-        expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
+        await chat.invoke(["worker", "status"]);
+        expect(JSON.parse(chat.lines.at(-1)!).worker).toMatchObject({
           running: true,
           services: { tasks: mode !== "gateway", gateway: mode !== "tasks" },
         });
