@@ -1,5 +1,5 @@
-import { ChannelError, loadChannelSettings, saveChannelSettings } from "@poppet/gateway";
-import { Effect, Schema } from "effect";
+import { channelSettings } from "@poppet/gateway";
+import { Schema } from "effect";
 
 /** Telegram's positive numeric user IDs, represented as text at the channel boundary. */
 export const TelegramId = Schema.String.check(
@@ -19,27 +19,8 @@ export const TelegramSettings = Schema.Struct({
 
 export type TelegramSettings = typeof TelegramSettings.Type;
 
-const SavedSettings = Schema.fromJsonString(TelegramSettings);
+const store = channelSettings("telegram", "Telegram", TelegramSettings);
 
-const settingsError = () =>
-  new ChannelError({
-    reason: "configuration",
-    message: "Cannot read or write protected Telegram settings. Run gateway telegram setup again.",
-  });
+export const loadTelegramSettings = store.load;
 
-export const loadTelegramSettings = (dataDirectory: string) =>
-  Effect.gen(function* () {
-    const contents = yield* loadChannelSettings(dataDirectory, "telegram");
-
-    if (contents === null) return null;
-
-    return yield* Schema.decodeUnknownEffect(SavedSettings, { onExcessProperty: "error" })(
-      contents,
-    );
-  }).pipe(Effect.mapError(settingsError));
-
-export const saveTelegramSettings = (dataDirectory: string, settings: TelegramSettings) =>
-  Schema.encodeEffect(SavedSettings)(settings).pipe(
-    Effect.flatMap((contents) => saveChannelSettings(dataDirectory, "telegram", contents)),
-    Effect.mapError(settingsError),
-  );
+export const saveTelegramSettings = store.save;
