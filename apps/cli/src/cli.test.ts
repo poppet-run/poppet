@@ -1141,6 +1141,11 @@ describe("CLI", () => {
 
       const providerHelp = await invoke(["provider", "--help"], environment);
 
+      for (const provider of providers) {
+        expect(providerHelp.stdout).toContain(provider.id);
+        expect(providerHelp.stdout).toContain(provider.authentication.help);
+      }
+
       for (const action of ["login", "logout", "status", "models"])
         expect(providerHelp.stdout).toContain(`  ${action} `);
 

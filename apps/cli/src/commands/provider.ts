@@ -55,7 +55,10 @@ export const providerCommand = (context: CLIContext) => {
   const providerHelp = describeProviders(registered);
 
   const providerCommands = (["login", "status", "models", "logout"] as const).map((action) => {
-    const targetArgument = Argument.String("provider").pipe(Argument.optional);
+    const targetArgument = Argument.String("provider").pipe(
+      Argument.withDescription("Provider ID; defaults to the configured provider"),
+      Argument.optional,
+    );
 
     const providerFlag = Flag.String("provider").pipe(
       Flag.withSchema(ProviderId),
@@ -104,18 +107,20 @@ export const providerCommand = (context: CLIContext) => {
           login: "Sign in or save an API key",
           status: "Show connection status without secrets",
           models: "List available models",
-          logout: "Clear the selected provider",
+          logout: "Clear the selected provider's saved connection",
         }[action],
       ),
     );
   });
 
   return Command.make("provider").pipe(
-    Command.withDescription(`Manage provider connections\n\n${providerHelp}`),
+    Command.withDescription(
+      `Manage provider connections\n\n  Providers:\n  ${providerHelp.replaceAll("\n", "\n  ")}`,
+    ),
     Command.withShortDescription("Manage provider connections"),
     Command.withSubcommands(providerCommands),
   );
 };
 
-export const describeProviders = (registered: ReadonlyArray<ProviderRegistration>) =>
+const describeProviders = (registered: ReadonlyArray<ProviderRegistration>) =>
   registered.map((entry) => `${entry.id} (${entry.name}): ${entry.authentication.help}`).join("\n");
