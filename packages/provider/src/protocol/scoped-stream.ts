@@ -1,3 +1,5 @@
+import { Effect, Stream } from "effect";
+
 import {
   interrupted,
   validateRequest,
@@ -5,10 +7,8 @@ import {
   type ModelEvent,
   type ModelRequest,
   type ProviderError,
-} from "@poppet/provider";
-import { Effect, Stream } from "effect";
-
-import { inferenceFailure } from "#src/errors";
+} from "#src/index";
+import { inferenceFailure } from "#src/protocol/errors";
 
 /** Validates inference input and aborts the request on deadline or early consumer exit. */
 export const modelStream = (

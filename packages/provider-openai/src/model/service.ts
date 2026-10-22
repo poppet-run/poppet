@@ -10,7 +10,7 @@ import {
   type ProviderError,
   type ProviderOperations,
 } from "@poppet/provider";
-import { responsesModel } from "@poppet/provider-protocol";
+import { responsesModel } from "@poppet/provider/protocol";
 import { Clock, Context, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
 
 import { ChatGPTAuth } from "#src/auth/service";

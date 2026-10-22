@@ -1,6 +1,7 @@
-import { type HttpFetch, type ProviderId, ProviderError, invalidRequest } from "@poppet/provider";
 import { Effect, Redacted, Schema } from "effect";
 import OpenAI, { APIError } from "openai";
+
+import { type HttpFetch, type ProviderId, ProviderError, invalidRequest } from "#src/index";
 
 export const openAIClient = (options: {
   readonly key: Redacted.Redacted<string>;

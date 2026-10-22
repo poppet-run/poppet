@@ -1,14 +1,3 @@
-import {
-  Completion,
-  ProviderError,
-  invalidRequest,
-  interrupted,
-  type ModelDescription,
-  type ModelEvent,
-  type ModelOperations,
-  type ModelRequest,
-  type Output,
-} from "@poppet/provider";
 import { Effect, Schema } from "effect";
 import type OpenAI from "openai";
 import type {
@@ -20,8 +9,19 @@ import type {
   Tool,
 } from "openai/resources/responses/responses";
 
-import { inferenceFailure, remoteFailure, type InferenceOptions } from "#src/errors";
-import { modelStream } from "#src/scoped-stream";
+import {
+  Completion,
+  ProviderError,
+  invalidRequest,
+  interrupted,
+  type ModelDescription,
+  type ModelEvent,
+  type ModelOperations,
+  type ModelRequest,
+  type Output,
+} from "#src/index";
+import { inferenceFailure, remoteFailure, type InferenceOptions } from "#src/protocol/errors";
+import { modelStream } from "#src/protocol/scoped-stream";
 
 const Content = Schema.Union([
   Schema.Struct({

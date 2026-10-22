@@ -1,5 +1,6 @@
-import { ProviderError, type ProviderId, type ModelRequest } from "@poppet/provider";
 import { APIError, APIConnectionError, APIConnectionTimeoutError, APIUserAbortError } from "openai";
+
+import { ProviderError, type ProviderId, type ModelRequest } from "#src/index";
 
 /** Adapter hooks for request headers and provider-specific inference error classification. */
 export interface InferenceOptions {

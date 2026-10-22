@@ -25,7 +25,6 @@
     "entities": "8.1.0"
   },
   "devDependencies": {
-    "@poppet/provider-protocol": "workspace:*",
     "openai": "7.32.0"
   }
 }

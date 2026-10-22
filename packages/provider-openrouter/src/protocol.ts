@@ -1,5 +1,5 @@
 import { ProviderError } from "@poppet/provider";
-import { inferenceFailure, remoteFailure, type ChatOptions } from "@poppet/provider-protocol";
+import { inferenceFailure, remoteFailure, type ChatOptions } from "@poppet/provider/protocol";
 import { Option, Schema } from "effect";
 import { APIError } from "openai";
 import type {

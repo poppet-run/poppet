@@ -15,7 +15,7 @@ bun run check
 
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
-`@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`,
+`@poppet/provider-openrouter`, `@poppet/credentials`,
 `@poppet/store`, `@poppet/agent`, `@poppet/browser`, `@poppet/io`, `@poppet/mcp`,
 `@poppet/memory`, `@poppet/tasks`, `@poppet/web-search`,
 `@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`,
@@ -165,8 +165,7 @@ packages/
     src/service.ts        Provider service, model operations, and typed errors
     src/verification.ts   Shared local tool round-trip verification
     src/registration.ts   Connection interface, provider metadata, and host services
-  provider-protocol/      @poppet/provider-protocol
-    src/                  Reusable Responses/Chat Completions codecs and cancellation
+    src/protocol/         Responses/Chat Completions codecs and cancellation
   provider-openai/        @poppet/provider-openai
     src/
       index.ts            Public services, live layers, and connection errors

@@ -1,18 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
+import { Effect, Fiber, Schema, Stream } from "effect";
+import { TestClock } from "effect/testing";
+import OpenAI from "openai";
+
 import {
   completeModel,
   verifyModel,
   type ModelDescription,
   type ModelRequest,
   type ProviderId,
-} from "@poppet/provider";
-import { Effect, Fiber, Schema, Stream } from "effect";
-import { TestClock } from "effect/testing";
-import OpenAI from "openai";
-
-import { chatCompletionsModel } from "#src/chat-completions";
-import { responsesModel } from "#src/responses";
+} from "#src/index";
+import { chatCompletionsModel } from "#src/protocol/chat-completions";
+import { responsesModel } from "#src/protocol/responses";
 
 type HttpFetch = (input: Request | string | URL, init?: RequestInit) => Promise<Response>;
 

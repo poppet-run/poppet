@@ -53,8 +53,7 @@ The Bun monorepo uses private workspaces:
 | `@poppet/channel-whatsapp`    | QR-linked personal chat, protected Signal keys, socket lifecycle, and settings     | Gateway contract                                                             |
 | `@poppet/channel-telegram`    | Telegram private chat, HTTP transport, polling normalization, and settings         | Gateway contract                                                             |
 | `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings        | Gateway contract                                                             |
-| `@poppet/provider`            | Normalized messages, streams, connection services, registration contracts          | None                                                                         |
-| `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming                | Provider contract                                                            |
+| `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export  | None                                                                         |
 | `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                    | Provider contract, credentials, protocol adapters                            |
 | `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                   | Provider contract, credentials, protocol adapters                            |
 | `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference        | Credentials, provider contract, protocol adapters                            |
@@ -173,16 +172,15 @@ The agent depends on `ModelResolver`, supplied by the CLI runtime, and calls the
 resolved model through the shared contract. `provider models` and
 `provider verify` also exercise this boundary.
 
-| Workspace                     | Responsibility                                                                |
-| ----------------------------- | ----------------------------------------------------------------------------- |
-| `@poppet/provider`            | Shared inference, connection, registration, and message contracts             |
-| `@poppet/provider-protocol`   | Reusable wire codecs, validated completion, deadlines, and cancellation       |
-| `@poppet/provider-openai`     | ChatGPT authentication, OpenAI request translation, streams, and continuation |
-| `@poppet/provider-opencode`   | OpenCode Go credentials, discovery, per-model protocol selection, and streams |
-| `@poppet/provider-openrouter` | OpenRouter credentials, catalog capabilities, and Chat Completions binding    |
-| `@poppet/cli`                 | Provider/model configuration and composition of the selected live layer       |
+| Workspace                     | Responsibility                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| `@poppet/provider`            | Shared inference, connection, registration, message contracts, and protocol adapters |
+| `@poppet/provider-openai`     | ChatGPT authentication, OpenAI request translation, streams, and continuation        |
+| `@poppet/provider-opencode`   | OpenCode Go credentials, discovery, per-model protocol selection, and streams        |
+| `@poppet/provider-openrouter` | OpenRouter credentials, catalog capabilities, and Chat Completions binding           |
+| `@poppet/cli`                 | Provider/model configuration and composition of the selected live layer              |
 
-OpenRouter reuses the Chat Completions adapter in `@poppet/provider-protocol`.
+OpenRouter reuses the Chat Completions adapter in `@poppet/provider/protocol`.
 It discovers concrete text models publicly and loads an environment or saved API key
 only when inference begins. Catalog parameters determine each model's supported
 settings. Requests require parameter support, disable provider fallbacks, and
@@ -341,12 +339,15 @@ unrecognized models and Messages protocol models are rejected. The key is read
 from `POPPET_OPENCODE_GO_API_KEY` or protected API-key storage only when inference begins. Go requests require
 `workload: "coding"`; general assistant tasks fail before credentials are read.
 
-The reusable protocol adapters in `@poppet/provider-protocol` bind a model
+The reusable protocol adapters in `@poppet/provider/protocol` bind a model
 description and a supplied client Effect. Both providers reuse Responses parsing;
 Go also uses Chat Completions parsing. Provider packages supply request headers,
 error classification, and reasoning-continuation extensions. The shared adapters
 never branch on provider IDs or open a ChatGPT
-credential store. The contract package imports no SDK types.
+credential store. The `@poppet/provider` root export contains shared contracts and
+operations without importing SDK types or protocol implementations. The
+`@poppet/provider/protocol` export exposes the SDK-dependent adapters from the
+same package, which declares the OpenAI SDK dependency.
 
 Responses continuation retains validated output items, including encrypted
 reasoning. Go owns `reasoning_content` continuation; OpenRouter owns its structured
