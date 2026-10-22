@@ -72,7 +72,7 @@ For a temporary override in fish:
 ```fish
 set -lx POPPET_DATA_DIR "$HOME/.local/share/poppet"
 set -lx POPPET_NOTES_DIR "$HOME/Documents/Notes"
-bun run start config
+poppet config
 ```
 
 Empty or invalid environment values fail instead of falling back to the file.
@@ -122,7 +122,7 @@ For a temporary local override in fish:
 
 ```fish
 set -lx POPPET_LOG_REASONING true
-bun run start chat new "Review my notes"
+poppet chat new "Review my notes"
 ```
 
 `chat new` and interactive chat stream readable reasoning to stderr under a
@@ -153,7 +153,7 @@ For a temporary local override in fish:
 
 ```fish
 set -lx POPPET_LOG_TIMINGS true
-bun run start chat interactive
+poppet chat interactive
 ```
 
 Each `Timing` entry includes a session ID, a run ID when available, and JSON with
@@ -209,11 +209,11 @@ forwarded. TLS certificate and source-hostname checks remain enabled.
 
 Web search uses [Brave's Web Search API](https://api-dashboard.search.brave.com/app/documentation/web-search).
 Save its API key with an interactive prompt, or pipe a key to
-`bun run start web login --key-stdin`:
+`poppet web login --key-stdin`:
 
 ```fish
-bun run start web login
-bun run start web status
+poppet web login
+poppet web status
 ```
 
 Enable it in `<data directory>/config.json`:
@@ -270,7 +270,7 @@ local path, and add this object to `config.json` alongside your other settings:
 
 All three paths must be absolute; `~` is not expanded. The complete JSON object
 can instead be supplied through `POPPET_VOICE`. Set `voice` to
-`{"enabled":false}` to turn it off. `bun run start config` shows the invoking
+`{"enabled":false}` to turn it off. `poppet config` shows the invoking
 process's effective voice settings. Restart the worker after changes.
 
 Audio is downloaded from Telegram and decoded/transcribed locally. No speech

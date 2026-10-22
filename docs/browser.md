@@ -67,7 +67,7 @@ Chrome's restriction on non-proxied UDP; it exposes no script or launch options
 to the model.
 
 `POPPET_BROWSER` replaces the complete file section. `{"enabled":false}` disables
-access. `bun run start config` shows the invoking process's settings without
+access. `poppet config` shows the invoking process's settings without
 launching a browser. Restart the worker after edits. Missing executables or wrong
 versions produce a sanitized diagnostic and omit browser tools while ordinary
 chat and MCP tools remain available. Poppet never installs or upgrades software.
@@ -75,7 +75,7 @@ chat and MCP tools remain available. Poppet never installs or upgrades software.
 ## Use and lifecycle
 
 ```fish
-bun run start chat new "Use the browser to open https://example.com and summarize its rendered page"
+poppet chat new "Use the browser to open https://example.com and summarize its rendered page"
 ```
 
 Tools are `poppet_browser.open`, `snapshot`, `click`, `fill`, `press`, `scroll`, and

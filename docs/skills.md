@@ -20,10 +20,10 @@ Save the review only if the user explicitly asks and note writes are permitted.
 Inspect and select it:
 
 ```fish
-bun run start skills list
-bun run start skills show weekly-review
-bun run start chat new --skill weekly-review "Review my Acorn project"
-bun run start tasks add weekly-review --cron "0 9 * * 1" --tz Europe/London --skill weekly-review "Review my Acorn project"
+poppet skills list
+poppet skills show weekly-review
+poppet chat new --skill weekly-review "Review my Acorn project"
+poppet tasks add weekly-review --cron "0 9 * * 1" --tz Europe/London --skill weekly-review "Review my Acorn project"
 ```
 
 Put `--skill` and other options before the message or prompt. Select at most one

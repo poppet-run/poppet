@@ -7,10 +7,10 @@ concrete model ID returned by `provider models` and save a key through login:
 
 ```fish
 set -lx POPPET_PROVIDER openrouter
-bun run start provider models
+poppet provider models
 set -lx POPPET_MODEL 'replace-with-model-id'
-bun run start auth login openrouter
-bun run start provider verify
+poppet auth login openrouter
+poppet provider verify
 ```
 
 ## Credentials

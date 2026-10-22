@@ -7,13 +7,13 @@
 Save preferences and facts with stable keys:
 
 ```fish
-bun run start memory remember answer.style "Keep answers concise"
-bun run start memory list
-bun run start chat new "How should you answer my questions?"
-bun run start memory replace answer.style "Explain the reasoning"
-bun run start chat new "How should you answer my questions?"
-bun run start memory forget answer.style
-bun run start memory list
+poppet memory remember answer.style "Keep answers concise"
+poppet memory list
+poppet chat new "How should you answer my questions?"
+poppet memory replace answer.style "Explain the reasoning"
+poppet chat new "How should you answer my questions?"
+poppet memory forget answer.style
+poppet memory list
 ```
 
 Memory management requires no login or model. Chat still requires a configured
@@ -32,10 +32,10 @@ including the interactive prompt and authorized messaging conversations. Restart
 an existing worker after updating so its agent advertises the new tool:
 
 ```fish
-bun run start chat new "Remember that I prefer concise answers, under answer.style"
-bun run start chat send $session_id "Replace answer.style with Explain the reasoning"
-bun run start chat send $session_id "Forget the saved fact answer.style"
-bun run start memory list
+poppet chat new "Remember that I prefer concise answers, under answer.style"
+poppet chat send $session_id "Replace answer.style with Explain the reasoning"
+poppet chat send $session_id "Forget the saved fact answer.style"
+poppet memory list
 ```
 
 Use the session ID printed by the first command. The model is instructed to change

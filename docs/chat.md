@@ -9,8 +9,8 @@ After signing in, choose a model ID returned by `auth models` and start a sessio
 ```fish
 set -lx POPPET_PROVIDER openai-chatgpt
 set -lx POPPET_MODEL 'replace-with-model-id'
-bun run start chat new "Help me plan a small TypeScript project"
-bun run start chat sessions
+poppet chat new "Help me plan a small TypeScript project"
+poppet chat sessions
 ```
 
 The answer streams to stdout. The session and run IDs print to stderr. Copy the
@@ -18,8 +18,8 @@ session ID to continue or inspect it in a later invocation:
 
 ```fish
 set session_id 'paste-session-id-here'
-bun run start chat send $session_id "What should I build first?"
-bun run start chat show $session_id
+poppet chat send $session_id "What should I build first?"
+poppet chat show $session_id
 ```
 
 `chat new` and `chat send` each submit one message. `chat sessions` lists saved sessions;
@@ -42,8 +42,8 @@ show the accepted transcript and require a later text confirmation for mutations
 Start a new session or resume one in a terminal:
 
 ```fish
-bun run start chat interactive
-bun run start chat interactive $session_id
+poppet chat interactive
+poppet chat interactive $session_id
 ```
 
 Enter one message at each `You>` prompt and wait for the answer before entering
@@ -94,7 +94,7 @@ one request and inspect it with `chat show`.
 ## Select a skill
 
 ```fish
-bun run start chat new --skill weekly-review "Review my Acorn project"
+poppet chat new --skill weekly-review "Review my Acorn project"
 ```
 
 The session saves the skill's name and text when created. Later turns and restarts
@@ -166,7 +166,7 @@ usage excludes naming. Old sessions remain unnamed and retain their IDs.
 Titles can repeat; commands always use session IDs.
 
 ```fish
-bun run start chat rename $session_id "Weekly project review"
+poppet chat rename $session_id "Weekly project review"
 ```
 
 Manual names survive restart and win over an in-flight title request. Renaming
@@ -176,8 +176,8 @@ Title changes do not change activity timestamps or saved message order.
 ## Search past conversations
 
 ```fish
-bun run start chat search "project TypeScript"
-bun run start chat show <session-id-from-search>
+poppet chat search "project TypeScript"
+poppet chat show <session-id-from-search>
 ```
 
 Search returns JSON with `matches` and `truncated`. Each match includes session
@@ -237,7 +237,7 @@ behavior; there is no extra CLI or worker command for model recall.
 ## Read a supplied URL
 
 ```fish
-bun run start chat new "Summarize https://example.com/ and cite the source"
+poppet chat new "Summarize https://example.com/ and cite the source"
 ```
 
 Tool-capable models can call `poppet_web.fetch_page` for a public HTTP(S) URL
@@ -264,7 +264,7 @@ Enable [web search](configuration.md#web-search) to let tool-capable models use
 `poppet_web.search_web` in local, interactive, worker, and messaging chat:
 
 ```fish
-bun run start chat new "Search for recent Bun releases, read a source, and cite it"
+poppet chat new "Search for recent Bun releases, read a source, and cite it"
 ```
 
 Search sends the model's query to Brave Search and returns at most five sources
@@ -298,7 +298,7 @@ coding session:
 ```fish
 set -lx POPPET_PROVIDER opencode-go
 set -lx POPPET_MODEL glm-5.3
-bun run start chat new --coding "Explain how to structure a TypeScript CLI"
+poppet chat new --coding "Explain how to structure a TypeScript CLI"
 ```
 
 ## Failures and cancellation

@@ -75,10 +75,10 @@ and avoids logging raw protocol failures, which may contain credentials.
 ## Inspect and use tools
 
 ```fish
-bun run start mcp servers
-bun run start mcp status
-bun run start mcp tools reference
-bun run start chat new "Use reference to look up record 123"
+poppet mcp servers
+poppet mcp status
+poppet mcp tools reference
+poppet chat new "Use reference to look up record 123"
 ```
 
 `servers` and `status` show configured permissions, connection state, PID,

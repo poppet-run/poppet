@@ -18,8 +18,8 @@ one minute from now:
 
 ```fish
 set when (bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
-bun run start tasks add summary --at $when "Read project.md and summarize it"
-bun run start tasks work
+poppet tasks add summary --at $when "Read project.md and summarize it"
+poppet tasks work
 ```
 
 The worker prints timestamped lifecycle messages for starts, completed or failed
@@ -31,10 +31,10 @@ An idle worker does not print polling messages.
 Leave the worker running. In another terminal using the same `POPPET_DATA_DIR`:
 
 ```fish
-bun run start tasks list
-bun run start tasks show <task-id>
-bun run start tasks pause <task-id>
-bun run start tasks resume <task-id>
+poppet tasks list
+poppet tasks show <task-id>
+poppet tasks pause <task-id>
+poppet tasks resume <task-id>
 ```
 
 ## Edit and control the next execution
@@ -42,13 +42,13 @@ bun run start tasks resume <task-id>
 Edit a task without replacing its ID or losing its history:
 
 ```fish
-bun run start tasks edit <task-id> --name "Morning review"
-bun run start tasks edit <task-id> --prompt "Read project.md and summarize its open decisions."
-bun run start tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
-bun run start tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
-bun run start tasks skip-next <task-id>
-bun run start tasks snooze <task-id> --until 2099-10-22T10:00:00+01:00
-bun run start tasks run-now <task-id>
+poppet tasks edit <task-id> --name "Morning review"
+poppet tasks edit <task-id> --prompt "Read project.md and summarize its open decisions."
+poppet tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
+poppet tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
+poppet tasks skip-next <task-id>
+poppet tasks snooze <task-id> --until 2099-10-22T10:00:00+01:00
+poppet tasks run-now <task-id>
 ```
 
 Edits change only supplied name, prompt, or schedule fields. A cron replacement
@@ -96,7 +96,7 @@ Use `--monitor` with a recurring cron schedule and an explicit timezone. Name a
 specific source, watched field, and stable representation in the prompt:
 
 ```fish
-bun run start tasks add release-watch --monitor --cron "0 9 * * *" --tz Europe/London "Read https://example.com/releases.txt and report the latest stable release tag exactly as published. Ignore prereleases and publication timestamps."
+poppet tasks add release-watch --monitor --cron "0 9 * * *" --tz Europe/London "Read https://example.com/releases.txt and report the latest stable release tag exactly as published. Ignore prereleases and publication timestamps."
 ```
 
 The first successful check saves a quiet baseline. Later checks compare the
@@ -196,11 +196,11 @@ skills, notes, pages, and tool results cannot authorize task changes.
 
 ## Deliver results to Discord
 
-Configure [Discord](gateways/discord.md), start `bun run start worker run`, and copy an
+Configure [Discord](gateways/discord.md), start `poppet worker run`, and copy an
 existing authorized thread's ID. Pass it before the task prompt:
 
 ```fish
-bun run start tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --discord-thread <thread-id> "Summarize my notes"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --discord-thread <thread-id> "Summarize my notes"
 ```
 
 A running messaging worker validates the thread before creating the task.
@@ -268,7 +268,7 @@ unscoped chats; owner CLI commands retain access to all tasks.
 Use a five-field cron expression and explicit timezone for a recurring task:
 
 ```fish
-bun run start tasks add daily-summary --cron "0 9 * * *" --tz Europe/London "Summarize my notes"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London "Summarize my notes"
 ```
 
 One-off timestamps require `Z` or an explicit UTC offset. Cron schedules retain
@@ -293,7 +293,7 @@ import its provider continuation. See [conversation context](chat.md#read-conver
 A saved task prompt can explicitly supply a public URL for `poppet_web.fetch_page`:
 
 ```fish
-bun run start tasks add page-summary --cron "0 9 * * *" --tz Europe/London "Summarize https://example.com/ and cite the source"
+poppet tasks add page-summary --cron "0 9 * * *" --tz Europe/London "Summarize https://example.com/ and cite the source"
 ```
 
 Each occurrence may read that URL through the same bounded [page reader](chat.md#read-a-supplied-url)
@@ -311,7 +311,7 @@ With [web search configured](configuration.md#web-search), a saved prompt may as
 for current research without supplying a source URL:
 
 ```fish
-bun run start tasks add weekly-research --cron "0 9 * * 5" --tz Europe/London "Search for recent Bun releases, read relevant sources, and cite them"
+poppet tasks add weekly-research --cron "0 9 * * 5" --tz Europe/London "Search for recent Bun releases, read relevant sources, and cite them"
 ```
 
 Each occurrence can search and read returned sources on a later model turn.
@@ -333,10 +333,10 @@ Pausing cancels pending work and keeps previous results. An active run needs an
 explicit cancellation:
 
 ```fish
-bun run start tasks cancel <occurrence-id>
-bun run start tasks retry <occurrence-id>
-bun run start tasks providers
-bun run start tasks resume-provider openai-chatgpt
+poppet tasks cancel <occurrence-id>
+poppet tasks retry <occurrence-id>
+poppet tasks providers
+poppet tasks resume-provider openai-chatgpt
 ```
 
 Quota failures pause scheduled requests for that provider until `resume-provider`.
@@ -351,7 +351,7 @@ retrying it. A cancelled one-off needs `retry`, since it has no future occurrenc
 To remove every task and its occurrence/skip history:
 
 ```fish
-bun run start tasks clear
+poppet tasks clear
 ```
 
 This works with the worker running or stopped. A running worker interrupts active

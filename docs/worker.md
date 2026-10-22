@@ -7,9 +7,9 @@
 Choose one foreground mode for a data directory:
 
 ```fish
-bun run start worker run    # Scheduling and messaging
-bun run start tasks work    # Scheduling only
-bun run start gateway work  # Messaging only
+poppet worker run    # Scheduling and messaging
+poppet tasks work    # Scheduling only
+poppet gateway work  # Messaging only
 ```
 
 All three modes own enabled [MCP connections](mcp.md), started lazily on discovery
@@ -51,9 +51,9 @@ On macOS, stop any foreground worker, then install a user LaunchAgent to start
 the combined `worker run` host at login and keep it running while you are logged in:
 
 ```fish
-bun run start worker install
-bun run start worker status
-bun run start worker logs
+poppet worker install
+poppet worker status
+poppet worker logs
 ```
 
 Save persistent provider, model, notes-directory, and chat-limit settings in
@@ -110,8 +110,8 @@ its observation time. `tasks status` works for the foreground worker too.
 Inspect full task results using the existing commands:
 
 ```fish
-bun run start tasks list
-bun run start tasks show <task-id>
+poppet tasks list
+poppet tasks show <task-id>
 ```
 
 Lifecycle logs go to `<data directory>/logs/worker.log`, with `0700` directory and
@@ -133,9 +133,9 @@ worker rather than allowing it to run without captured diagnostics.
 ## Stop, start, and uninstall
 
 ```fish
-bun run start worker stop
-bun run start worker start
-bun run start worker uninstall
+poppet worker stop
+poppet worker start
+poppet worker uninstall
 ```
 
 Stopping removes the running launchd registration and sends SIGTERM. Scoped
@@ -159,13 +159,13 @@ Task changes are durable even when their final chat reply fails.
 Chat, memory, session inspection, and `store status` work while it is running:
 
 ```fish
-bun run start memory remember project.name Acorn
-bun run start chat new "What is the project called?"
-bun run start chat interactive
-bun run start chat sessions
-bun run start chat search "project"
-bun run start memory list
-bun run start store status
+poppet memory remember project.name Acorn
+poppet chat new "What is the project called?"
+poppet chat interactive
+poppet chat sessions
+poppet chat search "project"
+poppet memory list
+poppet store status
 ```
 
 New chats use the invoking terminal's provider, model, and workload; continued
@@ -198,12 +198,12 @@ To manually test background execution, first save your provider and model in
 
 ```fish
 set when (date -u -v+1M +%Y-%m-%dT%H:%M:%SZ)
-bun run start tasks add background-summary --at $when "Read project.md and summarize it"
-bun run start worker install
-bun run start worker status
+poppet tasks add background-summary --at $when "Read project.md and summarize it"
+poppet worker install
+poppet worker status
 # After the scheduled time, inspect the task ID returned by tasks add:
-bun run start tasks show <task-id>
-bun run start worker logs
+poppet tasks show <task-id>
+poppet worker logs
 ```
 
 Use `worker start` instead of `install` if it is already installed. Repeat with a

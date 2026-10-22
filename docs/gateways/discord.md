@@ -20,9 +20,9 @@ stdin. The token is never accepted as an argument. For fish:
 
 ```fish
 read --silent --prompt-str 'Discord bot token: ' discord_token
-printf '%s\n' $discord_token | bun run start gateway discord setup <bot-id> <your-user-id> <server-id> <parent-channel-id> --key-stdin
+printf '%s\n' $discord_token | poppet gateway discord setup <bot-id> <your-user-id> <server-id> <parent-channel-id> --key-stdin
 set -e discord_token
-bun run start gateway work
+poppet gateway work
 ```
 
 Replace the angle-bracket placeholders with Discord IDs before running the
@@ -69,7 +69,7 @@ message edits are not supported in this phase.
 
 ## Status and delivery
 
-Use `bun run start gateway status` for connection state, rejected/dropped event
+Use `poppet gateway status` for connection state, rejected/dropped event
 counts while running, and persisted queue/delivery counts. Each registration has
 an entry in `channels`, including its ID, display name, enabled state, connection
 metadata, or configuration error. Persisted queue/delivery totals remain at the

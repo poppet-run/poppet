@@ -15,11 +15,11 @@ directory:
 ```fish
 mkdir -p ~/.config/poppet/projects/acorn
 printf '%s\n' '# Acorn' 'Use concise milestone reviews. Flag unresolved decisions.' > ~/.config/poppet/projects/acorn/PROJECT.md
-bun run start projects list
-bun run start projects show acorn
-bun run start chat new --project acorn "Review the next milestone"
-bun run start chat interactive --project acorn
-bun run start tasks add acorn-review --project acorn --cron "0 9 * * 1" --tz Europe/London "Review progress"
+poppet projects list
+poppet projects show acorn
+poppet chat new --project acorn "Review the next milestone"
+poppet chat interactive --project acorn
+poppet tasks add acorn-review --project acorn --cron "0 9 * * 1" --tz Europe/London "Review progress"
 ```
 
 Use your configured data directory if it differs from the default. Names contain
@@ -53,10 +53,10 @@ Tasks created through a project chat inherit its snapshot through the host.
 Manage facts separately:
 
 ```fish
-bun run start memory remember --project acorn review.format "List decisions first"
-bun run start memory list --project acorn
-bun run start memory replace --project acorn review.format "List blockers first"
-bun run start memory forget --project acorn review.format
+poppet memory remember --project acorn review.format "List decisions first"
+poppet memory list --project acorn
+poppet memory replace --project acorn review.format "List blockers first"
+poppet memory forget --project acorn review.format
 ```
 
 Memory commands default to global scope. The same key can exist globally and in

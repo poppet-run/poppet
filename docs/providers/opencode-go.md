@@ -8,9 +8,9 @@ with a hidden key prompt, then select a model:
 ```fish
 set -lx POPPET_PROVIDER opencode-go
 set -lx POPPET_MODEL glm-5.3
-bun run start auth login opencode-go
-bun run start provider models
-bun run start provider verify
+poppet auth login opencode-go
+poppet provider models
+poppet provider verify
 ```
 
 ## Models and workloads

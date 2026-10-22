@@ -7,10 +7,10 @@
 Sign in through the system browser, then verify subscription access:
 
 ```fish
-bun run start auth login openai-chatgpt
-bun run start auth models openai-chatgpt
-bun run start auth verify --provider openai-chatgpt
-bun run start auth status openai-chatgpt
+poppet auth login openai-chatgpt
+poppet auth models openai-chatgpt
+poppet auth verify --provider openai-chatgpt
+poppet auth status openai-chatgpt
 ```
 
 ## Registration and consent
@@ -26,7 +26,7 @@ one account and rejects a returning identity that does not match it until logout
 
 `auth verify` selects the first visible model in the account's catalog. Pass a
 model slug from `auth models` to choose another, for example
-`bun run start auth verify <slug> --provider openai-chatgpt`. Verification makes two streamed Responses
+`poppet auth verify <slug> --provider openai-chatgpt`. Verification makes two streamed Responses
 requests, which consume ChatGPT plan usage. It requests a local tool, supplies a
 random token as the tool result, and requires the completed answer to return that
 token. Success records the model and verification time; it does not guarantee
@@ -34,7 +34,7 @@ future quota or eligibility.
 [Subscription inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
 
 If identity sign-in succeeds without plan-usage permission, status reports
-`planUsage: false`. Run `bun run start auth login openai-chatgpt --consent` to request consent
+`planUsage: false`. Run `poppet auth login openai-chatgpt --consent` to request consent
 again. Usage limits, ineligible accounts, temporary failures, and interrupted
 streams produce separate errors. Model requests are not automatically retried.
 The flow uses OAuth credentials and requires no API key or client secret.
@@ -62,7 +62,7 @@ Never remove the lock database while Poppet is running.
 
 ## Logout
 
-`bun run start auth logout openai-chatgpt` deletes the saved connection file,
+`poppet auth logout openai-chatgpt` deletes the saved connection file,
 including account identity, tokens, verification, registration, and host identifier,
 then attempts remote revocation. Status does not recreate those details.
 Other providers' credentials are preserved. If remote revocation cannot

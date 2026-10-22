@@ -5,7 +5,7 @@
 Open or inspect the local database:
 
 ```fish
-bun run start store status
+poppet store status
 ```
 
 This opens `<POPPET_DATA_DIR>/store/poppet.sqlite`, applies pending migrations,
@@ -15,7 +15,7 @@ this database. To experiment in a separate directory:
 
 ```fish
 set -lx POPPET_DATA_DIR /tmp/poppet-storage-test
-bun run start store status
+poppet store status
 ```
 
 ## Schema and saved records

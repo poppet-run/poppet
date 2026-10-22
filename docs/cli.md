@@ -2,13 +2,13 @@
 
 [Documentation index](index.md)
 
-Run commands from the repository root with `bun run start`. Run
-`bun run start --help` for the current command syntax. Angle-bracket values below
+After [installing the command](getting-started.md#install-the-command), run `poppet` from any directory. Run
+`poppet --help` for the current command syntax. Angle-bracket values below
 are placeholders; replace them before running a command. Quote prompts and values
 that contain spaces.
 
-Every command has its own help, for example `bun run start tasks add --help` or
-`bun run start auth login -h`. Help works without valid configuration or credentials.
+Every command has its own help, for example `poppet tasks add --help` or
+`poppet auth login -h`. Help works without valid configuration or credentials.
 Argument errors print the relevant command's help and exit unsuccessfully.
 The remaining words of a message, memory value, or task prompt are joined with
 spaces; flags inside that text stay literal. Use `--` before the text when it
@@ -34,9 +34,9 @@ model selection. General provider commands use the configured provider:
 
 ```fish
 set -lx POPPET_PROVIDER openai-chatgpt
-bun run start provider models
+poppet provider models
 set -lx POPPET_MODEL 'replace-with-model-id'
-bun run start provider verify
+poppet provider verify
 ```
 
 `provider verify` exercises the shared message and continuation contract with
@@ -45,7 +45,7 @@ must be selected before verification opens credentials. The runtime builds only
 the selected provider's dependencies and never falls back to another model.
 
 To verify a provider without changing `POPPET_PROVIDER`, use
-`bun run start auth verify <model-id> --provider openrouter`. ChatGPT's browser
+`poppet auth verify <model-id> --provider openrouter`. ChatGPT's browser
 login and `--consent` remain available through `auth login openai-chatgpt`.
 
 | Command                                            | Action                                             |

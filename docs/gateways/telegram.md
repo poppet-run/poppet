@@ -13,9 +13,9 @@ Select an assistant-capable provider and model, then save the token through stdi
 
 ```fish
 read --silent --prompt-str 'Telegram bot token: ' telegram_token
-printf '%s\n' $telegram_token | bun run start gateway telegram setup <bot-id> <owner-id> --key-stdin
+printf '%s\n' $telegram_token | poppet gateway telegram setup <bot-id> <owner-id> --key-stdin
 set -e telegram_token
-bun run start gateway work
+poppet gateway work
 ```
 
 Replace the placeholders with numeric IDs. Open the bot's private chat in Telegram,
@@ -120,11 +120,11 @@ manually reposting an answer. A failed delivery does not rerun inference.
 
 ## Scheduled results
 
-Run `bun run start worker run` to enable scheduling and messaging together, then
+Run `poppet worker run` to enable scheduling and messaging together, then
 select the configured owner's private chat before the prompt:
 
 ```fish
-bun run start tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --telegram-chat <owner-id> "Summarize my notes"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --telegram-chat <owner-id> "Summarize my notes"
 ```
 
 The messaging worker checks the destination before saving. Each occurrence keeps

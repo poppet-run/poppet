@@ -284,9 +284,9 @@ Use small prompts and the same `POPPET_DATA_DIR` throughout. Select an
 assistant-capable provider and model for messaging and scheduled tasks.
 
 - [ ] Sign in to each provider you use, select a supported model, and run
-      `bun run start provider verify`. Expect inference and the tool round trip to
+      `poppet provider verify`. Expect inference and the tool round trip to
       succeed.
-- [ ] Run `bun run start chat interactive`. Send two messages, confirm context is
+- [ ] Run `poppet chat interactive`. Send two messages, confirm context is
       retained, then cancel a longer request with Ctrl-C. Start another chat and confirm
       it works.
 - [ ] For ChatGPT, repeat a request when the access token nears expiry. Expect
@@ -299,10 +299,10 @@ assistant-capable provider and model for messaging and scheduled tasks.
       disconnect the network and restore it; check reconnection and absence of
       duplicate replies.
 - [ ] Save provider/model settings in `config.json` and credentials in protected
-      storage. Stop foreground workers, then run `bun run start worker install`, or
-      `bun run start worker stop` followed by `bun run start worker start` for an
-      existing installation. Check `bun run start worker status` and
-      `bun run start worker logs`.
+      storage. Stop foreground workers, then run `poppet worker install`, or
+      `poppet worker stop` followed by `poppet worker start` for an
+      existing installation. Check `poppet worker status` and
+      `poppet worker logs`.
 - [ ] Log out of macOS and back in. Confirm the worker starts automatically,
       responds to CLI commands, and receives messaging input.
 - [ ] Schedule a one-off task, sleep across its due time, then wake. Expect one

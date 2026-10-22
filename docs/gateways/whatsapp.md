@@ -18,9 +18,9 @@ Select an assistant-capable provider and model, stop any running Poppet worker,
 then run these commands in an interactive terminal:
 
 ```fish
-bun run start gateway whatsapp setup <account-phone> <owner-phone>
-bun run start gateway whatsapp pair
-bun run start worker run
+poppet gateway whatsapp setup <account-phone> <owner-phone>
+poppet gateway whatsapp pair
+poppet worker run
 ```
 
 On the configured account's phone, open WhatsApp's Linked devices screen and scan
@@ -93,7 +93,7 @@ With `worker run` active and WhatsApp connected, select the owner's phone before
 the task prompt:
 
 ```fish
-bun run start tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --whatsapp-chat <owner-phone> "Summarize my notes"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --whatsapp-chat <owner-phone> "Summarize my notes"
 ```
 
 The messaging worker validates the destination before saving. Each occurrence
