@@ -17,6 +17,7 @@ import {
 } from "#src/browser-process";
 import { type BrowserSettings } from "#src/config";
 import { BrowserError } from "#src/errors";
+import { browserExecutables } from "#src/executables";
 
 /** A browser tool with validation and invocation owned by this package. */
 export interface BrowserTool {
@@ -100,13 +101,22 @@ export const browserTools = (
       return yield* Effect.fail(
         browserFailure("tool-network", "Browser tools currently require macOS or Linux."),
       );
-    const executable = settings.command ?? "agent-browser";
-    const chromium = settings.chromiumExecutable;
     const domains = settings.allowedDomains ?? [];
     const allowAllDomains = domains.includes("*");
 
-    if (chromium === undefined || domains.length === 0)
+    if (domains.length === 0)
       return yield* Effect.fail(browserFailure("tool-network", "Invalid browser configuration."));
+
+    const { executable, chromium } = yield* Effect.tryPromise({
+      try: () => browserExecutables(settings),
+      catch: (cause) =>
+        cause instanceof BrowserError
+          ? cause
+          : browserFailure(
+              "tool-network",
+              "Cannot discover browser executables. See docs/browser.md.",
+            ),
+    });
 
     // A short private path also stays within macOS's 103-byte Unix socket limit.
     const directory = yield* Effect.tryPromise({

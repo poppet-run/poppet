@@ -22,12 +22,13 @@ agent-browser --version
 command -v agent-browser
 ```
 
-Use the native binary, not the JavaScript launcher. Global npm installation
-normally links to it. It also lives under the package's `bin` directory, named
-`agent-browser-darwin-arm64`, `agent-browser-darwin-x64`, or the corresponding
-Linux binary. Poppet must own that exact daemon process.
+Poppet finds `agent-browser` on `PATH` and follows symlinks. For npm and Homebrew
+JavaScript launchers, it selects the platform's native binary beside the launcher
+so it can own that exact daemon process. The worker's `PATH` must include the
+installation, or you can set `command` to the native executable explicitly.
 
-Download and extract the pinned browser to a stable location:
+Download and extract the pinned browser into
+`~/.agent-browser/browsers/chrome-155.0.8059.84/`:
 
 | Platform            | Download                                                                                                           |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -43,16 +44,18 @@ section to your existing `<data directory>/config.json`:
 {
   "browser": {
     "enabled": true,
-    "command": "/absolute/path/to/agent-browser-darwin-arm64",
-    "chromiumExecutable": "/absolute/path/to/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
     "allowedDomains": ["example.com", "www.example.com"]
   }
 }
 ```
 
-`command` defaults to `agent-browser` on `PATH`; prefer an absolute path for the
-worker. File command paths containing `/` resolve beside `config.json`.
-`chromiumExecutable` must be absolute. For restricted browsing, allow 1–32 exact
+Both executable settings are optional overrides. `command` selects a native
+agent-browser executable; file command paths containing `/` resolve beside
+`config.json`. `chromiumExecutable` must be absolute when provided. Otherwise,
+Poppet finds the pinned Chrome in the invoking user's agent-browser cache before
+isolating the run's `HOME`. Both the installer's flattened layout and the original
+archive's platform directory are supported. Discovery never selects a different
+version or uses your everyday Chrome. For restricted browsing, allow 1–32 exact
 lowercase hostnames without schemes, ports, paths, or wildcards. Include required
 CDN hosts explicitly. An allowed hostname covers its ports.
 
@@ -132,7 +135,7 @@ Run `bun run check` for fixture and injected-model tests. With pinned executable
 run the standalone local-site self-check:
 
 ```sh
-bun packages/browser/src/test/browser-check.ts /absolute/path/to/agent-browser /absolute/path/to/chromium
+bun packages/browser/src/test/browser-check.ts
 ```
 
 It checks JavaScript rendering, a form action, restricted and wildcard navigation,
