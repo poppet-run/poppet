@@ -3,12 +3,12 @@
 [Documentation index](../index.md)
 
 For OpenRouter, discovery uses its public catalog without an API key. Select a
-concrete model ID and save a key through login:
+concrete model ID returned by `provider models` and save a key through login:
 
 ```fish
 set -lx POPPET_PROVIDER openrouter
 bun run start provider models
-set -lx POPPET_MODEL anthropic/claude-sonnet-4.5
+set -lx POPPET_MODEL 'replace-with-model-id'
 bun run start auth login openrouter
 bun run start provider verify
 ```

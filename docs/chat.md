@@ -4,11 +4,11 @@
 
 ## Start and continue a session
 
-After signing in and choosing a model, start a session:
+After signing in, choose a model ID returned by `auth models` and start a session:
 
 ```fish
 set -lx POPPET_PROVIDER openai-chatgpt
-set -lx POPPET_MODEL gpt-6.1-sol
+set -lx POPPET_MODEL 'replace-with-model-id'
 bun run start chat new "Help me plan a small TypeScript project"
 bun run start chat sessions
 ```

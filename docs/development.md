@@ -16,7 +16,7 @@ bun run check
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/provider-protocol`, `@poppet/credentials`,
-`@poppet/store`, `@poppet/agent`, `@poppet/io`, `@poppet/mcp`,
+`@poppet/store`, `@poppet/agent`, `@poppet/browser`, `@poppet/io`, `@poppet/mcp`,
 `@poppet/memory`, `@poppet/tasks`, `@poppet/web-search`,
 `@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`,
 `@poppet/channel-discord`, `@poppet/channel-telegram`, and `@poppet/channel-whatsapp`.
@@ -122,9 +122,6 @@ packages/
   io/                     @poppet/io
     src/io.ts             Bounded stream reads and subprocess cleanup
     src/public-url.ts     Shared HTTP URL validation and public-address policy
-  tasks/                  @poppet/tasks
-    src/monitoring.ts     Validated evidence, durable comparisons, recovery projections
-    src/monitor-tools.ts  Run-bound observation tool and host-owned instructions
   mcp/                    @poppet/mcp
     src/service.ts        MCP contract, scoped clients, permissions, discovery, invocation
     src/config.ts         Server schemas and environment/file configuration
@@ -155,6 +152,8 @@ packages/
     src/task-store.ts     Durable scheduling and occurrence transitions
     src/task-schema.ts    Typed commands, cron expressions, and timestamps
     src/task-socket.ts    Task command client and JSON responses
+    src/monitoring.ts     Validated evidence, durable comparisons, recovery projections
+    src/monitor-tools.ts  Run-bound observation tool and host-owned instructions
   worker/                 @poppet/worker
     src/socket.ts         Protected command transport and request ownership
   platform/               @poppet/platform

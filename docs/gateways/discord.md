@@ -82,7 +82,8 @@ the saved answer before manually reposting it. No reply is redirected to another
 channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#deliver-results-to-discord) can select an explicit
 thread with `--discord-thread`. Use the combined worker to execute and deliver
 them. Scheduled results use the same queue and do not alter thread sessions.
-[Telegram private chat](telegram.md) is also supported. WhatsApp remains planned.
+[Telegram private chat](telegram.md) and [WhatsApp personal-account chat](whatsapp.md)
+are also supported.
 
 ## Validation
 

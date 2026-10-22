@@ -317,7 +317,8 @@ bun run start tasks add weekly-research --cron "0 9 * * 5" --tz Europe/London "S
 Each occurrence can search and read returned sources on a later model turn.
 Search grants never carry over from older occurrences or saved history. Notes
 and memory stay read-only. Search authentication, service, and rate-limit errors
-fail that occurrence without retrying or pausing its inference provider. Use the
+return a failed tool result for the model to explain or handle within the run
+budgets. They do not automatically retry or pause the inference provider. Use the
 existing destination flags to deliver completed research through messaging.
 
 ## Missed work, pauses, and retries

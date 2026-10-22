@@ -54,10 +54,11 @@ Credentials live in `<POPPET_DATA_DIR>/auth/connection.json`, with owner-only fi
 permissions (`0600`) inside a protected directory (`0700`). Writes use atomic
 replacement. Tokens are redacted in application values and omitted from command
 output. Near-expiry access tokens are refreshed with rotating credentials saved
-together. An exclusive `auth/owner.lock` prevents concurrent authentication
-commands and is removed on normal shutdown or interruption. After a process
-crash, remove a remaining lock only after confirming no Poppet auth command is
-running.
+together. An OS-held SQLite lock in `auth/owner.lock.sqlite` prevents concurrent
+authentication commands. `auth/owner.lock` records the current PID for diagnostics
+and is removed on normal shutdown or interruption. After a crash, the OS releases
+the SQLite lock and the next owner replaces the leftover PID marker automatically.
+Never remove the lock database while Poppet is running.
 
 ## Logout
 

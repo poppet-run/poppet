@@ -34,8 +34,8 @@ model selection. General provider commands use the configured provider:
 
 ```fish
 set -lx POPPET_PROVIDER openai-chatgpt
-set -lx POPPET_MODEL gpt-6.1-sol
 bun run start provider models
+set -lx POPPET_MODEL 'replace-with-model-id'
 bun run start provider verify
 ```
 
@@ -93,6 +93,7 @@ Enable `webSearch` separately and restart any running worker. See
 | `chat interactive [session] [--coding] [--skill <name>] [--project <name>]` | Open a terminal prompt for a new or saved session.          |
 | `chat new [--coding] [--skill <name>] [--project <name>] <message>`         | Start a session with the configured provider and model.     |
 | `chat send <session> <message>`                                             | Continue a saved session.                                   |
+| `chat rename <session> <title>`                                             | Rename a saved session without inference.                   |
 | `chat search <query>`                                                       | Search completed conversation text without inference.       |
 | `chat sessions`                                                             | List saved sessions.                                        |
 | `chat show <session>`                                                       | Print saved messages, tool calls, and run outcomes as JSON. |

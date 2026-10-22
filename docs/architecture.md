@@ -2,8 +2,9 @@
 
 [Documentation index](index.md)
 
-Start with one local process invoked by the CLI. Add a background worker when
-scheduled tasks need one. The first chat flow calls the runner directly.
+The CLI runs chat locally when no worker owns the data directory. A running
+worker handles CLI requests, scheduled tasks, and messaging through one store
+connection and serialized agent. Background installation is available on macOS.
 
 ## Effect conventions
 
@@ -35,9 +36,11 @@ The Bun monorepo uses private workspaces:
 | Workspace                     | Responsibility                                                                     | Workspace dependencies                                                       |
 | ----------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                 | Config, agent, browser, MCP, memory, tasks, store, platform, provider layers |
-| `@poppet/browser`             | Isolated browser tools, settings, pinned daemon lifecycle, bounded native requests | Provider contract, Effect                                                    |
+| `@poppet/browser`             | Isolated browser tools, settings, pinned daemon lifecycle, bounded native requests | I/O helpers, provider contract, Effect                                       |
 | `@poppet/mcp`                 | Scoped stdio clients, bounded discovery, original-schema validation, result limits | Credentials, provider contract                                               |
-| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                    | Config, memory, store, provider contract                                     |
+| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                    | Config, I/O helpers, memory, store, web search, provider contract            |
+| `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation   | None                                                                         |
+| `@poppet/web-search`          | Brave search service, response validation, and bounded source results              | I/O helpers, Effect                                                          |
 | `@poppet/config`              | Validated settings and the `AppConfig` service                                     | Provider contract, browser and MCP configuration schemas                     |
 | `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                        | Provider contract                                                            |
 | `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle              | Config, credentials, provider contract                                       |
@@ -46,7 +49,7 @@ The Bun monorepo uses private workspaces:
 | `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                       | Platform contract                                                            |
 | `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                          | Config, agent, store, worker transport, provider contract                    |
 | `@poppet/worker`              | Protected local command transport and request lifecycle                            | Effect                                                                       |
-| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery           | Agent, config, credentials, store, provider contract                         |
+| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery           | Agent, config, credentials, I/O helpers, store, provider contract            |
 | `@poppet/channel-whatsapp`    | QR-linked personal chat, protected Signal keys, socket lifecycle, and settings     | Gateway contract                                                             |
 | `@poppet/channel-telegram`    | Telegram private chat, HTTP transport, polling normalization, and settings         | Gateway contract                                                             |
 | `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings        | Gateway contract                                                             |
@@ -54,14 +57,9 @@ The Bun monorepo uses private workspaces:
 | `@poppet/provider-protocol`   | Reusable Responses and Chat Completions codecs and scoped streaming                | Provider contract                                                            |
 | `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                    | Provider contract, credentials, protocol adapters                            |
 | `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                   | Provider contract, credentials, protocol adapters                            |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference        | Provider contract, protocol adapters                                         |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference        | Credentials, provider contract, protocol adapters                            |
 
-The CLI lives in `apps/cli`; libraries live in `packages/config` and
-`packages/provider-openai`, `packages/provider`, `packages/provider-opencode`,
-`packages/provider-openrouter`, `packages/provider-protocol`, `packages/credentials`,
-`packages/store`, `packages/agent`, `packages/browser`, `packages/mcp`, `packages/memory`, `packages/tasks`,
-`packages/platform`, `packages/platform-macos`, `packages/worker`, `packages/gateway`, and
-`packages/channel-discord`.
+The CLI lives in `apps/cli`; libraries live in `packages/`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
@@ -81,44 +79,12 @@ Providers do not depend on application configuration or other provider packages.
 
 ## Modules
 
-The implemented modules below live under `packages/provider-openai/src`, except
-configuration in `packages/config/src` and CLI files in `apps/cli/src`.
-Shared provider types live in `packages/provider/src`, and Go routing lives in
-`packages/provider-opencode/src`. OpenRouter discovery and composition live in
-`packages/provider-openrouter/src`. SQLite storage lives in `packages/store/src`.
-Persisted chat lives in `packages/agent/src`. Notes tools and their sequential model loop are implemented in that workspace.
-The memory contract and local implementation live in `packages/memory/src`.
-The agent formats memory snapshots into model instructions. Task scheduling, persistence,
-recovery, and task command execution live in `packages/tasks/src`. The protected
-worker transport lives in `packages/worker/src`. The CLI keeps task argument
-parsing, JSON presentation, and neutral worker startup in `worker-host.ts`.
-Task tables remain in the shared store migrations.
-
-| Module                  | Responsibility                                                              | Dependencies                                      |
-| ----------------------- | --------------------------------------------------------------------------- | ------------------------------------------------- |
-| `config.ts`             | Validate settings and provide `AppConfig`                                   | Effect Config and Schema                          |
-| `connection.ts`         | Credential schemas, redacted tokens, typed connection errors                | Effect Schema and Data                            |
-| `auth/credentials.ts`   | Atomic credential replacement and exclusive owner lock                      | Configuration, scoped filesystem access           |
-| `oauth/`                | OAuth service with discovery, HTTP, token, and identity modules             | Fetch, Effect Schema, jose                        |
-| `sign-in/`              | Sign-in service with one-use callback and browser modules                   | Scoped Bun listener and subprocess                |
-| `auth/`                 | Auth service with login, refresh, and pure state modules                    | Configuration, sign-in, OAuth, credential storage |
-| `model/`                | Model service with SDK adapter, stream collector, and verification protocol | Authentication, OpenAI client                     |
-| `store/`                | Scoped SQLite ownership, migrations, sessions, messages, and runs           | Configuration, shared provider schemas            |
-| `agent/service.ts`      | Persisted chat, deadlines, cancellation, run finalization                   | Model resolver, store, conversation workflow      |
-| `agent/conversation.ts` | Sequential model/tool loop, permission checks, run budgets                  | Model, store, notes, memory, pages, chat settings |
-| `agent/reply.ts`        | Validated stream completion and output limits                               | Shared model contract                             |
-| `agent/context.ts`      | Complete-exchange context assembly and size limits                          | Shared message and record types                   |
-| `agent/settings.ts`     | Validated context, history, and output budgets                              | Effect Config and Schema                          |
-| `agent/skills.ts`       | Explicit local procedure loading with bounded filesystem access             | Config and shared snapshot schema                 |
-| `agent/notes.ts`        | Note schemas, bounded filesystem access, atomic replacement                 | Config, chat settings, scoped filesystem access   |
-| `agent/pages.ts`        | URL authorization, redirect policy, scoped page retrieval                   | Page transport, extraction, chat settings         |
-| `agent/page-network.ts` | Public-address validation, cancellable DNS, pinned HTTP(S), body limits     | Node DNS, HTTP(S), net, TLS, zlib                 |
-| `agent/page-text.ts`    | Static HTML/plain-text extraction and bounded JSON results                  | Bun HTMLRewriter, entities                        |
-| `agent/memory-tools.ts` | Memory tool schema, budget preflight, mutation dispatch, and provenance     | Memory service, chat settings                     |
-| `agent/memory.ts`       | Run-start snapshot loading and model instructions                           | Memory service, chat settings                     |
-| `memory/`               | Memory contract, local fact operations, bounded profile reads               | Effect; config and shared database for local I/O  |
-| `tasks/scheduler.ts`    | Persisted due occurrences and sequential worker                             | Store, agent, clock, occurrence calculator        |
-| `cli.ts`                | Typed commands and terminal presentation                                    | Application services required by each command     |
+See the [source layout](development.md#source-layout) for module paths. Provider
+packages own authentication and inference adapters. The agent owns persisted
+conversation execution, context, and built-in tools. Tasks own scheduling and
+execution history; the gateway owns messaging acceptance and delivery. Their
+tables live in the shared store migrations, and the CLI composes their layers
+around one store connection and agent.
 
 Each live service gets a layer at the application boundary. Tests replace model,
 authentication, and clock behavior without contacting an account. SQLite and
@@ -136,9 +102,9 @@ services with local OAuth and model servers shared by the behavior suites.
 
 Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
 modules are implemented. `runtime.ts` builds only the registered provider selected
-for an auth or inference command. Its store layer opens SQLite only for store
-and chat and memory commands. Chat, notes tools, and explicit memory are implemented;
-scheduled tasks and messaging delivery are implemented.
+for an auth or inference command. Its store layer opens SQLite for saved-data operations and worker execution.
+Help, configuration, skill/project file inspection, and provider commands do not
+open the conversation database.
 
 ## Explicit local skills
 
@@ -201,8 +167,8 @@ allows no notes. Directory deletion retains facts and saved history. See
 
 ## Provider interface
 
-The shared interface is implemented before durable conversation storage so
-its schema can preserve normalized messages and provider continuation data.
+The shared interface defines normalized messages and provider continuation
+data independently of durable conversation storage.
 The agent depends on `ModelResolver`, supplied by the CLI runtime, and calls the
 resolved model through the shared contract. `provider models` and
 `provider verify` also exercise this boundary.
@@ -338,8 +304,7 @@ selects the data directory and file. Application settings and chat limits share
 one configuration source, while retaining their own validation.
 Provider selection uses `provider` and `model`, overridden by `POPPET_PROVIDER`
 and `POPPET_MODEL`.
-Use `openai-chatgpt` for the existing subscription connection and `opencode-go`
-for OpenCode Go. Reserve `openai-api` for later API-key support.
+The registered providers are `openai-chatgpt`, `opencode-go`, and `openrouter`.
 An explicit model is required for provider verification and new chat sessions.
 Help, configuration, and connection commands remain usable before selection.
 Credentials stay in separate
@@ -366,14 +331,14 @@ Anthropic Messages endpoints depending on the model. Its adapter selects the
 protocol per model and sends a Poppet user agent and a stable
 `x-opencode-session` conversation ID. Start with an explicit supported
 model/protocol set and expand it as each protocol passes validation. OpenCode Go
-specifies coding-agent traffic; resolve its suitability for Poppet's general notes
-and scheduled-assistant workloads before enabling it for those uses.
+specifies coding-agent traffic; the adapter rejects assistant workloads before
+reading credentials or sending inference requests.
 [OpenCode Go requirements](https://opencode.ai/v2/docs/console/go/)
 
 The first Go model set is `gpt-6-luna` using Responses and `glm-5.3` using
 Chat Completions. Only these models are listed from the remote public catalog;
 unrecognized models and Messages protocol models are rejected. The key is read
-from `POPPET_OPENCODE_GO_API_KEY` only when inference begins. Go requests require
+from `POPPET_OPENCODE_GO_API_KEY` or protected API-key storage only when inference begins. Go requests require
 `workload: "coding"`; general assistant tasks fail before credentials are read.
 
 The reusable protocol adapters in `@poppet/provider-protocol` bind a model
@@ -428,11 +393,12 @@ index permits only one pending or running run.
 successful completion requires a running run. `appendMessages` preserves exchanges inside
 a running run. `finishRun` atomically saves a successful response and assistant
 message, or records a failure/interruption reason. Read methods retain message
-order and provider continuation. No raw SQLite handle is exported publicly.
+order and provider continuation. The `Store` record API exposes no raw SQLite
+handle; repositories use the separate scoped `StoreDatabase` service.
 
 A new owner marks unfinished runs interrupted with `process-exit`, preserving
-their inputs without replaying them. A hard crash may leave the ownership lock;
-dead-process ownership recovery uses the shared scoped lock helper. Credentials, facts, jobs, context
+their inputs without replaying them. A hard crash releases the OS-held SQLite lock; the next owner replaces any
+leftover PID marker through the shared scoped lock helper. Credentials, facts, jobs, context
 assembly, and model execution are outside this store's record APIs.
 
 ## Persisted chat
@@ -509,6 +475,14 @@ uncertain. Completed calls are immutable; terminal calls cannot restart. Calls
 and model requests are never replayed. `chat show` exposes the ledger for manual
 inspection. An uncertain write requires checking the file before an explicit retry.
 
+Reported tool failures, including refused arguments and missing notes, return to
+the model within the existing budgets. An invalid batch executes none of its
+calls. Uncertain effects end the run without replay. Once page, search, MCP, or
+attachment content enters a run, task management, memory changes, and MCP tools
+are withdrawn until a new owner message. Note tools remain subject to their
+ordinary permissions; voice runs also remove note writes and all external tools.
+See [chat limits](chat.md#context-and-run-limits).
+
 ## Supplied page reading
 
 `agent/pages.ts` defines `poppet_web.fetch_page` and the injected `Pages` service.
@@ -540,7 +514,9 @@ within 15 seconds. Interruption cancels DNS queries and closes active HTTP I/O.
 The transport bounds actual transferred bytes to 1 MiB before gzip, deflate, or
 Brotli decoding, which independently caps decoded output at 1 MiB. Incomplete bodies,
 unsupported compression, HTTP failures, invalid UTF-8, and unsupported MIME types
-or charset declarations fail the existing durable tool/run lifecycle without retry.
+or charset declarations produce a failed durable tool result. The model can
+explain the failure or make another permitted request within the run budgets;
+the transport never retries automatically.
 
 Bun's native HTMLRewriter removes non-content elements and adds text boundaries.
 A second parse collects the cleaned document because removal still emits text
@@ -778,8 +754,8 @@ preserve complete exchanges, their continuation data, and tool request/result
 pairs. Limit loaded memory, tool output, model turns, and tool calls. Stop clearly
 when the active exchange alone exceeds the context budget.
 
-Keep credentials separate from notes, memory, and tool-readable files. Limit tools
-to the configured notes directory, including resolved symlink targets. The runner
+Keep credentials separate from notes, memory, and tool-readable files. Limit note tools
+to the configured notes directory and reject symlinks and hard-linked files. The runner
 enforces allowed tools before invoking them. Scheduled runs begin with read-only
 tools.
 
@@ -849,10 +825,11 @@ See [Apple's launchd guide](https://developer.apple.com/library/archive/document
 ChatGPT credentials, and API-key mutations. A small lock database uses
 [SQLite exclusive locking](https://www.sqlite.org/pragma.html#pragma_locking_mode),
 which remains held across transactions and is released by the OS after a crash.
-An atomic PID marker preserves compatibility with older file-lock owners and
-permits automatic reclamation only for a known dead process. Unknown markers or
-live PIDs remain blocked. Lock databases are protected and are never removed
-while an owner might hold them. They contain no user credentials or records.
+An atomic PID marker records the owner for diagnostics. Once the SQLite lock is
+acquired, a leftover regular marker is replaced without checking PID liveness,
+including when its PID has been reused. Invalid marker files fail closed. Lock
+databases are protected and are never removed while an owner might hold them.
+They contain no user credentials or records.
 
 The task package owns status data and recent occurrence summaries. The host
 supplies `WorkerConnections` through its registered provider layers. Status
@@ -903,8 +880,9 @@ workload; continued chats resolve their saved session. Notes paths and chat
 budgets come from the worker's existing layers.
 
 The listener owns the full request, including JSON body decoding, in a scoped
-fiber. Body reads have a 10-second deadline; idle timeouts are disabled only after
-a streaming response is ready. The transport accepts up to 2 MiB, leaving room
+fiber. Body reads have a 10-second deadline. The Unix-socket listener disables
+Bun idle timeouts so quiet requests can wait for the shared runner; per-request
+timeout changes are ineffective on this transport. The transport accepts up to 2 MiB, leaving room
 for a supported 1 MiB serialized chat context and command metadata. Oversized
 requests return a clear size error without local fallback.
 
@@ -947,7 +925,7 @@ The `@poppet/gateway` package owns validated incoming messages,
 authorization, conversation-to-session mapping, durable message acceptance, and
 reply delivery. `@poppet/channel-discord` owns Discord credentials, Gateway
 connections, event decoding, mentions, thread operations, formatting, and rate
-limits. Later channel packages implement the same small contract. The CLI owns
+limits. Telegram and WhatsApp implement the same small contract. The CLI owns
 adapter registration and live layer composition; neither the agent nor task
 scheduling imports concrete messaging adapters.
 

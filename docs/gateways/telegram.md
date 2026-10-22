@@ -71,7 +71,9 @@ caption, source, instructions and tools must still fit the configured chat budge
 
 Attachment contents and links are untrusted source material. They cannot grant
 URL access or authorize note, memory or task changes. A separate caption can
-request an action under the ordinary chat rules. `/new`, `/status` and `/cancel`
+request a permitted note write under the ordinary chat rules. Attachment runs
+withhold memory changes, task management, and MCP tools; confirm proposed actions
+in a subsequent text message. `/new`, `/status` and `/cancel`
 are parsed only from your text/caption. File contents cannot invoke them.
 
 Voice is optional and disabled by default. Configure

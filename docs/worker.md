@@ -22,7 +22,7 @@ through `store/tasks.sock`, protected by the `0700` store directory and `0600`
 socket. Commands use the worker when it is running and execute locally when it
 is stopped. Inspecting saved data needs no model or provider credentials.
 Task commands remain available in gateway-only mode, but no scheduled work is
-executed. Task-only mode does not initialize Discord or Telegram. `tasks status`
+executed. Task-only mode does not initialize messaging adapters. `tasks status`
 reports the host's selected services; `gateway status` reports whether messaging
 is running. Only one mode can own a data directory at a time.
 Interactive, scheduled, and messaging model requests share one runner. Chat streams to the
