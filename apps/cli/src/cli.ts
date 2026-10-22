@@ -35,7 +35,7 @@ import {
   readLocalTaskStatus,
 } from "@poppet/tasks";
 import { workerSocketPath } from "@poppet/worker";
-import { ConfigProvider, Console, Data, Effect, Layer, Option, Schema } from "effect";
+import { Console, Data, Effect, Layer, Option, Schema } from "effect";
 import { Argument, CliConfig, CliOutput, Command, Flag, GlobalFlag } from "effect/cli";
 
 import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
@@ -229,12 +229,10 @@ export const makeCLI = (
 
   const runWorkerCommand = (action: WorkerAction) => {
     if (action === "stop" || action === "uninstall" || action === "logs")
-      return configuredDataDirectory
-        .parse(ConfigProvider.fromEnv({ preserveEmptyStrings: true }))
-        .pipe(
-          Effect.flatMap((directory) => worker(action, directory)),
-          Effect.flatMap(Console.log),
-        );
+      return configuredDataDirectory.pipe(
+        Effect.flatMap((directory) => worker(action, directory)),
+        Effect.flatMap(Console.log),
+      );
 
     return Effect.gen(function* () {
       const config = yield* AppConfig;

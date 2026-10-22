@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 
 import { AgentError } from "@poppet/agent";
 import {
@@ -21,7 +22,16 @@ import {
   type ProviderRegistration,
 } from "@poppet/provider";
 import { requestWorker, workerSocketPath } from "@poppet/worker";
-import { Console, Effect, Fiber, Layer, ManagedRuntime, Queue, Stream } from "effect";
+import {
+  ConfigProvider,
+  Console,
+  Effect,
+  Fiber,
+  Layer,
+  ManagedRuntime,
+  Queue,
+  Stream,
+} from "effect";
 import { TestClock } from "effect/testing";
 
 import { readChatLine } from "#src/chat-prompt";
@@ -43,7 +53,8 @@ const description: ModelDescription = {
 const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-chat-cli-"));
 
-  const environment = {
+  // eslint-disable-next-line anti-slop/no-known-value-widening -- Tests delete overrides to exercise file defaults.
+  const environment: Record<string, string> = {
     POPPET_PROVIDER: "chat-provider",
     POPPET_MODEL: "chat-model",
     POPPET_DATA_DIR: directory,
@@ -58,8 +69,6 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     POPPET_LOG_TIMINGS: "false",
   };
 
-  const previous = new Map(Object.keys(environment).map((key) => [key, process.env[key]]));
-  Object.assign(process.env, environment);
   const requests: ModelRequest[] = [];
   const titleRequests: ModelRequest[] = [];
   const lines: string[] = [];
@@ -273,7 +282,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
       lines.push(values.join(" "));
     },
     error: (...values) => {
-      errors.push(values.join(" "));
+      errors.push(stripVTControlCharacters(values.join(" ")));
     },
   };
 
@@ -283,10 +292,17 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
         thinkingChunks.push(text);
         outputEvents.push(`thinking:${text}`);
       }),
-    )(args).pipe(Effect.provideService(Console.Console, consoleOutput));
+    )(args).pipe(
+      Effect.provideService(Console.Console, consoleOutput),
+      Effect.provideService(
+        ConfigProvider.ConfigProvider,
+        ConfigProvider.fromEnv({ env: environment, preserveEmptyStrings: true }),
+      ),
+    );
 
   return {
     directory,
+    environment,
     requests,
     titleRequests,
     lines,
@@ -318,11 +334,6 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     },
     close: async () => {
       await clock.dispose();
-
-      for (const [key, value] of previous) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
-      }
 
       await rm(directory, { recursive: true, force: true });
     },
@@ -447,7 +458,7 @@ describe("chat CLI", () => {
       const chat = await fixture();
       const workerLogs: string[] = [];
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-      process.env.POPPET_LOG_REASONING = String(enabled);
+      chat.environment.POPPET_LOG_REASONING = String(enabled);
       chat.state.reasoning = "Checking the notes.";
 
       try {
@@ -458,7 +469,7 @@ describe("chat CLI", () => {
               chat.lines.push(values.join(" "));
             },
             error: (...values) => {
-              workerLogs.push(values.join(" "));
+              workerLogs.push(stripVTControlCharacters(values.join(" ")));
             },
           });
 
@@ -505,7 +516,7 @@ describe("chat CLI", () => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
       let request: Fiber.Fiber<void, unknown> | null = null;
-      process.env.POPPET_LOG_REASONING = "true";
+      chat.environment.POPPET_LOG_REASONING = "true";
       chat.state.reasoning = "Checking the notes.";
       chat.state.hold = true;
       chat.state.useTools = true;
@@ -545,7 +556,7 @@ describe("chat CLI", () => {
 
   test("streams reasoning without sending a second diagnostic copy to the client", async () => {
     const chat = await fixture();
-    process.env.POPPET_LOG_REASONING = "true";
+    chat.environment.POPPET_LOG_REASONING = "true";
     chat.state.reasoning = "Checking the notes.";
     const worker = await chat.startWorker();
 
@@ -595,7 +606,7 @@ describe("chat CLI", () => {
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-      process.env.POPPET_LOG_REASONING = "true";
+      chat.environment.POPPET_LOG_REASONING = "true";
       chat.state.reasoning = "Checking the notes.";
       chat.state.useTools = true;
 
@@ -630,7 +641,7 @@ describe("chat CLI", () => {
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-      process.env.POPPET_LOG_REASONING = "true";
+      chat.environment.POPPET_LOG_REASONING = "true";
       chat.state.reasoning = "Checking before failure.";
       chat.state.useTools = true;
       chat.state.failNext = true;
@@ -660,7 +671,7 @@ describe("chat CLI", () => {
       const chat = await fixture();
       const log = openWorkerLog(join(chat.directory, "logs"));
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-      delete process.env.POPPET_LOG_REASONING;
+      delete chat.environment.POPPET_LOG_REASONING;
 
       try {
         await writeFile(
@@ -708,7 +719,7 @@ describe("chat CLI", () => {
 
         if (mode === "worker") {
           const workerLog = await readFile(join(chat.directory, "logs/worker.log"), "utf8");
-          const saved = workerLog.trim().split("\n");
+          const saved = stripVTControlCharacters(workerLog).trim().split("\n");
           expect(saved).toHaveLength(3);
           expect(saved[0]).toContain(`session=${chat.requests[0]?.sessionId} run=`);
           expect(saved[0]).toContain("Check the notes before answering.");
@@ -731,7 +742,7 @@ describe("chat CLI", () => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
       const workerLogs: string[] = [];
-      delete process.env.POPPET_LOG_TIMINGS;
+      delete chat.environment.POPPET_LOG_TIMINGS;
 
       try {
         await writeFile(
@@ -746,7 +757,7 @@ describe("chat CLI", () => {
               chat.lines.push(values.join(" "));
             },
             error: (...values) => {
-              workerLogs.push(values.join(" "));
+              workerLogs.push(stripVTControlCharacters(values.join(" ")));
             },
           });
 
@@ -801,10 +812,10 @@ describe("chat CLI", () => {
       expect(chat.thinkingChunks).toEqual([]);
       expect(chat.errors.some((line) => line.includes("Timing session="))).toBe(false);
       expect(chat.requests[0]?.settings.reasoningSummary).toBeUndefined();
-      process.env.POPPET_LOG_REASONING = "invalid";
+      chat.environment.POPPET_LOG_REASONING = "invalid";
       await expect(chat.invoke(["config"])).rejects.toHaveProperty("_tag", "ConfigError");
-      process.env.POPPET_LOG_REASONING = "false";
-      process.env.POPPET_LOG_TIMINGS = "invalid";
+      chat.environment.POPPET_LOG_REASONING = "false";
+      chat.environment.POPPET_LOG_TIMINGS = "invalid";
       await expect(chat.invoke(["config"])).rejects.toHaveProperty("_tag", "ConfigError");
     } finally {
       await chat.close();
@@ -823,7 +834,7 @@ describe("chat CLI", () => {
         "POPPET_NOTES_DIR",
         "POPPET_MODEL_TURNS",
       ])
-        delete process.env[key];
+        delete chat.environment[key];
 
       const settings = {
         provider: "chat-provider",
@@ -1141,8 +1152,8 @@ describe("chat CLI", () => {
           worker = undefined;
         }
 
-        delete process.env.POPPET_MODEL;
-        process.env.POPPET_PROVIDER = "unused-provider";
+        delete chat.environment.POPPET_MODEL;
+        chat.environment.POPPET_PROVIDER = "unused-provider";
         await rm(join(chat.directory, "skills"), { recursive: true });
         const resumed = ["After restart", null];
         await Effect.runPromise(
@@ -1276,7 +1287,7 @@ describe("chat CLI", () => {
     try {
       await mkdir(join(chat.directory, "skills", "large"), { recursive: true });
       await writeFile(join(chat.directory, "skills", "large", "SKILL.md"), "x".repeat(8192));
-      process.env.POPPET_CONTEXT_BYTES = "4096";
+      chat.environment.POPPET_CONTEXT_BYTES = "4096";
       await expect(
         chat.invoke(["chat", "new", "--skill", "large", "Review"]),
       ).rejects.toMatchObject({ reason: "context-limit" });
@@ -1511,7 +1522,7 @@ describe("chat CLI", () => {
 
   test("the worker accepts chats within a larger context budget and explains oversized requests", async () => {
     const chat = await fixture();
-    process.env.POPPET_CONTEXT_BYTES = "1048576";
+    chat.environment.POPPET_CONTEXT_BYTES = "1048576";
     const prompt = "x".repeat(150_000);
 
     try {
@@ -1689,8 +1700,8 @@ describe("chat CLI", () => {
 
       await readOutput(["memory", "replace", "project", "Birch"]);
       chat.state.useTools = false;
-      process.env.POPPET_PROVIDER = "unused-provider";
-      delete process.env.POPPET_MODEL;
+      chat.environment.POPPET_PROVIDER = "unused-provider";
+      delete chat.environment.POPPET_MODEL;
       expect(await readOutput(["chat", "send", session, "Continue"])).toBe("Answer\n");
       expect(chat.requests.at(-1)?.instructions).toContain("Birch");
       await readOutput(["memory", "forget", "project"]);
@@ -1938,9 +1949,9 @@ describe("chat CLI", () => {
         workload: "coding",
       });
       const built = chat.state.built;
-      process.env.POPPET_PROVIDER = "unused-provider";
-      delete process.env.POPPET_MODEL;
-      process.env.POPPET_CONTEXT_BYTES = "invalid";
+      chat.environment.POPPET_PROVIDER = "unused-provider";
+      delete chat.environment.POPPET_MODEL;
+      chat.environment.POPPET_CONTEXT_BYTES = "invalid";
       await chat.invoke(["chat", "show", session.id]);
       expect(chat.lines.at(-1)).not.toContain("secretOpaqueState");
       expect(chat.lines.at(-1)).not.toContain("continuation");
@@ -1948,7 +1959,7 @@ describe("chat CLI", () => {
         runs: [expect.objectContaining({ status: "completed", workload: "coding" })],
       });
       expect(chat.state.built).toBe(built);
-      process.env.POPPET_CONTEXT_BYTES = "65536";
+      chat.environment.POPPET_CONTEXT_BYTES = "65536";
       await chat.invoke(["chat", "send", session.id, "--unknown", "Second", "question"]);
       expect(chat.state.open).toBe(false);
       expect(chat.requests[1]).toMatchObject({
@@ -1980,14 +1991,14 @@ describe("chat CLI", () => {
         ].map((args) => expect(chat.invoke(args)).rejects.toHaveProperty("_tag", "UsageError")),
       );
 
-      delete process.env.POPPET_MODEL;
+      delete chat.environment.POPPET_MODEL;
       await expect(chat.invoke(["chat", "new", "Hello"])).rejects.toMatchObject({
         reason: "invalid-request",
         message: expect.stringContaining("POPPET_MODEL"),
       });
       expect(await readdir(chat.directory)).toEqual([]);
-      process.env.POPPET_MODEL = "chat-model";
-      process.env.POPPET_OUTPUT_TOKENS = "0";
+      chat.environment.POPPET_MODEL = "chat-model";
+      chat.environment.POPPET_OUTPUT_TOKENS = "0";
       await expect(chat.invoke(["chat", "new", "Hello"])).rejects.toHaveProperty(
         "_tag",
         "ConfigError",

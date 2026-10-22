@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 
 import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive } from "@poppet/memory";
@@ -22,6 +24,45 @@ import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver, type ChatEvent } from "#src/service";
 import { ChatSettings, defaultPolicy } from "#src/settings";
 import { WebSearch } from "#src/web-search";
+
+test.each([false, true])(
+  "diagnostics honour NO_COLOR=%s when colour is forced",
+  async (disabled) => {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--eval",
+        `
+      import { Console, Effect } from "effect";
+      import { logChatDiagnostic } from "./service.ts";
+      await Effect.runPromise(logChatDiagnostic("Session: example").pipe(
+        Effect.provideService(Console.Console, {
+          ...console,
+          error: (text) => console.log(JSON.stringify(text)),
+        }),
+      ));
+    `,
+      ],
+      {
+        cwd: fileURLToPath(new URL(".", import.meta.url)),
+        env: disabled ? { FORCE_COLOR: "1", NO_COLOR: "1" } : { FORCE_COLOR: "1" },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    const [output, errors, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+
+    expect({ code, errors }).toEqual({ code: 0, errors: "" });
+    expect(JSON.parse(output)).toBe(
+      disabled ? "Session: example" : "\u001b[90mSession: example\u001b[39m",
+    );
+  },
+);
 
 const response = (text = "Hello"): Completion => ({
   output: [{ type: "text", text }],
@@ -209,7 +250,7 @@ describe.concurrent("persisted agent", () => {
             Effect.provideService(Console.Console, {
               ...console,
               error: (...values) => {
-                logs.push(values.join(" "));
+                logs.push(stripVTControlCharacters(values.join(" ")));
               },
             }),
           ),
@@ -268,7 +309,7 @@ describe.concurrent("persisted agent", () => {
             Effect.provideService(Console.Console, {
               ...console,
               error: (...values) => {
-                logs.push(values.join(" "));
+                logs.push(stripVTControlCharacters(values.join(" ")));
               },
             }),
           ),
@@ -889,7 +930,7 @@ describe("session naming", () => {
             Effect.provide(TestClock.layer()),
             Effect.provideService(Console.Console, {
               ...console,
-              error: (...values) => errors.push(values.join(" ")),
+              error: (...values) => errors.push(stripVTControlCharacters(values.join(" "))),
             }),
           ),
         );

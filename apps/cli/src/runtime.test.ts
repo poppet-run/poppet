@@ -17,7 +17,7 @@ import {
 } from "@poppet/provider";
 import { Store } from "@poppet/store";
 import { WorkerConnections } from "@poppet/tasks";
-import { Context, Effect, Layer, Stream } from "effect";
+import { ConfigProvider, Context, Effect, Layer, Stream } from "effect";
 
 import { runtimeLayers } from "#src/runtime";
 
@@ -176,8 +176,12 @@ describe("configured model runtime", () => {
 
 test("running services retain their startup configuration when the file is edited", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-runtime-config-"));
-  const previous = process.env.POPPET_DATA_DIR;
-  process.env.POPPET_DATA_DIR = directory;
+
+  const configuration = ConfigProvider.fromEnv({
+    env: { POPPET_DATA_DIR: directory },
+    preserveEmptyStrings: true,
+  });
+
   const id = "test-provider";
 
   const runtime = runtimeLayers([
@@ -219,17 +223,18 @@ test("running services retain their startup configuration when the file is edite
           yield* Stream.runDrain((yield* Agent).send(session.id, "Hello"));
           expect(yield* (yield* WorkerConnections).status(id)).toMatchObject({ connected: true });
         }),
-      ).pipe(Effect.provide(runtime.chat)),
+      ).pipe(
+        Effect.provide(runtime.chat),
+        Effect.provideService(ConfigProvider.ConfigProvider, configuration),
+      ),
     );
   } finally {
-    if (previous === undefined) delete process.env.POPPET_DATA_DIR;
-    else process.env.POPPET_DATA_DIR = previous;
     await rm(directory, { recursive: true, force: true });
   }
 });
 
 test("worker connection status strips secrets, identifies consent and login actions, and labels cached metadata", async () => {
-  const id = process.env.POPPET_PROVIDER ?? "test-provider";
+  const id = "test-provider";
   let busy = false;
   let connected = true;
 
@@ -307,8 +312,12 @@ test("worker connection status strips secrets, identifies consent and login acti
 
 test("model resolution shares connection metadata with status queries within one runtime", async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-runtime-status-"));
-  const previous = process.env.POPPET_DATA_DIR;
-  process.env.POPPET_DATA_DIR = directory;
+
+  const configuration = ConfigProvider.fromEnv({
+    env: { POPPET_DATA_DIR: directory },
+    preserveEmptyStrings: true,
+  });
+
   const id = "test-provider";
   let busy = false;
 
@@ -356,31 +365,40 @@ test("model resolution shares connection metadata with status queries within one
       ModelResolver.use((resolver) => resolver.resolve(id, "test-model")).pipe(
         Effect.scoped,
         Effect.provide(runtime.chat),
+        Effect.provideService(ConfigProvider.ConfigProvider, configuration),
       ),
     );
     busy = true;
 
     const status = WorkerConnections.use((connections) => connections.status(id));
-    expect(await Effect.runPromise(status.pipe(Effect.provide(runtime.connections)))).toMatchObject(
-      {
-        provider: id,
-        account: "resolved@example.com",
-        connected: true,
-        cached: true,
-      },
-    );
+    expect(
+      await Effect.runPromise(
+        status.pipe(
+          Effect.provide(runtime.connections),
+          Effect.provideService(ConfigProvider.ConfigProvider, configuration),
+        ),
+      ),
+    ).toMatchObject({
+      provider: id,
+      account: "resolved@example.com",
+      connected: true,
+      cached: true,
+    });
 
     const independent = runtimeLayers(registered);
     expect(
-      await Effect.runPromise(status.pipe(Effect.provide(independent.connections))),
+      await Effect.runPromise(
+        status.pipe(
+          Effect.provide(independent.connections),
+          Effect.provideService(ConfigProvider.ConfigProvider, configuration),
+        ),
+      ),
     ).toMatchObject({
       connected: null,
       account: null,
       action: "Authentication is busy. Check again after the active run finishes.",
     });
   } finally {
-    if (previous === undefined) delete process.env.POPPET_DATA_DIR;
-    else process.env.POPPET_DATA_DIR = previous;
     await rm(directory, { recursive: true, force: true });
   }
 });

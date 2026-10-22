@@ -27,7 +27,6 @@ try {
         TEMP: home,
         TMP: home,
         POPPET_TEST_HOME: home,
-        NO_COLOR: "1",
         DO_NOT_TRACK: "1",
       },
       stdin: "ignore",

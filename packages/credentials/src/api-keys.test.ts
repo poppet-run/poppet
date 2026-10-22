@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { ProviderEnvironment } from "@poppet/provider";
-import { Effect, Layer, Redacted } from "effect";
+import { ConfigProvider, Effect, Layer, Redacted } from "effect";
 
 import { ApiKeyStore, ApiKeyStoreLive, loadApiKey } from "#src/api-keys";
 
@@ -55,29 +55,27 @@ describe("API-key storage", () => {
     try {
       await store.run((keys) => keys.write("test-provider", Redacted.make("router-key")));
 
-      const previous = process.env.TEST_PROVIDER_KEY;
-
-      const load = () =>
+      const load = (environment: Record<string, string> = {}) =>
         Effect.runPromise(
           loadApiKey("test-provider", "TEST_PROVIDER_KEY").pipe(
             Effect.provideService(ProviderEnvironment, {
               applicationName: "Test",
               dataDirectory: store.directory,
             }),
+            Effect.provideService(
+              ConfigProvider.ConfigProvider,
+              ConfigProvider.fromEnv({ env: environment, preserveEmptyStrings: true }),
+            ),
           ),
         );
 
-      try {
-        delete process.env.TEST_PROVIDER_KEY;
-        expect(Redacted.value(await load())).toBe("router-key");
-        process.env.TEST_PROVIDER_KEY = "environment-key";
-        expect(Redacted.value(await load())).toBe("environment-key");
-        process.env.TEST_PROVIDER_KEY = "";
-        await expect(load()).rejects.toMatchObject({ reason: "authentication" });
-      } finally {
-        if (previous === undefined) delete process.env.TEST_PROVIDER_KEY;
-        else process.env.TEST_PROVIDER_KEY = previous;
-      }
+      expect(Redacted.value(await load())).toBe("router-key");
+      expect(Redacted.value(await load({ TEST_PROVIDER_KEY: "environment-key" }))).toBe(
+        "environment-key",
+      );
+      await expect(load({ TEST_PROVIDER_KEY: "" })).rejects.toMatchObject({
+        reason: "authentication",
+      });
     } finally {
       await store.close();
     }

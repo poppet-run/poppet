@@ -3,10 +3,11 @@ import { mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 
 import { defaultPolicy } from "@poppet/agent";
 import { serveWorker, workerSocketPath } from "@poppet/worker";
-import { Console, Effect } from "effect";
+import { ConfigProvider, Console, Effect } from "effect";
 
 import { makeCLI } from "#src/cli";
 import { providers } from "#src/providers";
@@ -27,18 +28,6 @@ const invoke = async (
       };
     }),
 ) => {
-  const previous = { ...process.env };
-
-  // Bun's import.meta.env retains this object, so update it without replacing it.
-  for (const key of Object.keys(process.env)) delete process.env[key];
-  Object.assign(process.env, {
-    PATH: previous.PATH ?? "",
-    HOME: previous.HOME,
-    USERPROFILE: previous.USERPROFILE,
-    XDG_CONFIG_HOME: previous.XDG_CONFIG_HOME,
-    TMPDIR: previous.TMPDIR,
-    ...environment,
-  });
   let stdout = "";
   const errors: string[] = [];
 
@@ -47,7 +36,7 @@ const invoke = async (
     log: (...values) => {
       stdout += `${values.join(" ")}\n`;
     },
-    error: (...values) => errors.push(values.join(" ")),
+    error: (...values) => errors.push(stripVTControlCharacters(values.join(" "))),
   };
 
   const run = makeCLI(
@@ -59,29 +48,62 @@ const invoke = async (
     worker,
   );
 
-  try {
-    const exitCode = await Effect.runPromise(
-      run(args).pipe(
-        Effect.provideService(Console.Console, output),
-        Effect.match({
-          onSuccess: () => 0,
-          onFailure: (error) => {
-            errors.push(error.message);
-
-            return 1;
-          },
-        }),
+  const exitCode = await Effect.runPromise(
+    run(args).pipe(
+      Effect.provideService(Console.Console, output),
+      Effect.provideService(
+        ConfigProvider.ConfigProvider,
+        ConfigProvider.fromEnv({ env: environment, preserveEmptyStrings: true }),
       ),
-    );
+      Effect.match({
+        onSuccess: () => 0,
+        onFailure: (error) => {
+          errors.push(error.message);
 
-    return { stdout, stderr: errors.join("\n"), exitCode };
-  } finally {
-    for (const key of Object.keys(process.env)) delete process.env[key];
-    Object.assign(process.env, previous);
-  }
+          return 1;
+        },
+      }),
+    ),
+  );
+
+  return { stdout, stderr: errors.join("\n"), exitCode };
 };
 
 describe("CLI", () => {
+  test("concurrent invocations keep configuration separate without changing the process environment", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-cli-config-"));
+    const previous = { ...process.env };
+
+    const selections = [
+      { name: "First", provider: "openrouter" },
+      { name: "Second", provider: "opencode-go" },
+    ];
+
+    try {
+      const results = await Promise.all(
+        selections.map(({ name, provider }) =>
+          invoke(["config"], {
+            POPPET_APP_NAME: name,
+            POPPET_PROVIDER: provider,
+            POPPET_DATA_DIR: join(directory, name),
+          }),
+        ),
+      );
+
+      expect(results.map((result) => result.exitCode)).toEqual([0, 0]);
+      expect(
+        results.map((result) => {
+          const config = JSON.parse(result.stdout);
+
+          return { name: config.applicationName, provider: config.provider };
+        }),
+      ).toEqual(selections);
+      expect({ ...process.env }).toEqual(previous);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("a worker disappearing after inspection never falls back to a local task mutation", async () => {
     const directory = await mkdtemp("/tmp/p24-owner-");
     const storeDirectory = join(directory, "store");
@@ -629,7 +651,7 @@ describe("CLI", () => {
       ];
 
       for (const { args, message } of cases) {
-        // eslint-disable-next-line no-await-in-loop -- Invocations temporarily replace process.env.
+        // eslint-disable-next-line no-await-in-loop -- Cases share one application directory.
         const result = await invoke(["memory", ...args], { POPPET_DATA_DIR: directory });
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain(message);
@@ -709,7 +731,7 @@ describe("CLI", () => {
       expect(invalid.exitCode).toBe(1);
 
       for (const destination of ["--discord-thread=400", "--telegram-chat=200"]) {
-        // eslint-disable-next-line no-await-in-loop -- Invocations temporarily replace process.env.
+        // eslint-disable-next-line no-await-in-loop -- Cases share one application directory.
         const conflict = await invoke(
           [...command, destination, "--whatsapp-chat=447700900002", "Summary"],
           environment,
@@ -947,7 +969,7 @@ describe("CLI", () => {
       ];
 
       for (const { args, message } of cases) {
-        // eslint-disable-next-line no-await-in-loop -- Invocations temporarily replace process.env.
+        // eslint-disable-next-line no-await-in-loop -- Cases share one application directory.
         const result = await invoke(args, environment);
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain(message);
@@ -1001,7 +1023,7 @@ describe("CLI", () => {
 
     try {
       for (const args of [[], ["-h"], ...paths.map((path) => path.split(" ").concat("--help"))]) {
-        // eslint-disable-next-line no-await-in-loop -- Each call temporarily changes process.env.
+        // eslint-disable-next-line no-await-in-loop -- Cases share one application directory.
         const result = await invoke(args, environment);
         expect(result.exitCode).toBe(0);
         expect(result.stderr).toBe("");
@@ -1038,7 +1060,7 @@ describe("CLI", () => {
 
     try {
       for (const args of commands) {
-        // eslint-disable-next-line no-await-in-loop -- Each call temporarily changes process.env.
+        // eslint-disable-next-line no-await-in-loop -- Cases share one application directory.
         const result = await invoke(args, environment);
         expect({ args, exitCode: result.exitCode }).toEqual({ args, exitCode: 1 });
         expect(result.stderr).not.toBe("");

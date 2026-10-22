@@ -14,15 +14,18 @@ import {
   type ProviderRegistration,
 } from "@poppet/provider";
 import { Store } from "@poppet/store";
-import { Console, Effect, Fiber, Layer, Stream } from "effect";
+import { ConfigProvider, Console, Effect, Fiber, Layer, Stream } from "effect";
 
 import { makeCLI } from "#src/cli";
 import { runtimeLayers } from "#src/runtime";
 
 const fixture = async (name = "read", scheduledTools: string[] = []) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-cli-"));
-  const previous = process.env.POPPET_DATA_DIR;
-  process.env.POPPET_DATA_DIR = directory;
+
+  const configuration = ConfigProvider.fromEnv({
+    env: { POPPET_DATA_DIR: directory },
+    preserveEmptyStrings: true,
+  });
 
   const server: MCPServer = {
     id: "fixture",
@@ -168,14 +171,19 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
   );
 
   const program = (args: ReadonlyArray<string>) =>
-    run(args).pipe(Effect.provideService(Console.Console, consoleOutput));
+    run(args).pipe(
+      Effect.provideService(Console.Console, consoleOutput),
+      Effect.provideService(ConfigProvider.ConfigProvider, configuration),
+    );
 
   return {
     directory,
     server,
     requests,
     program,
-    runtime,
+    chat: runtime.chat.pipe(
+      Layer.provide(Layer.succeed(ConfigProvider.ConfigProvider, configuration)),
+    ),
     built: () => built,
     followup: (value: typeof followup) => {
       followup = value;
@@ -205,8 +213,6 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
       }
     },
     close: async () => {
-      if (previous === undefined) delete process.env.POPPET_DATA_DIR;
-      else process.env.POPPET_DATA_DIR = previous;
       await rm(directory, { recursive: true, force: true });
     },
   };
@@ -333,7 +339,7 @@ describe("MCP host integration", () => {
             expect(state.requests[0]!.tools.some((tool) => tool.namespace === "poppet_mcp")).toBe(
               scheduledTools.length > 0,
             );
-          }).pipe(Effect.provide(state.runtime.chat)),
+          }).pipe(Effect.provide(state.chat)),
         );
         expect((await readdir(state.directory)).includes("pid")).toBe(scheduledTools.length > 0);
       } finally {
@@ -361,7 +367,7 @@ describe("MCP host integration", () => {
             expect(error).toHaveProperty("reason", "tool-permission");
             const calls = yield* store.toolCalls((yield* store.runs(session.id))[0]!.id);
             expect(calls.map((call) => call.status)).toEqual(["completed", "interrupted"]);
-          }).pipe(Effect.provide(state.runtime.chat)),
+          }).pipe(Effect.provide(state.chat)),
         );
         expect(await readdir(state.directory)).not.toContain("notes");
       } finally {

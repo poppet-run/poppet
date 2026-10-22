@@ -1,5 +1,5 @@
 import { BunRuntime } from "@effect/platform-bun";
-import { Console, Effect } from "effect";
+import { ConfigProvider, Console, Effect } from "effect";
 
 import { run } from "#src/cli";
 
@@ -7,6 +7,10 @@ import { run } from "#src/cli";
 // and runs the cleanup registered by scoped resources.
 BunRuntime.runMain(
   run(Bun.argv.slice(2)).pipe(
+    Effect.provideService(
+      ConfigProvider.ConfigProvider,
+      ConfigProvider.fromEnv({ preserveEmptyStrings: true }),
+    ),
     Effect.catch((error) =>
       Effect.gen(function* () {
         yield* Console.error(error.message);

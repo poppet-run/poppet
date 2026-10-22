@@ -143,8 +143,4 @@ export const loadConfigSource = Effect.gen(function* () {
   );
 });
 
-export const ConfigSourceLive = Layer.effectContext(loadConfigSource).pipe(
-  Layer.provide(
-    ConfigProvider.layer(Effect.sync(() => ConfigProvider.fromEnv({ preserveEmptyStrings: true }))),
-  ),
-);
+export const ConfigSourceLive = Layer.effectContext(loadConfigSource);

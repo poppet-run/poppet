@@ -13,7 +13,7 @@ import {
   type ConnectionOperations,
   type ProviderOperations,
 } from "@poppet/provider";
-import { Config, ConfigProvider, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
+import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 
 import { acquireOwnerLock } from "#src/lock";
 
@@ -57,10 +57,6 @@ const storageError = (provider: ProviderId) =>
 export const environmentApiKey = (provider: ProviderId, environment: string) =>
   Config.schema(ApiKey, environment).pipe(
     Config.option,
-    Effect.provideService(
-      ConfigProvider.ConfigProvider,
-      ConfigProvider.fromEnv({ preserveEmptyStrings: true }),
-    ),
     Effect.mapError(
       () =>
         new ProviderError({
