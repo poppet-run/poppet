@@ -53,8 +53,7 @@ const description: ModelDescription = {
 const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-chat-cli-"));
 
-  // eslint-disable-next-line anti-slop/no-known-value-widening -- Tests delete overrides to exercise file defaults.
-  const environment: Record<string, string> = {
+  const defaults = {
     POPPET_PROVIDER: "chat-provider",
     POPPET_MODEL: "chat-model",
     POPPET_DATA_DIR: directory,
@@ -68,6 +67,8 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     POPPET_LOG_REASONING: "false",
     POPPET_LOG_TIMINGS: "false",
   };
+
+  const environment: Partial<typeof defaults> = defaults;
 
   const requests: ModelRequest[] = [];
   const titleRequests: ModelRequest[] = [];
@@ -833,7 +834,7 @@ describe("chat CLI", () => {
         "POPPET_MODEL",
         "POPPET_NOTES_DIR",
         "POPPET_MODEL_TURNS",
-      ])
+      ] as const)
         delete chat.environment[key];
 
       const settings = {
