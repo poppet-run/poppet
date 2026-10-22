@@ -78,12 +78,12 @@ test.concurrent("API-key login reads stdin without printing the key and rejects 
   const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: provider };
 
   try {
-    const empty = await invokeProcess(["auth", "login", "--key-stdin"], environment, "\n");
+    const empty = await invokeProcess(["provider", "login", "--key-stdin"], environment, "\n");
     expect(empty.exitCode).toBe(1);
     expect(await readdir(directory)).toEqual([]);
 
     const saved = await invokeProcess(
-      ["auth", "login", "--key-stdin"],
+      ["provider", "login", "--key-stdin"],
       environment,
       "stdin-test-secret\n",
     );
@@ -126,7 +126,7 @@ test.concurrent("unattended key input fails without creating credentials", async
   const directory = await mkdtemp(join(tmpdir(), "poppet-unattended-"));
 
   try {
-    const result = await invokeProcess(["auth", "login", "openrouter"], {
+    const result = await invokeProcess(["provider", "login", "openrouter"], {
       POPPET_DATA_DIR: directory,
     });
 

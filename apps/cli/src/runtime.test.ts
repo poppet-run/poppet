@@ -290,7 +290,7 @@ test("worker connection status strips secrets, identifies consent and login acti
         account: "person@example.com",
         planUsage: false,
         cached: false,
-        action: `Run auth login ${id}.`,
+        action: `Run provider login ${id}.`,
       });
       expect(JSON.stringify(first)).not.toContain("must-not-appear");
       busy = true;
@@ -304,7 +304,7 @@ test("worker connection status strips secrets, identifies consent and login acti
       expect(yield* service.status(id)).toMatchObject({
         connected: false,
         cached: false,
-        action: `Run auth login ${id}.`,
+        action: `Run provider login ${id}.`,
       });
     }).pipe(Effect.provide(runtime.connections)),
   );

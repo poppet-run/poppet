@@ -8,7 +8,7 @@ are placeholders; replace them before running a command. Quote prompts and value
 that contain spaces.
 
 Every command has its own help, for example `poppet tasks add --help` or
-`poppet auth login -h`. Help works without valid configuration or credentials.
+`poppet provider login -h`. Help works without valid configuration or credentials.
 Argument errors print the relevant command's help and exit unsuccessfully.
 The remaining words of a message, memory value, or task prompt are joined with
 spaces; flags inside that text stay literal. Use `--` before the text when it
@@ -26,11 +26,10 @@ See [configuration](configuration.md) and [storage](storage.md).
 
 ## Providers and models
 
-Select a provider and an explicit model. Auth commands default to `POPPET_PROVIDER`.
+Select a provider and an explicit model. Provider commands default to `POPPET_PROVIDER`.
 Pass a provider after `login`, `status`, `models`, or `logout`, or use
-`--provider <id>` for any auth command. This selects which credentials to manage
-without changing the configured inference provider. Login and status work before
-model selection. General provider commands use the configured provider:
+`--provider <id>`. This selects which provider to inspect or manage without
+changing the configured inference provider. These commands need no selected model.
 
 Bash / POSIX sh:
 
@@ -38,7 +37,6 @@ Bash / POSIX sh:
 export POPPET_PROVIDER=openai-chatgpt
 poppet provider models
 export POPPET_MODEL='replace-with-model-id'
-poppet provider verify
 ```
 
 fish:
@@ -47,27 +45,18 @@ fish:
 set -lx POPPET_PROVIDER openai-chatgpt
 poppet provider models
 set -lx POPPET_MODEL 'replace-with-model-id'
-poppet provider verify
 ```
 
-`provider verify` exercises the shared message and continuation contract with
-two requests and a local tool round trip. It consumes provider usage. A model
-must be selected before verification opens credentials. The runtime builds only
-the selected provider's dependencies and never falls back to another model.
+The runtime builds only the selected provider's dependencies and never falls
+back to another model. ChatGPT's browser login handles plan-usage consent
+through `provider login openai-chatgpt`.
 
-To verify a provider without changing `POPPET_PROVIDER`, use
-`poppet auth verify <model-id> --provider openrouter`. ChatGPT's browser
-login handles plan-usage consent through `auth login openai-chatgpt`.
-
-| Command                               | Action                                             |
-| ------------------------------------- | -------------------------------------------------- |
-| `auth login [provider] [--key-stdin]` | Sign in or save an API key.                        |
-| `auth status [provider]`              | Show connection status without secrets.            |
-| `auth models [provider]`              | List available models.                             |
-| `auth verify [model]`                 | Verify inference and a local tool round trip.      |
-| `auth logout [provider]`              | Clear that provider's saved connection.            |
-| `provider models`                     | List supported models for the configured provider. |
-| `provider verify`                     | Verify the configured provider and model.          |
+| Command                                   | Action                                  |
+| ----------------------------------------- | --------------------------------------- |
+| `provider login [provider] [--key-stdin]` | Sign in or save an API key.             |
+| `provider status [provider]`              | Show connection status without secrets. |
+| `provider models [provider]`              | List available models.                  |
+| `provider logout [provider]`              | Clear that provider's saved connection. |
 
 `--key-stdin` applies to API-key providers.
 See [ChatGPT](providers/openai-chatgpt.md), [OpenCode Go](providers/opencode-go.md),

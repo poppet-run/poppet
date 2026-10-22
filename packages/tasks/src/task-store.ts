@@ -899,7 +899,7 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
         Object.assign(item, {
           action:
             item.failureReason === "provider:authentication"
-              ? `Run auth login ${item.provider}, then tasks retry ${item.id}.`
+              ? `Run provider login ${item.provider}, then tasks retry ${item.id}.`
               : item.status === "interrupted"
                 ? `Run tasks retry ${item.id} if this work should run again.`
                 : item.status === "failed"

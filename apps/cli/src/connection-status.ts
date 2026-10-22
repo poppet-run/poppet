@@ -26,7 +26,9 @@ export const createConnectionStatus = () => {
           observedAt: Date.now(),
           cached: false,
           action:
-            !metadata.connected || metadata.planUsage === false ? `Run auth login ${id}.` : null,
+            !metadata.connected || metadata.planUsage === false
+              ? `Run provider login ${id}.`
+              : null,
         };
 
         observed.set(id, snapshot);
@@ -54,7 +56,7 @@ export const createConnectionStatus = () => {
       action:
         error instanceof ProviderError && error.code === "credential_store_busy"
           ? "Authentication is busy. Check again after the active run finishes."
-          : `Run auth status ${id} to inspect the connection.`,
+          : `Run provider status ${id} to inspect the connection.`,
     } satisfies Schema.JsonObject);
   };
 

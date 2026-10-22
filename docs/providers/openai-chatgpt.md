@@ -2,15 +2,14 @@
 
 [Documentation index](../README.md)
 
-## Sign in and verify
+## Sign in
 
-Sign in through the system browser, then verify subscription access:
+Sign in through the system browser, then inspect available models and connection status:
 
 ```sh
-poppet auth login openai-chatgpt
-poppet auth models openai-chatgpt
-poppet auth verify --provider openai-chatgpt
-poppet auth status openai-chatgpt
+poppet provider login openai-chatgpt
+poppet provider models openai-chatgpt
+poppet provider status openai-chatgpt
 ```
 
 ## Registration and consent
@@ -24,17 +23,8 @@ login after logout creates a fresh registration and host identifier. Poppet curr
 one account and rejects a returning identity that does not match it until logout.
 [OpenAI registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
 
-`auth verify` selects the first visible model in the account's catalog. Pass a
-model slug from `auth models` to choose another, for example
-`poppet auth verify <slug> --provider openai-chatgpt`. Verification makes two streamed Responses
-requests, which consume ChatGPT plan usage. It requests a local tool, supplies a
-random token as the tool result, and requires the completed answer to return that
-token. Success records the model and verification time; it does not guarantee
-future quota or eligibility.
-[Subscription inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
-
 If identity sign-in succeeds without plan-usage permission, status reports
-`planUsage: false`. Run `poppet auth login openai-chatgpt` again. Login automatically
+`planUsage: false`. Run `poppet provider login openai-chatgpt` again. Login automatically
 requests consent when saved credentials lack plan-usage permission. Returning
 sign-ins with plan permission do not force another consent prompt. Usage limits,
 ineligible accounts, temporary failures, and interrupted streams produce separate errors. Model requests are not automatically retried.
@@ -44,7 +34,7 @@ Model resolution reuses a successful catalog lookup for up to one minute within
 the same process, including across interactive CLI turns and worker requests.
 Each lookup still checks current authentication. Credential changes, an expired
 entry, or a model absent from the cached catalog trigger a fresh request.
-`auth models` and `auth verify` always fetch a fresh catalog. Failed responses
+`provider models` always fetches a fresh catalog. Failed responses
 are not cached, and nothing is written to disk. Separate one-shot CLI processes
 do not share the cache. Enable [timing logs](../configuration.md#timing-logs) to
 see catalog hits and misses.
@@ -63,7 +53,7 @@ Never remove the lock database while Poppet is running.
 
 ## Logout
 
-`poppet auth logout openai-chatgpt` deletes the saved connection file,
+`poppet provider logout openai-chatgpt` deletes the saved connection file,
 including account identity, tokens, verification, registration, and host identifier,
 then attempts remote revocation. Status does not recreate those details.
 Other providers' credentials are preserved. If remote revocation cannot

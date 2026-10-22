@@ -59,9 +59,9 @@ For ChatGPT, sign in through the system browser and list the models available to
 your account:
 
 ```sh
-poppet auth login openai-chatgpt
-poppet auth models openai-chatgpt
-poppet auth status openai-chatgpt
+poppet provider login openai-chatgpt
+poppet provider models openai-chatgpt
+poppet provider status openai-chatgpt
 ```
 
 Complete account selection and plan-usage consent in the browser, then return to
@@ -74,7 +74,7 @@ use ChatGPT or OpenRouter for general assistant chat, notes, and summaries.
 
 ## Choose a model and chat
 
-Replace the example value with a model ID returned by `auth models`:
+Replace the example value with a model ID returned by `provider models`:
 
 Bash / POSIX sh:
 
@@ -119,9 +119,8 @@ See the [interactive prompt guide](chat.md#interactive-prompt) for cancellation.
 
 These environment overrides apply within the current shell scope. New sessions use the
 configured provider and model; saved sessions retain their original selection.
-Chat consumes provider usage. You can also run `poppet provider verify`
-to check the selected model with two requests and a local tool round trip.
-See [command line](cli.md#providers-and-models) for verification details and
+Chat consumes provider usage.
+See [command line](cli.md#providers-and-models) for provider commands and
 [chat](chat.md) for session behavior and limits.
 
 ## Use notes, memory, and scheduled work

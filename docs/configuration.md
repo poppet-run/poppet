@@ -205,13 +205,13 @@ API-key login saves credentials under `<POPPET_DATA_DIR>/auth/openrouter.json`
 or `opencode-go.json`, with `0600` file permissions inside a `0700` directory.
 Writes replace files atomically and use a separate lock for each provider.
 Login reads an existing environment key if set, otherwise prompts without echo.
-For scripts, `auth login openrouter --key-stdin` reads a key from standard input;
+For scripts, `provider login openrouter --key-stdin` reads a key from standard input;
 keys are never accepted as command-line arguments.
 
 `POPPET_OPENROUTER_API_KEY` and `POPPET_OPENCODE_GO_API_KEY` override stored keys
 for inference and status. Empty or invalid overrides fail instead of falling
 back to a stored key. Status reports the credential source without secrets;
-remote access is checked separately by verification. `auth logout openrouter`
+remote access is checked when making model requests. `provider logout openrouter`
 removes that provider's saved key. It leaves other providers connected and does
 not revoke the remote key or unset an environment override.
 

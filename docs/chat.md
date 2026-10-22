@@ -4,7 +4,7 @@
 
 ## Start and continue a session
 
-After signing in, choose a model ID returned by `auth models` and start a session:
+After signing in, choose a model ID returned by `provider models` and start a session:
 
 Bash / POSIX sh:
 
