@@ -37,4 +37,4 @@ Start with [getting started](getting-started.md) to install dependencies, connec
 - [Document and voice compatibility](attachment-probe.md): PDF parser, local speech runtime, measurements, and remaining live checks.
 - [Architecture](architecture.md): service boundaries, Effect conventions, storage, and execution contracts.
 - [Implementation plan](implementation-plan.md): completed phases, validation records, and planned work.
-- [Refactoring plans](plans/index.md): planned deduplication and complexity reductions.
+- [Refactoring plans](plans/index.md): current status and candidates for future review.
