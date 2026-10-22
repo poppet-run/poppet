@@ -93,14 +93,26 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
   const insertOccurrence = (
     job: Task,
     scheduledAt: number,
-    availableAt = scheduledAt,
-    status: Occurrence["status"] = "pending",
-    reason: string | null = null,
-    finishedAt: number | null = null,
-    origin: Occurrence["origin"] = "scheduled",
-    destination = job.destination,
-    ignoreDuplicate = false,
+    options: {
+      readonly availableAt?: number;
+      readonly status?: Occurrence["status"];
+      readonly reason?: string | null;
+      readonly finishedAt?: number | null;
+      readonly origin?: Occurrence["origin"];
+      readonly destination?: Task["destination"];
+      readonly ignoreDuplicate?: boolean;
+    } = {},
   ) => {
+    const {
+      availableAt = scheduledAt,
+      status = "pending",
+      reason = null,
+      finishedAt = null,
+      origin = "scheduled",
+      destination = job.destination,
+      ignoreDuplicate = false,
+    } = options;
+
     const id = randomUUID();
     const definition = Schema.decodeUnknownSync(TaskDefinition)(job);
     database
@@ -126,17 +138,7 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
 
   // Scheduled occurrences are idempotent per task revision and time.
   const queue = (job: Task, scheduledAt: number) =>
-    insertOccurrence(
-      job,
-      scheduledAt,
-      scheduledAt,
-      "pending",
-      null,
-      null,
-      "scheduled",
-      job.destination,
-      true,
-    );
+    insertOccurrence(job, scheduledAt, { ignoreDuplicate: true });
 
   const activeOccurrence = (id: string, status: "pending" | "running") => {
     const row = database
@@ -470,16 +472,11 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
               snoozeCleared = scheduleChanged && pending.availableAt > pending.scheduledAt;
 
               if (!scheduleChanged) {
-                const id = insertOccurrence(
-                  task(job.id),
-                  pending.scheduledAt,
-                  pending.availableAt,
-                  "pending",
-                  null,
-                  null,
-                  pending.origin,
-                  pending.destination,
-                );
+                const id = insertOccurrence(task(job.id), pending.scheduledAt, {
+                  availableAt: pending.availableAt,
+                  origin: pending.origin,
+                  destination: pending.destination,
+                });
 
                 selected = occurrence(id);
               }
@@ -516,14 +513,12 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
               selected = occurrence(pending.id);
             } else {
               selected = occurrence(
-                insertOccurrence(
-                  job,
-                  target.scheduledAt,
-                  target.availableAt,
-                  "cancelled",
-                  "skipped-by-owner",
-                  now,
-                ),
+                insertOccurrence(job, target.scheduledAt, {
+                  availableAt: target.availableAt,
+                  status: "cancelled",
+                  reason: "skipped-by-owner",
+                  finishedAt: now,
+                }),
               );
               advance(target.scheduledAt);
             }
@@ -545,7 +540,9 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
                 ]);
                 selected = occurrence(pending.id);
               } else {
-                selected = occurrence(insertOccurrence(job, target.scheduledAt, command.until));
+                selected = occurrence(
+                  insertOccurrence(job, target.scheduledAt, { availableAt: command.until }),
+                );
                 advance(target.scheduledAt);
               }
 
@@ -583,15 +580,10 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
                   "An occurrence already exists at this time. Inspect its history before retrying.",
               });
             selected = occurrence(
-              insertOccurrence(
-                job,
-                logical,
-                Math.min(logical, now),
-                "pending",
-                null,
-                null,
-                "manual",
-              ),
+              insertOccurrence(job, logical, {
+                availableAt: Math.min(logical, now),
+                origin: "manual",
+              }),
             );
 
             if (job.schedule.type === "once" || due) {
