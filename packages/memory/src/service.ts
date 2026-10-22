@@ -9,6 +9,7 @@ export class MemoryError extends Data.TaggedError("MemoryError")<{
 }> {}
 
 interface MemoryOperations {
+  readonly forProject?: (name: string) => MemoryOperations;
   /** Reads prompt files and saved facts, failing rather than truncating content over budget. */
   readonly snapshot: (limits: SnapshotLimits) => Effect.Effect<MemorySnapshot, MemoryError>;
   readonly list: Effect.Effect<ReadonlyArray<MemoryFact>, MemoryError>;

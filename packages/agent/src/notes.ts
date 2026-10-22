@@ -127,7 +127,10 @@ export const decodeNoteCall = (
 export class Notes extends Context.Service<
   Notes,
   {
-    readonly execute: (call: NoteCall) => Effect.Effect<string, AgentError>;
+    readonly execute: (
+      call: NoteCall,
+      selected?: ReadonlyArray<string> | null,
+    ) => Effect.Effect<string, AgentError>;
   }
 >()("poppet/Notes") {}
 
@@ -218,6 +221,60 @@ const readText = async (path: string, signal: AbortSignal) => {
   } finally {
     await handle.close();
   }
+};
+
+export const validateProjectNotes = (root: string, paths: ReadonlyArray<string>) =>
+  Effect.tryPromise({
+    try: async () => {
+      if (paths.length === 0) return;
+      const original = await lstat(root);
+
+      if (!original.isDirectory() || original.isSymbolicLink()) throw forbidden();
+      const canonical = await realpath(root);
+      const current = await lstat(root);
+
+      if (current.dev !== original.dev || current.ino !== original.ino || current.isSymbolicLink())
+        throw forbidden();
+
+      for (const path of paths) await notePath(canonical, path, false);
+    },
+    catch: () =>
+      new AgentError({
+        reason: "invalid-request",
+        message:
+          "Project note selections must resolve through the existing notes directory without symlinks or hard links.",
+      }),
+  });
+
+const selectedSearch = async (
+  root: string,
+  paths: ReadonlyArray<string>,
+  query: string,
+  limit: number,
+  signal: AbortSignal,
+) => {
+  const matches: NoteMatch[] = [];
+  let truncated = false;
+
+  for (const path of paths) {
+    const note = await readText(await notePath(root, path, false), signal);
+    truncated ||= note.truncated;
+
+    for (const [index, line] of note.content.split("\n").entries()) {
+      if (!line.toLowerCase().includes(query.toLowerCase())) continue;
+      const match = { path, line: index + 1, text: line.slice(0, 1000) };
+      truncated ||= line.length > 1000;
+
+      if (
+        matches.length === 100 ||
+        byteSize(JSON.stringify({ matches: [...matches, match], truncated: true })) > limit
+      )
+        return JSON.stringify({ matches, truncated: true });
+      matches.push(match);
+    }
+  }
+
+  return JSON.stringify({ matches, truncated });
 };
 
 const readResult = async (root: string, requested: string, limit: number, signal: AbortSignal) => {
@@ -384,9 +441,20 @@ export const NotesLive = Layer.effect(
     const { toolBytes } = yield* ChatSettings;
     let root: string | null = null;
 
-    const execute = (call: NoteCall) =>
+    const execute = (call: NoteCall, selected?: ReadonlyArray<string> | null) =>
       Effect.tryPromise({
         try: async (signal) => {
+          if (
+            selected !== undefined &&
+            selected !== null &&
+            call.name !== "search_notes" &&
+            !selected.includes(call.path)
+          )
+            throw new AgentError({
+              reason: "tool-permission",
+              message: "This note is outside the saved project selection.",
+            });
+
           if (root === null) {
             await mkdir(notesDirectory, { recursive: true, mode: 0o700 });
             const info = await lstat(notesDirectory);
@@ -399,6 +467,9 @@ export const NotesLive = Layer.effect(
             case "read_note":
               return readResult(root, call.path, toolBytes, signal);
             case "search_notes":
+              if (selected !== undefined && selected !== null)
+                return selectedSearch(root, selected, call.query, toolBytes, signal);
+
               return searchResult(root, call.query, toolBytes, signal);
             case "save_note":
               return saveResult(root, call, toolBytes);

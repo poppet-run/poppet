@@ -2601,9 +2601,10 @@ configuration and permanent tool/model installation were not changed.
 
 ## Phase 26: Context for individual projects
 
-Planned only. Reuse the explicit skill-selection and saved-snapshot approach from
-phase 14, the memory service from phase 6, and existing session/task ownership.
-This phase does not require Phase 25 or a project-management interface.
+Implemented on 2026-10-21. Reuses the explicit skill-selection and saved-snapshot
+approach from phase 14, the memory service from phase 6, and existing session/task
+ownership. See the [project context guide](projects.md). Live model and messaging
+checks remain manual. The stages below record the implemented scope.
 
 ### Goal and selection rules
 
@@ -2619,7 +2620,7 @@ Do not infer a project from the working directory, conversation text, a link, or
 a recalled message. Repository scanning, automatic fact extraction, project
 renaming, and project-specific tool/provider credentials are outside this phase.
 
-Proposed owner interfaces:
+Owner interfaces:
 
 ```fish
 bun run start projects list
@@ -2745,6 +2746,20 @@ one review. Confirm selection in inspection and that unrelated facts/notes are
 not supplied. Repeat explicit selection in one authorized messaging conversation.
 Automated prompt assertions establish supplied context and tool limits; a live
 model check is still needed for instruction-following and useful project reviews.
+
+### Validation record
+
+`bun run check` passed on 2026-10-21: formatting, lint, workspace type checks,
+and 950 tests across 66 files. Project cases cover direct CLI, a real local worker
+and gateway composition, task inheritance and retry, scoped facts and recall,
+selected-note dispatch, file validation, stale-worker rejection, and atomic
+migration rollback. Migration 5 retains legacy facts globally and backfills saved
+sessions, tasks, and occurrence definitions as unscoped.
+
+Tests use injected models and temporary stores. The owner's live database was not
+opened or migrated. Live provider instruction-following, scheduled project review
+quality, and platform messaging selection remain the
+[manual project checks](projects.md#manual-validation).
 
 ## Phase 27: Actions the owner can review and approve
 

@@ -8,6 +8,64 @@ import { applyMigrations, migrations } from "#src/migrations";
 const initial = migrations.slice(0, 1);
 
 describe("store migrations", () => {
+  test("project migration preserves global facts and legacy snapshots and rolls back atomically", () => {
+    using database = new Database(":memory:");
+    database.run("PRAGMA foreign_keys = ON");
+    const prior = migrations.slice(0, 4);
+    applyMigrations(database, prior);
+    database.run(
+      "INSERT INTO memories (key, value, source_run_id, updated_at) VALUES ('style', 'Existing global fact', NULL, 7)",
+    );
+    database.run(
+      "INSERT INTO sessions (id, provider, model, created_at, updated_at) VALUES ('old', 'test', 'model', 1, 1)",
+    );
+    database.run(`INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, created_at)
+      VALUES ('old-task', 'Old', 'Review', 'test', 'model', 'assistant', '{"type":"once","at":10}', 1)`);
+
+    const definition = JSON.stringify({
+      name: "Old",
+      prompt: "Review",
+      provider: "test",
+      model: "model",
+      workload: "assistant",
+      schedule: { type: "once", at: 10 },
+      monitor: false,
+      skill: null,
+    });
+
+    database
+      .query(
+        "INSERT INTO job_occurrences (id, job_id, revision, scheduled_at, available_at, status, definition) VALUES ('old-occurrence', 'old-task', 0, 10, 10, 'pending', ?)",
+      )
+      .run(definition);
+    const next = migrations[4]!;
+    expect(() =>
+      applyMigrations(database, [...prior, { ...next, sql: `${next.sql}\ninvalid SQL;` }]),
+    ).toThrow("No pending migrations");
+    expect(database.query("SELECT * FROM memories").get()).toEqual({
+      key: "style",
+      value: "Existing global fact",
+      source_run_id: null,
+      updated_at: 7,
+    });
+    expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 4 });
+    applyMigrations(database);
+    expect(database.query("SELECT * FROM memories").get()).toEqual({
+      project: "",
+      key: "style",
+      value: "Existing global fact",
+      source_run_id: null,
+      updated_at: 7,
+    });
+    expect(database.query("SELECT project FROM sessions").get()).toEqual({ project: null });
+    expect(database.query("SELECT project FROM jobs").get()).toEqual({ project: null });
+    expect(
+      database
+        .query("SELECT json_type(definition, '$.project') AS kind FROM job_occurrences")
+        .get(),
+    ).toEqual({ kind: "null" });
+    expect(database.query("PRAGMA foreign_key_check").all()).toEqual([]);
+  });
   test("upgrades text-only inbox records in place and rolls back the attachment migration atomically", () => {
     using database = new Database(":memory:");
     database.run("PRAGMA foreign_keys = ON");
@@ -119,6 +177,7 @@ describe("store migrations", () => {
       workload: "coding",
       monitor: true,
       skill: { name: "release", content: "Read the current tag" },
+      project: null,
       schedule: { type: "cron", expression: "0 9 * * *", timezone: "Europe/London" },
     });
     database.run("DELETE FROM job_occurrences WHERE id = 'first'");

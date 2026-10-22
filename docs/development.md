@@ -54,7 +54,8 @@ the ledger checks their names and SQL checksums before applying pending steps.
 
 The unreleased base schema starts at version 1 with one initial migration.
 Migration 2 adds monitoring; migration 3 adds task revisions, occurrence snapshots,
-ready times and mutation receipts. Upgrades from versions 1 and 2 retain saved
+ready times and mutation receipts; migration 4 adds attachments; migration 5 adds
+project snapshots and scoped facts. Upgrades from versions 1 through 4 retain saved
 data, including monitoring children during occurrence-table replacement. Databases
 from the former 14-step history need a fresh data directory. See
 [storage](storage.md#schema-and-saved-records).
@@ -101,7 +102,9 @@ packages/
     src/conversation.ts   Sequential model/tool loop and run budgets
     src/reply.ts          Validated model stream completion
     src/notes.ts          Note schemas, bounded access, atomic writes
-    src/memory.ts         Memory snapshots formatted into model instructions
+    src/memory.ts         Global/project snapshots formatted into model instructions
+    src/projects.ts       Project instructions and selected-note validation
+    src/context-files.ts  Shared bounded skill/project file access
     src/memory-tools.ts   Validated memory changes with budget checks and source runs
     src/context.ts        Complete-exchange context assembly and limits
     src/settings.ts       Validated chat budgets
@@ -294,6 +297,15 @@ assistant-capable provider and model for messaging and scheduled tasks.
 - [ ] Schedule a one-off task, sleep across its due time, then wake. Expect one
       execution. Restart the worker and confirm it does not repeat; check that logs
       append without exposing secrets.
+
+### Project context checks
+
+Automated checks cover local/worker/messaging selection, chat-created task
+inheritance, snapshots through deletion, restart, edits and retries, fresh scoped
+facts with a fixed per-run prompt, recall isolation, selected-note limits, stale
+workers, and migration rollback. They inject models and do not establish live
+instruction-following. Follow the [two-project manual path](projects.md#manual-validation)
+for conflicting preferences, worker restart, a scheduled review, and messaging.
 
 ### Attachment checks
 

@@ -22,7 +22,7 @@ existing key so facts cannot be overwritten accidentally. `replace` and `forget`
 require an existing key. Keys start with a letter or digit and contain only letters,
 digits, dots, underscores, and hyphens, up to 128 characters. Values must be nonempty,
 have no surrounding whitespace, and fit in 4096 UTF-8 bytes. The store holds up to
-128 facts. Listing includes keys, values, update times, and source run IDs when
+128 facts per scope. Listing includes keys, values, update times, and source run IDs when
 available; CLI-created facts have no source run.
 
 ## Ask the model to change a fact
@@ -76,6 +76,22 @@ failures. Live model intent handling and the three memory actions remain manual
 checks. Ask for one fact to be remembered, continue and replace it, then forget it;
 inspect `memory list` and `chat show` after each step, including from a fresh chat.
 
+## Project facts
+
+Memory commands default to global facts. Pass `--project <name>` to list,
+remember, replace, or forget only that project's facts. Keys are unique per scope;
+the same key can exist in global memory and several projects. Each project run
+reads global context and its current project facts once. Project facts have a
+fixed 8 KiB snapshot budget within the existing overall context budget.
+
+A project chat's memory tool writes only its own project facts, with host-bound
+run provenance. Change global facts through an unscoped chat or the default CLI
+commands. Scheduled runs cannot write either scope. Deleting project files
+retains facts; `memory list --project <name>` reports an orphaned directory and
+`memory forget --project <name> <key>` removes an individual fact explicitly.
+See [project context](projects.md) for selection, preference precedence, and
+instruction snapshots.
+
 ## Profile
 
 Edit `<POPPET_DATA_DIR>/profile.md` for your name, background, and preferences.
@@ -105,7 +121,8 @@ and regular-file requirements as `profile.md`.
 Every run reads the current personality, profile, and saved facts once, then keeps
 that snapshot across its model/tool turns. New sessions and resumed sessions pick
 up changes on their next run, including scheduled tasks and messaging. Memory is
-shared across sessions and providers in the same data directory. Facts are included
+shared across sessions and providers within their global or selected project
+scope in the same data directory. Facts are included
 in key order as personal context, with no
 provenance metadata sent to the model. The memory tool is reserved for explicit
 changes requested by the current user; Poppet does not automatically extract facts

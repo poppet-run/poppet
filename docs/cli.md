@@ -88,14 +88,14 @@ Enable `webSearch` separately and restart any running worker. See
 
 ## Chat
 
-| Command                                                  | Action                                                      |
-| -------------------------------------------------------- | ----------------------------------------------------------- |
-| `chat interactive [session] [--coding] [--skill <name>]` | Open a terminal prompt for a new or saved session.          |
-| `chat new [--coding] [--skill <name>] <message>`         | Start a session with the configured provider and model.     |
-| `chat send <session> <message>`                          | Continue a saved session.                                   |
-| `chat search <query>`                                    | Search completed conversation text without inference.       |
-| `chat sessions`                                          | List saved sessions.                                        |
-| `chat show <session>`                                    | Print saved messages, tool calls, and run outcomes as JSON. |
+| Command                                                                     | Action                                                      |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `chat interactive [session] [--coding] [--skill <name>] [--project <name>]` | Open a terminal prompt for a new or saved session.          |
+| `chat new [--coding] [--skill <name>] [--project <name>] <message>`         | Start a session with the configured provider and model.     |
+| `chat send <session> <message>`                                             | Continue a saved session.                                   |
+| `chat search <query>`                                                       | Search completed conversation text without inference.       |
+| `chat sessions`                                                             | List saved sessions.                                        |
+| `chat show <session>`                                                       | Print saved messages, tool calls, and run outcomes as JSON. |
 
 See [chat](chat.md) for session selection, streaming, cancellation, and limits,
 and [notes](notes.md) for the tools available during a run.
@@ -110,38 +110,49 @@ and [notes](notes.md) for the tools available during a run.
 Use `--skill <name>` before a new chat message or task prompt to save the current
 procedure with that session or task. See [skills](skills.md) for examples and limits.
 
+## Projects
+
+| Command                | Action                                                                |
+| ---------------------- | --------------------------------------------------------------------- |
+| `projects list`        | List named project directories without opening storage.               |
+| `projects show <name>` | Validate and display current project instructions and note selection. |
+
+Select `--project <name>` before a new chat message or task prompt. See
+[project context](projects.md) for saved snapshots, facts, note limits, and messaging.
+
 ## Memory
 
-| Command                         | Action                       |
-| ------------------------------- | ---------------------------- |
-| `memory list`                   | List explicitly saved facts. |
-| `memory remember <key> <value>` | Create a new fact.           |
-| `memory replace <key> <value>`  | Change an existing fact.     |
-| `memory forget <key>`           | Delete a saved fact.         |
+| Command                                            | Action                       |
+| -------------------------------------------------- | ---------------------------- |
+| `memory list [--project <name>]`                   | List explicitly saved facts. |
+| `memory remember [--project <name>] <key> <value>` | Create a new fact.           |
+| `memory replace [--project <name>] <key> <value>`  | Change an existing fact.     |
+| `memory forget [--project <name>] <key>`           | Delete a saved fact.         |
 
+Memory commands default to global facts; `--project` selects only that scope.
 See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 
 ## Scheduled tasks
 
-| Command                                                                                                                                                              | Action                                                             |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `tasks add <name> --at <timestamp> [--coding] [--skill <name>] [--discord-thread <id>] [--telegram-chat <id>] [--whatsapp-chat <phone>] <prompt>`                    | Schedule a one-off request.                                        |
-| `tasks add <name> --cron <expression> --tz <timezone> [--coding] [--skill <name>] [--discord-thread <id>] [--telegram-chat <id>] [--whatsapp-chat <phone>] <prompt>` | Schedule recurring work.                                           |
-| `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp>                                                                                             | --cron <expression> --tz <timezone>]`                              | Edit definition fields while retaining task identity and history. |
-| `tasks skip-next <task>`                                                                                                                                             | Consume exactly the inspected next execution.                      |
-| `tasks snooze <task> --until <timestamp>`                                                                                                                            | Delay the next execution to a later offset-qualified instant.      |
-| `tasks run-now <task>`                                                                                                                                               | Queue normal read-only work without shifting recurring cadence.    |
-| `tasks list`                                                                                                                                                         | List saved tasks.                                                  |
-| `tasks show <task>`                                                                                                                                                  | Show occurrences, results, delivery states, and skipped intervals. |
-| `tasks pause <task>`                                                                                                                                                 | Pause scheduling and cancel pending work.                          |
-| `tasks resume <task>`                                                                                                                                                | Resume future occurrences.                                         |
-| `tasks cancel <occurrence>`                                                                                                                                          | Cancel pending or active work.                                     |
-| `tasks retry <occurrence>`                                                                                                                                           | Explicitly retry an unsuccessful occurrence.                       |
-| `tasks clear`                                                                                                                                                        | Interrupt active work and remove all tasks and task history.       |
-| `tasks providers`                                                                                                                                                    | Show provider quota pauses and temporary backoff.                  |
-| `tasks resume-provider <provider>`                                                                                                                                   | Allow scheduled requests for a provider again.                     |
-| `tasks status`                                                                                                                                                       | Show task counts, recent outcomes, and worker status.              |
-| `tasks work`                                                                                                                                                         | Run scheduling only in the foreground.                             |
+| Command                                                                                                                                                                                 | Action                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `tasks add <name> --at <timestamp> [--coding] [--skill <name>] [--project <name>] [--discord-thread <id>] [--telegram-chat <id>] [--whatsapp-chat <phone>] <prompt>`                    | Schedule a one-off request.                                        |
+| `tasks add <name> --cron <expression> --tz <timezone> [--coding] [--skill <name>] [--project <name>] [--discord-thread <id>] [--telegram-chat <id>] [--whatsapp-chat <phone>] <prompt>` | Schedule recurring work.                                           |
+| `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> --tz <timezone>]`                                                                       | Edit definition fields while retaining task identity and history.  |
+| `tasks skip-next <task>`                                                                                                                                                                | Consume exactly the inspected next execution.                      |
+| `tasks snooze <task> --until <timestamp>`                                                                                                                                               | Delay the next execution to a later offset-qualified instant.      |
+| `tasks run-now <task>`                                                                                                                                                                  | Queue normal read-only work without shifting recurring cadence.    |
+| `tasks list`                                                                                                                                                                            | List saved tasks.                                                  |
+| `tasks show <task>`                                                                                                                                                                     | Show occurrences, results, delivery states, and skipped intervals. |
+| `tasks pause <task>`                                                                                                                                                                    | Pause scheduling and cancel pending work.                          |
+| `tasks resume <task>`                                                                                                                                                                   | Resume future occurrences.                                         |
+| `tasks cancel <occurrence>`                                                                                                                                                             | Cancel pending or active work.                                     |
+| `tasks retry <occurrence>`                                                                                                                                                              | Explicitly retry an unsuccessful occurrence.                       |
+| `tasks clear`                                                                                                                                                                           | Interrupt active work and remove all tasks and task history.       |
+| `tasks providers`                                                                                                                                                                       | Show provider quota pauses and temporary backoff.                  |
+| `tasks resume-provider <provider>`                                                                                                                                                      | Allow scheduled requests for a provider again.                     |
+| `tasks status`                                                                                                                                                                          | Show task counts, recent outcomes, and worker status.              |
+| `tasks work`                                                                                                                                                                            | Run scheduling only in the foreground.                             |
 
 See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what
 `clear` deletes or retains. Tasks execute while a worker with scheduling enabled

@@ -61,6 +61,7 @@ export const prepareTask = (
   skill?: string,
   delivery?: { readonly adapter: string; readonly conversationId: string },
   monitor = false,
+  project?: string,
 ) =>
   Effect.gen(function* () {
     yield* taskOperation(() => {
@@ -92,8 +93,10 @@ export const prepareTask = (
 
     const selected = delivery === undefined ? command : { ...command, delivery };
 
+    const scoped = project === undefined ? selected : { ...selected, project };
+
     return yield* Schema.decodeUnknownEffect(TaskCommand)(
-      skill === undefined ? selected : { ...selected, skill },
+      skill === undefined ? scoped : { ...scoped, skill },
     ).pipe(
       Effect.mapError(
         () =>

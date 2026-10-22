@@ -886,6 +886,112 @@ describe("chat CLI", () => {
   );
 
   test.each(["local", "worker"])(
+    "selects durable project context and current scoped facts through %s execution",
+    async (mode) => {
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
+
+      const inspect = async (args: ReadonlyArray<string>) => {
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        await chat.invoke(args);
+
+        return JSON.parse(chat.lines.at(-1) ?? chat.chunks.join(""));
+      };
+
+      try {
+        const root = join(chat.directory, "projects", "acorn");
+        await mkdir(root, { recursive: true });
+        await mkdir(join(chat.directory, "notes"), { recursive: true });
+        await writeFile(join(chat.directory, "notes", "selected.md"), "Selected note");
+        await writeFile(join(root, "PROJECT.md"), "Acorn uses plain wording.");
+        await writeFile(join(root, "notes.json"), '["selected.md"]');
+        expect(await inspect(["projects", "list"])).toEqual(["acorn"]);
+        expect(await inspect(["projects", "show", "acorn"])).toEqual({
+          name: "acorn",
+          content: "Acorn uses plain wording.",
+          notes: ["selected.md"],
+        });
+        expect(chat.state.built).toBe(0);
+
+        if (mode === "worker") worker = await chat.startWorker();
+        await chat.invoke([
+          "memory",
+          "remember",
+          "--project",
+          "acorn",
+          "review.style",
+          "Project fact one",
+        ]);
+        await chat.invoke(["chat", "new", "--project=acorn", "Review", "--literal"]);
+        const id = chat.errors.find((line) => line.startsWith("Session: "))!.slice(9);
+        expect(chat.requests.at(-1)?.instructions).toContain("Project fact one");
+        expect(chat.requests.at(-1)?.instructions).toContain("Acorn uses plain wording.");
+        expect(chat.requests.at(-1)?.messages.at(-1)).toEqual({
+          role: "user",
+          text: "Review --literal",
+        });
+
+        const job = await inspect([
+          "tasks",
+          "add",
+          "Acorn review",
+          "--project",
+          "acorn",
+          "--at",
+          "2099-01-01T00:00:00Z",
+          "Review",
+        ]);
+
+        expect(job.project).toEqual({
+          name: "acorn",
+          content: "Acorn uses plain wording.",
+          notes: ["selected.md"],
+        });
+        await writeFile(join(root, "PROJECT.md"), "Edited instructions");
+        await chat.invoke([
+          "memory",
+          "replace",
+          "--project=acorn",
+          "review.style",
+          "Project fact two",
+        ]);
+
+        if (worker !== null) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+          worker = await chat.startWorker();
+        }
+
+        await rm(root, { recursive: true });
+        await chat.invoke(["chat", "send", id, "Continue"]);
+        expect(chat.requests.at(-1)?.instructions).toContain("Acorn uses plain wording.");
+        expect(chat.requests.at(-1)?.instructions).not.toContain("Edited instructions");
+        expect(chat.requests.at(-1)?.instructions).toContain("Project fact two");
+        expect(await inspect(["chat", "show", id])).toMatchObject({
+          session: { project: job.project },
+        });
+        expect(await inspect(["memory", "list", "--project", "acorn"])).toMatchObject({
+          project: "acorn",
+          orphaned: true,
+          facts: [{ key: "review.style", value: "Project fact two" }],
+        });
+        expect(await inspect(["memory", "list"])).toEqual([]);
+        const count = chat.requests.length;
+        await expect(
+          chat.invoke(["chat", "new", "--project", "missing", "Review"]),
+        ).rejects.toMatchObject({ message: expect.stringContaining("UTF-8") });
+        expect(chat.requests).toHaveLength(count);
+        await chat.invoke(["chat", "new", "Unscoped"]);
+        expect(chat.requests.at(-1)?.instructions).not.toContain("Project fact two");
+        await chat.invoke(["memory", "forget", "--project", "acorn", "review.style"]);
+      } finally {
+        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
+  test.each(["local", "worker"])(
     "saves explicit skill snapshots for chats and tasks through %s execution",
     async (mode) => {
       const remote = mode === "worker";
@@ -1275,6 +1381,32 @@ describe("chat CLI", () => {
       );
       expect(new Set(chat.requests.map((request) => request.sessionId)).size).toBe(2);
       expect(chat.state.peak).toBe(1);
+      await mkdir(join(chat.directory, "projects", "acorn"), { recursive: true });
+      await writeFile(
+        join(chat.directory, "projects", "acorn", "PROJECT.md"),
+        "Messaging host project preferences",
+      );
+      await chat.clock.runPromise(
+        Queue.offer(first.incoming, {
+          messageId: "selected-project",
+          scopeId: "guild",
+          parentId: "parent",
+          conversationId: "thread",
+          senderId: "owner",
+          text: "/new --project acorn Review",
+          mentioned: false,
+        }),
+      );
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          while (first.state.sent.length < 2) {
+            yield* Effect.promise(() => chat.clock.runPromise(TestClock.adjust("1 second")));
+            yield* Effect.sleep("5 millis");
+          }
+        }).pipe(Effect.timeout("5 seconds")),
+      );
+      expect(first.state.sent[1]).toBe("Answer");
+      expect(chat.requests.at(-1)?.instructions).toContain("Messaging host project preferences");
       chat.chunks.length = 0;
       await chat.invoke(["gateway", "status"]);
       expect(JSON.parse(chat.chunks.join(""))).toMatchObject({
@@ -1538,6 +1670,52 @@ describe("chat CLI", () => {
       await chmod(path, 0o666);
       await expect(chat.invoke(["memory", "list"])).rejects.toThrow("not protected");
       expect(delivered).toBe(5);
+    } finally {
+      await server.stop(true);
+      await chat.close();
+    }
+  });
+
+  test("project chat, memory and task requests reject an older worker before it can discard scope", async () => {
+    const chat = await fixture();
+    const directory = join(chat.directory, "store");
+    await mkdir(directory, { mode: 0o700 });
+    const path = workerSocketPath(chat.directory);
+    const received: string[] = [];
+
+    const server = Bun.serve({
+      unix: path,
+      fetch(request) {
+        received.push(new URL(request.url).pathname);
+
+        return new Response("Not found", { status: 404 });
+      },
+    });
+
+    await chmod(path, 0o600);
+
+    try {
+      await expect(chat.invoke(["chat", "new", "--project", "acorn", "Review"])).rejects.toThrow(
+        "outdated",
+      );
+      await expect(
+        chat.invoke(["memory", "remember", "--project", "acorn", "style", "Keep it short"]),
+      ).rejects.toThrow("outdated");
+      await expect(
+        chat.invoke([
+          "tasks",
+          "add",
+          "Review",
+          "--project",
+          "acorn",
+          "--at",
+          "2099-01-01T00:00:00Z",
+          "Review",
+        ]),
+      ).rejects.toThrow("outdated");
+      expect(received).toEqual(["/project-commands", "/project-commands", "/project-tasks"]);
+      expect(await readdir(directory)).toEqual(["tasks.sock"]);
+      expect(chat.state.built).toBe(0);
     } finally {
       await server.stop(true);
       await chat.close();

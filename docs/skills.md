@@ -46,6 +46,11 @@ budget. They cannot override explicit user requests or grant tool permissions.
 Scheduled notes and memory remain read-only. A skill cannot authorize memory
 changes; ordinary chat needs an explicit request in the current user message. Automatic session naming does not receive skills.
 
+Combine a skill with `--project <name>` to add [project context](projects.md).
+The project supplies instructions, facts, and optional note limits; the skill
+supplies a procedure within those limits. Both snapshots persist independently.
+Messaging accepts `/new --project acorn --skill weekly-review Review progress`.
+
 Skills are single files. Poppet does not parse YAML metadata, follow references,
 run scripts, download skills, choose them automatically, or let the agent write
 them.

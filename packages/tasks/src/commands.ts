@@ -1,4 +1,4 @@
-import { Skills } from "@poppet/agent";
+import { Skills, loadProject } from "@poppet/agent";
 import { DeliveryDestination, Store } from "@poppet/store";
 import { Context, Effect, Option } from "effect";
 
@@ -83,6 +83,13 @@ export const executeTaskCommand = (
               Effect.mapError((error) => new TaskError({ message: error.message })),
             );
 
+      const project =
+        command.project === undefined
+          ? null
+          : yield* loadProject(command.project).pipe(
+              Effect.mapError((error) => new TaskError({ message: error.message })),
+            );
+
       const resolver = Option.getOrNull(yield* Effect.serviceOption(TaskDestinations));
       let destination: DeliveryDestination | null = null;
 
@@ -108,6 +115,7 @@ export const executeTaskCommand = (
           destination,
           undefined,
           command.action === "add-monitor",
+          project,
         );
 
         return task.monitor ? { ...task, baseline: "pending-first-success" } : task;

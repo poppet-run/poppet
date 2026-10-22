@@ -7,6 +7,7 @@ import {
   PageTransportLive,
   PagesLive,
   SkillsLive,
+  ProjectsLive,
 } from "@poppet/agent";
 import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import { ApiKeyStoreLive } from "@poppet/credentials";
@@ -109,7 +110,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   const store = StoreLive.pipe(Layer.provide(config));
 
   const memory = LocalMemoryLive.pipe(Layer.provide([store, config]));
-  const skills = SkillsLive.pipe(Layer.provide(config));
+  const skills = Layer.merge(SkillsLive, ProjectsLive).pipe(Layer.provide(config));
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store), Layer.provideMerge(skills));
 
   const connectionStatus = createConnectionStatus();

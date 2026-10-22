@@ -55,7 +55,8 @@ Edits change only supplied name, prompt, or schedule fields. A cron replacement
 requires both expression and timezone; a one-off replacement requires a future
 offset-qualified timestamp. Empty patches, unknown fields, conflicting schedules,
 and timezone-only changes are rejected. Identical values are a no-op. Provider,
-model, workload, skill, destination, and monitor/report mode remain unchanged.
+model, workload, skill, project snapshot, destination, and monitor/report mode
+remain unchanged.
 Paused tasks may be edited without resuming them. Cancel a running occurrence
 explicitly before using any of these controls on that task.
 
@@ -251,6 +252,16 @@ fresh session. File edits and deletion do not change existing tasks, including
 explicit retries. Create a replacement task to use updated instructions.
 `tasks show` includes the snapshot. Scheduled tools remain read-only: neither note writes nor the memory tool is
 available, including when a selected skill requests changes.
+
+## Select a project
+
+Pass `--project <name>` before the prompt to save [project context](projects.md),
+optionally with a skill. Edits, restart, and explicit retries retain the project
+instructions and selected note paths. Each occurrence reads current global and
+project facts; note contents are read on demand. Scheduled tools remain read-only.
+Chat-created tasks inherit their owning session's project snapshot. The model can
+inspect and control tasks only in that project, including unscoped tasks from
+unscoped chats; owner CLI commands retain access to all tasks.
 
 ## Recurring schedules
 

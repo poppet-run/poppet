@@ -44,8 +44,10 @@ session. Earlier messages in an existing thread are not imported.
 
 Use `@Poppet /new --skill weekly-review Review Acorn` to start a fresh session
 with a saved [local skill](../skills.md#messaging-sessions), in a new thread or an
-existing one. `/new <message>` starts without a skill. Previous session history
-is retained; ordinary follow-ups keep the active session's skill snapshot.
+existing one. Add `--project acorn` to select [project context](../projects.md),
+with or without a skill. `/new <message>` starts without either selection.
+Previous session history is retained; ordinary follow-ups keep both snapshots.
+Options precede the prompt; selection errors leave the active session unchanged.
 
 ## Progress and controls
 
@@ -59,7 +61,7 @@ replaces it with ✅ after a successful run. Failed or cancelled requests clear
 the bot's 👀 without adding ✅. These markers are best effort; missing reaction
 permissions do not stop chat, and a crash or network error can leave a stale marker.
 
-In an attached thread, `@Poppet /status` reports its session, selected skill, and latest run;
+In an attached thread, `@Poppet /status` reports its session, selected skill and project, and latest run;
 `@Poppet /cancel` interrupts its active request and cancels its queued requests.
 These are text messages, not registered Discord slash commands. The bot ignores
 other users, bots, and webhooks. DMs, forums, attachments, voice, and streaming

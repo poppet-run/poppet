@@ -111,7 +111,10 @@ export const WorkerRequestsLive = Layer.effect(
     return {
       handle: (request, payload): Effect.Effect<Response, never, Scope.Scope> =>
         Effect.gen(function* () {
-          if (request.method !== "POST" || new URL(request.url).pathname !== "/commands")
+          if (
+            request.method !== "POST" ||
+            !["/commands", "/project-commands"].includes(new URL(request.url).pathname)
+          )
             return new Response("Not found", { status: 404 });
 
           const command = Schema.decodeUnknownOption(WorkerCommand)(payload);
@@ -211,7 +214,11 @@ export const remoteWorkerCommand = (
         try: (signal) =>
           requestWorker(
             path,
-            "/commands",
+            (command.kind === "chat" || command.kind === "memory") &&
+              "project" in command.command &&
+              command.command.project !== undefined
+              ? "/project-commands"
+              : "/commands",
             command.kind === "chat" && writeReasoning !== undefined
               ? { ...command, streamReasoning: true }
               : command,

@@ -25,6 +25,14 @@ line numbers, and snippets. It scans at most 128 files and 128 directories,
 returns at most 100 matches, and rejects directories exceeding 1000 entries.
 The per-tool result budget can truncate read/search results further.
 
+## Project note selections
+
+A [project](projects.md#select-notes) can save up to eight relative paths in
+`notes.json`. Its runs search, read, and write only those paths, subject to the
+normal checks and permissions. The path list stays fixed with the session/task;
+contents stay current and are read lazily. Missing notes fail without a fallback.
+No selection preserves the configured root policy; `[]` permits no notes.
+
 ## Tool execution
 
 Runs default to eight model turns and sixteen tool calls. Every requested batch

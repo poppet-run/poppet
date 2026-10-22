@@ -11,6 +11,7 @@ export const searchSessions = (
   database: Database,
   query: string,
   maxBytes: number,
+  project?: string | null,
 ): SessionSearchResult => {
   const text = Schema.decodeUnknownSync(SessionSearchQuery)(query);
   Schema.decodeUnknownSync(Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 })))(
@@ -43,9 +44,9 @@ export const searchSessions = (
       length(session_search.text) AS textLength
       FROM session_search JOIN messages AS m ON m.id = session_search.rowid
       JOIN sessions AS s ON s.id = m.session_id
-      WHERE session_search MATCH ?
+      WHERE session_search MATCH ? AND (? OR json_extract(s.project, '$.name') IS ?)
       ORDER BY rank, m.id LIMIT 11`)
-        .all(marker, marker, terms.join(" AND ")),
+        .all(marker, marker, terms.join(" AND "), project === undefined ? 1 : 0, project ?? null),
     ),
   );
 

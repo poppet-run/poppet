@@ -8,6 +8,7 @@ import { initialSchema } from "#src/migrations/20261018165445_initial-schema";
 import { changeAwareMonitoring } from "#src/migrations/20261021120000_change-aware-monitoring";
 import { taskControls } from "#src/migrations/20261021210000_task-controls";
 import { attachments } from "#src/migrations/20261021220000_attachments";
+import { projects } from "#src/migrations/20261021230000_projects";
 
 export interface Migration {
   readonly version: number;
@@ -22,6 +23,7 @@ export const migrations: ReadonlyArray<Migration> = [
   { version: 2, name: "change-aware-monitoring", sql: changeAwareMonitoring },
   { version: 3, name: "task-controls", sql: taskControls },
   { version: 4, name: "attachments", sql: attachments },
+  { version: 5, name: "projects", sql: projects },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

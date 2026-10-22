@@ -13,13 +13,18 @@ export const remoteTaskCommand = (path: string, command: TaskCommand) =>
     try: async (signal) => {
       const response = await requestWorker(
         path,
-        "/tasks",
+        "project" in command && command.project !== undefined ? "/project-tasks" : "/tasks",
         command,
         AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
       );
 
       if (response === null) return null;
 
+      if (response.status === 404)
+        throw new TaskError({
+          message:
+            "The worker rejected this command. Restart an outdated worker to load project context support. The command was not retried.",
+        });
       const reply = Schema.decodeUnknownSync(Reply)(await response.json());
 
       if (!reply.ok) throw new TaskError({ message: reply.message });

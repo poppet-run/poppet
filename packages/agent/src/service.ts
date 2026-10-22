@@ -216,7 +216,10 @@ export const AgentLive = Layer.effect(
 
             const reply = Stream.unwrap(
               Effect.gen(function* () {
-                const basePrompt = yield* measureTiming("memory", readMemoryPrompt());
+                const basePrompt = yield* measureTiming(
+                  "memory",
+                  readMemoryPrompt(session.project),
+                );
 
                 const prompt =
                   session.skill === null
@@ -255,6 +258,7 @@ export const AgentLive = Layer.effect(
                   options.source?.kind === "voice" || (options.readOnlyTools ?? false),
                   options.taskDestination ?? null,
                   options.source,
+                  session.project,
                 );
               }),
             ).pipe(

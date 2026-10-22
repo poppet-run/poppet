@@ -439,24 +439,25 @@ describe.concurrent("interactive chat loop", () => {
     expect(state.reads()).toBe(1);
   });
 
-  test.each([{ coding: true }, { coding: false, skill: "review" }])(
-    "rejects resume selection changes before reading input",
-    async (selection) => {
-      const state = fixture([]);
+  test.each([
+    { coding: true },
+    { coding: false, skill: "review" },
+    { coding: false, project: "acorn" },
+  ])("rejects resume selection changes before reading input", async (selection) => {
+    const state = fixture([]);
 
-      const result = await state.run(
-        interactiveChat(
-          { ...selection, sessionId: "saved-session" },
-          () => Effect.die("Must not submit"),
-          state.read,
-        ).pipe(Effect.result),
-      );
+    const result = await state.run(
+      interactiveChat(
+        { ...selection, sessionId: "saved-session" },
+        () => Effect.die("Must not submit"),
+        state.read,
+      ).pipe(Effect.result),
+    );
 
-      expect(result).toHaveProperty(
-        "failure.message",
-        expect.stringContaining("saved workload and skill"),
-      );
-      expect(state.reads()).toBe(0);
-    },
-  );
+    expect(result).toHaveProperty(
+      "failure.message",
+      expect.stringContaining("saved workload, skill and project"),
+    );
+    expect(state.reads()).toBe(0);
+  });
 });

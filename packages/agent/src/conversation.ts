@@ -13,6 +13,7 @@ import {
   Store,
   StoreError,
   type Run,
+  type ProjectSnapshot,
   type StoredMessage,
   type DeliveryDestination,
 } from "@poppet/store";
@@ -74,6 +75,7 @@ export const conversation = Effect.gen(function* () {
       | WebSearchCall
       | PreparedTaskCall
       | PreparedExternalCall,
+    project: ProjectSnapshot | null,
   ) => {
     const operation = Effect.gen(function* () {
       yield* store.startToolCall(run.id, callId);
@@ -82,12 +84,12 @@ export const conversation = Effect.gen(function* () {
       const result: Effect.Effect<string, AgentError | StoreError> = Match.value(call).pipe(
         Match.when({ name: "search_sessions" }, (plan) =>
           store
-            .searchSessions(plan.query, policy.toolBytes)
+            .searchSessions(plan.query, policy.toolBytes, project?.name ?? null)
             .pipe(Effect.map((value) => JSON.stringify(value))),
         ),
         Match.when({ name: "read_session" }, (plan) =>
           store
-            .readSession(plan.query, policy.toolBytes)
+            .readSession(plan.query, policy.toolBytes, project?.name ?? null)
             .pipe(Effect.map((value) => JSON.stringify(value))),
         ),
         Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
@@ -110,9 +112,14 @@ export const conversation = Effect.gen(function* () {
               ),
         ),
         Match.when({ name: "memory" }, (plan) =>
-          executeMemoryCall(memory, plan, run.id, policy.factsBytes),
+          executeMemoryCall(
+            project === null ? memory : memory.forProject!(project.name),
+            plan,
+            run.id,
+            project === null ? policy.factsBytes : 8192,
+          ),
         ),
-        Match.orElse((plan) => notes.execute(plan)),
+        Match.orElse((plan) => notes.execute(plan, project?.notes)),
       );
 
       const output = yield* measureTiming("tool", result).pipe(
@@ -156,6 +163,7 @@ export const conversation = Effect.gen(function* () {
     readOnlyTools: boolean,
     here: Effect.Effect<DeliveryDestination, AgentError> | null = null,
     source?: TextSource,
+    project: ProjectSnapshot | null = null,
   ) =>
     Stream.unwrap(
       Effect.gen(function* () {
@@ -441,7 +449,7 @@ export const conversation = Effect.gen(function* () {
                       });
 
                       for (const { callId, plan } of planned) {
-                        const { output, urls } = yield* executeTool(run, callId, plan);
+                        const { output, urls } = yield* executeTool(run, callId, plan, project);
 
                         for (const url of urls) allowedURLs.add(url);
                         current.push({ role: "tool", callId, output });

@@ -93,6 +93,34 @@ export const SkillSnapshot = Schema.Struct({
 
 export type SkillSnapshot = typeof SkillSnapshot.Type;
 
+export const ProjectName = SkillName;
+
+export const ProjectNotes = Schema.Array(
+  Schema.NonEmptyString.check(
+    Schema.isMaxLength(1024),
+    Schema.makeFilter(
+      (path) =>
+        !path.includes("\\") &&
+        !path.includes("\0") &&
+        !path.startsWith("/") &&
+        !path.split("/").some((part) => !part || part === "." || part === "..") &&
+        /\.(md|markdown|txt)$/i.test(path),
+    ),
+  ),
+).check(
+  Schema.isMaxLength(8),
+  Schema.makeFilter((paths) => new Set(paths).size === paths.length),
+);
+
+/** Instructions and optional note selection saved at creation, never refreshed implicitly. */
+export const ProjectSnapshot = Schema.Struct({
+  name: ProjectName,
+  content: SkillSnapshot.fields.content,
+  notes: Schema.NullOr(ProjectNotes),
+});
+
+export type ProjectSnapshot = typeof ProjectSnapshot.Type;
+
 /** A saved conversation whose provider, model, and workload stay fixed across runs. */
 export const Session = Schema.Struct({
   id: Id,
@@ -106,6 +134,7 @@ export const Session = Schema.Struct({
   titleAttempted: Schema.Boolean,
   titleUsage: Completion.fields.usage,
   skill: Schema.NullOr(SkillSnapshot),
+  project: Schema.NullOr(ProjectSnapshot),
 });
 
 /** A message ordered within a session; runId is null for history saved outside a run. */

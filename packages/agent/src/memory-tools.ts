@@ -81,8 +81,7 @@ export const executeMemoryCall = (
         return yield* Effect.fail(
           new AgentError({
             reason: "memory-limit",
-            message:
-              "This change would exceed POPPET_FACTS_BYTES. Shorten or forget a fact before adding it.",
+            message: `This change would exceed this run's ${factsBytes}-byte fact budget. Shorten or forget a fact before adding it.`,
           }),
         );
       yield* memory[call.action](call.key, call.value, runId);

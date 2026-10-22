@@ -1,5 +1,5 @@
 import { BunServices } from "@effect/platform-bun";
-import { ChatSettings, logChatDiagnostic, Skills } from "@poppet/agent";
+import { ChatSettings, logChatDiagnostic, Skills, Projects } from "@poppet/agent";
 import {
   AppConfig,
   ConfigSource,
@@ -20,7 +20,7 @@ import {
   type ProviderRegistration,
   ProviderId,
 } from "@poppet/provider";
-import { Session, SessionSearchQuery, SkillName, Store } from "@poppet/store";
+import { Session, SessionSearchQuery, SkillName, ProjectName, Store } from "@poppet/store";
 import {
   WorkerConnections,
   remoteTaskCommand,
@@ -83,6 +83,13 @@ const codingFlag = Flag.Boolean("coding").pipe(
   Flag.withDescription("Use the coding workload"),
   Flag.atMost(1),
   Flag.map(([value = false]) => value),
+);
+
+const projectFlag = Flag.String("project").pipe(
+  Flag.withSchema(ProjectName),
+  Flag.withDescription("Select a project and save its current instructions and note selection"),
+  Flag.atMost(1),
+  Flag.map(([value]) => value),
 );
 
 const skillFlag = Flag.String("skill").pipe(
@@ -213,7 +220,11 @@ export const makeCLI = (
   const runMemory = (command: MemoryCommand) =>
     throughWorker(
       { kind: "memory", command },
-      manageMemory(command).pipe(Effect.provide(runtime.memory), Effect.flatMap(Console.log)),
+      manageMemory(command).pipe(
+        Effect.provide(runtime.memory),
+        Effect.provide(runtime.skills),
+        Effect.flatMap(Console.log),
+      ),
     );
 
   const runWorkerCommand = (action: WorkerAction) => {
@@ -451,10 +462,11 @@ export const makeCLI = (
           ),
           coding: codingFlag,
           skill: skillFlag,
+          project: projectFlag,
         },
-        ({ id, coding, skill }) =>
+        ({ id, coding, skill, project }) =>
           interactiveChat(
-            { sessionId: Option.getOrUndefined(id), coding, skill },
+            { sessionId: Option.getOrUndefined(id), coding, skill, project },
             (command, onSession) => runChat(command, onSession, true),
             readLine,
           ),
@@ -464,12 +476,15 @@ export const makeCLI = (
         {
           coding: codingFlag,
           skill: skillFlag,
+          project: projectFlag,
           text: textArgument("message").pipe(Argument.withSchema(MessageText)),
         },
-        ({ coding, text, skill }) => {
+        ({ coding, text, skill, project }) => {
           const command: ChatCommand = { action: "new", coding, text };
 
-          return runChat(skill === undefined ? command : { ...command, skill });
+          const selected = skill === undefined ? command : { ...command, skill };
+
+          return runChat(project === undefined ? selected : { ...selected, project });
         },
       ).pipe(Command.withDescription("Start a session")),
       Command.make(
@@ -509,17 +524,21 @@ export const makeCLI = (
   const memory = Command.make("memory").pipe(
     Command.withDescription("Manage explicitly saved facts"),
     Command.withSubcommands([
-      Command.make("list", {}, () => runMemory({ action: "list" })).pipe(
-        Command.withDescription("List saved facts"),
-      ),
+      Command.make("list", { project: projectFlag }, ({ project }) =>
+        runMemory(project === undefined ? { action: "list" } : { action: "list", project }),
+      ).pipe(Command.withDescription("List saved facts")),
       ...(["remember", "replace"] as const).map((action) =>
         Command.make(
           action,
           {
+            project: projectFlag,
             key: Argument.String("key").pipe(Argument.withSchema(MemoryKey)),
             value: textArgument("value").pipe(Argument.withSchema(MemoryValue)),
           },
-          ({ key, value }) => runMemory({ action, key, value }),
+          ({ key, value, project }) =>
+            runMemory(
+              project === undefined ? { action, key, value } : { action, key, value, project },
+            ),
         ).pipe(
           Command.withDescription(
             action === "remember" ? "Save a new fact" : "Change an existing fact",
@@ -530,8 +549,12 @@ export const makeCLI = (
         "forget",
         {
           key: Argument.String("key").pipe(Argument.withSchema(MemoryKey)),
+          project: projectFlag,
         },
-        ({ key }) => runMemory({ action: "forget", key }),
+        ({ key, project }) =>
+          runMemory(
+            project === undefined ? { action: "forget", key } : { action: "forget", key, project },
+          ),
       ).pipe(Command.withDescription("Delete a fact")),
     ]),
   );
@@ -645,6 +668,7 @@ export const makeCLI = (
           ),
           coding: codingFlag,
           skill: skillFlag,
+          project: projectFlag,
           discordThread: Flag.String("discord-thread").pipe(
             Flag.withSchema(Schema.NonEmptyString.check(Schema.isPattern(/^[0-9]{1,20}$/))),
             Flag.withDescription("Send each completed result to this authorized Discord thread"),
@@ -678,6 +702,7 @@ export const makeCLI = (
           coding,
           prompt,
           skill,
+          project,
           discordThread,
           telegramChat,
           whatsappChat,
@@ -710,6 +735,7 @@ export const makeCLI = (
               skill,
               delivery,
               monitor,
+              project,
             );
 
             yield* runTasks(command);
@@ -917,6 +943,26 @@ export const makeCLI = (
               }),
             ).pipe(Effect.provide(runtime.config)),
           ).pipe(Command.withDescription("Verify the configured model with a local tool")),
+        ]),
+      ),
+      Command.make("projects").pipe(
+        Command.withDescription("Inspect local project context snapshots"),
+        Command.withSubcommands([
+          Command.make("list", {}, () =>
+            Projects.use((projects) => projects.list).pipe(
+              Effect.flatMap((names) => Console.log(JSON.stringify(names, null, 2))),
+              Effect.provide(runtime.skills),
+            ),
+          ),
+          Command.make(
+            "show",
+            { name: Argument.String("name").pipe(Argument.withSchema(ProjectName)) },
+            ({ name }) =>
+              Projects.use((projects) => projects.load(name)).pipe(
+                Effect.flatMap((project) => Console.log(JSON.stringify(project, null, 2))),
+                Effect.provide(runtime.skills),
+              ),
+          ),
         ]),
       ),
       Command.make("skills").pipe(

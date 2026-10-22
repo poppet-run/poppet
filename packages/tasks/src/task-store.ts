@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
-import { DeliveryDestination, StoreDatabase, SkillSnapshot } from "@poppet/store";
+import { DeliveryDestination, StoreDatabase, SkillSnapshot, ProjectSnapshot } from "@poppet/store";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 
 import { monitoringRecords } from "#src/monitoring";
@@ -33,7 +33,7 @@ export const recurringExpiry = 24 * 60 * 60 * 1000;
 
 const taskSql = `SELECT id, name, prompt, provider, model, workload, schedule,
   monitor, revision, monitor_revision AS monitorRevision, monitor_baseline_after AS monitorBaselineAfter,
-  skill, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
+  skill, project, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
 
 const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, status,
   revision, definition, available_at AS availableAt, origin,
@@ -270,6 +270,7 @@ export const makeTaskStore = (database: Database) => {
     destination: DeliveryDestination | null = null,
     source?: { readonly runId: string; readonly callId: string },
     monitor = false,
+    project: ProjectSnapshot | null = null,
   ) => {
     if (source) {
       const existing = Schema.decodeUnknownSync(
@@ -295,7 +296,7 @@ export const makeTaskStore = (database: Database) => {
     const id = randomUUID();
 
     using statement = database.prepare(
-      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id, monitor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id, monitor, project) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
 
     statement.run(
@@ -313,6 +314,7 @@ export const makeTaskStore = (database: Database) => {
       source?.runId ?? null,
       source?.callId ?? null,
       monitor ? 1 : 0,
+      project === null ? null : Schema.encodeSync(Schema.fromJsonString(ProjectSnapshot))(project),
     );
 
     return task(id);
@@ -894,11 +896,15 @@ export const makeTaskStore = (database: Database) => {
     commandLock,
     monitoring,
     list,
-    listPage: (after: string | null) => {
+    listPage: (after: string | null, project?: string | null) => {
       if (after !== null) task(after);
 
       return Schema.decodeUnknownSync(Schema.Array(Task))(
-        database.query(`${taskSql} WHERE id > ? ORDER BY id LIMIT 11`).all(after ?? ""),
+        database
+          .query(
+            `${taskSql} WHERE id > ? AND (? OR json_extract(project, '$.name') IS ?) ORDER BY id LIMIT 11`,
+          )
+          .all(after ?? "", project === undefined ? 1 : 0, project ?? null),
       );
     },
     status,

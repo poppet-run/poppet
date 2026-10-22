@@ -32,7 +32,8 @@ for synchronization, and whether external edits or failures disabled naming.
 [Bun SQLite](https://bun.sh/docs/runtime/sqlite). The initial migration creates the
 base schema; migration 2 adds change-aware monitoring, migration 3 adds task
 controls and immutable occurrence definitions, and migration 4 adds attachment
-processing results and source-aware recall without resetting saved data.
+processing results and source-aware recall. Migration 5 adds project snapshots
+and scoped facts without resetting saved data.
 Migration SQL lives in timestamped TypeScript files under
 `packages/store/src/migrations/`, registered in order by `migrations.ts`.
 A checksummed migration ledger rejects newer schemas and changed migration
@@ -40,7 +41,7 @@ history. All pending migrations commit together; a failure rolls back the pendin
 batch.
 
 The unreleased base migration history was consolidated into schema version 1;
-the current schema is version 4. Existing version-1 through version-3 databases upgrade in place.
+the current schema is version 5. Existing version-1 through version-4 databases upgrade in place.
 Development databases created with the former 14-step history are still rejected.
 Those legacy databases require a fresh data directory; databases are never reset
 automatically.
@@ -141,6 +142,19 @@ snapshot into the new session; no later run rereads the skill file. Inspection
 exposes snapshots without provider
 continuation or credentials. See [skills](skills.md).
 
+## Project snapshots and facts
+
+Migration 5 adds nullable JSON `project` columns to sessions and jobs and
+backfills occurrence definitions with `project: null`. New selected snapshots
+contain `name`, saved instruction `content`, and a nullable selected `notes` path
+array. Occurrence sessions and retries use their saved definition snapshot.
+
+Facts retain their values, source runs, and timestamps while migrating to a
+composite `(project, key)` primary key. An empty database scope denotes global
+facts; project names are nonempty validated identifiers. Every fact operation
+binds its host scope, and source-run provenance must match it. Deleting a project
+directory does not delete snapshots, history, or facts. See [projects](projects.md).
+
 ## Conversation search index
 
 The schema includes an FTS5 index for completed user messages and final
@@ -154,6 +168,9 @@ titles are read from sessions at query time so manual renames appear immediately
 byte budget. It quotes and binds FTS terms, returns at most ten relevance-ranked
 matches with stable message-ID ordering for ties, and bounds excerpts and output.
 The CLI and agent tool use this same operation on the owning store connection.
+Agent calls bind the owning session's project, including null for unscoped
+sessions; the SQL search filter and session read enforce it before returning
+history. Owner CLI calls omit the scope to inspect all projects.
 See [conversation search](chat.md#search-past-conversations).
 
 `Store.readSession` uses the same indexed eligible message IDs and the

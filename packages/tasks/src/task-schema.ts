@@ -1,5 +1,12 @@
 import { ProviderId } from "@poppet/provider";
-import { DeliveryDestination, Session, SkillName, SkillSnapshot } from "@poppet/store";
+import {
+  DeliveryDestination,
+  ProjectName,
+  ProjectSnapshot,
+  Session,
+  SkillName,
+  SkillSnapshot,
+} from "@poppet/store";
 import { Cron, Data, Schema } from "effect";
 
 /** A task validation, scheduling, or storage failure suitable for command output. */
@@ -150,6 +157,7 @@ export const TaskCommand = Schema.Union([
     action: Schema.Literals(["add", "add-monitor"]),
     task: NewTask,
     skill: Schema.optionalKey(SkillName),
+    project: Schema.optionalKey(ProjectName),
     delivery: Schema.optionalKey(
       Schema.Struct({
         adapter: DeliveryDestination.fields.adapter,
@@ -176,6 +184,7 @@ export const Task = Schema.Struct({
   monitorBaselineAfter: Schema.Natural,
   destination: Schema.NullOr(Schema.fromJsonString(DeliveryDestination)),
   skill: Schema.NullOr(Schema.fromJsonString(SkillSnapshot)),
+  project: Schema.NullOr(Schema.fromJsonString(ProjectSnapshot)),
   schedule: Schema.fromJsonString(Schedule),
   id: Session.fields.id,
   nextAt: Schema.NullOr(Schema.Natural),
@@ -190,6 +199,7 @@ export const TaskDefinition = Schema.Struct({
   ...NewTask.fields,
   monitor: Schema.Boolean,
   skill: Schema.NullOr(SkillSnapshot),
+  project: Schema.NullOr(ProjectSnapshot),
 });
 
 /** One scheduled execution, linked to its session and run as they are created. */

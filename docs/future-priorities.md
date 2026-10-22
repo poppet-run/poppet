@@ -9,7 +9,8 @@ capabilities and the relevant phase's compatibility gates before implementation.
 
 Change-aware monitoring already has a [Phase 23 plan](implementation-plan.md#phase-23-change-aware-monitoring).
 Task controls are implemented in Phase 24, and Telegram documents/local voice in
-Phase 25. Priorities after those remain planned work.
+Phase 25. Project context is implemented in Phase 26; priorities after it remain
+planned work.
 
 ## 1. Editable tasks and snoozing
 
@@ -43,18 +44,18 @@ Starting points: [Telegram](gateways/telegram.md), [gateway architecture](archit
 
 ## 3. Context for individual projects
 
-Planning is captured in [Phase 26](implementation-plan.md#phase-26-context-for-individual-projects),
-with saved project instructions first, then scoped facts and selected notes.
+Implemented in [Phase 26](implementation-plan.md#phase-26-context-for-individual-projects),
+including saved instructions, scoped facts and recall, and selected notes. See
+[project context](projects.md) for setup and the remaining live manual checks.
 
 Let the owner explicitly select a project with its own instructions, selected
 notes, and facts. Project details should load for that project without becoming
 global memory for unrelated conversations.
 
-Start with one selected project folder and a small, documented context file.
-Plan how selection persists in sessions and scheduled tasks, how project and
-global preferences combine, and which files may be read. Selection must not
-silently grant broader file or tool access. Automatic project detection and a
-project-management interface can wait.
+Selection persists in sessions and scheduled tasks; project preferences refine
+compatible global preferences. Selected notes retain normal file checks and
+permissions. Automatic project detection and a project-management interface
+remain outside this phase.
 
 Starting points: [memory](memory.md), [skills](skills.md),
 `packages/agent/src/context.ts`, and the saved session/task snapshots.

@@ -20,6 +20,7 @@ const summary = (task: Task) => ({
   name: task.name,
   monitor: task.monitor,
   revision: task.revision,
+  project: task.project?.name ?? null,
   schedule:
     task.schedule.type === "once"
       ? { type: "once", at: new Date(task.schedule.at).toISOString() }
@@ -102,6 +103,31 @@ export const ChatTasksLive = Layer.effect(
               }),
             );
 
+          const session = yield* store.session(run.sessionId);
+
+          if (session === null)
+            return yield* Effect.fail(
+              new AgentError({
+                reason: "tool-permission",
+                message: "The owning session no longer exists.",
+              }),
+            );
+
+          if ("id" in action && action.id !== null) {
+            const selected = yield* Effect.try({
+              try: () => repo.task(action.id!),
+              catch: invalid,
+            });
+
+            if ((selected.project?.name ?? null) !== (session.project?.name ?? null))
+              return yield* Effect.fail(
+                new AgentError({
+                  reason: "tool-permission",
+                  message: "This task is outside the session's selected project.",
+                }),
+              );
+          }
+
           let input: NewTask | null = null;
           let skill: SkillSnapshot | null = null;
           let destination: DeliveryDestination | null = null;
@@ -167,7 +193,9 @@ export const ChatTasksLive = Layer.effect(
           } else {
             yield* Effect.try({
               try: () =>
-                action.action === "list" ? repo.listPage(action.after) : repo.task(action.id),
+                action.action === "list"
+                  ? repo.listPage(action.after, session.project?.name ?? null)
+                  : repo.task(action.id),
               catch: invalid,
             });
 
@@ -314,6 +342,7 @@ export const ChatTasksLive = Layer.effect(
                     callId: context.callId,
                   },
                   action.action === "create_monitor",
+                  session.project,
                 );
 
                 return bounded(
@@ -349,7 +378,7 @@ export const ChatTasksLive = Layer.effect(
               }
 
               if (action.action === "list") {
-                const rows = repo.listPage(action.after);
+                const rows = repo.listPage(action.after, session.project?.name ?? null);
                 const tasks: ReturnType<typeof summary>[] = [];
 
                 for (const task of rows.slice(0, 10)) {
@@ -425,6 +454,7 @@ export const ChatTasksLive = Layer.effect(
                     model: task.model,
                     workload: task.workload,
                     skill: task.skill?.name ?? null,
+                    project: task.project,
                   },
                   occurrences,
                   target: repo.nextTarget(task.id),
