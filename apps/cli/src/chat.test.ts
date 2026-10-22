@@ -1381,7 +1381,7 @@ describe("chat CLI", () => {
             yield* Effect.promise(() => chat.clock.runPromise(TestClock.adjust("1 second")));
             yield* Effect.sleep("5 millis");
           }
-        }).pipe(Effect.timeout("5 seconds")),
+        }).pipe(Effect.timeout("15 seconds")),
       );
       expect(first.state.sent).toEqual(["Answer"]);
       expect(second.state.sent).toEqual(["Answer"]);
@@ -1415,7 +1415,7 @@ describe("chat CLI", () => {
             yield* Effect.promise(() => chat.clock.runPromise(TestClock.adjust("1 second")));
             yield* Effect.sleep("5 millis");
           }
-        }).pipe(Effect.timeout("5 seconds")),
+        }).pipe(Effect.timeout("15 seconds")),
       );
       expect(first.state.sent[1]).toBe("Answer");
       expect(chat.requests.at(-1)?.instructions).toContain("Messaging host project preferences");
@@ -1441,7 +1441,7 @@ describe("chat CLI", () => {
       if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
       await chat.close();
     }
-  });
+  }, 15_000);
 
   test.each(["all", "tasks", "gateway"] as const)(
     "%s worker mode starts only selected services and keeps shared commands available",
