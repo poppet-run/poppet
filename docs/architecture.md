@@ -142,8 +142,8 @@ The shared store schema defines the bounded name/content snapshot and
 nullable snapshots on sessions and jobs. Task execution copies the saved
 snapshot into each occurrence session without filesystem access. The agent adds
 one saved snapshot to the run's instructions, below base rules, and the existing
-context budget accounts for its serialized bytes. Tool dispatch and scheduled
-read-only restrictions stay in the conversation workflow. Provider packages need
+context budget accounts for its serialized bytes. The conversation loop owns batch validation, permissions, and budgets;
+`tool-execution.ts` owns tool dispatch, outcome classification, and journal writes. Provider packages need
 no skill-specific behavior. See [skills](skills.md).
 
 ## Explicit project context

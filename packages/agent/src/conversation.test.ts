@@ -20,7 +20,6 @@ import { WebSearch, WebSearchError, makeBraveSearch } from "@poppet/web-search";
 import { Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect";
 import OpenAI from "openai";
 
-import { toolFailureKind } from "#src/conversation";
 import { AgentError } from "#src/errors";
 import { ExternalTools, type ExternalTool } from "#src/external-tools";
 import { Notes, NotesLive, noteTools } from "#src/notes";
@@ -30,6 +29,7 @@ import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
 import { maxSkillWrites } from "#src/skill-tools";
 import { Skills } from "#src/skills";
 import { ChatTasks } from "#src/task-tools";
+import { toolFailureKind } from "#src/tool-execution";
 
 const tool = (
   name: string,

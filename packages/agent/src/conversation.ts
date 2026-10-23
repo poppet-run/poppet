@@ -1,4 +1,3 @@
-import { Memory } from "@poppet/memory";
 import { measureTiming, recordTiming } from "@poppet/provider";
 import type {
   Completion,
@@ -29,150 +28,39 @@ import {
   outputBudget,
 } from "#src/context";
 import { AgentError } from "#src/errors";
-import { ExternalTools, type PreparedExternalCall } from "#src/external-tools";
-import {
-  learningMemoryTool,
-  memoryTool,
-  decodeMemoryCall,
-  executeMemoryCall,
-  type MemoryCall,
-} from "#src/memory-tools";
-import { Notes, decodeNoteCall, noteTools, type NoteCall } from "#src/notes";
-import {
-  Pages,
-  decodeFetchPageCall,
-  fetchPageTool,
-  suppliedPageURLs,
-  type FetchPageCall,
-} from "#src/pages";
+import { ExternalTools } from "#src/external-tools";
+import { learningMemoryTool, memoryTool, decodeMemoryCall } from "#src/memory-tools";
+import { decodeNoteCall, noteTools } from "#src/notes";
+import { decodeFetchPageCall, fetchPageTool, suppliedPageURLs } from "#src/pages";
 import { maxTextBytes, streamReply } from "#src/reply";
 import {
   decodeSessionReadCall,
   decodeSessionSearchCall,
   sessionReadTool,
   sessionSearchTool,
-  type SessionReadCall,
-  type SessionSearchCall,
 } from "#src/search";
 import { ChatSettings } from "#src/settings";
 import { skillIndex, skillIndexGuidance } from "#src/skill-index";
 import {
   decodeSkillManageCall,
-  executeSkillManage,
-  maxSkillWrites,
   skillLearningGuidance,
   skillManageTool,
-  type SkillManageCall,
-} from "#src/skill-tools";
-import {
   decodeSkillViewCall,
-  executeSkillView,
   skillViewTool,
-  type SkillViewCall,
 } from "#src/skill-tools";
 import { Skills } from "#src/skills";
-import { ChatTasks, decodeTaskCall, taskTool, type PreparedTaskCall } from "#src/task-tools";
-import { WebSearch, decodeWebSearchCall, webSearchTool, type WebSearchCall } from "#src/web-search";
+import { ChatTasks, decodeTaskCall, taskTool } from "#src/task-tools";
+import { toolExecution, preflightReported, failureReason, failureReply } from "#src/tool-execution";
+import { WebSearch, decodeWebSearchCall, webSearchTool } from "#src/web-search";
 
 type ConversationEvent = ModelEvent | { readonly type: "reasoning-end" };
-
-type ToolPlan =
-  | NoteCall
-  | SessionSearchCall
-  | SessionReadCall
-  | FetchPageCall
-  | MemoryCall
-  | SkillViewCall
-  | SkillManageCall
-  | WebSearchCall
-  | PreparedTaskCall
-  | PreparedExternalCall;
-
-// Failures the model can see and recover from, because no effect is left unconfirmed.
-const reportedReasons: ReadonlySet<string> = new Set([
-  "tool-arguments",
-  "tool-permission",
-  "tool-network",
-  "tool-authentication",
-  "tool-rate-limit",
-  "tool-storage",
-  "tool-limit",
-  "tool-reported",
-  "memory-limit",
-]);
-
-const reportedStoreReasons: ReadonlySet<string> = new Set([
-  "invalid-request",
-  "not-found",
-  "conflict",
-]);
-
-// Note saves commit by renaming; these reasons are raised before that point.
-const unsavedNoteReasons: ReadonlySet<string> = new Set([
-  "tool-arguments",
-  "tool-permission",
-  "tool-limit",
-]);
-
-/**
- * Reported failures become the call's reply. Uncertain failures may have changed state, so
- * they end the run without replay. Fatal failures also end the run.
- */
-export const toolFailureKind = (
-  name: ToolPlan["name"],
-  error: AgentError | StoreError,
-): "reported" | "uncertain" | "fatal" => {
-  if (error instanceof StoreError) {
-    if (name !== "manage_tasks") return "fatal";
-
-    if (error.reason === "storage") return "uncertain";
-
-    return reportedStoreReasons.has(error.reason) ? "reported" : "fatal";
-  }
-
-  if (name === "external") return error.reason === "tool-reported" ? "reported" : "uncertain";
-
-  if (name === "save_note") return unsavedNoteReasons.has(error.reason) ? "reported" : "uncertain";
-
-  if (name === "memory" && error.reason === "memory-storage") return "uncertain";
-
-  if (name === "manage_skill" && error.reason === "skill-storage") return "uncertain";
-
-  return reportedReasons.has(error.reason) ? "reported" : "fatal";
-};
-
-/** Preparation runs before any effect, so its failures are reportable unless storage failed. */
-const preflightReported = (error: AgentError | StoreError) =>
-  error instanceof StoreError
-    ? reportedStoreReasons.has(error.reason)
-    : reportedReasons.has(error.reason);
-
-const failureReason = (error: AgentError | StoreError) =>
-  `${error instanceof AgentError ? "agent" : "store"}:${error.reason}`;
-
-const failureReply = (reason: string, message: string) =>
-  JSON.stringify({ error: { reason, message } });
 
 // Results from these tools carry content the owner did not write.
 const untrustedSources: ReadonlySet<string> = new Set(["fetch_page", "search_web", "external"]);
 
-// Results from these tools only add context, so an oversized one can be refused without loss.
-const contextOnlyTools: ReadonlySet<string> = new Set([
-  "read_note",
-  "search_notes",
-  "search_sessions",
-  "read_session",
-  "fetch_page",
-  "search_web",
-  "view_skill",
-]);
-
 /** Builds the bounded model/tool loop; the caller owns the run's final outcome. */
 export const conversation = Effect.gen(function* () {
   const store = yield* Store;
-  const notes = yield* Notes;
-  const memory = yield* Memory;
-  const pages = yield* Pages;
   const webSearch = yield* WebSearch;
   const policy = yield* ChatSettings;
   const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
@@ -181,127 +69,7 @@ export const conversation = Effect.gen(function* () {
   const learned = Option.getOrNull(yield* Effect.serviceOption(LearnedSkills));
   const clock = yield* Clock.Clock;
 
-  const executeTool = (
-    run: Run,
-    callId: string,
-    call: ToolPlan,
-    project: ProjectSnapshot | null,
-    guard: (output: string) => Effect.Effect<void, AgentError>,
-    skillState: { readonly seen: Map<string, number>; writes: number },
-  ) => {
-    const operation = Effect.gen(function* () {
-      yield* store.startToolCall(run.id, callId);
-      let urls: ReadonlyArray<string> = [];
-
-      const result: Effect.Effect<string, AgentError | StoreError> = Match.value(call).pipe(
-        Match.when({ name: "search_sessions" }, (plan) =>
-          store
-            .searchSessions(plan.query, policy.toolBytes, project?.name ?? null)
-            .pipe(Effect.map((value) => JSON.stringify(value))),
-        ),
-        Match.when({ name: "read_session" }, (plan) =>
-          store
-            .readSession(plan.query, policy.toolBytes, project?.name ?? null)
-            .pipe(Effect.map((value) => JSON.stringify(value))),
-        ),
-        Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
-        Match.when({ name: "view_skill" }, (plan) =>
-          skills === null
-            ? Effect.fail(
-                new AgentError({ reason: "tool-permission", message: "Skills are unavailable." }),
-              )
-            : executeSkillView(skills, plan, learned, skillState.seen),
-        ),
-        Match.when({ name: "manage_skill" }, (plan) =>
-          skills === null || learned === null
-            ? Effect.fail(
-                new AgentError({ reason: "tool-permission", message: "Skills are unavailable." }),
-              )
-            : ++skillState.writes > maxSkillWrites
-              ? Effect.fail(
-                  new AgentError({
-                    reason: "tool-limit",
-                    message: `This run already made ${maxSkillWrites} skill changes. Continue without changing more skills.`,
-                  }),
-                )
-              : executeSkillManage(
-                  skills,
-                  learned,
-                  plan,
-                  { runId: run.id, callId },
-                  skillState.seen,
-                ),
-        ),
-        Match.when({ name: "manage_tasks" }, (plan) => plan.execute),
-        Match.when({ name: "external" }, (plan) => plan.execute),
-        Match.when({ name: "search_web" }, (plan) =>
-          webSearch.search === null
-            ? Effect.fail(
-                new AgentError({
-                  reason: "tool-permission",
-                  message: "Web search is unavailable.",
-                }),
-              )
-            : webSearch.search(plan.query).pipe(
-                Effect.mapError(
-                  (error) => new AgentError({ reason: error.reason, message: error.message }),
-                ),
-                Effect.map((value) => {
-                  urls = value.results.map((item) => item.url);
-
-                  return JSON.stringify(value);
-                }),
-              ),
-        ),
-        Match.when({ name: "memory" }, (plan) =>
-          project === null
-            ? executeMemoryCall(memory, plan, run.id, policy.factsBytes)
-            : executeMemoryCall(memory.forProject(project.name), plan, run.id, 8192),
-        ),
-        Match.orElse((plan) => notes.execute(plan, project?.notes)),
-      );
-
-      const outcome = yield* measureTiming("tool", result).pipe(
-        Effect.tap((output) => (contextOnlyTools.has(call.name) ? guard(output) : Effect.void)),
-        Effect.map((output) => ({ output, reported: false })),
-        Effect.catch((error) => {
-          const kind = toolFailureKind(call.name, error);
-
-          if (kind === "reported") {
-            const output = failureReply(error.reason, error.message);
-
-            return store
-              .finishToolCall(run.id, callId, {
-                status: "failed",
-                reason: failureReason(error),
-                output,
-              })
-              .pipe(Effect.as({ output, reported: true }));
-          }
-
-          return store
-            .finishToolCall(run.id, callId, {
-              status: kind === "uncertain" ? "uncertain" : "failed",
-              reason: failureReason(error),
-            })
-            .pipe(Effect.andThen(Effect.fail(error)));
-        }),
-      );
-
-      if (!outcome.reported && call.name !== "manage_tasks")
-        yield* store.finishToolCall(run.id, callId, {
-          status: "completed",
-          output: outcome.output,
-        });
-
-      return { output: outcome.output, urls: outcome.reported ? [] : urls };
-    });
-
-    // Keep an atomic write and its durable result together on graceful cancellation.
-    return call.name === "save_note" || call.name === "memory" || call.name === "manage_skill"
-      ? Effect.uninterruptible(operation)
-      : operation;
-  };
+  const executeTool = yield* toolExecution;
 
   return (
     run: Run,
