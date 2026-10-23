@@ -50,10 +50,9 @@ describe("configuration", () => {
     }
   });
 
-  test("rejects reserved or unknown providers without falling back", () => {
-    for (const provider of ["openai-api", "unknown"])
-      expect(
-        Exit.isFailure(Effect.runSyncExit(withEnvironment({ POPPET_PROVIDER: provider }))),
-      ).toBe(true);
+  test("rejects an unregistered provider without falling back", () => {
+    expect(
+      Exit.isFailure(Effect.runSyncExit(withEnvironment({ POPPET_PROVIDER: "unknown" }))),
+    ).toBe(true);
   });
 });
