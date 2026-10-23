@@ -827,7 +827,8 @@ the same protocol. Saved record migrations are independent of the wire protocol.
 
 `conversation-naming.ts` owns rename reconciliation and owner-override handling.
 
-Discord thread chat is bundled.
+Discord thread chat is bundled. Additional adapters can be loaded from explicitly
+configured installed packages.
 The gateway runs
 inside the neutral worker host, with scheduling optional, and shares its store, memory, model
 resolver, and serialized `Agent` instance with CLI and scheduled requests. The
@@ -998,7 +999,11 @@ and uncertain delivery counts even when the worker is stopped. Thread-scoped
 `@Poppet /status` and `@Poppet /cancel` are text controls rather than registered
 slash commands. Live Discord checks remain manual.
 
-### Polling
+### External adapters and polling
+
+The CLI loads default `ChannelRegistration` exports listed in `gatewayPackages`
+from `<POPPET_DATA_DIR>/gateways`. Discord remains bundled. See
+[adding a channel](development.md#adding-a-channel) for setup and compatibility.
 
 The optional `poll(cursor)` operation returns ordered updates and their next
 opaque cursors. An ignored update has a null message. The gateway accepts each

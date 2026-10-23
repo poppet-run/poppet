@@ -22,6 +22,7 @@ const FileSettings = Schema.Struct({
   webSearchProvider: Schema.optionalKey(Schema.Literals(["brave", "kagi"])),
   browser: Schema.optionalKey(BrowserSettings),
   mcpServers: Schema.optionalKey(MCPServers),
+  gatewayPackages: Schema.optionalKey(Schema.Array(ConfigText)),
   tasks: Schema.optionalKey(Schema.Struct({ catchUpMinutes: Schema.optionalKey(Schema.Int) })),
   chat: Schema.optionalKey(
     Schema.Struct({
@@ -109,6 +110,8 @@ export const loadConfigSource = Effect.gen(function* () {
     POPPET_WEB_SEARCH_PROVIDER: file.webSearchProvider,
     POPPET_BROWSER: browserFileValue(file.browser, directory),
     POPPET_MCP_SERVERS: mcpFileValue(file.mcpServers, directory),
+    POPPET_GATEWAY_PACKAGES:
+      file.gatewayPackages === undefined ? undefined : JSON.stringify(file.gatewayPackages),
     POPPET_TASK_CATCH_UP_MINUTES: file.tasks?.catchUpMinutes,
     POPPET_LOG_REASONING: file.chat?.logReasoning,
     POPPET_LOG_TIMINGS: file.chat?.logTimings,

@@ -1321,6 +1321,7 @@ describe("makeCLI", () => {
         webSearchProvider: "brave",
         browser: { enabled: false },
         mcpServers: [],
+        gatewayPackages: [],
         chat: { ...chat, outputTokens: 512, runDeadlineSeconds: 300 },
         tasks: { catchUpMinutes: 60 },
         configFile: { path: join(directory, "config.json"), exists: true },

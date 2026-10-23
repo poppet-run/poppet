@@ -4,7 +4,7 @@ import type { ProviderRegistration } from "@poppet/provider";
 import { Effect } from "effect";
 import { CliConfig, CliOutput, Command, GlobalFlag } from "effect/cli";
 
-import { channels } from "#src/channel-registry";
+import { channels, loadRegisteredChannels } from "#src/channel-registry";
 import { type ChatWriter, writeChatText, writeChatThinking } from "#src/chat";
 import { readChatLine } from "#src/chat-prompt";
 import { commandArgs } from "#src/command-args";
@@ -73,4 +73,16 @@ export const makeCLI = (
     );
 };
 
-export const run = makeCLI(providers);
+export const run = (args: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    // Only gateway commands and messaging workers need external adapter code.
+    const registeredChannels =
+      args[0] === "gateway" ||
+      (args[0] === "worker" &&
+        args[1] === "run" &&
+        !args.some((arg) => ["--tasks-only", "--help", "-h"].includes(arg)))
+        ? yield* loadRegisteredChannels
+        : channels;
+
+    return yield* makeCLI(providers, undefined, undefined, registeredChannels)(args);
+  });

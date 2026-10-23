@@ -7,7 +7,13 @@ import {
   dataDirectory as configuredDataDirectory,
 } from "#src/source";
 
-export { ConfigSource, dataDirectory } from "#src/source";
+export { ConfigSource, ConfigSourceLive, dataDirectory } from "#src/source";
+
+/** Extra installed gateway registration entry points, alongside bundled Discord. */
+export const gatewayPackages = Config.schema(
+  Schema.fromJsonString(Schema.Array(ConfigText)),
+  "POPPET_GATEWAY_PACKAGES",
+).pipe(Config.withDefault([]));
 
 export { BrowserSettings, browserSettings } from "@poppet/browser/config";
 

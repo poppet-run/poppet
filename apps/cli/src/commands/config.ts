@@ -6,6 +6,7 @@ import {
   webSearchEnabled,
   webSearchProvider,
   browserSettings,
+  gatewayPackages,
 } from "@poppet/config";
 import { mcpServers } from "@poppet/mcp";
 import { Console, Effect } from "effect";
@@ -25,6 +26,7 @@ export const configCommand = (context: CLIContext) => {
           webSearchProvider: yield* webSearchProvider,
           browser: yield* browserSettings,
           mcpServers: yield* mcpServers,
+          gatewayPackages: yield* gatewayPackages,
           chat: yield* ChatSettings,
           tasks: { catchUpMinutes: yield* taskCatchUpMinutes },
           ...(yield* ConfigSource),

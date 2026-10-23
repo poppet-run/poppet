@@ -100,7 +100,8 @@ the saved answer before manually reposting it. No reply is redirected to another
 channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#deliver-results-to-discord) can select an explicit
 thread with `--channel discord --conversation <thread-id>`. Use the combined worker to execute and deliver
 them. Scheduled results use the same queue and do not alter thread sessions.
-Discord is the only bundled adapter.
+Discord is the only bundled adapter. Additional adapters can use the
+[external package contract](../development.md#adding-a-channel).
 
 ## Validation
 

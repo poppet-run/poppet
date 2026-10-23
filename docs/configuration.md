@@ -47,6 +47,7 @@ channel settings stay in their existing protected stores.
 | `POPPET_DATA_DIR`              | Environment only          | `~/.config/poppet`  | Configuration, credentials, and conversation storage                                                  |
 | `POPPET_PROVIDER`              | `provider`                | `openai-chatgpt`    | `openai-chatgpt`, `opencode-go`, or `openrouter`                                                      |
 | `POPPET_MODEL`                 | `model`                   | Unset               | Model ID for verification and new sessions and tasks                                                  |
+| `POPPET_GATEWAY_PACKAGES`      | `gatewayPackages`         | `[]`                | JSON list of additional installed gateway entry points; Discord stays bundled                         |
 | `POPPET_MCP_SERVERS`           | `mcpServers`              | `[]`                | JSON server list replacing file values; local MCP tools and scheduled permissions                     |
 | `POPPET_BROWSER`               | `browser`                 | `{"enabled":false}` | JSON object replacing browser settings, with native CLI, pinned Chromium, and allowed domains         |
 | `POPPET_WEB_SEARCH`            | `webSearch`               | `false`             | Enable web search when the selected provider has a key                                                |
@@ -94,6 +95,15 @@ environment variables never appear in this output.
 Chat budgets must be positive integers within the limits above. Their ranges are
 validated for `config`, chat execution, worker startup, and conversation search.
 Session listing and inspection work independently of out-of-range budgets.
+
+## External gateways
+
+Discord is bundled and uses its existing `gateway discord setup` command.
+Optional `gatewayPackages` lists additional installed registration entry points.
+`POPPET_GATEWAY_PACKAGES` replaces that list for the current process. See
+[adding a channel](development.md#adding-a-channel) for the fixed installation
+directory and package contract. The background worker reads the file at startup;
+shell overrides do not change an installed worker. Restart it after edits.
 
 ## MCP servers
 
