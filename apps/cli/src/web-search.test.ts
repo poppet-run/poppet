@@ -6,13 +6,13 @@ import { ConfigProvider, Effect, Layer, Redacted } from "effect";
 
 import { WebSearchLive } from "#src/web-search";
 
-describe.each(["brave", "kagi"])("%s search configuration", (provider) => {
+describe.each(["brave", "kagi"])("WebSearchLive", (provider) => {
   test.each([
     [false, true],
     [true, false],
     [true, true],
   ])(
-    "advertises search only when enabled with a key, enabled: %s stored: %s",
+    `when ${provider} search is enabled=%s and stored=%s, advertises it only with both permission and a key`,
     async (enabled, stored) => {
       let reads = 0;
 

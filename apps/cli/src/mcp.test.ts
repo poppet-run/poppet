@@ -222,8 +222,8 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
   };
 };
 
-describe("MCP host integration", () => {
-  test("an unavailable browser leaves configured MCP tools and ordinary chat available", async () => {
+describe("ExternalAgentToolsLive", () => {
+  test("when the browser is unavailable, leaves configured MCP tools and ordinary chat usable", async () => {
     const state = await fixture();
 
     try {
@@ -252,7 +252,7 @@ describe("MCP host integration", () => {
   });
 
   test.each([false, true])(
-    "uses scoped local or worker-owned discovery and durable calls, worker: %s",
+    "when worker ownership is %s, scopes MCP discovery and records durable calls",
     async (worker) => {
       const state = await fixture();
       const fiber = worker ? await state.worker() : null;
@@ -306,7 +306,7 @@ describe("MCP host integration", () => {
   );
 
   test.each([false, true])(
-    "scheduled MCP requires an owner-reviewed read, enabled: %s",
+    "when scheduled MCP is enabled=%s, permits only owner-reviewed reads",
     async (enabled) => {
       const scheduledTools = enabled ? ["read"] : [];
       const state = await fixture("read", scheduledTools);
@@ -353,7 +353,7 @@ describe("MCP host integration", () => {
   );
 
   test.each(["fetch", "note", "memory", "task"] as const)(
-    "untrusted MCP output grants no scheduled %s authority",
+    "when scheduled MCP output is untrusted, grants no %s authority",
     async (action) => {
       const state = await fixture("read", ["read"]);
       state.followup(action);
@@ -385,7 +385,7 @@ describe("MCP host integration", () => {
     },
   );
 
-  test("an unavailable server leaves the allowed server and built-in tools usable", async () => {
+  test("when one MCP server is unavailable, leaves other allowed tools usable", async () => {
     const state = await fixture();
 
     try {
@@ -413,7 +413,7 @@ describe("MCP host integration", () => {
     }
   });
 
-  test("cancelling a dispatched MCP call leaves an uncertain record across reopening and reaps the child", async () => {
+  test("when a dispatched MCP call is cancelled, reaps the child and retains uncertainty across reopening", async () => {
     const state = await fixture("hang");
     const fiber = Effect.runFork(state.program(["chat", "new", "Run the fixture"]));
 
@@ -449,7 +449,7 @@ describe("MCP host integration", () => {
     }
   });
 
-  test("a disconnected call stays uncertain across reopening without replay", async () => {
+  test("when an MCP call disconnects, retains uncertainty across reopening without replay", async () => {
     const state = await fixture("disconnect");
 
     try {

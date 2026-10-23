@@ -44,6 +44,10 @@ services through behavior users rely on, including permissions, saved data,
 cancellation, and recovery. Keep shared protocol contract tests at the public
 entry point. Avoid tests of test scaffolding or dependency bookkeeping.
 
+Use `describe` for the exact source filename, function, method, or type under test.
+Name each `test` as `when <condition>, <expected result>`, keeping parameter values
+in table-driven names so failures identify the case.
+
 Prefer testing behaviour through package services with explicit inputs and local
 fixtures. CLI tests call `makeCLI` in-process for command routing and output.
 Keep subprocess tests for process behaviour such as stdin, terminal requirements,

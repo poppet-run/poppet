@@ -68,9 +68,9 @@ const invoke = async (
   return { stdout, stderr: errors.join("\n"), exitCode };
 };
 
-describe("CLI", () => {
+describe("makeCLI", () => {
   test.each([false, true])(
-    "gateway status redacts channel settings, unreadable: %s",
+    "when gateway settings are unreadable=%s, reports status without exposing secrets",
     async (unreadable) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-channel-status-"));
 
@@ -133,7 +133,7 @@ describe("CLI", () => {
     },
   );
 
-  test("concurrent invocations keep configuration separate without changing the process environment", async () => {
+  test("when invocations run concurrently, isolates configuration without changing the process environment", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-config-"));
     const previous = { ...process.env };
 
@@ -167,7 +167,7 @@ describe("CLI", () => {
     }
   });
 
-  test("a worker disappearing after inspection never falls back to a local task mutation", async () => {
+  test("when a worker disappears after inspection, rejects the task mutation without local fallback", async () => {
     const directory = await mkdtemp("/tmp/p24-owner-");
     const storeDirectory = join(directory, "store");
     await mkdir(storeDirectory, { mode: 0o700 });
@@ -209,7 +209,7 @@ describe("CLI", () => {
     }
   });
 
-  test("edits, skips, snoozes and queues saved tasks without credentials while preserving snapshots and cadence", async () => {
+  test("when saved tasks are edited, skipped, snoozed, or queued offline, preserves snapshots and cadence", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-controls-cli-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "saved-model" };
     const offline = { POPPET_DATA_DIR: directory };
@@ -280,7 +280,7 @@ describe("CLI", () => {
     }
   });
 
-  test("creates recurring monitors locally and rejects one-off monitoring before opening storage", async () => {
+  test("when creating monitors locally, accepts recurring schedules and rejects one-off schedules before storage", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-monitor-cli-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "saved-model" };
 
@@ -327,7 +327,7 @@ describe("CLI", () => {
     }
   });
 
-  test("Kagi setup uses separate credentials and leaves Brave credentials intact", async () => {
+  test("when Kagi credentials are configured, leaves Brave credentials intact", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-kagi-cli-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_WEB_SEARCH_PROVIDER: "kagi" };
 
@@ -400,7 +400,7 @@ describe("CLI", () => {
     }
   });
 
-  test("manages search credentials independently of inference and keeps config and status secret-free", async () => {
+  test("when search credentials change, keeps inference credentials separate and status secret-free", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-web-cli-"));
     const environment = { POPPET_DATA_DIR: directory };
 
@@ -468,7 +468,7 @@ describe("CLI", () => {
     }
   });
 
-  test("rejects missing prompts and invalid task IDs as argument errors before opening the store", async () => {
+  test("when prompts are missing or task IDs are invalid, rejects arguments before opening the store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-invalid-"));
 
     try {
@@ -491,7 +491,7 @@ describe("CLI", () => {
     }
   });
 
-  test("stopped worker status includes providers assigned to saved tasks", async () => {
+  test("when the worker is stopped, includes saved-task providers in status", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-worker-providers-"));
 
     try {
@@ -533,7 +533,7 @@ describe("CLI", () => {
     }
   });
 
-  test("recovers local task commands after a worker crashes without deleting its owner lock", async () => {
+  test("when the worker crashes with its owner lock intact, recovers local task commands", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-crash-"));
 
     const environment = {
@@ -584,7 +584,7 @@ describe("CLI", () => {
     }
   });
 
-  test("manages saved tasks without credentials and validates schedules before creating a store", async () => {
+  test("when managing saved tasks without credentials, validates schedules before creating a store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-tasks-cli-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
 
@@ -657,7 +657,7 @@ describe("CLI", () => {
     }
   });
 
-  test("task, memory, and inspection clients reach the worker and a second worker cannot acquire ownership", async () => {
+  test("when the worker owns storage, routes task, memory, and inspection commands to it and rejects another owner", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-cli-"));
     const environment = { PATH: process.env.PATH ?? "", POPPET_DATA_DIR: directory };
 
@@ -755,7 +755,7 @@ describe("CLI", () => {
     }
   });
 
-  test("manages explicit facts across CLI invocations without a provider connection or model", async () => {
+  test("when no provider is connected or selected, manages explicit facts across invocations", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-memory-cli-"));
     const environment = { POPPET_DATA_DIR: directory };
 
@@ -817,7 +817,7 @@ describe("CLI", () => {
     }
   });
 
-  test("rejects invalid memory commands before creating a store", async () => {
+  test("when memory commands are invalid, rejects them before creating a store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-memory-args-"));
 
     try {
@@ -844,7 +844,7 @@ describe("CLI", () => {
     }
   });
 
-  test("parses an explicit Discord task destination and requires a messaging worker to validate it", async () => {
+  test("when a Discord task destination is supplied, requires messaging-worker validation", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-destination-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
     const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z", "--discord-thread"];
@@ -870,7 +870,7 @@ describe("CLI", () => {
     }
   });
 
-  test("Telegram task destinations require a messaging worker and cannot be combined with Discord", async () => {
+  test("when a Telegram task destination is supplied, requires a messaging worker and rejects conflicting Discord delivery", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-telegram-task-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
     const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z"];
@@ -898,7 +898,7 @@ describe("CLI", () => {
     }
   });
 
-  test("validates WhatsApp task phones and rejects conflicting destinations before saving", async () => {
+  test("when WhatsApp task phones or destinations are invalid, rejects them before saving", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-whatsapp-task-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
     const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z"];
@@ -937,7 +937,7 @@ describe("CLI", () => {
     }
   });
 
-  test("opens and reopens the conversation store without authentication or model selection", async () => {
+  test("when no model or authentication is selected, opens and reopens the conversation store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-store-cli-"));
 
     const environment = {
@@ -971,7 +971,7 @@ describe("CLI", () => {
   });
 
   test.each(["retained registration", "malformed details"])(
-    "logout deletes %s completely without affecting another provider or recreating details",
+    "when logging out with %s, deletes all details without affecting another provider or recreating files",
     async (kind) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-logout-details-"));
       const environment = { POPPET_DATA_DIR: directory };
@@ -1020,7 +1020,7 @@ describe("CLI", () => {
     },
   );
 
-  test("logs in to explicitly chosen API-key providers, defaults to the configured provider, and logs out independently", async () => {
+  test("when logging into API-key providers, honors explicit selection and keeps logout independent", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-login-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "opencode-go" };
 
@@ -1084,7 +1084,7 @@ describe("CLI", () => {
     }
   });
 
-  test("uses environment credentials without writing them until login and rejects invalid overrides", async () => {
+  test("when environment credentials are supplied, uses them without saving until login and rejects invalid overrides", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-env-"));
 
     const environment = {
@@ -1127,7 +1127,7 @@ describe("CLI", () => {
     }
   });
 
-  test("rejects bad provider options before creating credentials", async () => {
+  test("when provider options are invalid, rejects them before creating credentials", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-invalid-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "openrouter" };
 
@@ -1164,7 +1164,7 @@ describe("CLI", () => {
   });
 
   test.each(["stop", "uninstall", "logs"])(
-    "worker recovery %s ignores invalid file settings and rejects an empty data directory",
+    "when worker recovery runs %s, ignores invalid file settings and rejects an empty data directory",
     async (action) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-worker-recovery-"));
       const calls: string[] = [];
@@ -1197,7 +1197,7 @@ describe("CLI", () => {
     },
   );
 
-  test("root and command help never load configuration or create application files", async () => {
+  test("when root or command help is requested, avoids configuration loading and file creation", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-help-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "invalid/provider" };
 
@@ -1267,7 +1267,7 @@ describe("CLI", () => {
     }
   });
 
-  test("rejects conflicting schedules, repeated flags and malformed worker commands before opening storage", async () => {
+  test("when schedules conflict, flags repeat, or worker commands are malformed, rejects them before storage", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-flags-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
     const at = "2099-10-15T09:00:00Z";
@@ -1300,7 +1300,7 @@ describe("CLI", () => {
     }
   });
 
-  test("preserves free-form memory values and task prompts containing flag-like text", async () => {
+  test("when memory values or task prompts contain flag-like text, preserves that text", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-text-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
 
@@ -1348,7 +1348,7 @@ describe("CLI", () => {
     }
   });
 
-  test("config prints environment settings without creating application files", async () => {
+  test("when configuration comes from the environment, prints it without creating application files", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-env-cli-"));
 
     try {
@@ -1370,7 +1370,7 @@ describe("CLI", () => {
     }
   });
 
-  test("config shows file settings, all chat budgets, and environment overrides without opening storage", async () => {
+  test("when file settings have environment overrides, prints effective budgets and sources without opening storage", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-file-cli-"));
 
     const chat = {
@@ -1457,7 +1457,7 @@ describe("CLI", () => {
   });
 
   test.each(["openai-chatgpt", "opencode-go", "openrouter"])(
-    "%s configuration hides secrets and requires a model before opening credentials",
+    "when %s has no selected model, hides configuration secrets and fails before opening credentials",
     async (provider) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-provider-cli-"));
 
@@ -1484,7 +1484,7 @@ describe("CLI", () => {
     },
   );
 
-  test("shows disconnected provider status without creating credentials", async () => {
+  test("when the provider is disconnected, reports status without creating credentials", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-test-"));
 
     try {

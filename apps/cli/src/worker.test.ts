@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,110 +14,114 @@ import { MessagingWorker } from "#src/channels";
 import { workerLaunch } from "#src/worker";
 import { runWorker } from "#src/worker-host";
 
-test("worker installation selects the data directory without persisting shell secrets or setting overrides", () => {
-  const previous = process.env.POPPET_OPENROUTER_API_KEY;
-  const previousSoulBytes = process.env.POPPET_SOUL_BYTES;
-  process.env.POPPET_OPENROUTER_API_KEY = "must-not-be-written";
-  process.env.POPPET_SOUL_BYTES = "4096";
-
-  try {
-    const launch = workerLaunch("/tmp/data");
-
-    expect(launch.environment).toEqual(new Map([["POPPET_DATA_DIR", "/tmp/data"]]));
-  } finally {
-    if (previous === undefined) delete process.env.POPPET_OPENROUTER_API_KEY;
-    else process.env.POPPET_OPENROUTER_API_KEY = previous;
-
-    if (previousSoulBytes === undefined) delete process.env.POPPET_SOUL_BYTES;
-    else process.env.POPPET_SOUL_BYTES = previousSoulBytes;
-  }
-});
-
-test.each(["all", "gateway"] as const)(
-  "%s worker validates and saves destinations through its task socket",
-  async (mode) => {
-    const directory = await mkdtemp(join(tmpdir(), "p11-worker-"));
-    const ready = Deferred.makeUnsafe<void>();
-
-    const destination = {
-      adapter: "discord",
-      account: "bot",
-      ownerId: "owner",
-      scopeId: "guild",
-      parentId: "parent",
-      conversationId: "thread",
-    };
-
-    const config = Layer.succeed(AppConfig, {
-      applicationName: "Test",
-      dataDirectory: directory,
-      notesDirectory: join(directory, "notes"),
-      provider: "test-provider",
-      model: "test-model",
-    });
-
-    const store = StoreLive.pipe(Layer.provideMerge(config));
-
-    const services = Layer.mergeAll(
-      store,
-      Layer.merge(SkillsLive, ProjectsLive).pipe(Layer.provide(config)),
-      TaskRepositoryLive.pipe(Layer.provide(store)),
-      Layer.succeed(Agent, {
-        send: () => Stream.die("Unexpected inference"),
-        nameSession: () => Effect.void,
-      }),
-      Layer.succeed(WorkerRequests, {
-        handle: () => Effect.succeed(new Response("Not found", { status: 404 })),
-      }),
-      Layer.succeed(MessagingWorker, {
-        run: Effect.never,
-        status: Effect.succeed({}),
-        resolveDestination: (adapter, conversationId) => {
-          expect([adapter, conversationId]).toEqual(["discord", "thread"]);
-
-          return Effect.succeed(destination);
-        },
-      }),
-    );
-
-    const output: Console.Console = {
-      ...console,
-      log: (...values) => {
-        if (values.join(" ").startsWith("Worker running."))
-          Effect.runSync(Deferred.succeed(ready, undefined));
-      },
-    };
+describe("workerLaunch", () => {
+  test("when installing a worker, includes the data directory without shell secrets or setting overrides", () => {
+    const previous = process.env.POPPET_OPENROUTER_API_KEY;
+    const previousSoulBytes = process.env.POPPET_SOUL_BYTES;
+    process.env.POPPET_OPENROUTER_API_KEY = "must-not-be-written";
+    process.env.POPPET_SOUL_BYTES = "4096";
 
     try {
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const fiber = yield* runWorker(mode).pipe(Effect.forkScoped);
-            yield* Deferred.await(ready);
+      const launch = workerLaunch("/tmp/data");
 
-            const reply = yield* remoteTaskCommand(workerSocketPath(directory), {
-              action: "add",
-              task: {
-                name: "Summary",
-                prompt: "Summarize notes",
-                provider: "test-provider",
-                model: "test-model",
-                workload: "assistant",
-                schedule: { type: "once", at: Date.parse("2099-10-15T09:00:00Z") },
-              },
-              delivery: { adapter: "discord", conversationId: "thread" },
-            });
-
-            expect(reply?.value).toHaveProperty("destination", destination);
-            expect(
-              (yield* remoteTaskCommand(workerSocketPath(directory), { action: "list" }))?.value,
-            ).toMatchObject([{ destination }]);
-            yield* Fiber.interrupt(fiber);
-          }),
-        ).pipe(Effect.provide(services), Effect.provideService(Console.Console, output)),
-      );
+      expect(launch.environment).toEqual(new Map([["POPPET_DATA_DIR", "/tmp/data"]]));
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      if (previous === undefined) delete process.env.POPPET_OPENROUTER_API_KEY;
+      else process.env.POPPET_OPENROUTER_API_KEY = previous;
+
+      if (previousSoulBytes === undefined) delete process.env.POPPET_SOUL_BYTES;
+      else process.env.POPPET_SOUL_BYTES = previousSoulBytes;
     }
-  },
-);
+  });
+});
+
+describe("runWorker", () => {
+  test.each(["all", "gateway"] as const)(
+    "when a %s worker receives a task destination, validates and saves it through the socket",
+    async (mode) => {
+      const directory = await mkdtemp(join(tmpdir(), "p11-worker-"));
+      const ready = Deferred.makeUnsafe<void>();
+
+      const destination = {
+        adapter: "discord",
+        account: "bot",
+        ownerId: "owner",
+        scopeId: "guild",
+        parentId: "parent",
+        conversationId: "thread",
+      };
+
+      const config = Layer.succeed(AppConfig, {
+        applicationName: "Test",
+        dataDirectory: directory,
+        notesDirectory: join(directory, "notes"),
+        provider: "test-provider",
+        model: "test-model",
+      });
+
+      const store = StoreLive.pipe(Layer.provideMerge(config));
+
+      const services = Layer.mergeAll(
+        store,
+        Layer.merge(SkillsLive, ProjectsLive).pipe(Layer.provide(config)),
+        TaskRepositoryLive.pipe(Layer.provide(store)),
+        Layer.succeed(Agent, {
+          send: () => Stream.die("Unexpected inference"),
+          nameSession: () => Effect.void,
+        }),
+        Layer.succeed(WorkerRequests, {
+          handle: () => Effect.succeed(new Response("Not found", { status: 404 })),
+        }),
+        Layer.succeed(MessagingWorker, {
+          run: Effect.never,
+          status: Effect.succeed({}),
+          resolveDestination: (adapter, conversationId) => {
+            expect([adapter, conversationId]).toEqual(["discord", "thread"]);
+
+            return Effect.succeed(destination);
+          },
+        }),
+      );
+
+      const output: Console.Console = {
+        ...console,
+        log: (...values) => {
+          if (values.join(" ").startsWith("Worker running."))
+            Effect.runSync(Deferred.succeed(ready, undefined));
+        },
+      };
+
+      try {
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const fiber = yield* runWorker(mode).pipe(Effect.forkScoped);
+              yield* Deferred.await(ready);
+
+              const reply = yield* remoteTaskCommand(workerSocketPath(directory), {
+                action: "add",
+                task: {
+                  name: "Summary",
+                  prompt: "Summarize notes",
+                  provider: "test-provider",
+                  model: "test-model",
+                  workload: "assistant",
+                  schedule: { type: "once", at: Date.parse("2099-10-15T09:00:00Z") },
+                },
+                delivery: { adapter: "discord", conversationId: "thread" },
+              });
+
+              expect(reply?.value).toHaveProperty("destination", destination);
+              expect(
+                (yield* remoteTaskCommand(workerSocketPath(directory), { action: "list" }))?.value,
+              ).toMatchObject([{ destination }]);
+              yield* Fiber.interrupt(fiber);
+            }),
+          ).pipe(Effect.provide(services), Effect.provideService(Console.Console, output)),
+        );
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+});

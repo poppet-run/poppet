@@ -14,8 +14,8 @@ const run = <A, E>(program: Effect.Effect<A, E>) =>
     program.pipe(Effect.provideService(Console.Console, quiet), Effect.provide(TestClock.layer())),
   );
 
-describe("messaging adapter supervision", () => {
-  test("restarts a failed or defective adapter with backoff while its siblings keep running", async () => {
+describe("superviseAdapter", () => {
+  test("when an adapter fails or defects, restarts it with backoff while siblings keep running", async () => {
     const health: AdapterHealth = { restarts: 0, lastError: null };
     let attempts = 0;
     let sibling = 0;
@@ -57,7 +57,7 @@ describe("messaging adapter supervision", () => {
     );
   });
 
-  test("caps the restart delay and resets it after a healthy period", async () => {
+  test("when failures persist then recovery lasts ten minutes, caps and resets the restart delay", async () => {
     const health: AdapterHealth = { restarts: 0, lastError: null };
     const started: number[] = [];
 
@@ -89,7 +89,7 @@ describe("messaging adapter supervision", () => {
     );
   });
 
-  test("storage failures and interruption still stop the worker", async () => {
+  test("when storage fails or execution is interrupted, stops the worker", async () => {
     const health: AdapterHealth = { restarts: 0, lastError: null };
 
     const error = await run(
