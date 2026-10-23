@@ -1,6 +1,13 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
-import { Agent, AgentError, Skills, sessionTitle, type ChatFailure } from "@poppet/agent";
+import {
+  Agent,
+  AgentError,
+  Skills,
+  sessionTitle,
+  type ChatFailure,
+  type CommandApproval,
+} from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { DeliveryDestination, Store, StoreError, type Run } from "@poppet/store";
 import {
@@ -9,6 +16,7 @@ import {
   type Duration,
   Console,
   Context,
+  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -24,7 +32,7 @@ import { AttachmentProcessor } from "#src/attachments";
 import { ChannelError, IncomingMessage, MessagingChannel } from "#src/channel";
 import { conversationNaming } from "#src/conversation-naming";
 import { GatewayRepository, gatewayStorage, type Inbox } from "#src/repository";
-import { messagingRequest } from "#src/request";
+import { messagingRequest, isCommandApproval } from "#src/request";
 
 // Prefer paragraph, line, then word breaks in the second half of a chunk, so replies stay
 // readable without producing tiny fragments.
@@ -162,6 +170,53 @@ const gateway = Effect.gen(function* () {
       return destination;
     });
 
+  const approvals = new Map<
+    string,
+    { conversation: string; decision: Deferred.Deferred<boolean> }
+  >();
+
+  const approveCommand = (
+    message: IncomingMessage,
+    conversation: string,
+    request: CommandApproval,
+  ) =>
+    Effect.gen(function* () {
+      const id = randomUUID();
+      const decision = yield* Deferred.make<boolean>();
+      approvals.set(id, { conversation, decision });
+
+      return yield* Effect.gen(function* () {
+        if (!authorized(message)) return false;
+        yield* channel.checkAccess(message, conversation);
+        const text = `Bash approval required: ${request.reason}\nExact invocation: ${JSON.stringify({ command: request.command, cwd: request.cwd, timeoutSeconds: request.timeoutSeconds })}\nReply /approve ${id} or /deny ${id}. Expires in two minutes; permits one execution only.`;
+
+        for (const [index, part] of chunks(text, channel.textLimit).entries())
+          yield* channel.send(
+            conversation,
+            part,
+            createHash("sha256").update(`${id}-${index}`).digest("hex").slice(0, 24),
+          );
+        const approved = yield* Deferred.await(decision).pipe(Effect.timeout("2 minutes"));
+
+        if (approved) yield* channel.checkAccess(message, conversation);
+
+        return approved && authorized(message);
+      }).pipe(
+        Effect.mapError(
+          () =>
+            new AgentError({
+              reason: "command-approval-required",
+              message: "Command approval expired or could not be confirmed. Nothing was executed.",
+            }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            approvals.delete(id);
+          }),
+        ),
+      );
+    });
+
   // Reconcile saved results rather than rerun inference after a crash or failed send.
   const scheduleResults = Effect.gen(function* () {
     yield* gatewayStorage(() => repo.rejectChangedAccounts(channel.id, account));
@@ -270,7 +325,12 @@ const gateway = Effect.gen(function* () {
       if (entry === null) return;
       yield* wake(inboxWake);
 
-      if (message.text !== "/status" && message.text !== "/cancel") return;
+      if (
+        message.text !== "/status" &&
+        message.text !== "/cancel" &&
+        !isCommandApproval(message.text)
+      )
+        return;
       // Controls never create sessions or wait behind the model they may need to cancel.
       yield* gatewayStorage(() => repo.state(entry.id, "cancelled"));
 
@@ -278,7 +338,25 @@ const gateway = Effect.gen(function* () {
 
       yield* mark(message, "working");
 
-      if (message.text === "/cancel") {
+      if (isCommandApproval(message.text)) {
+        yield* channel.checkAccess(message, conversation);
+        const reply = /^\/(approve|deny) ([a-f0-9-]{36})$/.exec(message.text.trim());
+        const pending = reply === null ? undefined : approvals.get(reply[2]!);
+
+        if (pending === undefined || pending.conversation !== conversation) {
+          yield* finish(
+            entry.id,
+            "No matching pending approval in this conversation. It may have expired; request the operation again.",
+          );
+        } else {
+          approvals.delete(reply![2]!);
+          yield* Deferred.succeed(pending.decision, reply![1] === "approve");
+          yield* finish(
+            entry.id,
+            reply![1] === "approve" ? "Approved this exact command once." : "Command denied.",
+          );
+        }
+      } else if (message.text === "/cancel") {
         yield* gatewayStorage(() => repo.cancel(channel.id, account, conversation));
 
         if (active?.entry.conversationId === conversation) {
@@ -456,6 +534,7 @@ const gateway = Effect.gen(function* () {
           yield* Stream.runDrain(
             agent.send(session.id, prompt, {
               runId: entry.runId,
+              approveCommand: (request) => approveCommand(entry.message, conversation, request),
               source,
               readOnlyTools: source !== undefined && !entry.message.text,
               taskDestination: Effect.gen(function* () {
@@ -537,13 +616,15 @@ const gateway = Effect.gen(function* () {
             if (saved.conversationId !== null && error !== null && !(error instanceof StoreError)) {
               yield* finish(
                 entry.id,
-                error instanceof ChannelError && error.reason === "attachment"
+                error instanceof AgentError && error.reason.startsWith("command-")
                   ? error.message
-                  : error instanceof AgentError &&
-                      error.reason === "context-limit" &&
-                      entry.message.attachment !== undefined
-                    ? "This attachment and request exceed the configured conversation context budget. Send a shorter file or caption. No inference was started."
-                    : "The request failed. Use /status in this conversation to inspect its session before sending a new request.",
+                  : error instanceof ChannelError && error.reason === "attachment"
+                    ? error.message
+                    : error instanceof AgentError &&
+                        error.reason === "context-limit" &&
+                        entry.message.attachment !== undefined
+                      ? "This attachment and request exceed the configured conversation context budget. Send a shorter file or caption. No inference was started."
+                      : "The request failed. Use /status in this conversation to inspect its session before sending a new request.",
                 "failed",
               );
             } else yield* gatewayStorage(() => repo.state(entry.id, "failed"));

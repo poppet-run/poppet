@@ -35,3 +35,6 @@ export const messagingRequest = (text: string) =>
 
     return { fresh: true, prompt, skill };
   });
+
+/** Approval replies are owner controls, never prompts for the model. */
+export const isCommandApproval = (text: string) => /^\/(?:approve|deny)(?:\s|$)/.test(text);

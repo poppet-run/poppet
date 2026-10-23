@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   Agent,
   AgentLive,
+  Bash,
   ChatSettings,
   defaultPolicy,
   type ChatPolicy,
@@ -73,6 +74,7 @@ const fixture = async (
   tools = false,
   policy: Partial<ChatPolicy> = {},
   pages: Pages["Service"] = { fetch: () => Effect.die("Unexpected page fetch") },
+  bash?: Bash["Service"],
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-gateway-"));
   const requests: ModelRequest[] = [];
@@ -124,6 +126,7 @@ const fixture = async (
         ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
         Layer.succeed(WebSearch, { search: null }),
         Layer.succeed(Pages, pages),
+        bash === undefined ? Layer.empty : Layer.succeed(Bash, bash),
         Layer.succeed(ModelResolver, {
           resolve: (provider, model) => {
             expect([provider, model]).toEqual(["test-provider", "test-model"]);
@@ -216,6 +219,120 @@ const scheduled = (destination: DeliveryDestination | null) =>
   });
 
 describe.concurrent("Gateway", () => {
+  test.each(["approve", "deny", "timeout", "cancel", "revoked"])(
+    "when command approval ends with %s, binds the decision to the owner and original conversation",
+    async (action) => {
+      const requested = Effect.runSync(Deferred.make<string>());
+      let executed = 0;
+      let revoked = false;
+
+      const state = await fixture(
+        {
+          checkAccess: (input) =>
+            Effect.suspend(() => {
+              if (revoked)
+                return Effect.fail(new ChannelError({ reason: "permission", message: "Revoked" }));
+
+              if (action === "revoked" && input.messageId === "decision") revoked = true;
+
+              return Effect.void;
+            }),
+          send: (_conversation, text) =>
+            Effect.gen(function* () {
+              const id = /Reply \/approve ([a-f0-9-]{36})/.exec(text)?.[1];
+
+              if (id) yield* Deferred.succeed(requested, id);
+
+              return "sent";
+            }),
+        },
+        (request) => {
+          if (request.settings.toolChoice === "none")
+            return response(
+              JSON.stringify({ decision: "needs_approval", reason: "Restart a service" }),
+            );
+
+          if (request.messages.at(-1)?.role === "tool") return response("Done");
+
+          return Stream.make({
+            type: "completed",
+            response: {
+              output: [
+                {
+                  type: "tool-call",
+                  namespace: "poppet_system",
+                  name: "bash",
+                  callId: "bash-1",
+                  arguments: JSON.stringify({
+                    command: "restart-service",
+                    cwd: "/tmp",
+                    timeoutSeconds: 5,
+                  }),
+                },
+              ],
+              continuation: {
+                version: 1,
+                provider: "test-provider",
+                model: "test-model",
+                data: {},
+              },
+              finishReason: "tool-calls",
+              usage: null,
+            },
+          });
+        },
+        true,
+        {},
+        undefined,
+        {
+          run: () =>
+            Effect.sync(() => {
+              executed++;
+
+              return { stdout: "done", stderr: "", exitCode: 0, truncated: false };
+            }),
+        },
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            yield* gateway.accept(message("start", "thread", "Restart the service"));
+            const running = yield* gateway.processNext.pipe(Effect.forkChild);
+            const id = yield* Deferred.await(requested);
+            yield* gateway.accept({
+              ...message("stranger", "thread", `/approve ${id}`),
+              senderId: "stranger",
+            });
+            yield* gateway.accept(message("other", "other-thread", `/approve ${id}`));
+            expect(executed).toBe(0);
+
+            if (action === "timeout") yield* TestClock.adjust("2 minutes");
+            else
+              yield* gateway.accept(
+                message(
+                  "decision",
+                  "thread",
+                  action === "cancel"
+                    ? "/cancel"
+                    : `/${action === "revoked" ? "approve" : action} ${id}`,
+                ),
+              );
+            yield* Fiber.join(running);
+            expect(executed).toBe(action === "approve" ? 1 : 0);
+            revoked = false;
+            yield* gateway.accept(message("replay", "thread", `/approve ${id}`));
+            expect(yield* gateway.processNext).toBe(false);
+            expect(executed).toBe(action === "approve" ? 1 : 0);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test("when skill selections change across restart, preserves valid snapshots and resets only with new", async () => {
     const state = await fixture();
 

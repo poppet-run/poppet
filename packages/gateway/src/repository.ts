@@ -5,6 +5,7 @@ import { DeliveryDestination, StoreDatabase, StoreError } from "@poppet/store";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { IncomingMessage, ChannelError } from "#src/channel";
+import { isCommandApproval } from "#src/request";
 
 const Inbox = Schema.Struct({
   id: Schema.Natural,
@@ -290,7 +291,11 @@ const repository = Effect.gen(function* () {
               .get(adapter, account),
           );
 
-          const control = message.text === "/status" || message.text === "/cancel";
+          const control =
+            message.text === "/status" ||
+            message.text === "/cancel" ||
+            isCommandApproval(message.text);
+
           const overloaded = counts.count >= 64 && !control;
 
           if (overloaded && overloadReply === undefined)
