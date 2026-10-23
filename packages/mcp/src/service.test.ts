@@ -90,15 +90,18 @@ const expireRequest = async <A>(
     await activity.promise;
 
     // File IO lets the real subprocess progress while only its timers advance.
-    // eslint-disable-next-line no-unmodified-loop-condition -- The Promise settles during file IO.
-    for (let attempt = 0; attempt < 1000 && !settled; attempt++) {
-      // eslint-disable-next-line no-await-in-loop
-      if (!(await readdir(state.directory)).includes("events")) continue;
-      // eslint-disable-next-line no-await-in-loop
-      const events = await state.events();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        for (let attempt = 0; attempt < 1000; attempt++) {
+          if (settled) break;
 
-      if (events.some((event) => event.method === method)) jest.advanceTimersToNextTimer();
-    }
+          if (!(yield* Effect.promise(() => readdir(state.directory))).includes("events")) continue;
+          const events = yield* Effect.promise(() => state.events());
+
+          if (events.some((event) => event.method === method)) jest.advanceTimersToNextTimer();
+        }
+      }),
+    );
 
     expect(settled).toBe(true);
 
@@ -111,10 +114,9 @@ const expireRequest = async <A>(
 
 // Real time passes for the child process while the test clock controls backoff.
 const reaped = (pid: number) =>
-  Effect.promise(async () => {
-    // Exit is observed by polling the process table.
-    // eslint-disable-next-line no-await-in-loop
-    while (!dead(pid)) await new Promise((resolve) => setTimeout(resolve, 5));
+  Effect.gen(function* () {
+    while (!dead(pid))
+      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 5)));
   });
 
 describe("MCP", () => {

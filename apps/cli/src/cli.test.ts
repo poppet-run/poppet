@@ -831,12 +831,11 @@ describe("makeCLI", () => {
         { args: ["unknown"], message: "Unknown subcommand" },
       ];
 
-      for (const { args, message } of cases) {
-        // eslint-disable-next-line no-await-in-loop -- Cases share one application directory.
+      await Array.fromAsync(cases, async ({ args, message }) => {
         const result = await invoke(["memory", ...args], { POPPET_DATA_DIR: directory });
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain(message);
-      }
+      });
 
       expect(await readdir(directory)).toEqual([]);
     } finally {
@@ -911,16 +910,18 @@ describe("makeCLI", () => {
 
       expect(invalid.exitCode).toBe(1);
 
-      for (const destination of ["--discord-thread=400", "--telegram-chat=200"]) {
-        // eslint-disable-next-line no-await-in-loop -- Cases share one application directory.
-        const conflict = await invoke(
-          [...command, destination, "--whatsapp-chat=447700900002", "Summary"],
-          environment,
-        );
+      await Array.fromAsync(
+        ["--discord-thread=400", "--telegram-chat=200"],
+        async (destination) => {
+          const conflict = await invoke(
+            [...command, destination, "--whatsapp-chat=447700900002", "Summary"],
+            environment,
+          );
 
-        expect(conflict.exitCode).toBe(1);
-        expect(conflict.stderr).toContain("Choose only one messaging destination");
-      }
+          expect(conflict.exitCode).toBe(1);
+          expect(conflict.stderr).toContain("Choose only one messaging destination");
+        },
+      );
 
       expect(await readdir(directory)).toEqual([]);
 
@@ -1150,12 +1151,11 @@ describe("makeCLI", () => {
         { args: ["provider", "status", "--key-stdin"], message: "Unrecognized flag: --key-stdin" },
       ];
 
-      for (const { args, message } of cases) {
-        // eslint-disable-next-line no-await-in-loop -- Cases share one application directory.
+      await Array.fromAsync(cases, async ({ args, message }) => {
         const result = await invoke(args, environment);
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain(message);
-      }
+      });
 
       expect(await readdir(directory)).toEqual([]);
     } finally {
@@ -1223,14 +1223,16 @@ describe("makeCLI", () => {
     ];
 
     try {
-      for (const args of [[], ["-h"], ...paths.map((path) => path.split(" ").concat("--help"))]) {
-        // eslint-disable-next-line no-await-in-loop -- Cases share one application directory.
-        const result = await invoke(args, environment);
-        expect(result.exitCode).toBe(0);
-        expect(result.stderr).toBe("");
-        expect(result.stdout).toContain("USAGE");
-        expect(result.stdout).toContain("poppet");
-      }
+      await Array.fromAsync(
+        [[], ["-h"], ...paths.map((path) => path.split(" ").concat("--help"))],
+        async (args) => {
+          const result = await invoke(args, environment);
+          expect(result.exitCode).toBe(0);
+          expect(result.stderr).toBe("");
+          expect(result.stdout).toContain("USAGE");
+          expect(result.stdout).toContain("poppet");
+        },
+      );
 
       const rootHelp = await invoke(["--help"], environment);
       expect(rootHelp.stdout).toContain("A personal AI agent for local use");
@@ -1287,12 +1289,11 @@ describe("makeCLI", () => {
     ];
 
     try {
-      for (const args of commands) {
-        // eslint-disable-next-line no-await-in-loop -- Cases share one application directory.
+      await Array.fromAsync(commands, async (args) => {
         const result = await invoke(args, environment);
         expect({ args, exitCode: result.exitCode }).toEqual({ args, exitCode: 1 });
         expect(result.stderr).not.toBe("");
-      }
+      });
 
       expect(await readdir(directory)).toEqual([]);
     } finally {

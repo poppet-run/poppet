@@ -448,31 +448,32 @@ describe("chat.ts", () => {
         });
         chat.state.taskId = task.id;
 
-        for (const [action, paused] of [
-          ["show", 0],
-          ["pause", 1],
-          ["resume", 0],
-          ["list", 0],
-        ] as const) {
-          chat.state.taskAction = action;
-          // eslint-disable-next-line no-await-in-loop -- Each action observes the preceding saved state.
-          await chat.invoke(["chat", "new", `${action} the saved task`]);
-          expect(chat.requests.at(-1)?.tools).toContainEqual(
-            expect.objectContaining({ name: "manage_tasks", namespace: "poppet_tasks" }),
-          );
-          const reply = chat.requests.at(-1)?.messages.at(-1);
+        await Array.fromAsync(
+          [
+            ["show", 0],
+            ["pause", 1],
+            ["resume", 0],
+            ["list", 0],
+          ] as const,
+          async ([action, paused]) => {
+            chat.state.taskAction = action;
+            await chat.invoke(["chat", "new", `${action} the saved task`]);
+            expect(chat.requests.at(-1)?.tools).toContainEqual(
+              expect.objectContaining({ name: "manage_tasks", namespace: "poppet_tasks" }),
+            );
+            const reply = chat.requests.at(-1)?.messages.at(-1);
 
-          if (reply?.role !== "tool") throw new Error("Missing task tool reply");
-          expect(JSON.parse(reply.output)).toMatchObject(
-            action === "list"
-              ? { tasks: [{ id: task.id, name: task.name, paused }] }
-              : { task: { id: task.id, name: task.name, paused } },
-          );
+            if (reply?.role !== "tool") throw new Error("Missing task tool reply");
+            expect(JSON.parse(reply.output)).toMatchObject(
+              action === "list"
+                ? { tasks: [{ id: task.id, name: task.name, paused }] }
+                : { task: { id: task.id, name: task.name, paused } },
+            );
 
-          // eslint-disable-next-line no-await-in-loop -- Inspect each mutation before the next action.
-          await chat.invoke(["tasks", "show", task.id]);
-          expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ task: { id: task.id, paused } });
-        }
+            await chat.invoke(["tasks", "show", task.id]);
+            expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ task: { id: task.id, paused } });
+          },
+        );
       } finally {
         if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
         await chat.close();
@@ -1742,19 +1743,21 @@ describe("chat.ts", () => {
     await chmod(path, 0o600);
 
     try {
-      for (const response of [
-        '{"type":"failed","message":"Already saved."}\n',
-        '{"type":"stdout","text":"Possibly saved"}\n',
-        '{"type":"stdout"}\n',
-        '{"type":"done"}\n{"type":"stdout","text":"Too late"}\n',
-      ]) {
-        reply = response;
-        // Each response is selected before issuing the next request.
-        // eslint-disable-next-line no-await-in-loop
-        await expect(
-          chat.invoke(["memory", "remember", "project", "Acorn"]),
-        ).rejects.toHaveProperty("_tag", "WorkerRequestError");
-      }
+      await Array.fromAsync(
+        [
+          '{"type":"failed","message":"Already saved."}\n',
+          '{"type":"stdout","text":"Possibly saved"}\n',
+          '{"type":"stdout"}\n',
+          '{"type":"done"}\n{"type":"stdout","text":"Too late"}\n',
+        ],
+        async (response) => {
+          reply = response;
+          // Each response is selected before issuing the next request.
+          await expect(
+            chat.invoke(["memory", "remember", "project", "Acorn"]),
+          ).rejects.toHaveProperty("_tag", "WorkerRequestError");
+        },
+      );
 
       expect(delivered).toBe(4);
       expect(await readdir(directory)).toEqual(["tasks.sock"]);
