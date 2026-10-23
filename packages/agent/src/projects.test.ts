@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop -- Each filesystem mutation is checked before the next validation case. */
 import { describe, expect, test } from "bun:test";
 import { link, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -85,10 +84,10 @@ const fixture = async (contextBytes = defaultPolicy.contextBytes) => {
   const layer = AgentLive.pipe(Layer.provideMerge(dependencies));
   await mkdir(join(directory, "notes"));
 
-  for (const name of ["acorn", "blue"]) {
+  await Array.fromAsync(["acorn", "blue"], async (name) => {
     await mkdir(join(directory, "projects", name), { recursive: true });
     await writeFile(join(directory, "projects", name, "PROJECT.md"), `${name} saved instructions`);
-  }
+  });
 
   return {
     directory,
@@ -359,17 +358,20 @@ describe.concurrent("projects.ts", () => {
     const root = join(state.directory, "projects", "acorn");
 
     try {
-      for (const json of [
-        '["../outside.md"]',
-        '["/outside.md"]',
-        '["same.md","same.md"]',
-        JSON.stringify(Array.from({ length: 9 }, (_, index) => `${index}.md`)),
-      ]) {
-        await writeFile(join(root, "notes.json"), json);
-        await expect(
-          state.run(Projects.use((projects) => projects.load("acorn"))),
-        ).rejects.toThrow();
-      }
+      await Array.fromAsync(
+        [
+          '["../outside.md"]',
+          '["/outside.md"]',
+          '["same.md","same.md"]',
+          JSON.stringify(Array.from({ length: 9 }, (_, index) => `${index}.md`)),
+        ],
+        async (json) => {
+          await writeFile(join(root, "notes.json"), json);
+          await expect(
+            state.run(Projects.use((projects) => projects.load("acorn"))),
+          ).rejects.toThrow();
+        },
+      );
 
       await rm(join(root, "notes.json"));
       await writeFile(join(root, "PROJECT.md"), "x".repeat(8193));

@@ -446,14 +446,18 @@ describe.concurrent("browser.ts", () => {
     try {
       const deadline = Date.now() + 3000;
 
-      // Readiness depends on the preceding fixture request.
-      /* eslint-disable no-await-in-loop */
-      while (
-        !(await readFile(state.trace, "utf8").catch(() => "")).includes('"action":"click"') &&
-        Date.now() < deadline
-      )
-        await Bun.sleep(10);
-      /* eslint-enable no-await-in-loop */
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          while (Date.now() < deadline) {
+            const trace = yield* Effect.promise(() =>
+              readFile(state.trace, "utf8").catch(() => ""),
+            );
+
+            if (trace.includes('"action":"click"')) return;
+            yield* Effect.sleep("10 millis");
+          }
+        }),
+      );
       expect(await readFile(state.trace, "utf8")).toContain('"action":"click"');
       await Effect.runPromise(Fiber.interrupt(fiber));
       await state.cleaned();

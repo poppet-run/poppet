@@ -68,23 +68,22 @@ describe("runLoggedWorker", () => {
 
     try {
       // The ready line follows socket permissions and scoped service acquisition.
-      let ready = false;
+      const ready = await Effect.runPromise(
+        Effect.gen(function* () {
+          for (let attempt = 0; attempt < 500; attempt++) {
+            const content = yield* Effect.promise(async () =>
+              (await Bun.file(path).exists()) ? readFile(path, "utf8") : "",
+            );
 
-      // The subprocess must publish readiness before this test sends commands or signals.
-      /* eslint-disable no-await-in-loop */
-      for (let attempt = 0; attempt < 500; attempt++) {
-        if (
-          (await Bun.file(path).exists()) &&
-          (await readFile(path, "utf8")).includes("Worker running.")
-        ) {
-          ready = true;
-          break;
-        }
+            if (content.includes("Worker running.")) return true;
 
-        if (child.exitCode !== null) break;
-        await Bun.sleep(10);
-      }
-      /* eslint-enable no-await-in-loop */
+            if (child.exitCode !== null) return false;
+            yield* Effect.sleep("10 millis");
+          }
+
+          return false;
+        }),
+      );
 
       expect(ready).toBe(true);
 

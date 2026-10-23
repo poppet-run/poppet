@@ -70,16 +70,18 @@ describe("makeAttachmentProcessor", () => {
     });
     expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
 
-    for (const bytes of [
-      Buffer.from([0xff]),
-      Buffer.from("binary\0text"),
-      Buffer.from(" "),
-      Buffer.from("x".repeat(32769)),
-      Buffer.from("x".repeat(65537)),
-    ]) {
-      // eslint-disable-next-line no-await-in-loop -- Exercise each rejected input independently.
-      await expect(Effect.runPromise(processor.extract(document, bytes))).rejects.toThrow();
-    }
+    await Array.fromAsync(
+      [
+        Buffer.from([0xff]),
+        Buffer.from("binary\0text"),
+        Buffer.from(" "),
+        Buffer.from("x".repeat(32769)),
+        Buffer.from("x".repeat(65537)),
+      ],
+      async (bytes) => {
+        await expect(Effect.runPromise(processor.extract(document, bytes))).rejects.toThrow();
+      },
+    );
 
     await expect(
       Effect.runPromise(processor.limit({ ...document, mime: "application/zip" })),
@@ -111,20 +113,21 @@ describe("makeAttachmentProcessor", () => {
       expect(partial.completeness).toContain("Partial text: pages 1-1 of 2");
       expect(partial.text).not.toContain("Omitted");
 
-      for (const bytes of [
-        Buffer.from("not a PDF"),
-        Buffer.from("%PDF-broken"),
-        new Uint8Array(
-          await Bun.file(new URL("./fixtures/encrypted.pdf", import.meta.url)).arrayBuffer(),
-        ),
-        textPDF([""]),
-        textPDF(Array.from({ length: 65 }, () => "Page")),
-      ]) {
-        // eslint-disable-next-line no-await-in-loop -- Verify cleanup after each individual failure.
-        await expect(Effect.runPromise(processor.extract(pdf, bytes))).rejects.toThrow();
-        // eslint-disable-next-line no-await-in-loop
-        expect(await readdir(root)).toEqual([]);
-      }
+      await Array.fromAsync(
+        [
+          Buffer.from("not a PDF"),
+          Buffer.from("%PDF-broken"),
+          new Uint8Array(
+            await Bun.file(new URL("./fixtures/encrypted.pdf", import.meta.url)).arrayBuffer(),
+          ),
+          textPDF([""]),
+          textPDF(Array.from({ length: 65 }, () => "Page")),
+        ],
+        async (bytes) => {
+          await expect(Effect.runPromise(processor.extract(pdf, bytes))).rejects.toThrow();
+          expect(await readdir(root)).toEqual([]);
+        },
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
