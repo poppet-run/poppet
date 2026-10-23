@@ -40,7 +40,6 @@ describe("makeAttachmentProcessor", () => {
           Effect.provideService(AppConfig, {
             applicationName: "Test",
             dataDirectory: directory,
-            notesDirectory: join(directory, "notes"),
             provider: "test",
             model: null,
           }),

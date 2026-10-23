@@ -17,7 +17,7 @@ const invalid = () =>
   new AgentError({
     reason: "invalid-request",
     message:
-      "Skills must be UTF-8 SKILL.md files and projects must be UTF-8 PROJECT.md/context files of at most 8192 bytes in named directories under <data directory>/skills or projects. Symlinks, hard links, and paths are not allowed.",
+      "Skills must be UTF-8 SKILL.md files and projects must be UTF-8 PROJECT.md files of at most 8192 bytes in named directories under <data directory>/skills or projects. Symlinks, hard links, and paths are not allowed.",
   });
 
 const failure = (cause: unknown) => (cause instanceof AgentError ? cause : invalid());
@@ -40,7 +40,7 @@ export const contextFiles = (
     // Canonicalize the configured parent, but never follow a link at the context root or below it.
     const rootPath = async () => join(await realpath(dataDirectory), collection);
 
-    const read = (name: string, file: "SKILL.md" | "PROJECT.md" | "notes.json", optional = false) =>
+    const read = (name: string) =>
       Effect.tryPromise({
         try: async (signal) => {
           Schema.decodeUnknownSync(SkillName)(name);
@@ -49,17 +49,12 @@ export const contextFiles = (
           await directoryInfo(root);
           const parent = join(root, name);
           const original = await directoryInfo(parent);
-          const path = join(parent, file);
+          const path = join(parent, filename);
 
           const handle = await open(
             path,
             constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-          ).catch((cause: unknown) => {
-            if (optional && Schema.is(MissingFile)(cause)) return null;
-            throw cause;
-          });
-
-          if (handle === null) return null;
+          );
 
           try {
             const info = await handle.stat();
@@ -139,12 +134,7 @@ export const contextFiles = (
       catch: failure,
     });
 
-    const load = (name: string) =>
-      read(name, filename).pipe(
-        Effect.flatMap((content) =>
-          content === null ? Effect.fail(invalid()) : Effect.succeed({ name, content }),
-        ),
-      );
+    const load = (name: string) => read(name).pipe(Effect.map((content) => ({ name, content })));
 
-    return { list, load, read };
+    return { list, load };
   });

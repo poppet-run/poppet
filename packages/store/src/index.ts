@@ -11,7 +11,6 @@ export {
   SkillName,
   SkillSnapshot,
   ProjectName,
-  ProjectNotes,
   ProjectSnapshot,
   SessionSearchQuery,
   SessionSearchMatch,

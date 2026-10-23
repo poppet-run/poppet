@@ -22,7 +22,6 @@ const fixture = async () => {
       Layer.succeed(AppConfig, {
         applicationName: "Test",
         dataDirectory: directory,
-        notesDirectory: join(directory, "notes"),
         provider: "first-provider",
         model: null,
       }),
@@ -59,9 +58,9 @@ const toolCall = (callId: string) =>
   ({
     type: "tool-call",
     callId,
-    name: "read_note",
-    namespace: "notes",
-    arguments: "{}",
+    name: "fetch_page",
+    namespace: "poppet_web",
+    arguments: '{"url":"https://example.com/"}',
   }) as const;
 
 const reject = <A>(operation: Effect.Effect<A, StoreError>, reason: StoreError["reason"]) =>
@@ -104,9 +103,9 @@ describe("Store", () => {
               {
                 type: "tool-call",
                 callId: "read",
-                name: "read_note",
-                namespace: "poppet_notes",
-                arguments: '{"path":"argumentonly.md"}',
+                name: "fetch_page",
+                namespace: "poppet_web",
+                arguments: '{"url":"https://example.com/argumentonly"}',
               },
             ],
             finishReason: "tool-calls",
@@ -595,16 +594,16 @@ describe("Store", () => {
                 {
                   type: "tool-call",
                   callId: "write",
-                  name: "save_note",
-                  namespace: "notes",
-                  arguments: '{"path":"a.md","content":"May already exist"}',
+                  name: "memory",
+                  namespace: "poppet_memory",
+                  arguments: '{"action":"remember","key":"preference","value":"May already exist"}',
                 },
                 {
                   type: "tool-call",
                   callId: "read",
-                  name: "read_note",
-                  namespace: "notes",
-                  arguments: '{"path":"a.md"}',
+                  name: "fetch_page",
+                  namespace: "poppet_web",
+                  arguments: '{"url":"https://example.com/"}',
                 },
               ],
             });
@@ -663,7 +662,7 @@ describe("Store", () => {
 
       const exchange: ReadonlyArray<Message> = [
         { role: "assistant", output: request.output, continuation: request.continuation },
-        { role: "tool", callId: "call-1", output: "A note" },
+        { role: "tool", callId: "call-1", output: "Page text" },
       ];
 
       const saved = await fixtureStore.run(
@@ -689,7 +688,7 @@ describe("Store", () => {
           yield* store.startToolCall(pending.id, "call-1");
           yield* store.finishToolCall(pending.id, "call-1", {
             status: "completed",
-            output: "A note",
+            output: "Page text",
           });
           const completed = yield* store.finishRun(pending.id, { status: "completed", response });
 

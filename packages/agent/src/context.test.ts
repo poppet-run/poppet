@@ -37,29 +37,29 @@ const stored = (messages: ReadonlyArray<Message>): ReadonlyArray<StoredMessage> 
   }));
 
 const toolExchange = [
-  { role: "user", text: "Find a note" },
+  { role: "user", text: "Read the pages" },
   {
     role: "assistant",
     output: [
       {
         type: "tool-call",
         callId: "call-1",
-        name: "read_note",
-        namespace: "poppet_notes",
-        arguments: "{}",
+        name: "fetch_page",
+        namespace: "poppet_web",
+        arguments: '{"url":"https://example.com/"}',
       },
       {
         type: "tool-call",
         callId: "call-2",
-        name: "read_note",
-        namespace: "poppet_notes",
-        arguments: "{}",
+        name: "fetch_page",
+        namespace: "poppet_web",
+        arguments: '{"url":"https://example.com/"}',
       },
     ],
     continuation: assistant.continuation,
   },
-  { role: "tool", callId: "call-2", output: "Second note" },
-  { role: "tool", callId: "call-1", output: "First note" },
+  { role: "tool", callId: "call-2", output: "Second page" },
+  { role: "tool", callId: "call-1", output: "First page" },
   assistant,
 ] as const satisfies ReadonlyArray<Message>;
 

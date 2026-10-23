@@ -1,5 +1,3 @@
-import { join, resolve } from "node:path";
-
 import { ProviderId } from "@poppet/provider";
 import { Config, Context, Effect, Layer, Option, Schema } from "effect";
 
@@ -33,7 +31,6 @@ export const webSearchProvider = Config.schema(
 export interface Settings {
   readonly applicationName: string;
   readonly dataDirectory: string;
-  readonly notesDirectory: string;
   readonly provider: ProviderId;
   readonly model: string | null;
 }
@@ -50,11 +47,6 @@ export const loadConfig = (defaultProvider: ProviderId, providers: ReadonlyArray
 
     const dataDirectory = yield* configuredDataDirectory;
 
-    const notesDirectory = yield* Config.schema(ConfigText, "POPPET_NOTES_DIR").pipe(
-      Config.withDefault(join(dataDirectory, "notes")),
-      Config.map((directory) => resolve(directory)),
-    );
-
     const provider = yield* Config.schema(
       ProviderId.check(
         Schema.makeFilter((id) => providers.includes(id) || "Choose a registered provider."),
@@ -67,7 +59,7 @@ export const loadConfig = (defaultProvider: ProviderId, providers: ReadonlyArray
       Config.map(Option.getOrNull),
     );
 
-    return { applicationName, dataDirectory, notesDirectory, provider, model } satisfies Settings;
+    return { applicationName, dataDirectory, provider, model } satisfies Settings;
   });
 
 export const makeAppConfigLive = (

@@ -120,7 +120,7 @@ export const makeOpenCodeProvider = (
                   provider: "opencode-go",
                   reason: "permission",
                   message:
-                    "OpenCode Go requires coding-agent workloads. General assistant and notes tasks are not enabled.",
+                    "OpenCode Go requires coding-agent workloads. General assistant tasks are not enabled.",
                 }),
               ),
       } satisfies ModelOperations;

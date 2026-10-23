@@ -11,7 +11,6 @@ import {
   defaultPolicy,
   type ChatPolicy,
   ModelResolver,
-  NotesLive,
   Pages,
   WebSearch,
   Skills,
@@ -79,6 +78,7 @@ const fixture = async (
   tools = false,
   processor?: AttachmentProcessor["Service"],
   policy: Partial<ChatPolicy> = {},
+  pages: Pages["Service"] = { fetch: () => Effect.die("Unexpected page fetch") },
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-gateway-"));
   const requests: ModelRequest[] = [];
@@ -112,7 +112,6 @@ const fixture = async (
   const config = Layer.succeed(AppConfig, {
     applicationName: "Test",
     dataDirectory: directory,
-    notesDirectory: join(directory, "notes"),
     provider: "test-provider",
     model: "test-model",
   });
@@ -142,8 +141,7 @@ const fixture = async (
         ).pipe(Layer.provide(tasks)),
         ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
         Layer.succeed(WebSearch, { search: null }),
-        Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
-        NotesLive.pipe(Layer.provide(Layer.merge(config, settings))),
+        Layer.succeed(Pages, pages),
         Layer.succeed(ModelResolver, {
           resolve: (provider, model) => {
             expect([provider, model]).toEqual(["test-provider", "test-model"]);
@@ -228,7 +226,7 @@ const scheduled = (destination: DeliveryDestination | null) =>
     repo.add(
       {
         name: "Summary",
-        prompt: "Summarize notes",
+        prompt: "Summarize recent conversations",
         provider: "test-provider",
         model: "test-model",
         workload: "assistant",
@@ -298,6 +296,7 @@ describe.concurrent("Gateway", () => {
   });
   test("when monitors stay quiet or sends become uncertain, preserves changed alerts across restart without starvation or replay", async () => {
     let uncertain = false;
+    let release = "v1";
     const attempts: string[] = [];
 
     const state = await fixture(
@@ -325,10 +324,10 @@ describe.concurrent("Gateway", () => {
             output: [
               {
                 type: "tool-call",
-                name: "read_note",
-                namespace: "poppet_notes",
+                name: "fetch_page",
+                namespace: "poppet_web",
                 callId: "source",
-                arguments: '{"path":"release.md"}',
+                arguments: '{"url":"https://example.com/release"}',
               },
             ],
           };
@@ -343,7 +342,7 @@ describe.concurrent("Gateway", () => {
                 namespace: "poppet_monitor",
                 callId: "observation",
                 arguments: JSON.stringify({
-                  value: JSON.parse(last.output).content,
+                  value: JSON.parse(last.output).text,
                   summary: "Release checked",
                   sourceCallIds: ["source"],
                 }),
@@ -369,10 +368,12 @@ describe.concurrent("Gateway", () => {
         });
       },
       true,
+      undefined,
+      {},
+      {
+        fetch: (url) => Effect.sync(() => JSON.stringify({ url, text: release, truncated: false })),
+      },
     );
-
-    await mkdir(join(state.directory, "notes"));
-    await writeFile(join(state.directory, "notes/release.md"), "v1");
 
     try {
       const saved = await state.run(
@@ -383,7 +384,7 @@ describe.concurrent("Gateway", () => {
           const job = repo.add(
             {
               name: "Release",
-              prompt: "Read release.md and report the tag",
+              prompt: "Read https://example.com/release and report the tag",
               provider: "test-provider",
               model: "test-model",
               workload: "assistant",
@@ -411,7 +412,7 @@ describe.concurrent("Gateway", () => {
 
           expect(repo.occurrences(job.id)).toHaveLength(65);
           expect(repo.monitoring.latest(job.id)?.decision).toBe("unchanged");
-          yield* Effect.promise(() => writeFile(join(state.directory, "notes/release.md"), "v2"));
+          release = "v2";
           repo.reconcile(66 * 60_000);
           const changed = repo.claim(66 * 60_000)!;
           yield* executeOccurrence(repo, changed.occurrence, changed.task);
@@ -437,7 +438,7 @@ describe.concurrent("Gateway", () => {
           ]);
           expect(state.requests).toHaveLength(saved.calls);
           const repo = yield* TaskRepository;
-          yield* Effect.promise(() => writeFile(join(state.directory, "notes/release.md"), "v3"));
+          release = "v3";
           repo.reconcile(67 * 60_000);
           const active = repo.claim(67 * 60_000)!;
           yield* executeOccurrence(repo, active.occurrence, active.task);
@@ -504,7 +505,7 @@ describe.concurrent("Gateway", () => {
                     action: "create",
                     id: null,
                     name: "Weekly review",
-                    prompt: "Summarize the notes",
+                    prompt: "Summarize recent conversations",
                     schedule: { type: "cron", expression: "0 9 * * 5", timezone: "Europe/London" },
                     delivery: "here",
                     skill: null,
@@ -1007,7 +1008,6 @@ describe.concurrent("Gateway", () => {
         { destination: "scheduled-thread", text: "Answer", nonce: expect.any(String) },
       ]);
       expect(state.requests).toHaveLength(1);
-      expect(state.requests[0]!.tools.some((tool) => tool.name === "save_note")).toBe(false);
     } finally {
       await state.close();
     }
@@ -2256,7 +2256,6 @@ describe.concurrent("service.ts", () => {
       );
       expect(state.sent[0]?.text).toContain("subsequent text message");
       expect(state.requests[0]?.tools.map((tool) => tool.name)).not.toContain("manage_tasks");
-      expect(state.requests[0]?.tools.map((tool) => tool.name)).not.toContain("save_note");
       expect(state.requests[0]?.tools.map((tool) => tool.name)).not.toContain("memory");
     } finally {
       await state.close();

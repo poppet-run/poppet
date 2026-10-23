@@ -10,12 +10,12 @@ const call = (name: string, serverId: string | null = null) => ({ name, serverId
 
 describe("review.ts", () => {
   test.each([
-    [[call("read_note")], 0, false, null],
-    [[call("read_note"), call("read_note"), call("save_note")], 0, false, "pending"],
+    [[call("view_skill")], 0, false, null],
+    [[call("view_skill"), call("view_skill"), call("manage_skill")], 0, false, "pending"],
     [[], 5, false, "pending"],
-    [[call("fetch_page"), call("read_note"), call("read_note")], 0, false, "skipped"],
-    [[call("tool", "server"), call("read_note"), call("read_note")], 0, false, "skipped"],
-    [[call("search_sessions"), call("read_note"), call("read_note")], 0, false, "skipped"],
+    [[call("fetch_page"), call("view_skill"), call("view_skill")], 0, false, "skipped"],
+    [[call("tool", "server"), call("view_skill"), call("view_skill")], 0, false, "skipped"],
+    [[call("search_sessions"), call("view_skill"), call("view_skill")], 0, false, "skipped"],
     [[], 5, true, "skipped"],
   ] as const)(
     "when calls are %j after %i runs with attachment %s, returns %s",
@@ -53,9 +53,9 @@ describe("review.ts", () => {
         runId: "r",
         callId: "c",
         position: 0,
-        name: "read_note",
-        namespace: "poppet_notes",
-        arguments: '{"path":"acorn.md"}',
+        name: "view_skill",
+        namespace: "poppet_skills",
+        arguments: '{"name":"acorn"}',
         serverId: null,
         toolName: null,
         status: "completed",
@@ -71,7 +71,7 @@ describe("review.ts", () => {
     expect(JSON.parse(full)).toMatchObject({
       requests: ["Summarize Acorn"],
       answer: "Summary",
-      tools: [{ tool: "poppet_notes.read_note", status: "completed" }],
+      tools: [{ tool: "poppet_skills.view_skill", status: "completed" }],
     });
     expect(Buffer.byteLength(full)).toBeLessThan(4096);
     expect(Buffer.byteLength(reviewTranscript(messages, calls, 1024)!)).toBeLessThanOrEqual(1024);

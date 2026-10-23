@@ -216,7 +216,7 @@ describe("makeCLI", () => {
 
     try {
       const added = await invoke(
-        ["tasks", "add", "Original", "--at", "2099-10-22T09:00:00Z", "Read notes"],
+        ["tasks", "add", "Original", "--at", "2099-10-22T09:00:00Z", "Read recent conversations"],
         environment,
       );
 
@@ -496,7 +496,14 @@ describe("makeCLI", () => {
 
     try {
       const added = await invoke(
-        ["tasks", "add", "Router task", "--at", "2099-10-14T09:00:00Z", "Summarize notes"],
+        [
+          "tasks",
+          "add",
+          "Router task",
+          "--at",
+          "2099-10-14T09:00:00Z",
+          "Summarize recent conversations",
+        ],
         {
           POPPET_DATA_DIR: directory,
           POPPET_PROVIDER: "openrouter",
@@ -598,7 +605,7 @@ describe("makeCLI", () => {
           "* * * * *",
           "--tz",
           "Invalid/Zone",
-          "Summarize notes",
+          "Summarize recent conversations",
         ],
         environment,
       );
@@ -616,7 +623,7 @@ describe("makeCLI", () => {
           "0 9 * * *",
           "--tz",
           "Europe/London",
-          "Summarize notes",
+          "Summarize recent conversations",
         ],
         environment,
       );
@@ -849,16 +856,25 @@ describe("makeCLI", () => {
     const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z", "--discord-thread"];
 
     try {
-      const invalid = await invoke([...command, "invalid", "Summarize notes"], environment);
+      const invalid = await invoke(
+        [...command, "invalid", "Summarize recent conversations"],
+        environment,
+      );
+
       expect(invalid.exitCode).toBe(1);
       expect(await readdir(directory)).toEqual([]);
-      const rejected = await invoke([...command, "400", "Summarize notes"], environment);
+
+      const rejected = await invoke(
+        [...command, "400", "Summarize recent conversations"],
+        environment,
+      );
+
       expect(rejected.exitCode).toBe(1);
       expect(rejected.stderr).toContain("Start worker run or gateway work");
       expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
 
       const local = await invoke(
-        ["tasks", "add", "Local", "--at", "2099-10-15T09:00:00Z", "Summarize notes"],
+        ["tasks", "add", "Local", "--at", "2099-10-15T09:00:00Z", "Summarize recent conversations"],
         environment,
       );
 
@@ -876,7 +892,14 @@ describe("makeCLI", () => {
 
     try {
       const conflict = await invoke(
-        [...command, "--discord-thread", "400", "--telegram-chat", "200", "Summarize notes"],
+        [
+          ...command,
+          "--discord-thread",
+          "400",
+          "--telegram-chat",
+          "200",
+          "Summarize recent conversations",
+        ],
         environment,
       );
 
@@ -885,7 +908,7 @@ describe("makeCLI", () => {
       expect(await readdir(directory)).toEqual([]);
 
       const rejected = await invoke(
-        [...command, "--telegram-chat=200", "Summarize notes"],
+        [...command, "--telegram-chat=200", "Summarize recent conversations"],
         environment,
       );
 
@@ -1247,7 +1270,7 @@ describe("makeCLI", () => {
 
       const projectsHelp = await invoke(["projects", "--help"], environment);
       expect(projectsHelp.stdout).toMatch(/list +List local projects/);
-      expect(projectsHelp.stdout).toMatch(/show +Show project instructions and note selection/);
+      expect(projectsHelp.stdout).toMatch(/show +Show project instructions/);
 
       const skillsHelp = await invoke(["skills", "--help"], environment);
       expect(skillsHelp.stdout).toMatch(/list +List local skills/);
@@ -1403,7 +1426,6 @@ describe("makeCLI", () => {
           applicationName: "File app",
           provider: "openrouter",
           model: "file-model",
-          notesDirectory: "my-notes",
           chat,
         }),
       );
@@ -1420,7 +1442,6 @@ describe("makeCLI", () => {
       expect(JSON.parse(result.stdout)).toEqual({
         applicationName: "File app",
         dataDirectory: directory,
-        notesDirectory: join(directory, "my-notes"),
         provider: "openrouter",
         model: "override-model",
         webSearch: false,

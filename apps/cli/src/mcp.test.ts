@@ -45,7 +45,7 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
   );
   const requests: ModelRequest[] = [];
   let built = 0;
-  let followup: "done" | "fetch" | "note" | "memory" | "task" = "done";
+  let followup: "done" | "fetch" | "memory" | "task" = "done";
 
   const registration: ProviderRegistration = {
     id: "fixture",
@@ -108,11 +108,6 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
                           name: "fetch_page",
                           namespace: "poppet_web",
                           arguments: JSON.stringify({ url: "https://untrusted.example/page" }),
-                        },
-                        note: {
-                          name: "save_note",
-                          namespace: "poppet_notes",
-                          arguments: JSON.stringify({ path: "injected.md", content: "injected" }),
                         },
                         memory: {
                           name: "memory",
@@ -352,7 +347,7 @@ describe("ExternalAgentToolsLive", () => {
     },
   );
 
-  test.each(["fetch", "note", "memory", "task"] as const)(
+  test.each(["fetch", "memory", "task"] as const)(
     "when scheduled MCP output is untrusted, grants no %s authority",
     async (action) => {
       const state = await fixture("read", ["read"]);
@@ -378,7 +373,6 @@ describe("ExternalAgentToolsLive", () => {
             ]);
           }).pipe(Effect.provide(state.chat)),
         );
-        expect(await readdir(state.directory)).not.toContain("notes");
       } finally {
         await state.close();
       }
@@ -406,7 +400,7 @@ describe("ExternalAgentToolsLive", () => {
       );
       expect(await state.invoke(["chat", "new", "Read the fixture"])).toContain("Done");
       const tools = state.requests[0]!.tools;
-      expect(tools.some((tool) => tool.name === "read_note")).toBe(true);
+      expect(tools.some((tool) => tool.name === "fetch_page")).toBe(true);
       expect(tools.filter((tool) => tool.namespace === "poppet_mcp")).toHaveLength(1);
     } finally {
       await state.close();

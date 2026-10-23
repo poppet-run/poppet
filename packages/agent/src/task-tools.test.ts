@@ -8,7 +8,7 @@ const fields = {
   action: "create",
   id: null,
   name: "Summary",
-  prompt: "Summarize my notes",
+  prompt: "Summarize recent conversations",
   schedule: { type: "once", at: "2026-10-18T09:00:00+01:00" },
   delivery: "local",
   skill: null,

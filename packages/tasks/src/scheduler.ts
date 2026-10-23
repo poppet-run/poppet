@@ -66,7 +66,7 @@ export const reconcileTasks = (repo: TaskStore, now: number, startup = false) =>
     );
   });
 
-/** Runs an occurrence in a fresh session with read-only notes, then saves its outcome. */
+/** Runs an occurrence in a fresh session with read-only tools, then saves its outcome. */
 export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) =>
   Effect.gen(function* () {
     const store = yield* Store;
