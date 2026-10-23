@@ -614,9 +614,10 @@ timer reconciles new work. Pause and resume retain repository semantics.
 Task controls bind an inspected definition revision and, for skip/snooze/run-now,
 the exact occurrence/ready time or unqueued slot. Chat requires a completed `show`
 receipt earlier in the current run; the CLI uses a small `inspect` worker request.
-Commit rechecks revision, target, paused/running state, and future times. New
-action discriminators let older workers reject the requests. A lost worker
-response never falls back to local mutation.
+`task-controls.ts` rechecks revision, target, paused/running state, and future times
+inside the same transaction as the mutation and receipt. `task-records.ts` shares
+record access with the scheduler on the owned connection. A lost worker response
+never falls back to local mutation.
 
 Each occurrence saves its definition and revision. Claiming/retrying uses that
 snapshot; a pending edit cancels and replaces the original without rewriting
