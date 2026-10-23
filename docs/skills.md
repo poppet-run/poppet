@@ -115,7 +115,7 @@ reference bundles, script execution, and a publishing command are deferred.
 
 ## Messaging sessions
 
-In an authorized Discord thread, Telegram private chat, or WhatsApp private chat,
+In an authorized Discord thread,
 send a text command with a prompt:
 
 ```text

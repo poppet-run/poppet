@@ -120,55 +120,16 @@ export const tasksCommand = (context: CLIContext) => {
             Flag.atMost(1),
             Flag.map(([value]) => value),
           ),
-          telegramChat: Flag.String("telegram-chat").pipe(
-            Flag.withSchema(Schema.NonEmptyString.check(Schema.isPattern(/^[1-9][0-9]{0,15}$/))),
-            Flag.withDescription(
-              "Send each completed result to the configured owner's private Telegram chat",
-            ),
-            Flag.atMost(1),
-            Flag.map(([value]) => value),
-          ),
-          whatsappChat: Flag.String("whatsapp-chat").pipe(
-            Flag.withSchema(Schema.String.check(Schema.isPattern(/^[1-9]\d{6,14}$/))),
-            Flag.withDescription(
-              "Send each completed result to the configured WhatsApp owner phone",
-            ),
-            Flag.atMost(1),
-            Flag.map(([value]) => value),
-          ),
           prompt: textArgument("prompt"),
         },
-        ({
-          name,
-          at,
-          cron,
-          tz,
-          coding,
-          prompt,
-          skill,
-          discordThread,
-          telegramChat,
-          whatsappChat,
-        }) =>
+        ({ name, at, cron, tz, coding, prompt, skill, discordThread }) =>
           Effect.gen(function* () {
             const schedule = yield* taskOperation(() => parseTaskSchedule(at, cron, tz));
-
-            if (
-              [discordThread, telegramChat, whatsappChat].filter((value) => value !== undefined)
-                .length > 1
-            )
-              return yield* Effect.fail(
-                new TaskError({ message: "Choose only one messaging destination." }),
-              );
 
             const delivery =
               discordThread !== undefined
                 ? { adapter: "discord", conversationId: discordThread }
-                : telegramChat !== undefined
-                  ? { adapter: "telegram", conversationId: telegramChat }
-                  : whatsappChat !== undefined
-                    ? { adapter: "whatsapp", conversationId: whatsappChat }
-                    : undefined;
+                : undefined;
 
             const command = yield* prepareTask(name, schedule, coding, prompt, skill, delivery);
 

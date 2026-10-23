@@ -30,8 +30,5 @@
     "oxlint": "1.89.0",
     "typescript": "7.0.2"
   },
-  "packageManager": "bun@1.4.3",
-  "patchedDependencies": {
-    "libsignal@6.0.0": "patches/libsignal@6.0.0.patch"
-  }
+  "packageManager": "bun@1.4.3"
 }

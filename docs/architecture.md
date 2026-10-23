@@ -50,8 +50,6 @@ The Bun monorepo uses private workspaces:
 | `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                          | Config, agent, store, worker transport, provider contract                            |
 | `@poppet/worker`              | Protected local command transport and request lifecycle                            | Effect                                                                               |
 | `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery           | Agent, config, credentials, store, provider contract                                 |
-| `@poppet/channel-whatsapp`    | QR-linked personal chat, protected Signal keys, socket lifecycle, and settings     | Gateway contract                                                                     |
-| `@poppet/channel-telegram`    | Telegram private chat, HTTP transport, polling normalization, and settings         | Gateway contract                                                                     |
 | `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings        | Gateway contract                                                                     |
 | `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export  | None                                                                                 |
 | `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                    | Provider contract, credentials, protocol adapters                                    |
@@ -829,7 +827,7 @@ the same protocol. Saved record migrations are independent of the wire protocol.
 
 `conversation-naming.ts` owns rename reconciliation and owner-override handling.
 
-Discord thread chat and owner-only Telegram and WhatsApp private chat are implemented.
+Discord thread chat is bundled.
 The gateway runs
 inside the neutral worker host, with scheduling optional, and shares its store, memory, model
 resolver, and serialized `Agent` instance with CLI and scheduled requests. The
@@ -853,7 +851,7 @@ The `@poppet/gateway` package owns validated incoming messages,
 authorization, conversation-to-session mapping, durable message acceptance, and
 reply delivery. `@poppet/channel-discord` owns Discord credentials, Gateway
 connections, event decoding, mentions, thread operations, formatting, and rate
-limits. Telegram and WhatsApp implement the same small contract. The CLI owns
+limits. External adapters implement the same small contract. The CLI owns
 adapter registration and live layer composition; neither the agent nor task
 scheduling imports concrete messaging adapters.
 
@@ -1000,68 +998,21 @@ and uncertain delivery counts even when the worker is stopped. Thread-scoped
 `@Poppet /status` and `@Poppet /cancel` are text controls rather than registered
 slash commands. Live Discord checks remain manual.
 
-### Telegram private chat and polling
-
-`@poppet/channel-telegram` implements the same channel contract using Bun HTTP
-and the Bot API. Bot identity is verified before polling or sending. Only the
-configured owner's private-chat text and supported attachments are normalized. Groups, channels,
-private topics, edits, and other users are ignored. Single supported attachments use the bounded processing path below. Telegram uses
-its own adapter/account identities for inbox deduplication and session bindings.
-
-Telegram requests up to ten updates per poll under a two MiB response limit.
-At inference queue capacity, the gateway saves excess polled requests as failed
-with a queue-full reply in the same transaction. This keeps controls reachable
-without acknowledging unrecorded input or creating more inference work.
+### Polling
 
 The optional `poll(cursor)` operation returns ordered updates and their next
 opaque cursors. An ignored update has a null message. The gateway accepts each
 message durably before checkpointing its cursor in `gateway_cursors`, keyed by
-adapter/account. It cannot acknowledge an update before its acceptance or
-rejection commits. A crash between inbox acceptance and cursor persistence can
-redeliver an update, which the existing inbox identity deduplicates. Requests
-abort with worker cancellation.
-
-Telegram settings use the shared protected channel-file helper and a separate
-`channels/telegram.json` schema. HTTP and decoding failures never expose a token
-from the API URL or remote diagnostics. Replies use plain text with previews
-disabled and conservative 4096-unit chunks. The transport does not retry sends;
-explicit rate-limit rejection permits the gateway's bounded retry, while network
-and server failures leave uncertain delivery records without automatic replay.
-`--telegram-chat` selects scheduled results through the existing resolver.
-
-### WhatsApp personal-account chat
-
-`@poppet/channel-whatsapp` owns QR pairing, the Baileys socket, and phone/LID
-normalization. The configured linked account and owner use canonical international
-phone digits in the gateway; JID/device formats stay inside the adapter. Only the
-owner's private text is accepted. Self-chat allows human outgoing messages while
-persisted assistant message IDs suppress echoes after restart or uncertain sends.
-
-`gateway whatsapp setup` saves configuration offline. `gateway whatsapp pair`
-requires a foreground TTY and is the only QR output path. The scoped
-`WhatsAppClient` service locks `channels/whatsapp-auth.sqlite`, stores SDK key
-batches transactionally, validates account identity on connection, and closes each
-socket before reconnecting. Its storage is separate from the transcript database;
-no shared-store migration is needed. Failed key persistence stops the adapter.
-A layer construction failure is reported per channel without stopping its peers.
-
-Automatic SDK message retries and full history synchronization are disabled.
-The SDK acknowledges events before the gateway can durably accept them, so a
-bounded receive buffer can lose pre-acceptance input after overload or a crash.
-Accepted inputs use the existing durable inbox and session bindings. Replies use
-stable saved IDs, plain text without previews, and uncertain outcomes without
-automatic replay. `--whatsapp-chat` uses the existing destination resolver and
-scheduled-result queue. See the [WhatsApp guide](gateways/whatsapp.md) for pairing and limits.
+adapter/account. A crash between acceptance and checkpointing can redeliver an
+update, which the existing inbox identity deduplicates. Platform offset arithmetic
+and filtering belong to the adapter.
 
 ## Dependencies
 
 The foundation uses Effect 4.0.4, its Bun platform adapter, TypeScript 7.0.2,
 Oxfmt 0.73.0, Oxlint 1.88.0, and Bun 1.4.3 with matching Bun types. Bun checks types;
 TypeScript provides editor support. Versions are pinned and the lockfile is
-checked in. WhatsApp adds Baileys 7.0.0-rc14 and qrcode-terminal 0.12.0;
-imports, crypto initialization, auth serialization, protobuf, and QR rendering
-were checked under pinned Bun without connecting a live account. A narrow Bun patch
-removes private session objects from libsignal console output. Effect provides Config and Schema, so a separate schema
+checked in. Effect provides Config and Schema, so a separate schema
 library is unnecessary.
 
 Subscription verification adds OpenAI 7.32.0 for Responses streaming and jose
@@ -1163,13 +1114,12 @@ Browser calls use the existing external-tool identity and durable
 uncertain outcomes. Scheduled catalogs omit every browser operation. See
 [browser automation](browser.md) for setup, bounds, permissions, and live checks.
 
-### Telegram attachment processing
+### Attachment processing
 
-`IncomingMessage` optionally carries one bounded attachment descriptor. Telegram
-checks bot identity and owner/private-chat IDs before resolving that descriptor
-through `getFile`; only the fixed Telegram file endpoint can supply bytes.
-Streaming byte counts, redirect rejection and actual format checks precede use.
-Other adapters retain their text-only behavior.
+`IncomingMessage` optionally carries one bounded attachment descriptor. The shared
+processing contract and saved attachment records remain available, though the
+bundled Discord adapter accepts text messages only. An external adapter must
+check sender identity and access before resolving a descriptor or downloading bytes.
 
 The host composes a shared `AttachmentProcessor` with the gateways. It validates
 text-file metadata and performs strict UTF-8 decoding in memory outside SQLite

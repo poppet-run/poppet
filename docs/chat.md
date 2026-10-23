@@ -51,7 +51,7 @@ and omitted from this display. Inspection needs no selected model or login.
 With `chat.logReasoning` enabled, `chat new` streams thinking to stderr using the
 [interactive prompt's formatting](#interactive-prompt). Stdout contains only the answer.
 
-Telegram can submit [UTF-8 text attachments](gateways/telegram.md#text-attachments).
+Discord currently accepts text messages. Saved attachment text remains readable.
 The saved user message keeps its caption/request separate from structured source
 metadata and text. Model context and recall label that source as untrusted JSON;
 only text reaches inference providers. Attachment data counts against the existing

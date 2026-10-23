@@ -1392,8 +1392,6 @@ describe("chat.ts", () => {
               error:
                 "Cannot read or write protected Discord settings. Run gateway discord setup again.",
             },
-            { id: "telegram", enabled: false },
-            { id: "whatsapp", enabled: false },
           ]);
         await chat.clock.runPromise(TestClock.adjust("61 seconds"));
 

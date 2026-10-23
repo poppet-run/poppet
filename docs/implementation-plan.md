@@ -41,7 +41,6 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 9: Interactive use with the worker running](phases/9.md)
 - [Phase 10: Messaging gateway with Discord thread sessions](phases/10.md)
 - [Phase 11: Scheduled results in messaging conversations](phases/11.md)
-- [Phase 12: Additional messaging adapters](phases/12.md)
 - [Phase 13: Search past conversations](phases/13.md)
 - [Phase 14: Explicit local Markdown skills](phases/14.md)
 - [Phase 15: Read a supplied URL](phases/15.md)

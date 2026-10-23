@@ -193,7 +193,7 @@ remains a separate phase 3 follow-up.
 `gateway_attachments` is keyed to the accepted inbox entry and records processing,
 accepted, or failed state. Accepted results contain a SHA-256 content hash,
 extraction version, safe filename/MIME, completeness label and bounded text;
-failures retain a bounded reason. The inbox keeps the original opaque Telegram
+failures retain a bounded reason. The inbox keeps the original opaque adapter
 file reference and caption. No token-bearing download URL is saved.
 
 Accepted text commits before the reserved run ID is started. Restart reuses it;

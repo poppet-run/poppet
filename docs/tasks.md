@@ -175,21 +175,8 @@ Results are standalone posts. They do not change the destination's conversation
 history, session binding, or name. A stopped gateway resumes queued delivery when
 it starts again. Already queued replies remain queued if task history is cleared.
 
-## Deliver results to Telegram
-
-Configure [Telegram](gateways/telegram.md), run the combined worker, and pass
-`--telegram-chat <owner-id>` before the prompt. Only the configured owner's private
-chat is supported. It uses the same destination snapshots, authorization rechecks,
-and delivery inspection as Discord. Choose one destination per task;
-`--telegram-chat`, `--whatsapp-chat`, and `--discord-thread` cannot be combined.
-
-## Deliver results to WhatsApp
-
-Configure and pair [WhatsApp](gateways/whatsapp.md), run the combined worker, and pass
-`--whatsapp-chat <owner-phone>` before the prompt. Use the configured owner's
-international phone digits without `+`. The adapter validates the connected
-account and private chat, then uses the same saved destination and delivery queue.
-Ambiguous sends remain uncertain without automatic replay.
+Existing Discord task destinations keep their stored format. Tasks for removed adapters
+retain their history and results but cannot deliver until that adapter is available again.
 
 ## Select a skill
 

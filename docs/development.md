@@ -19,7 +19,7 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/store`, `@poppet/agent`, `@poppet/browser`, `@poppet/io`, `@poppet/mcp`,
 `@poppet/memory`, `@poppet/skills`, `@poppet/tasks`, `@poppet/web-search`,
 `@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`,
-`@poppet/channel-discord`, `@poppet/channel-telegram`, and `@poppet/channel-whatsapp`.
+`@poppet/channel-discord`.
 Root `start` and `dev` commands run the CLI from the
 repository directory, so relative configuration paths keep the same meaning.
 
@@ -255,16 +255,9 @@ The messaging host builds a gateway per configured registration, sharing the
 existing store and serialized agent. Configuration errors appear per channel and
 do not prevent other configured channels from running. All resources close with
 the worker. The existing Discord setup syntax and `channels/discord.json` file
-remain compatible. Telegram adds a lightweight HTTP adapter for owner-only private
-chat. WhatsApp uses a scoped Baileys socket and a separate protected SQLite key
-store for QR-linked personal accounts. Shared `loadChannelSettings` and
-`saveChannelSettings` preserve bounded reads, ownership checks, atomic replacement,
-and protected file modes while adapters own their schemas.
-
-The root `patchedDependencies` applies `patches/libsignal@6.0.0.patch` to remove
-private session objects from console logs outside Baileys' logger. A subprocess
-regression check exercises the installed dependency. Keep this patch when
-updating the lockfile, and reassess it on dependency upgrades.
+remain compatible. Shared `loadChannelSettings` and `saveChannelSettings` preserve
+bounded reads, ownership checks, atomic replacement, and protected file modes
+while adapters own their schemas.
 
 A channel can supply `poll(cursor)` instead of an event stream. Each returned item
 has the next opaque cursor and either a normalized message or `null` for an
@@ -283,7 +276,7 @@ live account access. The earlier phase 1 live ChatGPT check remains separate
 evidence; Go and OpenRouter inference have not been verified against live accounts.
 
 The [storage guide](storage.md#permissions-and-recovery) describes local recovery checks.
-Live chat, ChatGPT token renewal, Discord, Telegram, and WhatsApp setup and reconnection, and macOS login
+Live chat, ChatGPT token renewal, Discord setup and reconnection, and macOS login
 startup and physical sleep/wake remain separate manual checks. Follow the
 [Discord guide](gateways/discord.md) and [worker manual validation](worker.md#manual-validation)
 for those paths. The [implementation plan](implementation-plan.md) records
@@ -301,10 +294,8 @@ assistant-capable provider and model for messaging and scheduled tasks.
       it works.
 - [ ] For ChatGPT, repeat a request when the access token nears expiry. Expect
       automatic renewal without signing in again.
-- [ ] Test each enabled messaging adapter: Discord in an allowed thread; Telegram
-      or WhatsApp in the owner's private chat. Check replies, `/status`, `/cancel`, and
-      rejection of another sender. For WhatsApp self-chat, confirm replies do not
-      trigger another run.
+- [ ] Test Discord in an allowed thread. Check replies, `/status`, `/cancel`, and
+      rejection of another sender.
 - [ ] Restart the worker and send a follow-up. Expect the same session. Briefly
       disconnect the network and restore it; check reconnection and absence of
       duplicate replies.
@@ -326,6 +317,5 @@ rejection, cancellation, owner checks, restart reuse, context overflow,
 source-aware recall and URL permissions. PDFs and recordings are rejected before
 download or inference. Saved document text and old transcripts remain readable.
 
-Tests inject downloads and use temporary databases; they do not contact Telegram
-or a live inference provider. For live validation, follow
-[Telegram's text attachment checklist](gateways/telegram.md#manual-validation).
+Tests inject downloads and use temporary databases. No bundled adapter currently
+accepts attachments; live attachment intake is not verified.

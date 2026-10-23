@@ -25,8 +25,6 @@ for persistent settings.
 ## Gateways
 
 - [Discord](gateways/discord.md): bot setup, thread sessions, permissions, and delivery.
-- [Telegram](gateways/telegram.md): owner-only private chat, bot setup, polling, and delivery.
-- [WhatsApp](gateways/whatsapp.md): QR-linked personal accounts, owner-only text, and delivery limits.
 
 ## Providers
 

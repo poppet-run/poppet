@@ -87,16 +87,6 @@ describe("makeCLI", () => {
             token: "discord-secret",
           },
         },
-        {
-          id: "telegram",
-          name: "Telegram",
-          settings: { version: 1, botId: "100", ownerId: "200", token: "100:telegram-secret" },
-        },
-        {
-          id: "whatsapp",
-          name: "WhatsApp",
-          settings: { version: 1, accountPhone: "447700900001", ownerPhone: "447700900002" },
-        },
       ];
 
       try {
@@ -831,82 +821,6 @@ describe("makeCLI", () => {
 
       expect(local.exitCode).toBe(0);
       expect(JSON.parse(local.stdout).destination).toBeNull();
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  test("when a Telegram task destination is supplied, requires a messaging worker and rejects conflicting Discord delivery", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-telegram-task-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
-    const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z"];
-
-    try {
-      const conflict = await invoke(
-        [
-          ...command,
-          "--discord-thread",
-          "400",
-          "--telegram-chat",
-          "200",
-          "Summarize recent conversations",
-        ],
-        environment,
-      );
-
-      expect(conflict.exitCode).toBe(1);
-      expect(conflict.stderr).toContain("Choose only one messaging destination");
-      expect(await readdir(directory)).toEqual([]);
-
-      const rejected = await invoke(
-        [...command, "--telegram-chat=200", "Summarize recent conversations"],
-        environment,
-      );
-
-      expect(rejected.exitCode).toBe(1);
-      expect(rejected.stderr).toContain("Start worker run or gateway work");
-      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  test("when WhatsApp task phones or destinations are invalid, rejects them before saving", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-whatsapp-task-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
-    const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z"];
-
-    try {
-      const invalid = await invoke(
-        [...command, "--whatsapp-chat", "+447700900002", "Summary"],
-        environment,
-      );
-
-      expect(invalid.exitCode).toBe(1);
-
-      await Array.fromAsync(
-        ["--discord-thread=400", "--telegram-chat=200"],
-        async (destination) => {
-          const conflict = await invoke(
-            [...command, destination, "--whatsapp-chat=447700900002", "Summary"],
-            environment,
-          );
-
-          expect(conflict.exitCode).toBe(1);
-          expect(conflict.stderr).toContain("Choose only one messaging destination");
-        },
-      );
-
-      expect(await readdir(directory)).toEqual([]);
-
-      const rejected = await invoke(
-        [...command, "--whatsapp-chat", "447700900002", "Summary"],
-        environment,
-      );
-
-      expect(rejected.exitCode).toBe(1);
-      expect(rejected.stderr).toContain("Start worker run or gateway work");
-      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

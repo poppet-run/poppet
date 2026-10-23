@@ -128,8 +128,7 @@ See [command line](cli.md#providers-and-models) for provider commands and
 [Memory](memory.md) adds your editable profile and explicitly saved facts to each
 run. [Scheduled tasks](tasks.md) execute one-off or recurring prompts while a
 [worker](worker.md) is running. The same worker can connect
-[Discord](gateways/discord.md), [Telegram](gateways/telegram.md), and
-[WhatsApp](gateways/whatsapp.md).
+[Discord](gateways/discord.md).
 
 Start the combined foreground worker after configuring the services you need:
 

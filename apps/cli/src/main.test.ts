@@ -163,22 +163,6 @@ describe("main.ts", () => {
     }
   });
 
-  test.concurrent("when WhatsApp pairing output is redirected, rejects pairing without creating credentials", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-whatsapp-terminal-"));
-
-    try {
-      const result = await invokeProcess(["gateway", "whatsapp", "pair"], {
-        POPPET_DATA_DIR: directory,
-      });
-
-      expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain("requires an interactive terminal");
-      expect(await readdir(directory)).toEqual([]);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
   test.concurrent("when interactive chat input is redirected, rejects it without creating a session", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-interactive-input-"));
 
