@@ -5,14 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
-import {
-  LearnedSkills,
-  LearnedSkillsLive,
-  LearningReviews,
-  LearningReviewsLive,
-  LocalMemoryLive,
-  Memory,
-} from "@poppet/memory";
+import { LearningReviews, LearningReviewsLive, LocalMemoryLive, Memory } from "@poppet/memory";
 import {
   ProviderError,
   type Completion,
@@ -21,6 +14,7 @@ import {
   type Output,
 } from "@poppet/provider";
 import { responsesModel } from "@poppet/provider/protocol";
+import { LearnedSkills, LearnedSkillsLive } from "@poppet/skills";
 import { SessionReadResult, SessionSearchMatch, Store, StoreError, StoreLive } from "@poppet/store";
 import { WebSearch, WebSearchError, makeBraveSearch } from "@poppet/web-search";
 import { Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect";

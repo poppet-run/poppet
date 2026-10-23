@@ -17,7 +17,7 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/credentials`,
 `@poppet/store`, `@poppet/agent`, `@poppet/browser`, `@poppet/io`, `@poppet/mcp`,
-`@poppet/memory`, `@poppet/tasks`, `@poppet/web-search`,
+`@poppet/memory`, `@poppet/skills`, `@poppet/tasks`, `@poppet/web-search`,
 `@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`,
 `@poppet/channel-discord`, `@poppet/channel-telegram`, and `@poppet/channel-whatsapp`.
 Root `start` and `dev` commands run the CLI from the
@@ -107,6 +107,9 @@ packages/
   agent/                  @poppet/agent
     src/service.ts        Persisted chat runner, deadlines, run finalization
     src/conversation.ts   Sequential model/tool loop and run budgets
+    src/skills.ts         Owner skill-file access
+    src/skill-index.ts    Bounded skill descriptions and indexing
+    src/skill-tools.ts    Skill view and management tools
     src/reply.ts          Validated model stream completion
     src/notes.ts          Note schemas, bounded access, atomic writes
     src/memory.ts         Global/project snapshots formatted into model instructions
@@ -142,6 +145,11 @@ packages/
     src/schema.ts         Facts, snapshot data, and snapshot limits
     src/local.ts          Local fact operations and bounded snapshots
     src/context-file.ts   Bounded UTF-8 personality and profile reads
+  skills/                 @poppet/skills
+    src/schema.ts         Learned skill content and revisions
+    src/service.ts        Learned skill storage and revision operations
+    src/errors.ts         Skill storage and request errors
+    src/promotion.ts      Exclusive owner-file creation
   store/                  @poppet/store
     src/database.ts       Scoped SQLite connection, ownership, and permissions
     src/migrations.ts     Ordered migrations and transactional migration ledger

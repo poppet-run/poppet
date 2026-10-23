@@ -7,7 +7,8 @@ import { AppConfig } from "@poppet/config";
 import { Effect, Layer } from "effect";
 
 import { AgentError } from "#src/errors";
-import { Skills, SkillsLive, skillDescription, skillIndex } from "#src/skills";
+import { skillDescription, skillIndex } from "#src/skill-index";
+import { Skills, SkillsLive } from "#src/skills";
 
 const fixture = async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-skills-"));

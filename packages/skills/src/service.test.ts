@@ -7,8 +7,8 @@ import { AppConfig } from "@poppet/config";
 import { Store, StoreDatabase, StoreLive } from "@poppet/store";
 import { Effect, Layer } from "effect";
 
-import { MemoryError } from "#src/service";
-import { LearnedSkills, LearnedSkillsLive, containsSecret, maxLearnedSkills } from "#src/skills";
+import { SkillError } from "#src/errors";
+import { LearnedSkills, LearnedSkillsLive, containsSecret, maxLearnedSkills } from "#src/service";
 
 const fixture = async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-learned-skills-"));
@@ -33,7 +33,7 @@ const fixture = async () => {
 
 const owner = { origin: "owner" } as const;
 
-const reason = <A>(operation: Effect.Effect<A, MemoryError>) =>
+const reason = <A>(operation: Effect.Effect<A, SkillError>) =>
   operation.pipe(
     Effect.match({
       onFailure: (error) => error.reason,

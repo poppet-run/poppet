@@ -1,4 +1,4 @@
-import { LearnedSkills, Memory } from "@poppet/memory";
+import { Memory } from "@poppet/memory";
 import { measureTiming, recordTiming } from "@poppet/provider";
 import type {
   Completion,
@@ -10,6 +10,7 @@ import type {
   TextSource,
   Tool,
 } from "@poppet/provider";
+import { LearnedSkills } from "@poppet/skills";
 import {
   Store,
   StoreError,
@@ -54,6 +55,7 @@ import {
   type SessionSearchCall,
 } from "#src/search";
 import { ChatSettings } from "#src/settings";
+import { skillIndex, skillIndexGuidance } from "#src/skill-index";
 import {
   decodeSkillManageCall,
   executeSkillManage,
@@ -63,14 +65,12 @@ import {
   type SkillManageCall,
 } from "#src/skill-tools";
 import {
-  Skills,
   decodeSkillViewCall,
   executeSkillView,
-  skillIndex,
-  skillIndexGuidance,
   skillViewTool,
   type SkillViewCall,
-} from "#src/skills";
+} from "#src/skill-tools";
+import { Skills } from "#src/skills";
 import { ChatTasks, decodeTaskCall, taskTool, type PreparedTaskCall } from "#src/task-tools";
 import { WebSearch, decodeWebSearchCall, webSearchTool, type WebSearchCall } from "#src/web-search";
 

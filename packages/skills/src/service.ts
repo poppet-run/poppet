@@ -1,89 +1,29 @@
-import { SkillName, SkillSnapshot, StoreDatabase } from "@poppet/store";
+import { SkillName, StoreDatabase } from "@poppet/store";
 import { Context, DateTime, Effect, Layer, Schema } from "effect";
 
-import { MemoryError } from "#src/service";
-
-/** Learned skill Markdown: nonempty, at most 8192 UTF-8 bytes, and free of NUL bytes. */
-export const LearnedSkillContent = SkillSnapshot.fields.content.check(
-  Schema.makeFilter((text) => text.trim().length > 0 || "Use nonempty skill content."),
-);
-
-const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
-
-const RunId = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/));
-
-/** The current text of a skill Poppet wrote; owner files with the same name take precedence. */
-export const LearnedSkill = Schema.Struct({
-  name: SkillName,
-  revision: Revision,
-  content: LearnedSkillContent,
-  createdAt: Schema.Natural,
-  updatedAt: Schema.Natural,
-});
-
-export type LearnedSkill = typeof LearnedSkill.Type;
-
-export const SkillOrigin = Schema.Literals(["owner", "turn", "review"]);
-
-export type SkillOrigin = typeof SkillOrigin.Type;
-
-/** One append-only history entry; a deletion keeps its tombstone so it can be reverted. */
-export const SkillRevision = Schema.Struct({
-  name: SkillName,
-  revision: Revision,
-  action: Schema.Literals(["create", "patch", "replace", "delete", "revert"]),
-  content: Schema.NullOr(LearnedSkillContent),
-  origin: SkillOrigin,
-  sourceRunId: Schema.NullOr(RunId),
-  sourceCallId: Schema.NullOr(Schema.NonEmptyString),
-  createdAt: Schema.Natural,
-});
-
-export type SkillRevision = typeof SkillRevision.Type;
-
-/** A change requested by the owner or the model; non-create changes may require a revision. */
-export type SkillChange =
-  | { readonly action: "create"; readonly name: string; readonly content: string }
-  | {
-      readonly action: "replace";
-      readonly name: string;
-      readonly content: string;
-      readonly expectedRevision?: number;
-    }
-  | {
-      readonly action: "patch";
-      readonly name: string;
-      readonly old: string;
-      readonly new: string;
-      readonly expectedRevision?: number;
-    }
-  | { readonly action: "delete"; readonly name: string; readonly expectedRevision?: number };
-
-/** Host-supplied provenance; model arguments never choose an origin or source. */
-export type SkillSource =
-  | { readonly origin: "owner" }
-  | { readonly origin: "turn" | "review"; readonly runId: string; readonly callId: string };
-
-export interface SkillReceipt {
-  readonly name: string;
-  readonly revision: number;
-  readonly action: SkillRevision["action"];
-  readonly deleted: boolean;
-}
+import { SkillError } from "#src/errors";
+import {
+  LearnedSkill,
+  LearnedSkillContent,
+  SkillRevision,
+  type SkillChange,
+  type SkillSource,
+  type SkillReceipt,
+} from "#src/schema";
 
 /** Learned procedures with revision history, stored beside conversations and facts. */
 export class LearnedSkills extends Context.Service<
   LearnedSkills,
   {
-    readonly list: Effect.Effect<ReadonlyArray<LearnedSkill>, MemoryError>;
-    readonly get: (name: string) => Effect.Effect<LearnedSkill | null, MemoryError>;
-    readonly history: (name: string) => Effect.Effect<ReadonlyArray<SkillRevision>, MemoryError>;
+    readonly list: Effect.Effect<ReadonlyArray<LearnedSkill>, SkillError>;
+    readonly get: (name: string) => Effect.Effect<LearnedSkill | null, SkillError>;
+    readonly history: (name: string) => Effect.Effect<ReadonlyArray<SkillRevision>, SkillError>;
     readonly write: (
       change: SkillChange,
       source: SkillSource,
-    ) => Effect.Effect<SkillReceipt, MemoryError>;
+    ) => Effect.Effect<SkillReceipt, SkillError>;
     /** Restores an earlier revision as a new one; restoring a tombstone deletes the skill. */
-    readonly revert: (name: string, revision: number) => Effect.Effect<SkillReceipt, MemoryError>;
+    readonly revert: (name: string, revision: number) => Effect.Effect<SkillReceipt, SkillError>;
   }
 >()("poppet/LearnedSkills") {}
 
@@ -110,14 +50,14 @@ const skillSql =
 const revisionSql =
   "SELECT name, revision, action, content, origin, source_run_id AS sourceRunId, source_call_id AS sourceCallId, created_at AS createdAt FROM skill_revisions";
 
-const fail = (reason: MemoryError["reason"], message: string) => {
-  throw new MemoryError({ reason, message });
+const fail = (reason: SkillError["reason"], message: string) => {
+  throw new SkillError({ reason, message });
 };
 
 const failure = (cause: unknown) => {
-  if (cause instanceof MemoryError) return cause;
+  if (cause instanceof SkillError) return cause;
 
-  return new MemoryError({
+  return new SkillError({
     reason: cause instanceof Schema.SchemaError ? "invalid-request" : "storage",
     message:
       cause instanceof Schema.SchemaError
@@ -168,7 +108,9 @@ export const LearnedSkillsLive = Layer.effect(
       );
 
       return readRecord(() =>
-        Schema.decodeUnknownSync(Schema.Struct({ revision: Revision }))(statement.get(name)),
+        Schema.decodeUnknownSync(Schema.Struct({ revision: LearnedSkill.fields.revision }))(
+          statement.get(name),
+        ),
       ).revision;
     };
 
@@ -322,7 +264,7 @@ export const LearnedSkillsLive = Layer.effect(
       revert: (name, revision) =>
         transaction((at) => {
           Schema.decodeUnknownSync(SkillName)(name);
-          Schema.decodeUnknownSync(Revision)(revision);
+          Schema.decodeUnknownSync(LearnedSkill.fields.revision)(revision);
 
           using statement = database.prepare(`${revisionSql} WHERE name = ? AND revision = ?`);
 

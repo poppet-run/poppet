@@ -14,7 +14,6 @@ import {
   type ChannelRegistration,
   type IncomingMessage,
 } from "@poppet/gateway";
-import { LearnedSkills, LearnedSkillsLive } from "@poppet/memory";
 import {
   Provider,
   ProviderConnection,
@@ -23,6 +22,7 @@ import {
   type ModelRequest,
   type ProviderRegistration,
 } from "@poppet/provider";
+import { LearnedSkills, LearnedSkillsLive } from "@poppet/skills";
 import { StoreLive } from "@poppet/store";
 import { requestWorker, workerSocketPath } from "@poppet/worker";
 import {

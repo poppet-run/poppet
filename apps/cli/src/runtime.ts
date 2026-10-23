@@ -13,7 +13,7 @@ import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import { ApiKeyStoreLive } from "@poppet/credentials";
 import { GatewayRepositoryLive } from "@poppet/gateway";
 import { makeMCPLive } from "@poppet/mcp";
-import { LearnedSkillsLive, LearningReviewsLive, LocalMemoryLive } from "@poppet/memory";
+import { LearningReviewsLive, LocalMemoryLive } from "@poppet/memory";
 import {
   Provider,
   ProviderEnvironment,
@@ -23,6 +23,7 @@ import {
   type ProviderRegistration,
   type ProviderError,
 } from "@poppet/provider";
+import { LearnedSkillsLive } from "@poppet/skills";
 import { StoreLive } from "@poppet/store";
 import { ChatTasksLive, TaskRepositoryLive, WorkerConnections } from "@poppet/tasks";
 import { Context, Effect, Layer, Schema } from "effect";
