@@ -472,7 +472,7 @@ describe.concurrent("telegramDownload", () => {
         });
         expect(updates[1]?.message).toMatchObject({
           text: "",
-          attachment: { kind: "voice", duration: 4 },
+          attachment: { kind: "unsupported" },
         });
         expect(updates[2]?.message).toBeNull();
         expect(updates[3]?.message?.attachment?.kind).toBe("unsupported");

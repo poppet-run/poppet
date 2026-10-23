@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-/** Host-extracted text, retained separately from the owner's request. Never a file upload. */
+/** Saved attachment text; voice remains decodable for transcripts stored before its removal. */
 export const TextSource = Schema.Struct({
   kind: Schema.Literals(["document", "voice"]),
   name: Schema.String.check(Schema.isMaxLength(120)),

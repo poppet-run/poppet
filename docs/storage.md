@@ -263,9 +263,9 @@ in optional `source`. Context assembly converts the source to labelled untrusted
 JSON text; recall and the existing FTS projection preserve that label and include
 accepted source text for completed runs. No separate document index is created.
 
-Raw PDF/audio files live under private generated directories in
-`<data directory>/attachment-tmp`, with `0700` directories and `0600` input files.
-Scoped cleanup removes them on completion, failure or cancellation; worker startup
-removes only this feature's abandoned directories. UTF-8 documents can be processed
-in memory. Saved transcripts, extracted text, source metadata, answers and provider
-records are separate from temporary raw files and follow existing history retention.
+Text attachments are processed in memory without raw files on disk. Saved text,
+source metadata, answers and provider records follow existing history retention.
+Previously saved PDF text and voice transcripts remain readable. Old
+`<data directory>/attachment-tmp` directories from interrupted PDF/audio processing
+are no longer used or cleaned by Poppet; after stopping the old worker, they can
+be removed without deleting saved history.

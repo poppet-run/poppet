@@ -49,7 +49,6 @@ channel settings stay in their existing protected stores.
 | `POPPET_MODEL`                 | `model`                   | Unset               | Model ID for verification and new sessions and tasks                                                  |
 | `POPPET_MCP_SERVERS`           | `mcpServers`              | `[]`                | JSON server list replacing file values; local MCP tools and scheduled permissions                     |
 | `POPPET_BROWSER`               | `browser`                 | `{"enabled":false}` | JSON object replacing browser settings, with native CLI, pinned Chromium, and allowed domains         |
-| `POPPET_VOICE`                 | `voice`                   | `{"enabled":false}` | JSON object replacing local voice settings; explicit absolute decoder, transcriber and model paths    |
 | `POPPET_WEB_SEARCH`            | `webSearch`               | `false`             | Enable web search when the selected provider has a key                                                |
 | `POPPET_WEB_SEARCH_PROVIDER`   | `webSearchProvider`       | `"brave"`           | Search provider, `brave` or `kagi`                                                                    |
 | `POPPET_LOG_REASONING`         | `chat.logReasoning`       | `false`             | Log readable provider reasoning to CLI stderr and worker logs                                         |
@@ -294,32 +293,9 @@ five returned sources within `POPPET_TOOL_BYTES`. Search uses existing run budge
 and adds no browser, crawling, cache, or inference-provider fallback. See
 [chat](chat.md#search-the-web) for result permissions and citations.
 
-## Local voice transcription
+## Removed voice settings
 
-Telegram voice processing stays off until configured. Install FFmpeg and
-whisper.cpp's `whisper-cli`, download a compatible speech model to a permanent
-local path, and add this object to `config.json` alongside your other settings:
-
-```json
-{
-  "voice": {
-    "enabled": true,
-    "ffmpeg": "/absolute/path/to/ffmpeg",
-    "whisper": "/absolute/path/to/whisper-cli",
-    "model": "/absolute/path/to/ggml-tiny.bin"
-  }
-}
-```
-
-All three paths must be absolute; `~` is not expanded. The complete JSON object
-can instead be supplied through `POPPET_VOICE`. Set `voice` to
-`{"enabled":false}` to turn it off. `poppet config` shows the invoking
-process's effective voice settings. Restart the worker after changes.
-
-Audio is downloaded from Telegram and decoded/transcribed locally. No speech
-service or existing provider subscription credentials are used. Only the accepted
-text transcript enters normal model inference. Transcripts and answers remain in
-conversation storage after temporary audio is deleted. Voice runs require a
-subsequent text confirmation for mutations. See [Telegram](gateways/telegram.md#documents-and-voice)
-for limits and [the compatibility probe](attachment-probe.md) for tested versions,
-installation requirements and measurements.
+PDF processing and voice transcription are no longer supported. Remove the
+`voice` section from an existing `config.json`; unknown settings are rejected.
+`POPPET_VOICE` is no longer read. Send a text message or UTF-8 text attachment
+instead. Previously saved document text and transcripts remain in history.

@@ -56,7 +56,7 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 21: Browser automation with agent-browser](phases/21.md)
 - [Phase 23: Change-aware monitoring](phases/23.md)
 - [Phase 24: Editable tasks and snoozing](phases/24.md)
-- [Phase 25: Documents and voice messages](phases/25.md)
+- [Phase 25: Text attachments](phases/25.md)
 - [Phase 26: Context for individual projects](phases/26.md)
 - [Phase 28: Browser login state across requests](phases/28.md)
 - [Phase 29: A useful `poppet doctor`](phases/29.md)

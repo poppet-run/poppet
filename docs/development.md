@@ -338,15 +338,11 @@ for conflicting preferences, worker restart, a scheduled review, and messaging.
 
 ### Attachment checks
 
-Attachment fixtures cover strict UTF-8, PDF page/excerpt labels, encryption,
-malformed/empty PDFs, actual streamed limits, redirect/path rejection, process
-output/deadlines/cancellation, private-file cleanup, owner checks, restart reuse,
-context overflow, source-aware recall and URL permissions, and voice write-tool
-exclusion. The encrypted fixture uses an empty user password so rejection also
-covers encrypted files a parser can open without prompting.
+Attachment fixtures cover strict UTF-8, actual streamed limits, redirect/path
+rejection, cancellation, owner checks, restart reuse, context overflow,
+source-aware recall and URL permissions. PDFs and recordings are rejected before
+download or inference. Saved document text and old transcripts remain readable.
 
-Tests inject downloads and local transcription commands; they do not contact
-Telegram or require FFmpeg, a speech model, or a live inference provider. The
-[compatibility probe](attachment-probe.md) separately records a real local
-Ogg/Opus-to-transcript check. For live validation, follow
-[Telegram's document and voice checklist](gateways/telegram.md#manual-validation).
+Tests inject downloads and use temporary databases; they do not contact Telegram
+or a live inference provider. For live validation, follow
+[Telegram's text attachment checklist](gateways/telegram.md#manual-validation).

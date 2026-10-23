@@ -50,7 +50,7 @@ The Bun monorepo uses private workspaces:
 | `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                       | Platform contract                                                                    |
 | `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                          | Config, agent, store, worker transport, provider contract                            |
 | `@poppet/worker`              | Protected local command transport and request lifecycle                            | Effect                                                                               |
-| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery           | Agent, config, credentials, I/O helpers, store, provider contract                    |
+| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery           | Agent, config, credentials, store, provider contract                                 |
 | `@poppet/channel-whatsapp`    | QR-linked personal chat, protected Signal keys, socket lifecycle, and settings     | Gateway contract                                                                     |
 | `@poppet/channel-telegram`    | Telegram private chat, HTTP transport, polling normalization, and settings         | Gateway contract                                                                     |
 | `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings        | Gateway contract                                                                     |
@@ -1240,18 +1240,18 @@ through `getFile`; only the fixed Telegram file endpoint can supply bytes.
 Streaming byte counts, redirect rejection and actual format checks precede use.
 Other adapters retain their text-only behavior.
 
-The host composes a shared `AttachmentProcessor` with the gateways. It performs
-strict UTF-8 decoding or owned PDF/audio subprocess work outside SQLite
-transactions and the agent's model permit. PDF parsing is text-only with network
-and evaluation disabled. Optional voice uses configured local FFmpeg and
-whisper.cpp paths. Scoped private temporary files and bounded process output,
-duration, deadlines and accepted text apply independently of remote metadata.
+The host composes a shared `AttachmentProcessor` with the gateways. It validates
+text-file metadata and performs strict UTF-8 decoding in memory outside SQLite
+transactions and the agent's model permit. Advertised file sizes and downloaded
+bytes are limited to 64 KiB; accepted text is limited to 32 KiB. Unsupported types fail
+before download. There are no PDF/audio subprocesses or temporary attachment files.
 
 `gateway_attachments` records a result before `Agent.send` starts the inbox's
 reserved run. Recovery reuses accepted text and completed replies. Agent/store
 user messages retain a structured `TextSource` separately from the caption;
 context assembly renders it to labelled untrusted JSON text for any provider.
 The same label survives recall/search. Current URL grants come only from the
-caption. Voice runs remove write and external tools regardless of model output;
-confirmation comes from a subsequent owner text message. See
-[compatibility evidence](attachment-probe.md) and [retention](storage.md#attachment-retention).
+caption. Saved PDF text and voice transcripts remain decodable, including
+pending requests already extracted before the feature was removed. Legacy voice
+runs retain their existing tool restrictions and transcript receipts. See
+[retention](storage.md#attachment-retention).

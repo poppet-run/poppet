@@ -1447,7 +1447,6 @@ describe("makeCLI", () => {
         webSearch: false,
         webSearchProvider: "brave",
         browser: { enabled: false },
-        voice: { enabled: false },
         mcpServers: [],
         chat: { ...chat, outputTokens: 512, runDeadlineSeconds: 300 },
         tasks: { catchUpMinutes: 60 },

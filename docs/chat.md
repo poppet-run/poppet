@@ -51,12 +51,12 @@ and omitted from this display. Inspection needs no selected model or login.
 With `chat.logReasoning` enabled, `chat new` streams thinking to stderr using the
 [interactive prompt's formatting](#interactive-prompt). Stdout contains only the answer.
 
-Telegram can submit [documents and local voice transcripts](gateways/telegram.md#documents-and-voice).
+Telegram can submit [UTF-8 text attachments](gateways/telegram.md#text-attachments).
 The saved user message keeps its caption/request separate from structured source
 metadata and text. Model context and recall label that source as untrusted JSON;
 only text reaches inference providers. Attachment data counts against the existing
-context budget. Titles use the caption or a safe attachment label. Voice replies
-show the accepted transcript and require a later text confirmation for mutations.
+context budget. Titles use the caption or a safe attachment label. Previously saved
+PDF text and voice transcripts remain readable.
 
 ## Interactive prompt
 
@@ -380,7 +380,7 @@ Once a fetched page, web search result, attachment, or MCP result enters a run,
 task management, memory changes, and MCP tools are withdrawn for the rest of that
 run. Reading tools, browser tools, and monitoring observations remain.
 The model proposes withdrawn actions instead, and a new message from you can
-confirm them. Attachments and voice transcripts start their run with these tools
+confirm them. Attachments start their run with these tools
 withdrawn.
 Recorded usage sums all model turns when every turn reports usage, otherwise it
 is null. Live account chat remains a manual check and consumes provider usage.

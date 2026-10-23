@@ -43,12 +43,10 @@ const File = Schema.Struct({
   file_name: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
   mime_type: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
   file_size: Schema.optionalKey(Schema.Natural),
-  duration: Schema.optionalKey(Schema.Natural),
 });
 
 interface FileMetadata {
   size?: number;
-  duration?: number;
 }
 
 const forwardedText: Attachment = {
@@ -83,10 +81,10 @@ const attachmentFrom = (input: typeof Message.Type): Attachment | undefined => {
     media.length !== 1 ||
     input.media_group_id !== undefined ||
     input.forward_origin !== undefined ||
-    (input.document === undefined && input.voice === undefined)
+    input.document === undefined
   )
     return unsupported;
-  const file = Option.getOrNull(Schema.decodeUnknownOption(File)(input.document ?? input.voice));
+  const file = Option.getOrNull(Schema.decodeUnknownOption(File)(input.document));
 
   if (file === null) return unsupported;
 
@@ -94,14 +92,10 @@ const attachmentFrom = (input: typeof Message.Type): Attachment | undefined => {
 
   if (file.file_size !== undefined) optional.size = file.file_size;
 
-  if (file.duration !== undefined) optional.duration = file.duration;
-
   return {
-    kind: input.voice === undefined ? "document" : "voice",
+    kind: "document",
     fileId: file.file_id,
-    name: safeAttachmentName(
-      input.voice === undefined ? (file.file_name ?? "Document") : "Voice message",
-    ),
+    name: safeAttachmentName(file.file_name ?? "Document"),
     mime: (file.mime_type ?? "").toLowerCase(),
     ...optional,
   };

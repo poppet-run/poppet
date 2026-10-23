@@ -11,8 +11,6 @@ export { ConfigSource, dataDirectory } from "#src/source";
 
 export { BrowserSettings, browserSettings } from "@poppet/browser/config";
 
-export { VoiceSettings, voiceSettings } from "#src/voice";
-
 /** Minutes after a missed recurring task time during which it still runs once. */
 export const taskCatchUpMinutes = Config.schema(
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1440 })),

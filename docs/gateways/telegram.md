@@ -73,44 +73,30 @@ clear reply; forwarded text was written by someone else, so it cannot act as you
 request. Reactions
 and Telegram chat renaming remain outside this adapter's scope.
 
-## Documents and voice
+## Text attachments
 
-Send one UTF-8 `.txt`, `.md`, `.markdown`, or text-based `.pdf` file. Its caption
-is your request; without a caption Poppet gives a short summary. PDF replies state
-extraction completeness and retain page labels for citations. Scans, encrypted or
-malformed PDFs, images, archives, albums, forwarded attachments and remote file
-links are unsupported. Send files directly so a third-party caption cannot act as
-your current instruction.
+Send one UTF-8 `.txt`, `.md`, or `.markdown` file. Its caption is your request;
+without a caption Poppet gives a short summary. PDFs, voice messages, images,
+archives, albums, forwarded attachments and remote file links are unsupported.
+Send files directly so a third-party caption cannot act as your current instruction.
+Unsupported types are rejected before download or inference.
 
-Text downloads are limited to 64 KiB, with at most 32 KiB of accepted text. PDFs
-are limited to 8 MiB, 64 pages and 30 seconds of extraction. PDF text can be
-excerpted at 32 KiB; the reply and model input explicitly identify omitted text
-and pages. Oversized text files are rejected rather than shortened. Combined
-caption, source, instructions and tools must still fit the configured chat budget.
+Downloads are limited to 64 KiB, with at most 32 KiB of accepted text. Oversized
+text files are rejected rather than shortened. Combined caption, source,
+instructions and tools must still fit the configured chat budget.
 
 Attachment contents and links are untrusted source material. They cannot grant
-URL access or authorize memory or task changes. Attachment runs
-withhold memory changes, task management, and MCP tools; confirm proposed actions
-in a subsequent text message. `/new`, `/status` and `/cancel`
-are parsed only from your text/caption. File contents cannot invoke them.
+URL access or authorize memory or task changes. Attachment runs withhold memory
+changes, task management, and MCP tools; confirm proposed actions in a subsequent
+text message. `/new`, `/status` and `/cancel` are parsed only from your text/caption.
+File contents cannot invoke them.
 
-Voice is optional and disabled by default. Configure
-[local transcription](../configuration.md#local-voice-transcription), then restart
-the worker. Telegram Ogg/Opus voice messages must be at most 8 MiB and 2 minutes;
-accepted transcripts are at most 16 KiB. Audio decoding and transcription stay
-on your machine. The transcript is sent to the selected text model.
-
-Every voice reply shows the exact accepted transcript. Voice runs have no memory or task write tools and no external MCP/browser tools. For a dictated
-reminder, Poppet proposes the task and resolved time/timezone, then asks you to
-confirm in a subsequent text message. Correct unclear words or times before
-confirming; speech recognition does not authenticate a speaker.
-
-Downloads and extraction run before inference without holding the model permit.
-Accepted text is saved before the run starts, so restart or repeated updates reuse
-it. Raw files are removed after processing; startup removes only this feature's
-abandoned temporary directories. Saved text, transcripts, source metadata and
-answers remain in conversation storage and may enter provider history. Removing
-temporary files does not erase those records or any earlier tool effects.
+Downloads and UTF-8 decoding run before inference without holding the model
+permit. Accepted text is saved before the run starts, so restart or repeated
+updates reuse it. Raw bytes are processed in memory without temporary files.
+Saved text, source metadata and answers remain in conversation storage and may
+enter provider history. Previously accepted PDF text and voice transcripts remain
+readable; pending requests with already-extracted text can finish after an update.
 Reasoning diagnostics are suppressed for attachment runs and later turns in a
 session containing attachment source records.
 
@@ -160,12 +146,10 @@ receipt, and recovery behavior. Scheduled runs cannot manage other tasks.
 
 ## Manual validation
 
-Send a small Markdown file with and without a caption, a two-page PDF, and an
-unsupported file. Check grounding, page/omission labels, and clear rejections.
-Cancel during extraction, restart after an accepted file, and confirm no duplicate
-answer. After enabling local voice, send a short question and a dictated reminder;
-verify the displayed words and proposed timezone, confirm by text, and check that
-exactly one task is created. Check another sender cannot trigger any download.
+Send a small Markdown file with and without a caption. Check grounding and clear
+rejections for a PDF, a voice recording, and another unsupported file. Cancel during
+a download, restart after an accepted file, and confirm no duplicate answer.
+Check another sender cannot trigger any download.
 
 Automated tests use injected HTTP replies and temporary SQLite databases. Live
 bot setup, Telegram permissions, polling, and model inference remain unverified.

@@ -7,8 +7,6 @@ import { BrowserSettings, browserFileValue } from "@poppet/browser/config";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
 
-import { VoiceSettings, voiceFileValue } from "#src/voice";
-
 export const ConfigText = Schema.NonEmptyString.check(Schema.isTrimmed());
 
 export const dataDirectory = Config.schema(ConfigText, "POPPET_DATA_DIR").pipe(
@@ -24,7 +22,6 @@ const FileSettings = Schema.Struct({
   webSearchProvider: Schema.optionalKey(Schema.Literals(["brave", "kagi"])),
   browser: Schema.optionalKey(BrowserSettings),
   mcpServers: Schema.optionalKey(MCPServers),
-  voice: Schema.optionalKey(VoiceSettings),
   tasks: Schema.optionalKey(Schema.Struct({ catchUpMinutes: Schema.optionalKey(Schema.Int) })),
   chat: Schema.optionalKey(
     Schema.Struct({
@@ -119,7 +116,6 @@ export const loadConfigSource = Effect.gen(function* () {
     POPPET_WEB_SEARCH_PROVIDER: file.webSearchProvider,
     POPPET_BROWSER: browserFileValue(file.browser, directory),
     POPPET_MCP_SERVERS: mcpFileValue(file.mcpServers, directory),
-    POPPET_VOICE: voiceFileValue(file.voice),
     POPPET_TASK_CATCH_UP_MINUTES: file.tasks?.catchUpMinutes,
     POPPET_LOG_REASONING: file.chat?.logReasoning,
     POPPET_LOG_TIMINGS: file.chat?.logTimings,

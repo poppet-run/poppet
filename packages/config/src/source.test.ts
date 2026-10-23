@@ -12,7 +12,6 @@ import {
   taskCatchUpMinutes,
   webSearchEnabled,
   webSearchProvider,
-  voiceSettings,
 } from "#src/config";
 import { ConfigSource, loadConfigSource } from "#src/source";
 
@@ -35,56 +34,6 @@ const load = (environment: Record<string, string>) =>
   );
 
 describe("loadConfigSource", () => {
-  test("when voice settings are loaded, defaults off, requires absolute paths, and lets environment settings replace the file", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-voice-config-"));
-
-    try {
-      const defaults = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-      expect(await Effect.runPromise(voiceSettings.pipe(Effect.provide(defaults.context)))).toEqual(
-        { enabled: false },
-      );
-
-      const configured = {
-        enabled: true,
-        ffmpeg: "/local/ffmpeg",
-        whisper: "/local/whisper-cli",
-        model: "/local/ggml-tiny.bin",
-      };
-
-      await writeFile(join(directory, "config.json"), JSON.stringify({ voice: configured }));
-      const file = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-      expect(await Effect.runPromise(voiceSettings.pipe(Effect.provide(file.context)))).toEqual(
-        configured,
-      );
-
-      const overridden = await Effect.runPromise(
-        load({ POPPET_DATA_DIR: directory, POPPET_VOICE: '{"enabled":false}' }),
-      );
-
-      expect(
-        await Effect.runPromise(voiceSettings.pipe(Effect.provide(overridden.context))),
-      ).toEqual({ enabled: false });
-      expect(overridden.source.environmentOverrides).toContain("POPPET_VOICE");
-      await Promise.all(
-        [
-          "",
-          '{"enabled":true}',
-          JSON.stringify({ ...configured, model: "relative-model" }),
-          '{"enabled":false,"service":"cloud"}',
-        ].map(async (json) => {
-          const invalid = await Effect.runPromise(
-            load({ POPPET_DATA_DIR: directory, POPPET_VOICE: json }),
-          );
-
-          await expect(
-            Effect.runPromise(voiceSettings.pipe(Effect.provide(invalid.context))),
-          ).rejects.toThrow("Invalid POPPET_VOICE");
-        }),
-      );
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
   test("when browser settings are loaded, defaults off, resolves file paths, and honors environment replacement", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-browser-config-"));
 
@@ -414,6 +363,7 @@ describe("loadConfigSource", () => {
 
   test.each([
     ["malformed JSON", '{"token":"must-not-appear",'],
+    ["removed voice setting", '{"voice":{"enabled":false}}'],
     ["unknown setting", '{"token":"must-not-appear"}'],
     ["unknown chat setting", '{"chat":{"outputToken":1024}}'],
     ["data directory in file", '{"dataDirectory":"elsewhere"}'],

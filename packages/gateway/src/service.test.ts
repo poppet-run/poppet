@@ -35,7 +35,7 @@ import {
 import { Console, Deferred, Effect, Fiber, Layer, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
-import { AttachmentProcessor, makeAttachmentProcessor } from "#src/attachments";
+import { AttachmentProcessorLive } from "#src/attachments";
 import { ChannelError, MessagingChannel, type IncomingMessage } from "#src/channel";
 import { GatewayRepository, GatewayRepositoryLive } from "#src/repository";
 import { Gateway, GatewayLive, chunks } from "#src/service";
@@ -76,7 +76,6 @@ const fixture = async (
   overrides: Partial<MessagingChannel["Service"]> = {},
   stream: ModelOperations["stream"] = () => response(),
   tools = false,
-  processor?: AttachmentProcessor["Service"],
   policy: Partial<ChatPolicy> = {},
   pages: Pages["Service"] = { fetch: () => Effect.die("Unexpected page fetch") },
 ) => {
@@ -182,10 +181,7 @@ const fixture = async (
         tasks,
         skills,
         agent,
-        Layer.succeed(
-          AttachmentProcessor,
-          processor ?? makeAttachmentProcessor(directory, { enabled: false }),
-        ),
+        AttachmentProcessorLive,
       ),
     ),
   );
@@ -368,7 +364,6 @@ describe.concurrent("Gateway", () => {
         });
       },
       true,
-      undefined,
       {},
       {
         fetch: (url) => Effect.sync(() => JSON.stringify({ url, text: release, truncated: false })),
@@ -2127,7 +2122,7 @@ describe.concurrent("service.ts", () => {
     }
   });
 
-  test("when extraction was saved before inference, reuses it and rejects overflow or disabled voice without inference", async () => {
+  test("when extraction was saved before inference, reuses it and rejects context overflow", async () => {
     let downloads = 0;
 
     const state = await fixture(
@@ -2141,7 +2136,6 @@ describe.concurrent("service.ts", () => {
       },
       undefined,
       false,
-      undefined,
       { contextBytes: 65536 },
     );
 
@@ -2176,13 +2170,6 @@ describe.concurrent("service.ts", () => {
           yield* gateway.processNext;
           yield* gateway.deliverNext;
           expect(state.sent.at(-1)?.text).toContain("context budget");
-          yield* gateway.accept({
-            ...message("disabled", "thread", ""),
-            attachment: { ...document, kind: "voice", name: "Voice message", mime: "audio/ogg" },
-          });
-          yield* gateway.processNext;
-          yield* gateway.deliverNext;
-          expect(state.sent.at(-1)?.text).toContain("disabled");
         }),
       );
       expect(state.requests).toHaveLength(1);
@@ -2192,71 +2179,99 @@ describe.concurrent("service.ts", () => {
     }
   });
 
-  test("when voice requests a task, shows the exact transcript and requires later text confirmation", async () => {
-    const transcript = "Remind me to review notes at 09:00 tomorrow in Europe/London.";
+  test.each([
+    { kind: "document" as const, name: "old.pdf", mime: "application/pdf" },
+    { kind: "voice" as const, name: "Voice message", mime: "audio/ogg" },
+  ])(
+    "when previously extracted $kind text survives an update, finishes without downloading and retains history",
+    async (metadata) => {
+      const source = {
+        ...metadata,
+        sha256: "b".repeat(64),
+        version: 1 as const,
+        text: "Previously saved attachment text",
+        completeness: "Saved extraction",
+      };
 
-    const processor: AttachmentProcessor["Service"] = {
-      limit: () => Effect.succeed(8 * 1024 * 1024),
-      extract: () =>
-        Effect.succeed({
-          kind: "voice",
-          name: "Voice message",
-          mime: "audio/ogg",
-          sha256: "b".repeat(64),
-          version: 1,
-          text: transcript,
-          completeness: "Local transcript; requires text confirmation.",
-        }),
-    };
+      const state = await fixture(
+        { download: () => Effect.die("Unexpected download") },
+        undefined,
+        true,
+      );
 
-    const state = await fixture(
-      { download: () => Effect.succeed(Buffer.from("audio")) },
-      () =>
-        Stream.make({
-          type: "completed" as const,
-          response: {
-            output: [
-              {
-                type: "tool-call" as const,
-                callId: "unconfirmed",
-                name: "manage_tasks",
-                namespace: "poppet_tasks",
-                arguments: "{}",
-              },
-            ],
-            continuation: {
-              version: 1 as const,
-              provider: "test-provider",
-              model: "test-model",
-              data: {},
-            },
-            finishReason: "tool-calls" as const,
-            usage: null,
-          },
-        }),
-      true,
-      processor,
-    );
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            const repo = yield* GatewayRepository;
+            yield* gateway.accept({
+              ...message("saved", "thread", ""),
+              attachment: { ...document, ...metadata },
+            });
+            const entry = repo.next("discord", "bot", Number.MAX_SAFE_INTEGER)!;
+            repo.processing(entry.id);
+            repo.extracted(entry.id, source);
+            repo.state(entry.id, "executing");
+          }),
+        );
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            yield* gateway.recover;
+            yield* gateway.processNext;
+            yield* gateway.deliverNext;
+            const store = yield* Store;
+            const session = (yield* store.sessions)[0]!;
+            expect((yield* store.messages(session.id))[0]?.message).toMatchObject({ source });
+
+            const recalled = yield* store.readSession(
+              { sessionId: session.id, aroundMessageId: null, afterMessageId: null },
+              16384,
+            );
+
+            expect(recalled.messages[0]?.text).toContain(source.text);
+            expect(recalled.messages[0]?.text).toContain("Untrusted attachment source");
+          }),
+        );
+        expect(state.requests).toHaveLength(1);
+        expect(state.requests[0]?.tools.map((tool) => tool.name)).not.toContain("manage_tasks");
+        expect(state.requests[0]?.tools.map((tool) => tool.name)).not.toContain("memory");
+        expect(state.sent[0]?.text).toContain(
+          metadata.kind === "voice" ? source.text : source.name,
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when PDFs or recordings arrive, rejects them before downloading or calling the model", async () => {
+    const state = await fixture({ download: () => Effect.die("Unexpected download") });
 
     try {
       await state.run(
         Effect.gen(function* () {
           const gateway = yield* Gateway;
-          yield* gateway.accept({
-            ...message("voice", "thread", ""),
-            attachment: { ...document, kind: "voice", name: "Voice message", mime: "audio/ogg" },
-          });
-          yield* gateway.processNext;
-          yield* gateway.deliverNext;
-          expect((yield* TaskRepository).list()).toEqual([]);
+
+          for (const attachment of [
+            { ...document, name: "notes.pdf", mime: "application/pdf" },
+            { ...document, kind: "unsupported" as const },
+            { ...document, kind: "voice" as const, name: "Voice message", mime: "audio/ogg" },
+          ]) {
+            yield* gateway.accept({
+              ...message(attachment.name, "thread", "Summarize"),
+              attachment,
+            });
+            yield* gateway.processNext;
+            yield* gateway.deliverNext;
+            expect(state.sent.at(-1)?.text).toContain("not supported");
+          }
+
+          expect((yield* GatewayRepository).status()).toMatchObject({ failedRequests: 3 });
         }),
       );
-      expect(state.sent[0]?.text).toContain(
-        `Transcript (local speech recognition):\n${transcript}`,
-      );
-      expect(state.sent[0]?.text).toContain("subsequent text message");
-      expect(state.requests[0]?.tools.map((tool) => tool.name)).not.toContain("manage_tasks");
-      expect(state.requests[0]?.tools.map((tool) => tool.name)).not.toContain("memory");
+      expect(state.sent).toHaveLength(3);
+      expect(state.requests).toEqual([]);
     } finally {
       await state.close();
     }

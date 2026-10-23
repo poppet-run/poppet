@@ -15,6 +15,7 @@ export class ChannelError extends Data.TaggedError("ChannelError")<{
 
 const ExternalId = Schema.NonEmptyString.check(Schema.isMaxLength(128));
 
+// Voice metadata remains decodable for saved inbox entries; new recordings are unsupported.
 export const Attachment = Schema.Struct({
   kind: Schema.Literals(["document", "voice", "unsupported"]),
   fileId: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),

@@ -38,6 +38,5 @@ for persistent settings.
 ## Development
 
 - [Development](development.md): workspace layout, checks, tests, and adding providers or channels.
-- [Document and voice compatibility](attachment-probe.md): PDF parser, local speech runtime, measurements, and remaining live checks.
 - [Architecture](architecture.md): service boundaries, Effect conventions, storage, and execution contracts.
 - [Implementation plan](implementation-plan.md): completed phases, validation records, and planned work.
