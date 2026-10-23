@@ -39,6 +39,11 @@ loading disabled. It blocks external HTTP requests and system commands, and pass
 the same guards to CLI subprocesses. Workspace test scripts use this runner too.
 Direct `bun test` is rejected unless the isolation runner started it.
 
+Name each test file after an existing source module. Test current functions and
+services through behavior users rely on, including permissions, saved data,
+cancellation, and recovery. Keep shared protocol contract tests at the public
+entry point. Avoid tests of test scaffolding or dependency bookkeeping.
+
 Prefer testing behaviour through package services with explicit inputs and local
 fixtures. CLI tests call `makeCLI` in-process for command routing and output.
 Keep subprocess tests for process behaviour such as stdin, terminal requirements,
