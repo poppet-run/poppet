@@ -112,7 +112,12 @@ directories. The CLI composes `SkillsLive` with host configuration. When a host
 supplies `Skills` and `POPPET_SKILL_INDEX_BYTES` is nonzero, the conversation
 workflow builds a bounded index at run start and adds the read-only
 `poppet_skills.view_skill` tool, a context-only tool journalled like recall. It
-does not extend notes access. Creation requests carry only the selected
+does not extend notes access. With `POPPET_LEARN_SKILLS`, interactive runs also
+get `poppet_skills.manage_skill`, which writes through `LearnedSkills` with the
+run and call as provenance. The conversation tracks the revisions each run has
+seen and its write count; the tool is withdrawn with memory after untrusted
+content and excluded by `readOnlyTools`. Storage failures leave the call
+uncertain rather than replaying it. Creation requests carry only the selected
 name; the process owning the store resolves it, including worker chat and task
 commands. Missing or invalid selections fail before creating a session or task.
 

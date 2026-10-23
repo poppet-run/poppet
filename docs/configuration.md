@@ -66,6 +66,7 @@ channel settings stay in their existing protected stores.
 | `POPPET_PROFILE_BYTES`         | `chat.profileBytes`       | `8192`                   | UTF-8 bytes in `profile.md`; range `1–65536`                                                          |
 | `POPPET_FACTS_BYTES`           | `chat.factsBytes`         | `8192`                   | UTF-8 bytes of serialized saved facts sent to the model; range `1–65536`                              |
 | `POPPET_SKILL_INDEX_BYTES`     | `chat.skillIndexBytes`    | `8192`                   | UTF-8 bytes of the skill index sent to the model; `0` disables model-selected skills; range `0–65536` |
+| `POPPET_LEARN_SKILLS`          | `chat.learnSkills`        | `false`                  | Let interactive runs create and change learned skills                                                 |
 | `POPPET_RUN_DEADLINE_SECONDS`  | `chat.runDeadlineSeconds` | `300`                    | Absolute deadline for one chat or task run; range `30–3600`                                           |
 | `POPPET_TASK_CATCH_UP_MINUTES` | `tasks.catchUpMinutes`    | `60`                     | How late a missed recurring task time may still run once; `0` skips at startup; range `0–1440`        |
 

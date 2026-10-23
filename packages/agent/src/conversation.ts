@@ -1,4 +1,4 @@
-import { Memory } from "@poppet/memory";
+import { LearnedSkills, Memory } from "@poppet/memory";
 import { measureTiming, recordTiming } from "@poppet/provider";
 import type {
   Completion,
@@ -54,6 +54,14 @@ import {
 } from "#src/search";
 import { ChatSettings } from "#src/settings";
 import {
+  decodeSkillManageCall,
+  executeSkillManage,
+  maxSkillWrites,
+  skillLearningGuidance,
+  skillManageTool,
+  type SkillManageCall,
+} from "#src/skill-tools";
+import {
   Skills,
   decodeSkillViewCall,
   executeSkillView,
@@ -74,6 +82,7 @@ type ToolPlan =
   | FetchPageCall
   | MemoryCall
   | SkillViewCall
+  | SkillManageCall
   | WebSearchCall
   | PreparedTaskCall
   | PreparedExternalCall;
@@ -126,6 +135,8 @@ export const toolFailureKind = (
 
   if (name === "memory" && error.reason === "memory-storage") return "uncertain";
 
+  if (name === "manage_skill" && error.reason === "skill-storage") return "uncertain";
+
   return reportedReasons.has(error.reason) ? "reported" : "fatal";
 };
 
@@ -166,6 +177,7 @@ export const conversation = Effect.gen(function* () {
   const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
   const external = Option.getOrNull(yield* Effect.serviceOption(ExternalTools));
   const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
+  const learned = Option.getOrNull(yield* Effect.serviceOption(LearnedSkills));
   const clock = yield* Clock.Clock;
 
   const executeTool = (
@@ -174,6 +186,7 @@ export const conversation = Effect.gen(function* () {
     call: ToolPlan,
     project: ProjectSnapshot | null,
     guard: (output: string) => Effect.Effect<void, AgentError>,
+    skillState: { readonly seen: Map<string, number>; writes: number },
   ) => {
     const operation = Effect.gen(function* () {
       yield* store.startToolCall(run.id, callId);
@@ -196,7 +209,27 @@ export const conversation = Effect.gen(function* () {
             ? Effect.fail(
                 new AgentError({ reason: "tool-permission", message: "Skills are unavailable." }),
               )
-            : executeSkillView(skills, plan),
+            : executeSkillView(skills, plan, learned, skillState.seen),
+        ),
+        Match.when({ name: "manage_skill" }, (plan) =>
+          skills === null || learned === null
+            ? Effect.fail(
+                new AgentError({ reason: "tool-permission", message: "Skills are unavailable." }),
+              )
+            : ++skillState.writes > maxSkillWrites
+              ? Effect.fail(
+                  new AgentError({
+                    reason: "tool-limit",
+                    message: `This run already made ${maxSkillWrites} skill changes. Continue without changing more skills.`,
+                  }),
+                )
+              : executeSkillManage(
+                  skills,
+                  learned,
+                  plan,
+                  { runId: run.id, callId },
+                  skillState.seen,
+                ),
         ),
         Match.when({ name: "manage_tasks" }, (plan) => plan.execute),
         Match.when({ name: "external" }, (plan) => plan.execute),
@@ -271,7 +304,7 @@ export const conversation = Effect.gen(function* () {
     });
 
     // Keep an atomic write and its durable result together on graceful cancellation.
-    return call.name === "save_note" || call.name === "memory"
+    return call.name === "save_note" || call.name === "memory" || call.name === "manage_skill"
       ? Effect.uninterruptible(operation)
       : operation;
   };
@@ -308,10 +341,17 @@ export const conversation = Effect.gen(function* () {
             : [];
 
         // A frozen per-run index; the model loads a matching skill only when it needs one.
-        const skillsIndex =
-          model.description.capabilities.tools && skills !== null && policy.skillIndexBytes > 0
-            ? yield* measureTiming("skill-index", skillIndex(skills, policy.skillIndexBytes))
-            : null;
+        const skillTools =
+          model.description.capabilities.tools && skills !== null && policy.skillIndexBytes > 0;
+
+        // Learning needs the index and view tool, so the model can see revisions to change.
+        const learning = skillTools && learned !== null && policy.learnSkills && !readOnlyTools;
+
+        const skillsIndex = skillTools
+          ? yield* measureTiming("skill-index", skillIndex(skills, policy.skillIndexBytes, learned))
+          : null;
+
+        const skillState = { seen: new Map<string, number>(), writes: 0 };
 
         const tools = model.description.capabilities.tools
           ? [
@@ -321,7 +361,8 @@ export const conversation = Effect.gen(function* () {
               sessionReadTool,
               fetchPageTool,
               memoryTool,
-              ...(skillsIndex === null ? [] : [skillViewTool]),
+              ...(skillsIndex === null && !learning ? [] : [skillViewTool]),
+              ...(learning ? [skillManageTool] : []),
               ...(webSearch.search === null ? [] : [webSearchTool]),
               ...(tasks === null || readOnlyTools ? [] : [taskTool]),
             ].filter(
@@ -352,6 +393,7 @@ export const conversation = Effect.gen(function* () {
         const withdrawn = (tool: Tool) =>
           tool.name === taskTool.name ||
           tool.name === memoryTool.name ||
+          tool.name === skillManageTool.name ||
           catalog.some(
             (entry) =>
               entry.availableAfterUntrusted !== true &&
@@ -361,10 +403,15 @@ export const conversation = Effect.gen(function* () {
 
         const activeTools = () => (untrusted ? tools.filter((tool) => !withdrawn(tool)) : tools);
 
+        const skillPrompt = [
+          ...(skillsIndex === null
+            ? []
+            : [`${skillIndexGuidance(selectedSkill)}\n${JSON.stringify(skillsIndex)}`]),
+          ...(learning ? [skillLearningGuidance] : []),
+        ];
+
         const indexedPrompt =
-          skillsIndex === null
-            ? prompt
-            : `${prompt}\n\n${skillIndexGuidance(selectedSkill)}\n${JSON.stringify(skillsIndex)}`;
+          skillPrompt.length === 0 ? prompt : `${prompt}\n\n${skillPrompt.join("\n\n")}`;
 
         const baseInstructions =
           external?.instructions === undefined
@@ -413,6 +460,7 @@ export const conversation = Effect.gen(function* () {
               Match.when({ name: "read_session" }, decodeSessionReadCall),
               Match.when({ name: "memory" }, decodeMemoryCall),
               Match.when({ name: "view_skill" }, decodeSkillViewCall),
+              Match.when({ name: "manage_skill" }, decodeSkillManageCall),
               Match.when({ name: "search_web" }, decodeWebSearchCall),
               Match.when({ name: "manage_tasks" }, (taskCall) =>
                 decodeTaskCall(taskCall).pipe(
@@ -683,6 +731,7 @@ export const conversation = Effect.gen(function* () {
                           plan,
                           project,
                           guard,
+                          skillState,
                         );
 
                         for (const url of urls) allowedURLs.add(url);
