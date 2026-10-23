@@ -86,6 +86,8 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
   // SAFETY: these mutable fixture controls accept only the declared action literals and string IDs.
   const state = {
     open: false,
+    // Chat runs and optional session naming can hold provider scopes at the same time.
+    openScopes: 0,
     built: 0,
     writeFails: false,
     useTools: false,
@@ -103,6 +105,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     Provider,
     Effect.acquireRelease(
       Effect.sync(() => {
+        state.openScopes++;
         state.open = true;
         state.built++;
 
@@ -244,7 +247,8 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
       }),
       () =>
         Effect.sync(() => {
-          state.open = false;
+          state.openScopes--;
+          state.open = state.openScopes > 0;
         }),
     ),
   );
