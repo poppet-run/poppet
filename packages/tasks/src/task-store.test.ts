@@ -7,8 +7,9 @@ import { AppConfig } from "@poppet/config";
 import { Store, StoreDatabase, StoreLive } from "@poppet/store";
 import { Effect, Layer } from "effect";
 
+import { recurringExpiry } from "#src/task-records";
 import { nextOccurrence, parseTimestamp, type NewTask } from "#src/task-schema";
-import { makeTaskStore, recurringExpiry, type TaskStore } from "#src/task-store";
+import { makeTaskStore, type TaskStore } from "#src/task-store";
 
 const start = Date.parse("2026-10-14T09:00:00Z");
 

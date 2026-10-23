@@ -161,6 +161,8 @@ packages/
     src/scheduler.ts      Serialized scheduled runs and wake queue
     src/commands.ts       Task operations and result inspection
     src/task-store.ts     Durable scheduling and occurrence transitions
+    src/task-controls.ts  Atomic edit, snooze, skip, and run-now transactions
+    src/task-records.ts   Shared task and occurrence records
     src/task-schema.ts    Typed commands, cron expressions, and timestamps
     src/task-socket.ts    Task command client and JSON responses
     src/monitoring.ts     Validated evidence, durable comparisons, recovery projections
