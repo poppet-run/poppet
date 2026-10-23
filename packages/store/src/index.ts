@@ -23,7 +23,6 @@ export {
   Run,
   RunStatus,
   RunOutcome,
-  MessageBatch,
   ToolCall,
   ToolOutcome,
   type StoreStatus,
