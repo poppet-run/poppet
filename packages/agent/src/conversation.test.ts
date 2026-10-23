@@ -5,7 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
-import { LearnedSkills, LearnedSkillsLive, LocalMemoryLive } from "@poppet/memory";
+import {
+  LearnedSkills,
+  LearnedSkillsLive,
+  LearningReviews,
+  LearningReviewsLive,
+  LocalMemoryLive,
+  Memory,
+} from "@poppet/memory";
 import {
   ProviderError,
   type Completion,
@@ -147,6 +154,7 @@ const fixture = async (
         externalTools === undefined ? Layer.empty : Layer.succeed(ExternalTools, externalTools),
         injectedSkills === undefined ? Layer.empty : Layer.succeed(Skills, injectedSkills),
         learnedSkills ? LearnedSkillsLive.pipe(Layer.provide(store)) : Layer.empty,
+        learnedSkills ? LearningReviewsLive.pipe(Layer.provide(store)) : Layer.empty,
         Layer.succeed(Pages, injectedPages ?? { fetch: () => Effect.die("Unexpected page fetch") }),
         Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),
       ),
@@ -158,8 +166,9 @@ const fixture = async (
     notesDirectory,
     path,
     requests,
-    run: <A, E>(program: Effect.Effect<A, E, Agent | Store | LearnedSkills>) =>
-      Effect.runPromise(program.pipe(Effect.provide(layer))),
+    run: <A, E>(
+      program: Effect.Effect<A, E, Agent | Store | LearnedSkills | LearningReviews | Memory>,
+    ) => Effect.runPromise(program.pipe(Effect.provide(layer))),
     close: () => rm(directory, { recursive: true, force: true }),
   };
 };
@@ -516,6 +525,161 @@ describe.concurrent("notes conversation", () => {
         );
       } finally {
         await state.close();
+      }
+    });
+
+    test("reviews a qualifying run in the background and reports its changes once", async () => {
+      let ownerTurns = 0;
+      let reviewTurns = 0;
+
+      const state = await learning(
+        (request) => {
+          if (request.instructions.includes("reviewing one of your own")) {
+            reviewTurns++;
+
+            return reviewTurns === 1
+              ? completed([
+                  manage(
+                    { action: "create", name: "triage", content: "# Triage\n\nSort mail." },
+                    "save",
+                  ),
+                  tool(
+                    "memory",
+                    '{"action":"replace","key":"owner.fact","value":"Changed"}',
+                    "fact",
+                    "poppet_memory",
+                  ),
+                ])
+              : completed([{ type: "text", text: "Saved triage." }], 2);
+          }
+
+          ownerTurns++;
+
+          return ownerTurns === 1
+            ? completed([
+                tool("view_skill", '{"name":"weekly-review"}', "view-1", "poppet_skills"),
+                tool("view_skill", '{"name":"weekly-review"}', "view-2", "poppet_skills"),
+              ])
+            : final();
+        },
+        { learnReview: true, learnMemory: true, reviewMinToolCalls: 2 },
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const agent = yield* Agent;
+            const reviews = yield* LearningReviews;
+            const learned = yield* LearnedSkills;
+            const memory = yield* Memory;
+            yield* memory.remember("owner.fact", "Mine");
+            const session = yield* store.createSession("test-provider", "test-model");
+            expect(yield* reportedFailures(session.id, "Review my week")).toEqual([]);
+            const [run] = yield* store.runs(session.id);
+
+            const [review] = yield* reviews.list({ limit: 5 });
+            expect(review).toMatchObject({ sourceRunId: run!.id, state: "pending" });
+
+            expect(yield* agent.reviewNext!).toBe(true);
+            expect(yield* agent.reviewNext!).toBe(false);
+
+            expect(yield* learned.history("triage")).toMatchObject([
+              {
+                action: "create",
+                origin: "review",
+                sourceRunId: run!.id,
+                sourceCallId: `review-${review!.id}-save`,
+              },
+            ]);
+            // Review cannot change a fact the owner saved from the CLI.
+            expect(yield* memory.list).toMatchObject([{ key: "owner.fact", value: "Mine" }]);
+            expect(yield* reviews.list({ limit: 5 })).toMatchObject([
+              {
+                state: "completed",
+                // The fixture answers a reported tool error with its default final reply.
+                summary: "Done",
+                changes: [{ kind: "skill", action: "create", name: "triage", revision: 1 }],
+              },
+            ]);
+
+            const notices = (options: { readonly notices?: boolean }) =>
+              Stream.runCollect(agent.send(session.id, "Next", options)).pipe(
+                Effect.map((events) =>
+                  [...events].flatMap((event) => (event.type === "notice" ? [event.text] : [])),
+                ),
+              );
+
+            expect(yield* notices({})).toEqual([]);
+            expect(yield* notices({ notices: true })).toEqual([
+              "Since last time: learned skill triage (r1).",
+            ]);
+            expect(yield* notices({ notices: true })).toEqual([]);
+          }),
+        );
+        expect(
+          state.requests.some(
+            (request) =>
+              request.messages[0]?.role === "user" &&
+              request.messages[0].text.includes('"tool":"poppet_skills.view_skill"'),
+          ),
+        ).toBe(true);
+      } finally {
+        await state.close();
+      }
+    });
+
+    test("skips runs with untrusted content and leaves review off by default", async () => {
+      let turns = 0;
+
+      const state = await learning(
+        () => {
+          turns++;
+
+          return turns === 1
+            ? completed([
+                tool("fetch_page", '{"url":"https://example.com/"}', "page", "poppet_web"),
+              ])
+            : final();
+        },
+        { learnReview: true, reviewMinToolCalls: 1 },
+        { fetch: () => Effect.succeed("Page") },
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const reviews = yield* LearningReviews;
+            const session = yield* store.createSession("test-provider", "test-model");
+            yield* reportedFailures(session.id, "Read https://example.com/");
+            expect(yield* reviews.list({ limit: 5 })).toMatchObject([
+              { state: "skipped", reason: "untrusted-content" },
+            ]);
+            yield* reportedFailures(session.id, "Scheduled", { readOnlyTools: true });
+            expect((yield* reviews.list({ limit: 5 })).length).toBe(1);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+
+      const disabled = await learning(() => final(), {
+        reviewMinToolCalls: 1,
+        reviewTurnInterval: 1,
+      });
+
+      try {
+        await disabled.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            yield* reportedFailures(session.id, "Hello");
+            expect(yield* (yield* LearningReviews).list({ limit: 5 })).toEqual([]);
+          }),
+        );
+      } finally {
+        await disabled.close();
       }
     });
 

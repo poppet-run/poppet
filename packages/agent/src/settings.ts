@@ -19,6 +19,16 @@ export interface ChatPolicy {
   readonly learnSkills: boolean;
   /** Lets interactive runs save, replace, and forget facts without an explicit request. */
   readonly learnMemory: boolean;
+  /** Queues background review of qualifying interactive runs for the worker. */
+  readonly learnReview: boolean;
+  /** Tool calls that make a run worth reviewing. */
+  readonly reviewMinToolCalls: number;
+  /** Completed runs in a session since its last review that make the next one qualify. */
+  readonly reviewTurnInterval: number;
+  /** UTF-8 bytes of the reviewed run's transcript sent to the review model. */
+  readonly reviewInputBytes: number;
+  /** Pending reviews older than this are skipped instead of run. */
+  readonly reviewMaxAgeHours: number;
   /** Absolute deadline for one chat request, including every model turn and tool call. */
   readonly runDeadlineSeconds: number;
 }
@@ -43,6 +53,11 @@ export const defaultPolicy: ChatPolicy = {
   skillIndexBytes: 8192,
   learnSkills: false,
   learnMemory: false,
+  learnReview: false,
+  reviewMinToolCalls: 5,
+  reviewTurnInterval: 10,
+  reviewInputBytes: 65536,
+  reviewMaxAgeHours: 24,
   runDeadlineSeconds: 300,
 };
 
@@ -96,6 +111,22 @@ export const ChatSettingsLive = Layer.effect(
         ),
         learnMemory: Config.Boolean("POPPET_LEARN_MEMORY").pipe(
           Config.withDefault(defaultPolicy.learnMemory),
+        ),
+        learnReview: Config.Boolean("POPPET_LEARN_REVIEW").pipe(
+          Config.withDefault(defaultPolicy.learnReview),
+        ),
+        reviewMinToolCalls: Config.schema(bounded(64), "POPPET_REVIEW_MIN_TOOL_CALLS").pipe(
+          Config.withDefault(defaultPolicy.reviewMinToolCalls),
+        ),
+        reviewTurnInterval: Config.schema(bounded(100), "POPPET_REVIEW_TURN_INTERVAL").pipe(
+          Config.withDefault(defaultPolicy.reviewTurnInterval),
+        ),
+        reviewInputBytes: Config.schema(
+          Schema.Int.check(Schema.isBetween({ minimum: 4096, maximum: 262144 })),
+          "POPPET_REVIEW_INPUT_BYTES",
+        ).pipe(Config.withDefault(defaultPolicy.reviewInputBytes)),
+        reviewMaxAgeHours: Config.schema(bounded(168), "POPPET_REVIEW_MAX_AGE_HOURS").pipe(
+          Config.withDefault(defaultPolicy.reviewMaxAgeHours),
         ),
         runDeadlineSeconds: Config.schema(
           Schema.Int.check(Schema.isBetween({ minimum: 30, maximum: 3600 })),

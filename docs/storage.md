@@ -44,7 +44,7 @@ controls and immutable occurrence definitions, and migration 4 adds attachment
 processing results and source-aware recall. Migration 5 adds project snapshots
 and scoped facts without resetting saved data. Migration 6 adds learned skills
 and their revision history. Migration 7 adds fact origins and fact revision
-history.
+history. Migration 8 adds the background review queue.
 Migration SQL lives in timestamped TypeScript files under
 `packages/store/src/migrations/`, registered in order by `migrations.ts`.
 A checksummed migration ledger rejects newer schemas and changed migration
@@ -52,7 +52,7 @@ history. All pending migrations commit together; a failure rolls back the pendin
 batch.
 
 The unreleased base migration history was consolidated into schema version 1;
-the current schema is version 7. Existing version-1 through version-6 databases upgrade in place.
+the current schema is version 8. Existing version-1 through version-7 databases upgrade in place.
 Development databases created with the former 14-step history are still rejected.
 Those legacy databases require a fresh data directory; databases are never reset
 automatically.
@@ -173,6 +173,15 @@ append-only `memory_revisions` table records every remember, replace, forget,
 and revert per project scope and key, with the value (null when forgotten),
 origin, source run, and time. Existing facts are backfilled as revision 1. CLI
 changes have no source run; model changes always do.
+
+## Background reviews
+
+Migration 8 adds `learning_reviews`, one row per reviewed source run, with its
+session, state (`pending`, `running`, `completed`, `skipped`, `failed`, or
+`uncertain`), reason, bounded summary, a JSON array of the skill and fact
+changes it made, and when its notice was shown. Reviews write no messages or
+runs; their skill and fact revisions name the reviewed run with origin `review`.
+A worker restart marks running reviews `uncertain` rather than replaying them.
 
 ## Project snapshots and facts
 

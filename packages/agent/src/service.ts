@@ -1,5 +1,6 @@
 import { styleText } from "node:util";
 
+import { LearningReviews, type LearningReview, type ReviewChange } from "@poppet/memory";
 import {
   ProviderError,
   RequestTiming,
@@ -33,6 +34,7 @@ import {
 import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
 import { memoryPrompt } from "#src/memory";
+import { reviewDecision, reviewRunner } from "#src/review";
 import { ChatSettings } from "#src/settings";
 import { generateTitle, sessionTitle } from "#src/title";
 
@@ -53,6 +55,7 @@ export type ChatEvent =
   | { readonly type: "text-delta"; readonly text: string }
   | { readonly type: "reasoning-delta"; readonly text: string }
   | { readonly type: "reasoning-end" }
+  | { readonly type: "notice"; readonly text: string }
   | { readonly type: "completed"; readonly run: Run };
 
 /** Failures from orchestration, model inference, or persistence of a chat request. */
@@ -79,8 +82,12 @@ export class Agent extends Context.Service<
         readonly timingLog?: (line: string) => Effect.Effect<void>;
         /** Host-only validation of this run's authorized messaging conversation. */
         readonly taskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
+        /** Emits and consumes pending background-review notices for this session. */
+        readonly notices?: boolean;
       },
     ) => Stream.Stream<ChatEvent, ChatFailure>;
+    /** Runs the oldest pending background review, if any, sharing the request permit. */
+    readonly reviewNext?: Effect.Effect<boolean>;
   }
 >()("poppet/Agent") {}
 
@@ -106,6 +113,28 @@ const failureOutcome = (exit: Exit.Exit<unknown, ChatFailure>): RunOutcome => {
 export const logChatDiagnostic = (text: string) =>
   Console.error(process.env.NO_COLOR ? text : styleText("gray", text, { stream: process.stderr }));
 
+const describeChange = (change: ReviewChange) => {
+  if (change.kind === "fact") {
+    const scope = change.project === null ? "" : `${change.project} `;
+
+    return `${change.action === "forget" ? "forgot" : "saved"} ${scope}fact ${change.name}`;
+  }
+
+  const revision = change.revision === null ? "" : ` (r${change.revision})`;
+  let verb = "updated";
+
+  if (change.action === "create") verb = "learned";
+  else if (change.action === "delete") verb = "deleted";
+
+  return `${verb} skill ${change.name}${revision}`;
+};
+
+const describeNotice = (pending: ReadonlyArray<LearningReview>) =>
+  `Since last time: ${pending
+    .flatMap((review) => review.changes)
+    .map(describeChange)
+    .join("; ")}.`;
+
 export const AgentLive = Layer.effect(
   Agent,
   Effect.gen(function* () {
@@ -117,6 +146,48 @@ export const AgentLive = Layer.effect(
     const requests = yield* Semaphore.make(1);
     // Naming is optional and short, so it does not wait behind a running request.
     const naming = yield* Semaphore.make(1);
+    const reviews = Option.getOrNull(yield* Effect.serviceOption(LearningReviews));
+    const reviewer = reviews === null ? null : yield* reviewRunner(reviews);
+
+    // Queueing is best-effort: a completed answer never fails because review bookkeeping did.
+    const queueReview = (run: Run, readOnly: boolean, attachment: boolean) =>
+      reviews === null || !policy.learnReview || readOnly
+        ? Effect.void
+        : Effect.gen(function* () {
+            const since = yield* reviews.lastReviewAt(run.sessionId);
+
+            const completed = (yield* store.runs(run.sessionId)).filter(
+              (entry) => entry.status === "completed" && entry.createdAt > (since ?? -1),
+            );
+
+            const decision = reviewDecision(
+              yield* store.toolCalls(run.id),
+              completed.length,
+              attachment,
+              policy,
+            );
+
+            if (decision !== null)
+              yield* reviews.enqueue({
+                sourceRunId: run.id,
+                sessionId: run.sessionId,
+                ...decision,
+              });
+          }).pipe(Effect.catch(() => Effect.void));
+
+    const takeNotices = (sessionId: string) =>
+      reviews === null
+        ? Effect.succeed(null)
+        : reviews.notices(sessionId).pipe(
+            Effect.flatMap((pending) =>
+              pending.length === 0
+                ? Effect.succeed(null)
+                : reviews
+                    .markNotified(pending.map((review) => review.id))
+                    .pipe(Effect.as(describeNotice(pending))),
+            ),
+            Effect.catch(() => Effect.succeed(null)),
+          );
 
     const send = (
       sessionId: string,
@@ -128,6 +199,7 @@ export const AgentLive = Layer.effect(
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
         readonly timingLog?: (line: string) => Effect.Effect<void>;
         readonly taskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
+        readonly notices?: boolean;
       } = {},
     ): Stream.Stream<ChatEvent, ChatFailure> =>
       Stream.suspend(() => {
@@ -294,13 +366,27 @@ export const AgentLive = Layer.effect(
                     ),
                   );
 
+                  yield* queueReview(
+                    saved,
+                    options.source?.kind === "voice" || (options.readOnlyTools ?? false),
+                    attachmentHistory,
+                  );
+
                   return { type: "completed" as const, run: saved };
                 }),
               ),
               Stream.ensuring(flushReasoning(true)),
             );
 
-            return Stream.concat(Stream.make({ type: "started" as const, run }), reply);
+            const notice = options.notices === true ? yield* takeNotices(sessionId) : null;
+
+            return Stream.concat(
+              Stream.make<ChatEvent[]>(
+                { type: "started", run },
+                ...(notice === null ? [] : [{ type: "notice" as const, text: notice }]),
+              ),
+              reply,
+            );
           }),
         ).pipe(
           Stream.interruptWhen(
@@ -387,6 +473,25 @@ export const AgentLive = Layer.effect(
         ),
       );
 
-    return { send, nameSession };
+    // Reviews wait for the same permit as chats and tasks, so they never overlap owner work.
+    const reviewNext =
+      reviews === null || reviewer === null
+        ? Effect.succeed(false)
+        : Effect.acquireUseRelease(
+            requests.take(1),
+            () =>
+              reviews
+                .claim(policy.reviewMaxAgeHours * 3_600_000)
+                .pipe(
+                  Effect.flatMap((review) =>
+                    review === null
+                      ? Effect.succeed(false)
+                      : reviewer(review, resolver, policy).pipe(Effect.as(true)),
+                  ),
+                ),
+            () => requests.release(1),
+          ).pipe(Effect.catch(() => Effect.succeed(false)));
+
+    return { send, nameSession, reviewNext };
   }),
 );

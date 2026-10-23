@@ -121,6 +121,24 @@ already exists, then validates it like any other owner skill. These commands go
 through a running worker, like memory commands, and otherwise open the store
 directly.
 
+## Background review
+
+With `POPPET_LEARN_REVIEW=true`, the worker also reviews qualifying interactive
+runs after they finish, as Hermes Agent does. A run qualifies after at least 5
+tool calls (`POPPET_REVIEW_MIN_TOOL_CALLS`) or every 10 completed runs in a
+session (`POPPET_REVIEW_TURN_INTERVAL`). Runs that read pages, search results,
+MCP results, attachments, or recalled history are skipped, so fetched text
+cannot plant a skill. The review is one extra model request with the session's
+model and only the skill tools (with `POPPET_LEARN_SKILLS`) and the memory tool
+(with `POPPET_LEARN_MEMORY`); it never changes facts you saved from the CLI.
+
+Reviews run one at a time, never alongside your own chats or tasks, and only
+in a running worker. Changes are attributed to the reviewed run with origin
+`review`. The next CLI chat in that session prints them once, for example
+`Since last time: learned skill triage (r1).` Inspect every review with
+`poppet learning reviews`, and undo changes with `skills revert` or
+`memory revert`. Each review costs a model request against your provider.
+
 ## Draft a skill from a completed procedure
 
 After a procedure succeeds, ask Poppet in the same chat to turn it into reusable

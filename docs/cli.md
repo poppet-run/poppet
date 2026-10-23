@@ -116,6 +116,14 @@ and [notes](notes.md) for the tools available during a run.
 Use `--skill <name>` before a new chat message or task prompt to save the current
 procedure with that session or task. See [skills](skills.md) for examples and limits.
 
+## Learning
+
+| Command                                      | Action                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------- |
+| `learning reviews [--state <s>] [--limit n]` | List background reviews, their outcomes, and the changes they made. |
+
+See [skills](skills.md#background-review) for when reviews run.
+
 ## Projects
 
 | Command                | Action                                                                |
