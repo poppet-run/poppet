@@ -4,15 +4,19 @@
 
 Phases 1–21 and 23–26 are implemented with automated checks. Live validation
 remains outstanding where listed in each phase.
-Phases 27–30 are planned only. Plans do not authorize implementation.
+Phases 28–30 are planned only. Plans do not authorize implementation.
 
 Completed phases retain short status summaries, evidence, and outstanding checks.
 Use the linked guides for current behavior and setup. Git history retains the
 original delivery plans.
 
-The remaining priority order is reviewed actions, browser login state, doctor,
-then calendar briefing and weekly review trials using existing tools. Independent
-work such as doctor need not wait for earlier phases.
+The remaining priority order is browser login state, doctor, then calendar
+briefing and weekly review trials using existing tools. Independent work such as
+doctor need not wait for earlier phases.
+
+Reusable workflows start with [drafting a skill in chat](skills.md#draft-a-skill-from-a-completed-procedure),
+owner review, and manual saving into the local skill library. This uses existing
+chat and skill selection, with no approval system or new runtime phase.
 
 Updated: 2026-10-22
 
@@ -51,7 +55,6 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 24: Editable tasks and snoozing](phases/24.md)
 - [Phase 25: Documents and voice messages](phases/25.md)
 - [Phase 26: Context for individual projects](phases/26.md)
-- [Phase 27: Actions the owner can review and approve](phases/27.md)
 - [Phase 28: Browser login state across requests](phases/28.md)
 - [Phase 29: A useful `poppet doctor`](phases/29.md)
 - [Phase 30: Calendar briefings and weekly reviews](phases/30.md)

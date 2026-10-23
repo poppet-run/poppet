@@ -2,7 +2,7 @@
 
 [Documentation index](README.md)
 
-A skill is an owner-written procedure selected when creating a chat or scheduled
+A skill is an owner-reviewed procedure selected when creating a chat or scheduled
 task. It uses Poppet's existing tools and permissions. Create one file at
 `<POPPET_DATA_DIR>/skills/<name>/SKILL.md`, using UTF-8 Markdown of at most 8192
 bytes. Names contain 1–128 letters, digits, underscores, or hyphens.
@@ -54,6 +54,54 @@ Messaging accepts `/new --project acorn --skill weekly-review Review progress`.
 Skills are single files. Poppet does not parse YAML metadata, follow references,
 run scripts, download skills, choose them automatically, or let the agent write
 them.
+
+## Draft a skill from a completed procedure
+
+After a procedure succeeds, ask Poppet in the same chat to turn it into reusable
+Markdown. For example:
+
+```text
+Turn the weekly review we just completed into a skill named weekly-review.
+Return only a draft in your reply; do not save anything. Include required inputs,
+steps using existing Poppet tools, pitfalls, and how to verify the result.
+Generalize private project details and omit credentials and unrelated facts.
+Identify any missing context or unverified steps rather than inventing them.
+```
+
+This is ordinary chat, including in authorized messaging conversations. There is
+no skill-creation tool, approval command, or automatic publication. Poppet returns
+text for the owner to review and revise before saving it manually.
+
+Review the draft against what actually worked. Keep the procedure self-contained,
+within the 8192-byte limit, and limited to tools and permissions Poppet already
+has. Replace account names, paths, and destinations with inputs where appropriate.
+Check for credentials and private information before placing it in the shared
+local skill library. Project permissions still depend on the project selected
+for the future chat or task, not the conversation that produced the draft.
+
+The source is the conversation available to that model turn, which may omit older
+exchanges under the history/context budgets. Recalled conversations expose bounded
+user and final assistant text, not a complete execution trace. A successful model
+reply is not proof that an external action succeeded. If the source is incomplete,
+clarify the steps before saving. Keep the source session/run IDs in your own review
+notes if you need provenance; this flow adds no separate audit records.
+
+Save the reviewed Markdown with your editor at
+`<POPPET_DATA_DIR>/skills/<name>/SKILL.md`. Use a new name to preserve an existing
+skill. Run `poppet skills show <name>` to validate and inspect the saved file before
+selecting it explicitly for a new chat or task. Invalid files remain unusable until
+you correct them; Poppet does not repair or publish them automatically. Saving a
+file does not change the current session or any existing session/task snapshots.
+
+Validate a new procedure on a harmless input in a fresh chat first. Check actual
+results and tool receipts, then try it in a scheduled task only if it works with
+scheduled read-only permissions. Editing the file requires another new chat or
+task to test the revised snapshot.
+
+This flow changes only an owner-saved instruction file. It does not modify
+Poppet's code, base rules, configuration, or permissions. Automatic learning or
+selection, skill hubs, downloads, reference bundles, script execution, and a
+publishing command are deferred.
 
 ## Messaging sessions
 
