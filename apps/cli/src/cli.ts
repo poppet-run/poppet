@@ -13,6 +13,7 @@ import { configCommand } from "#src/commands/config";
 import { createCLIContext } from "#src/commands/context";
 import { UsageError } from "#src/commands/errors";
 import { gatewayCommand } from "#src/commands/gateway";
+import { learningCommand } from "#src/commands/learning";
 import { mcpCommand } from "#src/commands/mcp";
 import { memoryCommand } from "#src/commands/memory";
 import { projectsCommand } from "#src/commands/projects";
@@ -48,6 +49,7 @@ export const makeCLI = (
       chatCommand(context),
       configCommand(context),
       gatewayCommand(context),
+      learningCommand(context),
       mcpCommand(context),
       memoryCommand(context),
       projectsCommand(context),

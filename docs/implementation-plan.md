@@ -24,8 +24,8 @@ Updated: 2026-10-23
 
 Storage history: the unreleased base schema was consolidated into version 1.
 Phases 23–26 add migrations 2–5 for monitoring, task controls, attachments, and
-projects while retaining earlier data. Phase 31 adds migrations 6 and 7 for
-learned skills and fact history. Historical validation records describe
+projects while retaining earlier data. Phase 31 adds migrations 6–8 for
+learned skills, fact history, and background reviews. Historical validation records describe
 checks performed at delivery time, not checks rerun for this documentation update.
 See [storage](storage.md#schema-and-saved-records),
 [development](development.md#store-migrations), and

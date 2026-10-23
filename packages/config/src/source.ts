@@ -43,6 +43,11 @@ const FileSettings = Schema.Struct({
       skillIndexBytes: Schema.optionalKey(Schema.Int),
       learnSkills: Schema.optionalKey(Schema.Boolean),
       learnMemory: Schema.optionalKey(Schema.Boolean),
+      learnReview: Schema.optionalKey(Schema.Boolean),
+      reviewMinToolCalls: Schema.optionalKey(Schema.Int),
+      reviewTurnInterval: Schema.optionalKey(Schema.Int),
+      reviewInputBytes: Schema.optionalKey(Schema.Int),
+      reviewMaxAgeHours: Schema.optionalKey(Schema.Int),
       runDeadlineSeconds: Schema.optionalKey(Schema.Int),
     }),
   ),
@@ -133,6 +138,11 @@ export const loadConfigSource = Effect.gen(function* () {
     POPPET_SKILL_INDEX_BYTES: file.chat?.skillIndexBytes,
     POPPET_LEARN_SKILLS: file.chat?.learnSkills,
     POPPET_LEARN_MEMORY: file.chat?.learnMemory,
+    POPPET_LEARN_REVIEW: file.chat?.learnReview,
+    POPPET_REVIEW_MIN_TOOL_CALLS: file.chat?.reviewMinToolCalls,
+    POPPET_REVIEW_TURN_INTERVAL: file.chat?.reviewTurnInterval,
+    POPPET_REVIEW_INPUT_BYTES: file.chat?.reviewInputBytes,
+    POPPET_REVIEW_MAX_AGE_HOURS: file.chat?.reviewMaxAgeHours,
     POPPET_RUN_DEADLINE_SECONDS: file.chat?.runDeadlineSeconds,
   };
 

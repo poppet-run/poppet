@@ -238,7 +238,10 @@ export const sendChat = (
     yield* announce(`Session: ${sessionId}`, sessionId);
     const agent = yield* Agent;
 
-    const options = reasoning.log === undefined ? {} : { reasoningLog: reasoning.log };
+    const options =
+      reasoning.log === undefined
+        ? { notices: true }
+        : { notices: true, reasoningLog: reasoning.log };
 
     const reply = agent.send(
       sessionId,
@@ -248,6 +251,8 @@ export const sendChat = (
 
     yield* Stream.runForEach(reply, (event) => {
       if (event.type === "started") return announce(`Run: ${event.run.id}`);
+
+      if (event.type === "notice") return announce(event.text);
 
       if (event.type === "text-delta") return write(event.text);
 

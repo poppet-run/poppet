@@ -103,7 +103,9 @@ results, notes, history, or tool output; only your own messages can supply facts
 
 The existing safeguards stay: memory changes are withdrawn once untrusted
 content enters a run, scheduled runs cannot change memory, budgets and limits
-are unchanged, and every change records its run. Use `memory history` and
+are unchanged, and every change records its run. With `POPPET_LEARN_REVIEW`, background
+review can also save facts, but never changes ones with CLI origin; see
+[background review](skills.md#background-review). Use `memory history` and
 `memory revert` to inspect and undo anything. Without the setting, the
 explicit-request rules above apply.
 

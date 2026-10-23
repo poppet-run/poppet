@@ -95,6 +95,7 @@ export const executeSkillManage = (
   call: SkillManageCall,
   source: { readonly runId: string; readonly callId: string },
   seen: Map<string, number>,
+  origin: "turn" | "review" = "turn",
 ) =>
   Effect.gen(function* () {
     const name = call.change.name;
@@ -123,7 +124,7 @@ export const executeSkillManage = (
         : { ...call.change, expectedRevision: call.revision };
 
     const receipt = yield* learned
-      .write(change, { origin: "turn", ...source })
+      .write(change, { origin, ...source })
       .pipe(Effect.mapError(writeFailure));
 
     if (receipt.deleted) seen.delete(name);

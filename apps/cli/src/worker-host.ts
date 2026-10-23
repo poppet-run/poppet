@@ -1,5 +1,6 @@
-import { Skills } from "@poppet/agent";
+import { Agent, Skills } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
+import { LearningReviews } from "@poppet/memory";
 import { Store } from "@poppet/store";
 import {
   executeLocalTaskCommand,
@@ -27,6 +28,18 @@ export const runWorker = (mode: WorkerMode) =>
       const messaging = Option.getOrNull(yield* Effect.serviceOption(MessagingWorker));
       const services = yield* Effect.context<Store | TaskRepository | Skills>();
       const startedAt = yield* Clock.currentTimeMillis;
+      const agent = Option.getOrNull(yield* Effect.serviceOption(Agent));
+      const reviews = Option.getOrNull(yield* Effect.serviceOption(LearningReviews));
+
+      // Background review: reviews interrupted by a previous crash stay uncertain, never replayed.
+      const reviewing =
+        agent?.reviewNext === undefined || reviews === null
+          ? Effect.never
+          : Effect.gen(function* () {
+              yield* reviews.recover.pipe(Effect.catch(() => Effect.void));
+
+              while (true) if (!(yield* agent.reviewNext!)) yield* Effect.sleep("30 seconds");
+            });
 
       const destinations: TaskDestinations["Service"] = {
         resolve: (adapter, conversationId) =>
@@ -69,8 +82,8 @@ export const runWorker = (mode: WorkerMode) =>
         "Worker running. Use commands in another terminal; Ctrl-C stops the worker.",
       );
 
-      yield* Effect.all([tasks?.run ?? Effect.never, messaging?.run ?? Effect.never], {
-        concurrency: 2,
+      yield* Effect.all([tasks?.run ?? Effect.never, messaging?.run ?? Effect.never, reviewing], {
+        concurrency: 3,
         discard: true,
       });
     }),
