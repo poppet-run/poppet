@@ -25,6 +25,7 @@ import { StoreLive } from "@poppet/store";
 import { ChatTasksLive, TaskRepositoryLive, WorkerConnections } from "@poppet/tasks";
 import { Context, Effect, Layer, Schema } from "effect";
 
+import { BashLive } from "#src/bash";
 import { createConnectionStatus } from "#src/connection-status";
 import { ExternalAgentToolsLive } from "#src/mcp";
 import { WebSearchLive } from "#src/web-search";
@@ -182,6 +183,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
       webSearch,
       chatTasks,
       externalTools,
+      BashLive,
     ]),
     Layer.provideMerge(config),
   );

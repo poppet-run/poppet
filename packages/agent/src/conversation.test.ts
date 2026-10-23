@@ -18,6 +18,7 @@ import { WebSearch, WebSearchError, makeBraveSearch } from "@poppet/web-search";
 import { Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect";
 import OpenAI from "openai";
 
+import { Bash, commandReviewInstructions } from "#src/bash";
 import { AgentError } from "#src/errors";
 import { ExternalTools, type ExternalTool } from "#src/external-tools";
 import { Pages, fetchPageTool } from "#src/pages";
@@ -88,6 +89,7 @@ const fixture = async (
   chatTasks?: ChatTasks["Service"],
   externalTools?: ExternalTools["Service"],
   injectedSkills?: Skills["Service"],
+  injectedBash?: Bash["Service"],
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-tools-"));
   const requests: ModelRequest[] = [];
@@ -132,6 +134,7 @@ const fixture = async (
         chatTasks === undefined ? Layer.empty : Layer.succeed(ChatTasks, chatTasks),
         externalTools === undefined ? Layer.empty : Layer.succeed(ExternalTools, externalTools),
         injectedSkills === undefined ? Layer.empty : Layer.succeed(Skills, injectedSkills),
+        injectedBash === undefined ? Layer.empty : Layer.succeed(Bash, injectedBash),
         Layer.succeed(Pages, injectedPages ?? { fetch: () => Effect.die("Unexpected page fetch") }),
         Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),
       ),
@@ -191,6 +194,173 @@ const skilled = (
 ) => fixture(stream, overrides, pages, undefined, undefined, undefined, librarySkills);
 
 describe.concurrent("conversation", () => {
+  test.each([false, true])(
+    "when scheduled=%s, reviews every Bash invocation independently before executing",
+    async (scheduled) => {
+      const executed: string[] = [];
+      const args = { command: "printf hello", cwd: "/tmp", timeoutSeconds: 5 };
+      let reviews = 0;
+
+      const state = await fixture(
+        (request) => {
+          if (request.instructions === commandReviewInstructions) {
+            reviews++;
+            expect(request.tools).toEqual([]);
+            expect(request.messages).toHaveLength(1);
+            expect(
+              JSON.parse(request.messages[0]!.role === "user" ? request.messages[0]!.text : "{}"),
+            ).toMatchObject({ ownerRequest: "Print hello twice", ...args });
+
+            return completed([
+              {
+                type: "text",
+                text: JSON.stringify({ decision: "allow", reason: "Requested output" }),
+              },
+            ]);
+          }
+
+          return request.messages.at(-1)?.role === "tool"
+            ? final()
+            : completed([
+                tool("bash", JSON.stringify(args), "bash-1", "poppet_system"),
+                tool("bash", JSON.stringify(args), "bash-2", "poppet_system"),
+              ]);
+        },
+        {},
+        undefined,
+        { search: null },
+        undefined,
+        undefined,
+        undefined,
+        {
+          run: (request) =>
+            Effect.sync(() => {
+              executed.push(request.command);
+
+              return { stdout: "hello", stderr: "", exitCode: 0, truncated: false };
+            }),
+        },
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            yield* Stream.runDrain(
+              (yield* Agent).send(session.id, "Print hello twice", { readOnlyTools: scheduled }),
+            );
+            const run = (yield* store.runs(session.id))[0]!;
+            expect(run.status).toBe("completed");
+            expect((yield* store.toolCalls(run.id)).map((call) => call.status)).toEqual([
+              "completed",
+              "completed",
+            ]);
+          }),
+        );
+        expect(executed).toEqual([args.command, args.command]);
+        expect(reviews).toBe(2);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test.each(["deny", "invalid", "unavailable", "scheduled", "approved", "rejected"])(
+    "when Bash review is %s, enforces the decision without model retries",
+    async (mode) => {
+      let executions = 0;
+      let approvals = 0;
+      const args = { command: "change-service", cwd: "/tmp", timeoutSeconds: 5 };
+
+      const state = await fixture(
+        (request) => {
+          if (request.instructions === commandReviewInstructions) {
+            if (mode === "unavailable")
+              return Stream.fail(
+                new ProviderError({
+                  provider: "test-provider",
+                  reason: "temporary",
+                  message: "offline",
+                }),
+              );
+
+            return completed([
+              {
+                type: "text",
+                text:
+                  mode === "invalid"
+                    ? "not JSON"
+                    : JSON.stringify({
+                        decision: mode === "deny" ? "deny" : "needs_approval",
+                        reason: "Service change",
+                      }),
+              },
+            ]);
+          }
+
+          return request.messages.at(-1)?.role === "tool"
+            ? final()
+            : completed([tool("bash", JSON.stringify(args), "bash-1", "poppet_system")]);
+        },
+        {},
+        undefined,
+        { search: null },
+        undefined,
+        undefined,
+        undefined,
+        {
+          run: () =>
+            Effect.sync(() => {
+              executions++;
+
+              return { stdout: "done", stderr: "", exitCode: 0, truncated: false };
+            }),
+        },
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            yield* Stream.runDrain(
+              (yield* Agent).send(session.id, "Restart my service", {
+                readOnlyTools: mode === "scheduled",
+                approveCommand: (request) =>
+                  Effect.sync(() => {
+                    approvals++;
+                    expect(request).toEqual({ ...args, reason: "Service change" });
+
+                    return mode === "approved";
+                  }),
+              }),
+            ).pipe(Effect.result);
+            const run = (yield* store.runs(session.id))[0]!;
+            expect(run.status).toBe(mode === "approved" ? "completed" : "failed");
+            const calls = yield* store.toolCalls(run.id);
+            expect(calls).toHaveLength(1);
+            expect(calls[0]!.status).toBe(mode === "approved" ? "completed" : "failed");
+
+            if (mode !== "approved") {
+              const messages = yield* store.messages(session.id);
+              expect(
+                messages.some(
+                  (entry) =>
+                    entry.message.role === "tool" && entry.message.output.includes("Invocation"),
+                ),
+              ).toBe(true);
+            }
+          }),
+        );
+        expect(executions).toBe(mode === "approved" ? 1 : 0);
+        expect(approvals).toBe(["approved", "rejected"].includes(mode) ? 1 : 0);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test.each([false, true])(
     "when a run finishes with scheduled=%s, closes its external resources",
     async (scheduled) => {

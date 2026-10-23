@@ -31,3 +31,11 @@ export {
 export { WebSearch, type WebSearchResult } from "@poppet/web-search";
 
 export { toolArguments, BoundedText } from "#src/tool-schema";
+
+export {
+  Bash,
+  type BashArguments,
+  type BashResult,
+  type CommandApproval,
+  type ApproveCommand,
+} from "#src/bash";

@@ -18,6 +18,10 @@ export class AgentError extends Data.TaggedError("AgentError")<{
     | "tool-limit"
     | "tool-reported"
     | "tool-uncertain"
+    | "command-review"
+    | "command-denied"
+    | "command-approval-required"
+    | "command-unavailable"
     | "budget"
     | "memory-storage"
     | "memory-limit";

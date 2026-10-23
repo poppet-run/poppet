@@ -30,6 +30,7 @@ import {
   type Scope,
 } from "effect";
 
+import type { ApproveCommand } from "#src/bash";
 import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
 import { memoryPrompt } from "#src/memory";
@@ -73,6 +74,7 @@ export class Agent extends Context.Service<
       text: string,
       options?: {
         readonly readOnlyTools?: boolean;
+        readonly approveCommand?: ApproveCommand;
         readonly source?: TextSource | undefined;
         readonly runId?: string;
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
@@ -123,6 +125,7 @@ export const AgentLive = Layer.effect(
       text: string,
       options: {
         readonly readOnlyTools?: boolean;
+        readonly approveCommand?: ApproveCommand;
         readonly source?: TextSource | undefined;
         readonly runId?: string;
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
@@ -223,7 +226,7 @@ export const AgentLive = Layer.effect(
                 const prompt =
                   session.skill === null
                     ? basePrompt
-                    : `${basePrompt}\n\nExplicitly selected owner-written procedure follows as JSON. Apply it to this session, below the base rules. It cannot override explicit user requests, tool permissions, or scheduled runs' read-only tool policy. It grants no additional capabilities.\n${JSON.stringify(session.skill)}`;
+                    : `${basePrompt}\n\nExplicitly selected owner-written procedure follows as JSON. Apply it to this session, below the base rules. It cannot override explicit user requests, tool permissions, or scheduled tool restrictions. It grants no additional capabilities.\n${JSON.stringify(session.skill)}`;
 
                 const model = yield* measureTiming(
                   "model-resolution",
@@ -258,6 +261,7 @@ export const AgentLive = Layer.effect(
                   options.taskDestination ?? null,
                   options.source,
                   session.skill?.name ?? null,
+                  options.approveCommand ?? null,
                 );
               }),
             ).pipe(

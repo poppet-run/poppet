@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, relative, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { bashFixtures } from "./bash-fixtures";
 
 const home = process.env.POPPET_TEST_HOME;
 
@@ -30,6 +32,25 @@ const protectSpawn = <T extends typeof Bun.spawn | typeof Bun.spawnSync>(spawn: 
   new Proxy(spawn, {
     apply(target, _receiver, [command, options]) {
       const settings = Array.isArray(command) ? { ...options, cmd: command } : command;
+
+      // Exercise the real Bash lifecycle without enabling arbitrary shell commands in tests.
+      if (settings?.cmd?.[0] === "/bin/bash") {
+        const cwd = relative(home, settings.cwd ?? ".");
+
+        if (
+          cwd.startsWith("..") ||
+          isAbsolute(cwd) ||
+          settings.env?.HOME !== home ||
+          JSON.stringify(settings.cmd.slice(0, 6)) !==
+            JSON.stringify(["/bin/bash", "--noprofile", "--norc", "-o", "pipefail", "-c"]) ||
+          settings.cmd.length !== 7 ||
+          !Object.values(bashFixtures).includes(settings.cmd[6])
+        )
+          throw new Error("Tests may only run fixed Bash fixtures inside their isolated home.");
+
+        // SAFETY: the validated options match both native spawn overloads.
+        return (target as typeof Bun.spawn)(settings);
+      }
 
       if (settings?.cmd?.[0] !== process.execPath)
         throw new Error("Tests may only launch guarded Bun subprocesses.");

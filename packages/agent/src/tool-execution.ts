@@ -3,6 +3,7 @@ import { measureTiming } from "@poppet/provider";
 import { Store, StoreError, type Run } from "@poppet/store";
 import { Effect, Match, Option } from "effect";
 
+import type { BashCall } from "#src/bash";
 import { AgentError } from "#src/errors";
 import type { PreparedExternalCall } from "#src/external-tools";
 import { executeMemoryCall, type MemoryCall } from "#src/memory-tools";
@@ -22,7 +23,8 @@ type ToolPlan =
   | SkillViewCall
   | WebSearchCall
   | PreparedTaskCall
-  | PreparedExternalCall;
+  | PreparedExternalCall
+  | BashCall;
 
 // Failures the model can see and recover from, because no effect is left unconfirmed.
 const reportedReasons: ReadonlySet<string> = new Set([
@@ -58,6 +60,8 @@ export const toolFailureKind = (
 
     return reportedStoreReasons.has(error.reason) ? "reported" : "fatal";
   }
+
+  if (name === "bash") return error.reason === "tool-uncertain" ? "uncertain" : "fatal";
 
   if (name === "external") return error.reason === "tool-reported" ? "reported" : "uncertain";
 
@@ -126,6 +130,7 @@ export const toolExecution = Effect.gen(function* () {
         ),
         Match.when({ name: "manage_tasks" }, (plan) => plan.execute),
         Match.when({ name: "external" }, (plan) => plan.execute),
+        Match.when({ name: "bash" }, (plan) => plan.execute),
         Match.when({ name: "search_web" }, (plan) =>
           webSearch.search === null
             ? Effect.fail(
@@ -168,6 +173,15 @@ export const toolExecution = Effect.gen(function* () {
               })
               .pipe(Effect.as({ output, reported: true }));
           }
+
+          if (call.name === "bash" && kind === "fatal")
+            return store
+              .finishToolCall(run.id, callId, {
+                status: "failed",
+                reason: failureReason(error),
+                output: failureReply(error.reason, error.message),
+              })
+              .pipe(Effect.andThen(Effect.fail(error)));
 
           return store
             .finishToolCall(run.id, callId, {

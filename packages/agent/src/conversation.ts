@@ -18,6 +18,7 @@ import {
 } from "@poppet/store";
 import { Cause, Clock, Effect, Exit, Match, Option, Result, Stream } from "effect";
 
+import { Bash, bashTool, prepareBash, type ApproveCommand } from "#src/bash";
 import {
   assembleContext,
   byteSize,
@@ -47,7 +48,12 @@ import { WebSearch, decodeWebSearchCall, webSearchTool } from "#src/web-search";
 type ConversationEvent = ModelEvent | { readonly type: "reasoning-end" };
 
 // Results from these tools carry content the owner did not write.
-const untrustedSources: ReadonlySet<string> = new Set(["fetch_page", "search_web", "external"]);
+const untrustedSources: ReadonlySet<string> = new Set([
+  "fetch_page",
+  "search_web",
+  "external",
+  "bash",
+]);
 
 /** Builds the bounded model/tool loop; the caller owns the run's final outcome. */
 export const conversation = Effect.gen(function* () {
@@ -56,6 +62,7 @@ export const conversation = Effect.gen(function* () {
   const policy = yield* ChatSettings;
   const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
   const external = Option.getOrNull(yield* Effect.serviceOption(ExternalTools));
+  const bash = Option.getOrNull(yield* Effect.serviceOption(Bash));
   const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
   const clock = yield* Clock.Clock;
 
@@ -72,6 +79,7 @@ export const conversation = Effect.gen(function* () {
     here: Effect.Effect<DeliveryDestination, AgentError> | null = null,
     source?: TextSource,
     selectedSkill: string | null = null,
+    approveCommand: ApproveCommand | null = null,
   ) =>
     Stream.unwrap(
       Effect.gen(function* () {
@@ -102,6 +110,11 @@ export const conversation = Effect.gen(function* () {
         const tools = model.description.capabilities.tools
           ? [
               ...catalog.map((entry) => entry.definition),
+              ...(bash === null ||
+              source?.kind === "voice" ||
+              (source !== undefined && readOnlyTools)
+                ? []
+                : [bashTool]),
               sessionSearchTool,
               sessionReadTool,
               fetchPageTool,
@@ -195,6 +208,18 @@ export const conversation = Effect.gen(function* () {
               return { callId: call.callId, plan: yield* entry.prepare(call.arguments) };
 
             const plan = yield* Match.value(call).pipe(
+              Match.when({ name: "bash" }, (command) =>
+                prepareBash(
+                  command,
+                  bash!,
+                  model,
+                  run,
+                  text,
+                  readOnlyTools,
+                  approveCommand,
+                  policy.toolBytes,
+                ),
+              ),
               Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
               Match.when({ name: "read_session" }, decodeSessionReadCall),
               Match.when({ name: "memory" }, decodeMemoryCall),
