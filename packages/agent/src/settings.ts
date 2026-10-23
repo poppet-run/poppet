@@ -13,6 +13,8 @@ export interface ChatPolicy {
   readonly soulBytes: number;
   readonly profileBytes: number;
   readonly factsBytes: number;
+  /** UTF-8 bytes of the skill index in instructions; zero disables model-selected skills. */
+  readonly skillIndexBytes: number;
   /** Absolute deadline for one chat request, including every model turn and tool call. */
   readonly runDeadlineSeconds: number;
 }
@@ -34,6 +36,7 @@ export const defaultPolicy: ChatPolicy = {
   soulBytes: 8192,
   profileBytes: 8192,
   factsBytes: 8192,
+  skillIndexBytes: 8192,
   runDeadlineSeconds: 300,
 };
 
@@ -78,6 +81,10 @@ export const ChatSettingsLive = Layer.effect(
         factsBytes: Config.schema(bounded(65536), "POPPET_FACTS_BYTES").pipe(
           Config.withDefault(defaultPolicy.factsBytes),
         ),
+        skillIndexBytes: Config.schema(
+          Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 65536 })),
+          "POPPET_SKILL_INDEX_BYTES",
+        ).pipe(Config.withDefault(defaultPolicy.skillIndexBytes)),
         runDeadlineSeconds: Config.schema(
           Schema.Int.check(Schema.isBetween({ minimum: 30, maximum: 3600 })),
           "POPPET_RUN_DEADLINE_SECONDS",
