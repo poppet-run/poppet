@@ -199,6 +199,16 @@ describe.concurrent("LocalMemoryLive", () => {
           const session = yield* store.createSession("first-provider", "selected-model");
           const run = yield* store.queueRun(session.id, [{ role: "user", text: "Hello" }]);
 
+          const { database } = yield* StoreDatabase;
+          database
+            .query(
+              "INSERT INTO memories (project, key, value, origin, updated_at) VALUES ('acorn', 'answer.style', 'Archived', 'cli', 1)",
+            )
+            .run();
+          database
+            .query("UPDATE sessions SET project = ? WHERE id = ?")
+            .run(JSON.stringify({ name: "acorn", content: "Archived context" }), session.id);
+
           yield* memory.remember("answer.style", "Concise");
           yield* memory.replace("answer.style", "Detailed", run.id);
           yield* memory.forget("answer.style", run.id);
@@ -243,11 +253,10 @@ describe.concurrent("LocalMemoryLive", () => {
           });
 
           yield* reject(memory.forget("missing"), "not-found");
-
-          // Project history is separate from global history.
-          const project = memory.forProject("acorn");
-          yield* project.remember("answer.style", "Project");
-          expect((yield* project.history("answer.style")).length).toBe(1);
+          expect(
+            database.query("SELECT value FROM memories WHERE project = 'acorn'").get(),
+          ).toEqual({ value: "Archived" });
+          expect(yield* memory.list).toEqual([]);
         }),
       );
     } finally {

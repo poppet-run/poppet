@@ -118,59 +118,6 @@ const execute = (action: ChatTaskAction, context: ChatTaskContext) =>
   });
 
 describe("ChatTasks", () => {
-  test("when tasks belong to a project session, inherits that project and restricts inspection to its scope", async () => {
-    const state = await fixture();
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-
-          const project = {
-            name: "acorn",
-            content: "Original project instructions",
-          };
-
-          const session = yield* store.createSession("test-provider", "test-model", { project });
-
-          const run = yield* store.startRun(
-            (yield* store.queueRun(session.id, [{ role: "user", text: "Create a project task" }]))
-              .id,
-          );
-
-          const recordedCall = yield* recorded(create, "create-project", run);
-          const created = JSON.parse(yield* execute(create, recordedCall.context));
-          const repo = yield* TaskRepository;
-          expect(repo.task(created.task.id).project).toEqual(project);
-          expect(created.task.project).toBe("acorn");
-
-          const input = {
-            name: "Unrelated task",
-            prompt: "Private unrelated instructions",
-            provider: "test-provider",
-            model: "test-model",
-            workload: "assistant" as const,
-            schedule: { type: "once" as const, at: now + 60000 },
-          };
-
-          const unscoped = repo.add(input, now);
-          repo.add(input, now, null, null, undefined, false, { ...project, name: "birch" });
-          const list: ChatTaskAction = { action: "list", after: null };
-          const pageCall = yield* recorded(list, "project-list", run);
-          const page = JSON.parse(yield* execute(list, pageCall.context));
-          expect(page.tasks.map((task: { id: string }) => task.id)).toEqual([created.task.id]);
-          expect(repo.list()).toHaveLength(3);
-          const show: ChatTaskAction = { action: "show", id: unscoped.id };
-          const denied = yield* recorded(show, "outside-project", run);
-          expect(
-            yield* (yield* ChatTasks).prepare(show, denied.context).pipe(Effect.flip),
-          ).toMatchObject({ reason: "tool-permission" });
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
   test("when tasks are edited or snoozed, binds atomic receipts to the host and rolls back stale or failed changes", async () => {
     const state = await fixture();
 

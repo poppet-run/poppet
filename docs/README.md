@@ -18,7 +18,6 @@ for persistent settings.
 - [Browser automation](browser.md): agent-browser setup, isolated runs, website permissions, and limits.
 - [Skills](skills.md): explicitly selected local procedures saved with chats and tasks.
 - [Memory](memory.md): an editable profile and explicitly saved facts shared across sessions.
-- [Projects](projects.md): saved instructions, scoped facts and recall for chats and tasks.
 - [Storage](storage.md): the local database, permissions, ownership, and recovery.
 - [Scheduled tasks](tasks.md): one-off and recurring work, change-aware monitoring, results, pauses, and retries.
 - [Worker](worker.md): foreground modes, macOS login startup, lifecycle, and logs.

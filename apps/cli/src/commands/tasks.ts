@@ -4,7 +4,7 @@ import { Effect, Option, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
-import { codingFlag, projectFlag, skillFlag, textArgument } from "#src/commands/flags";
+import { codingFlag, skillFlag, textArgument } from "#src/commands/flags";
 import { parseTaskSchedule, prepareTask, prepareTaskControl, runTaskCommand } from "#src/tasks";
 
 export const tasksCommand = (context: CLIContext) => {
@@ -121,7 +121,6 @@ export const tasksCommand = (context: CLIContext) => {
           ),
           coding: codingFlag,
           skill: skillFlag,
-          project: projectFlag,
           discordThread: Flag.String("discord-thread").pipe(
             Flag.withSchema(Schema.NonEmptyString.check(Schema.isPattern(/^[0-9]{1,20}$/))),
             Flag.withDescription("Send each completed result to this authorized Discord thread"),
@@ -155,7 +154,6 @@ export const tasksCommand = (context: CLIContext) => {
           coding,
           prompt,
           skill,
-          project,
           discordThread,
           telegramChat,
           whatsappChat,
@@ -188,7 +186,6 @@ export const tasksCommand = (context: CLIContext) => {
               skill,
               delivery,
               monitor,
-              project,
             );
 
             yield* runTaskCommand(runtime, command);

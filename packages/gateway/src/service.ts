@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Agent, AgentError, Skills, Projects, sessionTitle, type ChatFailure } from "@poppet/agent";
+import { Agent, AgentError, Skills, sessionTitle, type ChatFailure } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { DeliveryDestination, Store, StoreError, type Run } from "@poppet/store";
 import {
@@ -84,7 +84,6 @@ const gateway = Effect.gen(function* () {
   const store = yield* Store;
   const agent = yield* Agent;
   const skills = yield* Skills;
-  const projects = yield* Projects;
   const config = yield* AppConfig;
   const clock = yield* Clock.Clock;
   const processor = Option.getOrNull(yield* Effect.serviceOption(AttachmentProcessor));
@@ -295,7 +294,7 @@ const gateway = Effect.gen(function* () {
         const savedSession = yield* store.session(session);
         yield* finish(
           entry.id,
-          `Session: ${session}\nTitle: ${savedSession?.title ?? session}\nSkill: ${savedSession?.skill?.name ?? "none"}\nProject snapshot: ${savedSession?.project?.name ?? "none"}\nLatest run: ${latest?.status ?? "none"}`,
+          `Session: ${session}\nTitle: ${savedSession?.title ?? session}\nSkill: ${savedSession?.skill?.name ?? "none"}\nLatest run: ${latest?.status ?? "none"}`,
         );
       }
 
@@ -376,18 +375,9 @@ const gateway = Effect.gen(function* () {
             "Could not load the selected skill. Check it with skills list and skills show before starting a new session.",
           );
 
-        const project = yield* (
-          request.project === null ? Effect.succeed(null) : projects.load(request.project)
-        ).pipe(Effect.result);
-
-        if (Result.isFailure(project))
-          return yield* reject(
-            "Could not load the selected project. Check projects show and create a new session after correcting its files.",
-          );
         session = yield* store.createSession(config.provider, config.model, {
           id,
           skill: selected.success,
-          project: project.success,
         });
       }
 

@@ -315,9 +315,6 @@ describe.concurrent("memory.ts", () => {
     "when memory fails with $reason, records the failure before resolving the model",
     async ({ reason, expected }) => {
       const injected: Memory["Service"] = {
-        forProject: () => {
-          throw new Error("Unexpected project memory");
-        },
         history: () => Effect.die("Unexpected memory history"),
         revert: () => Effect.die("Unexpected memory revert"),
         snapshot: () => Effect.fail(new MemoryError({ reason, message: "Snapshot unavailable" })),
@@ -645,9 +642,6 @@ describe.concurrent("memory.ts", () => {
     const facts: MemoryFact[] = [];
 
     const injected: Memory["Service"] = {
-      forProject: () => {
-        throw new Error("Unexpected project memory");
-      },
       history: () => Effect.die("Unexpected memory history"),
       revert: () => Effect.die("Unexpected memory revert"),
       snapshot: () => Effect.succeed({ soul: "", profile: "", facts: [] }),

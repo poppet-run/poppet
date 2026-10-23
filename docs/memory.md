@@ -89,23 +89,7 @@ poppet memory revert answer.style 1       # restore revision 1 as a new revision
 
 Reverting never rewrites history. Restoring a forgotten revision forgets the
 fact again; restoring an earlier value recreates or replaces it as a CLI change.
-Both commands accept `--project <name>` and go through a running worker.
-
-## Project facts
-
-Memory commands default to global facts. Pass `--project <name>` to list,
-remember, replace, or forget only that project's facts. Keys are unique per scope;
-the same key can exist in global memory and several projects. Each project run
-reads global context and its current project facts once. Project facts have a
-fixed 8 KiB snapshot budget within the existing overall context budget.
-
-A project chat's memory tool writes only its own project facts, with host-bound
-run provenance. Change global facts through an unscoped chat or the default CLI
-commands. Scheduled runs cannot write either scope. Deleting project files
-retains facts; `memory list --project <name>` reports an orphaned directory and
-`memory forget --project <name> <key>` removes an individual fact explicitly.
-See [project context](projects.md) for selection, preference precedence, and
-instruction snapshots.
+Both commands go through a running worker.
 
 ## Profile
 
@@ -136,8 +120,7 @@ and regular-file requirements as `profile.md`.
 Every run reads the current personality, profile, and saved facts once, then keeps
 that snapshot across its model/tool turns. New sessions and resumed sessions pick
 up changes on their next run, including scheduled tasks and messaging. Memory is
-shared across sessions and providers within their global or selected project
-scope in the same data directory. Facts are included
+shared across sessions and providers in the same data directory. Facts are included
 in key order as personal context, with no
 provenance metadata sent to the model. The memory tool is reserved for explicit
 changes requested by the current user; Poppet does not automatically extract facts

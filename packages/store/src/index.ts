@@ -10,8 +10,6 @@ export {
   SessionTitle,
   SkillName,
   SkillSnapshot,
-  ProjectName,
-  ProjectSnapshot,
   SessionSearchQuery,
   SessionSearchMatch,
   type SessionSearchResult,

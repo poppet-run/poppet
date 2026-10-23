@@ -90,7 +90,7 @@ The background worker still writes its structured reasoning log entries.
 Providers may return no readable reasoning for a turn; in that case no heading
 is printed.
 
-For a new session, `--coding`, `--skill <name>`, and `--project <name>` work as
+For a new session, `--coding` and `--skill <name>` work as
 they do with `chat new`.
 Omit them when supplying a session ID, which retains its original selection.
 A session is created only when you submit its first nonblank message. Failed turns
@@ -122,15 +122,6 @@ The session saves the skill's name and text when created. Later turns and restar
 use that snapshot even if the file changes or disappears. `chat show` includes
 the saved `skill`; ordinary sessions have `null`. Skill instructions count toward
 the context budget and keep the existing tool permissions. See [skills](skills.md).
-
-## Select a project
-
-Use `chat new --project acorn <message>` or `chat interactive --project acorn`
-to save project instructions. Later turns retain
-that snapshot while reading current global and project facts. Agent recall and
-task inspection stay within the selected project; owner CLI inspection can still
-inspect all sessions. See [project context](projects.md) for setup, combinations
-with skills, memory scope, retention, and limits.
 
 ## Change saved memory
 

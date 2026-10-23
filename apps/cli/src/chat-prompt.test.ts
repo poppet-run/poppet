@@ -174,11 +174,7 @@ describe.concurrent("interactiveChat", () => {
     expect(state.reads()).toBe(1);
   });
 
-  test.each([
-    { coding: true },
-    { coding: false, skill: "review" },
-    { coding: false, project: "acorn" },
-  ])(
+  test.each([{ coding: true }, { coding: false, skill: "review" }])(
     "when resuming with selection changes, rejects them before reading input",
     async (selection) => {
       const state = fixture([]);
@@ -193,7 +189,7 @@ describe.concurrent("interactiveChat", () => {
 
       expect(result).toHaveProperty(
         "failure.message",
-        expect.stringContaining("saved workload, skill and project"),
+        expect.stringContaining("saved workload and skill"),
       );
       expect(state.reads()).toBe(0);
     },

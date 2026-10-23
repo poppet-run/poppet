@@ -93,16 +93,6 @@ export const SkillSnapshot = Schema.Struct({
 
 export type SkillSnapshot = typeof SkillSnapshot.Type;
 
-export const ProjectName = SkillName;
-
-/** Project instructions saved at creation, never refreshed implicitly. */
-export const ProjectSnapshot = Schema.Struct({
-  name: ProjectName,
-  content: SkillSnapshot.fields.content,
-});
-
-export type ProjectSnapshot = typeof ProjectSnapshot.Type;
-
 /** A saved conversation whose provider, model, and workload stay fixed across runs. */
 export const Session = Schema.Struct({
   id: Id,
@@ -116,7 +106,6 @@ export const Session = Schema.Struct({
   titleAttempted: Schema.Boolean,
   titleUsage: Completion.fields.usage,
   skill: Schema.NullOr(SkillSnapshot),
-  project: Schema.NullOr(ProjectSnapshot),
 });
 
 /** A message ordered within a session; runId is null for history saved outside a run. */

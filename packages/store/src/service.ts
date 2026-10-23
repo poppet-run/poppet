@@ -21,7 +21,6 @@ import {
   Session,
   SessionTitle,
   SkillSnapshot,
-  ProjectSnapshot,
   type SessionSearchResult,
   type SessionReadQuery,
   type SessionReadResult,
@@ -43,7 +42,6 @@ interface StoreOperations {
       readonly id?: string;
       readonly taskTitle?: string;
       readonly skill?: SkillSnapshot | null;
-      readonly project?: ProjectSnapshot | null;
     },
   ) => Effect.Effect<Session, StoreError>;
   /** Manual metadata changes never reorder history; manual names win over in-flight generation. */
@@ -62,13 +60,11 @@ interface StoreOperations {
   readonly searchSessions: (
     query: string,
     maxBytes: number,
-    project?: string | null,
   ) => Effect.Effect<SessionSearchResult, StoreError>;
   /** Reads at most ten eligible messages around or after a stable anchor within a JSON byte budget. */
   readonly readSession: (
     query: SessionReadQuery,
     maxBytes: number,
-    project?: string | null,
   ) => Effect.Effect<SessionReadResult, StoreError>;
   /** Reads messages in session order and rejects continuation belonging to another model. */
   readonly messages: (sessionId: string) => Effect.Effect<ReadonlyArray<StoredMessage>, StoreError>;
@@ -118,13 +114,12 @@ interface StoreOperations {
 export class Store extends Context.Service<Store, StoreOperations>()("poppet/Store") {}
 
 const sessionSql = `SELECT id, provider, model, workload, created_at AS createdAt, updated_at AS updatedAt,
-  title, title_source AS titleSource, title_attempted AS titleAttempted, title_usage AS titleUsage, skill, project FROM sessions`;
+  title, title_source AS titleSource, title_attempted AS titleAttempted, title_usage AS titleUsage, skill FROM sessions`;
 
 const SessionRecord = Schema.Struct({
   ...Session.fields,
   titleAttempted: Schema.BooleanFromBit,
   skill: Schema.NullOr(Schema.fromJsonString(SkillSnapshot)),
-  project: Schema.NullOr(Schema.fromJsonString(ProjectSnapshot)),
   titleUsage: Schema.NullOr(Schema.fromJsonString(Completion.fields.usage)),
 });
 
@@ -347,7 +342,7 @@ export const StoreLive = Layer.effect(
     const createSession: StoreOperations["createSession"] = (
       provider,
       model,
-      { workload = "assistant", id: suppliedId, taskTitle, skill = null, project = null } = {},
+      { workload = "assistant", id: suppliedId, taskTitle, skill = null } = {},
     ) =>
       atTime((at) => {
         const selectedProvider = Schema.decodeUnknownSync(ProviderId)(provider);
@@ -361,8 +356,8 @@ export const StoreLive = Layer.effect(
             : Schema.decodeUnknownSync(SessionTitle)(taskTitle);
 
         database
-          .query(`INSERT INTO sessions (id, provider, model, created_at, updated_at, workload, title, title_source, title_attempted, skill, project)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .query(`INSERT INTO sessions (id, provider, model, created_at, updated_at, workload, title, title_source, title_attempted, skill)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(
             id,
             selectedProvider,
@@ -374,9 +369,6 @@ export const StoreLive = Layer.effect(
             taskTitle === undefined ? "fallback" : "task",
             taskTitle === undefined ? 0 : 1,
             skill === null ? null : Schema.encodeSync(Schema.fromJsonString(SkillSnapshot))(skill),
-            project === null
-              ? null
-              : Schema.encodeSync(Schema.fromJsonString(ProjectSnapshot))(project),
           );
 
         return requireSession(database, id);
@@ -731,14 +723,14 @@ export const StoreLive = Layer.effect(
       queueRun,
       startRun,
       finishRun,
-      searchSessions: (query, maxBytes, project) =>
+      searchSessions: (query, maxBytes) =>
         Effect.try({
-          try: () => searchSessions(database, query, maxBytes, project),
+          try: () => searchSessions(database, query, maxBytes),
           catch: requestFailure,
         }),
-      readSession: (query, maxBytes, project) =>
+      readSession: (query, maxBytes) =>
         Effect.try({
-          try: () => readSession(database, query, maxBytes, project),
+          try: () => readSession(database, query, maxBytes),
           catch: requestFailure,
         }),
       session: (id) =>

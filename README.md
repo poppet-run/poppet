@@ -6,8 +6,7 @@ Chat in the terminal or through Discord, Telegram, and WhatsApp, with support fo
 ChatGPT, OpenCode Go, and OpenRouter. Sessions are saved locally so you can pick up
 past conversations.
 
-Poppet can remember facts and use selected project context and
-local Markdown skills. It can also read web pages, search the web, use explicitly
+Poppet can remember facts and use local Markdown skills. It can also read web pages, search the web, use explicitly
 allowed local MCP tools, and run scheduled tasks through a shared background worker.
 
 ## Documentation

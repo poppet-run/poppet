@@ -18,7 +18,6 @@ export const readSession = (
   database: Database,
   query: SessionReadQuery,
   maxBytes: number,
-  project?: string | null,
 ): SessionReadResult => {
   const { sessionId, aroundMessageId, afterMessageId } = Schema.decodeUnknownSync(
     SessionReadQuery,
@@ -32,13 +31,7 @@ export const readSession = (
   const session = readRecord(() =>
     Schema.decodeUnknownSync(
       Schema.NullOr(Schema.Struct({ id: Session.fields.id, title: Session.fields.title })),
-    )(
-      database
-        .query(
-          "SELECT id, title FROM sessions WHERE id = ? AND (? OR json_extract(project, '$.name') IS ?)",
-        )
-        .get(sessionId, project === undefined ? 1 : 0, project ?? null),
-    ),
+    )(database.query("SELECT id, title FROM sessions WHERE id = ?").get(sessionId)),
   );
 
   if (session === null)

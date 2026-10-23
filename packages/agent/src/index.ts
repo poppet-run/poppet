@@ -13,8 +13,6 @@ export { ExternalTools, type ExternalTool, type PreparedExternalCall } from "#sr
 
 export { Skills, SkillsLive } from "#src/skills";
 
-export { Projects, ProjectsLive, loadProject } from "#src/projects";
-
 export { ChatSettings, ChatSettingsLive, defaultPolicy, type ChatPolicy } from "#src/settings";
 
 export { sessionTitle } from "#src/title";

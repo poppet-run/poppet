@@ -122,7 +122,6 @@ packages/
     src/skill-tools.ts    Skill view and management tools
     src/reply.ts          Validated model stream completion
     src/memory.ts         Global/project snapshots formatted into model instructions
-    src/projects.ts       Project instruction loading
     src/context-files.ts  Shared bounded skill/project file access
     src/memory-tools.ts   Validated memory changes with budget checks and source runs
     src/context.ts        Complete-exchange context assembly and limits
@@ -321,15 +320,6 @@ assistant-capable provider and model for messaging and scheduled tasks.
 - [ ] Schedule a one-off task, sleep across its due time, then wake. Expect one
       execution. Restart the worker and confirm it does not repeat; check that logs
       append without exposing secrets.
-
-### Project context checks
-
-Automated checks cover local/worker/messaging selection, chat-created task
-inheritance, snapshots through deletion, restart, edits and retries, fresh scoped
-facts with a fixed per-run prompt, recall isolation, stale
-workers, and migration rollback. They inject models and do not establish live
-instruction-following. Follow the [two-project manual path](projects.md#manual-validation)
-for conflicting preferences, worker restart, a scheduled review, and messaging.
 
 ### Attachment checks
 

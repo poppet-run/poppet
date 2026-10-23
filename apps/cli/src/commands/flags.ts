@@ -1,4 +1,4 @@
-import { ProjectName, SkillName } from "@poppet/store";
+import { SkillName } from "@poppet/store";
 import { Argument, Flag } from "effect/cli";
 
 export const textArgument = (name: string) =>
@@ -11,13 +11,6 @@ export const codingFlag = Flag.Boolean("coding").pipe(
   Flag.withDescription("Use the coding workload"),
   Flag.atMost(1),
   Flag.map(([value = false]) => value),
-);
-
-export const projectFlag = Flag.String("project").pipe(
-  Flag.withSchema(ProjectName),
-  Flag.withDescription("Select a project and save its current instructions"),
-  Flag.atMost(1),
-  Flag.map(([value]) => value),
 );
 
 export const skillFlag = Flag.String("skill").pipe(

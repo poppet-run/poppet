@@ -62,6 +62,37 @@ const fixture = async (catchUpMs = 0) => {
 };
 
 describe.concurrent("TaskRepository", () => {
+  test("when saved records contain retired project snapshots, reads them without activating project context", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo, store, database) =>
+        Effect.gen(function* () {
+          const project = JSON.stringify({ name: "acorn", content: "Archived instructions" });
+          const session = yield* store.createSession("test-provider", "test-model");
+          database.query("UPDATE sessions SET project = ? WHERE id = ?").run(project, session.id);
+          expect(yield* store.session(session.id)).toEqual(session);
+          const job = repo.add(once, start);
+          database.query("UPDATE jobs SET project = ? WHERE id = ?").run(project, job.id);
+          repo.reconcile(start);
+          const occurrence = repo.claim(start)!.occurrence;
+          database
+            .query(
+              "UPDATE job_occurrences SET definition = json_set(definition, '$.project', json(?)) WHERE id = ?",
+            )
+            .run(project, occurrence.id);
+          expect(repo.task(job.id)).toEqual({ ...job, nextAt: null });
+          expect(repo.occurrence(occurrence.id).definition).toEqual(occurrence.definition);
+          expect(database.query("SELECT project FROM jobs WHERE id = ?").get(job.id)).toEqual({
+            project,
+          });
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when a paused one-off is rearmed, retains it behind an older explicit retry", async () => {
     const state = await fixture();
 

@@ -262,16 +262,6 @@ explicit retries. Create a replacement task to use updated instructions.
 `tasks show` includes the snapshot. Scheduled tools remain read-only: the memory tool is not
 available, including when a selected skill requests changes.
 
-## Select a project
-
-Pass `--project <name>` before the prompt to save [project context](projects.md),
-optionally with a skill. Edits, restart, and explicit retries retain the project
-instructions. Each occurrence reads current global and
-project facts. Scheduled tools remain read-only.
-Chat-created tasks inherit their owning session's project snapshot. The model can
-inspect and control tasks only in that project, including unscoped tasks from
-unscoped chats; owner CLI commands retain access to all tasks.
-
 ## Recurring schedules
 
 Use a five-field cron expression and explicit timezone for a recurring task:

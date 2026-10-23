@@ -13,7 +13,7 @@ import {
 } from "#src/chat";
 import { interactiveChat, interactiveChatOutput } from "#src/chat-prompt";
 import type { CLIContext } from "#src/commands/context";
-import { codingFlag, projectFlag, skillFlag, textArgument } from "#src/commands/flags";
+import { codingFlag, skillFlag, textArgument } from "#src/commands/flags";
 
 export const chatCommand = (context: CLIContext) => {
   const { runtime, throughWorker, write, writeThinking, readLine } = context;
@@ -86,11 +86,10 @@ export const chatCommand = (context: CLIContext) => {
           ),
           coding: codingFlag,
           skill: skillFlag,
-          project: projectFlag,
         },
-        ({ id, coding, skill, project }) =>
+        ({ id, coding, skill }) =>
           interactiveChat(
-            { sessionId: Option.getOrUndefined(id), coding, skill, project },
+            { sessionId: Option.getOrUndefined(id), coding, skill },
             (command, onSession) => runChat(command, onSession, true),
             readLine,
           ),
@@ -100,15 +99,14 @@ export const chatCommand = (context: CLIContext) => {
         {
           coding: codingFlag,
           skill: skillFlag,
-          project: projectFlag,
           text: textArgument("message").pipe(Argument.withSchema(MessageText)),
         },
-        ({ coding, text, skill, project }) => {
+        ({ coding, text, skill }) => {
           const command: ChatCommand = { action: "new", coding, text };
 
           const selected = skill === undefined ? command : { ...command, skill };
 
-          return runChat(project === undefined ? selected : { ...selected, project });
+          return runChat(selected);
         },
       ).pipe(Command.withDescription("Start a session")),
       Command.make(

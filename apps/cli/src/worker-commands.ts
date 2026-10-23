@@ -1,11 +1,4 @@
-import {
-  Agent,
-  ChatSettings,
-  logChatDiagnostic,
-  Projects,
-  Skills,
-  type AgentError,
-} from "@poppet/agent";
+import { Agent, ChatSettings, logChatDiagnostic, Skills, type AgentError } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { MCP, MCPCommand, inspectMCP } from "@poppet/mcp";
 import { Memory } from "@poppet/memory";
@@ -107,7 +100,7 @@ export const WorkerRequestsLive = Layer.effect(
   WorkerRequests,
   Effect.gen(function* () {
     const services = yield* Effect.context<
-      Agent | AppConfig | Store | Memory | ChatSettings | Skills | Projects | MCP
+      Agent | AppConfig | Store | Memory | ChatSettings | Skills | MCP
     >();
 
     const messaging = yield* Effect.serviceOption(MessagingWorker);

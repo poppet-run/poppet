@@ -102,7 +102,7 @@ services with local OAuth and model servers shared by the behavior suites.
 Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
 modules are implemented. `runtime.ts` builds only the registered provider selected
 for an auth or inference command. Its store layer opens SQLite for saved-data operations and worker execution.
-Help, configuration, skill/project file inspection, and provider commands do not
+Help, configuration, skill file inspection, and provider commands do not
 open the conversation database.
 
 ## Explicit local skills
@@ -135,34 +135,6 @@ one saved snapshot to the run's instructions, below base rules, and the existing
 context budget accounts for its serialized bytes. The conversation loop owns batch validation, permissions, and budgets;
 `tool-execution.ts` owns tool dispatch, outcome classification, and journal writes. Provider packages need
 no skill-specific behavior. See [skills](skills.md).
-
-## Explicit project context
-
-`ProjectsLive` uses the same bounded filesystem loader as `SkillsLive` for
-`projects/<name>/PROJECT.md`. New CLI and messaging
-requests carry only a validated name. The store owner loads and snapshots the
-instructions in sessions, jobs, and immutable occurrence
-definitions. Continued sessions, edited tasks, and retries retain those snapshots.
-Records without a project remain unscoped. Versioned worker routes and strict
-request decoding reject unsupported payloads before dispatch. No provider changes are needed.
-
-At run start, `agent/memory.ts` reads global context and the host-selected project
-facts once. They are labelled separately and kept fixed through the tool loop.
-Base tool rules and current explicit requests take precedence; compatible project
-preferences refine global ones, and skills remain procedures within those rules.
-Project instructions and facts count toward existing context limits.
-
-`LocalMemoryLive.forProject` binds every fact operation to a composite
-`(project, key)` scope and checks that source runs belong to it. The model cannot
-choose a scope. Project memory tools write only project facts; scheduled runs
-keep the existing read-only policy. The CLI defaults to global scope and allows
-explicit project fact management without inference.
-
-Conversation search and reads bind the session project in store SQL, including
-null for unscoped sessions. Task tools bind their inspection and controls to the
-same scope, and new tasks inherit the session snapshot. Owner CLI inspection can
-still inspect all scopes. Directory deletion retains facts and saved history. See
-[project context](projects.md) for the owner interface and retention rules.
 
 ## Provider interface
 
@@ -655,9 +627,7 @@ requires no additional socket command or migration.
 `MemoryError`. Its operations are `snapshot`, `list`, `remember`, `replace`, and
 `forget`. `LocalMemoryLive` implements these operations using the existing
 `memories` table and editable `<data directory>/profile.md` and `soul.md` files.
-It retains up to 128 facts per scope of at most 4096 UTF-8 bytes each.
-`forProject` returns operations bound to one host-selected project; root operations
-retain global behavior.
+It retains up to 128 facts of at most 4096 UTF-8 bytes each.
 
 The store owns database acquisition and the `memories` table schema. `StoreLive`
 also exposes the scoped `StoreDatabase` service, allowing the CLI to supply one connection and

@@ -6,14 +6,12 @@ import {
   defaultPolicy,
   logChatDiagnostic,
   Skills,
-  loadProject,
   sessionTitle,
   type ChatEvent,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import {
   Session,
-  ProjectName,
   SessionSearchQuery,
   SkillName,
   Store,
@@ -29,7 +27,6 @@ export type ChatCommand =
       readonly text: string;
       readonly coding: boolean;
       readonly skill?: string;
-      readonly project?: string;
     }
   | { readonly action: "send"; readonly id: string; readonly text: string }
   | { readonly action: "rename"; readonly id: string; readonly text: string }
@@ -51,7 +48,6 @@ export const ChatRequest = Schema.Union([
     model: Session.fields.model,
     workload: Session.fields.workload,
     skill: Schema.optionalKey(SkillName),
-    project: Schema.optionalKey(ProjectName),
   }),
   Schema.Struct({ action: Schema.Literal("send"), id: Session.fields.id, text: MessageText }),
   Schema.Struct({ action: Schema.Literal("rename"), id: Session.fields.id, text: MessageText }),
@@ -198,7 +194,7 @@ export const prepareChat = (
 
     const selected = command.skill === undefined ? request : { ...request, skill: command.skill };
 
-    return command.project === undefined ? selected : { ...selected, project: command.project };
+    return selected;
   });
 
 const resolveChatSession = (command: ChatSubmission) =>
@@ -212,16 +208,10 @@ const resolveChatSession = (command: ChatSubmission) =>
         ? yield* Skills.use((skills) => skills.load(selectedSkill))
         : null;
 
-    const project =
-      command.action === "new" && command.project !== undefined
-        ? yield* loadProject(command.project)
-        : null;
-
     return command.action === "new"
       ? (yield* store.createSession(command.provider, command.model, {
           workload: command.workload,
           skill,
-          project,
         })).id
       : command.id;
   });

@@ -165,21 +165,9 @@ Export any learned procedures you want to keep into owner-written `SKILL.md` fil
 Migration 7 adds an `origin` column to `memories` (`cli`, `turn`, or `review`),
 set to `turn` for existing facts with a source run and `cli` otherwise. The
 append-only `memory_revisions` table records every remember, replace, forget,
-and revert per project scope and key, with the value (null when forgotten),
+and revert per key, with the value (null when forgotten),
 origin, source run, and time. Existing facts are backfilled as revision 1. CLI
 changes have no source run; model changes always do.
-
-## Project snapshots and facts
-
-Migration 5 adds nullable JSON `project` columns to sessions and jobs and
-backfills occurrence definitions with `project: null`. New selected snapshots
-contain `name` and saved instruction `content`. Occurrence sessions and retries use their saved definition snapshot.
-
-Facts retain their values, source runs, and timestamps while migrating to a
-composite `(project, key)` primary key. An empty database scope denotes global
-facts; project names are nonempty validated identifiers. Every fact operation
-binds its host scope, and source-run provenance must match it. Deleting a project
-directory does not delete snapshots, history, or facts. See [projects](projects.md).
 
 ## Conversation search index
 
@@ -194,9 +182,7 @@ titles are read from sessions at query time so manual renames appear immediately
 byte budget. It quotes and binds FTS terms, returns at most ten relevance-ranked
 matches with stable message-ID ordering for ties, and bounds excerpts and output.
 The CLI and agent tool use this same operation on the owning store connection.
-Agent calls bind the owning session's project, including null for unscoped
-sessions; the SQL search filter and session read enforce it before returning
-history. Owner CLI calls omit the scope to inspect all projects.
+Agent and CLI recall can inspect all saved sessions.
 See [conversation search](chat.md#search-past-conversations).
 
 `Store.readSession` uses the same indexed eligible message IDs and the
@@ -255,3 +241,15 @@ Previously saved PDF text and voice transcripts remain readable. Old
 `<data directory>/attachment-tmp` directories from interrupted PDF/audio processing
 are no longer used or cleaned by Poppet; after stopping the old worker, they can
 be removed without deleting saved history.
+
+## Retired project data
+
+Project selection has been removed. Existing project columns, occurrence JSON,
+facts, and revision histories remain in SQLite; project files are untouched.
+They are no longer loaded as instructions or active facts. Current memory uses
+only the global scope, so conflicting keys are never merged. Export any project
+facts you still need and save them explicitly with `memory remember`.
+
+Existing conversations and tasks still load. Recall and task controls now cover
+all saved records. Review task prompts that depended on project instructions;
+put required context in the prompt or a skill when creating replacement tasks.

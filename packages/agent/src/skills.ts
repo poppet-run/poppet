@@ -13,4 +13,4 @@ export class Skills extends Context.Service<
   }
 >()("poppet/Skills") {}
 
-export const SkillsLive = Layer.effect(Skills, contextFiles("skills", "SKILL.md"));
+export const SkillsLive = Layer.effect(Skills, contextFiles);

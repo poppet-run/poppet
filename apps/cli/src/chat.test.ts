@@ -926,107 +926,6 @@ describe("chat.ts", () => {
   );
 
   test.each(["local", "worker"])(
-    "when %s execution selects a project, saves its context and loads current scoped facts",
-    async (mode) => {
-      const chat = await fixture();
-      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-
-      const inspect = async (args: ReadonlyArray<string>) => {
-        chat.lines.length = 0;
-        chat.chunks.length = 0;
-        await chat.invoke(args);
-
-        return JSON.parse(chat.lines.at(-1) ?? chat.chunks.join(""));
-      };
-
-      try {
-        const root = join(chat.directory, "projects", "acorn");
-        await mkdir(root, { recursive: true });
-        await writeFile(join(root, "PROJECT.md"), "Acorn uses plain wording.");
-        expect(await inspect(["projects", "list"])).toEqual(["acorn"]);
-        expect(await inspect(["projects", "show", "acorn"])).toEqual({
-          name: "acorn",
-          content: "Acorn uses plain wording.",
-        });
-        expect(chat.state.built).toBe(0);
-
-        if (mode === "worker") worker = await chat.startWorker();
-        await chat.invoke([
-          "memory",
-          "remember",
-          "--project",
-          "acorn",
-          "review.style",
-          "Project fact one",
-        ]);
-        await chat.invoke(["chat", "new", "--project=acorn", "Review", "--literal"]);
-        const id = chat.errors.find((line) => line.startsWith("Session: "))!.slice(9);
-        expect(chat.requests.at(-1)?.instructions).toContain("Project fact one");
-        expect(chat.requests.at(-1)?.instructions).toContain("Acorn uses plain wording.");
-        expect(chat.requests.at(-1)?.messages.at(-1)).toEqual({
-          role: "user",
-          text: "Review --literal",
-        });
-
-        const job = await inspect([
-          "tasks",
-          "add",
-          "Acorn review",
-          "--project",
-          "acorn",
-          "--at",
-          "2099-01-01T00:00:00Z",
-          "Review",
-        ]);
-
-        expect(job.project).toEqual({
-          name: "acorn",
-          content: "Acorn uses plain wording.",
-        });
-        await writeFile(join(root, "PROJECT.md"), "Edited instructions");
-        await chat.invoke([
-          "memory",
-          "replace",
-          "--project=acorn",
-          "review.style",
-          "Project fact two",
-        ]);
-
-        if (worker !== null) {
-          await Effect.runPromise(Fiber.interrupt(worker));
-          worker = await chat.startWorker();
-        }
-
-        await rm(root, { recursive: true });
-        await chat.invoke(["chat", "send", id, "Continue"]);
-        expect(chat.requests.at(-1)?.instructions).toContain("Acorn uses plain wording.");
-        expect(chat.requests.at(-1)?.instructions).not.toContain("Edited instructions");
-        expect(chat.requests.at(-1)?.instructions).toContain("Project fact two");
-        expect(await inspect(["chat", "show", id])).toMatchObject({
-          session: { project: job.project },
-        });
-        expect(await inspect(["memory", "list", "--project", "acorn"])).toMatchObject({
-          project: "acorn",
-          orphaned: true,
-          facts: [{ key: "review.style", value: "Project fact two" }],
-        });
-        expect(await inspect(["memory", "list"])).toEqual([]);
-        const count = chat.requests.length;
-        await expect(
-          chat.invoke(["chat", "new", "--project", "missing", "Review"]),
-        ).rejects.toMatchObject({ message: expect.stringContaining("UTF-8") });
-        expect(chat.requests).toHaveLength(count);
-        await chat.invoke(["chat", "new", "Unscoped"]);
-        expect(chat.requests.at(-1)?.instructions).not.toContain("Project fact two");
-        await chat.invoke(["memory", "forget", "--project", "acorn", "review.style"]);
-      } finally {
-        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
-        await chat.close();
-      }
-    },
-  );
-
-  test.each(["local", "worker"])(
     "when %s execution selects a skill, saves its snapshot for chats and tasks",
     async (mode) => {
       const remote = mode === "worker";
@@ -1416,26 +1315,6 @@ describe("chat.ts", () => {
       );
       expect(new Set(chat.requests.map((request) => request.sessionId)).size).toBe(2);
       expect(chat.state.peak).toBe(1);
-      await mkdir(join(chat.directory, "projects", "acorn"), { recursive: true });
-      await writeFile(
-        join(chat.directory, "projects", "acorn", "PROJECT.md"),
-        "Messaging host project preferences",
-      );
-      await chat.clock.runPromise(
-        Queue.offer(first.incoming, {
-          messageId: "selected-project",
-          scopeId: "guild",
-          parentId: "parent",
-          conversationId: "thread",
-          senderId: "owner",
-          text: "/new --project acorn Review",
-          mentioned: false,
-        }),
-      );
-      stage = "project reply";
-      await Effect.runPromise(Queue.take(first.replies).pipe(Effect.timeout("2 seconds")));
-      expect(first.state.sent[1]).toBe("Answer");
-      expect(chat.requests.at(-1)?.instructions).toContain("Messaging host project preferences");
       chat.chunks.length = 0;
       await chat.invoke(["gateway", "status"]);
       expect(JSON.parse(chat.chunks.join(""))).toMatchObject({

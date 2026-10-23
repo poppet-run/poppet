@@ -1229,9 +1229,6 @@ describe("makeCLI", () => {
       "provider",
       "provider login",
       "provider models",
-      "projects",
-      "projects list",
-      "projects show",
       "skills",
       "skills list",
       "skills show",
@@ -1268,16 +1265,9 @@ describe("makeCLI", () => {
         expect(providerHelp.stdout).toContain(provider.authentication.help);
       }
 
-      const projectsHelp = await invoke(["projects", "--help"], environment);
-      expect(projectsHelp.stdout).toMatch(/list +List local projects/);
-      expect(projectsHelp.stdout).toMatch(/show +Show project instructions/);
-
       const skillsHelp = await invoke(["skills", "--help"], environment);
       expect(skillsHelp.stdout).toMatch(/list +List local skills/);
       expect(skillsHelp.stdout).toMatch(/show +Show a skill's Markdown instructions/);
-
-      const memoryHelp = await invoke(["memory", "list", "--help"], environment);
-      expect(memoryHelp.stdout).toContain("Use this project's saved facts instead of global facts");
 
       for (const action of ["login", "logout", "status", "models"])
         expect(providerHelp.stdout).toContain(`  ${action} `);

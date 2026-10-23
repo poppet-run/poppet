@@ -81,7 +81,6 @@ export interface InteractiveChatOptions {
   readonly sessionId?: string | undefined;
   readonly coding: boolean;
   readonly skill?: string | undefined;
-  readonly project?: string | undefined;
 }
 
 /** Keeps streamed thinking readable while answer text stays on its existing output. */
@@ -217,15 +216,12 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
   read: Effect.Effect<string | null, AgentError> = readChatLine,
 ) =>
   Effect.gen(function* () {
-    if (
-      options.sessionId !== undefined &&
-      (options.coding || options.skill !== undefined || options.project !== undefined)
-    )
+    if (options.sessionId !== undefined && (options.coding || options.skill !== undefined))
       return yield* Effect.fail(
         new AgentError({
           reason: "invalid-request",
           message:
-            "A resumed session keeps its saved workload, skill and project. Omit --coding, --skill and --project.",
+            "A resumed session keeps its saved workload and skill. Omit --coding and --skill.",
         }),
       );
 
@@ -263,12 +259,7 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
             ? { action: "new" as const, coding: options.coding, text }
             : { action: "new" as const, coding: options.coding, skill: options.skill, text };
 
-      const selected =
-        command.action === "new" && options.project !== undefined
-          ? { ...command, project: options.project }
-          : command;
-
-      const result = yield* send(selected, acknowledgeSession).pipe(Effect.result);
+      const result = yield* send(command, acknowledgeSession).pipe(Effect.result);
 
       if (Result.isFailure(result)) {
         if (

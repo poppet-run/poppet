@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { Agent, ProjectsLive, SkillsLive } from "@poppet/agent";
+import { Agent, SkillsLive } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { StoreLive } from "@poppet/store";
 import { TaskRepositoryLive, remoteTaskCommand } from "@poppet/tasks";
@@ -62,7 +62,7 @@ describe("runWorker", () => {
 
       const services = Layer.mergeAll(
         store,
-        Layer.merge(SkillsLive, ProjectsLive).pipe(Layer.provide(config)),
+        SkillsLive.pipe(Layer.provide(config)),
         TaskRepositoryLive.pipe(Layer.provide(store)),
         Layer.succeed(Agent, {
           send: () => Stream.die("Unexpected inference"),

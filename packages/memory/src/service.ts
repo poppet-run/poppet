@@ -9,7 +9,6 @@ export class MemoryError extends Data.TaggedError("MemoryError")<{
 }> {}
 
 interface MemoryOperations {
-  readonly forProject: (name: string) => MemoryOperations;
   /** Reads prompt files and saved facts, failing rather than truncating content over budget. */
   readonly snapshot: (limits: SnapshotLimits) => Effect.Effect<MemorySnapshot, MemoryError>;
   readonly list: Effect.Effect<ReadonlyArray<MemoryFact>, MemoryError>;
@@ -27,7 +26,7 @@ interface MemoryOperations {
   ) => Effect.Effect<MemoryFact, MemoryError>;
   /** Removes a saved fact; a missing key is an error. History keeps a tombstone. */
   readonly forget: (key: string, sourceRunId?: string | null) => Effect.Effect<void, MemoryError>;
-  /** Every change to one key in this scope, oldest first. */
+  /** Every change to one key , oldest first. */
   readonly history: (key: string) => Effect.Effect<ReadonlyArray<MemoryRevision>, MemoryError>;
   /** Restores an earlier revision as a new owner revision; a tombstone forgets the fact. */
   readonly revert: (key: string, revision: number) => Effect.Effect<MemoryFact | null, MemoryError>;

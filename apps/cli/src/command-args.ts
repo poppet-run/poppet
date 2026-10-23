@@ -18,21 +18,14 @@ export const commandArgs = (
     while (offset < args.length) {
       const token = args[offset]!;
 
-      if (token === "--skill" || token === "--project") offset += 2;
-      else if (token === "--coding" || /^--(?:skill|project)=/.test(token)) offset++;
+      if (token === "--skill") offset += 2;
+      else if (token === "--coding" || token.startsWith("--skill=")) offset++;
       else break;
     }
   } else if (args[0] === "chat" && ["send", "rename"].includes(args[1] ?? "")) {
     offset = 3;
   } else if (args[0] === "memory" && ["remember", "replace"].includes(args[1] ?? "")) {
-    offset = 2;
-
-    while (args[offset] === "--project" || args[offset]?.startsWith("--project="))
-      offset += args[offset] === "--project" ? 2 : 1;
-    offset++;
-
-    while (args[offset] === "--project" || args[offset]?.startsWith("--project="))
-      offset += args[offset] === "--project" ? 2 : 1;
+    offset = 3;
   } else if (args[0] === "tasks" && args[1] === "add") {
     offset = 3;
 
@@ -45,7 +38,6 @@ export const commandArgs = (
           "--cron",
           "--tz",
           "--skill",
-          "--project",
           "--discord-thread",
           "--telegram-chat",
           "--whatsapp-chat",
@@ -55,7 +47,7 @@ export const commandArgs = (
       else if (
         token === "--coding" ||
         token === "--monitor" ||
-        /^--(?:at|cron|tz|skill|project|discord-thread|telegram-chat|whatsapp-chat)=/.test(token)
+        /^--(?:at|cron|tz|skill|discord-thread|telegram-chat|whatsapp-chat)=/.test(token)
       )
         offset++;
       else break;

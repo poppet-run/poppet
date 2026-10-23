@@ -13,7 +13,6 @@ import {
   Store,
   StoreError,
   type Run,
-  type ProjectSnapshot,
   type StoredMessage,
   type DeliveryDestination,
 } from "@poppet/store";
@@ -72,7 +71,6 @@ export const conversation = Effect.gen(function* () {
     readOnlyTools: boolean,
     here: Effect.Effect<DeliveryDestination, AgentError> | null = null,
     source?: TextSource,
-    project: ProjectSnapshot | null = null,
     selectedSkill: string | null = null,
   ) =>
     Stream.unwrap(
@@ -472,13 +470,7 @@ export const conversation = Effect.gen(function* () {
                               );
                         };
 
-                        const { output, urls } = yield* executeTool(
-                          run,
-                          callId,
-                          plan,
-                          project,
-                          guard,
-                        );
+                        const { output, urls } = yield* executeTool(run, callId, plan, guard);
 
                         for (const url of urls) allowedURLs.add(url);
 

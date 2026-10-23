@@ -63,9 +63,8 @@ session. Earlier messages in an existing thread are not imported.
 
 Use `@Poppet /new --skill weekly-review Review Acorn` to start a fresh session
 with a saved [local skill](../skills.md#messaging-sessions), in a new thread or an
-existing one. Add `--project acorn` to select [project context](../projects.md),
-with or without a skill. `/new <message>` starts without either selection.
-Previous session history is retained; ordinary follow-ups keep both snapshots.
+existing one. `/new <message>` starts without a skill.
+Previous session history is retained; ordinary follow-ups keep the skill snapshot.
 Options precede the prompt; selection errors leave the active session unchanged.
 
 ## Progress and controls

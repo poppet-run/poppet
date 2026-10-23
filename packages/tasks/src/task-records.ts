@@ -10,7 +10,7 @@ export const recurringExpiry = 24 * 60 * 60 * 1000;
 
 export const taskSql = `SELECT id, name, prompt, provider, model, workload, schedule,
   monitor, revision, monitor_revision AS monitorRevision, monitor_baseline_after AS monitorBaselineAfter,
-  skill, project, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
+  skill, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
 
 export const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, status,
   revision, definition, available_at AS availableAt, origin,

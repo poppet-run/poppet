@@ -2,7 +2,7 @@
 
 [Documentation index](README.md)
 
-Phases 1–21 and 23–26 are implemented with automated checks. Live validation
+Phases 1–21 and 23–25 are implemented with automated checks. Live validation
 remains outstanding where listed in each phase.
 Phases 28–30 are planned only. Plans do not authorize implementation.
 
@@ -54,7 +54,6 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 23: Change-aware monitoring](phases/23.md)
 - [Phase 24: Editable tasks and snoozing](phases/24.md)
 - [Phase 25: Text attachments](phases/25.md)
-- [Phase 26: Context for individual projects](phases/26.md)
 - [Phase 28: Browser login state across requests](phases/28.md)
 - [Phase 29: A useful `poppet doctor`](phases/29.md)
 - [Phase 30: Calendar briefings and weekly reviews](phases/30.md)

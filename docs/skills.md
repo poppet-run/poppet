@@ -12,7 +12,7 @@ For example, save this as `skills/weekly-review/SKILL.md` under your data direct
 ```markdown
 # Weekly review
 
-Search past conversations within the selected project. Read relevant exchanges,
+Search past conversations. Read relevant exchanges,
 then summarize progress, unresolved questions, and next actions. Cite session IDs.
 ```
 
@@ -44,11 +44,6 @@ run's instructions below the base rules and count toward the existing context
 budget. They cannot override explicit user requests or grant tool permissions.
 Scheduled runs cannot write memory. A skill cannot authorize memory
 changes; ordinary chat needs an explicit request in the current user message. Automatic session naming does not receive skills.
-
-Combine a skill with `--project <name>` to add [project context](projects.md).
-The project supplies instructions and facts; the skill
-supplies a procedure within the existing tool permissions. Both snapshots persist independently.
-Messaging accepts `/new --project acorn --skill weekly-review Review progress`.
 
 Skills are single files. Poppet does not parse YAML metadata, follow references,
 run scripts, download skills, or let the agent write them.

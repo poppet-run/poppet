@@ -1,4 +1,4 @@
-import { Projects, Skills } from "@poppet/agent";
+import { Skills } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { Store } from "@poppet/store";
 import {
@@ -25,7 +25,7 @@ export const runWorker = (mode: WorkerMode) =>
       const commands = yield* WorkerRequests;
       const tasks = mode === "gateway" ? null : yield* makeTaskWorker;
       const messaging = Option.getOrNull(yield* Effect.serviceOption(MessagingWorker));
-      const services = yield* Effect.context<Store | TaskRepository | Skills | Projects>();
+      const services = yield* Effect.context<Store | TaskRepository | Skills>();
       const startedAt = yield* Clock.currentTimeMillis;
 
       const destinations: TaskDestinations["Service"] = {

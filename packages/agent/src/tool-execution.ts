@@ -1,6 +1,6 @@
 import { Memory } from "@poppet/memory";
 import { measureTiming } from "@poppet/provider";
-import { Store, StoreError, type Run, type ProjectSnapshot } from "@poppet/store";
+import { Store, StoreError, type Run } from "@poppet/store";
 import { Effect, Match, Option } from "effect";
 
 import { AgentError } from "#src/errors";
@@ -99,7 +99,6 @@ export const toolExecution = Effect.gen(function* () {
     run: Run,
     callId: string,
     call: ToolPlan,
-    project: ProjectSnapshot | null,
     guard: (output: string) => Effect.Effect<void, AgentError>,
   ) => {
     const operation = Effect.gen(function* () {
@@ -109,12 +108,12 @@ export const toolExecution = Effect.gen(function* () {
       const result: Effect.Effect<string, AgentError | StoreError> = Match.value(call).pipe(
         Match.when({ name: "search_sessions" }, (plan) =>
           store
-            .searchSessions(plan.query, policy.toolBytes, project?.name ?? null)
+            .searchSessions(plan.query, policy.toolBytes)
             .pipe(Effect.map((value) => JSON.stringify(value))),
         ),
         Match.when({ name: "read_session" }, (plan) =>
           store
-            .readSession(plan.query, policy.toolBytes, project?.name ?? null)
+            .readSession(plan.query, policy.toolBytes)
             .pipe(Effect.map((value) => JSON.stringify(value))),
         ),
         Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
@@ -147,9 +146,7 @@ export const toolExecution = Effect.gen(function* () {
               ),
         ),
         Match.when({ name: "memory" }, (plan) =>
-          project === null
-            ? executeMemoryCall(memory, plan, run.id, policy.factsBytes)
-            : executeMemoryCall(memory.forProject(project.name), plan, run.id, 8192),
+          executeMemoryCall(memory, plan, run.id, policy.factsBytes),
         ),
         Match.exhaustive,
       );

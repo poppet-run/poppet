@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 
 import { taskCatchUpMinutes } from "@poppet/config";
-import { DeliveryDestination, StoreDatabase, SkillSnapshot, ProjectSnapshot } from "@poppet/store";
+import { DeliveryDestination, StoreDatabase, SkillSnapshot } from "@poppet/store";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 
 import { monitoringRecords } from "#src/monitoring";
@@ -202,7 +202,6 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
     destination: DeliveryDestination | null = null,
     source?: { readonly runId: string; readonly callId: string },
     monitor = false,
-    project: ProjectSnapshot | null = null,
   ) => {
     if (source) {
       const existing = Schema.decodeUnknownSync(
@@ -228,7 +227,7 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
     const id = randomUUID();
 
     using statement = database.prepare(
-      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id, monitor, project) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id, monitor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
 
     statement.run(
@@ -246,7 +245,6 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
       source?.runId ?? null,
       source?.callId ?? null,
       monitor ? 1 : 0,
-      project === null ? null : Schema.encodeSync(Schema.fromJsonString(ProjectSnapshot))(project),
     );
 
     return task(id);
@@ -535,15 +533,11 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
     commandLock,
     monitoring,
     list,
-    listPage: (after: string | null, project?: string | null) => {
+    listPage: (after: string | null) => {
       if (after !== null) task(after);
 
       return Schema.decodeUnknownSync(Schema.Array(Task))(
-        database
-          .query(
-            `${taskSql} WHERE id > ? AND (? OR json_extract(project, '$.name') IS ?) ORDER BY id LIMIT 11`,
-          )
-          .all(after ?? "", project === undefined ? 1 : 0, project ?? null),
+        database.query(`${taskSql} WHERE id > ? ORDER BY id LIMIT 11`).all(after ?? ""),
       );
     },
     status,

@@ -14,8 +14,6 @@ import {
   ModelResolver,
   Skills,
   SkillsLive,
-  Projects,
-  ProjectsLive,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive, Memory } from "@poppet/memory";
@@ -125,7 +123,7 @@ const fixture = async (
   const memory = LocalMemoryLive.pipe(Layer.provideMerge(store));
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
   const settings = Layer.succeed(ChatSettings, defaultPolicy);
-  const skills = Layer.merge(SkillsLive, ProjectsLive).pipe(Layer.provide(config));
+  const skills = SkillsLive.pipe(Layer.provide(config));
 
   const agent = AgentLive.pipe(
     Layer.provideMerge(
@@ -174,7 +172,7 @@ const fixture = async (
       program: Effect.Effect<
         A,
         E,
-        Agent | Store | StoreDatabase | Memory | TaskRepository | AppConfig | Skills | Projects
+        Agent | Store | StoreDatabase | Memory | TaskRepository | AppConfig | Skills
       >,
     ) =>
       Effect.runPromise(
@@ -899,92 +897,6 @@ describe.concurrent("makeTaskWorker", () => {
         "read_session",
         "fetch_page",
       ]);
-    } finally {
-      await state.close();
-    }
-  });
-
-  test("when project files change or disappear before retry, retains snapshots and reads current facts without write tools", async () => {
-    let fail = true;
-
-    const state = await fixture(() => {
-      if (fail) {
-        fail = false;
-
-        return Stream.fail(
-          new ProviderError({
-            provider: "test-provider",
-            reason: "invalid-request",
-            message: "Fixture denied",
-          }),
-        );
-      }
-
-      return final();
-    });
-
-    let id = "";
-
-    try {
-      const root = join(state.directory, "projects", "acorn");
-      await mkdir(root, { recursive: true });
-      await writeFile(join(root, "PROJECT.md"), "Fixed Acorn instructions");
-      await state.run(
-        Effect.gen(function* () {
-          const repo = yield* TaskRepository;
-          yield* executeTaskCommand(
-            repo,
-            yield* Store,
-            { action: "add", task: state.task, project: "acorn" },
-            0,
-          );
-          id = repo.list()[0]!.id;
-          const project = yield* (yield* Projects).load("acorn");
-          expect(repo.task(id).project).toEqual(project);
-          const target = repo.nextTarget(id)!;
-          repo.control(
-            {
-              action: "edit",
-              id,
-              revision: 0,
-              operationId: "project-edit",
-              patch: { prompt: "Revised prompt" },
-            },
-            0,
-          );
-          expect(target).not.toBeNull();
-          expect(repo.task(id).project).toEqual(project);
-        }),
-      );
-      await rm(root, { recursive: true });
-      await state.run(
-        Effect.gen(function* () {
-          const repo = yield* TaskRepository;
-          const store = yield* Store;
-          yield* (yield* Memory).forProject("acorn").remember("review", "Current project fact");
-          repo.reconcile(0);
-          const claimed = repo.claim(0)!;
-          yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-          const occurrence = repo.occurrence(claimed.occurrence.id);
-          expect((yield* store.session(occurrence.sessionId!))?.project).toEqual(
-            repo.task(id).project,
-          );
-          expect(occurrence.status).toBe("failed");
-          expect(occurrence.definition.project).toEqual(repo.task(id).project);
-          repo.retry(occurrence.id, 0);
-          const retried = repo.claim(0)!;
-          yield* executeOccurrence(repo, retried.occurrence, retried.task);
-          const successful = repo.occurrence(occurrence.id);
-          expect(successful.status).toBe("completed");
-          expect(successful.sessionId).not.toBe(occurrence.sessionId);
-          expect((yield* store.session(successful.sessionId!))?.project).toEqual(
-            occurrence.definition.project,
-          );
-        }),
-      );
-      expect(state.requests[0]?.instructions).toContain("Fixed Acorn instructions");
-      expect(state.requests[0]?.instructions).toContain("Current project fact");
-      expect(state.requests[0]?.tools.map((tool) => tool.name)).not.toContain("memory");
     } finally {
       await state.close();
     }

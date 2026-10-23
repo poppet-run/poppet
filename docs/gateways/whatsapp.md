@@ -52,10 +52,9 @@ reply delivery work as they do for the other adapters. `/status` reports the ses
 and latest run, including the selected skill and project; `/cancel` interrupts current work and cancels queued input.
 
 Send `/new --skill weekly-review Review Acorn` to start a fresh session with a
-saved [local skill](../skills.md#messaging-sessions). Add `--project acorn` to
-select [project context](../projects.md), with or without a skill. Options precede
-the prompt. `/new <message>` starts without either selection. Previous sessions
-and history are retained. Follow-ups keep both snapshots across restart and local
+saved [local skill](../skills.md#messaging-sessions). Options precede
+the prompt. `/new <message>` starts without a skill. Previous sessions
+and history are retained. Follow-ups keep the skill snapshot across restart and local
 file edits or deletion. Selection errors leave the active session unchanged.
 
 Only ordinary private text from the configured owner is accepted. WhatsApp's LID

@@ -15,8 +15,6 @@ import {
   WebSearch,
   Skills,
   SkillsLive,
-  Projects,
-  ProjectsLive,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive } from "@poppet/memory";
@@ -118,7 +116,7 @@ const fixture = async (
   const store = StoreLive.pipe(Layer.provideMerge(config));
   const settings = Layer.succeed(ChatSettings, { ...defaultPolicy, ...policy });
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
-  const skills = Layer.merge(SkillsLive, ProjectsLive).pipe(Layer.provide(config));
+  const skills = SkillsLive.pipe(Layer.provide(config));
 
   const agent = AgentLive.pipe(
     Layer.provideMerge(
@@ -195,14 +193,7 @@ const fixture = async (
       program: Effect.Effect<
         A,
         E,
-        | Gateway
-        | Store
-        | StoreDatabase
-        | GatewayRepository
-        | TaskRepository
-        | Agent
-        | Skills
-        | Projects
+        Gateway | Store | StoreDatabase | GatewayRepository | TaskRepository | Agent | Skills
       >,
     ) =>
       Effect.runPromise(
@@ -240,26 +231,22 @@ const scheduled = (destination: DeliveryDestination | null) =>
   });
 
 describe.concurrent("Gateway", () => {
-  test("when project and skill selections change across restart, preserves valid snapshots and resets only with new", async () => {
+  test("when skill selections change across restart, preserves valid snapshots and resets only with new", async () => {
     const state = await fixture();
 
     try {
-      const root = join(state.directory, "projects", "acorn");
-      await mkdir(root, { recursive: true });
-      await writeFile(join(root, "PROJECT.md"), "Gateway project preferences");
+      const root = join(state.directory, "skills", "review");
       await mkdir(join(state.directory, "skills", "review"), { recursive: true });
       await writeFile(join(state.directory, "skills", "review", "SKILL.md"), "Review procedure");
       let selected = "";
       await state.run(
         Effect.gen(function* () {
           const gateway = yield* Gateway;
-          yield* gateway.accept(
-            message("project", "thread", "/new --project acorn --skill review Review"),
-          );
+          yield* gateway.accept(message("skill", "thread", "/new --skill review Review"));
           yield* gateway.processNext;
           const session = (yield* (yield* Store).sessions)[0]!;
           selected = session.id;
-          expect(session.project).toEqual(yield* (yield* Projects).load("acorn"));
+          expect(session.skill).toEqual(yield* (yield* Skills).load("review"));
         }),
       );
       await rm(root, { recursive: true });
@@ -270,7 +257,7 @@ describe.concurrent("Gateway", () => {
           yield* gateway.accept(message("continue", "thread", "Continue"));
           yield* gateway.processNext;
           expect(yield* store.sessions).toHaveLength(1);
-          yield* gateway.accept(message("bad-project", "thread", "/new --project missing Review"));
+          yield* gateway.accept(message("bad-skill", "thread", "/new --skill missing Review"));
           yield* gateway.processNext;
           expect((yield* GatewayRepository).binding("discord", "bot", "guild", "thread")).toBe(
             selected,
@@ -278,14 +265,13 @@ describe.concurrent("Gateway", () => {
           yield* gateway.accept(message("unscoped", "thread", "/new Review"));
           yield* gateway.processNext;
           expect(
-            (yield* store.sessions).find((session) => session.id !== selected)?.project,
+            (yield* store.sessions).find((session) => session.id !== selected)?.skill,
           ).toBeNull();
         }),
       );
-      expect(state.requests[0]?.instructions).toContain("Gateway project preferences");
-      expect(state.requests[1]?.instructions).toContain("Gateway project preferences");
+      expect(state.requests[0]?.instructions).toContain("Review procedure");
       expect(state.requests[1]?.instructions).toContain("Review procedure");
-      expect(state.requests[2]?.instructions).not.toContain("Gateway project preferences");
+      expect(state.requests[2]?.instructions).not.toContain("Review procedure");
     } finally {
       await state.close();
     }

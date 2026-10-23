@@ -54,13 +54,12 @@ restart and retains its selected provider and model. Telegram and Discord have
 separate sessions even if external IDs happen to match.
 
 Send `/new --skill weekly-review Review Acorn` to start a fresh session with a
-saved [local skill](../skills.md#messaging-sessions). Add `--project acorn` to
-select [project context](../projects.md), with or without a skill. Options precede
-the prompt. `/new <message>` starts without either selection. Previous sessions
-and history remain; ordinary follow-ups retain both snapshots across restart and
+saved [local skill](../skills.md#messaging-sessions). Options precede
+the prompt. `/new <message>` starts without a skill. Previous sessions
+and history remain; ordinary follow-ups retain the skill snapshot across restart and
 local file edits. Selection errors leave the active session unchanged.
 
-After the first exchange, `/status` reports the session, skill, project, and latest run. `/cancel`
+After the first exchange, `/status` reports the session, skill, and latest run. `/cancel`
 interrupts active work and cancels queued input in this chat without waiting for
 inference. The adapter sends typing actions while processing and plain text
 replies, split into chunks of at most 4096 UTF-16 units, preferring paragraph, line,
