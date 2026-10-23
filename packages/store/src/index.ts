@@ -4,6 +4,8 @@ export { StoreError } from "#src/errors";
 
 export { StoreDatabase, StoreDatabaseLive } from "#src/database";
 
+export { decodeRow, decodeRows } from "#src/sql";
+
 export {
   DeliveryDestination,
   Session,

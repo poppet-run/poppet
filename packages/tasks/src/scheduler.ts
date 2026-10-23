@@ -16,7 +16,7 @@ import {
   Stream,
 } from "effect";
 
-import { executeTaskCommand, taskOperation } from "#src/commands";
+import { executeTaskCommand } from "#src/commands";
 import {
   type Occurrence,
   type ProviderPause,
@@ -56,7 +56,7 @@ const logProviderPause = (at: number, pause: ProviderPause) =>
 /** Reconciles due work and logs only skips committed by the repository. */
 export const reconcileTasks = (repo: TaskStore, now: number, startup = false) =>
   Effect.gen(function* () {
-    const skipped = yield* taskOperation(() => repo.reconcile(now, startup));
+    const skipped = yield* repo.reconcile(now, startup);
 
     yield* Effect.forEach(skipped, (item) =>
       workerLog(
@@ -92,13 +92,11 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) 
         skill: job.skill,
       });
 
-      yield* taskOperation(() => repo.link(item.id, session.id, null));
+      yield* repo.link(item.id, session.id, null);
       yield* Stream.runForEach(
         agent.send(session.id, job.prompt, { readOnlyTools: true }),
         (event) =>
-          taskOperation(() => {
-            if (event.type === "started") repo.link(item.id, session.id, event.run.id);
-          }),
+          event.type === "started" ? repo.link(item.id, session.id, event.run.id) : Effect.void,
       );
     }).pipe(
       // Catch model failures before finalization so a failed database write still stops the worker.
@@ -107,9 +105,9 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) 
         Effect.gen(function* () {
           const now = clock.currentTimeMillisUnsafe();
 
-          const outcome = yield* taskOperation(() => {
+          const outcome = yield* Effect.gen(function* () {
             if (Exit.isSuccess(exit) && modelFailure === null) {
-              const finished = repo.finish(item.id, "completed", null, now);
+              const finished = yield* repo.finish(item.id, "completed", null, now);
 
               return { ...finished, reason: finished.occurrence.reason };
             }
@@ -143,13 +141,13 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) 
                     : "storage";
 
             return {
-              ...repo.finish(
+              ...(yield* repo.finish(
                 item.id,
                 interrupted ? "interrupted" : "failed",
                 error?.message ?? "worker-stopped",
                 now,
                 pauseReason,
-              ),
+              )),
               reason,
             };
           });
@@ -192,7 +190,7 @@ export const makeTaskWorker = Effect.gen(function* () {
   const connections = Option.getOrNull(yield* Effect.serviceOption(WorkerConnections));
 
   yield* reconcileTasks(repo, clock.currentTimeMillisUnsafe(), true);
-  const pauses = yield* taskOperation(() => repo.providers());
+  const pauses = yield* repo.providers();
   yield* Effect.forEach(
     pauses.filter(
       (pause) => pause.resumeAt === null || pause.resumeAt > clock.currentTimeMillisUnsafe(),
@@ -201,7 +199,7 @@ export const makeTaskWorker = Effect.gen(function* () {
   );
 
   const readStatus = Effect.gen(function* () {
-    const overview = yield* taskOperation(() => repo.status());
+    const overview = yield* repo.status();
 
     const ids = [...new Set([config.provider, ...overview.providers])];
 
@@ -235,9 +233,7 @@ export const makeTaskWorker = Effect.gen(function* () {
 
       const pending =
         command.action === "pause"
-          ? yield* taskOperation(() =>
-              repo.occurrences(command.id).filter((item) => item.status === "pending"),
-            )
+          ? (yield* repo.occurrences(command.id)).filter((item) => item.status === "pending")
           : [];
 
       const result = yield* executeTaskCommand(repo, store, command, now);
@@ -257,7 +253,7 @@ export const makeTaskWorker = Effect.gen(function* () {
         yield* Fiber.interrupt(active.fiber);
 
       if (command.action === "pause" || command.action === "resume") {
-        const job = yield* taskOperation(() => repo.task(command.id));
+        const job = yield* repo.task(command.id);
         yield* workerLog(
           now,
           `Task ${JSON.stringify(job.name)} task=${job.id} ${command.action === "pause" ? "paused" : "resumed"}`,
@@ -268,8 +264,8 @@ export const makeTaskWorker = Effect.gen(function* () {
       }
 
       if (command.action === "retry" || command.action === "cancel") {
-        const item = yield* taskOperation(() => repo.occurrence(command.id));
-        const job = yield* taskOperation(() => repo.task(item.jobId));
+        const item = yield* repo.occurrence(command.id);
+        const job = yield* repo.task(item.jobId);
         yield* workerLog(
           now,
           `${occurrenceLabel(job.name, item.id)} ${command.action === "retry" ? "queued for retry" : "cancelled"}`,
@@ -309,9 +305,7 @@ export const makeTaskWorker = Effect.gen(function* () {
         const current = yield* commands.withPermit(
           Effect.uninterruptibleMask((restore) =>
             Effect.gen(function* () {
-              const claimed = yield* taskOperation(() =>
-                repo.claim(clock.currentTimeMillisUnsafe()),
-              );
+              const claimed = yield* repo.claim(clock.currentTimeMillisUnsafe());
 
               if (claimed === null) return null;
 

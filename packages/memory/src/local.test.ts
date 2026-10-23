@@ -5,8 +5,9 @@ import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
 import type { Completion } from "@poppet/provider";
-import { Store, StoreDatabase, StoreLive } from "@poppet/store";
+import { Store, StoreLive } from "@poppet/store";
 import { Effect, Layer } from "effect";
+import { SqlClient } from "effect/sql";
 
 import { LocalMemoryLive } from "#src/local";
 import { Memory, MemoryError } from "#src/service";
@@ -26,7 +27,7 @@ const fixture = async () => {
 
   return {
     directory,
-    run: <A, E>(program: Effect.Effect<A, E, Memory | Store | StoreDatabase>) =>
+    run: <A, E>(program: Effect.Effect<A, E, Memory | Store | SqlClient.SqlClient>) =>
       Effect.runPromise(program.pipe(Effect.provide(layer))),
     close: () => rm(directory, { recursive: true, force: true }),
   };
@@ -114,15 +115,16 @@ describe.concurrent("LocalMemoryLive", () => {
           yield* reject(memory.remember("empty", " "), "invalid-request");
           yield* reject(memory.remember("large", "😀".repeat(1025)), "invalid-request");
           yield* reject(memory.remember("unknown", "value", "missing-run"), "not-found");
-          const { database } = yield* StoreDatabase;
-          // Seed in one transaction, then exercise real writes at the capacity boundary.
-          database.transaction(() => {
-            using insert = database.prepare(
-              "INSERT INTO memories (key, value, origin, source_run_id, updated_at) VALUES (?, ?, 'cli', NULL, ?)",
-            );
-
-            for (let index = 0; index < 127; index++) insert.run(`fact-${index}`, "Original", 1);
-          })();
+          const sql = yield* SqlClient.SqlClient;
+          // Seed directly, then exercise real writes at the capacity boundary.
+          yield* sql`INSERT INTO memories ${sql.insert(
+            Array.from({ length: 127 }, (_, index) => ({
+              key: `fact-${index}`,
+              value: "Original",
+              origin: "cli",
+              updatedAt: 1,
+            })),
+          )}`;
           yield* memory.remember("fact-127", "Original");
           yield* reject(memory.remember("overflow", "value"), "conflict");
           yield* reject(memory.replace("fact-0", "😀".repeat(1025)), "invalid-request");

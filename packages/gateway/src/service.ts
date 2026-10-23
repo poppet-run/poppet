@@ -219,9 +219,9 @@ const gateway = Effect.gen(function* () {
 
   // Reconcile saved results rather than rerun inference after a crash or failed send.
   const scheduleResults = Effect.gen(function* () {
-    yield* gatewayStorage(() => repo.rejectScheduledDeliveries(channel.id, account));
+    yield* gatewayStorage(repo.rejectScheduledDeliveries(channel.id, account));
 
-    for (const item of yield* gatewayStorage(() => repo.scheduled(channel.id))) {
+    for (const item of yield* gatewayStorage(repo.scheduled(channel.id))) {
       const run = yield* store.run(item.runId);
 
       if (run?.status !== "completed") continue;
@@ -233,7 +233,7 @@ const gateway = Effect.gen(function* () {
         destination.scopeId === channel.policy.scopeId &&
         channel.policy.parentIds.includes(destination.parentId);
 
-      yield* gatewayStorage(() =>
+      yield* gatewayStorage(
         repo.scheduleResult(
           item.id,
           item.runId,
@@ -246,18 +246,20 @@ const gateway = Effect.gen(function* () {
   });
 
   const finish = (id: number, text: string, state = "completed") =>
-    gatewayStorage(() => {
-      const source = repo.attachment(id)?.result;
+    gatewayStorage(
+      Effect.gen(function* () {
+        const source = (yield* repo.attachment(id))?.result;
 
-      const receipt =
-        source === null || source === undefined
-          ? ""
-          : source.kind === "voice"
-            ? `Transcript (local speech recognition):\n${source.text}\n\nAny action needs your confirmation in a subsequent text message.\n\n`
-            : `Document ${JSON.stringify(source.name)}: ${source.completeness}\n\n`;
+        const receipt =
+          source === null || source === undefined
+            ? ""
+            : source.kind === "voice"
+              ? `Transcript (local speech recognition):\n${source.text}\n\nAny action needs your confirmation in a subsequent text message.\n\n`
+              : `Document ${JSON.stringify(source.name)}: ${source.completeness}\n\n`;
 
-      repo.complete(id, chunks(`${receipt}${text}`, channel.textLimit), state);
-    }).pipe(Effect.andThen(wake(deliveryWake)));
+        yield* repo.complete(id, chunks(`${receipt}${text}`, channel.textLimit), state);
+      }),
+    ).pipe(Effect.andThen(wake(deliveryWake)));
 
   // shortcut: Reactions are best effort; add durable reconciliation if stale markers after crashes matter.
   const mark = (message: IncomingMessage, state: "working" | "completed" | "stopped") =>
@@ -265,18 +267,18 @@ const gateway = Effect.gen(function* () {
 
   /** Reconciles saved runs with the inbox and leaves interrupted sends uncertain. */
   const recover = Effect.gen(function* () {
-    yield* gatewayStorage(() => repo.recoverDelivery(channel.id, account));
+    yield* gatewayStorage(repo.recoverDelivery(channel.id, account));
 
-    for (const entry of yield* gatewayStorage(() => repo.executing(channel.id, account))) {
+    for (const entry of yield* gatewayStorage(repo.executing(channel.id, account))) {
       const run = yield* store.run(entry.runId);
 
       if (run === null) {
         const processing = yield* gatewayStorage(
-          () => repo.attachment(entry.id)?.state === "processing",
+          repo.attachment(entry.id).pipe(Effect.map((saved) => saved?.state === "processing")),
         );
 
         if (processing && entry.attempts >= 3) {
-          yield* gatewayStorage(() =>
+          yield* gatewayStorage(
             repo.extractionFailed(
               entry.id,
               "Attachment processing was repeatedly interrupted. Send the file again.",
@@ -287,8 +289,8 @@ const gateway = Effect.gen(function* () {
             "Attachment processing was repeatedly interrupted. Send the file again.",
             "failed",
           );
-        } else if (processing) yield* gatewayStorage(() => repo.retry(entry, 0));
-        else yield* gatewayStorage(() => repo.state(entry.id, "queued"));
+        } else if (processing) yield* gatewayStorage(repo.retry(entry, 0));
+        else yield* gatewayStorage(repo.state(entry.id, "queued"));
       } else {
         yield* finish(entry.id, answer(run));
         yield* mark(entry.message, run.status === "completed" ? "completed" : "stopped");
@@ -312,15 +314,11 @@ const gateway = Effect.gen(function* () {
       const session =
         conversation === null
           ? null
-          : yield* gatewayStorage(() =>
-              repo.binding(channel.id, account, message.scopeId, conversation),
-            );
+          : yield* gatewayStorage(repo.binding(channel.id, account, message.scopeId, conversation));
 
       if (conversation === null && !message.mentioned) return;
 
-      const entry = yield* gatewayStorage(() =>
-        repo.accept(channel.id, account, message, overloadReply),
-      );
+      const entry = yield* gatewayStorage(repo.accept(channel.id, account, message, overloadReply));
 
       if (entry === null) return;
       yield* wake(inboxWake);
@@ -332,7 +330,7 @@ const gateway = Effect.gen(function* () {
       )
         return;
       // Controls never create sessions or wait behind the model they may need to cancel.
-      yield* gatewayStorage(() => repo.state(entry.id, "cancelled"));
+      yield* gatewayStorage(repo.state(entry.id, "cancelled"));
 
       if (conversation === null || session === null) return;
 
@@ -357,11 +355,11 @@ const gateway = Effect.gen(function* () {
           );
         }
       } else if (message.text === "/cancel") {
-        yield* gatewayStorage(() => repo.cancel(channel.id, account, conversation));
+        yield* gatewayStorage(repo.cancel(channel.id, account, conversation));
 
         if (active?.entry.conversationId === conversation) {
           const current = active;
-          yield* gatewayStorage(() => repo.state(current.entry.id, "cancelled"));
+          yield* gatewayStorage(repo.state(current.entry.id, "cancelled"));
           yield* Fiber.interrupt(current.fiber);
         }
 
@@ -403,7 +401,7 @@ const gateway = Effect.gen(function* () {
 
       const reject = (text: string) =>
         Effect.gen(function* () {
-          yield* gatewayStorage(() => repo.address(entry.id, conversation));
+          yield* gatewayStorage(repo.address(entry.id, conversation));
           yield* finish(entry.id, text, "failed");
           yield* mark(entry.message, "stopped");
 
@@ -413,7 +411,7 @@ const gateway = Effect.gen(function* () {
       if (Result.isFailure(parsed)) return yield* reject(parsed.failure.message);
       const request = parsed.success;
 
-      const existing = yield* gatewayStorage(() =>
+      const existing = yield* gatewayStorage(
         repo.binding(channel.id, account, entry.message.scopeId, conversation),
       );
 
@@ -459,7 +457,7 @@ const gateway = Effect.gen(function* () {
         });
       }
 
-      yield* gatewayStorage(() =>
+      yield* gatewayStorage(
         repo.attach(entry.id, conversation, session.id, created.managedName, request.fresh),
       );
 
@@ -468,14 +466,14 @@ const gateway = Effect.gen(function* () {
 
   /** Executes the next eligible queued request, retrying setup only before a run exists. */
   const processNext = Effect.gen(function* () {
-    const entry = yield* gatewayStorage(() =>
+    const entry = yield* gatewayStorage(
       repo.next(channel.id, account, clock.currentTimeMillisUnsafe()),
     );
 
     if (entry === null) return false;
 
     if (!authorized(entry.message)) {
-      yield* gatewayStorage(() => repo.state(entry.id, "cancelled"));
+      yield* gatewayStorage(repo.state(entry.id, "cancelled"));
 
       return true;
     }
@@ -489,7 +487,7 @@ const gateway = Effect.gen(function* () {
 
       if (active !== null)
         active.entry = { ...entry, conversationId: conversation, sessionId: session.id };
-      yield* gatewayStorage(() => repo.state(entry.id, "executing"));
+      yield* gatewayStorage(repo.state(entry.id, "executing"));
       yield* Effect.scoped(
         Effect.gen(function* () {
           // Discord typing expires after ten seconds; progress must never block inference.
@@ -502,7 +500,7 @@ const gateway = Effect.gen(function* () {
           let source;
 
           if (entry.message.attachment !== undefined) {
-            const saved = yield* gatewayStorage(() => repo.attachment(entry.id));
+            const saved = yield* gatewayStorage(repo.attachment(entry.id));
 
             if (saved?.state === "failed")
               return yield* Effect.fail(
@@ -514,7 +512,7 @@ const gateway = Effect.gen(function* () {
             source = saved?.result ?? undefined;
 
             if (source === undefined) {
-              yield* gatewayStorage(() => repo.processing(entry.id));
+              yield* gatewayStorage(repo.processing(entry.id));
 
               if (processor === null || channel.download === undefined)
                 return yield* Effect.fail(
@@ -526,7 +524,7 @@ const gateway = Effect.gen(function* () {
               const maxBytes = yield* processor.limit(entry.message.attachment);
               const bytes = yield* channel.download(entry.message, maxBytes);
               const extracted = yield* processor.extract(entry.message.attachment, bytes);
-              yield* gatewayStorage(() => repo.extracted(entry.id, extracted));
+              yield* gatewayStorage(repo.extracted(entry.id, extracted));
               source = extracted;
             }
           }
@@ -570,13 +568,15 @@ const gateway = Effect.gen(function* () {
           yield* mark(entry.message, "stopped");
 
           if (Cause.hasInterrupts(exit.cause)) {
-            yield* gatewayStorage(() => {
-              if (
-                repo.item(entry.id).state === "cancelled" &&
-                repo.attachment(entry.id)?.state === "processing"
-              )
-                repo.extractionFailed(entry.id, "Attachment processing was cancelled.");
-            });
+            yield* gatewayStorage(
+              Effect.gen(function* () {
+                if (
+                  (yield* repo.item(entry.id)).state === "cancelled" &&
+                  (yield* repo.attachment(entry.id))?.state === "processing"
+                )
+                  yield* repo.extractionFailed(entry.id, "Attachment processing was cancelled.");
+              }),
+            );
 
             return;
           }
@@ -588,10 +588,11 @@ const gateway = Effect.gen(function* () {
             error instanceof ChannelError &&
             error.reason === "attachment"
           )
-            yield* gatewayStorage(() => {
-              repo.processing(entry.id);
-              repo.extractionFailed(entry.id, error.message);
-            });
+            yield* gatewayStorage(
+              repo
+                .processing(entry.id)
+                .pipe(Effect.andThen(repo.extractionFailed(entry.id, error.message))),
+            );
 
           if (
             error instanceof ChannelError &&
@@ -603,15 +604,17 @@ const gateway = Effect.gen(function* () {
               clock.currentTimeMillisUnsafe() +
               Math.max(1000 * 2 ** entry.attempts, error.retryAfterMs ?? 0);
 
-            yield* gatewayStorage(() => repo.retry(entry, retryAt));
+            yield* gatewayStorage(repo.retry(entry, retryAt));
           } else {
-            const saved = yield* gatewayStorage(() => repo.item(entry.id));
+            const saved = yield* gatewayStorage(repo.item(entry.id));
 
             if (entry.message.attachment !== undefined && error instanceof ChannelError)
-              yield* gatewayStorage(() => {
-                if (repo.attachment(entry.id)?.state === "processing")
-                  repo.extractionFailed(entry.id, error.message);
-              });
+              yield* gatewayStorage(
+                Effect.gen(function* () {
+                  if ((yield* repo.attachment(entry.id))?.state === "processing")
+                    yield* repo.extractionFailed(entry.id, error.message);
+                }),
+              );
 
             if (saved.conversationId !== null && error !== null && !(error instanceof StoreError)) {
               yield* finish(
@@ -627,7 +630,7 @@ const gateway = Effect.gen(function* () {
                       : "The request failed. Use /status in this conversation to inspect its session before sending a new request.",
                 "failed",
               );
-            } else yield* gatewayStorage(() => repo.state(entry.id, "failed"));
+            } else yield* gatewayStorage(repo.state(entry.id, "failed"));
           }
         }),
       ),
@@ -660,16 +663,16 @@ const gateway = Effect.gen(function* () {
   const deliverNext = Effect.gen(function* () {
     yield* scheduleResults;
 
-    const delivery = yield* gatewayStorage(() =>
+    const delivery = yield* gatewayStorage(
       repo.nextDelivery(channel.id, account, clock.currentTimeMillisUnsafe()),
     );
 
     if (delivery === null) return false;
-    const entry = yield* gatewayStorage(() => repo.item(delivery.inboxId));
+    const entry = yield* gatewayStorage(repo.item(delivery.inboxId));
     const destination = entry.conversationId;
 
     if (!authorized(entry.message) || destination === null) {
-      yield* gatewayStorage(() => repo.deliveryFailed(delivery, "failed", 0));
+      yield* gatewayStorage(repo.deliveryFailed(delivery, "failed", 0));
 
       return true;
     }
@@ -677,7 +680,7 @@ const gateway = Effect.gen(function* () {
     yield* Effect.gen(function* () {
       yield* channel.checkAccess(entry.message, destination);
       // Commit before the send. An interruption after this point is an uncertain delivery.
-      yield* gatewayStorage(() => repo.delivering(delivery));
+      yield* gatewayStorage(repo.delivering(delivery));
 
       const id = yield* channel.send(
         destination,
@@ -685,11 +688,11 @@ const gateway = Effect.gen(function* () {
         `${entry.id}-${delivery.position}`,
       );
 
-      yield* gatewayStorage(() => repo.delivered(delivery, id));
+      yield* gatewayStorage(repo.delivered(delivery, id));
       yield* wake(namingWake);
     }).pipe(
       Effect.catchTag("ChannelError", (error) =>
-        gatewayStorage(() =>
+        gatewayStorage(
           repo.deliveryFailed(
             delivery,
             error.reason === "uncertain"
@@ -713,13 +716,13 @@ const gateway = Effect.gen(function* () {
 
   const pollOnce = Effect.gen(function* () {
     if (!channel.poll) return;
-    const cursor = yield* gatewayStorage(() => repo.cursor(channel.id, account));
+    const cursor = yield* gatewayStorage(repo.cursor(channel.id, account));
     const updates = yield* channel.poll(cursor);
 
     for (const update of updates) {
       if (update.message !== null) yield* accept(update.message);
       // A crash before this write safely redelivers an already deduplicated inbox entry.
-      yield* gatewayStorage(() => repo.checkpoint(channel.id, account, update.cursor));
+      yield* gatewayStorage(repo.checkpoint(channel.id, account, update.cursor));
     }
   });
 

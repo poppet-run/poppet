@@ -31,15 +31,24 @@ const summary = (task: Task) => ({
       : { adapter: task.destination.adapter, conversationId: task.destination.conversationId },
 });
 
-const bounded = (output: string, limit: number) => {
-  if (Buffer.byteLength(output) > limit)
-    throw new StoreError({
-      reason: "invalid-request",
-      message: "Task details exceed the tool-result budget. Increase POPPET_TOOL_BYTES.",
-    });
+const bounded = (output: string, limit: number) =>
+  Buffer.byteLength(output) > limit
+    ? Effect.fail(
+        new StoreError({
+          reason: "invalid-request",
+          message: "Task details exceed the tool-result budget. Increase POPPET_TOOL_BYTES.",
+        }),
+      )
+    : Effect.succeed(output);
 
-  return output;
-};
+// Task failures inside a committed operation surface as storage failures, as before.
+const committedFailure = (cause: StoreError | TaskError) =>
+  cause instanceof StoreError
+    ? cause
+    : new StoreError({
+        reason: "storage",
+        message: "Poppet could not read or write its conversation store.",
+      });
 
 const invalid = (cause: unknown) =>
   new AgentError({
@@ -58,14 +67,15 @@ export const ChatTasksLive = Layer.effect(
     const { toolBytes } = yield* ChatSettings;
 
     // The host builds this layer under the new store owner, before starting agent or scheduler work.
-    yield* Effect.try({
-      try: () => repo.recover(clock.currentTimeMillisUnsafe()),
-      catch: () =>
-        new AgentError({
-          reason: "tool-storage",
-          message: "Could not recover scheduled task state.",
-        }),
-    });
+    yield* repo.recover(clock.currentTimeMillisUnsafe()).pipe(
+      Effect.mapError(
+        () =>
+          new AgentError({
+            reason: "tool-storage",
+            message: "Could not recover scheduled task state.",
+          }),
+      ),
+    );
 
     return {
       prepare: (action, context) =>
@@ -169,11 +179,9 @@ export const ChatTasksLive = Layer.effect(
               );
             }
           } else {
-            yield* Effect.try({
-              try: () =>
-                action.action === "list" ? repo.listPage(action.after) : repo.task(action.id),
-              catch: invalid,
-            });
+            if (action.action === "list")
+              yield* repo.listPage(action.after).pipe(Effect.mapError(invalid));
+            else yield* repo.task(action.id).pipe(Effect.mapError(invalid));
 
             if (
               action.action === "edit" ||
@@ -269,169 +277,170 @@ export const ChatTasksLive = Layer.effect(
                 );
 
               if (change.action === "edit" && change.patch.schedule !== undefined) {
-                const edited = change;
-                yield* Effect.try({
-                  try: () => {
-                    const schedule = edited.patch.schedule!;
-                    nextOccurrence(schedule, clock.currentTimeMillisUnsafe());
+                const schedule = change.patch.schedule;
 
-                    if (
-                      schedule.type === "once" &&
-                      schedule.at <= clock.currentTimeMillisUnsafe() &&
-                      !isDeepStrictEqual(schedule, repo.task(edited.id).schedule)
-                    )
-                      throw new TaskError({
-                        message: "Choose a future one-off time with an explicit UTC offset.",
-                      });
-                  },
+                yield* Effect.try({
+                  try: () => nextOccurrence(schedule, clock.currentTimeMillisUnsafe()),
                   catch: invalid,
                 });
+
+                // An unchanged past one-off is allowed; choosing a new past time is not.
+                if (schedule.type === "once" && schedule.at <= clock.currentTimeMillisUnsafe()) {
+                  const current = yield* repo.task(change.id).pipe(Effect.mapError(invalid));
+
+                  if (!isDeepStrictEqual(schedule, current.schedule))
+                    return yield* Effect.fail(
+                      invalid(
+                        new TaskError({
+                          message: "Choose a future one-off time with an explicit UTC offset.",
+                        }),
+                      ),
+                    );
+                }
               }
             }
           }
 
-          const execute = store
-            .commitToolCall(context.runId, context.callId, () => {
-              const now = clock.currentTimeMillisUnsafe();
+          const commit = Effect.gen(function* () {
+            const now = clock.currentTimeMillisUnsafe();
 
-              if ("delivery" in action) {
-                const valid = input!;
+            if ("delivery" in action) {
+              const valid = input!;
 
-                if (valid.schedule.type === "once" && valid.schedule.at <= now)
-                  throw new StoreError({
-                    reason: "invalid-request",
-                    message: "The requested one-off time has passed. Choose a future time.",
-                  });
-
-                const task = repo.add(valid, now, skill, destination, {
-                  runId: context.runId,
-                  callId: context.callId,
+              if (valid.schedule.type === "once" && valid.schedule.at <= now)
+                return yield* new StoreError({
+                  reason: "invalid-request",
+                  message: "The requested one-off time has passed. Choose a future time.",
                 });
 
-                return bounded(
-                  JSON.stringify({
-                    action: action.action,
-                    task: summary(task),
-                    truncated: false,
-                  }),
-                  toolBytes,
+              const task = yield* repo.add(valid, now, skill, destination, {
+                runId: context.runId,
+                callId: context.callId,
+              });
+
+              return yield* bounded(
+                JSON.stringify({ action: action.action, task: summary(task), truncated: false }),
+                toolBytes,
+              );
+            }
+
+            if (change !== null) {
+              const receipt = yield* repo
+                .control(change, now)
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new StoreError({ reason: "invalid-request", message: cause.message }),
+                  ),
                 );
-              }
 
-              if (change !== null) {
-                let receipt;
+              return yield* bounded(
+                JSON.stringify({
+                  ...receipt,
+                  task: summary(yield* repo.task(change.id)),
+                  truncated: false,
+                }),
+                toolBytes,
+              );
+            }
 
-                try {
-                  receipt = repo.control(change, now);
-                } catch (cause) {
-                  if (cause instanceof TaskError)
-                    throw new StoreError({ reason: "invalid-request", message: cause.message });
-                  throw cause;
-                }
+            if (action.action === "list") {
+              const rows = yield* repo.listPage(action.after);
+              const tasks: ReturnType<typeof summary>[] = [];
 
-                return bounded(
-                  JSON.stringify({
-                    ...receipt,
-                    task: summary(repo.task(change.id)),
-                    truncated: false,
-                  }),
-                  toolBytes,
-                );
-              }
+              for (const task of rows.slice(0, 10)) {
+                const result = summary(task);
 
-              if (action.action === "list") {
-                const rows = repo.listPage(action.after);
-                const tasks: ReturnType<typeof summary>[] = [];
-
-                for (const task of rows.slice(0, 10)) {
-                  const result = summary(task);
-
-                  if (
-                    Buffer.byteLength(
-                      JSON.stringify({
-                        tasks: [...tasks, result],
-                        nextCursor: task.id,
-                        truncated: true,
-                      }),
-                    ) > toolBytes
-                  )
-                    break;
-                  tasks.push(result);
-                }
-
-                if (tasks.length === 0 && rows.length > 0)
-                  return bounded(
+                if (
+                  Buffer.byteLength(
                     JSON.stringify({
-                      tasks: [summary(rows[0]!)],
-                      nextCursor: rows[0]!.id,
+                      tasks: [...tasks, result],
+                      nextCursor: task.id,
                       truncated: true,
                     }),
-                    toolBytes,
-                  );
-                const truncated = rows.length > tasks.length;
-
-                return JSON.stringify({
-                  tasks,
-                  nextCursor: truncated ? tasks.at(-1)!.id : null,
-                  truncated,
-                });
+                  ) > toolBytes
+                )
+                  break;
+                tasks.push(result);
               }
 
-              const task = Match.value(action).pipe(
-                Match.when({ action: "pause" }, ({ id }) => repo.pause(id, now)),
-                Match.when({ action: "resume" }, ({ id }) => repo.resume(id, now)),
-                Match.orElse(({ id }) => repo.task(id)),
-              );
-
-              if (action.action !== "show")
-                return bounded(
-                  JSON.stringify({ action: action.action, task: summary(task), truncated: false }),
+              if (tasks.length === 0 && rows.length > 0)
+                return yield* bounded(
+                  JSON.stringify({
+                    tasks: [summary(rows[0]!)],
+                    nextCursor: rows[0]!.id,
+                    truncated: true,
+                  }),
                   toolBytes,
                 );
+              const truncated = rows.length > tasks.length;
 
-              const rows = repo.occurrences(task.id, 6);
+              return JSON.stringify({
+                tasks,
+                nextCursor: truncated ? tasks.at(-1)!.id : null,
+                truncated,
+              });
+            }
 
-              let occurrences = rows.slice(0, 5).map((item) => ({
-                id: item.id,
-                status: item.status,
-                scheduledAt: item.scheduledAt,
-                availableAt: item.availableAt,
-                revision: item.revision,
-                origin: item.origin,
-                finishedAt: item.finishedAt,
-                reason: item.reason,
-              }));
+            const task = yield* Match.value(action).pipe(
+              Match.when({ action: "pause" }, ({ id }) => repo.pause(id, now)),
+              Match.when({ action: "resume" }, ({ id }) => repo.resume(id, now)),
+              Match.orElse(({ id }) => repo.task(id)),
+            );
 
-              let prompt = [...task.prompt];
-              let truncated = rows.length > 5;
+            if (action.action !== "show")
+              return yield* bounded(
+                JSON.stringify({ action: action.action, task: summary(task), truncated: false }),
+                toolBytes,
+              );
 
-              const output = () =>
-                JSON.stringify({
-                  task: {
-                    ...summary(task),
-                    prompt: prompt.join(""),
-                    provider: task.provider,
-                    model: task.model,
-                    workload: task.workload,
-                    skill: task.skill?.name ?? null,
-                  },
-                  occurrences,
-                  target: repo.nextTarget(task.id),
-                  truncated,
-                });
+            const rows = yield* repo.occurrences(task.id, 6);
+            const target = yield* repo.nextTarget(task.id);
 
-              while (
-                Buffer.byteLength(output()) > toolBytes &&
-                (prompt.length > 0 || occurrences.length > 0)
-              ) {
-                truncated = true;
+            let occurrences = rows.slice(0, 5).map((item) => ({
+              id: item.id,
+              status: item.status,
+              scheduledAt: item.scheduledAt,
+              availableAt: item.availableAt,
+              revision: item.revision,
+              origin: item.origin,
+              finishedAt: item.finishedAt,
+              reason: item.reason,
+            }));
 
-                if (prompt.length > 0) prompt = prompt.slice(0, Math.floor(prompt.length / 2));
-                else if (occurrences.length > 0) occurrences = occurrences.slice(0, -1);
-              }
+            let prompt = [...task.prompt];
+            let truncated = rows.length > 5;
 
-              return bounded(output(), toolBytes);
-            })
+            const output = () =>
+              JSON.stringify({
+                task: {
+                  ...summary(task),
+                  prompt: prompt.join(""),
+                  provider: task.provider,
+                  model: task.model,
+                  workload: task.workload,
+                  skill: task.skill?.name ?? null,
+                },
+                occurrences,
+                target,
+                truncated,
+              });
+
+            while (
+              Buffer.byteLength(output()) > toolBytes &&
+              (prompt.length > 0 || occurrences.length > 0)
+            ) {
+              truncated = true;
+
+              if (prompt.length > 0) prompt = prompt.slice(0, Math.floor(prompt.length / 2));
+              else if (occurrences.length > 0) occurrences = occurrences.slice(0, -1);
+            }
+
+            return yield* bounded(output(), toolBytes);
+          }).pipe(Effect.mapError(committedFailure));
+
+          const execute = store
+            .commitToolCall(context.runId, context.callId, commit)
             .pipe(repo.commandLock.withPermit);
 
           return { name: "manage_tasks" as const, execute };

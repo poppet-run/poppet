@@ -1,118 +1,22 @@
-import { Database } from "bun:sqlite";
-import { createHash } from "node:crypto";
+import { Effect } from "effect";
+import { Migrator, SqlClient } from "effect/sql";
 
-import { Schema } from "effect";
-
-import { StoreError } from "#src/errors";
 import { baseline } from "#src/migrations/0001_baseline";
 
-export interface Migration {
-  readonly version: number;
-  readonly name: string;
-  readonly sql: string;
-}
+const statements = (sql: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const client = yield* SqlClient.SqlClient;
 
-export const applicationId = 0x504f5054;
-
-export const migrations: ReadonlyArray<Migration> = [
-  { version: 1, name: "baseline", sql: baseline.join(";\n") },
-];
-
-const Version = Schema.Struct({ user_version: Schema.Natural });
-
-const Application = Schema.Struct({ application_id: Schema.Natural });
-
-const AppliedMigration = Schema.Struct({
-  version: Schema.Int.check(Schema.isGreaterThan(0)),
-  name: Schema.NonEmptyString,
-  checksum: Schema.NonEmptyString,
-});
-
-const checksum = (migration: Migration) =>
-  createHash("sha256")
-    .update(`${migration.version}\n${migration.name}\n${migration.sql}`)
-    .digest("hex");
-
-const unsupported = () =>
-  new StoreError({
-    reason: "migration",
-    message: "The conversation database has an unsupported or changed migration history.",
+    for (const statement of sql) yield* client.unsafe(statement);
   });
 
-// All pending migrations and their ledger entries commit together. A failed step
-// leaves both the previous schema and its version unchanged.
-export const applyMigrations = (
-  database: Database,
-  plan: ReadonlyArray<Migration> = migrations,
-  at = Date.now(),
-) => {
-  try {
-    for (const [index, migration] of plan.entries()) {
-      if (migration.version !== index + 1 || !migration.name || !migration.sql) throw unsupported();
-    }
+/**
+ * Append a new `<id>_<name>` entry for each schema change; never edit an applied one.
+ * The migrator runs all pending entries in one transaction.
+ */
+export const migrations = Migrator.fromRecord({
+  "1_baseline": statements(baseline),
+});
 
-    const current = Schema.decodeUnknownSync(Version)(
-      database.query("PRAGMA user_version").get(),
-    ).user_version;
-
-    const identity = Schema.decodeUnknownSync(Application)(
-      database.query("PRAGMA application_id").get(),
-    ).application_id;
-
-    const tables = database
-      .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
-      .all();
-
-    if (
-      current > plan.length ||
-      (identity !== applicationId && (identity !== 0 || tables.length > 0 || current !== 0))
-    )
-      throw unsupported();
-
-    return database
-      .transaction(() => {
-        database.run(
-          `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL) STRICT`,
-        );
-
-        const applied = Schema.decodeUnknownSync(Schema.Array(AppliedMigration))(
-          database
-            .query("SELECT version, name, checksum FROM schema_migrations ORDER BY version")
-            .all(),
-        );
-
-        if (applied.length !== current) throw unsupported();
-
-        for (const [index, entry] of applied.entries()) {
-          const migration = plan[index];
-
-          if (
-            !migration ||
-            entry.version !== migration.version ||
-            entry.name !== migration.name ||
-            entry.checksum !== checksum(migration)
-          )
-            throw unsupported();
-        }
-
-        for (const migration of plan.slice(current)) {
-          database.run(migration.sql);
-          database
-            .query("INSERT INTO schema_migrations VALUES (?, ?, ?, ?)")
-            .run(migration.version, migration.name, checksum(migration), at);
-          database.run(`PRAGMA user_version = ${migration.version}`);
-        }
-
-        database.run(`PRAGMA application_id = ${applicationId}`);
-
-        return plan.length;
-      })
-      .immediate();
-  } catch (cause) {
-    if (cause instanceof StoreError) throw cause;
-    throw new StoreError({
-      reason: "migration",
-      message: "Conversation database migration failed. No pending migrations were committed.",
-    });
-  }
-};
+/** The highest migration ID this build knows. */
+export const schemaVersion = 1;

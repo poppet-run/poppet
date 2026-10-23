@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import { TextSource } from "@poppet/provider";
-import { DeliveryDestination, StoreDatabase, StoreError } from "@poppet/store";
+import { DeliveryDestination, StoreError, decodeRow, decodeRows } from "@poppet/store";
 import { Context, Effect, Layer, Schema } from "effect";
+import { SqlClient } from "effect/sql";
 
 import { IncomingMessage, ChannelError } from "#src/channel";
 import { isCommandApproval } from "#src/request";
@@ -32,9 +33,6 @@ const Delivery = Schema.Struct({
 /** One ordered reply chunk awaiting delivery to the inbox entry's conversation. */
 export type Delivery = typeof Delivery.Type;
 
-const inboxSql = `SELECT id, adapter, account, payload AS message, conversation_id AS conversationId,
-  session_id AS sessionId, run_id AS runId, state, attempts FROM gateway_inbox`;
-
 const Binding = Schema.Struct({
   sessionId: Schema.String,
   managedName: Schema.NullOr(Schema.String),
@@ -50,103 +48,107 @@ const AttachmentResult = Schema.Struct({
   failure: Schema.NullOr(Schema.String),
 });
 
-export const gatewayStorage = <A>(operation: () => A) =>
-  Effect.try({
-    try: operation,
-    catch: (cause) =>
-      cause instanceof ChannelError
-        ? cause
-        : new StoreError({ reason: "storage", message: "Cannot read or write messaging records." }),
-  });
+// Overload rejections pass through; anything else is reported as a storage failure.
+const gatewayFailure = (cause: unknown) =>
+  cause instanceof ChannelError
+    ? cause
+    : new StoreError({ reason: "storage", message: "Cannot read or write messaging records." });
+
+/** Reports a repository failure as the gateway's storage or overload error. */
+export const gatewayStorage = <A, E, R>(operation: Effect.Effect<A, E, R>) =>
+  operation.pipe(Effect.mapError(gatewayFailure));
+
+const conflictingSession = () => new Error("Conflicting messaging session");
 
 const repository = Effect.gen(function* () {
-  const { database } = yield* StoreDatabase;
+  const sql = yield* SqlClient.SqlClient;
+
+  const inbox = sql`SELECT id, adapter, account, payload AS message, conversation_id, session_id,
+    run_id, state, attempts FROM gateway_inbox`;
 
   const item = (id: number) =>
-    Schema.decodeUnknownSync(Inbox)(database.query(`${inboxSql} WHERE id = ?`).get(id));
+    sql`${inbox} WHERE id = ${id}`.pipe(
+      decodeRow(Inbox),
+      Effect.flatMap((row) =>
+        row === null ? Effect.fail(new Error("Missing messaging request")) : Effect.succeed(row),
+      ),
+    );
 
   const binding = (adapter: string, account: string, scope: string, conversation: string) =>
-    Schema.decodeUnknownSync(Schema.NullOr(Schema.Struct({ sessionId: Schema.String })))(
-      database
-        .query(
-          `SELECT session_id AS sessionId FROM gateway_bindings WHERE adapter = ? AND account = ? AND scope_id = ? AND conversation_id = ?`,
-        )
-        .get(adapter, account, scope, conversation),
-    )?.sessionId ?? null;
+    sql`SELECT session_id FROM gateway_bindings WHERE adapter = ${adapter} AND account = ${account}
+      AND scope_id = ${scope} AND conversation_id = ${conversation}`.pipe(
+      decodeRow(Schema.Struct({ sessionId: Schema.String })),
+      Effect.map((row) => row?.sessionId ?? null),
+    );
 
   const namedBinding = (adapter: string, account: string, conversation: string) =>
-    Schema.decodeUnknownSync(Schema.NullOr(Binding))(
-      database
-        .query(`SELECT session_id AS sessionId,
-      managed_name AS managedName, synced_title AS syncedTitle, pending_name AS pendingName, naming_disabled AS namingDisabled,
-      creation_message_id AS creationMessageId FROM gateway_bindings WHERE adapter = ? AND account = ? AND conversation_id = ?`)
-        .get(adapter, account, conversation),
+    sql`SELECT session_id, managed_name, synced_title, pending_name, naming_disabled,
+      creation_message_id FROM gateway_bindings
+      WHERE adapter = ${adapter} AND account = ${account} AND conversation_id = ${conversation}`.pipe(
+      decodeRow(Binding),
     );
+
+  const insertDeliveries = (
+    inboxId: number,
+    chunks: ReadonlyArray<string>,
+    state: "pending" | "failed",
+    ignoreExisting = false,
+  ) =>
+    chunks.length === 0
+      ? Effect.void
+      : sql`INSERT INTO gateway_deliveries ${sql.insert(
+          chunks.map((text, position) => ({ inboxId, position, text, state })),
+        )} ${sql.literal(ignoreExisting ? "ON CONFLICT DO NOTHING" : "")}`.pipe(Effect.asVoid);
 
   return {
     attachment: (id: number) =>
-      Schema.decodeUnknownSync(Schema.NullOr(AttachmentResult))(
-        database
-          .query("SELECT state, result, failure FROM gateway_attachments WHERE inbox_id = ?")
-          .get(id),
+      sql`SELECT state, result, failure FROM gateway_attachments WHERE inbox_id = ${id}`.pipe(
+        decodeRow(AttachmentResult),
       ),
     processing: (id: number) =>
-      database
-        .query(
-          "INSERT INTO gateway_attachments (inbox_id, state) VALUES (?, 'processing') ON CONFLICT DO NOTHING",
-        )
-        .run(id),
+      sql`INSERT INTO gateway_attachments (inbox_id, state) VALUES (${id}, 'processing')
+        ON CONFLICT DO NOTHING`.pipe(Effect.asVoid),
     extracted: (id: number, result: TextSource) =>
-      database
-        .query(
-          "UPDATE gateway_attachments SET state = 'accepted', result = ?, failure = NULL WHERE inbox_id = ?",
-        )
-        .run(JSON.stringify(Schema.decodeUnknownSync(TextSource)(result)), id),
+      Schema.decodeUnknownEffect(TextSource)(result).pipe(
+        Effect.flatMap(
+          (valid) => sql`UPDATE gateway_attachments SET state = 'accepted',
+            result = ${JSON.stringify(valid)}, failure = NULL WHERE inbox_id = ${id}`,
+        ),
+        Effect.asVoid,
+      ),
     extractionFailed: (id: number, failure: string) =>
-      database
-        .query(
-          "UPDATE gateway_attachments SET state = 'failed', result = NULL, failure = ? WHERE inbox_id = ?",
-        )
-        .run(failure.slice(0, 256), id),
+      sql`UPDATE gateway_attachments SET state = 'failed', result = NULL,
+        failure = ${failure.slice(0, 256)} WHERE inbox_id = ${id}`.pipe(Effect.asVoid),
     cursor: (adapter: string, account: string) =>
-      Schema.decodeUnknownSync(Schema.NullOr(Schema.Struct({ cursor: Schema.String })))(
-        database
-          .query("SELECT cursor FROM gateway_cursors WHERE adapter = ? AND account = ?")
-          .get(adapter, account),
-      )?.cursor ?? null,
+      sql`SELECT cursor FROM gateway_cursors WHERE adapter = ${adapter} AND account = ${account}`.pipe(
+        decodeRow(Schema.Struct({ cursor: Schema.String })),
+        Effect.map((row) => row?.cursor ?? null),
+      ),
     checkpoint: (adapter: string, account: string, cursor: string) =>
-      database
-        .query(`INSERT INTO gateway_cursors (adapter, account, cursor) VALUES (?, ?, ?)
-      ON CONFLICT (adapter, account) DO UPDATE SET cursor = excluded.cursor`)
-        .run(adapter, account, cursor),
+      sql`INSERT INTO gateway_cursors (adapter, account, cursor) VALUES (${adapter}, ${account}, ${cursor})
+        ON CONFLICT (adapter, account) DO UPDATE SET cursor = excluded.cursor`.pipe(Effect.asVoid),
+    // Scheduled results stay deliverable only to the current account and only for completed runs.
     rejectScheduledDeliveries: (adapter: string, account: string) =>
-      database
-        .query(`UPDATE gateway_deliveries
-      SET state = 'failed' WHERE state = 'pending' AND inbox_id IN (
-        SELECT id FROM gateway_inbox WHERE adapter = ? AND occurrence_id IS NOT NULL
-          AND (account != ? OR EXISTS (
+      sql`UPDATE gateway_deliveries SET state = 'failed' WHERE state = 'pending' AND inbox_id IN (
+        SELECT id FROM gateway_inbox WHERE adapter = ${adapter} AND occurrence_id IS NOT NULL
+          AND (account != ${account} OR EXISTS (
             SELECT 1 FROM runs r WHERE r.id = gateway_inbox.run_id AND r.status != 'completed'
           ))
-      )`)
-        .run(adapter, account),
+      )`.pipe(Effect.asVoid),
     scheduled: (adapter: string) =>
-      Schema.decodeUnknownSync(
-        Schema.Array(
+      sql`SELECT o.id, o.run_id, o.destination FROM job_occurrences o
+        WHERE o.status = 'completed' AND o.run_id IS NOT NULL
+          AND json_extract(o.destination, '$.adapter') = ${adapter}
+          AND NOT EXISTS (SELECT 1 FROM gateway_inbox i
+            WHERE i.occurrence_id = o.id AND i.run_id = o.run_id)
+        ORDER BY o.scheduled_at, o.id LIMIT 64`.pipe(
+        decodeRows(
           Schema.Struct({
             id: Schema.String,
             runId: Schema.String,
             destination: Schema.fromJsonString(DeliveryDestination),
           }),
         ),
-      )(
-        database
-          .query(`SELECT o.id, o.run_id AS runId, o.destination FROM job_occurrences o
-      JOIN jobs j ON j.id = o.job_id
-      WHERE o.status = 'completed' AND o.run_id IS NOT NULL
-        AND json_extract(o.destination, '$.adapter') = ?
-        AND NOT EXISTS (SELECT 1 FROM gateway_inbox i WHERE i.occurrence_id = o.id AND i.run_id = o.run_id)
-      ORDER BY o.scheduled_at, o.id LIMIT 64`)
-          .all(adapter),
       ),
     scheduleResult: (
       id: string,
@@ -155,8 +157,8 @@ const repository = Effect.gen(function* () {
       chunks: ReadonlyArray<string>,
       enabled: boolean,
     ) =>
-      database
-        .transaction(() => {
+      sql.withTransaction(
+        Effect.gen(function* () {
           const message: IncomingMessage = {
             messageId: `task-${id}-${runId}`,
             senderId: destination.ownerId,
@@ -167,43 +169,29 @@ const repository = Effect.gen(function* () {
             mentioned: false,
           };
 
-          const inserted = database
-            .query(`INSERT INTO gateway_inbox
-          (adapter, account, external_id, payload, conversation_id, run_id, state, occurrence_id)
-          VALUES (?, ?, ?, ?, ?, ?, 'completed', ?) ON CONFLICT DO NOTHING`)
-            .run(
-              destination.adapter,
-              destination.account,
-              message.messageId,
-              JSON.stringify(message),
-              destination.conversationId,
-              runId,
-              id,
-            );
+          const inserted = yield* sql`INSERT INTO gateway_inbox ${sql.insert({
+            adapter: destination.adapter,
+            account: destination.account,
+            externalId: message.messageId,
+            payload: JSON.stringify(message),
+            conversationId: destination.conversationId,
+            runId,
+            state: "completed",
+            occurrenceId: id,
+          })} ON CONFLICT DO NOTHING RETURNING id`.pipe(
+            decodeRow(Schema.Struct({ id: Schema.Natural })),
+          );
 
-          if (!inserted.changes) return;
+          if (inserted === null) return;
 
-          for (const [position, text] of chunks.entries())
-            database
-              .query(
-                "INSERT INTO gateway_deliveries (inbox_id, position, text, state) VALUES (?, ?, ?, ?)",
-              )
-              .run(
-                Number(inserted.lastInsertRowid),
-                position,
-                text,
-                enabled ? "pending" : "failed",
-              );
-        })
-        .immediate(),
+          yield* insertDeliveries(inserted.id, chunks, enabled ? "pending" : "failed");
+        }),
+      ),
     namedBinding,
     namingEntry: (adapter: string, account: string, conversation: string) =>
-      Schema.decodeUnknownSync(Schema.NullOr(Inbox))(
-        database
-          .query(
-            `${inboxSql} WHERE adapter = ? AND account = ? AND conversation_id = ? AND session_id IS NOT NULL ORDER BY id LIMIT 1`,
-          )
-          .get(adapter, account, conversation),
+      sql`${inbox} WHERE adapter = ${adapter} AND account = ${account}
+        AND conversation_id = ${conversation} AND session_id IS NOT NULL ORDER BY id LIMIT 1`.pipe(
+        decodeRow(Inbox),
       ),
     // synced_title records the attempted session title, even if no remote rename is confirmed.
     nameAttempted: (
@@ -213,11 +201,9 @@ const repository = Effect.gen(function* () {
       title: string | null,
       session: string,
     ) =>
-      database
-        .query(
-          "UPDATE gateway_bindings SET synced_title = ? WHERE adapter = ? AND account = ? AND conversation_id = ? AND session_id = ?",
-        )
-        .run(title, adapter, account, conversation, session),
+      sql`UPDATE gateway_bindings SET synced_title = ${title} WHERE adapter = ${adapter}
+        AND account = ${account} AND conversation_id = ${conversation}
+        AND session_id = ${session}`.pipe(Effect.asVoid),
     // Save the desired remote name before sending; recovery inspects it without replaying a rename.
     namePending: (
       adapter: string,
@@ -226,11 +212,9 @@ const repository = Effect.gen(function* () {
       name: string,
       session: string,
     ) =>
-      database
-        .query(
-          "UPDATE gateway_bindings SET pending_name = ? WHERE adapter = ? AND account = ? AND conversation_id = ? AND naming_disabled = 0 AND session_id = ?",
-        )
-        .run(name, adapter, account, conversation, session).changes === 1,
+      sql`UPDATE gateway_bindings SET pending_name = ${name} WHERE adapter = ${adapter}
+        AND account = ${account} AND conversation_id = ${conversation} AND naming_disabled = 0
+        AND session_id = ${session} RETURNING 1`.pipe(Effect.map((rows) => rows.length === 1)),
     // managed_name is the last confirmed remote name; a different observed name belongs to the user.
     nameConfirmed: (
       adapter: string,
@@ -239,33 +223,31 @@ const repository = Effect.gen(function* () {
       name: string,
       session: string,
     ) =>
-      database
-        .query(
-          "UPDATE gateway_bindings SET managed_name = ?, pending_name = NULL WHERE adapter = ? AND account = ? AND conversation_id = ? AND naming_disabled = 0 AND session_id = ?",
-        )
-        .run(name, adapter, account, conversation, session),
+      sql`UPDATE gateway_bindings SET managed_name = ${name}, pending_name = NULL
+        WHERE adapter = ${adapter} AND account = ${account} AND conversation_id = ${conversation}
+          AND naming_disabled = 0 AND session_id = ${session}`.pipe(Effect.asVoid),
     disableNaming: (adapter: string, account: string, conversation: string, session: string) =>
-      database
-        .query(
-          "UPDATE gateway_bindings SET naming_disabled = 1, pending_name = NULL WHERE adapter = ? AND account = ? AND conversation_id = ? AND session_id = ?",
-        )
-        .run(adapter, account, conversation, session),
+      sql`UPDATE gateway_bindings SET naming_disabled = 1, pending_name = NULL
+        WHERE adapter = ${adapter} AND account = ${account} AND conversation_id = ${conversation}
+          AND session_id = ${session}`.pipe(Effect.asVoid),
+    // The first fully delivered exchange of each session, when its title or remote name needs work.
     namingEntries: (adapter: string, account: string) =>
-      Schema.decodeUnknownSync(Schema.Array(Inbox))(
-        database
-          .query(`${inboxSql} WHERE adapter = ? AND account = ?
+      sql`${inbox} WHERE adapter = ${adapter} AND account = ${account}
         AND session_id IS NOT NULL AND state = 'completed'
-        AND id = (SELECT MIN(first.id) FROM gateway_inbox first WHERE first.session_id = gateway_inbox.session_id AND first.state = 'completed' AND EXISTS (SELECT 1 FROM runs r WHERE r.id = first.run_id AND r.status = 'completed'))
+        AND id = (SELECT MIN(first.id) FROM gateway_inbox first
+          WHERE first.session_id = gateway_inbox.session_id AND first.state = 'completed'
+            AND EXISTS (SELECT 1 FROM runs r WHERE r.id = first.run_id AND r.status = 'completed'))
         AND EXISTS (SELECT 1 FROM runs r WHERE r.id = gateway_inbox.run_id AND r.status = 'completed')
         AND EXISTS (SELECT 1 FROM gateway_deliveries d WHERE d.inbox_id = gateway_inbox.id)
-        AND NOT EXISTS (SELECT 1 FROM gateway_deliveries d WHERE d.inbox_id = gateway_inbox.id AND d.state != 'sent')
-        AND (EXISTS (SELECT 1 FROM sessions s WHERE s.id = gateway_inbox.session_id AND s.title_source = 'fallback' AND s.title_attempted = 0)
+        AND NOT EXISTS (SELECT 1 FROM gateway_deliveries d
+          WHERE d.inbox_id = gateway_inbox.id AND d.state != 'sent')
+        AND (EXISTS (SELECT 1 FROM sessions s WHERE s.id = gateway_inbox.session_id
+            AND s.title_source = 'fallback' AND s.title_attempted = 0)
           OR EXISTS (SELECT 1 FROM gateway_bindings b JOIN sessions s ON s.id = b.session_id
-            WHERE b.session_id = gateway_inbox.session_id AND b.managed_name IS NOT NULL AND b.naming_disabled = 0
+            WHERE b.session_id = gateway_inbox.session_id AND b.managed_name IS NOT NULL
+              AND b.naming_disabled = 0
               AND (b.pending_name IS NOT NULL OR b.synced_title IS NOT s.title)))
-        ORDER BY id`)
-          .all(adapter, account),
-      ),
+        ORDER BY id`.pipe(decodeRows(Inbox)),
     item,
     binding,
     accept: (
@@ -274,23 +256,17 @@ const repository = Effect.gen(function* () {
       message: IncomingMessage,
       overloadReply?: ReadonlyArray<string>,
     ) =>
-      database
-        .transaction(() => {
-          if (
-            database
-              .query(
-                "SELECT id FROM gateway_inbox WHERE adapter = ? AND account = ? AND external_id = ?",
-              )
-              .get(adapter, account, message.messageId)
-          )
-            return null;
+      sql.withTransaction(
+        Effect.gen(function* () {
+          const duplicate = yield* sql`SELECT id FROM gateway_inbox WHERE adapter = ${adapter}
+            AND account = ${account} AND external_id = ${message.messageId}`;
 
-          const counts = Schema.decodeUnknownSync(Schema.Struct({ count: Schema.Natural }))(
-            database
-              .query(
-                "SELECT COUNT(*) AS count FROM gateway_inbox WHERE adapter = ? AND account = ? AND state IN ('queued', 'executing')",
-              )
-              .get(adapter, account),
+          if (duplicate.length > 0) return null;
+
+          const queued = yield* sql`SELECT COUNT(*) AS count FROM gateway_inbox
+            WHERE adapter = ${adapter} AND account = ${account}
+              AND state IN ('queued', 'executing')`.pipe(
+            decodeRow(Schema.Struct({ count: Schema.Natural })),
           );
 
           const control =
@@ -298,64 +274,50 @@ const repository = Effect.gen(function* () {
             message.text === "/cancel" ||
             isCommandApproval(message.text);
 
-          const overloaded = counts.count >= 64 && !control;
+          const overloaded = (queued?.count ?? 0) >= 64 && !control;
 
           if (overloaded && overloadReply === undefined)
-            throw new ChannelError({
+            return yield* new ChannelError({
               reason: "overloaded",
               message: "Messaging queue is full. Try again later.",
             });
 
-          const result = database
-            .query(`INSERT INTO gateway_inbox (adapter, account, external_id, payload, conversation_id, run_id, state)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`)
-            .run(
-              adapter,
-              account,
-              message.messageId,
-              JSON.stringify(message),
-              message.conversationId,
-              randomUUID(),
-              overloaded ? "failed" : control ? "cancelled" : "queued",
-            );
+          const inserted = yield* sql`INSERT INTO gateway_inbox ${sql.insert({
+            adapter,
+            account,
+            externalId: message.messageId,
+            payload: JSON.stringify(message),
+            conversationId: message.conversationId,
+            runId: randomUUID(),
+            state: overloaded ? "failed" : control ? "cancelled" : "queued",
+          })} RETURNING id`.pipe(decodeRows(Schema.Struct({ id: Schema.Natural })));
+
+          const id = inserted[0]!.id;
 
           // Save rejection and reply together before polling advances its cursor.
           if (overloaded && overloadReply !== undefined)
-            for (const [position, text] of overloadReply.entries())
-              database
-                .query(`INSERT INTO gateway_deliveries (inbox_id, position, text, state)
-                VALUES (?, ?, ?, 'pending')`)
-                .run(Number(result.lastInsertRowid), position, text);
+            yield* insertDeliveries(id, overloadReply, "pending");
 
-          return item(Number(result.lastInsertRowid));
-        })
-        .immediate(),
+          return yield* item(id);
+        }),
+      ),
     // A delayed request blocks later input in the same conversation to preserve history order.
     next: (adapter: string, account: string, now: number) =>
-      Schema.decodeUnknownSync(Schema.NullOr(Inbox))(
-        database
-          .query(`${inboxSql} WHERE adapter = ? AND account = ? AND state = 'queued' AND retry_at <= ?
-        AND NOT EXISTS (SELECT 1 FROM gateway_inbox earlier WHERE earlier.adapter = ? AND earlier.account = ?
-          AND json_extract(earlier.payload, '$.parentId') = json_extract(gateway_inbox.payload, '$.parentId')
-          AND COALESCE(earlier.conversation_id, earlier.external_id) = COALESCE(gateway_inbox.conversation_id, gateway_inbox.external_id)
-          AND earlier.state IN ('queued', 'executing') AND earlier.id < gateway_inbox.id)
-        ORDER BY id LIMIT 1`)
-          .get(adapter, account, now, adapter, account),
-      ),
+      sql`${inbox} WHERE adapter = ${adapter} AND account = ${account} AND state = 'queued'
+        AND retry_at <= ${now}
+        AND NOT EXISTS (SELECT 1 FROM gateway_inbox earlier
+          WHERE earlier.adapter = ${adapter} AND earlier.account = ${account}
+            AND json_extract(earlier.payload, '$.parentId') = json_extract(gateway_inbox.payload, '$.parentId')
+            AND COALESCE(earlier.conversation_id, earlier.external_id) =
+              COALESCE(gateway_inbox.conversation_id, gateway_inbox.external_id)
+            AND earlier.state IN ('queued', 'executing') AND earlier.id < gateway_inbox.id)
+        ORDER BY id LIMIT 1`.pipe(decodeRow(Inbox)),
     retry: (entry: Inbox, retryAt: number) =>
-      database
-        .query(
-          "UPDATE gateway_inbox SET state = 'queued', attempts = attempts + 1, retry_at = ? WHERE id = ?",
-        )
-        .run(retryAt, entry.id),
+      sql`UPDATE gateway_inbox SET state = 'queued', attempts = attempts + 1, retry_at = ${retryAt}
+        WHERE id = ${entry.id}`.pipe(Effect.asVoid),
     executing: (adapter: string, account: string) =>
-      Schema.decodeUnknownSync(Schema.Array(Inbox))(
-        database
-          .query(
-            `${inboxSql} WHERE adapter = ? AND account = ? AND state = 'executing' ORDER BY id`,
-          )
-          .all(adapter, account),
-      ),
+      sql`${inbox} WHERE adapter = ${adapter} AND account = ${account} AND state = 'executing'
+        ORDER BY id`.pipe(decodeRows(Inbox)),
     attach: (
       id: number,
       conversation: string,
@@ -363,123 +325,102 @@ const repository = Effect.gen(function* () {
       managedName: string | null = null,
       replace = false,
     ) =>
-      database
-        .transaction(() => {
-          const entry = item(id);
-          database
-            .query(`INSERT INTO gateway_bindings (adapter, account, scope_id, conversation_id, session_id, managed_name, creation_message_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`)
-            .run(
-              entry.adapter,
-              entry.account,
-              entry.message.scopeId,
-              conversation,
-              session,
-              managedName,
-              managedName === null ? null : entry.message.messageId,
-            );
+      sql.withTransaction(
+        Effect.gen(function* () {
+          const entry = yield* item(id);
+
+          yield* sql`INSERT INTO gateway_bindings ${sql.insert({
+            adapter: entry.adapter,
+            account: entry.account,
+            scopeId: entry.message.scopeId,
+            conversationId: conversation,
+            sessionId: session,
+            managedName,
+            creationMessageId: managedName === null ? null : entry.message.messageId,
+          })} ON CONFLICT DO NOTHING`;
 
           // Keep thread ownership and user naming overrides when replacing its session.
           if (replace)
-            database
-              .query(`UPDATE gateway_bindings SET session_id = ?, synced_title = NULL
-                WHERE adapter = ? AND account = ? AND scope_id = ? AND conversation_id = ? AND session_id != ?`)
-              .run(
-                session,
-                entry.adapter,
-                entry.account,
-                entry.message.scopeId,
-                conversation,
-                session,
-              );
+            yield* sql`UPDATE gateway_bindings SET session_id = ${session}, synced_title = NULL
+              WHERE adapter = ${entry.adapter} AND account = ${entry.account}
+                AND scope_id = ${entry.message.scopeId} AND conversation_id = ${conversation}
+                AND session_id != ${session}`;
 
-          if (
-            binding(entry.adapter, entry.account, entry.message.scopeId, conversation) !== session
-          )
-            throw new Error("Conflicting messaging session");
-          database
-            .query("UPDATE gateway_inbox SET conversation_id = ?, session_id = ? WHERE id = ?")
-            .run(conversation, session, id);
-        })
-        .immediate(),
-    address: (id: number, conversation: string) =>
-      database
-        .query("UPDATE gateway_inbox SET conversation_id = ? WHERE id = ?")
-        .run(conversation, id),
-    state: (id: number, state: string) =>
-      database.query("UPDATE gateway_inbox SET state = ? WHERE id = ?").run(state, id),
-    cancel: (adapter: string, account: string, conversation: string) =>
-      database
-        .query(`UPDATE gateway_inbox SET state = 'cancelled'
-      WHERE adapter = ? AND account = ? AND conversation_id = ? AND state = 'queued'`)
-        .run(adapter, account, conversation),
-    complete: (id: number, chunks: ReadonlyArray<string>, state = "completed") =>
-      database
-        .transaction(() => {
-          // Reconciliation can observe a committed run before its delivery was recorded.
-          for (const [position, text] of chunks.entries())
-            database
-              .query(`INSERT INTO gateway_deliveries (inbox_id, position, text, state)
-        VALUES (?, ?, ?, 'pending') ON CONFLICT DO NOTHING`)
-              .run(id, position, text);
-          database.query("UPDATE gateway_inbox SET state = ? WHERE id = ?").run(state, id);
-        })
-        .immediate(),
-    nextDelivery: (adapter: string, account: string, now: number) =>
-      Schema.decodeUnknownSync(Schema.NullOr(Delivery))(
-        database
-          .query(`
-      SELECT d.inbox_id AS inboxId, d.position, d.text, d.attempts FROM gateway_deliveries d
-      JOIN gateway_inbox i ON i.id = d.inbox_id
-      WHERE i.adapter = ? AND i.account = ? AND d.state = 'pending' AND d.retry_at <= ?
-      AND NOT EXISTS (SELECT 1 FROM gateway_deliveries earlier WHERE earlier.inbox_id = d.inbox_id AND earlier.position < d.position AND earlier.state != 'sent')
-      ORDER BY d.inbox_id, d.position LIMIT 1`)
-          .get(adapter, account, now),
+          const bound = yield* binding(
+            entry.adapter,
+            entry.account,
+            entry.message.scopeId,
+            conversation,
+          );
+
+          if (bound !== session) return yield* Effect.fail(conflictingSession());
+
+          yield* sql`UPDATE gateway_inbox SET conversation_id = ${conversation},
+            session_id = ${session} WHERE id = ${id}`;
+        }),
       ),
+    address: (id: number, conversation: string) =>
+      sql`UPDATE gateway_inbox SET conversation_id = ${conversation} WHERE id = ${id}`.pipe(
+        Effect.asVoid,
+      ),
+    state: (id: number, state: string) =>
+      sql`UPDATE gateway_inbox SET state = ${state} WHERE id = ${id}`.pipe(Effect.asVoid),
+    cancel: (adapter: string, account: string, conversation: string) =>
+      sql`UPDATE gateway_inbox SET state = 'cancelled' WHERE adapter = ${adapter}
+        AND account = ${account} AND conversation_id = ${conversation}
+        AND state = 'queued'`.pipe(Effect.asVoid),
+    complete: (id: number, chunks: ReadonlyArray<string>, state = "completed") =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          // Reconciliation can observe a committed run before its delivery was recorded.
+          yield* insertDeliveries(id, chunks, "pending", true);
+          yield* sql`UPDATE gateway_inbox SET state = ${state} WHERE id = ${id}`;
+        }),
+      ),
+    nextDelivery: (adapter: string, account: string, now: number) =>
+      sql`SELECT d.inbox_id, d.position, d.text, d.attempts FROM gateway_deliveries d
+        JOIN gateway_inbox i ON i.id = d.inbox_id
+        WHERE i.adapter = ${adapter} AND i.account = ${account} AND d.state = 'pending'
+          AND d.retry_at <= ${now}
+          AND NOT EXISTS (SELECT 1 FROM gateway_deliveries earlier
+            WHERE earlier.inbox_id = d.inbox_id AND earlier.position < d.position
+              AND earlier.state != 'sent')
+        ORDER BY d.inbox_id, d.position LIMIT 1`.pipe(decodeRow(Delivery)),
     delivering: (entry: Delivery) =>
-      database
-        .query(
-          "UPDATE gateway_deliveries SET state = 'sending' WHERE inbox_id = ? AND position = ?",
-        )
-        .run(entry.inboxId, entry.position),
+      sql`UPDATE gateway_deliveries SET state = 'sending'
+        WHERE inbox_id = ${entry.inboxId} AND position = ${entry.position}`.pipe(Effect.asVoid),
     delivered: (entry: Delivery, messageId: string) =>
-      database
-        .query(
-          "UPDATE gateway_deliveries SET state = 'sent', message_id = ? WHERE inbox_id = ? AND position = ?",
-        )
-        .run(messageId, entry.inboxId, entry.position),
+      sql`UPDATE gateway_deliveries SET state = 'sent', message_id = ${messageId}
+        WHERE inbox_id = ${entry.inboxId} AND position = ${entry.position}`.pipe(Effect.asVoid),
     deliveryFailed: (entry: Delivery, state: string, retryAt: number) =>
-      database
-        .query(
-          "UPDATE gateway_deliveries SET state = ?, attempts = attempts + 1, retry_at = ? WHERE inbox_id = ? AND position = ?",
-        )
-        .run(state, retryAt, entry.inboxId, entry.position),
+      sql`UPDATE gateway_deliveries SET state = ${state}, attempts = attempts + 1,
+        retry_at = ${retryAt} WHERE inbox_id = ${entry.inboxId}
+          AND position = ${entry.position}`.pipe(Effect.asVoid),
     // A crash after a send began cannot prove whether the remote service accepted it.
     recoverDelivery: (adapter: string, account: string) =>
-      database
-        .query(`UPDATE gateway_deliveries SET state = 'uncertain' WHERE state = 'sending'
-          AND inbox_id IN (SELECT id FROM gateway_inbox WHERE adapter = ? AND account = ?)`)
-        .run(adapter, account),
+      sql`UPDATE gateway_deliveries SET state = 'uncertain' WHERE state = 'sending'
+        AND inbox_id IN (SELECT id FROM gateway_inbox
+          WHERE adapter = ${adapter} AND account = ${account})`.pipe(Effect.asVoid),
     status: () =>
-      Schema.decodeUnknownSync(
-        Schema.Struct({
-          queued: Schema.Natural,
-          executing: Schema.Natural,
-          pendingDelivery: Schema.Natural,
-          failedDelivery: Schema.Natural,
-          uncertainDelivery: Schema.Natural,
-          failedRequests: Schema.Natural,
-        }),
-      )(
-        database
-          .query(`SELECT
+      sql`SELECT
         (SELECT COUNT(*) FROM gateway_inbox WHERE state = 'queued') AS queued,
         (SELECT COUNT(*) FROM gateway_inbox WHERE state = 'executing') AS executing,
-        (SELECT COUNT(*) FROM gateway_deliveries WHERE state IN ('pending', 'sending')) AS pendingDelivery,
-        (SELECT COUNT(*) FROM gateway_deliveries WHERE state = 'failed') AS failedDelivery,
-        (SELECT COUNT(*) FROM gateway_deliveries WHERE state = 'uncertain') AS uncertainDelivery,
-        (SELECT COUNT(*) FROM gateway_inbox WHERE state = 'failed') AS failedRequests`)
-          .get(),
+        (SELECT COUNT(*) FROM gateway_deliveries
+          WHERE state IN ('pending', 'sending')) AS pending_delivery,
+        (SELECT COUNT(*) FROM gateway_deliveries WHERE state = 'failed') AS failed_delivery,
+        (SELECT COUNT(*) FROM gateway_deliveries WHERE state = 'uncertain') AS uncertain_delivery,
+        (SELECT COUNT(*) FROM gateway_inbox WHERE state = 'failed') AS failed_requests`.pipe(
+        decodeRows(
+          Schema.Struct({
+            queued: Schema.Natural,
+            executing: Schema.Natural,
+            pendingDelivery: Schema.Natural,
+            failedDelivery: Schema.Natural,
+            uncertainDelivery: Schema.Natural,
+            failedRequests: Schema.Natural,
+          }),
+        ),
+        Effect.map((rows) => rows[0]!),
       ),
   };
 });

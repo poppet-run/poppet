@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { AppConfig } from "@poppet/config";
 import { type Completion, type Message, type ProviderId } from "@poppet/provider";
 import { Effect, Fiber, Layer } from "effect";
+import { SqlClient } from "effect/sql";
 
 import { StoreDatabase } from "#src/database";
 import { StoreError } from "#src/errors";
@@ -28,7 +29,7 @@ const fixture = async () => {
     ),
   );
 
-  const run = <A>(program: Effect.Effect<A, StoreError, Store | StoreDatabase>) =>
+  const run = <A, E>(program: Effect.Effect<A, E, Store | StoreDatabase | SqlClient.SqlClient>) =>
     Effect.runPromise(program.pipe(Effect.provide(layer)));
 
   return {
@@ -165,17 +166,12 @@ describe("Store", () => {
           ]);
 
           yield* store.finishRun(interrupted.id, { status: "interrupted", reason: "test" });
-          const { database } = yield* StoreDatabase;
+          const sql = yield* SqlClient.SqlClient;
           // Saved history can contain messages created before run ownership was recorded.
-          database
-            .query(`INSERT INTO messages (session_id, run_id, position, created_at, payload)
-            SELECT ?, NULL, COALESCE(MAX(position), -1) + 1, ?, ? FROM messages WHERE session_id = ?`)
-            .run(
-              session.id,
-              session.createdAt,
-              JSON.stringify({ role: "user", text: "unownedonly" }),
-              session.id,
-            );
+          yield* sql`INSERT INTO messages (session_id, run_id, position, created_at, payload)
+            SELECT ${session.id}, NULL, COALESCE(MAX(position), -1) + 1, ${session.createdAt},
+              ${JSON.stringify({ role: "user", text: "unownedonly" })}
+            FROM messages WHERE session_id = ${session.id}`;
 
           for (const query of ["failedonly", "interruptedonly", "unownedonly"]) {
             expect((yield* store.searchSessions(query, 16384)).matches).toEqual([]);
@@ -974,54 +970,32 @@ describe("Store", () => {
     }
   });
 
-  test.each(["workload", "continuation"])(
-    "when a run contains foreign %s, rejects both direct and session reads",
-    async (kind) => {
-      const saved = await fixture();
+  test("when a run's model identity differs from its session, the schema rejects it", async () => {
+    const saved = await fixture();
 
-      try {
-        const run = await saved.run(
-          Effect.gen(function* () {
-            const store = yield* Store;
-            const session = yield* store.createSession("new-provider", "selected-model");
-            const pending = yield* store.queueRun(session.id, [user]);
-            yield* store.startRun(pending.id);
+    try {
+      const run = await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("new-provider", "selected-model");
 
-            return yield* store.finishRun(pending.id, {
-              status: "completed",
-              response: responseFor("new-provider"),
-            });
-          }),
-        );
+          return yield* store.queueRun(session.id, [user]);
+        }),
+      );
 
-        using tampered = new Database(saved.path);
+      using tampered = new Database(saved.path);
+      tampered.run("PRAGMA foreign_keys = ON");
+      expect(() =>
+        tampered.query("UPDATE runs SET workload = 'coding' WHERE id = ?").run(run.id),
+      ).toThrow("FOREIGN KEY constraint failed");
+    } finally {
+      await saved.close();
+    }
+  });
 
-        if (kind === "workload")
-          tampered.query("UPDATE runs SET workload = 'coding' WHERE id = ?").run(run.id);
-        else
-          tampered
-            .query("UPDATE runs SET result = ? WHERE id = ?")
-            .run(JSON.stringify(responseFor("other-provider")), run.id);
-
-        tampered.close(true);
-
-        await saved.run(
-          Store.use((store) =>
-            Effect.gen(function* () {
-              yield* reject(store.run(run.id), "corrupt");
-              yield* reject(store.runs(run.sessionId), "corrupt");
-            }),
-          ),
-        );
-      } finally {
-        await saved.close();
-      }
-    },
-  );
-
-  test.each(["malformed-json", "foreign-continuation"])(
+  test.each(["malformed-json"])(
     "when stored rows contain %s, rejects them without exposing payloads",
-    async (kind) => {
+    async () => {
       const fixtureStore = await fixture();
 
       try {
@@ -1036,18 +1010,7 @@ describe("Store", () => {
           .query(
             "INSERT INTO messages (session_id, position, created_at, payload) VALUES (?, ?, ?, ?)",
           )
-          .run(
-            session.id,
-            0,
-            1,
-            kind === "malformed-json"
-              ? "secret-invalid-payload"
-              : JSON.stringify({
-                  role: "assistant",
-                  output: [],
-                  continuation: responseFor("second-provider").continuation,
-                }),
-          );
+          .run(session.id, 0, 1, "secret-invalid-payload");
         tampered.close(true);
 
         const failure = await fixtureStore.run(
@@ -1095,14 +1058,18 @@ describe("Store", () => {
     try {
       await fixtureStore.run(Store.use((store) => store.status));
       using newer = new Database(fixtureStore.path);
-      newer.run("PRAGMA user_version = 99");
+      newer.run("INSERT INTO effect_sql_migrations (migration_id, name) VALUES (99, 'future')");
       newer.close(true);
       await expect(fixtureStore.run(Store.use((store) => store.status))).rejects.toMatchObject({
         reason: "migration",
       });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       using inspect = new Database(fixtureStore.path, { readonly: true });
-      expect(inspect.query("PRAGMA user_version").get()).toEqual({ user_version: 99 });
+      expect(
+        inspect.query("SELECT MAX(migration_id) AS latest FROM effect_sql_migrations").get(),
+      ).toEqual({
+        latest: 99,
+      });
     } finally {
       await fixtureStore.close();
     }

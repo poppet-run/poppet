@@ -22,10 +22,11 @@ import {
   type ModelRequest,
   type Output,
 } from "@poppet/provider";
-import { SessionReadResult, Store, StoreDatabase, StoreLive } from "@poppet/store";
+import { SessionReadResult, Store, StoreLive } from "@poppet/store";
 import { WebSearchError } from "@poppet/web-search";
 import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { Clock, Console, Deferred, Effect, Fiber, Layer, Match, Schema, Stream } from "effect";
+import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
 import { ChatTasksLive } from "#src/chat-tools";
@@ -158,7 +159,7 @@ const fixture = async (
       program: Effect.Effect<
         A,
         E,
-        Agent | Store | StoreDatabase | Memory | TaskRepository | AppConfig | Skills
+        Agent | Store | SqlClient.SqlClient | Memory | TaskRepository | AppConfig | Skills
       >,
     ) =>
       Effect.runPromise(
@@ -181,7 +182,11 @@ describe.concurrent("makeTaskWorker", () => {
             const path = workerSocketPath(state.directory);
             yield* serveWorker(path, (_request, body) => taskResponse(body, worker.handle));
             const at = Date.now() + 60_000;
-            const job = repo.add({ ...state.task, schedule: { type: "once", at } }, Date.now());
+
+            const job = yield* repo.add(
+              { ...state.task, schedule: { type: "once", at } },
+              Date.now(),
+            );
 
             const edited = yield* remoteTaskCommand(path, {
               action: "edit",
@@ -198,7 +203,7 @@ describe.concurrent("makeTaskWorker", () => {
               id: job.id,
               revision: 1,
               operationId: "worker-snooze",
-              target: repo.nextTarget(job.id)!,
+              target: (yield* repo.nextTarget(job.id))!,
               until: at + 60_000,
             });
 
@@ -209,7 +214,7 @@ describe.concurrent("makeTaskWorker", () => {
               id: job.id,
               revision: 1,
               operationId: "held-run",
-              target: repo.nextTarget(job.id)!,
+              target: (yield* repo.nextTarget(job.id))!,
             }).pipe(Effect.result);
 
             expect(early).toHaveProperty("failure.message", expect.stringContaining("held"));
@@ -218,7 +223,7 @@ describe.concurrent("makeTaskWorker", () => {
               id: job.id,
               revision: 1,
               operationId: "worker-skip",
-              target: repo.nextTarget(job.id)!,
+              target: (yield* repo.nextTarget(job.id))!,
             });
             yield* remoteTaskCommand(path, {
               action: "edit",
@@ -233,18 +238,18 @@ describe.concurrent("makeTaskWorker", () => {
               id: job.id,
               revision: 2,
               operationId: "worker-run",
-              target: repo.nextTarget(job.id)!,
+              target: (yield* repo.nextTarget(job.id))!,
             };
 
             const queued = yield* remoteTaskCommand(path, request);
             expect((yield* remoteTaskCommand(path, request))?.value).toEqual(queued?.value);
-            const claimed = repo.claim(Date.now())!;
+            const claimed = (yield* repo.claim(Date.now()))!;
             expect(claimed.occurrence).toMatchObject({
               origin: "manual",
               definition: { prompt: "Read the new decisions" },
             });
             yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-            expect(repo.occurrence(claimed.occurrence.id).status).toBe("completed");
+            expect((yield* repo.occurrence(claimed.occurrence.id)).status).toBe("completed");
             expect(state.requests).toHaveLength(1);
             expect(state.requests[0]?.messages).toMatchObject([
               { role: "user", text: "Read the new decisions" },
@@ -359,11 +364,11 @@ describe.concurrent("makeTaskWorker", () => {
             });
             const history = yield* store.messages(earlier.id);
             const repo = yield* TaskRepository;
-            jobId = repo.add(state.task, 0).id;
-            repo.reconcile(0);
-            const active = repo.claim(0)!;
+            jobId = (yield* repo.add(state.task, 0)).id;
+            yield* repo.reconcile(0);
+            const active = (yield* repo.claim(0))!;
             yield* executeOccurrence(repo, active.occurrence, active.task);
-            const finished = repo.occurrence(active.occurrence.id);
+            const finished = yield* repo.occurrence(active.occurrence.id);
             expect(finished.status).toBe("completed");
             expect(yield* store.toolCalls(finished.runId!)).toMatchObject([
               { name: "read_session", status: "completed" },
@@ -375,8 +380,8 @@ describe.concurrent("makeTaskWorker", () => {
               },
             ]);
             expect(yield* (yield* Memory).list).toEqual([]);
-            expect(repo.list()).toHaveLength(1);
-            expect(repo.task(jobId).paused).toBe(0);
+            expect(yield* repo.list()).toHaveLength(1);
+            expect((yield* repo.task(jobId)).paused).toBe(0);
             expect(yield* store.messages(earlier.id)).toEqual(history);
           }),
         );
@@ -435,8 +440,8 @@ describe.concurrent("makeTaskWorker", () => {
           Effect.gen(function* () {
             const repo = yield* TaskRepository;
             const worker = yield* makeTaskWorker;
-            jobId = repo.add(state.task, 0).id;
-            repo.reconcile(0);
+            jobId = (yield* repo.add(state.task, 0)).id;
+            yield* repo.reconcile(0);
             const session = yield* (yield* Store).createSession("test-provider", "test-model");
 
             const interactive = yield* Stream.runDrain(
@@ -446,14 +451,14 @@ describe.concurrent("makeTaskWorker", () => {
             yield* Deferred.await(entered);
             const background = yield* worker.run.pipe(Effect.forkChild);
 
-            while (repo.occurrences(jobId)[0]?.status !== "running")
+            while ((yield* repo.occurrences(jobId))[0]?.status !== "running")
               yield* Effect.sleep("1 millis");
             yield* Deferred.succeed(release, undefined);
             yield* Fiber.join(interactive);
 
-            while (repo.occurrences(jobId)[0]?.status !== "completed")
+            while ((yield* repo.occurrences(jobId))[0]?.status !== "completed")
               yield* Effect.sleep("1 millis");
-            expect(repo.task(jobId).paused).toBe(1);
+            expect((yield* repo.task(jobId)).paused).toBe(1);
             yield* Fiber.interrupt(background);
           }),
         ).pipe(Effect.timeout("3 seconds")),
@@ -494,14 +499,16 @@ describe.concurrent("makeTaskWorker", () => {
       await state.run(
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
-          repo.add(state.task, 0);
-          repo.reconcile(0);
-          const claimed = repo.claim(0)!;
+          yield* repo.add(state.task, 0);
+          yield* repo.reconcile(0);
+          const claimed = (yield* repo.claim(0))!;
           yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-          expect(repo.list()).toHaveLength(1);
-          expect(repo.occurrence(claimed.occurrence.id)).toMatchObject({ status: "completed" });
+          expect(yield* repo.list()).toHaveLength(1);
+          expect(yield* repo.occurrence(claimed.occurrence.id)).toMatchObject({
+            status: "completed",
+          });
           expect(
-            yield* (yield* Store).toolCalls(repo.occurrence(claimed.occurrence.id).runId!),
+            yield* (yield* Store).toolCalls((yield* repo.occurrence(claimed.occurrence.id)).runId!),
           ).toMatchObject([{ status: "failed", failureReason: "agent:tool-permission" }]);
         }),
       );
@@ -581,7 +588,7 @@ describe.concurrent("makeTaskWorker", () => {
             message: expect.stringContaining("timed out"),
           });
           yield* TestClock.adjust("3 seconds");
-          expect(repo.list().map((task) => task.name)).toEqual(["First"]);
+          expect((yield* repo.list()).map((task) => task.name)).toEqual(["First"]);
         }).pipe(Effect.provide(TestClock.layer())),
       );
     } finally {
@@ -629,11 +636,11 @@ describe.concurrent("makeTaskWorker", () => {
       await state.run(
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
-          repo.add({ ...state.task, prompt: "Summarize https://example.com/article" }, 0);
-          repo.reconcile(0);
-          const claimed = repo.claim(0)!;
+          yield* repo.add({ ...state.task, prompt: "Summarize https://example.com/article" }, 0);
+          yield* repo.reconcile(0);
+          const claimed = (yield* repo.claim(0))!;
           yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-          expect(repo.occurrence(claimed.occurrence.id).status).toBe("completed");
+          expect((yield* repo.occurrence(claimed.occurrence.id)).status).toBe("completed");
         }),
       );
       expect(fetched).toEqual(["https://example.com/article"]);
@@ -688,12 +695,12 @@ describe.concurrent("makeTaskWorker", () => {
       await state.run(
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
-          repo.add({ ...state.task, prompt: "Research a current topic" }, 0);
-          repo.reconcile(0);
-          const claimed = repo.claim(0)!;
+          yield* repo.add({ ...state.task, prompt: "Research a current topic" }, 0);
+          yield* repo.reconcile(0);
+          const claimed = (yield* repo.claim(0))!;
           yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-          expect(repo.occurrence(claimed.occurrence.id).status).toBe("completed");
-          expect(repo.providers()).toEqual([]);
+          expect((yield* repo.occurrence(claimed.occurrence.id)).status).toBe("completed");
+          expect(yield* repo.providers()).toEqual([]);
         }),
       );
       expect(state.requests).toHaveLength(3);
@@ -727,15 +734,17 @@ describe.concurrent("makeTaskWorker", () => {
       await state.run(
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
-          repo.add(state.task, 0);
-          repo.reconcile(0);
-          const claimed = repo.claim(0)!;
+          yield* repo.add(state.task, 0);
+          yield* repo.reconcile(0);
+          const claimed = (yield* repo.claim(0))!;
           yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-          expect(repo.occurrence(claimed.occurrence.id)).toMatchObject({ status: "completed" });
+          expect(yield* repo.occurrence(claimed.occurrence.id)).toMatchObject({
+            status: "completed",
+          });
           expect(
-            yield* (yield* Store).toolCalls(repo.occurrence(claimed.occurrence.id).runId!),
+            yield* (yield* Store).toolCalls((yield* repo.occurrence(claimed.occurrence.id)).runId!),
           ).toMatchObject([{ status: "failed", failureReason: "agent:tool-rate-limit" }]);
-          expect(repo.providers()).toEqual([]);
+          expect(yield* repo.providers()).toEqual([]);
         }),
       );
       expect(state.requests).toHaveLength(2);
@@ -771,7 +780,7 @@ describe.concurrent("makeTaskWorker", () => {
             skill: { name: "weekly-review", content: "Original weekly review" },
           });
 
-          return repo.list()[0]!.id;
+          return (yield* repo.list())[0]!.id;
         }),
       );
 
@@ -780,14 +789,14 @@ describe.concurrent("makeTaskWorker", () => {
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
           const store = yield* Store;
-          expect(repo.task(id).skill).toEqual({
+          expect((yield* repo.task(id)).skill).toEqual({
             name: "weekly-review",
             content: "Original weekly review",
           });
-          repo.reconcile(0);
-          const claimed = repo.claim(0)!;
+          yield* repo.reconcile(0);
+          const claimed = (yield* repo.claim(0))!;
           yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-          const occurrence = repo.occurrence(claimed.occurrence.id);
+          const occurrence = yield* repo.occurrence(claimed.occurrence.id);
           expect(occurrence.status).toBe("completed");
           expect((yield* store.session(occurrence.sessionId!))?.skill).toEqual(claimed.task.skill);
         }),
@@ -815,9 +824,9 @@ describe.concurrent("makeTaskWorker", () => {
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
           const store = yield* Store;
-          repo.add(state.task, 0);
-          repo.reconcile(0);
-          const active = repo.claim(0)!;
+          yield* repo.add(state.task, 0);
+          yield* repo.reconcile(0);
+          const active = (yield* repo.claim(0))!;
 
           const running = yield* Effect.forkChild(
             executeOccurrence(repo, active.occurrence, active.task),
@@ -826,7 +835,7 @@ describe.concurrent("makeTaskWorker", () => {
           yield* Deferred.await(started);
           yield* TestClock.adjust("5 minutes");
           yield* Fiber.join(running);
-          const occurrence = repo.occurrence(active.occurrence.id);
+          const occurrence = yield* repo.occurrence(active.occurrence.id);
 
           expect(occurrence.status).toBe("interrupted");
           expect((yield* store.run(occurrence.runId!))?.status).toBe("interrupted");
@@ -851,20 +860,20 @@ describe.concurrent("makeTaskWorker", () => {
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
           const store = yield* Store;
-          const job = repo.add(state.task, Date.now());
+          const job = yield* repo.add(state.task, Date.now());
           const worker = yield* Effect.forkChild(runTaskWorker);
           yield* Effect.raceFirst(Deferred.await(started), Fiber.join(worker));
-          const active = repo.occurrences(job.id)[0]!;
-          const pending = repo.add(state.task, Date.now());
-          repo.reconcile(Date.now());
-          expect(repo.occurrences(pending.id)[0]?.status).toBe("pending");
+          const active = (yield* repo.occurrences(job.id))[0]!;
+          const pending = yield* repo.add(state.task, Date.now());
+          yield* repo.reconcile(Date.now());
+          expect((yield* repo.occurrences(pending.id))[0]?.status).toBe("pending");
           const path = workerSocketPath(state.directory);
           const result = yield* remoteTaskCommand(path, { action: "clear" });
 
           expect(result?.value).toEqual({ cleared: 2 });
-          expect(repo.list()).toEqual([]);
-          expect(repo.occurrences(job.id)).toEqual([]);
-          expect(repo.occurrences(pending.id)).toEqual([]);
+          expect(yield* repo.list()).toEqual([]);
+          expect(yield* repo.occurrences(job.id)).toEqual([]);
+          expect(yield* repo.occurrences(pending.id)).toEqual([]);
           expect((yield* store.run(active.runId!))?.status).toBe("interrupted");
           expect(state.requests).toHaveLength(1);
           expect(state.lines).toContainEqual(expect.stringContaining("All tasks cleared."));
@@ -876,7 +885,7 @@ describe.concurrent("makeTaskWorker", () => {
           });
 
           expect(added).not.toBeNull();
-          expect(repo.list()).toHaveLength(1);
+          expect(yield* repo.list()).toHaveLength(1);
           yield* Fiber.interrupt(worker);
         }),
       );
@@ -894,8 +903,8 @@ describe.concurrent("makeTaskWorker", () => {
       await state.run(
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
-          const { database } = yield* StoreDatabase;
-          const job = repo.add({ ...state.task, schedule }, start);
+          const sql = yield* SqlClient.SqlClient;
+          const job = yield* repo.add({ ...state.task, schedule }, start);
           yield* reconcileTasks(repo, start + 5 * 60_000, true);
           yield* reconcileTasks(repo, start + 6 * 60_000);
           yield* reconcileTasks(repo, start + 10 * 60_000);
@@ -907,8 +916,8 @@ describe.concurrent("makeTaskWorker", () => {
             `[2026-10-14T09:06:00.000Z] Task "Summary" task=${job.id} skipped 2026-10-14T09:06:00.000Z to 2026-10-14T09:06:00.000Z reason=previous-occurrence-active`,
             `[2026-10-14T09:10:00.000Z] Task "Summary" task=${job.id} skipped 2026-10-14T09:07:00.000Z to 2026-10-14T09:10:00.000Z reason=previous-occurrence-active`,
           ]);
-          const broken = repo.add({ ...state.task, schedule }, start + 1);
-          database.run("UPDATE jobs SET schedule = ? WHERE id = ?", [
+          const broken = yield* repo.add({ ...state.task, schedule }, start + 1);
+          yield* sql.unsafe("UPDATE jobs SET schedule = ? WHERE id = ?", [
             JSON.stringify({ ...schedule, timezone: "Invalid/Zone" }),
             broken.id,
           ]);
@@ -919,7 +928,7 @@ describe.concurrent("makeTaskWorker", () => {
 
           expect(error).toMatchObject({ message: expect.stringContaining("Invalid cron") });
           expect(state.lines).toHaveLength(3);
-          expect(repo.skips(job.id)).toHaveLength(3);
+          expect(yield* repo.skips(job.id)).toHaveLength(3);
         }),
       );
     } finally {
@@ -942,15 +951,13 @@ describe.concurrent("makeTaskWorker", () => {
       await state.run(
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
-          repo.add(state.task, Date.now());
-          repo.reconcile(Date.now());
-          const active = repo.claim(Date.now())!;
+          yield* repo.add(state.task, Date.now());
+          yield* repo.reconcile(Date.now());
+          const active = (yield* repo.claim(Date.now()))!;
 
           const failing = {
             ...repo,
-            finish: () => {
-              throw new TaskError({ message: "Outcome write failed" });
-            },
+            finish: () => Effect.fail(new TaskError({ message: "Outcome write failed" })),
           };
 
           const error = yield* executeOccurrence(failing, active.occurrence, active.task).pipe(
@@ -958,7 +965,7 @@ describe.concurrent("makeTaskWorker", () => {
           );
 
           expect(error).toMatchObject({ message: "Outcome write failed" });
-          expect(repo.occurrence(active.occurrence.id).status).toBe("running");
+          expect((yield* repo.occurrence(active.occurrence.id)).status).toBe("running");
           expect(state.lines).toHaveLength(1);
           expect(state.errors).toEqual([]);
         }),
@@ -990,9 +997,9 @@ describe.concurrent("makeTaskWorker", () => {
           const store = yield* Store;
           const memory = yield* Memory;
           yield* memory.remember("style", "Concise");
-          const first = repo.add(state.task, Date.now());
-          repo.reconcile(Date.now());
-          const active = repo.claim(Date.now())!;
+          const first = yield* repo.add(state.task, Date.now());
+          yield* repo.reconcile(Date.now());
+          const active = (yield* repo.claim(Date.now()))!;
           yield* executeOccurrence(repo, active.occurrence, active.task);
           const titled = (yield* (yield* Store).sessions)[0];
           expect(titled).toMatchObject({
@@ -1006,9 +1013,9 @@ describe.concurrent("makeTaskWorker", () => {
           yield* (yield* Agent).nameSession(titled.id);
 
           yield* memory.replace("style", "Detailed");
-          const second = repo.add(state.task, Date.now());
-          repo.reconcile(Date.now());
-          const next = repo.claim(Date.now())!;
+          const second = yield* repo.add(state.task, Date.now());
+          yield* repo.reconcile(Date.now());
+          const next = (yield* repo.claim(Date.now()))!;
           yield* executeOccurrence(repo, next.occurrence, next.task);
 
           const firstResult = yield* executeTaskCommand(
@@ -1018,14 +1025,16 @@ describe.concurrent("makeTaskWorker", () => {
             Date.now(),
           );
 
-          const secondResult = repo.occurrences(second.id)[0]!;
+          const secondResult = (yield* repo.occurrences(second.id))[0]!;
 
           expect(firstResult).toMatchObject({
             occurrences: [
               { status: "completed", output: [{ type: "text", text: "Acorn summary" }] },
             ],
           });
-          expect(repo.occurrences(first.id)[0]?.sessionId).not.toBe(secondResult.sessionId);
+          expect((yield* repo.occurrences(first.id))[0]?.sessionId).not.toBe(
+            secondResult.sessionId,
+          );
           expect(state.requests.map((request) => request.tools.map((tool) => tool.name))).toEqual(
             Array.from({ length: 4 }, () => ["search_sessions", "read_session", "fetch_page"]),
           );
@@ -1067,15 +1076,15 @@ describe.concurrent("makeTaskWorker", () => {
           const repo = yield* TaskRepository;
           const store = yield* Store;
 
-          repo.add(state.task, Date.now(), {
+          yield* repo.add(state.task, Date.now(), {
             name: "write",
             content: "Remember the project name even during scheduled runs",
           });
 
-          repo.reconcile(Date.now());
-          const claimed = repo.claim(Date.now())!;
+          yield* repo.reconcile(Date.now());
+          const claimed = (yield* repo.claim(Date.now()))!;
           yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-          const finished = repo.occurrence(claimed.occurrence.id);
+          const finished = yield* repo.occurrence(claimed.occurrence.id);
 
           expect(state.requests[0]?.instructions).toContain(
             "Remember the project name even during scheduled runs",
@@ -1112,15 +1121,15 @@ describe.concurrent("makeTaskWorker", () => {
       const saved = await state.run(
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
-          repo.add(state.task, Date.now());
-          repo.reconcile(Date.now());
-          const claimed = repo.claim(Date.now())!;
+          yield* repo.add(state.task, Date.now());
+          yield* repo.reconcile(Date.now());
+          const claimed = (yield* repo.claim(Date.now()))!;
           yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
-          const held = repo.add(state.task, Date.now());
-          repo.reconcile(Date.now());
+          const held = yield* repo.add(state.task, Date.now());
+          yield* repo.reconcile(Date.now());
 
-          expect(repo.claim(Date.now())).toBeNull();
-          expect(repo.providers()).toMatchObject([
+          expect(yield* repo.claim(Date.now())).toBeNull();
+          expect(yield* repo.providers()).toMatchObject([
             { provider: "test-provider", reason: "quota", resumeAt: null },
           ]);
           expect(state.errors[0]).toContain(
@@ -1140,20 +1149,20 @@ describe.concurrent("makeTaskWorker", () => {
       await state.run(
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
-          repo.reconcile(Date.now(), true);
-          expect(repo.claim(Date.now())).toBeNull();
-          expect(repo.occurrence(saved.failed).status).toBe("failed");
+          yield* repo.reconcile(Date.now(), true);
+          expect(yield* repo.claim(Date.now())).toBeNull();
+          expect((yield* repo.occurrence(saved.failed)).status).toBe("failed");
           expect(state.requests).toHaveLength(1);
           quota = false;
-          repo.resumeProvider("test-provider", Date.now());
-          const held = repo.claim(Date.now())!;
+          yield* repo.resumeProvider("test-provider", Date.now());
+          const held = (yield* repo.claim(Date.now()))!;
           expect(held.task.id).toBe(saved.held);
           yield* executeOccurrence(repo, held.occurrence, held.task);
-          repo.retry(saved.failed, Date.now());
-          const retry = repo.claim(Date.now())!;
+          yield* repo.retry(saved.failed, Date.now());
+          const retry = (yield* repo.claim(Date.now()))!;
           yield* executeOccurrence(repo, retry.occurrence, retry.task);
-          expect(repo.occurrence(saved.failed).status).toBe("completed");
-          expect(repo.providers()).toEqual([]);
+          expect((yield* repo.occurrence(saved.failed)).status).toBe("completed");
+          expect(yield* repo.providers()).toEqual([]);
         }),
       );
     } finally {
@@ -1178,7 +1187,7 @@ describe.concurrent("makeTaskWorker", () => {
           yield* TestClock.setTime(Date.now());
           const repo = yield* TaskRepository;
           const store = yield* Store;
-          const job = repo.add(state.task, Date.now());
+          const job = yield* repo.add(state.task, Date.now());
           const worker = yield* Effect.forkChild(runTaskWorker);
           yield* Effect.raceFirst(Deferred.await(started), Fiber.join(worker));
           const path = workerSocketPath(state.directory);
@@ -1186,7 +1195,7 @@ describe.concurrent("makeTaskWorker", () => {
           expect(mode.mode & 0o777).toBe(0o600);
           const listing = yield* remoteTaskCommand(path, { action: "list" });
           expect(listing?.value).toMatchObject([{ id: job.id }]);
-          const active = repo.occurrences(job.id)[0]!;
+          const active = (yield* repo.occurrences(job.id))[0]!;
           expect((yield* remoteTaskCommand(path, { action: "status" }))?.value).toMatchObject({
             running: true,
             pid: process.pid,
@@ -1195,11 +1204,11 @@ describe.concurrent("makeTaskWorker", () => {
             recent: [{ id: active.id, status: "running" }],
           });
           yield* remoteTaskCommand(path, { action: "pause", id: job.id });
-          expect(repo.occurrence(active.id).status).toBe("running");
+          expect((yield* repo.occurrence(active.id)).status).toBe("running");
           yield* remoteTaskCommand(path, { action: "cancel", id: active.id });
-          expect(repo.occurrence(active.id).status).toBe("cancelled");
+          expect((yield* repo.occurrence(active.id)).status).toBe("cancelled");
           expect((yield* store.run(active.runId!))?.status).toBe("interrupted");
-          repo.blockProvider("test-provider", "quota", Date.now());
+          yield* repo.blockProvider("test-provider", "quota", Date.now());
           yield* remoteTaskCommand(path, { action: "resume-provider", provider: "test-provider" });
           expect(state.lines).toContainEqual(
             expect.stringContaining("Provider test-provider resumed by request"),
@@ -1243,14 +1252,17 @@ describe.concurrent("makeTaskWorker", () => {
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
           const clock = yield* Clock.Clock;
-          const initial = repo.add(state.task, 0);
+          const initial = yield* repo.add(state.task, 0);
 
-          const recurring = repo.add(
+          const recurring = yield* repo.add(
             { ...state.task, schedule: { type: "cron", expression: "* * * * *", timezone: "UTC" } },
             0,
           );
 
-          const once = repo.add({ ...state.task, schedule: { type: "once", at: 120_000 } }, 0);
+          const once = yield* repo.add(
+            { ...state.task, schedule: { type: "once", at: 120_000 } },
+            0,
+          );
 
           const worker = yield* runTaskWorker.pipe(
             Effect.provideService(Clock.Clock, {
@@ -1263,25 +1275,29 @@ describe.concurrent("makeTaskWorker", () => {
 
           yield* Deferred.await(started);
 
-          while (repo.occurrences(initial.id)[0]?.status !== "completed") yield* Effect.yieldNow;
+          while ((yield* repo.occurrences(initial.id))[0]?.status !== "completed")
+            yield* Effect.yieldNow;
           wallTime = 3_600_000;
           yield* TestClock.adjust("1 second");
 
           while (
-            repo.occurrences(once.id)[0]?.status !== "completed" ||
-            repo.occurrences(recurring.id)[0]?.status !== "completed"
+            (yield* repo.occurrences(once.id))[0]?.status !== "completed" ||
+            (yield* repo.occurrences(recurring.id))[0]?.status !== "completed"
           )
             yield* Effect.yieldNow;
           yield* TestClock.adjust("1 second");
-          expect(repo.occurrences(recurring.id)).toHaveLength(1);
-          expect(repo.occurrences(once.id)).toHaveLength(1);
+          expect(yield* repo.occurrences(recurring.id)).toHaveLength(1);
+          expect(yield* repo.occurrences(once.id)).toHaveLength(1);
           // Waking within the catch-up window runs the latest missed minute, not the earliest.
-          expect(repo.occurrences(recurring.id)[0]?.scheduledAt).toBe(wallTime);
-          expect(repo.skips(recurring.id)).toEqual([
+          expect((yield* repo.occurrences(recurring.id))[0]?.scheduledAt).toBe(wallTime);
+          expect(yield* repo.skips(recurring.id)).toEqual([
             { firstAt: 60_000, lastAt: wallTime - 1, reason: "worker-delayed" },
           ]);
           expect(state.requests).toHaveLength(3);
-          expect(repo.status()).toMatchObject({ pendingCount: 0, nextScheduledAt: 3_660_000 });
+          expect(yield* repo.status()).toMatchObject({
+            pendingCount: 0,
+            nextScheduledAt: 3_660_000,
+          });
           yield* Fiber.interrupt(worker);
         }).pipe(Effect.provide(TestClock.layer())),
       );
@@ -1301,14 +1317,14 @@ describe.concurrent("makeTaskWorker", () => {
       await state.run(
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
-          const job = repo.add({ ...state.task, schedule: { type: "once", at: 60_000 } }, 0);
+          const job = yield* repo.add({ ...state.task, schedule: { type: "once", at: 60_000 } }, 0);
           const worker = yield* Effect.forkChild(runTaskWorker);
           yield* Effect.yieldNow;
           yield* TestClock.adjust("60 seconds");
           yield* Effect.raceFirst(Deferred.await(done), Fiber.join(worker));
           yield* TestClock.adjust("2 seconds");
-          expect(repo.occurrences(job.id)).toHaveLength(1);
-          expect(repo.occurrences(job.id)[0]?.status).toBe("completed");
+          expect(yield* repo.occurrences(job.id)).toHaveLength(1);
+          expect((yield* repo.occurrences(job.id))[0]?.status).toBe("completed");
           expect(state.requests).toHaveLength(1);
           yield* Fiber.interrupt(worker);
         }).pipe(Effect.provide(TestClock.layer())),

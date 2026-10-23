@@ -1,40 +1,65 @@
-import type { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 
-import { Schema } from "effect";
+import { decodeRow } from "@poppet/store";
+import { Effect, Schema } from "effect";
+import type { SqlClient } from "effect/sql";
 
-import { Task, Occurrence, TaskError, TaskDefinition, type TaskTarget } from "#src/task-schema";
+import {
+  Task,
+  Occurrence,
+  TaskError,
+  TaskDefinition,
+  latestOccurrence,
+  nextOccurrence,
+  type Schedule,
+  type TaskTarget,
+} from "#src/task-schema";
 
 // Recurring summaries lose their usefulness after a day. One-off work never expires.
 export const recurringExpiry = 24 * 60 * 60 * 1000;
 
-export const taskSql = `SELECT id, name, prompt, provider, model, workload, schedule,
-  revision,
-  skill, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
+/** Converts storage and saved-row failures at the repository boundary. */
+export const taskFailure = (cause: unknown) =>
+  cause instanceof TaskError
+    ? cause
+    : new TaskError({ message: "Could not read or update scheduled tasks." });
 
-export const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, status,
-  revision, definition, available_at AS availableAt, origin,
-  destination, session_id AS sessionId, run_id AS runId, finished_at AS finishedAt, reason FROM job_occurrences`;
+// The schedule helpers throw TaskError; these keep that a typed failure inside transactions.
+export const nextTime = (schedule: Schedule, after: number) =>
+  Effect.try({ try: () => nextOccurrence(schedule, after), catch: taskFailure });
 
-export const taskRecords = (database: Database) => {
-  const task = (id: string) => {
-    using statement = database.prepare(`${taskSql} WHERE id = ?`);
-    const row = statement.get(id);
+export const latestTime = (schedule: Schedule, atOrBefore: number) =>
+  Effect.try({ try: () => latestOccurrence(schedule, atOrBefore), catch: taskFailure });
 
-    if (!row) throw new TaskError({ message: "The task does not exist. Use tasks list." });
+export const taskRecords = (sql: SqlClient.SqlClient) => {
+  const tasks = sql`SELECT id, name, prompt, provider, model, workload, schedule, revision, skill,
+    destination, next_at, paused, created_at FROM jobs`;
 
-    return Schema.decodeUnknownSync(Task)(row);
-  };
+  const occurrences = sql`SELECT id, job_id, scheduled_at, status, revision, definition,
+    available_at, origin, destination, session_id, run_id, finished_at, reason
+    FROM job_occurrences`;
 
-  const occurrence = (id: string) => {
-    using statement = database.prepare(`${occurrenceSql} WHERE id = ?`);
-    const row = statement.get(id);
+  const task = (id: string) =>
+    sql`${tasks} WHERE id = ${id}`.pipe(
+      decodeRow(Task),
+      Effect.flatMap((row) =>
+        row === null
+          ? Effect.fail(new TaskError({ message: "The task does not exist. Use tasks list." }))
+          : Effect.succeed(row),
+      ),
+    );
 
-    if (!row)
-      throw new TaskError({ message: "The occurrence does not exist. Use tasks show <task>." });
-
-    return Schema.decodeUnknownSync(Occurrence)(row);
-  };
+  const occurrence = (id: string) =>
+    sql`${occurrences} WHERE id = ${id}`.pipe(
+      decodeRow(Occurrence),
+      Effect.flatMap((row) =>
+        row === null
+          ? Effect.fail(
+              new TaskError({ message: "The occurrence does not exist. Use tasks show <task>." }),
+            )
+          : Effect.succeed(row),
+      ),
+    );
 
   const insertOccurrence = (
     job: Task,
@@ -48,63 +73,73 @@ export const taskRecords = (database: Database) => {
       readonly destination?: Task["destination"];
       readonly ignoreDuplicate?: boolean;
     } = {},
-  ) => {
-    const {
-      availableAt = scheduledAt,
-      status = "pending",
-      reason = null,
-      finishedAt = null,
-      origin = "scheduled",
-      destination = job.destination,
-      ignoreDuplicate = false,
-    } = options;
+  ) =>
+    Effect.gen(function* () {
+      const {
+        availableAt = scheduledAt,
+        status = "pending",
+        reason = null,
+        finishedAt = null,
+        origin = "scheduled",
+        destination = job.destination,
+        ignoreDuplicate = false,
+      } = options;
 
-    const id = randomUUID();
-    const definition = Schema.decodeUnknownSync(TaskDefinition)(job);
-    database
-      .query(`INSERT INTO job_occurrences
-        (id, job_id, revision, definition, scheduled_at, available_at, status, reason, finished_at, origin, destination)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ${ignoreDuplicate ? "ON CONFLICT (job_id, revision, scheduled_at) DO NOTHING" : ""}`)
-      .run(
+      const id = randomUUID();
+      const definition = yield* Schema.decodeUnknownEffect(TaskDefinition)(job);
+
+      yield* sql`INSERT INTO job_occurrences ${sql.insert({
         id,
-        job.id,
-        job.revision,
-        JSON.stringify(definition),
+        jobId: job.id,
+        revision: job.revision,
+        definition: JSON.stringify(definition),
         scheduledAt,
         availableAt,
         status,
         reason,
         finishedAt,
         origin,
-        destination === null ? null : JSON.stringify(destination),
-      );
+        destination: destination === null ? null : JSON.stringify(destination),
+      })} ${sql.literal(
+        ignoreDuplicate ? "ON CONFLICT (job_id, revision, scheduled_at) DO NOTHING" : "",
+      )}`;
 
-    return id;
+      return id;
+    });
+
+  const activeOccurrence = (id: string, status: "pending" | "running") =>
+    sql`${occurrences} WHERE job_id = ${id} AND status = ${status} LIMIT 1`.pipe(
+      decodeRow(Occurrence),
+    );
+
+  const nextTarget = (id: string) =>
+    Effect.gen(function* () {
+      const job = yield* task(id);
+      const pending = yield* activeOccurrence(id, "pending");
+
+      if (pending !== null)
+        return {
+          occurrenceId: pending.id,
+          scheduledAt: pending.scheduledAt,
+          availableAt: pending.availableAt,
+        } satisfies TaskTarget;
+
+      return job.nextAt === null
+        ? null
+        : ({
+            occurrenceId: null,
+            scheduledAt: job.nextAt,
+            availableAt: job.nextAt,
+          } satisfies TaskTarget);
+    });
+
+  return {
+    tasks,
+    occurrences,
+    task,
+    occurrence,
+    insertOccurrence,
+    activeOccurrence,
+    nextTarget,
   };
-
-  const activeOccurrence = (id: string, status: "pending" | "running") => {
-    const row = database
-      .query(`${occurrenceSql} WHERE job_id = ? AND status = ? LIMIT 1`)
-      .get(id, status);
-
-    return row === null ? undefined : Schema.decodeUnknownSync(Occurrence)(row);
-  };
-
-  const nextTarget = (id: string): TaskTarget | null => {
-    const job = task(id);
-    const pending = activeOccurrence(id, "pending");
-
-    if (pending !== undefined)
-      return {
-        occurrenceId: pending.id,
-        scheduledAt: pending.scheduledAt,
-        availableAt: pending.availableAt,
-      };
-
-    return job.nextAt === null
-      ? null
-      : { occurrenceId: null, scheduledAt: job.nextAt, availableAt: job.nextAt };
-  };
-
-  return { task, occurrence, insertOccurrence, activeOccurrence, nextTarget };
 };
