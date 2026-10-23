@@ -49,7 +49,7 @@ export const ProjectsLive = Layer.effect(
   }),
 );
 
-/** Optional injection keeps unscoped callers compatible; a requested scope never falls back. */
+/** Loading a named project requires the Projects service; missing context fails the request. */
 export const loadProject = (name: string) =>
   Effect.gen(function* () {
     const projects = yield* Effect.serviceOption(Projects);

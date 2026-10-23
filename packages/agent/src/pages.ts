@@ -31,7 +31,7 @@ export interface FetchPageCall {
   readonly url: string;
 }
 
-/** Only URLs in this request authorize initial retrieval, never history, skills, or tool results. */
+/** Seeds page access from the request text; completed searches can grant additional URLs during the run. */
 export const suppliedPageURLs = (text: string) => {
   const urls = new Set<string>();
 

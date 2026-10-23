@@ -44,7 +44,8 @@ const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, 
 /** Builds synchronous task operations on the caller's owned database; failures are thrown. */
 /**
  * catchUpMs is how late a missed recurring occurrence may still run once; older ones are
- * skipped. Zero keeps the original policy of skipping at startup and running late otherwise.
+ * skipped. Zero skips missed recurring work at startup; while running, it queues the earliest
+ * due occurrence if the task is idle.
  */
 export const makeTaskStore = (database: Database, catchUpMs = 0) => {
   const commandLock = Semaphore.makeUnsafe(1);

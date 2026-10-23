@@ -115,7 +115,7 @@ const unsavedNoteReasons: ReadonlySet<string> = new Set([
 
 /**
  * Reported failures become the call's reply. Uncertain failures may have changed state, so
- * they end the run without replay; other failures end the run as before.
+ * they end the run without replay. Fatal failures also end the run.
  */
 export const toolFailureKind = (
   name: ToolPlan["name"],
@@ -387,7 +387,7 @@ export const conversation = Effect.gen(function* () {
 
         const allowedURLs = source?.kind === "voice" ? new Set<string>() : suppliedPageURLs(text);
 
-        // Once untrusted content enters the run, withdraw tools that act beyond its notes.
+        // Untrusted content withdraws task, memory, and skill mutations; external tools need explicit opt-in to remain.
         let untrusted = source !== undefined;
 
         const withdrawn = (tool: Tool) =>
@@ -655,7 +655,7 @@ export const conversation = Effect.gen(function* () {
                           }),
                         );
 
-                      // Validate the whole batch before any call can change notes or memory.
+                      // Validate every call before executing any tool in the batch.
                       const planned = yield* Effect.forEach(calls, (call) =>
                         prepareTool(call).pipe(Effect.result),
                       );

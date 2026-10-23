@@ -8,7 +8,7 @@ export class WorkerRequestError extends Data.TaggedError("WorkerRequestError")<{
   readonly message: string;
 }> {}
 
-// Retain the existing endpoint so older clients still reach the single store owner.
+// All worker clients share this endpoint for the single store owner.
 export const workerSocketPath = (directory: string) => join(directory, "store", "tasks.sock");
 
 /** Host routing for decoded worker requests, using the listener's resource scope. */

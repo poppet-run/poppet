@@ -67,7 +67,7 @@ export class Agent extends Context.Service<
       sessionId: string,
       timingLog?: (line: string) => Effect.Effect<void>,
     ) => Effect.Effect<void>;
-    /** Streams a reply; readOnlyTools excludes note/memory writes and task management. */
+    /** Streams a reply; readOnlyTools excludes note, memory, and skill writes and task management. */
     readonly send: (
       sessionId: string,
       text: string,

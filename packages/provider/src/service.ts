@@ -29,7 +29,7 @@ export class ProviderError extends Data.TaggedError("ProviderError")<{
 /** Inference operations for one resolved provider and model. */
 export interface ModelOperations {
   readonly description: ModelDescription;
-  /** Starts inference when consumed; emits text deltas followed by one final completion. */
+  /** Starts inference when consumed; emits answer and reasoning deltas followed by one final completion. */
   readonly stream: (request: ModelRequest) => Stream.Stream<ModelEvent, ProviderError>;
 }
 

@@ -32,7 +32,7 @@ const WorkerCommand = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("mcp"), command: MCPCommand }),
 ]);
 
-/** Chat, memory, and status operations sent to the process that owns local storage. */
+/** Chat, memory, skill, and inspection requests sent to the process that owns local storage. */
 export type WorkerCommand = typeof WorkerCommand.Type;
 
 const Frame = Schema.Union([
@@ -277,7 +277,7 @@ export const remoteWorkerCommand = (
           if (frame.type === "reasoning-delta" || frame.type === "reasoning-end")
             return writeReasoning?.(frame) ?? Effect.void;
 
-          // Older workers send these alongside deltas that streaming clients already render.
+          // Suppress reasoning logs when the caller renders streamed reasoning.
           if (frame.type === "reasoning-log")
             return writeReasoning === undefined ? logChatDiagnostic(frame.text) : Effect.void;
 

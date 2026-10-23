@@ -1,7 +1,6 @@
 import type { ChannelRegistration } from "@poppet/gateway";
 
-// The old CLI treated the rest of a prompt/value, and adapter setup arguments,
-// as literal text. Shield those tokens from option parsing with the CLI's `--`.
+// Insert `--` so prompts, values, and adapter setup arguments reach their handlers as literal text.
 export const commandArgs = (
   args: ReadonlyArray<string>,
   channels: ReadonlyArray<ChannelRegistration>,

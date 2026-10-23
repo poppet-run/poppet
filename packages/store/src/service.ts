@@ -103,7 +103,7 @@ interface StoreOperations {
   readonly toolCalls: (runId: string) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;
   /** Marks a pending call as running before invoking the tool. */
   readonly startToolCall: (runId: string, callId: string) => Effect.Effect<void, StoreError>;
-  /** Saves the outcome and, on success, appends the tool reply in the same transaction. */
+  /** Saves the outcome and any reply, including reported failures, in the same transaction. */
   readonly finishToolCall: (
     runId: string,
     callId: string,
