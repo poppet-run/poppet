@@ -48,8 +48,8 @@ const fixture = (reply: (method: string) => Schema.Json | null = () => null) => 
   return { calls, layer: telegramChannelLayer(settings, http) };
 };
 
-describe.concurrent("Telegram adapter", () => {
-  test("normalizes only the owner's private text and returns a cursor for every ignored update", async () => {
+describe.concurrent("telegramChannelLayer", () => {
+  test("when polling receives mixed updates, accepts only owner-private text and returns cursors for ignored updates", async () => {
     const other = incoming(2);
     other.message.from.id = 999;
     const group = incoming(3);
@@ -112,7 +112,7 @@ describe.concurrent("Telegram adapter", () => {
     ]);
   });
 
-  test("validates access and sends bounded plain text without formatting or previews", async () => {
+  test("when sending Telegram text, checks access and bounds plain text without formatting or previews", async () => {
     const state = fixture();
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -170,7 +170,7 @@ describe.concurrent("Telegram adapter", () => {
     { code: 401, reason: "configuration" },
     { code: 500, reason: "uncertain" },
   ])(
-    "classifies send error $code without resending or exposing remote diagnostics",
+    "when sending returns error $code, classifies it without resending or exposing diagnostics",
     async ({ code, reason }) => {
       const state = fixture((method) =>
         method === "sendMessage"
@@ -197,7 +197,7 @@ describe.concurrent("Telegram adapter", () => {
   );
 
   test.each(["network", "malformed", "wrong-chat"])(
-    "keeps %s send acknowledgements uncertain",
+    "when send acknowledgements are %s, keeps the outcome uncertain",
     async (failure) => {
       const http: HttpFetch = async (url) => {
         if (url.endsWith("getMe"))
@@ -226,7 +226,7 @@ describe.concurrent("Telegram adapter", () => {
     },
   );
 
-  test("deduplicates a repeated polling update and rejects an unordered batch without acknowledging it", async () => {
+  test("when polling repeats or reorders updates, deduplicates repeats and rejects unordered batches without acknowledgement", async () => {
     let ordered = true;
 
     const state = fixture((method) =>
@@ -251,7 +251,7 @@ describe.concurrent("Telegram adapter", () => {
     );
   });
 
-  test("drains a backlog of long replies within the response byte limit without losing updates", async () => {
+  test("when long replies accumulate, drains the backlog within byte limits without losing updates", async () => {
     const text = "界".repeat(4096);
     const original = { ...incoming(999, text).message, date: 1792187999 };
 
@@ -299,7 +299,7 @@ describe.concurrent("Telegram adapter", () => {
     );
   });
 
-  test("bounds response bytes before decoding and redacts malformed provider data", async () => {
+  test("when provider data is oversized or malformed, bounds decoding and redacts failures", async () => {
     let cancelled = false;
 
     const http: HttpFetch = async (url) => {
@@ -328,7 +328,7 @@ describe.concurrent("Telegram adapter", () => {
     );
   });
 
-  test("a mismatched bot cannot poll or send", async () => {
+  test("when the bot identity mismatches, rejects polling and sending", async () => {
     const state = fixture((method) =>
       method === "getMe" ? { ok: true, result: { id: 999, is_bot: true } } : null,
     );
@@ -350,7 +350,7 @@ describe.concurrent("Telegram adapter", () => {
   });
 
   test.each(["getUpdates", "sendMessage"])(
-    "cancellation aborts an active %s request",
+    "when an active %s request is cancelled, aborts it",
     async (method) => {
       const started = Deferred.makeUnsafe<void>();
       let aborted = false;
@@ -391,8 +391,8 @@ describe.concurrent("Telegram adapter", () => {
   );
 });
 
-describe.concurrent("Telegram attachments", () => {
-  test("normalizes owner captions/attachment-only messages without downloading, and rejects downloads outside that private chat", async () => {
+describe.concurrent("telegramDownload", () => {
+  test("when owner attachments arrive, normalizes captions without downloading and rejects access outside the private chat", async () => {
     const calls: string[] = [];
 
     const file = {
@@ -497,7 +497,7 @@ describe.concurrent("Telegram attachments", () => {
   });
 
   test.each(["valid", "oversized-stream", "unsafe-path", "redirect", "expired"])(
-    "protects binary downloads: %s",
+    "when a binary download is %s, accepts only complete bounded data from the authorized path",
     async (scenario) => {
       const calls: string[] = [];
       let cancelled = false;

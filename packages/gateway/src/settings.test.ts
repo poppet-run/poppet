@@ -9,8 +9,8 @@ import { loadChannelSettings, saveChannelSettings } from "#src/settings";
 
 import { makeFIFO } from "../../../tools/testing/fifo";
 
-describe.concurrent("protected channel settings", () => {
-  test("saves settings with protected permissions and repairs permissions when reading", async () => {
+describe.concurrent("settings.ts", () => {
+  test("when channel settings are saved or read, protects files and repairs permissions", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-channel-settings-"));
     const path = join(directory, "channels/test-channel.json");
 
@@ -30,7 +30,7 @@ describe.concurrent("protected channel settings", () => {
   });
 
   test.each(["symlink", "hardlink", "oversized", "fifo"])(
-    "rejects %s settings without exposing their contents or changing link targets",
+    "when channel settings are %s, rejects them without exposing content or changing link targets",
     async (kind) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-channel-invalid-"));
 

@@ -6,8 +6,8 @@ import { dirname, join } from "node:path";
 import { chromiumVersion } from "#src/browser-process";
 import { browserExecutables } from "#src/executables";
 
-describe.concurrent("browser executable discovery", () => {
-  test("keeps explicit overrides without requiring a standard installation", async () => {
+describe.concurrent("browserExecutables", () => {
+  test("when explicit executable overrides exist, uses them without requiring a standard installation", async () => {
     expect(
       await browserExecutables(
         { enabled: true, command: "/custom/browser", chromiumExecutable: "/custom/chrome" },
@@ -17,7 +17,7 @@ describe.concurrent("browser executable discovery", () => {
     ).toEqual({ executable: "/custom/browser", chromium: "/custom/chrome" });
   });
 
-  test("resolves a symlinked launcher to its native sibling and discovers pinned Chrome", async () => {
+  test("when the launcher is symlinked, finds its native sibling and pinned Chrome", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-discovery-"));
 
     try {
@@ -55,7 +55,7 @@ describe.concurrent("browser executable discovery", () => {
     }
   });
 
-  test("accepts native PATH installs and extracted archives, without selecting another Chrome version", async () => {
+  test("when native or extracted installations exist, resolves them without selecting another Chrome version", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-discovery-"));
 
     try {

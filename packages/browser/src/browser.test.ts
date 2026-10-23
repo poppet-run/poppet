@@ -93,8 +93,8 @@ const call = (tools: ReadonlyArray<BrowserTool>, name: string, input: Schema.Jso
     return yield* prepared.execute;
   });
 
-describe.concurrent("browser tools", () => {
-  test("publishes strict object schemas and rejects invalid no-argument inputs", async () => {
+describe.concurrent("browser.ts", () => {
+  test("when browser tools are published, uses strict object schemas and rejects invalid no-argument inputs", async () => {
     const state = await fixture();
 
     try {
@@ -129,7 +129,7 @@ describe.concurrent("browser tools", () => {
     }
   });
 
-  test("isolates runs, accepts only current references, and reaps its daemon and commands", async () => {
+  test("when browser runs finish and restart, isolates state, rejects stale references, and reaps processes", async () => {
     const state = await fixture();
 
     try {
@@ -185,7 +185,7 @@ describe.concurrent("browser tools", () => {
     }
   });
 
-  test("accepts bare snapshot references without allowing stale references", async () => {
+  test("when references omit the @ prefix, accepts current references and rejects stale ones", async () => {
     const state = await fixture();
 
     try {
@@ -209,7 +209,7 @@ describe.concurrent("browser tools", () => {
     }
   });
 
-  test("rejects session/flag overrides, disallowed URLs, and unsafe values before dispatch", async () => {
+  test("when inputs override flags or use disallowed URLs or unsafe values, rejects them before dispatch", async () => {
     const state = await fixture();
 
     try {
@@ -254,7 +254,7 @@ describe.concurrent("browser tools", () => {
     }
   });
 
-  test("wildcard domains allow HTTP(S) hosts without relaxing URL, action, or process restrictions", async () => {
+  test("when wildcard domains are enabled, permits HTTP(S) hosts while retaining other restrictions", async () => {
     const state = await fixture();
 
     try {
@@ -342,7 +342,7 @@ describe.concurrent("browser tools", () => {
     ["navigation", "net::ERR_NAME_NOT_RESOLVED at https://example.com/"],
     ["missing-error", "Browser action failed."],
     ["empty-error", "Browser action failed."],
-  ])("reports %s failures when opening a URL", async (mode, message) => {
+  ])("when URL navigation has a %s failure, reports it", async (mode, message) => {
     const state = await fixture(mode);
 
     try {
@@ -365,7 +365,7 @@ describe.concurrent("browser tools", () => {
   });
 
   test.each(["invalid", "overflow", "stale", "uncertain"])(
-    "handles %s failures and never retries an action",
+    "when a browser action has a %s failure, reports it without retrying",
     async (mode) => {
       const state = await fixture(mode);
 
@@ -413,7 +413,7 @@ describe.concurrent("browser tools", () => {
     },
   );
 
-  test("disabled and incompatible installations never launch a daemon", async () => {
+  test("when browser support is disabled or incompatible, launches no daemon", async () => {
     const state = await fixture("version");
 
     try {
@@ -429,7 +429,7 @@ describe.concurrent("browser tools", () => {
     }
   });
 
-  test("cancellation stops a pending interaction and the run-owned daemon", async () => {
+  test("when an interaction is cancelled, stops it and the run-owned daemon", async () => {
     const state = await fixture("stall");
 
     const fiber = Effect.runFork(
@@ -463,7 +463,7 @@ describe.concurrent("browser tools", () => {
     }
   });
 
-  test("command deadlines kill and reap a stalled subprocess", async () => {
+  test("when a command reaches its deadline, kills and reaps the stalled subprocess", async () => {
     const state = await fixture("stall");
 
     try {
@@ -486,7 +486,7 @@ describe.concurrent("browser tools", () => {
     }
   });
 
-  test("request deadlines leave uncertain outcomes and close the daemon", async () => {
+  test("when a request reaches its deadline, records uncertainty and closes the daemon", async () => {
     const state = await fixture("stall");
 
     try {
@@ -517,19 +517,22 @@ describe.concurrent("browser tools", () => {
     }
   });
 
-  test.each(["stdout", "stderr"])("caps %s before unbounded buffering", async (pipe) => {
-    await expect(
-      Effect.runPromise(
-        runBrowserCommand(
-          [process.execPath, "--eval", `process.${pipe}.write("x".repeat(262145))`],
-          tmpdir(),
-          {},
+  test.each(["stdout", "stderr"])(
+    "when %s exceeds its byte cap, rejects it before unbounded buffering",
+    async (pipe) => {
+      await expect(
+        Effect.runPromise(
+          runBrowserCommand(
+            [process.execPath, "--eval", `process.${pipe}.write("x".repeat(262145))`],
+            tmpdir(),
+            {},
+          ),
         ),
-      ),
-    ).rejects.toHaveProperty("reason", "tool-limit");
-  });
+      ).rejects.toHaveProperty("reason", "tool-limit");
+    },
+  );
 
-  test("results preserve Unicode and respect the serialized byte budget", () => {
+  test("when results contain long Unicode text, preserves valid Unicode within the serialized budget", () => {
     const output = browserResult("https://example.com/", '😀"'.repeat(4000), 1024);
     expect(Buffer.byteLength(output)).toBeLessThanOrEqual(1024);
     const result = JSON.parse(output);

@@ -245,8 +245,8 @@ const scheduled = (destination: DeliveryDestination | null) =>
     return repo.occurrence(claimed.occurrence.id);
   });
 
-describe.concurrent("messaging gateway", () => {
-  test("explicit project and skill selection persists across restart, rejects invalid replacements, and resets only with new", async () => {
+describe.concurrent("Gateway", () => {
+  test("when project and skill selections change across restart, preserves valid snapshots and resets only with new", async () => {
     const state = await fixture();
 
     try {
@@ -296,7 +296,7 @@ describe.concurrent("messaging gateway", () => {
       await state.close();
     }
   });
-  test("quiet monitors cannot starve alerts; changed payloads survive restart and uncertain sends are not repeated", async () => {
+  test("when monitors stay quiet or sends become uncertain, preserves changed alerts across restart without starvation or replay", async () => {
     let uncertain = false;
     const attempts: string[] = [];
 
@@ -475,7 +475,7 @@ describe.concurrent("messaging gateway", () => {
   });
 
   test.each([false, true])(
-    "chat task delivery uses the current checked conversation, revoked: %s",
+    "when conversation access is revoked=%s, validates current authorization before saving chat task delivery",
     async (revoked) => {
       let denied = false;
       let calls = 0;
@@ -571,7 +571,7 @@ describe.concurrent("messaging gateway", () => {
     },
   );
 
-  test("snapshots a selected skill, resumes it after restart, and starts an unskilled replacement", async () => {
+  test("when a selected skill changes after restart, retains its snapshot until a new unskilled session replaces it", async () => {
     const adapter = "test-channel";
     const state = await fixture({ id: adapter });
     const path = join(state.directory, "skills/review/SKILL.md");
@@ -655,7 +655,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("invalid selection replies without changing the binding or invoking a model", async () => {
+  test("when selection is invalid, replies without changing the binding or invoking a model", async () => {
     const state = await fixture();
 
     try {
@@ -700,7 +700,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("recovers a selected session created before binding without reloading its skill", async () => {
+  test("when a selected session exists before binding, recovers it without reloading its skill", async () => {
     const state = await fixture();
     const path = join(state.directory, "skills/review/SKILL.md");
     await mkdir(join(state.directory, "skills/review"), { recursive: true });
@@ -753,7 +753,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("polling records overload rejections and replies atomically before checkpointing", async () => {
+  test("when polling overloads the inbox, commits rejections and replies atomically before checkpointing", async () => {
     const offsets: (string | null)[] = [];
 
     const state = await fixture({
@@ -821,7 +821,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("a failed cursor commit replays the accepted update without repeating model work", async () => {
+  test("when cursor commit fails, replays acceptance without repeating model work", async () => {
     const state = await fixture({
       id: "telegram",
       poll: () => Effect.succeed([{ cursor: "2", message: message("first", "private-chat") }]),
@@ -860,7 +860,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("replayed polling updates deduplicate after acceptance, and conversation bindings survive restart", async () => {
+  test("when polling updates replay after restart, deduplicates accepted work and retains conversation bindings", async () => {
     const state = await fixture({
       id: "telegram",
       poll: (cursor) =>
@@ -913,7 +913,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("polled cancellation bypasses a full inbox without starting another run", async () => {
+  test("when cancellation is polled with a full inbox, handles it without starting another run", async () => {
     const started = Deferred.makeUnsafe<void>();
     let cancel = false;
 
@@ -968,7 +968,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("delivers a saved occurrence after restart to its snapshot, without changing the chat session", async () => {
+  test("when a saved occurrence is delivered after restart, uses its destination snapshot without changing chat", async () => {
     const adapter = "test-channel";
     const state = await fixture({ id: adapter });
 
@@ -1014,7 +1014,7 @@ describe.concurrent("messaging gateway", () => {
   });
 
   test.each(["unavailable", "permission", "uncertain"] as const)(
-    "keeps scheduled %s delivery separate from execution across restart",
+    "when scheduled delivery is %s, keeps its state separate from execution across restart",
     async (reason) => {
       let attempts = 0;
       const destinations: string[] = [];
@@ -1067,7 +1067,7 @@ describe.concurrent("messaging gateway", () => {
     },
   );
 
-  test("a crash during a scheduled send leaves uncertainty and blocks later chunks after restart", async () => {
+  test("when a scheduled send crashes, retains uncertainty and blocks later chunks after restart", async () => {
     const sending = Deferred.makeUnsafe<void>();
     let attempts = 0;
 
@@ -1116,7 +1116,7 @@ describe.concurrent("messaging gateway", () => {
   });
 
   test.each(["owner", "guild", "parent", "account"])(
-    "rejects a scheduled result with changed %s authorization",
+    "when scheduled delivery has changed %s authorization, rejects it",
     async (field) => {
       const state = await fixture();
 
@@ -1149,7 +1149,7 @@ describe.concurrent("messaging gateway", () => {
     },
   );
 
-  test("rechecks deleted or revoked threads immediately before delivery and leaves tasks without destinations local", async () => {
+  test("when threads are deleted or revoked, rechecks access before delivery and keeps destination-free tasks local", async () => {
     let allowed = true;
 
     const state = await fixture({
@@ -1181,7 +1181,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("validates explicit task destinations before saving and rejects an unauthorized parent", async () => {
+  test("when explicit task destinations are supplied, validates them before saving and rejects unauthorized parents", async () => {
     let parent = "parent";
     const state = await fixture({ destination: () => Effect.succeed(parent) });
 
@@ -1228,7 +1228,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("reaction failures do not fail or repeat model work or reply delivery", async () => {
+  test("when reactions fail, continues model work and reply delivery without repetition", async () => {
     const state = await fixture({
       mark: () => Effect.fail(new ChannelError({ reason: "permission", message: "Cannot react" })),
     });
@@ -1253,7 +1253,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("reports failed inference in the thread without publishing partial text or retrying", async () => {
+  test("when inference fails, reports it in the thread without partial text or retry", async () => {
     const state = await fixture({}, () =>
       Stream.concat(
         Stream.make({ type: "text-delta" as const, text: "Partial private response" }),
@@ -1289,7 +1289,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("an accepted message is answered and delivered without waiting for a polling timer", async () => {
+  test("when a message is accepted, answers and delivers it without waiting for a polling timer", async () => {
     const incoming = Effect.runSync(Queue.make<IncomingMessage>());
     const delivered = Deferred.makeUnsafe<void>();
 
@@ -1316,7 +1316,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("runs receive and delivery loops, and shutdown preserves queued work while interrupting an active run", async () => {
+  test("when receive and delivery loops shut down, preserves queued work and interrupts active inference", async () => {
     const incoming = Effect.runSync(Queue.make<IncomingMessage>());
     const delivered = Deferred.makeUnsafe<void>();
     const blocked = Deferred.makeUnsafe<void>();
@@ -1375,7 +1375,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("requires mentions only in parent channels, adopts threads, deduplicates and resumes after restart", async () => {
+  test("when parent and thread messages arrive across restart, applies mention rules and deduplicates while resuming bindings", async () => {
     const state = await fixture();
 
     try {
@@ -1440,7 +1440,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("recovers queued work and committed answers without replaying interrupted runs", async () => {
+  test("when queued work and committed answers survive a crash, recovers them without replaying interrupted runs", async () => {
     const state = await fixture();
 
     try {
@@ -1502,7 +1502,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("reconciles uncertain thread creation before running the model", async () => {
+  test("when thread creation is uncertain, reconciles it before inference", async () => {
     let attempts = 0;
 
     const state = await fixture({
@@ -1535,7 +1535,7 @@ describe.concurrent("messaging gateway", () => {
   });
 
   test.each(["unavailable", "permission", "uncertain"] as const)(
-    "handles %s delivery without repeating inference",
+    "when delivery is %s, handles it without repeating inference",
     async (reason) => {
       let attempts = 0;
 
@@ -1572,7 +1572,7 @@ describe.concurrent("messaging gateway", () => {
     },
   );
 
-  test("splits replies at paragraph, line, then word boundaries without losing text", () => {
+  test("when replies exceed the chunk limit, splits at paragraph, line, then word boundaries without losing text", () => {
     const paragraphs = `${"a".repeat(12)}\n\n${"b".repeat(5)} ${"c".repeat(4)}`;
 
     expect(chunks(paragraphs, 20)).toEqual([
@@ -1587,7 +1587,7 @@ describe.concurrent("messaging gateway", () => {
     expect(chunks("", 10)).toEqual([]);
   });
 
-  test("preserves Unicode chunks and stops later chunks after an uncertain send", async () => {
+  test("when a Unicode chunk send is uncertain, preserves text and stops later chunks", async () => {
     let attempts = 0;
     const text = "x".repeat(1999) + "😀" + "y".repeat(2200);
 
@@ -1628,7 +1628,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("cancels only the thread's active and queued requests while CLI chat can continue", async () => {
+  test("when a thread is cancelled, stops only its active and queued requests while CLI chat continues", async () => {
     const started = Deferred.makeUnsafe<void>();
 
     const state = await fixture({}, (request) => {
@@ -1678,7 +1678,7 @@ describe.concurrent("messaging gateway", () => {
     }
   });
 
-  test("bounds pending work and preserves cancellation at capacity", async () => {
+  test("when pending work reaches capacity, rejects excess work and keeps cancellation available", async () => {
     const state = await fixture();
 
     try {
@@ -1708,8 +1708,8 @@ describe.concurrent("messaging gateway", () => {
   });
 });
 
-describe("managed conversation names", () => {
-  test("skips an old session's pending naming after its binding is replaced", async () => {
+describe("conversationNaming", () => {
+  test("when a session binding is replaced, skips naming the old session", async () => {
     const started = Deferred.makeUnsafe<void>();
     const release = Deferred.makeUnsafe<void>();
     const renames: string[] = [];
@@ -1796,109 +1796,116 @@ describe("managed conversation names", () => {
     "uncertain",
     "existing-thread",
     "unproven-creation",
-  ])("handles %s names after answer delivery without repeating inference", async (mode) => {
-    let current = "First question";
-    const renames: string[] = [];
-    let titleRequests = 0;
+  ])(
+    "when names are %s after answer delivery, handles them without repeating inference",
+    async (mode) => {
+      let current = "First question";
+      const renames: string[] = [];
+      let titleRequests = 0;
 
-    const naming: NonNullable<MessagingChannel["Service"]["naming"]> = {
-      sanitize: (title) => title,
-      changes: Stream.never,
-      conversation: (input, title) =>
-        Effect.succeed({
-          id: `thread-${input.messageId}`,
-          managedName: mode === "unproven-creation" ? null : title,
-        }),
-      current: () => Effect.succeed(current),
-      rename: (_input, _id, expected, title) =>
-        Effect.suspend(() => {
-          if (current !== expected) return Effect.succeed(null);
-          renames.push(title);
+      const naming: NonNullable<MessagingChannel["Service"]["naming"]> = {
+        sanitize: (title) => title,
+        changes: Stream.never,
+        conversation: (input, title) =>
+          Effect.succeed({
+            id: `thread-${input.messageId}`,
+            managedName: mode === "unproven-creation" ? null : title,
+          }),
+        current: () => Effect.succeed(current),
+        rename: (_input, _id, expected, title) =>
+          Effect.suspend(() => {
+            if (current !== expected) return Effect.succeed(null);
+            renames.push(title);
 
-          if (mode === "permission" || mode === "rate-limit")
-            return Effect.fail(
-              new ChannelError({
-                reason: mode === "permission" ? "permission" : "unavailable",
-                message: "Cannot rename",
-                retryAfterMs: 60000,
-              }),
+            if (mode === "permission" || mode === "rate-limit")
+              return Effect.fail(
+                new ChannelError({
+                  reason: mode === "permission" ? "permission" : "unavailable",
+                  message: "Cannot rename",
+                  retryAfterMs: 60000,
+                }),
+              );
+            current = title;
+
+            return mode === "uncertain"
+              ? Effect.fail(new ChannelError({ reason: "uncertain", message: "Lost reply" }))
+              : Effect.succeed(current);
+          }),
+      };
+
+      const state = await fixture({ naming }, (request) => {
+        if (request.settings.toolChoice === "none") {
+          titleRequests++;
+          expect(state.sent).toHaveLength(1);
+
+          return response("Generated conversation title");
+        }
+
+        return response();
+      });
+
+      try {
+        const savedId = await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            const store = yield* Store;
+            const repo = yield* GatewayRepository;
+            yield* gateway.accept(
+              message("title", mode === "existing-thread" ? "existing" : null, "First question"),
             );
-          current = title;
+            yield* gateway.processNext;
+            yield* gateway.nameNext;
+            expect(titleRequests).toBe(0);
+            const session = (yield* store.sessions)[0];
 
-          return mode === "uncertain"
-            ? Effect.fail(new ChannelError({ reason: "uncertain", message: "Lost reply" }))
-            : Effect.succeed(current);
-        }),
-    };
+            if (!session) throw new Error("Missing session");
+            expect(session.title).toBe("First question");
+            yield* gateway.deliverNext;
 
-    const state = await fixture({ naming }, (request) => {
-      if (request.settings.toolChoice === "none") {
-        titleRequests++;
+            if (mode === "manual") yield* store.renameSession(session.id, "My manual title");
+
+            if (mode === "external-edit") current = "User's thread name";
+            yield* gateway.nameNext;
+            yield* gateway.nameNext;
+            expect((yield* store.runs(session.id))[0]?.status).toBe("completed");
+            expect(yield* store.messages(session.id)).toHaveLength(2);
+            expect((yield* store.session(session.id))?.title).toBe(
+              mode === "manual" ? "My manual title" : "Generated conversation title",
+            );
+
+            if (["external-edit", "permission", "rate-limit"].includes(mode)) {
+              expect(repo.namedBinding("discord", "bot", "thread-title")?.namingDisabled).toBe(
+                true,
+              );
+            }
+
+            return session.id;
+          }),
+        );
+
+        // Reopen the store and gateway. Neither naming nor uncertain renames repeat.
+        await state.run(
+          Effect.gen(function* () {
+            yield* (yield* Gateway).nameNext;
+            expect((yield* (yield* Store).session(savedId))?.titleAttempted).toBe(
+              mode !== "manual",
+            );
+          }),
+        );
+        expect(titleRequests).toBe(mode === "manual" ? 0 : 1);
+        expect(renames).toEqual(
+          ["external-edit", "existing-thread", "unproven-creation"].includes(mode)
+            ? []
+            : [mode === "manual" ? "My manual title" : "Generated conversation title"],
+        );
         expect(state.sent).toHaveLength(1);
-
-        return response("Generated conversation title");
+      } finally {
+        await state.close();
       }
+    },
+  );
 
-      return response();
-    });
-
-    try {
-      const savedId = await state.run(
-        Effect.gen(function* () {
-          const gateway = yield* Gateway;
-          const store = yield* Store;
-          const repo = yield* GatewayRepository;
-          yield* gateway.accept(
-            message("title", mode === "existing-thread" ? "existing" : null, "First question"),
-          );
-          yield* gateway.processNext;
-          yield* gateway.nameNext;
-          expect(titleRequests).toBe(0);
-          const session = (yield* store.sessions)[0];
-
-          if (!session) throw new Error("Missing session");
-          expect(session.title).toBe("First question");
-          yield* gateway.deliverNext;
-
-          if (mode === "manual") yield* store.renameSession(session.id, "My manual title");
-
-          if (mode === "external-edit") current = "User's thread name";
-          yield* gateway.nameNext;
-          yield* gateway.nameNext;
-          expect((yield* store.runs(session.id))[0]?.status).toBe("completed");
-          expect(yield* store.messages(session.id)).toHaveLength(2);
-          expect((yield* store.session(session.id))?.title).toBe(
-            mode === "manual" ? "My manual title" : "Generated conversation title",
-          );
-
-          if (["external-edit", "permission", "rate-limit"].includes(mode)) {
-            expect(repo.namedBinding("discord", "bot", "thread-title")?.namingDisabled).toBe(true);
-          }
-
-          return session.id;
-        }),
-      );
-
-      // Reopen the store and gateway. Neither naming nor uncertain renames repeat.
-      await state.run(
-        Effect.gen(function* () {
-          yield* (yield* Gateway).nameNext;
-          expect((yield* (yield* Store).session(savedId))?.titleAttempted).toBe(mode !== "manual");
-        }),
-      );
-      expect(titleRequests).toBe(mode === "manual" ? 0 : 1);
-      expect(renames).toEqual(
-        ["external-edit", "existing-thread", "unproven-creation"].includes(mode)
-          ? []
-          : [mode === "manual" ? "My manual title" : "Generated conversation title"],
-      );
-      expect(state.sent).toHaveLength(1);
-    } finally {
-      await state.close();
-    }
-  });
-
-  test("reconciles a pending rename after restart without issuing it again", async () => {
+  test("when a pending rename survives restart, reconciles it without issuing it again", async () => {
     let current = "Original";
     const renames: string[] = [];
 
@@ -1958,7 +1965,7 @@ describe("managed conversation names", () => {
   });
 });
 
-describe.concurrent("attachment gateway", () => {
+describe.concurrent("service.ts", () => {
   const document = {
     kind: "document" as const,
     fileId: "original",
@@ -1966,7 +1973,7 @@ describe.concurrent("attachment gateway", () => {
     mime: "text/plain",
   };
 
-  test("cancel remains responsive during attachment download and attachment URLs do not grant fetch permission", async () => {
+  test("when attachments are downloading, keeps cancellation responsive and grants no fetch authority from attachment URLs", async () => {
     const started = Deferred.makeUnsafe<void>();
     let cancelled = false;
 
@@ -2053,7 +2060,7 @@ describe.concurrent("attachment gateway", () => {
     }
   });
 
-  test("persists provenance, deduplicates across restart, and recalls/searches source text without promoting it", async () => {
+  test("when attachments survive restart, retains provenance and permits recall without promoting source text to authority", async () => {
     let downloads = 0;
     const input = { ...message("file", "thread", "Summarize this"), attachment: document };
 
@@ -2120,7 +2127,7 @@ describe.concurrent("attachment gateway", () => {
     }
   });
 
-  test("reuses an extraction saved before inference and rejects overflow/disabled voice without inference", async () => {
+  test("when extraction was saved before inference, reuses it and rejects overflow or disabled voice without inference", async () => {
     let downloads = 0;
 
     const state = await fixture(
@@ -2185,7 +2192,7 @@ describe.concurrent("attachment gateway", () => {
     }
   });
 
-  test("shows the exact transcript and rejects a task tool call until a subsequent text confirmation", async () => {
+  test("when voice requests a task, shows the exact transcript and requires later text confirmation", async () => {
     const transcript = "Remind me to review notes at 09:00 tomorrow in Europe/London.";
 
     const processor: AttachmentProcessor["Service"] = {

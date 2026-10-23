@@ -18,8 +18,8 @@ const settings = {
   token: Redacted.make("discord-secret"),
 };
 
-describe.concurrent("Discord settings", () => {
-  test("setup saves protected settings offline without leaking the token", async () => {
+describe.concurrent("settings.ts", () => {
+  test("when Discord setup receives valid settings, saves them privately without network access or token disclosure", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-discord-"));
 
     try {
@@ -46,7 +46,7 @@ describe.concurrent("Discord settings", () => {
   });
 
   test.each(["", "x".repeat(8193)])(
-    "setup rejects invalid tokens before writing settings",
+    "when the Discord token is invalid in case %#, rejects setup before writing settings",
     async (token) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-discord-input-"));
 
@@ -75,18 +75,21 @@ describe.concurrent("Discord settings", () => {
       name: "empty allowed channels",
       contents: JSON.stringify({ ...settings, channelIds: [], token: "discord-secret" }),
     },
-  ])("rejects $name without exposing settings contents", async ({ contents }) => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-discord-invalid-"));
+  ])(
+    "when Discord settings contain $name, rejects them without exposing their contents",
+    async ({ contents }) => {
+      const directory = await mkdtemp(join(tmpdir(), "poppet-discord-invalid-"));
 
-    try {
-      await Effect.runPromise(saveDiscordSettings(directory, settings));
-      const path = join(directory, "channels/discord.json");
-      await writeFile(path, contents);
-      const result = await Effect.runPromise(loadDiscordSettings(directory).pipe(Effect.result));
-      expect(result).toHaveProperty("failure.reason", "configuration");
-      expect(JSON.stringify(result)).not.toContain("discord-secret");
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
+      try {
+        await Effect.runPromise(saveDiscordSettings(directory, settings));
+        const path = join(directory, "channels/discord.json");
+        await writeFile(path, contents);
+        const result = await Effect.runPromise(loadDiscordSettings(directory).pipe(Effect.result));
+        expect(result).toHaveProperty("failure.reason", "configuration");
+        expect(JSON.stringify(result)).not.toContain("discord-secret");
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 });

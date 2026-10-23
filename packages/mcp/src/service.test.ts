@@ -117,8 +117,8 @@ const reaped = (pid: number) =>
     while (!dead(pid)) await new Promise((resolve) => setTimeout(resolve, 5));
   });
 
-describe("MCP stdio client", () => {
-  test("status never launches, discovery walks pages, calls validate original optional fields, and shutdown reaps the child", async () => {
+describe("MCP", () => {
+  test("when MCP is inspected, discovered, called, and closed, starts lazily, walks pages, validates arguments, and reaps the child", async () => {
     const state = await fixture();
     let pid = 0;
 
@@ -168,32 +168,35 @@ describe("MCP stdio client", () => {
     "endless",
     "no-tools",
     "protocol-startup",
-  ])("rejects %s discovery and closes the child without disabling built-ins", async (mode) => {
-    const state = await fixture(mode);
+  ])(
+    "when discovery is %s, rejects it and closes the child without disabling built-ins",
+    async (mode) => {
+      const state = await fixture(mode);
 
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
-          expect((yield* (yield* MCP).status)[0]).toMatchObject({
-            state: "unavailable",
-            pid: null,
-            availableTools: [],
-          });
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
+            expect((yield* (yield* MCP).status)[0]).toMatchObject({
+              state: "unavailable",
+              pid: null,
+              availableTools: [],
+            });
 
-          const pid = Number(
-            yield* Effect.promise(() => readFile(join(state.directory, "pid"), "utf8")),
-          );
+            const pid = Number(
+              yield* Effect.promise(() => readFile(join(state.directory, "pid"), "utf8")),
+            );
 
-          expect(dead(pid)).toBe(true);
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
+            expect(dead(pid)).toBe(true);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
-  test("scheduled permissions are an explicit subset and catalog notifications never add tools", async () => {
+  test("when scheduled permissions or catalog notifications change, allows only the explicit scheduled subset", async () => {
     const state = await fixture("normal", ["read", "write", "notify"], ["read"]);
 
     try {
@@ -218,7 +221,7 @@ describe("MCP stdio client", () => {
   });
 
   test.each(["error", "disconnect", "invalid-output"])(
-    "distinguishes %s without replay",
+    "when a call returns %s, classifies the failure without replay",
     async (name) => {
       const state = await fixture("normal", [name]);
 
@@ -240,7 +243,7 @@ describe("MCP stdio client", () => {
     },
   );
 
-  test("cancellation waits for teardown while the owning layer stays open", async () => {
+  test("when cancellation occurs with the owning layer open, waits for child teardown", async () => {
     const state = await fixture("stubborn", ["hang"]);
 
     try {
@@ -279,7 +282,7 @@ describe("MCP stdio client", () => {
     }
   }, 10000);
 
-  test("an idle protocol failure reaps the child and rejects calls from a retained catalog", async () => {
+  test("when an idle protocol failure occurs, reaps the child and rejects retained catalog calls", async () => {
     const state = await fixture("protocol-idle", ["read"]);
 
     try {
@@ -309,180 +312,139 @@ describe("MCP stdio client", () => {
       await state.close();
     }
   });
-});
 
-test("a failed server reconnects on a later request after its backoff, without replaying calls", async () => {
-  const state = await fixture("protocol-idle", ["read"]);
+  test("when backoff expires after server failure, reconnects on a later request without replaying calls", async () => {
+    const state = await fixture("protocol-idle", ["read"]);
 
-  try {
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const mcp = yield* MCP;
-        yield* TestClock.setTime(1_000_000);
-        expect(yield* mcp.snapshot(false)).toHaveLength(1);
-        const first = (yield* mcp.status)[0]!.pid!;
-
-        // A successful reconnect resets the backoff, so each later failure waits 30 seconds.
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const pid = (yield* mcp.status)[0]!.pid!;
-          process.kill(pid, "SIGUSR1");
-          yield* reaped(pid);
-          const failedAt = yield* Clock.currentTimeMillis;
-          expect((yield* mcp.status)[0]).toMatchObject({
-            state: "unavailable",
-            retryAt: failedAt + 30_000,
-          });
-          yield* TestClock.adjust(29_999);
-          expect(yield* mcp.snapshot(false)).toEqual([]);
-          yield* TestClock.adjust(1);
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const mcp = yield* MCP;
+          yield* TestClock.setTime(1_000_000);
           expect(yield* mcp.snapshot(false)).toHaveLength(1);
-          expect((yield* mcp.status)[0]).toMatchObject({ state: "connected", retryAt: null });
-          expect((yield* mcp.status)[0]!.pid).not.toBe(first);
-        }
-      }).pipe(Effect.provide(state.layer), Effect.provide(TestClock.layer())),
-    );
-    expect((await state.events()).filter((event) => event.method === "tools/call")).toHaveLength(0);
-  } finally {
-    await state.close();
-  }
-});
+          const first = (yield* mcp.status)[0]!.pid!;
 
-test.each(["", "false"])(
-  "ordinary selected environment value %j permits discovery",
-  async (value) => {
-    const previous = process.env.POPPET_MCP_SELECTED;
-    process.env.POPPET_MCP_SELECTED = value;
-
-    const state = await fixture("normal", ["read"], [], {
-      SELECTED: { env: "POPPET_MCP_SELECTED" },
-    });
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          expect((yield* (yield* MCP).snapshot(false)).map((tool) => tool.toolName)).toEqual([
-            "read",
-          ]);
-        }),
+          // A successful reconnect resets the backoff, so each later failure waits 30 seconds.
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const pid = (yield* mcp.status)[0]!.pid!;
+            process.kill(pid, "SIGUSR1");
+            yield* reaped(pid);
+            const failedAt = yield* Clock.currentTimeMillis;
+            expect((yield* mcp.status)[0]).toMatchObject({
+              state: "unavailable",
+              retryAt: failedAt + 30_000,
+            });
+            yield* TestClock.adjust(29_999);
+            expect(yield* mcp.snapshot(false)).toEqual([]);
+            yield* TestClock.adjust(1);
+            expect(yield* mcp.snapshot(false)).toHaveLength(1);
+            expect((yield* mcp.status)[0]).toMatchObject({ state: "connected", retryAt: null });
+            expect((yield* mcp.status)[0]!.pid).not.toBe(first);
+          }
+        }).pipe(Effect.provide(state.layer), Effect.provide(TestClock.layer())),
       );
-      expect((await state.events())[0]!.environment).toMatchObject({ SELECTED: value });
-    } finally {
-      if (previous === undefined) delete process.env.POPPET_MCP_SELECTED;
-      else process.env.POPPET_MCP_SELECTED = previous;
-      await state.close();
-    }
-  },
-);
-
-test.each(["credential-description", "credential-key"])(
-  "rejects selected secrets in %s",
-  async (mode) => {
-    const previous = process.env.POPPET_MCP_SELECTED;
-    process.env.POPPET_MCP_SELECTED = "selected-mcp-secret";
-    const state = await fixture(mode, ["read"], [], { SELECTED: { env: "POPPET_MCP_SELECTED" } });
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
-          const status = (yield* (yield* MCP).status)[0]!;
-          expect(status).toMatchObject({ state: "unavailable", pid: null });
-          expect(status.diagnostic).toContain("selected credential");
-          expect(JSON.stringify(status)).not.toContain("selected-mcp-secret");
-        }),
+      expect((await state.events()).filter((event) => event.method === "tools/call")).toHaveLength(
+        0,
       );
     } finally {
-      if (previous === undefined) delete process.env.POPPET_MCP_SELECTED;
-      else process.env.POPPET_MCP_SELECTED = previous;
       await state.close();
     }
-  },
-);
+  });
 
-test("passes only selected environment and protected credentials and redacts returned values", async () => {
-  const state = await fixture();
+  test.each(["", "false"])(
+    "when a selected environment value is %j, permits discovery",
+    async (value) => {
+      const previous = process.env.POPPET_MCP_SELECTED;
+      process.env.POPPET_MCP_SELECTED = value;
 
-  const previous = {
-    selected: process.env.POPPET_MCP_SELECTED,
-    provider: process.env.POPPET_OPENROUTER_API_KEY,
-    channel: process.env.POPPET_DISCORD_TOKEN,
-  };
+      const state = await fixture("normal", ["read"], [], {
+        SELECTED: { env: "POPPET_MCP_SELECTED" },
+      });
 
-  process.env.POPPET_MCP_SELECTED = "selected-mcp-secret";
-  process.env.POPPET_OPENROUTER_API_KEY = "unrelated-provider-secret";
-  process.env.POPPET_DISCORD_TOKEN = "unrelated-channel-secret";
-
-  const layer = makeMCPLive(16384).pipe(
-    Layer.provide([
-      Layer.succeed(ApiKeyStore, {
-        read: (name) => {
-          expect(name).toBe("mcp-fixture");
-
-          return Effect.succeed(Redacted.make("saved-mcp-secret"));
-        },
-        write: () => Effect.die("Unexpected write"),
-        remove: () => Effect.die("Unexpected delete"),
-      }),
-      ConfigProvider.layer(
-        ConfigProvider.fromUnknown({
-          POPPET_MCP_SERVERS: JSON.stringify([
-            {
-              ...state.server,
-              environment: {
-                SELECTED: { env: "POPPET_MCP_SELECTED" },
-                SAVED_SECRET: { credential: "mcp-fixture" },
-              },
-            },
-          ]),
-        }),
-      ),
-    ]),
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            expect((yield* (yield* MCP).snapshot(false)).map((tool) => tool.toolName)).toEqual([
+              "read",
+            ]);
+          }),
+        );
+        expect((await state.events())[0]!.environment).toMatchObject({ SELECTED: value });
+      } finally {
+        if (previous === undefined) delete process.env.POPPET_MCP_SELECTED;
+        else process.env.POPPET_MCP_SELECTED = previous;
+        await state.close();
+      }
+    },
   );
 
-  try {
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const tool = (yield* (yield* MCP).snapshot(false))[0]!;
+  test.each(["credential-description", "credential-key"])(
+    "when selected secrets appear in %s, rejects discovery",
+    async (mode) => {
+      const previous = process.env.POPPET_MCP_SELECTED;
+      process.env.POPPET_MCP_SELECTED = "selected-mcp-secret";
+      const state = await fixture(mode, ["read"], [], { SELECTED: { env: "POPPET_MCP_SELECTED" } });
 
-        const result = yield* tool
-          .prepare('{"input":"{}"}')
-          .pipe(Effect.flatMap((call) => call.execute));
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
+            const status = (yield* (yield* MCP).status)[0]!;
+            expect(status).toMatchObject({ state: "unavailable", pid: null });
+            expect(status.diagnostic).toContain("selected credential");
+            expect(JSON.stringify(status)).not.toContain("selected-mcp-secret");
+          }),
+        );
+      } finally {
+        if (previous === undefined) delete process.env.POPPET_MCP_SELECTED;
+        else process.env.POPPET_MCP_SELECTED = previous;
+        await state.close();
+      }
+    },
+  );
 
-        expect(result).toContain("[REDACTED]");
-        expect(result).not.toContain("selected-mcp-secret");
-        expect(result).not.toContain("saved-mcp-secret");
-        expect(JSON.stringify(yield* (yield* MCP).status)).not.toContain("secret");
-      }).pipe(Effect.provide(layer)),
+  test("when a server receives environment and credentials, passes only selected values and redacts results", async () => {
+    const state = await fixture();
+
+    const previous = {
+      selected: process.env.POPPET_MCP_SELECTED,
+      provider: process.env.POPPET_OPENROUTER_API_KEY,
+      channel: process.env.POPPET_DISCORD_TOKEN,
+    };
+
+    process.env.POPPET_MCP_SELECTED = "selected-mcp-secret";
+    process.env.POPPET_OPENROUTER_API_KEY = "unrelated-provider-secret";
+    process.env.POPPET_DISCORD_TOKEN = "unrelated-channel-secret";
+
+    const layer = makeMCPLive(16384).pipe(
+      Layer.provide([
+        Layer.succeed(ApiKeyStore, {
+          read: (name) => {
+            expect(name).toBe("mcp-fixture");
+
+            return Effect.succeed(Redacted.make("saved-mcp-secret"));
+          },
+          write: () => Effect.die("Unexpected write"),
+          remove: () => Effect.die("Unexpected delete"),
+        }),
+        ConfigProvider.layer(
+          ConfigProvider.fromUnknown({
+            POPPET_MCP_SERVERS: JSON.stringify([
+              {
+                ...state.server,
+                environment: {
+                  SELECTED: { env: "POPPET_MCP_SELECTED" },
+                  SAVED_SECRET: { credential: "mcp-fixture" },
+                },
+              },
+            ]),
+          }),
+        ),
+      ]),
     );
-    const start = (await state.events())[0]!;
-    expect(start.environment).toMatchObject({
-      SELECTED: "selected-mcp-secret",
-      SAVED_SECRET: "saved-mcp-secret",
-    });
-    expect(start.environment).not.toHaveProperty("POPPET_OPENROUTER_API_KEY");
-    expect(start.environment).not.toHaveProperty("POPPET_DISCORD_TOKEN");
-    expect(start.cwd).toBe(await realpath(state.directory));
-  } finally {
-    for (const [key, value] of [
-      ["POPPET_MCP_SELECTED", previous.selected],
-      ["POPPET_OPENROUTER_API_KEY", previous.provider],
-      ["POPPET_DISCORD_TOKEN", previous.channel],
-    ]) {
-      if (value === undefined) delete process.env[key!];
-      else process.env[key!] = value;
-    }
-
-    await state.close();
-  }
-});
-
-test.each(["huge", "media"])(
-  "bounds %s results without invalid JSON, split Unicode or automatic resource reads",
-  async (name) => {
-    const state = await fixture("normal", [name]);
 
     try {
-      await state.run(
+      await Effect.runPromise(
         Effect.gen(function* () {
           const tool = (yield* (yield* MCP).snapshot(false))[0]!;
 
@@ -490,70 +452,115 @@ test.each(["huge", "media"])(
             .prepare('{"input":"{}"}')
             .pipe(Effect.flatMap((call) => call.execute));
 
-          expect(Buffer.byteLength(result)).toBeLessThanOrEqual(1024);
-          expect(result).not.toContain("�");
-          expect(JSON.parse(result)).toMatchObject({ truncated: true });
+          expect(result).toContain("[REDACTED]");
+          expect(result).not.toContain("selected-mcp-secret");
+          expect(result).not.toContain("saved-mcp-secret");
+          expect(JSON.stringify(yield* (yield* MCP).status)).not.toContain("secret");
+        }).pipe(Effect.provide(layer)),
+      );
+      const start = (await state.events())[0]!;
+      expect(start.environment).toMatchObject({
+        SELECTED: "selected-mcp-secret",
+        SAVED_SECRET: "saved-mcp-secret",
+      });
+      expect(start.environment).not.toHaveProperty("POPPET_OPENROUTER_API_KEY");
+      expect(start.environment).not.toHaveProperty("POPPET_DISCORD_TOKEN");
+      expect(start.cwd).toBe(await realpath(state.directory));
+    } finally {
+      for (const [key, value] of [
+        ["POPPET_MCP_SELECTED", previous.selected],
+        ["POPPET_OPENROUTER_API_KEY", previous.provider],
+        ["POPPET_DISCORD_TOKEN", previous.channel],
+      ]) {
+        if (value === undefined) delete process.env[key!];
+        else process.env[key!] = value;
+      }
 
-          if (name === "media") {
-            expect(JSON.parse(result)).toMatchObject({ omittedContent: 2, content: [] });
-            expect(result).not.toContain("secret-media");
-          }
+      await state.close();
+    }
+  });
+
+  test.each(["huge", "media"])(
+    "when results are %s, bounds them without invalid JSON, split Unicode, or automatic resource reads",
+    async (name) => {
+      const state = await fixture("normal", [name]);
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const tool = (yield* (yield* MCP).snapshot(false))[0]!;
+
+            const result = yield* tool
+              .prepare('{"input":"{}"}')
+              .pipe(Effect.flatMap((call) => call.execute));
+
+            expect(Buffer.byteLength(result)).toBeLessThanOrEqual(1024);
+            expect(result).not.toContain("�");
+            expect(JSON.parse(result)).toMatchObject({ truncated: true });
+
+            if (name === "media") {
+              expect(JSON.parse(result)).toMatchObject({ omittedContent: 2, content: [] });
+              expect(result).not.toContain("secret-media");
+            }
+          }),
+        );
+        expect(
+          (await state.events()).filter((event) => event.method === "tools/call"),
+        ).toHaveLength(1);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when a dispatched call times out and ignores SIGTERM, reaps it without retry", async () => {
+    const state = await fixture("stubborn", ["hang"]);
+    let pid = 0;
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const tool = (yield* (yield* MCP).snapshot(false))[0]!;
+          pid = (yield* (yield* MCP).status)[0]!.pid!;
+          const call = yield* tool.prepare('{"input":"{}"}');
+
+          const error = yield* Effect.promise(() =>
+            expireRequest(state, "tools/call", () =>
+              Effect.runPromise(call.execute.pipe(Effect.flip)),
+            ),
+          );
+
+          expect(error.reason).toBe("tool-uncertain");
         }),
       );
+      expect(dead(pid)).toBe(true);
       expect((await state.events()).filter((event) => event.method === "tools/call")).toHaveLength(
         1,
       );
     } finally {
       await state.close();
     }
-  },
-);
+  }, 20000);
 
-test("bounds a dispatched timeout without retry and reaps a SIGTERM-resistant process", async () => {
-  const state = await fixture("stubborn", ["hang"]);
-  let pid = 0;
+  test("when startup times out, releases the client and reports an actionable status", async () => {
+    const state = await fixture("startup-hang");
 
-  try {
-    await state.run(
-      Effect.gen(function* () {
-        const tool = (yield* (yield* MCP).snapshot(false))[0]!;
-        pid = (yield* (yield* MCP).status)[0]!.pid!;
-        const call = yield* tool.prepare('{"input":"{}"}');
-
-        const error = yield* Effect.promise(() =>
-          expireRequest(state, "tools/call", () =>
-            Effect.runPromise(call.execute.pipe(Effect.flip)),
-          ),
-        );
-
-        expect(error.reason).toBe("tool-uncertain");
-      }),
-    );
-    expect(dead(pid)).toBe(true);
-    expect((await state.events()).filter((event) => event.method === "tools/call")).toHaveLength(1);
-  } finally {
-    await state.close();
-  }
-}, 20000);
-
-test("startup timeout releases the client and leaves an actionable status", async () => {
-  const state = await fixture("startup-hang");
-
-  try {
-    await expireRequest(state, "initialize", () =>
-      state.run(
-        Effect.gen(function* () {
-          expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
-          expect((yield* (yield* MCP).status)[0]).toMatchObject({
-            state: "unavailable",
-            pid: null,
-            diagnostic: expect.stringContaining("retries on a later request"),
-          });
-        }),
-      ),
-    );
-    expect(dead(Number(await readFile(join(state.directory, "pid"), "utf8")))).toBe(true);
-  } finally {
-    await state.close();
-  }
-}, 10000);
+    try {
+      await expireRequest(state, "initialize", () =>
+        state.run(
+          Effect.gen(function* () {
+            expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
+            expect((yield* (yield* MCP).status)[0]).toMatchObject({
+              state: "unavailable",
+              pid: null,
+              diagnostic: expect.stringContaining("retries on a later request"),
+            });
+          }),
+        ),
+      );
+      expect(dead(Number(await readFile(join(state.directory, "pid"), "utf8")))).toBe(true);
+    } finally {
+      await state.close();
+    }
+  }, 10000);
+});
