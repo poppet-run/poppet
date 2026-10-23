@@ -12,23 +12,28 @@ const call = (args: string) => ({
   arguments: args,
 });
 
-describe("web search results", () => {
+describe("web search arguments", () => {
   test("validates complete bounded query arguments", async () => {
-    expect(await Effect.runPromise(decodeWebSearchCall(call('{"query":"current news"}')))).toEqual({
+    const query = "é".repeat(256);
+    expect(await Effect.runPromise(decodeWebSearchCall(call(JSON.stringify({ query }))))).toEqual({
       name: "search_web",
-      query: "current news",
+      query,
     });
 
     await Promise.all(
       [
         "{",
         '{"query":""}',
+        '{"query":" "}',
         '{"query":" leading"}',
+        '{"query":"trailing "}',
+        JSON.stringify({ query: `${query}x` }),
         JSON.stringify({ query: "界".repeat(171) }),
         '{"query":"news","url":"https://example.com"}',
       ].map((args) =>
         expect(Effect.runPromise(decodeWebSearchCall(call(args)))).rejects.toMatchObject({
           reason: "tool-arguments",
+          message: "Invalid arguments for poppet_web.search_web.",
         }),
       ),
     );
