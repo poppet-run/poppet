@@ -8,10 +8,9 @@ import { Task, Occurrence, TaskError, TaskDefinition, type TaskTarget } from "#s
 // Recurring summaries lose their usefulness after a day. One-off work never expires.
 export const recurringExpiry = 24 * 60 * 60 * 1000;
 
-// Retired monitors remain archived in SQLite and cannot be resumed as ordinary tasks.
 export const taskSql = `SELECT id, name, prompt, provider, model, workload, schedule,
   revision,
-  skill, destination, next_at AS nextAt, paused, created_at AS createdAt FROM (SELECT * FROM jobs WHERE monitor = 0)`;
+  skill, destination, next_at AS nextAt, paused, created_at AS createdAt FROM jobs`;
 
 export const occurrenceSql = `SELECT id, job_id AS jobId, scheduled_at AS scheduledAt, status,
   revision, definition, available_at AS availableAt, origin,

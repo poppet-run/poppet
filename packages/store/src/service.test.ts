@@ -715,7 +715,7 @@ describe("Store", () => {
             { role: "assistant", output: response.output, continuation: response.continuation },
           ]);
           expect(yield* store.status).toMatchObject({
-            schemaVersion: 10,
+            schemaVersion: 1,
             sessions: 1,
             messages: 4,
             runs: 1,
@@ -966,7 +966,7 @@ describe("Store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 10,
+        schemaVersion: 1,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));
@@ -1030,6 +1030,8 @@ describe("Store", () => {
         );
 
         using tampered = new Database(fixtureStore.path);
+        // Simulate corruption that table checks would otherwise reject.
+        tampered.run("PRAGMA ignore_check_constraints = ON");
         tampered
           .query(
             "INSERT INTO messages (session_id, position, created_at, payload) VALUES (?, ?, ?, ?)",

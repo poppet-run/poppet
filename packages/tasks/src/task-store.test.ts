@@ -62,60 +62,6 @@ const fixture = async (catchUpMs = 0) => {
 };
 
 describe.concurrent("TaskRepository", () => {
-  test("when a monitor is archived, excludes it from task controls and keeps ordinary cron runnable", async () => {
-    const state = await fixture();
-
-    try {
-      await state.run((repo, _store, database) =>
-        Effect.sync(() => {
-          const archived = repo.add(recurring, start);
-          database
-            .query("UPDATE jobs SET monitor = 1, paused = 1, next_at = NULL WHERE id = ?")
-            .run(archived.id);
-          const active = repo.add(recurring, start);
-          expect(repo.list().map(({ id }) => id)).toEqual([active.id]);
-          expect(() => repo.resume(archived.id, start)).toThrow("does not exist");
-          repo.reconcile(start + 60_000);
-          expect(repo.claim(start + 60_000)?.task.id).toBe(active.id);
-          expect(repo.status().taskCount).toBe(1);
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
-
-  test("when saved records contain retired project snapshots, reads them without activating project context", async () => {
-    const state = await fixture();
-
-    try {
-      await state.run((repo, store, database) =>
-        Effect.gen(function* () {
-          const project = JSON.stringify({ name: "acorn", content: "Archived instructions" });
-          const session = yield* store.createSession("test-provider", "test-model");
-          database.query("UPDATE sessions SET project = ? WHERE id = ?").run(project, session.id);
-          expect(yield* store.session(session.id)).toEqual(session);
-          const job = repo.add(once, start);
-          database.query("UPDATE jobs SET project = ? WHERE id = ?").run(project, job.id);
-          repo.reconcile(start);
-          const occurrence = repo.claim(start)!.occurrence;
-          database
-            .query(
-              "UPDATE job_occurrences SET definition = json_set(definition, '$.project', json(?)) WHERE id = ?",
-            )
-            .run(project, occurrence.id);
-          expect(repo.task(job.id)).toEqual({ ...job, nextAt: null });
-          expect(repo.occurrence(occurrence.id).definition).toEqual(occurrence.definition);
-          expect(database.query("SELECT project FROM jobs WHERE id = ?").get(job.id)).toEqual({
-            project,
-          });
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
-
   test("when a paused one-off is rearmed, retains it behind an older explicit retry", async () => {
     const state = await fixture();
 
@@ -825,7 +771,7 @@ describe.concurrent("TaskRepository", () => {
           repo.link(active.occurrence.id, session.id, completed.id);
           repo.finish(active.occurrence.id, "completed", null, start + 60_000);
           database.run(
-            "INSERT INTO memories (key, value, source_run_id, updated_at) VALUES ('project', 'Acorn', ?, ?)",
+            "INSERT INTO memories (key, value, origin, source_run_id, updated_at) VALUES ('project', 'Acorn', 'turn', ?, ?)",
             [completed.id, start],
           );
           repo.blockProvider("test-provider", "quota", start);
