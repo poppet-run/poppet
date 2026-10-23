@@ -110,16 +110,14 @@ describe.concurrent("browser.ts", () => {
               additionalProperties: false,
             });
 
-          for (const name of ["snapshot", "close"]) {
-            const tool = tools.find((entry) => entry.toolName === name)!;
-            yield* tool.prepare("{}");
+          const tool = tools.find((entry) => entry.toolName === "snapshot")!;
+          yield* tool.prepare("{}");
 
-            for (const input of [null, true, 1, "text", [], { extra: true }])
-              expect(yield* tool.prepare(JSON.stringify(input)).pipe(Effect.flip)).toHaveProperty(
-                "reason",
-                "tool-arguments",
-              );
-          }
+          for (const input of [null, true, 1, "text", [], { extra: true }])
+            expect(yield* tool.prepare(JSON.stringify(input)).pipe(Effect.flip)).toHaveProperty(
+              "reason",
+              "tool-arguments",
+            );
         }),
       );
       expect(state.commands.every((command) => command[1] === "--version")).toBe(true);
@@ -143,7 +141,6 @@ describe.concurrent("browser.ts", () => {
             "fill",
             "press",
             "scroll",
-            "close",
           ]);
           yield* call(tools, "open", { url: "https://example.com/" });
           expect(JSON.parse(yield* call(tools, "snapshot"))).toMatchObject({
@@ -163,10 +160,6 @@ describe.concurrent("browser.ts", () => {
           const tools = yield* state.tools();
           yield* call(tools, "open", { url: "https://example.com/" });
           expect(JSON.parse(yield* call(tools, "snapshot")).text).not.toContain("Tom");
-          yield* call(tools, "close");
-          expect(
-            yield* call(tools, "open", { url: "https://example.com/" }).pipe(Effect.flip),
-          ).toHaveProperty("reason", "tool-uncertain");
         }),
       );
       await state.cleaned();
@@ -301,7 +294,6 @@ describe.concurrent("browser.ts", () => {
           ).toHaveProperty("reason", "tool-arguments");
           yield* call(tools, "snapshot");
           yield* call(tools, "fill", { reference: "@e1", text: "Tom" });
-          yield* call(tools, "close");
 
           const environment = state.environments.find((env) => env.AGENT_BROWSER_DAEMON === "1")!;
           expect(environment).not.toHaveProperty("AGENT_BROWSER_ALLOWED_DOMAINS");

@@ -81,12 +81,12 @@ chat and MCP tools remain available. Poppet never installs or upgrades software.
 poppet chat new "Use the browser to open https://example.com and summarize its rendered page"
 ```
 
-Tools are `poppet_browser.open`, `snapshot`, `click`, `fill`, `press`, `scroll`, and
-`close`. Inspect a snapshot before clicking/filling its current element references;
+Tools are `poppet_browser.open`, `snapshot`, `click`, `fill`, `press`, and
+`scroll`. Inspect a snapshot before clicking/filling its current element references;
 both `e1` and `@e1` are accepted and checked against that snapshot. Always
 refresh it after interacting. Individual navigation/editing keys are supported,
 without arbitrary shortcuts. Form values travel as structured data and cannot
-become flags. Closing ends browser use for that run.
+become flags. The browser closes automatically when the run ends.
 
 Every run has a fresh private home, directory, namespace, daemon, and browser.
 Cookies, tabs, login state, and references do not persist between messages.

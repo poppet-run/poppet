@@ -125,7 +125,6 @@ export const browserTools = (
     });
 
     let daemon: ReturnType<typeof startBrowserDaemon> | undefined;
-    let closed = false;
     let opened = false;
     const references = new Set<string>();
     const namespace = `p${createHash("sha256").update(runId).digest("hex").slice(0, 8)}`;
@@ -171,17 +170,7 @@ export const browserTools = (
           policyPath,
           JSON.stringify({
             default: "deny",
-            allow: [
-              "navigate",
-              "snapshot",
-              "click",
-              "fill",
-              "press",
-              "scroll",
-              "url",
-              "close",
-              "launch",
-            ],
+            allow: ["navigate", "snapshot", "click", "fill", "press", "scroll", "url", "launch"],
           }),
           { mode: 0o600 },
         );
@@ -235,7 +224,7 @@ export const browserTools = (
 
     const start = Effect.tryPromise({
       try: async (signal) => {
-        if (closed || (daemon !== undefined && !daemon.alive()))
+        if (daemon !== undefined && !daemon.alive())
           throw browserFailure(
             "tool-uncertain",
             "This run's browser stopped. No action was retried.",
@@ -317,7 +306,7 @@ export const browserTools = (
 
     const execute = (name: string, args: Schema.JsonObject) =>
       Effect.gen(function* () {
-        if (name !== "open" && name !== "close" && !opened)
+        if (name !== "open" && !opened)
           return yield* Effect.fail(
             browserFailure("tool-arguments", "Open an allowed URL before using the browser."),
           );
@@ -347,15 +336,6 @@ export const browserTools = (
           });
 
         const data = yield* command(args);
-
-        if (name === "close") {
-          closed = true;
-          opened = false;
-          references.clear();
-          yield* Effect.promise(() => daemon!.stop());
-
-          return browserResult(null, "Browser closed.", toolBytes);
-        }
 
         opened = true;
         const urlData = yield* command({ action: "url" });
@@ -487,12 +467,6 @@ export const browserTools = (
         }),
         "Scroll the current page by a bounded number of pixels.",
         (args) => ({ action: "scroll", direction: args.direction, amount: args.pixels }),
-      ),
-      tool(
-        "close",
-        NoArguments,
-        "Close this run's isolated browser. It cannot be reopened in this run.",
-        () => ({ action: "close" }),
       ),
     ];
   });

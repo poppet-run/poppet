@@ -93,7 +93,6 @@ const workflow = (scenario: "page" | "redirect" | "wildcard") =>
         const snapshot = JSON.parse(yield* call("snapshot"));
         assert.match(snapshot.text, /Rendered fixture/);
         assert.match(snapshot.text, /WebRTC blocked/);
-        yield* call("close");
 
         return;
       }
@@ -113,7 +112,10 @@ const workflow = (scenario: "page" | "redirect" | "wildcard") =>
       assert.match(snapshot.text, /Rendered fixture/);
       assert.match(snapshot.text, /WebRTC blocked/);
       assert.doesNotMatch(snapshot.text, /Saved Tom/);
-      const reference = /textbox "Name" \[ref=(e\d+)\]/.exec(snapshot.text)?.[1];
+      yield* call("press", { key: "Tab" });
+      yield* call("scroll", { direction: "down", pixels: 200 });
+      const current = JSON.parse(yield* call("snapshot"));
+      const reference = /textbox "Name" \[ref=(e\d+)\]/.exec(current.text)?.[1];
       assert(reference, snapshot.text);
       yield* call("fill", { reference: `@${reference}`, text: "Tom" });
       const filled = JSON.parse(yield* call("snapshot"));
@@ -129,7 +131,6 @@ const workflow = (scenario: "page" | "redirect" | "wildcard") =>
       );
 
       assert.equal(denied.reason, "tool-arguments");
-      yield* call("close");
     }),
   );
 
