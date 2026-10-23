@@ -11,8 +11,7 @@ import {
   type ModelRequest,
   type ProviderId,
 } from "#src/index";
-import { chatCompletionsModel } from "#src/protocol/chat-completions";
-import { responsesModel } from "#src/protocol/responses";
+import { chatCompletionsModel, responsesModel } from "#src/protocol/index";
 
 type HttpFetch = (input: Request | string | URL, init?: RequestInit) => Promise<Response>;
 

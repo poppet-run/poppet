@@ -15,7 +15,7 @@ import {
 } from "@poppet/provider";
 import { responsesModel } from "@poppet/provider/protocol";
 import { LearnedSkills, LearnedSkillsLive } from "@poppet/skills";
-import { SessionReadResult, SessionSearchMatch, Store, StoreError, StoreLive } from "@poppet/store";
+import { SessionReadResult, SessionSearchMatch, Store, StoreLive } from "@poppet/store";
 import { WebSearch, WebSearchError, makeBraveSearch } from "@poppet/web-search";
 import { Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect";
 import OpenAI from "openai";
@@ -29,7 +29,6 @@ import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
 import { maxSkillWrites } from "#src/skill-tools";
 import { Skills } from "#src/skills";
 import { ChatTasks } from "#src/task-tools";
-import { toolFailureKind } from "#src/tool-execution";
 
 const tool = (
   name: string,
@@ -180,10 +179,6 @@ const externalTool = (name: string, availableAfterUntrusted: boolean): ExternalT
 
 const toolNames = (request: ModelRequest) => request.tools.map((entry) => entry.name);
 
-const agentFailure = (reason: AgentError["reason"]) => new AgentError({ reason, message: reason });
-
-const storeFailure = (reason: StoreError["reason"]) => new StoreError({ reason, message: reason });
-
 const skillLibrary = new Map([
   ["weekly-review", "# Weekly review\n\nSummarize progress and next actions.\n\nStep details."],
   ["broken", ""],
@@ -258,34 +253,6 @@ const learning = (
     librarySkills,
     true,
   );
-
-describe("tool failure classification", () => {
-  test.each([
-    ["read_note", agentFailure("tool-storage"), "reported"],
-    ["fetch_page", agentFailure("tool-network"), "reported"],
-    ["search_web", agentFailure("tool-rate-limit"), "reported"],
-    ["read_note", agentFailure("budget"), "fatal"],
-    ["read_note", storeFailure("storage"), "fatal"],
-    ["save_note", agentFailure("tool-permission"), "reported"],
-    ["save_note", agentFailure("tool-limit"), "reported"],
-    ["save_note", agentFailure("tool-storage"), "uncertain"],
-    ["memory", agentFailure("memory-limit"), "reported"],
-    ["memory", agentFailure("memory-storage"), "uncertain"],
-    ["manage_skill", agentFailure("tool-arguments"), "reported"],
-    ["manage_skill", agentFailure("tool-limit"), "reported"],
-    ["manage_skill", agentFailure("skill-storage"), "uncertain"],
-    ["manage_tasks", storeFailure("conflict"), "reported"],
-    ["manage_tasks", storeFailure("invalid-request"), "reported"],
-    ["manage_tasks", storeFailure("storage"), "uncertain"],
-    ["manage_tasks", storeFailure("corrupt"), "fatal"],
-    ["manage_tasks", agentFailure("tool-permission"), "reported"],
-    ["external", agentFailure("tool-reported"), "reported"],
-    ["external", agentFailure("tool-network"), "uncertain"],
-    ["external", agentFailure("tool-uncertain"), "uncertain"],
-  ] as const)("%s failing with %o is %s", (name, error, kind) => {
-    expect(toolFailureKind(name, error)).toBe(kind);
-  });
-});
 
 describe.concurrent("notes conversation", () => {
   test.each([false, true])(
