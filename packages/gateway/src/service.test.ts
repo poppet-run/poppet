@@ -19,7 +19,7 @@ import {
 import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive } from "@poppet/memory";
 import { ProviderError, type ModelOperations, type ModelRequest } from "@poppet/provider";
-import { DeliveryDestination, Store, StoreDatabase, StoreLive } from "@poppet/store";
+import { DeliveryDestination, Store, StoreLive } from "@poppet/store";
 import {
   ChatTasksLive,
   TaskRepository,
@@ -29,6 +29,7 @@ import {
   executeOccurrence,
 } from "@poppet/tasks";
 import { Console, Deferred, Effect, Fiber, Layer, Queue, Stream } from "effect";
+import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
 import { AttachmentProcessorLive } from "#src/attachments";
@@ -181,7 +182,7 @@ const fixture = async (
       program: Effect.Effect<
         A,
         E,
-        Gateway | Store | StoreDatabase | GatewayRepository | TaskRepository | Agent | Skills
+        Gateway | Store | SqlClient.SqlClient | GatewayRepository | TaskRepository | Agent | Skills
       >,
     ) =>
       Effect.runPromise(
@@ -198,7 +199,7 @@ const fixture = async (
 const scheduled = (destination: DeliveryDestination | null) =>
   Effect.gen(function* () {
     const repo = yield* TaskRepository;
-    repo.add(
+    yield* repo.add(
       {
         name: "Summary",
         prompt: "Summarize recent conversations",
@@ -211,11 +212,11 @@ const scheduled = (destination: DeliveryDestination | null) =>
       null,
       destination,
     );
-    repo.reconcile(0);
-    const claimed = repo.claim(0)!;
+    yield* repo.reconcile(0);
+    const claimed = (yield* repo.claim(0))!;
     yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
 
-    return repo.occurrence(claimed.occurrence.id);
+    return yield* repo.occurrence(claimed.occurrence.id);
   });
 
 describe.concurrent("Gateway", () => {
@@ -417,7 +418,7 @@ describe.concurrent("Gateway", () => {
             );
 
             if (queuedNotice)
-              (yield* GatewayRepository).scheduleResult(
+              yield* (yield* GatewayRepository).scheduleResult(
                 item.id,
                 item.runId!,
                 destination,
@@ -435,22 +436,24 @@ describe.concurrent("Gateway", () => {
         await state.run(
           Effect.gen(function* () {
             const tasks = yield* TaskRepository;
-            expect(tasks.occurrence(id).status).toBe("failed");
-            expect(tasks.occurrence(id).reason).toContain("restart-service");
-            expect(tasks.deliveries(id).map((part) => part.state)).toEqual(
+            expect((yield* tasks.occurrence(id)).status).toBe("failed");
+            expect((yield* tasks.occurrence(id)).reason).toContain("restart-service");
+            expect((yield* tasks.deliveries(id)).map((part) => part.state)).toEqual(
               queuedNotice ? ["failed"] : [],
             );
-            expect(tasks.list()).toHaveLength(1);
+            expect(yield* tasks.list()).toHaveLength(1);
             allow = true;
-            tasks.retry(id, 0);
-            const claimed = tasks.claim(0)!;
+            yield* tasks.retry(id, 0);
+            const claimed = (yield* tasks.claim(0))!;
             yield* executeOccurrence(tasks, claimed.occurrence, claimed.task);
-            expect(tasks.occurrence(id).status).toBe("completed");
+            expect((yield* tasks.occurrence(id)).status).toBe("completed");
             yield* (yield* Gateway).deliverNext;
-            expect(tasks.deliveries(id).map((part) => part.state)).toEqual(
+            expect((yield* tasks.deliveries(id)).map((part) => part.state)).toEqual(
               queuedNotice ? ["failed", "sent"] : ["sent"],
             );
-            expect(tasks.deliveries(id).at(-1)!.runId).toBe(tasks.occurrence(id).runId!);
+            expect((yield* tasks.deliveries(id)).at(-1)!.runId).toBe(
+              (yield* tasks.occurrence(id)).runId!,
+            );
           }),
         );
         expect(executed).toBe(1);
@@ -495,9 +498,9 @@ describe.concurrent("Gateway", () => {
           expect(yield* store.sessions).toHaveLength(1);
           yield* gateway.accept(message("bad-skill", "thread", "/new --skill missing Review"));
           yield* gateway.processNext;
-          expect((yield* GatewayRepository).binding("discord", "bot", "guild", "thread")).toBe(
-            selected,
-          );
+          expect(
+            yield* (yield* GatewayRepository).binding("discord", "bot", "guild", "thread"),
+          ).toBe(selected);
           yield* gateway.accept(message("unscoped", "thread", "/new Review"));
           yield* gateway.processNext;
           expect(
@@ -575,7 +578,7 @@ describe.concurrent("Gateway", () => {
               message("schedule", null, "Create a weekly review and deliver it here"),
             );
             yield* gateway.processNext;
-            const tasks = (yield* TaskRepository).list();
+            const tasks = yield* (yield* TaskRepository).list();
 
             if (revoked) {
               expect(tasks).toEqual([]);
@@ -624,13 +627,13 @@ describe.concurrent("Gateway", () => {
           const store = yield* Store;
           yield* gateway.accept(message("ordinary", "chat", "Original conversation"));
           yield* gateway.processNext;
-          const original = repo.binding(adapter, "bot", "guild", "chat")!;
+          const original = (yield* repo.binding(adapter, "bot", "guild", "chat"))!;
           const selected = message("selected", "chat", "/new --skill review Review Acorn");
           yield* gateway.accept(selected);
           yield* gateway.accept(selected);
           yield* gateway.processNext;
           expect(yield* gateway.processNext).toBe(false);
-          const skilled = repo.binding(adapter, "bot", "guild", "chat")!;
+          const skilled = (yield* repo.binding(adapter, "bot", "guild", "chat"))!;
           expect(skilled).not.toBe(original);
           expect(yield* store.session(skilled)).toMatchObject({
             skill: {
@@ -661,7 +664,7 @@ describe.concurrent("Gateway", () => {
           yield* gateway.recover;
           yield* gateway.accept(message("follow-up", "chat", "Continue the review"));
           yield* gateway.processNext;
-          expect((yield* GatewayRepository).binding(adapter, "bot", "guild", "chat")).toBe(
+          expect(yield* (yield* GatewayRepository).binding(adapter, "bot", "guild", "chat")).toBe(
             ids.skilled,
           );
           expect(state.requests.at(-1)?.instructions).toContain("saved review procedure");
@@ -678,7 +681,14 @@ describe.concurrent("Gateway", () => {
           expect(state.requests.at(-1)?.instructions).toContain("saved review procedure");
           yield* gateway.accept(message("reset", "chat", "/new Start without a skill"));
           yield* gateway.processNext;
-          const current = (yield* GatewayRepository).binding(adapter, "bot", "guild", "chat")!;
+
+          const current = (yield* (yield* GatewayRepository).binding(
+            adapter,
+            "bot",
+            "guild",
+            "chat",
+          ))!;
+
           expect(current).not.toBe(ids.skilled);
           expect(yield* store.session(current)).toMatchObject({ skill: null });
           expect(state.requests.at(-1)?.instructions).not.toContain("saved review procedure");
@@ -704,7 +714,7 @@ describe.concurrent("Gateway", () => {
           const store = yield* Store;
           yield* gateway.accept(message("original", "chat"));
           yield* gateway.processNext;
-          const original = repo.binding("discord", "bot", "guild", "chat");
+          const original = yield* repo.binding("discord", "bot", "guild", "chat");
 
           for (const [index, text] of [
             "/new",
@@ -715,12 +725,12 @@ describe.concurrent("Gateway", () => {
           ].entries()) {
             yield* gateway.accept(message(`bad-${index}`, "chat", text));
             yield* gateway.processNext;
-            expect(repo.binding("discord", "bot", "guild", "chat")).toBe(original);
+            expect(yield* repo.binding("discord", "bot", "guild", "chat")).toBe(original);
           }
 
           yield* gateway.accept(message("unbound", null, "/new --skill missing prompt"));
           yield* gateway.processNext;
-          expect(repo.binding("discord", "bot", "guild", "thread-unbound")).toBeNull();
+          expect(yield* repo.binding("discord", "bot", "guild", "thread-unbound")).toBeNull();
           expect(yield* store.sessions).toHaveLength(1);
           expect(state.requests).toHaveLength(1);
 
@@ -748,13 +758,13 @@ describe.concurrent("Gateway", () => {
       const selectedId = await state.run(
         Effect.gen(function* () {
           const gateway = yield* Gateway;
-          const { database } = yield* StoreDatabase;
+          const sql = yield* SqlClient.SqlClient;
           yield* gateway.accept(message("original", "chat"));
           yield* gateway.processNext;
           const repo = yield* GatewayRepository;
-          const original = repo.binding("discord", "bot", "guild", "chat");
+          const original = yield* repo.binding("discord", "bot", "guild", "chat");
           yield* gateway.accept(message("selected", "chat", "/new --skill review First request"));
-          database.run(
+          yield* sql.unsafe(
             "CREATE TRIGGER fail_binding BEFORE INSERT ON gateway_bindings BEGIN SELECT RAISE(ABORT, 'test'); END",
           );
           expect(yield* gateway.processNext.pipe(Effect.result)).toHaveProperty(
@@ -763,9 +773,11 @@ describe.concurrent("Gateway", () => {
           );
           const sessions = yield* (yield* Store).sessions;
           expect(sessions).toHaveLength(2);
-          expect(repo.binding("discord", "bot", "guild", "chat")).toBe(original);
+          expect(yield* repo.binding("discord", "bot", "guild", "chat")).toBe(original);
           // An abrupt process crash here leaves the input queued instead of running failure cleanup.
-          database.run("UPDATE gateway_inbox SET state = 'queued' WHERE external_id = 'selected'");
+          yield* sql.unsafe(
+            "UPDATE gateway_inbox SET state = 'queued' WHERE external_id = 'selected'",
+          );
 
           return sessions.find((session) => session.skill?.name === "review")!.id;
         }),
@@ -775,10 +787,10 @@ describe.concurrent("Gateway", () => {
       await state.run(
         Effect.gen(function* () {
           const gateway = yield* Gateway;
-          (yield* StoreDatabase).database.run("DROP TRIGGER fail_binding");
+          yield* (yield* SqlClient.SqlClient).unsafe("DROP TRIGGER fail_binding");
           yield* gateway.recover;
           yield* gateway.processNext;
-          expect((yield* GatewayRepository).binding("discord", "bot", "guild", "chat")).toBe(
+          expect(yield* (yield* GatewayRepository).binding("discord", "bot", "guild", "chat")).toBe(
             selectedId,
           );
           expect(yield* (yield* Store).sessions).toHaveLength(2);
@@ -811,8 +823,8 @@ describe.concurrent("Gateway", () => {
       await state.run(
         Effect.gen(function* () {
           const gateway = yield* Gateway;
-          const { database } = yield* StoreDatabase;
-          database.run(
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql.unsafe(
             "CREATE TRIGGER reject_reply BEFORE INSERT ON gateway_deliveries BEGIN SELECT RAISE(ABORT, 'test'); END",
           );
           expect(yield* gateway.pollOnce.pipe(Effect.result)).toHaveProperty(
@@ -820,13 +832,11 @@ describe.concurrent("Gateway", () => {
             "storage",
           );
           const repo = yield* GatewayRepository;
-          expect(repo.cursor("telegram", "bot")).toBe("64");
-          expect(repo.cursor("discord", "bot")).toBeNull();
-          expect(repo.cursor("telegram", "another-bot")).toBeNull();
-          expect(
-            database.query("SELECT id FROM gateway_inbox WHERE external_id = '64'").get(),
-          ).toBeNull();
-          expect((yield* GatewayRepository).status()).toMatchObject({
+          expect(yield* repo.cursor("telegram", "bot")).toBe("64");
+          expect(yield* repo.cursor("discord", "bot")).toBeNull();
+          expect(yield* repo.cursor("telegram", "another-bot")).toBeNull();
+          expect(yield* sql`SELECT id FROM gateway_inbox WHERE external_id = '64'`).toEqual([]);
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({
             queued: 64,
             failedRequests: 0,
           });
@@ -834,13 +844,13 @@ describe.concurrent("Gateway", () => {
       );
       await state.run(
         Effect.gen(function* () {
-          (yield* StoreDatabase).database.run("DROP TRIGGER reject_reply");
+          yield* (yield* SqlClient.SqlClient).unsafe("DROP TRIGGER reject_reply");
           const gateway = yield* Gateway;
           yield* gateway.recover;
           yield* gateway.pollOnce;
           yield* gateway.pollOnce;
-          expect((yield* GatewayRepository).cursor("telegram", "bot")).toBe("65");
-          expect((yield* GatewayRepository).status()).toMatchObject({
+          expect(yield* (yield* GatewayRepository).cursor("telegram", "bot")).toBe("65");
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({
             queued: 64,
             failedRequests: 1,
             pendingDelivery: 1,
@@ -868,8 +878,8 @@ describe.concurrent("Gateway", () => {
     try {
       await state.run(
         Effect.gen(function* () {
-          const { database } = yield* StoreDatabase;
-          database.run(
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql.unsafe(
             "CREATE TRIGGER reject_cursor BEFORE INSERT ON gateway_cursors BEGIN SELECT RAISE(ABORT, 'test'); END",
           );
           const gateway = yield* Gateway;
@@ -877,18 +887,18 @@ describe.concurrent("Gateway", () => {
             "failure.reason",
             "storage",
           );
-          expect((yield* GatewayRepository).cursor("telegram", "bot")).toBeNull();
-          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 1 });
+          expect(yield* (yield* GatewayRepository).cursor("telegram", "bot")).toBeNull();
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({ queued: 1 });
         }),
       );
       await state.run(
         Effect.gen(function* () {
-          (yield* StoreDatabase).database.run("DROP TRIGGER reject_cursor");
+          yield* (yield* SqlClient.SqlClient).unsafe("DROP TRIGGER reject_cursor");
           const gateway = yield* Gateway;
           yield* gateway.recover;
           yield* gateway.pollOnce;
           yield* gateway.processNext;
-          expect((yield* GatewayRepository).cursor("telegram", "bot")).toBe("2");
+          expect(yield* (yield* GatewayRepository).cursor("telegram", "bot")).toBe("2");
           expect(yield* gateway.processNext).toBe(false);
         }),
       );
@@ -922,9 +932,9 @@ describe.concurrent("Gateway", () => {
           yield* gateway.processNext;
           yield* gateway.deliverNext;
           const repo = yield* GatewayRepository;
-          expect(repo.cursor("telegram", "bot")).toBe("3");
+          expect(yield* repo.cursor("telegram", "bot")).toBe("3");
 
-          return repo.binding("telegram", "bot", "guild", "private-chat");
+          return yield* repo.binding("telegram", "bot", "guild", "private-chat");
         }),
       );
 
@@ -936,9 +946,9 @@ describe.concurrent("Gateway", () => {
           yield* gateway.processNext;
           yield* gateway.deliverNext;
           const repo = yield* GatewayRepository;
-          expect(repo.binding("telegram", "bot", "guild", "private-chat")).toBe(session);
-          expect(repo.binding("telegram", "other-bot", "guild", "private-chat")).toBeNull();
-          expect(repo.binding("discord", "bot", "guild", "private-chat")).toBeNull();
+          expect(yield* repo.binding("telegram", "bot", "guild", "private-chat")).toBe(session);
+          expect(yield* repo.binding("telegram", "other-bot", "guild", "private-chat")).toBeNull();
+          expect(yield* repo.binding("discord", "bot", "guild", "private-chat")).toBeNull();
           const store = yield* Store;
           expect(yield* store.sessions).toHaveLength(1);
           expect(yield* store.runs(session!)).toHaveLength(2);
@@ -985,8 +995,8 @@ describe.concurrent("Gateway", () => {
           cancel = true;
           yield* gateway.pollOnce;
           yield* Fiber.join(processing);
-          expect((yield* GatewayRepository).cursor("telegram", "bot")).toBe("4");
-          expect((yield* GatewayRepository).status()).toMatchObject({
+          expect(yield* (yield* GatewayRepository).cursor("telegram", "bot")).toBe("4");
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({
             queued: 0,
             executing: 0,
             failedRequests: 1,
@@ -994,7 +1004,7 @@ describe.concurrent("Gateway", () => {
           });
           yield* gateway.pollOnce;
           expect(yield* gateway.processNext).toBe(false);
-          expect((yield* GatewayRepository).status()).toMatchObject({ pendingDelivery: 2 });
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({ pendingDelivery: 2 });
           const store = yield* Store;
           const session = (yield* store.sessions)[0]!;
           expect((yield* store.runs(session.id)).map((run) => run.status)).toEqual(["interrupted"]);
@@ -1016,9 +1026,9 @@ describe.concurrent("Gateway", () => {
           const gateway = yield* Gateway;
           const destination = yield* gateway.resolveDestination("scheduled-thread");
           const item = yield* scheduled(destination);
-          const { database } = yield* StoreDatabase;
+          const sql = yield* SqlClient.SqlClient;
           // Later configuration and task edits cannot redirect this occurrence.
-          database.run("UPDATE jobs SET destination = ?", [
+          yield* sql.unsafe("UPDATE jobs SET destination = ?", [
             JSON.stringify({ ...destination, conversationId: "different-thread" }),
           ]);
 
@@ -1032,12 +1042,14 @@ describe.concurrent("Gateway", () => {
           yield* gateway.recover;
           expect(yield* gateway.deliverNext).toBe(true);
           expect(yield* gateway.deliverNext).toBe(false);
-          expect((yield* TaskRepository).deliveries(occurrence.id)).toMatchObject([
+          expect(yield* (yield* TaskRepository).deliveries(occurrence.id)).toMatchObject([
             { state: "sent", attempts: 0 },
           ]);
-          expect((yield* TaskRepository).occurrence(occurrence.id).status).toBe("completed");
+          expect((yield* (yield* TaskRepository).occurrence(occurrence.id)).status).toBe(
+            "completed",
+          );
           expect(
-            (yield* GatewayRepository).binding(adapter, "bot", "guild", "scheduled-thread"),
+            yield* (yield* GatewayRepository).binding(adapter, "bot", "guild", "scheduled-thread"),
           ).toBeNull();
         }),
       );
@@ -1072,7 +1084,7 @@ describe.concurrent("Gateway", () => {
             const gateway = yield* Gateway;
             const item = yield* scheduled(yield* gateway.resolveDestination("saved-thread"));
             yield* gateway.deliverNext;
-            expect((yield* TaskRepository).occurrence(item.id).status).toBe("completed");
+            expect((yield* (yield* TaskRepository).occurrence(item.id)).status).toBe("completed");
 
             return item;
           }),
@@ -1084,14 +1096,16 @@ describe.concurrent("Gateway", () => {
             yield* gateway.recover;
             yield* TestClock.adjust("1 second");
             expect(yield* gateway.deliverNext).toBe(reason === "unavailable");
-            expect((yield* TaskRepository).deliveries(occurrence.id)[0]?.state).toBe(
+            expect((yield* (yield* TaskRepository).deliveries(occurrence.id))[0]?.state).toBe(
               ({ unavailable: "sent", permission: "failed", uncertain: "uncertain" } as const)[
                 reason
               ],
             );
             expect(yield* gateway.processNext).toBe(false);
             const repo = yield* TaskRepository;
-            expect(() => repo.retry(occurrence.id, 0)).toThrow("Only unsuccessful occurrences");
+            expect((yield* Effect.flip(repo.retry(occurrence.id, 0))).message).toContain(
+              "Only unsuccessful occurrences",
+            );
           }),
         );
         expect(state.requests).toHaveLength(1);
@@ -1125,10 +1139,9 @@ describe.concurrent("Gateway", () => {
           const fiber = yield* gateway.deliverNext.pipe(Effect.forkChild);
           yield* Deferred.await(sending);
           yield* Fiber.interrupt(fiber);
-          expect((yield* TaskRepository).deliveries(item.id).map((part) => part.state)).toEqual([
-            "sending",
-            "pending",
-          ]);
+          expect(
+            (yield* (yield* TaskRepository).deliveries(item.id)).map((part) => part.state),
+          ).toEqual(["sending", "pending"]);
 
           return item;
         }),
@@ -1140,9 +1153,11 @@ describe.concurrent("Gateway", () => {
           yield* gateway.recover;
           expect(yield* gateway.deliverNext).toBe(false);
           expect(
-            (yield* TaskRepository).deliveries(occurrence.id).map((part) => part.state),
+            (yield* (yield* TaskRepository).deliveries(occurrence.id)).map((part) => part.state),
           ).toEqual(["uncertain", "pending"]);
-          expect((yield* TaskRepository).occurrence(occurrence.id).status).toBe("completed");
+          expect((yield* (yield* TaskRepository).occurrence(occurrence.id)).status).toBe(
+            "completed",
+          );
         }),
       );
       expect(attempts).toBe(1);
@@ -1173,7 +1188,7 @@ describe.concurrent("Gateway", () => {
 
             const item = yield* scheduled(destination);
             expect(yield* gateway.deliverNext).toBe(false);
-            expect((yield* TaskRepository).deliveries(item.id)).toMatchObject([
+            expect(yield* (yield* TaskRepository).deliveries(item.id)).toMatchObject([
               { state: "failed" },
             ]);
           }),
@@ -1205,10 +1220,10 @@ describe.concurrent("Gateway", () => {
           const local = yield* scheduled(null);
           allowed = false;
           yield* gateway.deliverNext;
-          expect((yield* TaskRepository).deliveries(delivered.id)).toMatchObject([
+          expect(yield* (yield* TaskRepository).deliveries(delivered.id)).toMatchObject([
             { state: "failed" },
           ]);
-          expect((yield* TaskRepository).deliveries(local.id)).toEqual([]);
+          expect(yield* (yield* TaskRepository).deliveries(local.id)).toEqual([]);
           expect(yield* gateway.deliverNext).toBe(false);
         }),
       );
@@ -1245,7 +1260,7 @@ describe.concurrent("Gateway", () => {
           expect(
             yield* executeTaskCommand(repo, store, command, 0).pipe(Effect.result),
           ).toHaveProperty("failure.message", expect.stringContaining("Start worker"));
-          expect(repo.list()).toEqual([]);
+          expect(yield* repo.list()).toEqual([]);
           const resolved = yield* gateway.resolveDestination("saved-thread");
 
           const added = yield* executeTaskCommand(repo, store, command, 0).pipe(
@@ -1257,7 +1272,7 @@ describe.concurrent("Gateway", () => {
           expect(
             yield* gateway.resolveDestination("saved-thread").pipe(Effect.result),
           ).toHaveProperty("failure.reason", "permission");
-          expect(repo.list()).toHaveLength(1);
+          expect(yield* repo.list()).toHaveLength(1);
         }),
       );
     } finally {
@@ -1277,7 +1292,7 @@ describe.concurrent("Gateway", () => {
           yield* gateway.accept(message("first"));
           yield* gateway.processNext;
           yield* gateway.deliverNext;
-          expect((yield* GatewayRepository).status()).toMatchObject({
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({
             failedRequests: 0,
             pendingDelivery: 0,
           });
@@ -1311,7 +1326,7 @@ describe.concurrent("Gateway", () => {
           yield* gateway.accept(message("first"));
           yield* gateway.processNext;
           yield* gateway.deliverNext;
-          expect((yield* GatewayRepository).status()).toMatchObject({
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({
             failedRequests: 1,
             executing: 0,
           });
@@ -1388,7 +1403,10 @@ describe.concurrent("Gateway", () => {
           yield* Queue.offer(incoming, message("queued", "thread-first", "After shutdown"));
           yield* TestClock.adjust("1 second");
           yield* Fiber.interrupt(worker);
-          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 1, executing: 1 });
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({
+            queued: 1,
+            executing: 1,
+          });
         }),
       );
       await state.run(
@@ -1396,7 +1414,10 @@ describe.concurrent("Gateway", () => {
           const gateway = yield* Gateway;
           yield* gateway.recover;
           yield* gateway.processNext;
-          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 0, executing: 0 });
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({
+            queued: 0,
+            executing: 0,
+          });
           const session = (yield* Store).sessions;
           const saved = (yield* session)[0];
 
@@ -1430,7 +1451,7 @@ describe.concurrent("Gateway", () => {
           ])
             yield* gateway.accept(input);
           expect(yield* (yield* Store).sessions).toHaveLength(0);
-          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 0 });
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({ queued: 0 });
           expect(state.marks).toEqual([]);
           yield* gateway.accept(message("first"));
           yield* gateway.accept(message("first"));
@@ -1491,10 +1512,10 @@ describe.concurrent("Gateway", () => {
           const gateway = yield* Gateway;
           yield* gateway.recover;
           yield* gateway.processNext;
-          const { database } = yield* StoreDatabase;
+          const sql = yield* SqlClient.SqlClient;
           // Simulate a crash after committing the answer but before recording delivery.
-          database.run("DELETE FROM gateway_deliveries");
-          database.run("UPDATE gateway_inbox SET state = 'executing'");
+          yield* sql.unsafe("DELETE FROM gateway_deliveries");
+          yield* sql.unsafe("UPDATE gateway_inbox SET state = 'executing'");
         }),
       );
       await state.run(
@@ -1504,15 +1525,15 @@ describe.concurrent("Gateway", () => {
           yield* gateway.deliverNext;
           yield* gateway.accept(message("interrupted", "thread-first"));
           const repo = yield* GatewayRepository;
-          const pending = repo.next("discord", "bot", Date.now());
+          const pending = yield* repo.next("discord", "bot", Date.now());
           expect(pending).not.toBeNull();
 
           if (pending === null) return;
-          const id = repo.binding("discord", "bot", "guild", "thread-first");
+          const id = yield* repo.binding("discord", "bot", "guild", "thread-first");
 
           if (id === null) throw new Error("Missing session");
-          repo.attach(pending.id, "thread-first", id);
-          repo.state(pending.id, "executing");
+          yield* repo.attach(pending.id, "thread-first", id);
+          yield* repo.state(pending.id, "executing");
           yield* (yield* Store).queueRun(
             id,
             [{ role: "user", text: "Interrupted" }],
@@ -1526,7 +1547,10 @@ describe.concurrent("Gateway", () => {
           yield* gateway.recover;
           expect(yield* gateway.processNext).toBe(false);
           yield* gateway.deliverNext;
-          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 0, executing: 0 });
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({
+            queued: 0,
+            executing: 0,
+          });
         }),
       );
       expect(state.requests).toHaveLength(1);
@@ -1595,7 +1619,7 @@ describe.concurrent("Gateway", () => {
             expect(yield* gateway.deliverNext).toBe(false);
             yield* TestClock.adjust("60 seconds");
             expect(yield* gateway.deliverNext).toBe(reason === "unavailable");
-            expect((yield* GatewayRepository).status()).toMatchObject({
+            expect(yield* (yield* GatewayRepository).status()).toMatchObject({
               failedDelivery: reason === "permission" ? 1 : 0,
               uncertainDelivery: reason === "uncertain" ? 1 : 0,
             });
@@ -1644,11 +1668,11 @@ describe.concurrent("Gateway", () => {
           const gateway = yield* Gateway;
           yield* gateway.accept(message("first"));
           yield* gateway.processNext;
-          const { database } = yield* StoreDatabase;
+          const sql = yield* SqlClient.SqlClient;
 
-          const saved = database
-            .query<{ text: string }, []>("SELECT text FROM gateway_deliveries ORDER BY position")
-            .all();
+          const saved = yield* sql<{
+            readonly text: string;
+          }>`SELECT text FROM gateway_deliveries ORDER BY position`;
 
           expect(saved.map((entry) => entry.text).join("")).toBe(text);
           expect(
@@ -1692,7 +1716,7 @@ describe.concurrent("Gateway", () => {
           yield* gateway.processNext;
           const store = yield* Store;
 
-          const firstSession = (yield* GatewayRepository).binding(
+          const firstSession = yield* (yield* GatewayRepository).binding(
             "discord",
             "bot",
             "guild",
@@ -1706,7 +1730,10 @@ describe.concurrent("Gateway", () => {
           ]);
           expect(yield* store.sessions).toHaveLength(2);
           yield* Stream.runDrain((yield* Agent).send(firstSession, "CLI follow-up"));
-          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 0, executing: 0 });
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({
+            queued: 0,
+            executing: 0,
+          });
         }),
       );
       expect(state.requests).toHaveLength(4);
@@ -1734,7 +1761,7 @@ describe.concurrent("Gateway", () => {
 
           expect(result).toHaveProperty("failure.reason", "overloaded");
           yield* gateway.accept(message("cancel", "thread-first", "/cancel"));
-          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 0 });
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({ queued: 0 });
           expect(yield* gateway.processNext).toBe(false);
         }),
       );
@@ -1794,18 +1821,18 @@ describe("conversationNaming", () => {
           yield* gateway.accept(message("original", null, "/new --skill review Original"));
           yield* gateway.processNext;
           yield* gateway.deliverNext;
-          const old = repo.binding("discord", "bot", "guild", "managed")!;
+          const old = (yield* repo.binding("discord", "bot", "guild", "managed"))!;
           yield* store.renameSession(old, "Old delayed title");
           const naming = yield* gateway.nameNext.pipe(Effect.forkChild);
           yield* Deferred.await(started);
           yield* gateway.accept(message("replacement", "managed", "/new New prompt"));
           yield* gateway.processNext;
-          const replacement = repo.binding("discord", "bot", "guild", "managed")!;
+          const replacement = (yield* repo.binding("discord", "bot", "guild", "managed"))!;
           yield* store.renameSession(replacement, "New title");
           yield* Deferred.succeed(release, undefined);
           yield* Fiber.join(naming);
           expect(renames).toEqual([]);
-          expect(repo.namedBinding("discord", "bot", "managed")).toMatchObject({
+          expect(yield* repo.namedBinding("discord", "bot", "managed")).toMatchObject({
             sessionId: replacement,
             syncedTitle: null,
             namingDisabled: false,
@@ -1813,7 +1840,7 @@ describe("conversationNaming", () => {
           yield* gateway.deliverNext;
           yield* gateway.nameNext;
           expect(renames).toEqual(["New title"]);
-          expect(repo.namedBinding("discord", "bot", "managed")).toMatchObject({
+          expect(yield* repo.namedBinding("discord", "bot", "managed")).toMatchObject({
             managedName: "New title",
             creationMessageId: "original",
           });
@@ -1911,9 +1938,9 @@ describe("conversationNaming", () => {
             );
 
             if (["external-edit", "permission", "rate-limit"].includes(mode)) {
-              expect(repo.namedBinding("discord", "bot", "thread-title")?.namingDisabled).toBe(
-                true,
-              );
+              expect(
+                (yield* repo.namedBinding("discord", "bot", "thread-title"))?.namingDisabled,
+              ).toBe(true);
             }
 
             return session.id;
@@ -1972,7 +1999,7 @@ describe("conversationNaming", () => {
 
           if (!session) throw new Error("Missing session");
           yield* (yield* Store).renameSession(session.id, "Pending title");
-          (yield* GatewayRepository).namePending(
+          yield* (yield* GatewayRepository).namePending(
             "discord",
             "bot",
             "managed",
@@ -1986,7 +2013,7 @@ describe("conversationNaming", () => {
         Effect.gen(function* () {
           yield* (yield* Gateway).nameNext;
           expect(
-            (yield* GatewayRepository).namedBinding("discord", "bot", "managed"),
+            yield* (yield* GatewayRepository).namedBinding("discord", "bot", "managed"),
           ).toMatchObject({
             managedName: "Pending title",
             pendingName: null,
@@ -2039,7 +2066,10 @@ describe.concurrent("service.ts", () => {
           yield* gateway.accept(message("cancel-file", "thread", "/cancel"));
           yield* Fiber.join(pending);
           expect(cancelled).toBe(true);
-          expect((yield* GatewayRepository).status()).toMatchObject({ queued: 0, executing: 0 });
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({
+            queued: 0,
+            executing: 0,
+          });
         }),
       );
       expect(state.requests).toEqual([]);
@@ -2120,12 +2150,12 @@ describe.concurrent("service.ts", () => {
           yield* gateway.accept(input);
           yield* gateway.accept(input);
           yield* gateway.processNext;
-          expect(
-            (yield* StoreDatabase).database.query("SELECT state FROM gateway_attachments").get(),
-          ).toEqual({ state: "accepted" });
-          const { database } = yield* StoreDatabase;
-          database.run("DELETE FROM gateway_deliveries");
-          database.run("UPDATE gateway_inbox SET state = 'executing'");
+          const sql = yield* SqlClient.SqlClient;
+          expect(yield* sql`SELECT state FROM gateway_attachments`).toEqual([
+            { state: "accepted" },
+          ]);
+          yield* sql.unsafe("DELETE FROM gateway_deliveries");
+          yield* sql.unsafe("UPDATE gateway_inbox SET state = 'executing'");
         }),
       );
       await state.run(
@@ -2187,9 +2217,9 @@ describe.concurrent("service.ts", () => {
           const gateway = yield* Gateway;
           const repo = yield* GatewayRepository;
           yield* gateway.accept({ ...message("saved", "saved-thread", ""), attachment: document });
-          const entry = repo.next("discord", "bot", Number.MAX_SAFE_INTEGER)!;
-          repo.processing(entry.id);
-          repo.extracted(entry.id, {
+          const entry = (yield* repo.next("discord", "bot", Number.MAX_SAFE_INTEGER))!;
+          yield* repo.processing(entry.id);
+          yield* repo.extracted(entry.id, {
             kind: "document",
             name: "notes.md",
             mime: "text/plain",
@@ -2198,7 +2228,7 @@ describe.concurrent("service.ts", () => {
             text: "Saved before inference",
             completeness: "Complete UTF-8 text.",
           });
-          repo.state(entry.id, "executing");
+          yield* repo.state(entry.id, "executing");
         }),
       );
       await state.run(
@@ -2250,10 +2280,10 @@ describe.concurrent("service.ts", () => {
               ...message("saved", "thread", ""),
               attachment: { ...document, ...metadata },
             });
-            const entry = repo.next("discord", "bot", Number.MAX_SAFE_INTEGER)!;
-            repo.processing(entry.id);
-            repo.extracted(entry.id, source);
-            repo.state(entry.id, "executing");
+            const entry = (yield* repo.next("discord", "bot", Number.MAX_SAFE_INTEGER))!;
+            yield* repo.processing(entry.id);
+            yield* repo.extracted(entry.id, source);
+            yield* repo.state(entry.id, "executing");
           }),
         );
         await state.run(
@@ -2309,7 +2339,7 @@ describe.concurrent("service.ts", () => {
             expect(state.sent.at(-1)?.text).toContain("not supported");
           }
 
-          expect((yield* GatewayRepository).status()).toMatchObject({ failedRequests: 3 });
+          expect(yield* (yield* GatewayRepository).status()).toMatchObject({ failedRequests: 3 });
         }),
       );
       expect(state.sent).toHaveLength(3);

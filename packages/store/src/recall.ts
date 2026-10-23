@@ -1,9 +1,10 @@
-import { Database } from "bun:sqlite";
+import { Effect, Schema } from "effect";
+import type { SqlClient } from "effect/sql";
 
-import { Schema } from "effect";
-
-import { StoreError, readRecord } from "#src/errors";
+import { StoreError, decodeInput } from "#src/errors";
 import { Session, SessionReadMessage, SessionReadQuery, type SessionReadResult } from "#src/schema";
+import { MaxBytes } from "#src/search";
+import { decodeRow, decodeRows } from "#src/sql";
 
 const RecallRow = Schema.Struct({
   messageId: SessionReadMessage.fields.messageId,
@@ -14,74 +15,69 @@ const RecallRow = Schema.Struct({
 });
 
 /** Reads bounded windows from the same eligibility projection used to build search. */
-export const readSession = (
-  database: Database,
+export const readSession = Effect.fn(function* (
+  sql: SqlClient.SqlClient,
   query: SessionReadQuery,
   maxBytes: number,
-): SessionReadResult => {
-  const { sessionId, aroundMessageId, afterMessageId } = Schema.decodeUnknownSync(
+) {
+  const { sessionId, aroundMessageId, afterMessageId } = yield* decodeInput(
     SessionReadQuery,
+    query,
     { onExcessProperty: "error" },
-  )(query);
-
-  Schema.decodeUnknownSync(Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 })))(
-    maxBytes,
   );
 
-  const session = readRecord(() =>
-    Schema.decodeUnknownSync(
-      Schema.NullOr(Schema.Struct({ id: Session.fields.id, title: Session.fields.title })),
-    )(database.query("SELECT id, title FROM sessions WHERE id = ?").get(sessionId)),
+  yield* decodeInput(MaxBytes, maxBytes);
+
+  const session = yield* sql`SELECT id, title FROM sessions WHERE id = ${sessionId}`.pipe(
+    decodeRow(Schema.Struct({ id: Session.fields.id, title: Session.fields.title })),
   );
 
   if (session === null)
-    throw new StoreError({ reason: "not-found", message: "The recalled session does not exist." });
+    return yield* new StoreError({
+      reason: "not-found",
+      message: "The recalled session does not exist.",
+    });
 
   const anchorId = aroundMessageId ?? afterMessageId;
 
   const anchor =
     anchorId === null
       ? null
-      : readRecord(() =>
-          Schema.decodeUnknownSync(Schema.NullOr(Schema.Struct({ position: Schema.Natural })))(
-            database
-              .query(`SELECT m.position FROM messages AS m
-                JOIN session_search AS eligible ON eligible.rowid = m.id
-                WHERE m.session_id = ? AND m.id = ?`)
-              .get(sessionId, anchorId),
-          ),
+      : yield* sql`SELECT m.position FROM messages AS m
+          JOIN session_search AS eligible ON eligible.rowid = m.id
+          WHERE m.session_id = ${sessionId} AND m.id = ${anchorId}`.pipe(
+          decodeRow(Schema.Struct({ position: Schema.Natural })),
         );
 
   if (anchorId !== null && anchor === null)
-    throw new StoreError({
+    return yield* new StoreError({
       reason: "invalid-request",
       message: "The recall anchor is not an eligible message in this session.",
     });
 
   // Indexed IDs gate projection reads, avoiding evaluation of excluded tool payloads as assistant text.
-  const window = (before: boolean, position: number, limit: number) =>
-    readRecord(() =>
-      Schema.decodeUnknownSync(Schema.Array(RecallRow))(
-        database
-          .query(`SELECT messageId, role, createdAt, substr(text, 1, ?) AS text,
-            length(CAST(text AS BLOB)) AS textBytes FROM (
-              SELECT m.position, m.id AS messageId, json_extract(m.payload, '$.role') AS role,
-                m.created_at AS createdAt,
-                (SELECT text FROM searchable_messages WHERE id = m.id) AS text
-              FROM messages AS m JOIN session_search AS eligible ON eligible.rowid = m.id
-              WHERE m.session_id = ? AND m.position ${before ? "<=" : ">"} ?
-              ORDER BY m.position ${before ? "DESC" : "ASC"} LIMIT ?
-            ) ORDER BY position ${before ? "DESC" : "ASC"}`)
-          .all(maxBytes, sessionId, position, limit),
-      ),
-    );
+  const window = (before: boolean, position: number, limit: number) => {
+    const comparison = sql.literal(before ? "<=" : ">");
+    const direction = sql.literal(before ? "DESC" : "ASC");
 
-  const before = aroundMessageId === null ? [] : window(true, anchor!.position, 6).toReversed();
+    return sql`SELECT message_id, role, created_at, substr(text, 1, ${maxBytes}) AS text,
+        length(CAST(text AS BLOB)) AS text_bytes FROM (
+          SELECT m.position, m.id AS message_id, json_extract(m.payload, '$.role') AS role,
+            m.created_at, (SELECT text FROM searchable_messages WHERE id = m.id) AS text
+          FROM messages AS m JOIN session_search AS eligible ON eligible.rowid = m.id
+          WHERE m.session_id = ${sessionId} AND m.position ${comparison} ${position}
+          ORDER BY m.position ${direction} LIMIT ${limit}
+        ) ORDER BY position ${direction}`.pipe(decodeRows(RecallRow));
+  };
+
+  const before =
+    aroundMessageId === null ? [] : (yield* window(true, anchor!.position, 6)).toReversed();
+
   let omittedBefore = before.length > 5;
 
   const rows = [
     ...before.slice(-5),
-    ...window(false, anchor?.position ?? -1, aroundMessageId === null ? 11 : 6),
+    ...(yield* window(false, anchor?.position ?? -1, aroundMessageId === null ? 11 : 6)),
   ];
 
   const selected = rows.slice(0, 10).map((row) => ({
@@ -153,4 +149,4 @@ export const readSession = (
   }
 
   return result();
-};
+});

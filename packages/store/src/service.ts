@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -8,10 +7,12 @@ import {
   type Continuation,
   type Message as ModelMessage,
 } from "@poppet/provider";
-import { Context, DateTime, Effect, Layer, Schema } from "effect";
+import { Clock, Context, Effect, Layer, Schema } from "effect";
+import { SqlClient } from "effect/sql";
 
 import { StoreDatabase, StoreDatabaseLive } from "#src/database";
-import { StoreError, storageFailure, corruptRecord, readRecord } from "#src/errors";
+import { StoreError, decodeInput, storageFailure, storeFailure } from "#src/errors";
+import { schemaVersion } from "#src/migrations";
 import { readSession } from "#src/recall";
 import {
   Id,
@@ -30,6 +31,7 @@ import {
   type StoreStatus,
 } from "#src/schema";
 import { searchSessions } from "#src/search";
+import { decodeRow, decodeRows } from "#src/sql";
 
 interface StoreOperations {
   readonly status: Effect.Effect<StoreStatus, StoreError>;
@@ -56,7 +58,6 @@ interface StoreOperations {
   /** Returns null when the session does not exist. */
   readonly session: (id: string) => Effect.Effect<Session | null, StoreError>;
   readonly sessions: Effect.Effect<ReadonlyArray<Session>, StoreError>;
-  /** Searches completed user/final-answer text within the caller's JSON byte budget. */
   readonly searchSessions: (
     query: string,
     maxBytes: number,
@@ -66,7 +67,7 @@ interface StoreOperations {
     query: SessionReadQuery,
     maxBytes: number,
   ) => Effect.Effect<SessionReadResult, StoreError>;
-  /** Reads messages in session order and rejects continuation belonging to another model. */
+  /** Reads messages in session order. */
   readonly messages: (sessionId: string) => Effect.Effect<ReadonlyArray<StoredMessage>, StoreError>;
   /** Saves a pending run and its inputs together; rejects any other pending or running run. */
   readonly queueRun: (
@@ -79,7 +80,7 @@ interface StoreOperations {
   readonly startRun: (id: string) => Effect.Effect<Run, StoreError>;
   /** Saves the terminal outcome and final answer together, settling any unfinished tools. */
   readonly finishRun: (id: string, outcome: RunOutcome) => Effect.Effect<Run, StoreError>;
-  /** Returns null when absent and rejects provider or model state inconsistent with the session. */
+  /** Returns null when the run does not exist. */
   readonly run: (id: string) => Effect.Effect<Run | null, StoreError>;
   readonly runs: (sessionId: string) => Effect.Effect<ReadonlyArray<Run>, StoreError>;
   /** Saves a complete model tool request and its pending calls before execution begins. */
@@ -102,412 +103,316 @@ interface StoreOperations {
     callId: string,
     outcome: ToolOutcome,
   ) => Effect.Effect<void, StoreError>;
-  /** Commits a synchronous local mutation and its receipt together; completed calls return their saved receipt. */
-  readonly commitToolCall: (
+  /**
+   * Runs a local database change and saves its receipt in one transaction.
+   * A call that already completed returns its saved receipt without running the change again.
+   */
+  readonly commitToolCall: <E, R>(
     runId: string,
     callId: string,
-    operation: () => string,
-  ) => Effect.Effect<string, StoreError>;
+    operation: Effect.Effect<string, E, R>,
+  ) => Effect.Effect<string, StoreError | E, R>;
 }
 
 /** Persists conversation history and tracks run and tool execution through terminal outcomes. */
 export class Store extends Context.Service<Store, StoreOperations>()("poppet/Store") {}
 
-const sessionSql = `SELECT id, provider, model, workload, created_at AS createdAt, updated_at AS updatedAt,
-  title, title_source AS titleSource, title_attempted AS titleAttempted, title_usage AS titleUsage, skill FROM sessions`;
-
-const SessionRecord = Schema.Struct({
+const SessionRow = Schema.Struct({
   ...Session.fields,
   titleAttempted: Schema.BooleanFromBit,
   skill: Schema.NullOr(Schema.fromJsonString(SkillSnapshot)),
   titleUsage: Schema.NullOr(Schema.fromJsonString(Completion.fields.usage)),
 });
 
-const runSql = `SELECT id, session_id AS sessionId, provider, model, workload, status, created_at AS createdAt,
-  started_at AS startedAt, finished_at AS finishedAt, result, failure_reason AS failureReason FROM runs`;
-
-const messageSql = `SELECT id, session_id AS sessionId, run_id AS runId, position, created_at AS createdAt, payload AS message FROM messages`;
-
-const toolSql = `SELECT run_id AS runId, call_id AS callId, position, name, namespace, arguments, status,
-  created_at AS createdAt, started_at AS startedAt, finished_at AS finishedAt, output, failure_reason AS failureReason, server_id AS serverId, tool_name AS toolName FROM tool_calls`;
-
-const toolCallsFor = (database: Database, runId: string) =>
-  readRecord(() => {
-    using statement = database.prepare(`${toolSql} WHERE run_id = ? ORDER BY position`);
-
-    return Schema.decodeUnknownSync(Schema.Array(ToolCall))(statement.all(runId));
-  });
-
-const activeTool = (database: Database, runId: string, callId: string) => {
-  const run = requireRun(database, Schema.decodeUnknownSync(Id)(runId));
-  const call = toolCallsFor(database, runId).find((entry) => entry.callId === callId);
-
-  if (run.status !== "running" || !call || (call.status !== "pending" && call.status !== "running"))
-    throw new StoreError({
-      reason: "conflict",
-      message: "The tool call must belong to the running run and be active.",
-    });
-
-  return { run, call };
-};
-
-const CallReply = Schema.Struct({ callId: Schema.NonEmptyString });
-
-// Call IDs with a saved tool reply in this run, whether the call completed or reported failure.
-const repliedCalls = (database: Database, runId: string) =>
-  readRecord(() => {
-    using statement = database.prepare(
-      `SELECT json_extract(payload, '$.callId') AS callId FROM messages
-      WHERE run_id = ? AND json_extract(payload, '$.role') = 'tool'`,
-    );
-
-    return new Set(
-      Schema.decodeUnknownSync(Schema.Array(CallReply))(statement.all(runId)).map(
-        (reply) => reply.callId,
-      ),
-    );
-  });
-
-const interruptTools = (database: Database, runId: string, at: number, reason: string) => {
-  // Finalize this update before later run transitions and database shutdown.
-  using statement =
-    database.prepare(`UPDATE tool_calls SET status = CASE WHEN status = 'running' THEN 'uncertain' ELSE 'interrupted' END,
-    finished_at = MAX(created_at, COALESCE(started_at, 0), ?), failure_reason = ?
-    WHERE run_id = ? AND status IN ('pending', 'running')`);
-
-  statement.run(at, reason, runId);
-};
-
-const RunRecord = Schema.Struct({
+const RunRow = Schema.Struct({
   ...Run.fields,
   result: Schema.NullOr(Schema.fromJsonString(Completion)),
 });
 
-const MessageRecord = Schema.Struct({
+const MessageRow = Schema.Struct({
   ...StoredMessage.fields,
   message: Schema.fromJsonString(Message),
 });
 
-const Counts = Schema.Struct({
-  sessions: Schema.Natural,
-  messages: Schema.Natural,
-  runs: Schema.Natural,
-});
+const encodeMessage = Schema.encodeSync(Schema.fromJsonString(Message));
 
-const Position = Schema.Struct({ position: Schema.Natural });
+const conflict = (message: string) => new StoreError({ reason: "conflict", message });
 
-const continuationMatches = (
-  selection: Pick<Session, "provider" | "model">,
-  continuation: Continuation,
-) => continuation.provider === selection.provider && continuation.model === selection.model;
+const notFound = (message: string) => new StoreError({ reason: "not-found", message });
 
-const requestFailure = (cause: unknown) =>
-  cause instanceof Schema.SchemaError
-    ? new StoreError({
-        reason: "invalid-request",
-        message: "The conversation store request is invalid.",
-      })
-    : storageFailure(cause);
-
-const sessionFor = (database: Database, id: string) =>
-  readRecord(() =>
-    Schema.decodeUnknownSync(Schema.NullOr(SessionRecord))(
-      database.query(`${sessionSql} WHERE id = ?`).get(id),
-    ),
-  );
-
-// Decoding a row alone cannot check whether its model identity agrees with the session and result.
-const validateRunRecord = (session: Session | null, run: Run) => {
-  if (
-    !session ||
-    run.sessionId !== session.id ||
-    run.provider !== session.provider ||
-    run.model !== session.model ||
-    run.workload !== session.workload ||
-    (run.result !== null && !continuationMatches(run, run.result.continuation))
-  )
-    throw corruptRecord();
-
-  return run;
-};
-
-const runFor = (database: Database, id: string) =>
-  readRecord(() => {
-    const run = Schema.decodeUnknownSync(Schema.NullOr(RunRecord))(
-      database.query(`${runSql} WHERE id = ?`).get(id),
-    );
-
-    return run === null ? null : validateRunRecord(sessionFor(database, run.sessionId), run);
-  });
-
-const requireSession = (database: Database, id: string) => {
-  const session = sessionFor(database, id);
-
-  if (!session)
-    throw new StoreError({ reason: "not-found", message: "The session does not exist." });
-
-  return session;
-};
-
-const requireRun = (database: Database, id: string) => {
-  const run = runFor(database, id);
-
-  if (!run) throw new StoreError({ reason: "not-found", message: "The run does not exist." });
-
-  return run;
-};
-
-const validateContinuation = (session: Session, messages: ReadonlyArray<ModelMessage>) => {
-  for (const message of messages) {
-    if (
-      message.role === "assistant" &&
-      message.continuation !== null &&
-      !continuationMatches(session, message.continuation)
-    )
-      throw new StoreError({
-        reason: "invalid-request",
-        message: "Continuation belongs to another provider or model. Start a new session.",
-      });
-  }
-};
-
-const append = (
-  database: Database,
-  session: Session,
-  runId: string | null,
-  messages: ReadonlyArray<ModelMessage>,
-  at: number,
-) => {
-  validateContinuation(session, messages);
-
-  let position = readRecord(() =>
-    Schema.decodeUnknownSync(Position)(
-      database
-        .query(
-          "SELECT COALESCE(MAX(position) + 1, 0) AS position FROM messages WHERE session_id = ?",
-        )
-        .get(session.id),
-    ),
-  ).position;
-
-  const insert = database.query(
-    "INSERT INTO messages (session_id, run_id, position, created_at, payload) VALUES (?, ?, ?, ?, ?)",
-  );
-
-  for (const message of messages) {
-    insert.run(
-      session.id,
-      runId,
-      position++,
-      at,
-      Schema.encodeSync(Schema.fromJsonString(Message))(message),
-    );
-  }
-
-  database
-    .query("UPDATE sessions SET updated_at = MAX(updated_at, ?) WHERE id = ?")
-    .run(at, session.id);
-};
-
-const atTime = <A>(operation: (at: number) => A) =>
-  DateTime.nowAsDate.pipe(
-    Effect.flatMap((date) =>
-      Effect.try({ try: () => operation(date.getTime()), catch: requestFailure }),
-    ),
-  );
+const continuationMatches = (session: Session, continuation: Continuation) =>
+  continuation.provider === session.provider && continuation.model === session.model;
 
 export const StoreLive = Layer.effect(
   Store,
   Effect.gen(function* () {
-    const { database, path, schemaVersion } = yield* StoreDatabase;
+    const sql = yield* SqlClient.SqlClient;
+    const { path } = yield* StoreDatabase;
+
+    // Internal steps fail with SQL, schema, or store errors; public operations report StoreError.
+    const transaction = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      sql.withTransaction(effect).pipe(Effect.mapError(storeFailure));
+
+    const findSession = (id: string) =>
+      sql`SELECT * FROM sessions WHERE id = ${id}`.pipe(decodeRow(SessionRow));
+
+    const requireSession = (id: string) =>
+      Effect.flatMap(findSession(id), (session) =>
+        session === null
+          ? Effect.fail(notFound("The session does not exist."))
+          : Effect.succeed(session),
+      );
+
+    const findRun = (id: string) =>
+      sql`SELECT * FROM runs WHERE id = ${id}`.pipe(decodeRow(RunRow));
+
+    const requireRun = (id: string) =>
+      Effect.flatMap(findRun(id), (run) =>
+        run === null ? Effect.fail(notFound("The run does not exist.")) : Effect.succeed(run),
+      );
+
+    const toolCallsFor = (runId: string) =>
+      sql`SELECT * FROM tool_calls WHERE run_id = ${runId} ORDER BY position`.pipe(
+        decodeRows(ToolCall),
+      );
+
+    const activeTool = (runId: string, callId: string) =>
+      Effect.gen(function* () {
+        const run = yield* requireRun(yield* decodeInput(Id, runId));
+        const call = (yield* toolCallsFor(runId)).find((entry) => entry.callId === callId);
+
+        if (
+          run.status !== "running" ||
+          !call ||
+          (call.status !== "pending" && call.status !== "running")
+        )
+          return yield* conflict("The tool call must belong to the running run and be active.");
+
+        return { run, call };
+      });
+
+    // Call IDs with a saved tool reply in this run, whether the call completed or reported failure.
+    const repliedCalls = (runId: string) =>
+      sql`SELECT json_extract(payload, '$.callId') AS call_id FROM messages
+        WHERE run_id = ${runId} AND json_extract(payload, '$.role') = 'tool'`.pipe(
+        decodeRows(Schema.Struct({ callId: Schema.NonEmptyString })),
+        Effect.map((replies) => new Set(replies.map((reply) => reply.callId))),
+      );
+
+    // Settles unfinished calls; a call that was running may have had effects, so it is uncertain.
+    const interruptTools = (runId: string, at: number, reason: string) =>
+      sql`UPDATE tool_calls
+        SET status = CASE WHEN status = 'running' THEN 'uncertain' ELSE 'interrupted' END,
+          finished_at = MAX(created_at, COALESCE(started_at, 0), ${at}), failure_reason = ${reason}
+        WHERE run_id = ${runId} AND status IN ('pending', 'running')`;
+
+    const touch = (sessionId: string, at: number) =>
+      sql`UPDATE sessions SET updated_at = MAX(updated_at, ${at}) WHERE id = ${sessionId}`;
+
+    const append = (
+      session: Session,
+      runId: string | null,
+      messages: ReadonlyArray<ModelMessage>,
+      at: number,
+    ) =>
+      Effect.gen(function* () {
+        for (const message of messages)
+          if (
+            message.role === "assistant" &&
+            message.continuation !== null &&
+            !continuationMatches(session, message.continuation)
+          )
+            return yield* new StoreError({
+              reason: "invalid-request",
+              message: "Continuation belongs to another provider or model. Start a new session.",
+            });
+
+        const next = yield* sql`SELECT COALESCE(MAX(position) + 1, 0) AS position
+          FROM messages WHERE session_id = ${session.id}`.pipe(
+          decodeRow(Schema.Struct({ position: Schema.Natural })),
+        );
+
+        const start = next?.position ?? 0;
+
+        if (messages.length > 0)
+          yield* sql`INSERT INTO messages ${sql.insert(
+            messages.map((message, index) => ({
+              sessionId: session.id,
+              runId,
+              position: start + index,
+              createdAt: at,
+              payload: encodeMessage(message),
+            })),
+          )}`;
+
+        yield* touch(session.id, at);
+      });
 
     // A previous owner may have crashed between durable queueing and completion.
     // Preserve its inputs, but never automatically replay work with uncertain effects.
-    yield* atTime((at) =>
-      database
-        .transaction(() => {
-          for (const run of Schema.decodeUnknownSync(Schema.Array(RunRecord))(
-            database.query(`${runSql} WHERE status IN ('pending', 'running')`).all(),
-          ))
-            interruptTools(database, run.id, at, "process-exit");
-          database
-            .query(
-              `UPDATE runs SET status = 'interrupted', finished_at = MAX(created_at, COALESCE(started_at, 0), ?), failure_reason = 'process-exit' WHERE status IN ('pending', 'running')`,
-            )
-            .run(at);
-        })
-        .immediate(),
+    yield* transaction(
+      Effect.gen(function* () {
+        const at = yield* Clock.currentTimeMillis;
+
+        yield* sql`UPDATE tool_calls
+          SET status = CASE WHEN status = 'running' THEN 'uncertain' ELSE 'interrupted' END,
+            finished_at = MAX(created_at, COALESCE(started_at, 0), ${at}),
+            failure_reason = 'process-exit'
+          WHERE status IN ('pending', 'running')`;
+
+        yield* sql`UPDATE runs SET status = 'interrupted',
+            finished_at = MAX(created_at, COALESCE(started_at, 0), ${at}),
+            failure_reason = 'process-exit'
+          WHERE status IN ('pending', 'running')`;
+      }),
     );
 
     const createSession: StoreOperations["createSession"] = (
       provider,
       model,
-      { workload = "assistant", id: suppliedId, taskTitle, skill = null } = {},
+      { workload = "assistant", id = randomUUID(), taskTitle, skill = null } = {},
     ) =>
-      atTime((at) => {
-        const selectedProvider = Schema.decodeUnknownSync(ProviderId)(provider);
-        const selectedModel = Schema.decodeUnknownSync(ModelId)(model);
-        const selectedWorkload = Schema.decodeUnknownSync(Session.fields.workload)(workload);
-        const id = Schema.decodeUnknownSync(Id)(suppliedId ?? randomUUID());
+      Effect.gen(function* () {
+        const at = yield* Clock.currentTimeMillis;
 
         const title =
           taskTitle === undefined
             ? "New conversation"
-            : Schema.decodeUnknownSync(SessionTitle)(taskTitle);
+            : yield* decodeInput(SessionTitle, taskTitle);
 
-        database
-          .query(`INSERT INTO sessions (id, provider, model, created_at, updated_at, workload, title, title_source, title_attempted, skill)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(
-            id,
-            selectedProvider,
-            selectedModel,
-            at,
-            at,
-            selectedWorkload,
-            title,
-            taskTitle === undefined ? "fallback" : "task",
-            taskTitle === undefined ? 0 : 1,
-            skill === null ? null : Schema.encodeSync(Schema.fromJsonString(SkillSnapshot))(skill),
-          );
+        yield* sql`INSERT INTO sessions ${sql.insert({
+          id: yield* decodeInput(Id, id),
+          provider: yield* decodeInput(ProviderId, provider),
+          model: yield* decodeInput(ModelId, model),
+          workload: yield* decodeInput(Session.fields.workload, workload),
+          createdAt: at,
+          updatedAt: at,
+          title,
+          titleSource: taskTitle === undefined ? "fallback" : "task",
+          titleAttempted: taskTitle === undefined ? 0 : 1,
+          skill: skill === null ? null : JSON.stringify(yield* decodeInput(SkillSnapshot, skill)),
+        })}`;
 
-        return requireSession(database, id);
-      });
+        return yield* requireSession(id);
+      }).pipe(Effect.mapError(storeFailure));
 
-    const queueRun = (
-      sessionId: string,
-      input: ReadonlyArray<ModelMessage>,
-      suppliedId?: string,
-      fallbackTitle?: string,
+    const queueRun: StoreOperations["queueRun"] = (
+      sessionId,
+      input,
+      runId = randomUUID(),
+      fallbackTitle,
     ) =>
-      atTime((at) =>
-        database
-          .transaction(() => {
-            const id = Schema.decodeUnknownSync(Id)(sessionId);
+      transaction(
+        Effect.gen(function* () {
+          const at = yield* Clock.currentTimeMillis;
 
-            const messages = Schema.decodeUnknownSync(Schema.Array(Message), {
-              onExcessProperty: "error",
-            })(input);
+          const messages = yield* decodeInput(Schema.Array(Message), input, {
+            onExcessProperty: "error",
+          });
 
-            const session = requireSession(database, id);
+          const session = yield* requireSession(yield* decodeInput(Id, sessionId));
 
-            if (database.query("SELECT id FROM runs WHERE status IN ('pending', 'running')").get())
-              throw new StoreError({
-                reason: "conflict",
-                message: "Another run is pending or running.",
-              });
-            const runId = Schema.decodeUnknownSync(Id)(suppliedId ?? randomUUID());
-            const createdAt = Math.max(at, session.createdAt);
-            database
-              .query(
-                `INSERT INTO runs (id, session_id, provider, model, workload, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
-              )
-              .run(runId, id, session.provider, session.model, session.workload, createdAt);
+          const active = yield* sql`SELECT id FROM runs WHERE status IN ('pending', 'running')`;
 
-            if (fallbackTitle !== undefined)
-              database
-                .query(`UPDATE sessions SET title = ?, title_source = 'fallback'
-                WHERE id = ? AND title_source = 'fallback' AND NOT EXISTS (SELECT 1 FROM messages WHERE session_id = ?)`)
-                .run(Schema.decodeUnknownSync(SessionTitle)(fallbackTitle), id, id);
-            append(database, session, runId, messages, createdAt);
+          if (active.length > 0) return yield* conflict("Another run is pending or running.");
 
-            return requireRun(database, runId);
-          })
-          .immediate(),
+          const createdAt = Math.max(at, session.createdAt);
+
+          yield* sql`INSERT INTO runs ${sql.insert({
+            id: yield* decodeInput(Id, runId),
+            sessionId,
+            provider: session.provider,
+            model: session.model,
+            workload: session.workload,
+            status: "pending",
+            createdAt,
+          })}`;
+
+          // The first message names a session until a generated or manual title replaces it.
+          if (fallbackTitle !== undefined) {
+            const title = yield* decodeInput(SessionTitle, fallbackTitle);
+
+            yield* sql`UPDATE sessions SET title = ${title}, title_source = 'fallback'
+              WHERE id = ${sessionId} AND title_source = 'fallback'
+                AND NOT EXISTS (SELECT 1 FROM messages WHERE session_id = ${sessionId})`;
+          }
+
+          yield* append(session, runId, messages, createdAt);
+
+          return yield* requireRun(runId);
+        }),
       );
 
-    const startRun = (id: string) =>
-      atTime((at) =>
-        database
-          .transaction(() => {
-            const run = requireRun(database, Schema.decodeUnknownSync(Id)(id));
+    const startRun: StoreOperations["startRun"] = (id) =>
+      transaction(
+        Effect.gen(function* () {
+          const at = yield* Clock.currentTimeMillis;
+          const run = yield* requireRun(yield* decodeInput(Id, id));
 
-            if (run.status !== "pending")
-              throw new StoreError({
-                reason: "conflict",
-                message: "Only a pending run can be started.",
-              });
-            database
-              .query("UPDATE runs SET status = 'running', started_at = ? WHERE id = ?")
-              .run(Math.max(at, run.createdAt), id);
+          if (run.status !== "pending")
+            return yield* conflict("Only a pending run can be started.");
 
-            return requireRun(database, id);
-          })
-          .immediate(),
+          yield* sql`UPDATE runs SET status = 'running', started_at = ${Math.max(at, run.createdAt)}
+            WHERE id = ${id}`;
+
+          return yield* requireRun(id);
+        }),
       );
 
-    const finishRun = (id: string, outcome: RunOutcome) =>
-      atTime((at) =>
-        database
-          .transaction(() => {
-            const run = requireRun(database, Schema.decodeUnknownSync(Id)(id));
+    const finishRun: StoreOperations["finishRun"] = (id, outcome) =>
+      transaction(
+        Effect.gen(function* () {
+          const at = yield* Clock.currentTimeMillis;
+          const run = yield* requireRun(yield* decodeInput(Id, id));
+          const terminal = yield* decodeInput(RunOutcome, outcome, { onExcessProperty: "error" });
 
-            const terminal = Schema.decodeUnknownSync(RunOutcome, { onExcessProperty: "error" })(
-              outcome,
+          if (
+            run.status !== "running" &&
+            !(run.status === "pending" && terminal.status !== "completed")
+          )
+            return yield* conflict(
+              "Only an active run can be finished; completion requires a running run.",
             );
 
-            if (
-              run.status !== "running" &&
-              !(run.status === "pending" && terminal.status !== "completed")
+          const finishedAt = Math.max(at, run.createdAt, run.startedAt ?? 0);
+
+          if (terminal.status !== "completed") {
+            yield* interruptTools(id, finishedAt, terminal.reason);
+            yield* sql`UPDATE runs SET status = ${terminal.status}, finished_at = ${finishedAt},
+              failure_reason = ${terminal.reason} WHERE id = ${id}`;
+            yield* touch(run.sessionId, finishedAt);
+
+            return yield* requireRun(id);
+          }
+
+          const replied = yield* repliedCalls(id);
+
+          // A failed call may still complete its run when the model received the failure as a reply.
+          if (
+            (yield* toolCallsFor(id)).some(
+              (call) =>
+                call.status !== "completed" &&
+                !(call.status === "failed" && replied.has(call.callId)),
             )
-              throw new StoreError({
-                reason: "conflict",
-                message: "Only an active run can be finished; completion requires a running run.",
-              });
-            const finishedAt = Math.max(at, run.createdAt, run.startedAt ?? 0);
+          )
+            return yield* conflict(
+              "All tool calls must complete or report their failure before the run succeeds.",
+            );
 
-            if (terminal.status === "completed") {
-              const replied = repliedCalls(database, id);
+          const { output, continuation } = terminal.response;
 
-              if (
-                toolCallsFor(database, id).some(
-                  (call) =>
-                    call.status !== "completed" &&
-                    !(call.status === "failed" && replied.has(call.callId)),
-                )
-              )
-                throw new StoreError({
-                  reason: "conflict",
-                  message:
-                    "All tool calls must complete or report their failure before the run succeeds.",
-                });
-              append(
-                database,
-                requireSession(database, run.sessionId),
-                id,
-                [
-                  {
-                    role: "assistant",
-                    output: terminal.response.output,
-                    continuation: terminal.response.continuation,
-                  },
-                ],
-                finishedAt,
-              );
-              database
-                .query(
-                  "UPDATE runs SET status = 'completed', finished_at = ?, result = ? WHERE id = ?",
-                )
-                .run(
-                  finishedAt,
-                  Schema.encodeSync(Schema.fromJsonString(Completion))(terminal.response),
-                  id,
-                );
-            } else {
-              interruptTools(database, id, finishedAt, terminal.reason);
-              database
-                .query(
-                  "UPDATE runs SET status = ?, finished_at = ?, failure_reason = ? WHERE id = ?",
-                )
-                .run(terminal.status, finishedAt, terminal.reason, id);
-              database
-                .query("UPDATE sessions SET updated_at = MAX(updated_at, ?) WHERE id = ?")
-                .run(finishedAt, run.sessionId);
-            }
+          yield* append(
+            yield* requireSession(run.sessionId),
+            id,
+            [{ role: "assistant", output, continuation }],
+            finishedAt,
+          );
 
-            return requireRun(database, id);
-          })
-          .immediate(),
+          yield* sql`UPDATE runs SET status = 'completed', finished_at = ${finishedAt},
+            result = ${JSON.stringify(terminal.response)} WHERE id = ${id}`;
+
+          return yield* requireRun(id);
+        }),
       );
 
     const recordToolCalls: StoreOperations["recordToolCalls"] = (
@@ -515,302 +420,228 @@ export const StoreLive = Layer.effect(
       response,
       identities = [],
     ) =>
-      atTime((at) =>
-        database
-          .transaction(() => {
-            const run = requireRun(database, Schema.decodeUnknownSync(Id)(runId));
+      transaction(
+        Effect.gen(function* () {
+          const at = yield* Clock.currentTimeMillis;
+          const run = yield* requireRun(yield* decodeInput(Id, runId));
 
-            const decoded = Schema.decodeUnknownSync(Completion, { onExcessProperty: "error" })(
-              response,
+          const decoded = yield* decodeInput(Completion, response, { onExcessProperty: "error" });
+
+          const calls = decoded.output.flatMap((part) => (part.type === "tool-call" ? [part] : []));
+
+          if (
+            run.status !== "running" ||
+            decoded.finishReason !== "tool-calls" ||
+            calls.length === 0
+          )
+            return yield* conflict(
+              "Only completed tool requests in a running run can be recorded.",
             );
 
-            const calls = decoded.output.flatMap((part) =>
-              part.type === "tool-call" ? [part] : [],
-            );
+          const saved = yield* toolCallsFor(runId);
 
-            if (
-              run.status !== "running" ||
-              decoded.finishReason !== "tool-calls" ||
-              calls.length === 0
-            )
-              throw new StoreError({
-                reason: "conflict",
-                message: "Only completed tool requests in a running run can be recorded.",
-              });
-            const position = toolCallsFor(database, runId).length;
-            const createdAt = Math.max(at, run.startedAt ?? run.createdAt);
+          const ids = new Set([...saved, ...calls].map((call) => call.callId));
 
-            using existing = database.prepare(
-              "SELECT call_id FROM tool_calls WHERE run_id = ? AND call_id = ?",
-            );
+          if (ids.size !== saved.length + calls.length)
+            return yield* conflict("Tool call IDs cannot be reused within a run.");
 
-            using insert =
-              database.prepare(`INSERT INTO tool_calls (run_id, call_id, position, name, namespace, arguments, status, created_at, server_id, tool_name)
-              VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`);
+          const createdAt = Math.max(at, run.startedAt ?? run.createdAt);
 
-            for (const [index, call] of calls.entries()) {
-              if (existing.get(runId, call.callId))
-                throw new StoreError({
-                  reason: "conflict",
-                  message: "Tool call IDs cannot be reused within a run.",
-                });
+          yield* sql`INSERT INTO tool_calls ${sql.insert(
+            calls.map((call, index) => {
               const identity = identities.find((entry) => entry.callId === call.callId);
-              insert.run(
+
+              return {
                 runId,
-                call.callId,
-                position + index,
-                call.name,
-                call.namespace,
-                call.arguments,
+                callId: call.callId,
+                position: saved.length + index,
+                name: call.name,
+                namespace: call.namespace,
+                arguments: call.arguments,
+                serverId: identity?.serverId ?? null,
+                toolName: identity?.toolName ?? null,
+                status: "pending",
                 createdAt,
-                identity?.serverId ?? null,
-                identity?.toolName ?? null,
-              );
-            }
+              };
+            }),
+          )}`;
 
-            append(
-              database,
-              requireSession(database, run.sessionId),
-              runId,
-              [{ role: "assistant", output: decoded.output, continuation: decoded.continuation }],
-              createdAt,
-            );
+          yield* append(
+            yield* requireSession(run.sessionId),
+            runId,
+            [{ role: "assistant", output: decoded.output, continuation: decoded.continuation }],
+            createdAt,
+          );
 
-            return toolCallsFor(database, runId).slice(position);
-          })
-          .immediate(),
+          return (yield* toolCallsFor(runId)).slice(saved.length);
+        }),
       );
 
-    const startToolCall = (runId: string, callId: string) =>
-      atTime((at) =>
-        database
-          .transaction(() => {
-            const { call } = activeTool(database, runId, callId);
+    const finishTool = (runId: string, callId: string, outcome: ToolOutcome) =>
+      Effect.gen(function* () {
+        const at = yield* Clock.currentTimeMillis;
+        const { run, call } = yield* activeTool(runId, callId);
+        const decoded = yield* decodeInput(ToolOutcome, outcome, { onExcessProperty: "error" });
+        const finishedAt = Math.max(at, call.startedAt ?? call.createdAt);
 
-            if (call.status !== "pending")
-              throw new StoreError({
-                reason: "conflict",
-                message: "The tool call has already started.",
-              });
+        if (decoded.status === "completed" && call.status !== "running")
+          return yield* conflict("Only a started tool call can complete.");
 
-            using statement = database.prepare(
-              "UPDATE tool_calls SET status = 'running', started_at = ? WHERE run_id = ? AND call_id = ?",
-            );
+        // A reported failure keeps its reply in history only; the call row stores its reason.
+        if ("output" in decoded)
+          yield* append(
+            yield* requireSession(run.sessionId),
+            runId,
+            [{ role: "tool", callId, output: decoded.output }],
+            finishedAt,
+          );
 
-            statement.run(Math.max(at, call.createdAt), runId, callId);
-          })
-          .immediate(),
-      );
+        const completed = decoded.status === "completed";
 
-    const finishTool = (runId: string, callId: string, outcome: ToolOutcome, at: number) => {
-      const { run, call } = activeTool(database, runId, callId);
-
-      const decoded = Schema.decodeUnknownSync(ToolOutcome, { onExcessProperty: "error" })(outcome);
-
-      const finishedAt = Math.max(at, call.startedAt ?? call.createdAt);
-
-      if (decoded.status === "completed" && call.status !== "running")
-        throw new StoreError({
-          reason: "conflict",
-          message: "Only a started tool call can complete.",
-        });
-
-      // A reported failure keeps its reply in history only; the call row stores its reason.
-      if ("output" in decoded)
-        append(
-          database,
-          requireSession(database, run.sessionId),
-          runId,
-          [{ role: "tool", callId, output: decoded.output }],
-          finishedAt,
-        );
-
-      using statement = database.prepare(
-        "UPDATE tool_calls SET status = ?, finished_at = ?, output = ?, failure_reason = ? WHERE run_id = ? AND call_id = ?",
-      );
-
-      statement.run(
-        decoded.status,
-        finishedAt,
-        decoded.status === "completed" ? decoded.output : null,
-        decoded.status === "completed" ? null : decoded.reason,
-        runId,
-        callId,
-      );
-    };
-
-    const finishToolCall = (runId: string, callId: string, outcome: ToolOutcome) =>
-      atTime((at) =>
-        database.transaction(() => finishTool(runId, callId, outcome, at)).immediate(),
-      );
-
-    const commitToolCall: StoreOperations["commitToolCall"] = (runId, callId, operation) =>
-      atTime((at) =>
-        database
-          .transaction(() => {
-            const saved = toolCallsFor(database, runId).find((call) => call.callId === callId);
-
-            if (saved?.status === "completed") return saved.output!;
-            const { call } = activeTool(database, runId, callId);
-
-            if (call.status !== "running")
-              throw new StoreError({
-                reason: "conflict",
-                message: "Only a started tool call can commit a mutation.",
-              });
-            const output = operation();
-            finishTool(runId, callId, { status: "completed", output }, at);
-
-            return output;
-          })
-          .immediate(),
-      );
+        yield* sql`UPDATE tool_calls SET status = ${decoded.status}, finished_at = ${finishedAt},
+          output = ${completed ? decoded.output : null},
+          failure_reason = ${completed ? null : decoded.reason}
+          WHERE run_id = ${runId} AND call_id = ${callId}`;
+      });
 
     return {
-      recordToolCalls,
-      startToolCall,
-      finishToolCall,
-      commitToolCall,
-      toolCalls: (runId) =>
-        atTime(() => {
-          requireRun(database, Schema.decodeUnknownSync(Id)(runId));
-
-          return toolCallsFor(database, runId);
-        }),
-      renameSession: (id, title) =>
-        atTime(() => {
-          requireSession(database, Schema.decodeUnknownSync(Id)(id));
-          database
-            .query("UPDATE sessions SET title = ?, title_source = 'manual' WHERE id = ?")
-            .run(Schema.decodeUnknownSync(SessionTitle)(title), id);
-
-          return requireSession(database, id);
-        }),
-      claimTitle: (id) =>
-        atTime(() =>
-          database
-            .transaction(() => {
-              requireSession(database, Schema.decodeUnknownSync(Id)(id));
-
-              const changed = database
-                .query(`UPDATE sessions SET title_attempted = 1 WHERE id = ?
-          AND title_source = 'fallback' AND title_attempted = 0
-          AND EXISTS (SELECT 1 FROM runs WHERE session_id = ? AND status = 'completed')`)
-                .run(id, id);
-
-              return changed.changes === 1 ? requireSession(database, id) : null;
-            })
-            .immediate(),
-        ),
-      finishTitle: (id, title, usage) =>
-        atTime(() => {
-          requireSession(database, Schema.decodeUnknownSync(Id)(id));
-          const decoded = title === null ? null : Schema.decodeUnknownSync(SessionTitle)(title);
-
-          const savedUsage =
-            usage === null
-              ? null
-              : Schema.encodeSync(Schema.fromJsonString(Completion.fields.usage))(usage);
-
-          database
-            .query(`UPDATE sessions SET title_usage = ?,
-          title = CASE WHEN title_source = 'fallback' AND ? IS NOT NULL THEN ? ELSE title END,
-          title_source = CASE WHEN title_source = 'fallback' AND ? IS NOT NULL THEN 'generated' ELSE title_source END
-          WHERE id = ? AND title_attempted = 1`)
-            .run(savedUsage, decoded, decoded, decoded, id);
-        }),
       createSession,
       queueRun,
       startRun,
       finishRun,
+      recordToolCalls,
+      startToolCall: (runId, callId) =>
+        transaction(
+          Effect.gen(function* () {
+            const at = yield* Clock.currentTimeMillis;
+            const { call } = yield* activeTool(runId, callId);
+
+            if (call.status !== "pending")
+              return yield* conflict("The tool call has already started.");
+
+            yield* sql`UPDATE tool_calls SET status = 'running',
+              started_at = ${Math.max(at, call.createdAt)}
+              WHERE run_id = ${runId} AND call_id = ${callId}`;
+          }),
+        ),
+      finishToolCall: (runId, callId, outcome) => transaction(finishTool(runId, callId, outcome)),
+      commitToolCall: (runId, callId, operation) =>
+        sql
+          .withTransaction(
+            Effect.gen(function* () {
+              const saved = yield* toolCallsFor(runId).pipe(
+                Effect.map((calls) => calls.find((call) => call.callId === callId)),
+                Effect.mapError(storeFailure),
+              );
+
+              if (saved?.status === "completed") return saved.output!;
+
+              const { call } = yield* activeTool(runId, callId).pipe(Effect.mapError(storeFailure));
+
+              if (call.status !== "running")
+                return yield* conflict("Only a started tool call can commit a mutation.");
+
+              const output = yield* operation;
+
+              yield* finishTool(runId, callId, { status: "completed", output }).pipe(
+                Effect.mapError(storeFailure),
+              );
+
+              return output;
+            }),
+          )
+          .pipe(Effect.catchTag("SqlError", (error) => Effect.fail(storageFailure(error)))),
+      toolCalls: (runId) =>
+        Effect.gen(function* () {
+          yield* requireRun(yield* decodeInput(Id, runId));
+
+          return yield* toolCallsFor(runId);
+        }).pipe(Effect.mapError(storeFailure)),
+      renameSession: (id, title) =>
+        transaction(
+          Effect.gen(function* () {
+            yield* requireSession(yield* decodeInput(Id, id));
+
+            yield* sql`UPDATE sessions SET title = ${yield* decodeInput(SessionTitle, title)},
+            title_source = 'manual' WHERE id = ${id}`;
+
+            return yield* requireSession(id);
+          }),
+        ),
+      claimTitle: (id) =>
+        transaction(
+          Effect.gen(function* () {
+            yield* requireSession(yield* decodeInput(Id, id));
+
+            const claimed = yield* sql`UPDATE sessions SET title_attempted = 1
+              WHERE id = ${id} AND title_source = 'fallback' AND title_attempted = 0
+                AND EXISTS (SELECT 1 FROM runs WHERE session_id = ${id} AND status = 'completed')
+              RETURNING id`;
+
+            return claimed.length === 1 ? yield* requireSession(id) : null;
+          }),
+        ),
+      // A generated title replaces only the fallback; manual names always win.
+      finishTitle: (id, title, usage) =>
+        transaction(
+          Effect.gen(function* () {
+            yield* requireSession(yield* decodeInput(Id, id));
+            const generated = title === null ? null : yield* decodeInput(SessionTitle, title);
+
+            yield* sql`UPDATE sessions
+            SET title_usage = ${usage === null ? null : JSON.stringify(usage)},
+              title = CASE WHEN title_source = 'fallback' AND ${generated} IS NOT NULL
+                THEN ${generated} ELSE title END,
+              title_source = CASE WHEN title_source = 'fallback' AND ${generated} IS NOT NULL
+                THEN 'generated' ELSE title_source END
+            WHERE id = ${id} AND title_attempted = 1`;
+          }),
+        ),
       searchSessions: (query, maxBytes) =>
-        Effect.try({
-          try: () => searchSessions(database, query, maxBytes),
-          catch: requestFailure,
-        }),
+        searchSessions(sql, query, maxBytes).pipe(Effect.mapError(storeFailure)),
       readSession: (query, maxBytes) =>
-        Effect.try({
-          try: () => readSession(database, query, maxBytes),
-          catch: requestFailure,
-        }),
+        readSession(sql, query, maxBytes).pipe(Effect.mapError(storeFailure)),
       session: (id) =>
-        Effect.try({
-          try: () => sessionFor(database, Schema.decodeUnknownSync(Id)(id)),
-          catch: requestFailure,
-        }),
-      sessions: Effect.try({
-        try: () =>
-          readRecord(() =>
-            Schema.decodeUnknownSync(Schema.Array(SessionRecord))(
-              database.query(`${sessionSql} ORDER BY created_at, id`).all(),
-            ),
-          ),
-        catch: storageFailure,
-      }),
+        decodeInput(Id, id).pipe(Effect.flatMap(findSession), Effect.mapError(storeFailure)),
+      sessions: sql`SELECT * FROM sessions ORDER BY created_at, id`.pipe(
+        decodeRows(SessionRow),
+        Effect.mapError(storeFailure),
+      ),
       messages: (sessionId) =>
-        Effect.try({
-          try: () => {
-            const session = requireSession(database, Schema.decodeUnknownSync(Id)(sessionId));
+        Effect.gen(function* () {
+          yield* requireSession(yield* decodeInput(Id, sessionId));
 
-            const messages = readRecord(() =>
-              Schema.decodeUnknownSync(Schema.Array(MessageRecord))(
-                database
-                  .query(`${messageSql} WHERE session_id = ? ORDER BY position`)
-                  .all(sessionId),
-              ),
-            );
-
-            for (const entry of messages) {
-              if (
-                entry.message.role === "assistant" &&
-                entry.message.continuation !== null &&
-                !continuationMatches(session, entry.message.continuation)
-              )
-                throw corruptRecord();
-            }
-
-            return messages;
-          },
-          catch: requestFailure,
-        }),
-      run: (id) =>
-        Effect.try({
-          try: () => runFor(database, Schema.decodeUnknownSync(Id)(id)),
-          catch: requestFailure,
-        }),
+          return yield* sql`SELECT id, session_id, run_id, position, created_at, payload AS message
+            FROM messages WHERE session_id = ${sessionId} ORDER BY position`.pipe(
+            decodeRows(MessageRow),
+          );
+        }).pipe(Effect.mapError(storeFailure)),
+      run: (id) => decodeInput(Id, id).pipe(Effect.flatMap(findRun), Effect.mapError(storeFailure)),
       runs: (sessionId) =>
-        Effect.try({
-          try: () => {
-            const session = requireSession(database, Schema.decodeUnknownSync(Id)(sessionId));
+        Effect.gen(function* () {
+          yield* requireSession(yield* decodeInput(Id, sessionId));
 
-            const runs = readRecord(() =>
-              Schema.decodeUnknownSync(Schema.Array(RunRecord))(
-                database
-                  .query(`${runSql} WHERE session_id = ? ORDER BY created_at, id`)
-                  .all(sessionId),
-              ),
-            );
-
-            return runs.map((run) => validateRunRecord(session, run));
-          },
-          catch: requestFailure,
-        }),
-      status: Effect.try({
-        try: () => ({
+          return yield* sql`SELECT * FROM runs WHERE session_id = ${sessionId}
+            ORDER BY created_at, id`.pipe(decodeRows(RunRow));
+        }).pipe(Effect.mapError(storeFailure)),
+      status: sql`SELECT (SELECT COUNT(*) FROM sessions) AS sessions,
+          (SELECT COUNT(*) FROM messages) AS messages, (SELECT COUNT(*) FROM runs) AS runs`.pipe(
+        decodeRow(
+          Schema.Struct({
+            sessions: Schema.Natural,
+            messages: Schema.Natural,
+            runs: Schema.Natural,
+          }),
+        ),
+        Effect.map((counts) => ({
           path,
           schemaVersion,
-          ...readRecord(() =>
-            Schema.decodeUnknownSync(Counts)(
-              database
-                .query(
-                  "SELECT (SELECT COUNT(*) FROM sessions) AS sessions, (SELECT COUNT(*) FROM messages) AS messages, (SELECT COUNT(*) FROM runs) AS runs",
-                )
-                .get(),
-            ),
-          ),
-        }),
-        catch: storageFailure,
-      }),
+          sessions: counts?.sessions ?? 0,
+          messages: counts?.messages ?? 0,
+          runs: counts?.runs ?? 0,
+        })),
+        Effect.mapError(storeFailure),
+      ),
     } satisfies StoreOperations;
   }),
 ).pipe(Layer.provideMerge(StoreDatabaseLive));

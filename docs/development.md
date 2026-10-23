@@ -59,19 +59,17 @@ concurrent tests per worker.
 
 ## Store migrations
 
-Add migration SQL in a TypeScript file under `packages/store/src/migrations/`,
-named `YYYYMMDDHHMMSS_description.ts` with a UTC timestamp. Import its SQL in
-`packages/store/src/migrations.ts` and append an entry with the next sequential
-version and a stable name. Keep applied files and registrations unchanged;
-the ledger checks their names and SQL checksums before applying pending steps.
+The whole schema lives in `packages/store/src/migrations/0001_baseline.ts`, one
+SQL statement per array entry, grouped by the package that owns each table.
+`packages/store/src/migrations.ts` registers migrations for the
+[Effect SQL migrator](https://effect.website), keyed `<id>_<name>`.
 
-The unreleased base schema starts at version 1 with one initial migration.
-Migration 2 adds monitoring; migration 3 adds task revisions, occurrence snapshots,
-ready times and mutation receipts; migration 4 adds attachments; migration 5 adds
-project snapshots and scoped facts. Upgrades from versions 1 through 4 retain saved
-data, including monitoring children during occurrence-table replacement. Databases
-from the former 14-step history need a fresh data directory. See
-[storage](storage.md#schema-and-saved-records).
+To change the schema, add a new file with the next ID, register it, and raise
+`schemaVersion`. Never edit an applied migration: the migrator records only IDs,
+so it cannot detect a changed one. All pending migrations run in one transaction.
+
+Development databases created before the baseline are refused and need a fresh
+data directory. See [storage](storage.md#schema-and-saved-records).
 
 ## Lint rules
 
@@ -152,9 +150,10 @@ packages/
     src/local.ts          Local fact operations and bounded snapshots
     src/context-file.ts   Bounded UTF-8 personality and profile reads
   store/                  @poppet/store
-    src/database.ts       Scoped SQLite connection, ownership, and permissions
-    src/migrations.ts     Ordered migrations and transactional migration ledger
-    src/migrations/       Timestamped migration SQL in TypeScript files
+    src/database.ts       Scoped SQLite client, ownership, permissions, migration
+    src/migrations.ts     Registered migrations and the current schema version
+    src/migrations/       Baseline schema and later migrations
+    src/sql.ts            Row decoding helpers shared with other packages
     src/schema.ts         Durable session, message, and run schemas
     src/service.ts        Validated record operations and run lifecycle
   tasks/                  @poppet/tasks

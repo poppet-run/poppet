@@ -1,63 +1,52 @@
-import type { Database } from "bun:sqlite";
 import { isDeepStrictEqual } from "node:util";
 
-import { Schema } from "effect";
+import { decodeRow } from "@poppet/store";
+import { Effect, Schema } from "effect";
+import type { SqlClient } from "effect/sql";
 
-import { taskRecords, recurringExpiry } from "#src/task-records";
-import {
-  TaskControl,
-  ControlReceipt,
-  TaskError,
-  type Occurrence,
-  nextOccurrence,
-} from "#src/task-schema";
+import { nextTime, taskRecords, recurringExpiry } from "#src/task-records";
+import { TaskControl, ControlReceipt, TaskError, type Occurrence } from "#src/task-schema";
 
-export const taskControls = (database: Database) => {
-  const { task, occurrence, insertOccurrence, activeOccurrence, nextTarget } =
-    taskRecords(database);
+const reject = (message: string) => Effect.fail(new TaskError({ message }));
+
+export const taskControls = (sql: SqlClient.SqlClient) => {
+  const { task, occurrence, insertOccurrence, activeOccurrence, nextTarget } = taskRecords(sql);
 
   /** Revision/target checks, state changes, history and replay receipts share one transaction. */
   return (input: TaskControl, now: number) =>
-    database
-      .transaction(() => {
-        const command = Schema.decodeUnknownSync(TaskControl, { onExcessProperty: "error" })(input);
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const command = yield* Schema.decodeUnknownEffect(TaskControl, {
+          onExcessProperty: "error",
+        })(input);
 
-        const saved = Schema.decodeUnknownSync(
-          Schema.NullOr(
+        // A repeated operation ID replays its receipt instead of changing the task again.
+        const saved = yield* sql`SELECT command, receipt FROM job_operations
+          WHERE operation_id = ${command.operationId}`.pipe(
+          decodeRow(
             Schema.Struct({
               command: Schema.fromJsonString(Schema.Json),
               receipt: Schema.fromJsonString(ControlReceipt),
             }),
           ),
-        )(
-          database
-            .query("SELECT command, receipt FROM job_operations WHERE operation_id = ?")
-            .get(command.operationId),
         );
 
         if (saved !== null) {
           if (!isDeepStrictEqual(saved.command, command))
-            throw new TaskError({
-              message: "The operation ID belongs to a different task request.",
-            });
+            return yield* reject("The operation ID belongs to a different task request.");
 
           return saved.receipt;
         }
 
-        const job = task(command.id);
+        const job = yield* task(command.id);
 
         if (job.revision !== command.revision)
-          throw new TaskError({
-            message: "The task definition changed. Inspect it again before changing it.",
-          });
-        const active = activeOccurrence(job.id, "running");
+          return yield* reject("The task definition changed. Inspect it again before changing it.");
 
-        if (active !== undefined)
-          throw new TaskError({
-            message: "Cancel the running occurrence before changing this task.",
-          });
+        if ((yield* activeOccurrence(job.id, "running")) !== null)
+          return yield* reject("Cancel the running occurrence before changing this task.");
 
-        const pending = activeOccurrence(job.id, "pending");
+        const pending = yield* activeOccurrence(job.id, "pending");
         let selected: Occurrence | null = null;
         let replacedOccurrenceIds: string[] = [];
         let changedFields: string[] = [];
@@ -78,48 +67,36 @@ export const taskControls = (database: Database) => {
             const schedule = patch.schedule ?? job.schedule;
 
             if (scheduleChanged && schedule.type === "once" && schedule.at <= now)
-              throw new TaskError({
-                message: "Choose a future one-off time with an explicit UTC offset.",
-              });
+              return yield* reject("Choose a future one-off time with an explicit UTC offset.");
 
             const nextAt = scheduleChanged
               ? schedule.type === "once"
                 ? schedule.at
-                : nextOccurrence(schedule, now)
+                : yield* nextTime(schedule, now)
               : job.nextAt;
 
-            database
-              .query(
-                `UPDATE jobs SET name = ?, prompt = ?, schedule = ?, next_at = ?, revision = revision + 1 WHERE id = ?`,
-              )
-              .run(
-                patch.name ?? job.name,
-                patch.prompt ?? job.prompt,
-                JSON.stringify(schedule),
-                nextAt,
-                job.id,
-              );
+            yield* sql`UPDATE jobs SET name = ${patch.name ?? job.name},
+              prompt = ${patch.prompt ?? job.prompt}, schedule = ${JSON.stringify(schedule)},
+              next_at = ${nextAt}, revision = revision + 1 WHERE id = ${job.id}`;
 
-            if (pending !== undefined) {
-              database.run(
-                "UPDATE job_occurrences SET status = 'cancelled', finished_at = ?, reason = 'task-edited' WHERE id = ?",
-                [now, pending.id],
-              );
+            if (pending !== null) {
+              yield* sql`UPDATE job_occurrences SET status = 'cancelled', finished_at = ${now},
+                reason = 'task-edited' WHERE id = ${pending.id}`;
               replacedOccurrenceIds = [pending.id];
               snoozeCleared = scheduleChanged && pending.availableAt > pending.scheduledAt;
 
               if (!scheduleChanged) {
-                const id = insertOccurrence(task(job.id), pending.scheduledAt, {
+                const id = yield* insertOccurrence(yield* task(job.id), pending.scheduledAt, {
                   availableAt: pending.availableAt,
                   origin: pending.origin,
                   destination: pending.destination,
                 });
 
-                selected = occurrence(id);
+                selected = yield* occurrence(id);
               }
             }
 
-            const updated = task(job.id);
+            const updated = yield* task(job.id);
             details = {
               before: Object.fromEntries(fields.map((field) => [field, job[field]])),
               after: Object.fromEntries(fields.map((field) => [field, updated[field]])),
@@ -127,111 +104,99 @@ export const taskControls = (database: Database) => {
           }
         } else {
           if (job.paused)
-            throw new TaskError({ message: "Resume the task before changing its next execution." });
+            return yield* reject("Resume the task before changing its next execution.");
 
-          if (!isDeepStrictEqual(command.target, nextTarget(job.id)))
-            throw new TaskError({
-              message: "The next execution changed. Inspect the task again before changing it.",
-            });
+          if (!isDeepStrictEqual(command.target, yield* nextTarget(job.id)))
+            return yield* reject(
+              "The next execution changed. Inspect the task again before changing it.",
+            );
+
           const target = command.target;
 
           const advance = (after: number) =>
-            database.run("UPDATE jobs SET next_at = ? WHERE id = ?", [
-              nextOccurrence(job.schedule, after),
-              job.id,
-            ]);
+            Effect.flatMap(
+              nextTime(job.schedule, after),
+              (nextAt) => sql`UPDATE jobs SET next_at = ${nextAt} WHERE id = ${job.id}`,
+            );
 
           if (command.action === "skip-next") {
-            if (pending !== undefined) {
-              database.run(
-                "UPDATE job_occurrences SET status = 'cancelled', finished_at = ?, reason = 'skipped-by-owner' WHERE id = ?",
-                [now, pending.id],
-              );
-              selected = occurrence(pending.id);
+            if (pending !== null) {
+              yield* sql`UPDATE job_occurrences SET status = 'cancelled', finished_at = ${now},
+                reason = 'skipped-by-owner' WHERE id = ${pending.id}`;
+              selected = yield* occurrence(pending.id);
             } else {
-              selected = occurrence(
-                insertOccurrence(job, target.scheduledAt, {
+              selected = yield* occurrence(
+                yield* insertOccurrence(job, target.scheduledAt, {
                   availableAt: target.availableAt,
                   status: "cancelled",
                   reason: "skipped-by-owner",
                   finishedAt: now,
                 }),
               );
-              advance(target.scheduledAt);
+              yield* advance(target.scheduledAt);
             }
 
             changedFields = ["skip-next"];
           } else if (command.action === "snooze") {
             if (command.until <= now || command.until < target.availableAt)
-              throw new TaskError({
-                message: "Snooze until a future time later than the current ready time.",
-              });
+              return yield* reject("Snooze until a future time later than the current ready time.");
 
             if (command.until === target.availableAt) {
-              selected = pending ?? null;
+              selected = pending;
             } else {
-              if (pending !== undefined) {
-                database.run("UPDATE job_occurrences SET available_at = ? WHERE id = ?", [
-                  command.until,
-                  pending.id,
-                ]);
-                selected = occurrence(pending.id);
+              if (pending !== null) {
+                yield* sql`UPDATE job_occurrences SET available_at = ${command.until}
+                  WHERE id = ${pending.id}`;
+                selected = yield* occurrence(pending.id);
               } else {
-                selected = occurrence(
-                  insertOccurrence(job, target.scheduledAt, { availableAt: command.until }),
+                selected = yield* occurrence(
+                  yield* insertOccurrence(job, target.scheduledAt, { availableAt: command.until }),
                 );
-                advance(target.scheduledAt);
+                yield* advance(target.scheduledAt);
               }
 
               changedFields = ["availableAt"];
             }
-          } else if (pending !== undefined) {
+          } else if (pending !== null) {
             if (pending.availableAt > now)
-              throw new TaskError({
-                message:
-                  "The next occurrence is held until a future time. Run-now cannot undo a hold.",
-              });
+              return yield* reject(
+                "The next occurrence is held until a future time. Run-now cannot undo a hold.",
+              );
 
             if (
               pending.definition.schedule.type === "cron" &&
               pending.availableAt <= now - recurringExpiry
             )
-              throw new TaskError({
-                message:
-                  "This pending summary expired. Skip it or wait for reconciliation before running current work.",
-              });
+              return yield* reject(
+                "This pending summary expired. Skip it or wait for reconciliation before running current work.",
+              );
             selected = pending;
           } else {
             const due = target.scheduledAt <= now;
             const logical = job.schedule.type === "once" || due ? target.scheduledAt : now;
 
-            const collision = database
-              .query(
-                "SELECT id FROM job_occurrences WHERE job_id = ? AND revision = ? AND scheduled_at = ?",
-              )
-              .get(job.id, job.revision, logical);
+            const collision = yield* sql`SELECT id FROM job_occurrences
+              WHERE job_id = ${job.id} AND revision = ${job.revision} AND scheduled_at = ${logical}`;
 
-            if (collision !== null)
-              throw new TaskError({
-                message:
-                  "An occurrence already exists at this time. Inspect its history before retrying.",
-              });
-            selected = occurrence(
-              insertOccurrence(job, logical, {
+            if (collision.length > 0)
+              return yield* reject(
+                "An occurrence already exists at this time. Inspect its history before retrying.",
+              );
+
+            selected = yield* occurrence(
+              yield* insertOccurrence(job, logical, {
                 availableAt: Math.min(logical, now),
                 origin: "manual",
               }),
             );
 
             if (job.schedule.type === "once" || due) {
-              advance(now);
-              const following = nextOccurrence(job.schedule, logical);
+              yield* advance(now);
+              const following = yield* nextTime(job.schedule, logical);
 
               if (following !== null && following <= now)
-                database.run(
-                  "INSERT INTO job_skips (job_id, first_at, last_at, reason) VALUES (?, ?, ?, 'worker-delayed')",
-                  [job.id, following, now],
-                );
+                yield* sql`INSERT INTO job_skips (job_id, first_at, last_at, reason)
+                  VALUES (${job.id}, ${following}, ${now}, 'worker-delayed')`;
             }
 
             changedFields = ["run-now"];
@@ -242,13 +207,13 @@ export const taskControls = (database: Database) => {
               target,
               occurrenceId: selected?.id ?? null,
               availableAt: selected?.availableAt ?? null,
-              nextAt: task(job.id).nextAt,
+              nextAt: (yield* task(job.id)).nextAt,
             };
         }
 
-        const updated = task(job.id);
+        const updated = yield* task(job.id);
 
-        const receipt = Schema.decodeUnknownSync(ControlReceipt)({
+        const receipt = yield* Schema.decodeUnknownEffect(ControlReceipt)({
           operationId: command.operationId,
           action: command.action,
           taskId: job.id,
@@ -264,20 +229,16 @@ export const taskControls = (database: Database) => {
           availableAt: selected?.availableAt ?? null,
         });
 
-        database
-          .query(
-            "INSERT INTO job_operations (operation_id, job_id, command, receipt, changes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-          )
-          .run(
-            command.operationId,
-            job.id,
-            JSON.stringify(command),
-            JSON.stringify(receipt),
-            details === null ? null : JSON.stringify(details),
-            now,
-          );
+        yield* sql`INSERT INTO job_operations ${sql.insert({
+          operationId: command.operationId,
+          jobId: job.id,
+          command: JSON.stringify(command),
+          receipt: JSON.stringify(receipt),
+          changes: details === null ? null : JSON.stringify(details),
+          createdAt: now,
+        })}`;
 
         return receipt;
-      })
-      .immediate();
+      }),
+    );
 };

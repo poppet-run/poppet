@@ -16,6 +16,7 @@ export class TaskDestinations extends Context.Service<
   }
 >()("poppet/TaskDestinations") {}
 
+/** Runs synchronous task parsing or validation, reporting unexpected failures generically. */
 export const taskOperation = <A>(operation: () => A): Effect.Effect<A, TaskError> =>
   Effect.try({
     try: operation,
@@ -32,21 +33,23 @@ export const executeTaskCommand = (
   now: number,
 ) =>
   Effect.gen(function* () {
-    if (command.action === "inspect")
-      return yield* taskOperation(() => {
-        const job = repo.task(command.id);
+    if (command.action === "inspect") {
+      const job = yield* repo.task(command.id);
 
-        return { task: { id: job.id, revision: job.revision }, target: repo.nextTarget(job.id) };
-      });
+      return {
+        task: { id: job.id, revision: job.revision },
+        target: yield* repo.nextTarget(job.id),
+      };
+    }
 
     if (command.action === "show") {
-      const job = yield* taskOperation(() => repo.task(command.id));
-      const occurrences = yield* taskOperation(() => repo.occurrences(job.id));
+      const job = yield* repo.task(command.id);
+      const occurrences = yield* repo.occurrences(job.id);
 
       const results = yield* Effect.forEach(occurrences, (item) =>
         Effect.gen(function* () {
           const run = item.runId === null ? null : yield* store.run(item.runId);
-          const delivery = yield* taskOperation(() => repo.deliveries(item.id));
+          const delivery = yield* repo.deliveries(item.id);
 
           return {
             ...item,
@@ -59,10 +62,10 @@ export const executeTaskCommand = (
 
       return {
         task: job,
-        target: yield* taskOperation(() => repo.nextTarget(job.id)),
-        changes: yield* taskOperation(() => repo.changes(job.id)),
+        target: yield* repo.nextTarget(job.id),
+        changes: yield* repo.changes(job.id),
         occurrences: results,
-        skipped: yield* taskOperation(() => repo.skips(job.id)),
+        skipped: yield* repo.skips(job.id),
       };
     }
 
@@ -93,51 +96,41 @@ export const executeTaskCommand = (
         );
       }
 
-      return yield* taskOperation(() => {
-        const task = repo.add(command.task, now, skill, destination);
-
-        return task;
-      });
+      return yield* repo.add(command.task, now, skill, destination);
     }
 
-    return yield* taskOperation(() => {
-      switch (command.action) {
-        case "list":
-          return repo.list();
-        case "status":
-          return repo.status();
-        case "clear":
-          return { cleared: repo.clear() };
-        case "providers":
-          return repo.providers();
-        case "pause":
-          return repo.pause(command.id, now);
-        case "resume":
-          return repo.resume(command.id, now);
-        case "cancel":
-          return repo.cancel(command.id, now);
-        case "retry":
-          return repo.retry(command.id, now);
-        case "edit":
-        case "skip-next":
-        case "snooze":
-        case "run-now":
-          return repo.control(command, now);
-        case "resume-provider":
-          repo.resumeProvider(command.provider, now);
+    switch (command.action) {
+      case "list":
+        return yield* repo.list();
+      case "status":
+        return yield* repo.status();
+      case "clear":
+        return { cleared: yield* repo.clear() };
+      case "providers":
+        return yield* repo.providers();
+      case "pause":
+        return yield* repo.pause(command.id, now);
+      case "resume":
+        return yield* repo.resume(command.id, now);
+      case "cancel":
+        return yield* repo.cancel(command.id, now);
+      case "retry":
+        return yield* repo.retry(command.id, now);
+      case "edit":
+      case "skip-next":
+      case "snooze":
+      case "run-now":
+        return yield* repo.control(command, now);
+      case "resume-provider":
+        yield* repo.resumeProvider(command.provider, now);
 
-          return { provider: command.provider, resumed: true };
-      }
-    });
+        return { provider: command.provider, resumed: true };
+    }
   });
 
-const recoveredTasks = TaskRepository.pipe(
-  Effect.tap((repo) => taskOperation(() => repo.recover(Date.now()))),
-);
+const recoveredTasks = TaskRepository.pipe(Effect.tap((repo) => repo.recover(Date.now())));
 
-export const readLocalTaskStatus = recoveredTasks.pipe(
-  Effect.flatMap((repo) => taskOperation(() => repo.status())),
-);
+export const readLocalTaskStatus = recoveredTasks.pipe(Effect.flatMap((repo) => repo.status()));
 
 export const executeLocalTaskCommand = (command: TaskCommand) =>
   Effect.gen(function* () {

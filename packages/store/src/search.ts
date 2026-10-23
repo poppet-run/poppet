@@ -1,52 +1,43 @@
-import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import type { SqlClient } from "effect/sql";
 
-import { readRecord } from "#src/errors";
+import { decodeInput } from "#src/errors";
 import { SessionSearchMatch, SessionSearchQuery, type SessionSearchResult } from "#src/schema";
+import { decodeRows } from "#src/sql";
+
+/** Bounds a caller-supplied JSON byte budget. */
+export const MaxBytes = Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 }));
 
 /** Searches completed exchanges and keeps excerpts around their match within the JSON byte budget. */
-export const searchSessions = (
-  database: Database,
+export const searchSessions = Effect.fn(function* (
+  sql: SqlClient.SqlClient,
   query: string,
   maxBytes: number,
-): SessionSearchResult => {
-  const text = Schema.decodeUnknownSync(SessionSearchQuery)(query);
-  Schema.decodeUnknownSync(Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 })))(
-    maxBytes,
-  );
+) {
+  const text = yield* decodeInput(SessionSearchQuery, query);
+  yield* decodeInput(MaxBytes, maxBytes);
 
   const terms = text
     .split(/\s+/u)
     .filter((term) => /[\p{L}\p{N}]/u.test(term))
     .map((term) => `"${term.replaceAll('"', '""')}"`);
 
-  if (terms.length === 0) return { matches: [], truncated: false };
+  if (terms.length === 0) return { matches: [], truncated: false } satisfies SessionSearchResult;
 
   // Use a fresh marker so stored text cannot be mistaken for a match boundary.
   const marker = randomUUID();
 
-  const rows = readRecord(() =>
-    Schema.decodeUnknownSync(
-      Schema.Array(
-        Schema.Struct({
-          ...SessionSearchMatch.fields,
-          textLength: Schema.Natural,
-        }),
-      ),
-    )(
-      database
-        .query(`SELECT m.session_id AS sessionId, m.id AS messageId,
-      s.title, m.created_at AS createdAt, json_extract(m.payload, '$.role') AS role,
-      snippet(session_search, 0, ?, ?, '', 48) AS excerpt,
-      length(session_search.text) AS textLength
-      FROM session_search JOIN messages AS m ON m.id = session_search.rowid
-      JOIN sessions AS s ON s.id = m.session_id
-      WHERE session_search MATCH ?
-      ORDER BY rank, m.id LIMIT 11`)
-        .all(marker, marker, terms.join(" AND ")),
-    ),
+  const rows = yield* sql`SELECT m.session_id, m.id AS message_id, s.title, m.created_at,
+      json_extract(m.payload, '$.role') AS role,
+      snippet(session_search, 0, ${marker}, ${marker}, '', 48) AS excerpt,
+      length(session_search.text) AS text_length
+    FROM session_search JOIN messages AS m ON m.id = session_search.rowid
+    JOIN sessions AS s ON s.id = m.session_id
+    WHERE session_search MATCH ${terms.join(" AND ")}
+    ORDER BY rank, m.id LIMIT 11`.pipe(
+    decodeRows(Schema.Struct({ ...SessionSearchMatch.fields, textLength: Schema.Natural })),
   );
 
   const matches: Array<typeof SessionSearchMatch.Type> = [];
@@ -77,7 +68,7 @@ export const searchSessions = (
       Buffer.byteLength(JSON.stringify({ matches: [...matches, match], truncated: true })) >
       maxBytes
     ) {
-      if (length === hitLength) return { matches, truncated: true };
+      if (length === hitLength) return { matches, truncated: true } satisfies SessionSearchResult;
       length = Math.max(hitLength, Math.floor(length / 2));
       match = { ...row, excerpt: excerpt() };
       truncated = true;
@@ -86,5 +77,5 @@ export const searchSessions = (
     matches.push(match);
   }
 
-  return { matches, truncated };
-};
+  return { matches, truncated } satisfies SessionSearchResult;
+});

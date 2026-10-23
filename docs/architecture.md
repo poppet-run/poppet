@@ -79,7 +79,7 @@ See the [source layout](development.md#source-layout) for module paths. Provider
 packages own authentication and inference adapters. The agent owns persisted
 conversation execution, context, and built-in tools. Tasks own scheduling and
 execution history; the gateway owns messaging acceptance and delivery. Their
-tables live in the shared store migrations, and the CLI composes their layers
+tables live in the store's baseline schema, and the CLI composes their layers
 around one store connection and agent.
 
 Each live service gets a layer at the application boundary. Tests replace model,
@@ -337,26 +337,22 @@ provides configuration through its store runtime layer; `store status` migrates 
 schema and reports counts without opening authentication services.
 
 `database.ts` protects `<data directory>/store`, acquires the process ownership
-lock, and opens Bun SQLite with strict bindings, foreign keys, WAL, and full
-synchronous commits. Scope finalizers close SQLite before releasing ownership.
-Database files and WAL sidecars use owner-only permissions.
+lock, and opens one Effect SQL client on Bun SQLite with foreign keys, WAL, and full
+synchronous commits. Rows come back with camelCase names. Scope finalizers close
+SQLite before releasing ownership. Database files and WAL sidecars use owner-only
+permissions.
 
-`migrations.ts` registers append-only SQL migrations from timestamped TypeScript
-files in `migrations/` and owns a ledger containing names, checksums, and
-application times. Each registration has a sequential version. The unreleased
-history is consolidated into one initial migration; older development databases
-require a fresh data directory. The runner checks the application ID and schema
-version, validates all applied ledger entries, and applies every pending step
-inside one immediate transaction. A failed migration preserves the previous
-schema and ledger. Changed history and future schema versions require an explicit
-migration decision rather than silent repair.
+`migrations.ts` registers migrations for Effect's SQL migrator. The baseline in
+`migrations/0001_baseline.ts` holds the whole schema; later changes append new
+migrations. The layer refuses databases it did not create and databases from a
+newer version, then runs all pending migrations in one transaction.
 
 `schema.ts` defines session, message, run, and terminal-outcome records with
-Effect Schema. The initial schema persists workloads, defaulting sessions and
-runs to `assistant`. `service.ts` binds provider/model/workload selection to sessions and runs,
-validates persisted messages and completion payloads, and checks continuation
-identity. SQLite foreign keys enforce record ownership and a partial unique
-index permits only one pending or running run.
+Effect Schema. `service.ts` validates caller input, checks continuation identity
+before saving messages, and decodes rows on read. Table checks enforce valid run
+and tool-call states, a foreign key keeps each run's provider, model, and workload
+equal to its session's, and a partial unique index permits only one pending or
+running run. Services rely on these rules instead of repeating them.
 
 `queueRun` persists its pending run and input messages in one transaction.
 `startRun` accepts only pending work. Pending work can fail or be interrupted;
@@ -364,7 +360,7 @@ successful completion requires a running run. `recordToolCalls`, `startToolCall`
 `finishToolCall` journal tool exchanges and their outcomes. `finishRun` atomically saves a successful response and assistant
 message, or records a failure/interruption reason. Read methods retain message
 order and provider continuation. The `Store` record API exposes no raw SQLite
-handle; repositories use the separate scoped `StoreDatabase` service.
+handle; repositories query the shared `SqlClient` that `StoreLive` also provides.
 
 A new owner marks unfinished runs interrupted with `process-exit`, preserving
 their inputs without replaying them. A hard crash releases the OS-held SQLite lock; the next owner replaces any
@@ -462,9 +458,9 @@ requests. Scheduled runs never wait for approval; a blocked command fails the
 occurrence. Failed occurrences log a reason code and retain details in task history
 without posting to their destination or changing their recurring schedule.
 Only completed results enter the durable delivery queue. Pending failure notices
-from older versions are stopped before delivery. Migration 10 keeps delivery unique
-per occurrence/run, preserving old receipts while allowing a successful retry to
-deliver its result to the task's saved destination.
+from older versions are stopped before delivery. Delivery is unique per
+occurrence and run, so a successful retry can deliver its result to the task's
+saved destination.
 
 ## Supplied page reading
 
@@ -652,7 +648,7 @@ requires no additional socket command or migration.
 It retains up to 128 facts of at most 4096 UTF-8 bytes each.
 
 The store owns database acquisition and the `memories` table schema. `StoreLive`
-also exposes the scoped `StoreDatabase` service, allowing the CLI to supply one connection and
+also exposes the shared Effect `SqlClient`, allowing the CLI to supply one connection and
 owner lock to conversation storage and local memory. The memory implementation
 owns fact SQL; the conversation `Store` has no memory operations or dependency on
 the memory package.
@@ -979,7 +975,7 @@ separate sessions alone do not isolate the current shared profile or facts.
 
 The store schema includes conversation bindings, accepted message IDs,
 and delivery records. The gateway owns their repository through the shared
-`StoreDatabase`; the store retains database ownership and migration history.
+`SqlClient`; the store retains database ownership and migration history.
 Deduplicate by adapter, bot account, and external message ID. Persist accepted
 work before advancing a transport cursor or acknowledging receipt where the
 platform provides such a mechanism. Bound pending work and reject overload

@@ -1,4 +1,4 @@
-import { Data, Schema } from "effect";
+import { Data, Effect, Schema } from "effect";
 
 /** Distinguishes storage failures from invalid requests, missing records, and state conflicts. */
 export class StoreError extends Data.TaggedError("StoreError")<{
@@ -21,18 +21,33 @@ export const storageFailure = (cause: unknown) =>
         message: "Poppet could not read or write its conversation store.",
       });
 
-export const corruptRecord = () =>
-  new StoreError({
-    reason: "corrupt",
-    message: "The conversation store contains an invalid record.",
-  });
+/**
+ * Converts failures at the service boundary. Callers validate their input first,
+ * so a schema failure here means a saved row no longer matches its schema.
+ */
+export const storeFailure = (cause: unknown) =>
+  cause instanceof Schema.SchemaError
+    ? new StoreError({
+        reason: "corrupt",
+        message: "The conversation store contains an invalid record.",
+      })
+    : storageFailure(cause);
 
-// Invalid saved data is corruption; the service classifies invalid caller input separately.
-export const readRecord = <A>(read: () => A): A => {
-  try {
-    return read();
-  } catch (cause) {
-    if (cause instanceof Schema.SchemaError) throw corruptRecord();
-    throw cause;
-  }
-};
+/** Validates caller input, reporting a mismatch as an invalid request. */
+export const decodeInput = <S extends Schema.Top>(
+  schema: S,
+  value: S["Encoded"],
+  options?: { readonly onExcessProperty?: "error" },
+) =>
+  Schema.decodeUnknownEffect(
+    schema,
+    options,
+  )(value).pipe(
+    Effect.mapError(
+      () =>
+        new StoreError({
+          reason: "invalid-request",
+          message: "The conversation store request is invalid.",
+        }),
+    ),
+  );

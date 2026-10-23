@@ -38,24 +38,13 @@ creation provenance, confirmed and pending remote names, the last title consider
 for synchronization, and whether external edits or failures disabled naming.
 
 `@poppet/store` provides a scoped Effect `Store` service backed by
-[Bun SQLite](https://bun.sh/docs/runtime/sqlite). The initial migration creates the
-base schema; migration 2 adds change-aware monitoring, migration 3 adds task
-controls and immutable occurrence definitions, and migration 4 adds attachment
-processing results and source-aware recall. Migration 5 adds project snapshots
-and scoped facts without resetting saved data. Migration 6 adds learned skills
-and their revision history. Migration 7 adds fact origins and fact revision
-history. Migration 8 adds the background review queue.
-Migration SQL lives in timestamped TypeScript files under
-`packages/store/src/migrations/`, registered in order by `migrations.ts`.
-A checksummed migration ledger rejects newer schemas and changed migration
-history. All pending migrations commit together; a failure rolls back the pending
-batch.
-
-The unreleased base migration history was consolidated into schema version 1;
-the current schema is version 9. Existing version-1 through version-8 databases upgrade in place.
-Development databases created with the former 14-step history are still rejected.
-Those legacy databases require a fresh data directory; databases are never reset
-automatically.
+[Bun SQLite](https://bun.sh/docs/runtime/sqlite) through the Effect SQL client.
+One baseline migration creates the whole schema, and table checks define which
+record states are valid. Effect's migrator records applied migration IDs and runs
+all pending migrations in one transaction; a failure rolls back the batch.
+The store refuses databases from newer versions, from other applications, and
+from development builds before the baseline. Those need a fresh data directory;
+databases are never reset automatically.
 
 Sessions retain their selected provider, model, and workload. Sessions and runs
 default to the `assistant` workload. Messages preserve order, tool call IDs, tool
@@ -82,11 +71,6 @@ receipts retain replay protection without appearing as changes. Definition edits
 occurrence replacement, timing changes, history, and receipts commit together.
 Chat also completes its tool journal/message in that transaction. Clearing tasks
 cascades to operations, preserving existing chat and queued-delivery behavior.
-
-Migration 3 rebuilds occurrence uniqueness while preserving original IDs,
-monitor-result ordering, child foreign keys, and all unrelated records. The child
-monitoring table is copied before replacing its parent; migration rollback leaves
-both original tables and the version ledger intact.
 
 ## Scheduled delivery destinations
 
@@ -124,21 +108,13 @@ snapshot into the new session; no later run rereads the skill file. Inspection
 exposes snapshots without provider
 continuation or credentials. See [skills](skills.md).
 
-## Retired learning data
-
-Migrations 6 and 8 remain unchanged so existing databases still open. Their
-`learned_skills`, `skill_revisions`, and `learning_reviews` tables are retained
-as archived data. Poppet no longer reads, writes, or runs background reviews.
-Export any learned procedures you want to keep into owner-written `SKILL.md` files.
-
 ## Fact history
 
-Migration 7 adds an `origin` column to `memories` (`cli`, `turn`, or `review`),
-set to `turn` for existing facts with a source run and `cli` otherwise. The
+Each fact in `memories` records its `origin`: `cli`, `turn`, or `review`. The
 append-only `memory_revisions` table records every remember, replace, forget,
 and revert per key, with the value (null when forgotten),
-origin, source run, and time. Existing facts are backfilled as revision 1. CLI
-changes have no source run; model changes always do.
+origin, source run, and time. CLI changes have no source run; model changes
+always do.
 
 ## Conversation search index
 
@@ -212,24 +188,3 @@ Previously saved PDF text and voice transcripts remain readable. Old
 `<data directory>/attachment-tmp` directories from interrupted PDF/audio processing
 are no longer used or cleaned by Poppet; after stopping the old worker, they can
 be removed without deleting saved history.
-
-## Retired project data
-
-Project selection has been removed. Existing project columns, occurrence JSON,
-facts, and revision histories remain in SQLite; project files are untouched.
-They are no longer loaded as instructions or active facts. Current memory uses
-only the global scope, so conflicting keys are never merged. Export any project
-facts you still need and save them explicitly with `memory remember`.
-
-Existing conversations and tasks still load. Recall and task controls now cover
-all saved records. Review task prompts that depended on project instructions;
-put required context in the prompt or a skill when creating replacement tasks.
-
-## Retired monitoring data
-
-Migration 9 pauses existing monitor jobs, clears their next run, cancels pending
-checks, and interrupts unfinished checks. It stops pending alerts and marks
-in-flight deliveries uncertain. Completed runs and observation history remain
-in SQLite. Archived monitors are excluded from task commands and new delivery.
-Ordinary one-off and recurring tasks are unchanged. To replace a monitor, create
-a regular cron task; it reports every successful run.

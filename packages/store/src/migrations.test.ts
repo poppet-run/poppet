@@ -1,95 +1,128 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { applyMigrations, migrations } from "#src/migrations";
+import { SqliteClient, SqliteMigrator } from "@effect/sql-sqlite-bun";
+import { AppConfig } from "@poppet/config";
+import { Effect, Exit, Layer } from "effect";
+import { Migrator, SqlClient } from "effect/sql";
 
-const initial = migrations.slice(0, 1);
+import { StoreDatabase, StoreDatabaseLive } from "#src/database";
+import { migrations } from "#src/migrations";
 
-describe("applyMigrations", () => {
-  test("when a later migration fails during initial setup, rolls back schema creation", () => {
-    using database = new Database(":memory:");
+const fixture = async () => {
+  const directory = await mkdtemp(join(tmpdir(), "poppet-migrations-"));
+  const path = join(directory, "store/poppet.sqlite");
 
-    const broken = {
-      version: 2,
-      name: "broken",
-      sql: "CREATE TABLE partial (id INTEGER); invalid SQL;",
-    };
+  const layer = StoreDatabaseLive.pipe(
+    Layer.provide(
+      Layer.succeed(AppConfig, {
+        applicationName: "Test",
+        dataDirectory: directory,
+        provider: "first-provider",
+        model: null,
+      }),
+    ),
+  );
 
-    expect(() => applyMigrations(database, [...initial, broken])).toThrow(
-      "No pending migrations were committed",
+  const open = () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        yield* StoreDatabase;
+
+        return true;
+      }).pipe(Effect.provide(layer)),
     );
-    expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 0 });
-    expect(database.query("PRAGMA application_id").get()).toEqual({ application_id: 0 });
-    expect(database.query("SELECT name FROM sqlite_master").all()).toEqual([]);
-    expect(applyMigrations(database)).toBe(migrations.length);
-  });
 
-  test("when a pending migration fails, rolls back pending changes and ledger entries while preserving data", () => {
-    using database = new Database(":memory:");
-    applyMigrations(database, initial, 10);
-    database.run(
-      "INSERT INTO sessions (id, provider, model, workload, created_at, updated_at) VALUES ('saved', 'openrouter', 'model', 'assistant', 1, 1)",
-    );
+  return { directory, path, open, close: () => rm(directory, { recursive: true, force: true }) };
+};
 
-    const next = {
-      version: 2,
-      name: "session-index",
-      sql: "CREATE INDEX sessions_by_provider ON sessions (provider);",
-    };
+describe("StoreDatabaseLive migrations", () => {
+  test("when the store is new, applies the baseline once and records it", async () => {
+    const store = await fixture();
 
-    const broken = {
-      version: 3,
-      name: "broken",
-      sql: "CREATE TABLE partial (id INTEGER); invalid SQL;",
-    };
-
-    expect(() => applyMigrations(database, [...initial, next, broken], 20)).toThrow(
-      "No pending migrations were committed",
-    );
-    expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 1 });
-    expect(
-      database.query("SELECT version, applied_at FROM schema_migrations ORDER BY version").all(),
-    ).toEqual([{ version: 1, applied_at: 10 }]);
-    expect(
-      database
-        .query("SELECT name FROM sqlite_master WHERE name IN ('partial', 'sessions_by_provider')")
-        .all(),
-    ).toEqual([]);
-    expect(database.query("SELECT id FROM sessions").get()).toEqual({ id: "saved" });
-    expect(applyMigrations(database, [...initial, next], 20)).toBe(2);
-    expect(applyMigrations(database, [...initial, next], 30)).toBe(2);
-    expect(
-      database.query("SELECT version, applied_at FROM schema_migrations ORDER BY version").all(),
-    ).toEqual([
-      { version: 1, applied_at: 10 },
-      { version: 2, applied_at: 20 },
-    ]);
-    expect(database.query("SELECT id FROM sessions").get()).toEqual({ id: "saved" });
-  });
-
-  test.each(["future-version", "changed-checksum", "missing-ledger"])(
-    "when the migration ledger has %s, rejects further changes",
-    (failure) => {
-      using database = new Database(":memory:");
-      applyMigrations(database);
-
-      if (failure === "future-version") database.run("PRAGMA user_version = 99");
-      else if (failure === "changed-checksum")
-        database.run("UPDATE schema_migrations SET checksum = 'changed' WHERE version = 1");
-      else database.run("DELETE FROM schema_migrations WHERE version = 1");
-      expect(() => applyMigrations(database)).toThrow("unsupported or changed migration history");
+    try {
+      expect(await store.open()).toBe(true);
+      expect(await store.open()).toBe(true);
+      using database = new Database(store.path, { readonly: true });
+      expect(database.query("SELECT migration_id, name FROM effect_sql_migrations").all()).toEqual([
+        { migration_id: 1, name: "baseline" },
+      ]);
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions'").get(),
       ).toEqual({ name: "sessions" });
+    } finally {
+      await store.close();
+    }
+  });
+
+  test.each(["older-build", "other-application"])(
+    "when the database came from an %s, refuses it without changes",
+    async (origin) => {
+      const store = await fixture();
+
+      try {
+        await mkdir(join(store.directory, "store"), { recursive: true });
+
+        using existing = new Database(store.path);
+        existing.run(
+          origin === "older-build"
+            ? "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)"
+            : "CREATE TABLE other_data (id INTEGER)",
+        );
+        existing.close();
+
+        await expect(store.open()).rejects.toMatchObject({ reason: "migration" });
+        using inspect = new Database(store.path, { readonly: true });
+        expect(
+          inspect.query("SELECT name FROM sqlite_master WHERE type = 'table'").all(),
+        ).toHaveLength(1);
+      } finally {
+        await store.close();
+      }
     },
   );
 
-  test("when a database belongs to another application, refuses to claim it", () => {
-    using unrelated = new Database(":memory:");
-    unrelated.run("CREATE TABLE other_data (id INTEGER)");
-    expect(() => applyMigrations(unrelated)).toThrow("unsupported or changed migration history");
-    expect(
-      unrelated.query("SELECT name FROM sqlite_master WHERE name = 'schema_migrations'").get(),
-    ).toBeNull();
+  test("when a pending migration fails, commits none of the pending migrations", async () => {
+    const store = await fixture();
+
+    try {
+      await mkdir(join(store.directory, "store"), { recursive: true });
+
+      const run = (loader: Migrator.Loader) =>
+        Effect.runPromise(
+          SqliteMigrator.run({ loader }).pipe(
+            Effect.provide(SqliteClient.layer({ filename: store.path })),
+            Effect.exit,
+          ),
+        );
+
+      await run(migrations);
+
+      const pending = Migrator.fromRecord({
+        "1_baseline": Effect.void,
+        "2_index": Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`CREATE INDEX sessions_by_provider ON sessions (provider)`;
+        }),
+        "3_broken": Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`invalid SQL`;
+        }),
+      });
+
+      expect(Exit.isFailure(await run(pending))).toBe(true);
+      using database = new Database(store.path, { readonly: true });
+      expect(database.query("SELECT migration_id FROM effect_sql_migrations").all()).toEqual([
+        { migration_id: 1 },
+      ]);
+      expect(
+        database.query("SELECT name FROM sqlite_master WHERE name = 'sessions_by_provider'").get(),
+      ).toBeNull();
+    } finally {
+      await store.close();
+    }
   });
 });

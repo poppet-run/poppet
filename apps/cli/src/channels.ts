@@ -63,10 +63,13 @@ const loadChannels = (registered: ReadonlyArray<ChannelRegistration>) =>
   );
 
 const counts = (repo: GatewayRepository["Service"]) =>
-  Effect.try({
-    try: () => repo.status(),
-    catch: () => new StoreError({ reason: "storage", message: "Cannot read messaging status." }),
-  });
+  repo
+    .status()
+    .pipe(
+      Effect.mapError(
+        () => new StoreError({ reason: "storage", message: "Cannot read messaging status." }),
+      ),
+    );
 
 /** Restart counts and the latest failure an adapter recovered from, for status output. */
 export interface AdapterHealth {

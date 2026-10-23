@@ -13,8 +13,9 @@ import {
   type ChatTaskContext,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
-import { Store, StoreDatabase, StoreLive, type Run } from "@poppet/store";
+import { Store, StoreLive, type Run } from "@poppet/store";
 import { Deferred, Effect, Fiber, Layer } from "effect";
+import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
 import { ChatTasksLive } from "#src/chat-tools";
@@ -54,7 +55,9 @@ const fixture = async (toolBytes = 16384) => {
 
   return {
     directory,
-    run: <A, E>(program: Effect.Effect<A, E, ChatTasks | Store | StoreDatabase | TaskRepository>) =>
+    run: <A, E>(
+      program: Effect.Effect<A, E, ChatTasks | Store | SqlClient.SqlClient | TaskRepository>,
+    ) =>
       Effect.runPromise(
         Effect.gen(function* () {
           yield* TestClock.setTime(now);
@@ -125,7 +128,7 @@ describe("ChatTasks", () => {
       await state.run(
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
-          const { database } = yield* StoreDatabase;
+          const sql = yield* SqlClient.SqlClient;
           const first = yield* recorded(create);
           const created = JSON.parse(yield* execute(create, first.context));
           const id = created.task.id;
@@ -161,7 +164,7 @@ describe("ChatTasks", () => {
             action: "snooze",
             id,
             revision: 1,
-            target: repo.nextTarget(id)!,
+            target: (yield* repo.nextTarget(id))!,
             until: "2026-10-19T09:00:00Z",
           };
 
@@ -188,16 +191,16 @@ describe("ChatTasks", () => {
           );
           const rollback: ChatTaskAction = { ...edit, revision: 1, name: "Must roll back" };
           const fifth = yield* recorded(rollback, "rollback", first.run);
-          database.run(
+          yield* sql.unsafe(
             "CREATE TRIGGER reject_control_receipt BEFORE UPDATE OF status ON tool_calls WHEN NEW.call_id = 'rollback' AND NEW.status = 'completed' BEGIN SELECT RAISE(ABORT, 'receipt failed'); END",
           );
           expect(yield* execute(rollback, fifth.context).pipe(Effect.result)).toHaveProperty(
             "failure.reason",
             "storage",
           );
-          expect(repo.task(id)).toMatchObject({ revision: 1, name: "Edited" });
-          expect(repo.nextTarget(id)?.availableAt).toBe(Date.parse(snooze.until));
-          expect(repo.changes(id)).toHaveLength(2);
+          expect(yield* repo.task(id)).toMatchObject({ revision: 1, name: "Edited" });
+          expect((yield* repo.nextTarget(id))?.availableAt).toBe(Date.parse(snooze.until));
+          expect(yield* repo.changes(id)).toHaveLength(2);
         }),
       );
     } finally {
@@ -234,8 +237,8 @@ describe("ChatTasks", () => {
             "failure.reason",
             "invalid-request",
           );
-          expect(repo.task(id).revision).toBe(0);
-          expect(repo.changes(id)).toEqual([]);
+          expect((yield* repo.task(id)).revision).toBe(0);
+          expect(yield* repo.changes(id)).toEqual([]);
         }),
       );
     } finally {
@@ -254,7 +257,7 @@ describe("ChatTasks", () => {
         Effect.gen(function* () {
           const { store, run, context } = yield* recorded(action);
           const receipt = yield* execute(action, context);
-          const task = (yield* TaskRepository).list()[0]!;
+          const task = (yield* (yield* TaskRepository).list())[0]!;
           expect(task).toMatchObject({
             provider: "test-provider",
             model: "test-model",
@@ -277,7 +280,7 @@ describe("ChatTasks", () => {
         Effect.gen(function* () {
           const planned = yield* (yield* ChatTasks).prepare(action, saved.context);
           expect(yield* planned.execute).toBe(saved.receipt);
-          expect((yield* TaskRepository).list()).toHaveLength(1);
+          expect(yield* (yield* TaskRepository).list()).toHaveLength(1);
         }),
       );
     } finally {
@@ -292,19 +295,19 @@ describe("ChatTasks", () => {
       await state.run(
         Effect.gen(function* () {
           const { context, store } = yield* recorded(create);
-          const { database } = yield* StoreDatabase;
-          database.run(
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql.unsafe(
             `CREATE TRIGGER reject_task_receipt BEFORE INSERT ON messages WHEN json_extract(NEW.payload, '$.role') = 'tool' BEGIN SELECT RAISE(ABORT, 'receipt failed'); END`,
           );
           expect(yield* execute(create, context).pipe(Effect.flip)).toMatchObject({
             reason: "storage",
           });
-          expect((yield* TaskRepository).list()).toEqual([]);
+          expect(yield* (yield* TaskRepository).list()).toEqual([]);
           expect((yield* store.toolCalls(context.runId))[0]).toMatchObject({
             status: "running",
             output: null,
           });
-          database.run("DROP TRIGGER reject_task_receipt");
+          yield* sql.unsafe("DROP TRIGGER reject_task_receipt");
         }),
       );
     } finally {
@@ -333,7 +336,7 @@ describe("ChatTasks", () => {
             expect(
               yield* (yield* ChatTasks).prepare(action, context).pipe(Effect.flip),
             ).toBeInstanceOf(AgentError);
-            expect((yield* TaskRepository).list()).toEqual([]);
+            expect(yield* (yield* TaskRepository).list()).toEqual([]);
           }),
         );
       } finally {
@@ -360,7 +363,7 @@ describe("ChatTasks", () => {
           expect(yield* planned.execute.pipe(Effect.flip)).toMatchObject({
             reason: "invalid-request",
           });
-          expect((yield* TaskRepository).list()).toEqual([]);
+          expect(yield* (yield* TaskRepository).list()).toEqual([]);
         }),
       );
     } finally {
@@ -393,7 +396,7 @@ describe("ChatTasks", () => {
               })
               .pipe(Effect.flip),
           ).toMatchObject({ reason: "tool-permission" });
-          expect((yield* TaskRepository).list()).toEqual([]);
+          expect(yield* (yield* TaskRepository).list()).toEqual([]);
         }),
       );
     } finally {
@@ -423,7 +426,7 @@ describe("ChatTasks", () => {
 
           yield* Deferred.await(ready);
           yield* Fiber.interrupt(fiber);
-          expect((yield* TaskRepository).list()).toEqual([]);
+          expect(yield* (yield* TaskRepository).list()).toEqual([]);
         }),
       );
     } finally {
@@ -459,7 +462,7 @@ describe("ChatTasks", () => {
             message: "Current-conversation validation timed out.",
           });
           expect(cancelled).toBe(true);
-          expect((yield* TaskRepository).list()).toEqual([]);
+          expect(yield* (yield* TaskRepository).list()).toEqual([]);
         }),
       );
     } finally {
@@ -484,7 +487,7 @@ describe("ChatTasks", () => {
             schedule: { type: "once" as const, at: now + 60000 },
           };
 
-          for (let i = 0; i < 15; i++) repo.add(input, now);
+          for (let i = 0; i < 15; i++) yield* repo.add(input, now);
           const first = yield* recorded({ action: "list", after: null });
           let cursor: string | null = null;
           const ids: string[] = [];

@@ -1,12 +1,12 @@
-import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 
 import { taskCatchUpMinutes } from "@poppet/config";
-import { DeliveryDestination, StoreDatabase, SkillSnapshot } from "@poppet/store";
+import { DeliveryDestination, SkillSnapshot, decodeRow, decodeRows } from "@poppet/store";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
+import { SqlClient } from "effect/sql";
 
 import { taskControls } from "#src/task-controls";
-import { taskRecords, taskSql, occurrenceSql, recurringExpiry } from "#src/task-records";
+import { latestTime, nextTime, taskFailure, taskRecords, recurringExpiry } from "#src/task-records";
 import {
   NewTask,
   Occurrence,
@@ -15,8 +15,6 @@ import {
   Task,
   TaskError,
   ControlReceipt,
-  latestOccurrence,
-  nextOccurrence,
 } from "#src/task-schema";
 
 interface TaskSkip {
@@ -27,131 +25,116 @@ interface TaskSkip {
   readonly reason: "downtime" | "previous-occurrence-active" | "worker-delayed";
 }
 
-/** Builds synchronous task operations on the caller's owned database; failures are thrown. */
+const Count = Schema.Struct({ count: Schema.Natural });
+
+// Each public operation reports TaskError; internal steps may also fail with SQL or schema errors.
+const operation =
+  <Args extends ReadonlyArray<unknown>, A, E, R>(run: (...args: Args) => Effect.Effect<A, E, R>) =>
+  (...args: Args) =>
+    run(...args).pipe(Effect.mapError(taskFailure));
+
 /**
+ * Builds task operations on the shared database connection.
  * catchUpMs is how late a missed recurring occurrence may still run once; older ones are
  * skipped. Zero skips missed recurring work at startup; while running, it queues the earliest
  * due occurrence if the task is idle.
  */
-export const makeTaskStore = (database: Database, catchUpMs = 0) => {
+export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
   const commandLock = Semaphore.makeUnsafe(1);
 
-  const { task, occurrence, insertOccurrence, activeOccurrence, nextTarget } =
-    taskRecords(database);
+  const { tasks, occurrences, task, occurrence, insertOccurrence, activeOccurrence, nextTarget } =
+    taskRecords(sql);
 
-  const control = taskControls(database);
+  const control = taskControls(sql);
 
-  const list = () => {
-    using statement = database.prepare(`${taskSql} ORDER BY created_at, id`);
+  const list = () => sql`${tasks} ORDER BY created_at, id`.pipe(decodeRows(Task));
 
-    return Schema.decodeUnknownSync(Schema.Array(Task))(statement.all());
-  };
-
-  const occurrences = (jobId: string, limit = -1) => {
-    using statement = database.prepare(
-      `${occurrenceSql} WHERE job_id = ? ORDER BY scheduled_at DESC, id LIMIT ?`,
+  const occurrencesFor = (jobId: string, limit = -1) =>
+    sql`${occurrences} WHERE job_id = ${jobId} ORDER BY scheduled_at DESC, id LIMIT ${limit}`.pipe(
+      decodeRows(Occurrence),
     );
 
-    return Schema.decodeUnknownSync(Schema.Array(Occurrence))(statement.all(jobId, limit));
-  };
-
-  const executionTask = (item: Occurrence): Task => ({
-    ...task(item.jobId),
-    ...item.definition,
-    revision: item.revision,
-    destination: item.destination,
-  });
+  // Run the definition saved with the occurrence, not later edits to its task.
+  const executionTask = (item: Occurrence) =>
+    Effect.map(task(item.jobId), (job): Task => ({
+      ...job,
+      ...item.definition,
+      revision: item.revision,
+      destination: item.destination,
+    }));
 
   // Scheduled occurrences are idempotent per task revision and time.
   const queue = (job: Task, scheduledAt: number) =>
     insertOccurrence(job, scheduledAt, { ignoreDuplicate: true });
 
-  const providers = () => {
-    using statement = database.prepare(
-      `SELECT provider, reason, resume_at AS resumeAt, failures FROM job_provider_pauses ORDER BY provider`,
+  const providers = () =>
+    sql`SELECT provider, reason, resume_at, failures FROM job_provider_pauses ORDER BY provider`.pipe(
+      decodeRows(ProviderPause),
     );
 
-    return Schema.decodeUnknownSync(Schema.Array(ProviderPause))(statement.all());
-  };
-
-  const hasActive = (jobId: string) => {
-    using statement = database.prepare(
-      "SELECT id FROM job_occurrences WHERE job_id = ? AND status IN ('pending', 'running') LIMIT 1",
-    );
-
-    return statement.get(jobId) !== null;
-  };
+  const hasActive = (jobId: string) =>
+    sql`SELECT id FROM job_occurrences WHERE job_id = ${jobId}
+      AND status IN ('pending', 'running') LIMIT 1`.pipe(Effect.map((rows) => rows.length > 0));
 
   const recover = (now: number) =>
-    database
-      .transaction(() => {
+    sql.withTransaction(
+      Effect.gen(function* () {
         // The run may have saved a quota failure before the occurrence was finalized.
-        database.run(`INSERT INTO job_provider_pauses (provider, reason, resume_at, failures)
-      SELECT DISTINCT json_extract(occurrences.definition, '$.provider'), 'quota', NULL, 1
-      FROM job_occurrences AS occurrences
-      JOIN jobs ON jobs.id = occurrences.job_id
-      JOIN runs ON runs.id = occurrences.run_id
-      WHERE occurrences.status = 'running' AND runs.failure_reason = 'provider:quota'
-      ON CONFLICT (provider) DO UPDATE SET reason = 'quota', resume_at = NULL`);
+        yield* sql`INSERT INTO job_provider_pauses (provider, reason, resume_at, failures)
+          SELECT DISTINCT json_extract(occurrences.definition, '$.provider'), 'quota', NULL, 1
+          FROM job_occurrences AS occurrences
+          JOIN runs ON runs.id = occurrences.run_id
+          WHERE occurrences.status = 'running' AND runs.failure_reason = 'provider:quota'
+          ON CONFLICT (provider) DO UPDATE SET reason = 'quota', resume_at = NULL`;
 
-        const running = Schema.decodeUnknownSync(Schema.Array(Occurrence))(
-          database.query(`${occurrenceSql} WHERE status = 'running'`).all(),
+        const running = yield* sql`${occurrences} WHERE status = 'running'`.pipe(
+          decodeRows(Occurrence),
         );
 
         for (const item of running) {
           const completed =
             item.runId !== null &&
-            database
-              .query("SELECT id FROM runs WHERE id = ? AND status = 'completed'")
-              .get(item.runId) !== null;
+            (yield* sql`SELECT id FROM runs WHERE id = ${item.runId} AND status = 'completed'`)
+              .length > 0;
 
-          finish(
+          yield* finish(
             item.id,
             completed ? "completed" : "interrupted",
             completed ? null : "owner-stopped",
             now,
           );
         }
-      })
-      .immediate();
+      }),
+    );
 
-  const expire = (now: number) => {
-    using statement =
-      database.prepare(`UPDATE job_occurrences SET status = 'expired', finished_at = ?, reason = 'summary-expired'
-      WHERE status = 'pending' AND available_at <= ? AND json_extract(definition, '$.schedule.type') = 'cron'`);
-
-    statement.run(now, now - recurringExpiry);
-  };
+  const expire = (now: number) =>
+    sql`UPDATE job_occurrences SET status = 'expired', finished_at = ${now},
+      reason = 'summary-expired'
+      WHERE status = 'pending' AND available_at <= ${now - recurringExpiry}
+        AND json_extract(definition, '$.schedule.type') = 'cron'`;
 
   /** Queues due work and advances schedules together, recording missed recurring work as skips. */
   const reconcile = (now: number, startup = false) =>
-    database
-      .transaction(() => {
+    sql.withTransaction(
+      Effect.gen(function* () {
         const skipped: TaskSkip[] = [];
 
-        const recordSkip = (
-          job: Task,
-          firstAt: number,
-          reason: TaskSkip["reason"],
-          lastAt = now,
-        ) => {
-          using statement = database.prepare(
-            "INSERT INTO job_skips (job_id, first_at, last_at, reason) VALUES (?, ?, ?, ?)",
-          );
+        const recordSkip = (job: Task, firstAt: number, reason: TaskSkip["reason"], lastAt = now) =>
+          Effect.gen(function* () {
+            yield* sql`INSERT INTO job_skips (job_id, first_at, last_at, reason)
+              VALUES (${job.id}, ${firstAt}, ${lastAt}, ${reason})`;
+            skipped.push({ jobId: job.id, name: job.name, firstAt, lastAt, reason });
+          });
 
-          statement.run(job.id, firstAt, lastAt, reason);
-          skipped.push({ jobId: job.id, name: job.name, firstAt, lastAt, reason });
-        };
+        if (startup) yield* recover(now);
 
-        if (startup) recover(now);
+        yield* expire(now);
 
-        expire(now);
-
-        for (const job of list()) {
+        for (const job of yield* list()) {
           if (job.paused || job.nextAt === null || job.nextAt > now) continue;
-          const nextAt = nextOccurrence(job.schedule, now);
+          const nextAt = yield* nextTime(job.schedule, now);
 
-          const busy = hasActive(job.id);
+          const busy = yield* hasActive(job.id);
 
           // A historical retry may hold a rearmed one-off; keep its slot until that work finishes.
           if (busy && job.schedule.type === "once") continue;
@@ -161,36 +144,36 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
 
           if (job.schedule.type === "cron" && !busy && catchUpMs > 0) {
             // Run only the most recent missed time, and only while it is still recent.
-            const latest = Math.max(job.nextAt, latestOccurrence(job.schedule, now) ?? job.nextAt);
+            const latest = Math.max(
+              job.nextAt,
+              (yield* latestTime(job.schedule, now)) ?? job.nextAt,
+            );
 
-            if (now - latest > catchUpMs) recordSkip(job, job.nextAt, missed);
+            if (now - latest > catchUpMs) yield* recordSkip(job, job.nextAt, missed);
             else {
-              queue(job, latest);
+              yield* queue(job, latest);
 
-              if (latest > job.nextAt) recordSkip(job, job.nextAt, missed, latest - 1);
+              if (latest > job.nextAt) yield* recordSkip(job, job.nextAt, missed, latest - 1);
             }
           } else if (skip) {
-            recordSkip(job, job.nextAt, startup ? "downtime" : "previous-occurrence-active");
+            yield* recordSkip(job, job.nextAt, startup ? "downtime" : "previous-occurrence-active");
           } else {
-            queue(job, job.nextAt);
+            yield* queue(job, job.nextAt);
 
             // A delayed timer enqueues the earliest due occurrence and skips the rest.
-            const following = nextOccurrence(job.schedule, job.nextAt);
+            const following = yield* nextTime(job.schedule, job.nextAt);
 
-            if (following !== null && following <= now) {
-              recordSkip(job, following, "worker-delayed");
-            }
+            if (following !== null && following <= now)
+              yield* recordSkip(job, following, "worker-delayed");
           }
 
-          using update = database.prepare("UPDATE jobs SET next_at = ? WHERE id = ?");
-
-          update.run(nextAt, job.id);
+          yield* sql`UPDATE jobs SET next_at = ${nextAt} WHERE id = ${job.id}`;
         }
 
         // Return only committed transitions, so the worker never logs rolled-back skips.
         return skipped;
-      })
-      .immediate();
+      }),
+    );
 
   const add = (
     input: NewTask,
@@ -198,169 +181,160 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
     skill: SkillSnapshot | null = null,
     destination: DeliveryDestination | null = null,
     source?: { readonly runId: string; readonly callId: string },
-  ) => {
-    if (source) {
-      const existing = Schema.decodeUnknownSync(
-        Schema.NullOr(Schema.Struct({ id: Task.fields.id })),
-      )(
-        database
-          .query("SELECT id FROM jobs WHERE source_run_id = ? AND source_call_id = ?")
-          .get(source.runId, source.callId),
-      );
+  ) =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        // A replayed chat tool call returns the task it already created.
+        if (source) {
+          const existing = yield* sql`SELECT id FROM jobs
+          WHERE source_run_id = ${source.runId} AND source_call_id = ${source.callId}`.pipe(
+            decodeRow(Schema.Struct({ id: Task.fields.id })),
+          );
 
-      if (existing !== null) return task(existing.id);
-    }
+          if (existing !== null) return yield* task(existing.id);
+        }
 
-    if (destination !== null) Schema.decodeUnknownSync(DeliveryDestination)(destination);
-    const valid = Schema.decodeUnknownSync(NewTask)(input);
+        if (destination !== null)
+          yield* Schema.decodeUnknownEffect(DeliveryDestination)(destination);
+        const valid = yield* Schema.decodeUnknownEffect(NewTask)(input);
+        const id = randomUUID();
 
-    const nextAt =
-      valid.schedule.type === "once" ? valid.schedule.at : nextOccurrence(valid.schedule, now);
+        yield* sql`INSERT INTO jobs ${sql.insert({
+          id,
+          name: valid.name,
+          prompt: valid.prompt,
+          provider: valid.provider,
+          model: valid.model,
+          workload: valid.workload,
+          schedule: JSON.stringify(valid.schedule),
+          nextAt:
+            valid.schedule.type === "once"
+              ? valid.schedule.at
+              : yield* nextTime(valid.schedule, now),
+          createdAt: now,
+          skill: skill === null ? null : JSON.stringify(skill),
+          destination: destination === null ? null : JSON.stringify(destination),
+          sourceRunId: source?.runId ?? null,
+          sourceCallId: source?.callId ?? null,
+        })}`;
 
-    const id = randomUUID();
-
-    using statement = database.prepare(
-      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        return yield* task(id);
+      }),
     );
-
-    statement.run(
-      id,
-      valid.name,
-      valid.prompt,
-      valid.provider,
-      valid.model,
-      valid.workload,
-      JSON.stringify(valid.schedule),
-      nextAt,
-      now,
-      skill === null ? null : Schema.encodeSync(Schema.fromJsonString(SkillSnapshot))(skill),
-      destination === null ? null : JSON.stringify(destination),
-      source?.runId ?? null,
-      source?.callId ?? null,
-    );
-
-    return task(id);
-  };
 
   const pause = (id: string, now: number) =>
-    database
-      .transaction(() => {
-        task(id);
-        database.run("UPDATE jobs SET paused = 1 WHERE id = ?", [id]);
-        database.run(
-          "UPDATE job_occurrences SET status = 'cancelled', finished_at = ?, reason = 'task-paused' WHERE job_id = ? AND status = 'pending'",
-          [now, id],
-        );
+    sql.withTransaction(
+      Effect.gen(function* () {
+        yield* task(id);
+        yield* sql`UPDATE jobs SET paused = 1 WHERE id = ${id}`;
+        yield* sql`UPDATE job_occurrences SET status = 'cancelled', finished_at = ${now},
+          reason = 'task-paused' WHERE job_id = ${id} AND status = 'pending'`;
 
-        return task(id);
-      })
-      .immediate();
+        return yield* task(id);
+      }),
+    );
 
   const clear = () =>
-    database
-      .transaction(() => {
-        using running = database.prepare(
-          "SELECT id FROM job_occurrences WHERE status = 'running' LIMIT 1",
-        );
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const running = yield* sql`SELECT id FROM job_occurrences WHERE status = 'running' LIMIT 1`;
 
-        if (running.get() !== null)
-          throw new TaskError({ message: "Interrupt active work before clearing tasks." });
+        if (running.length > 0)
+          return yield* new TaskError({ message: "Interrupt active work before clearing tasks." });
 
         // Task history references conversations; deleting it leaves those conversations intact.
-        database.run("DELETE FROM job_operations");
-        database.run("DELETE FROM job_skips");
-        database.run("DELETE FROM job_occurrences");
+        yield* sql`DELETE FROM job_operations`;
+        yield* sql`DELETE FROM job_skips`;
+        yield* sql`DELETE FROM job_occurrences`;
 
-        return database.run("DELETE FROM jobs").changes;
-      })
-      .immediate();
+        return (yield* sql`DELETE FROM jobs RETURNING id`).length;
+      }),
+    );
 
   const resume = (id: string, now: number) =>
-    database
-      .transaction(() => {
-        const job = task(id);
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const job = yield* task(id);
 
         if (!job.paused) return job;
 
         const nextAt =
-          job.schedule.type === "once" ? job.nextAt : nextOccurrence(job.schedule, now);
+          job.schedule.type === "once" ? job.nextAt : yield* nextTime(job.schedule, now);
 
-        database.run("UPDATE jobs SET paused = 0, next_at = ? WHERE id = ?", [nextAt, id]);
+        yield* sql`UPDATE jobs SET paused = 0, next_at = ${nextAt} WHERE id = ${id}`;
 
-        return task(id);
-      })
-      .immediate();
-
-  const cancel = (id: string, now: number) => {
-    const item = occurrence(id);
-
-    if (item.status !== "pending" && item.status !== "running")
-      throw new TaskError({ message: "Only pending or running occurrences can be cancelled." });
-    database.run(
-      "UPDATE job_occurrences SET status = 'cancelled', finished_at = ?, reason = 'cancelled' WHERE id = ?",
-      [now, id],
+        return yield* task(id);
+      }),
     );
 
-    return occurrence(id);
-  };
+  const cancel = (id: string, now: number) =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const item = yield* occurrence(id);
+
+        if (item.status !== "pending" && item.status !== "running")
+          return yield* new TaskError({
+            message: "Only pending or running occurrences can be cancelled.",
+          });
+
+        yield* sql`UPDATE job_occurrences SET status = 'cancelled', finished_at = ${now},
+        reason = 'cancelled' WHERE id = ${id}`;
+
+        return yield* occurrence(id);
+      }),
+    );
 
   const retry = (id: string, now: number) =>
-    database
-      .transaction(() => {
-        const item = occurrence(id);
-        const job = task(item.jobId);
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const item = yield* occurrence(id);
+        const job = yield* task(item.jobId);
 
         if (job.paused)
-          throw new TaskError({ message: "Resume the task before retrying an occurrence." });
+          return yield* new TaskError({
+            message: "Resume the task before retrying an occurrence.",
+          });
 
         if (!["failed", "interrupted", "cancelled", "expired"].includes(item.status))
-          throw new TaskError({ message: "Only unsuccessful occurrences can be retried." });
+          return yield* new TaskError({ message: "Only unsuccessful occurrences can be retried." });
 
-        if (hasActive(job.id))
-          throw new TaskError({ message: "The task already has an active occurrence." });
+        if (yield* hasActive(job.id))
+          return yield* new TaskError({ message: "The task already has an active occurrence." });
 
         if (item.definition.schedule.type === "cron" && item.availableAt <= now - recurringExpiry)
-          throw new TaskError({ message: "This summary expired. Add a new one-off task instead." });
+          return yield* new TaskError({
+            message: "This summary expired. Add a new one-off task instead.",
+          });
 
-        database.run(
-          "UPDATE job_occurrences SET status = 'pending', session_id = NULL, run_id = NULL, finished_at = NULL, reason = NULL WHERE id = ?",
-          [id],
-        );
+        yield* sql`UPDATE job_occurrences SET status = 'pending', session_id = NULL,
+          run_id = NULL, finished_at = NULL, reason = NULL WHERE id = ${id}`;
 
-        return occurrence(id);
-      })
-      .immediate();
+        return yield* occurrence(id);
+      }),
+    );
 
   /** Atomically starts the oldest eligible occurrence, respecting task and provider pauses. */
   const claim = (now: number) =>
-    database
-      .transaction(() => {
-        expire(now);
+    sql.withTransaction(
+      Effect.gen(function* () {
+        yield* expire(now);
 
-        using statement =
-          database.prepare(`${occurrenceSql} WHERE status = 'pending' AND available_at <= ?
-      AND job_id IN (SELECT id FROM jobs WHERE paused = 0)
-      AND json_extract(definition, '$.provider') NOT IN
-        (SELECT provider FROM job_provider_pauses WHERE resume_at IS NULL OR resume_at > ?)
-      ORDER BY available_at, scheduled_at, id LIMIT 1`);
+        const item = yield* sql`${occurrences} WHERE status = 'pending' AND available_at <= ${now}
+          AND job_id IN (SELECT id FROM jobs WHERE paused = 0)
+          AND json_extract(definition, '$.provider') NOT IN
+            (SELECT provider FROM job_provider_pauses WHERE resume_at IS NULL OR resume_at > ${now})
+          ORDER BY available_at, scheduled_at, id LIMIT 1`.pipe(decodeRow(Occurrence));
 
-        const row = statement.get(now, now);
+        if (item === null) return null;
 
-        if (!row) return null;
-        const item = Schema.decodeUnknownSync(Occurrence)(row);
-        database.run("UPDATE job_occurrences SET status = 'running' WHERE id = ?", [item.id]);
+        yield* sql`UPDATE job_occurrences SET status = 'running' WHERE id = ${item.id}`;
 
-        return { occurrence: occurrence(item.id), task: executionTask(item) };
-      })
-      .immediate();
+        return { occurrence: yield* occurrence(item.id), task: yield* executionTask(item) };
+      }),
+    );
 
-  const link = (id: string, sessionId: string, runId: string | null) => {
-    database.run("UPDATE job_occurrences SET session_id = ?, run_id = ? WHERE id = ?", [
-      sessionId,
-      runId,
-      id,
-    ]);
-  };
+  const link = (id: string, sessionId: string, runId: string | null) =>
+    sql`UPDATE job_occurrences SET session_id = ${sessionId}, run_id = ${runId} WHERE id = ${id}`;
 
   const finish = (
     id: string,
@@ -369,204 +343,191 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
     now: number,
     pauseReason: ProviderPause["reason"] | null = null,
   ) =>
-    database
-      .transaction(() => {
+    sql.withTransaction(
+      Effect.gen(function* () {
         // Explicit cancellation wins over the run's cleanup callback.
-        database.run(
-          "UPDATE job_occurrences SET status = ?, reason = ?, finished_at = ? WHERE id = ? AND status = 'running'",
-          [status, reason, now, id],
-        );
+        yield* sql`UPDATE job_occurrences SET status = ${status}, reason = ${reason},
+          finished_at = ${now} WHERE id = ${id} AND status = 'running'`;
 
-        const saved = occurrence(id);
+        const saved = yield* occurrence(id);
         const provider = saved.definition.provider;
 
         const providerPause =
-          pauseReason === null ? null : blockProvider(provider, pauseReason, now);
+          pauseReason === null ? null : yield* blockProvider(provider, pauseReason, now);
 
-        const providerResumed = status === "completed" && resumeProvider(provider, now);
+        const providerResumed = status === "completed" && (yield* resumeProvider(provider, now));
 
         return { occurrence: saved, pause: providerPause, providerResumed };
-      })
-      .immediate();
+      }),
+    );
 
   // Quota failures need manual resumption; transient failures delay future work with capped backoff.
   const blockProvider = (
     provider: string,
     reason: "quota" | "temporary" | "rate-limit",
     now: number,
-  ) => {
-    const failures = Math.min(
-      (providers().find((item) => item.provider === provider)?.failures ?? 0) + 1,
-      5,
-    );
+  ) =>
+    Effect.gen(function* () {
+      const previous = (yield* providers()).find((item) => item.provider === provider);
+      const failures = Math.min((previous?.failures ?? 0) + 1, 5);
 
-    const resumeAt =
-      reason === "quota" ? null : now + Math.min(30_000 * 2 ** (failures - 1), 300_000);
+      const resumeAt =
+        reason === "quota" ? null : now + Math.min(30_000 * 2 ** (failures - 1), 300_000);
 
-    database.run(
-      `INSERT INTO job_provider_pauses (provider, reason, resume_at, failures) VALUES (?, ?, ?, ?)
-      ON CONFLICT (provider) DO UPDATE SET reason = excluded.reason, resume_at = excluded.resume_at, failures = excluded.failures`,
-      [provider, reason, resumeAt, failures],
-    );
+      yield* sql`INSERT INTO job_provider_pauses ${sql.insert({ provider, reason, resumeAt, failures })}
+        ON CONFLICT (provider) DO UPDATE SET reason = excluded.reason,
+          resume_at = excluded.resume_at, failures = excluded.failures`;
 
-    return { provider, reason, resumeAt, failures };
-  };
+      return { provider, reason, resumeAt, failures };
+    });
 
-  const resumeProvider = (provider: string, now: number) => {
-    expire(now);
+  const resumeProvider = (provider: string, now: number) =>
+    Effect.gen(function* () {
+      yield* expire(now);
 
-    return (
-      database.run("DELETE FROM job_provider_pauses WHERE provider = ?", [provider]).changes > 0
-    );
-  };
+      const removed = yield* sql`DELETE FROM job_provider_pauses WHERE provider = ${provider}
+        RETURNING provider`;
 
-  const skips = (jobId: string) => {
-    using statement = database.prepare(
-      "SELECT first_at AS firstAt, last_at AS lastAt, reason FROM job_skips WHERE job_id = ? ORDER BY id DESC",
-    );
+      return removed.length > 0;
+    });
 
-    return Schema.decodeUnknownSync(Schema.Array(Skipped))(statement.all(jobId));
-  };
+  const skips = (jobId: string) =>
+    sql`SELECT first_at, last_at, reason FROM job_skips WHERE job_id = ${jobId}
+      ORDER BY id DESC`.pipe(decodeRows(Skipped));
 
-  const status = () => {
-    const jobs = list();
+  const status = () =>
+    Effect.gen(function* () {
+      const jobs = yield* list();
 
-    using pending = database.prepare(
-      "SELECT COUNT(*) AS count FROM job_occurrences WHERE status = 'pending'",
-    );
+      const pending = yield* sql`SELECT COUNT(*) AS count FROM job_occurrences
+        WHERE status = 'pending'`.pipe(decodeRow(Count));
 
-    using recent =
-      database.prepare(`SELECT occurrences.id, jobs.id AS jobId, json_extract(occurrences.definition, '$.provider') AS provider,
-      json_extract(occurrences.definition, '$.name') AS name, occurrences.status,
-      occurrences.scheduled_at AS scheduledAt, occurrences.run_id AS runId,
-      runs.failure_reason AS failureReason
-      FROM job_occurrences AS occurrences JOIN jobs ON jobs.id = occurrences.job_id
-      LEFT JOIN runs ON runs.id = occurrences.run_id
-      ORDER BY COALESCE(occurrences.finished_at, occurrences.scheduled_at) DESC, occurrences.id DESC LIMIT 5`);
+      const results = yield* sql`SELECT occurrences.id, jobs.id AS job_id,
+          json_extract(occurrences.definition, '$.provider') AS provider,
+          json_extract(occurrences.definition, '$.name') AS name, occurrences.status,
+          occurrences.scheduled_at, occurrences.run_id, runs.failure_reason
+        FROM job_occurrences AS occurrences JOIN jobs ON jobs.id = occurrences.job_id
+        LEFT JOIN runs ON runs.id = occurrences.run_id
+        ORDER BY COALESCE(occurrences.finished_at, occurrences.scheduled_at) DESC,
+          occurrences.id DESC LIMIT 5`.pipe(
+        decodeRows(
+          Schema.Struct({
+            id: Occurrence.fields.id,
+            jobId: Occurrence.fields.jobId,
+            provider: NewTask.fields.provider,
+            name: NewTask.fields.name,
+            status: Occurrence.fields.status,
+            scheduledAt: Schema.Natural,
+            runId: Occurrence.fields.runId,
+            failureReason: Schema.NullOr(Schema.String),
+          }),
+        ),
+      );
 
-    const upcoming = jobs
-      .filter((job) => !job.paused)
-      .flatMap((job) => {
-        const queued = activeOccurrence(job.id, "pending");
+      const upcoming: number[] = [];
 
-        return queued !== undefined
-          ? [queued.availableAt]
-          : hasActive(job.id) || job.nextAt === null
-            ? []
-            : [job.nextAt];
-      });
+      for (const job of jobs) {
+        if (job.paused) continue;
+        const queued = yield* activeOccurrence(job.id, "pending");
 
-    const results = Schema.decodeUnknownSync(
-      Schema.Array(
+        if (queued !== null) upcoming.push(queued.availableAt);
+        else if (job.nextAt !== null && !(yield* hasActive(job.id))) upcoming.push(job.nextAt);
+      }
+
+      return {
+        taskCount: jobs.length,
+        providers: [...new Set(jobs.map((job) => job.provider))],
+        pausedTaskCount: jobs.filter((job) => job.paused).length,
+        pendingCount: pending?.count ?? 0,
+        nextScheduledAt: upcoming.length === 0 ? null : Math.min(...upcoming),
+        providerPauses: (yield* providers()).map((held) =>
+          Object.assign(held, {
+            action:
+              held.resumeAt === null
+                ? `Run worker resume-provider ${held.provider} when quota is available.`
+                : `Future work can resume at ${new Date(held.resumeAt).toISOString()}.`,
+          }),
+        ),
+        recent: results.map((item) =>
+          Object.assign(item, {
+            action:
+              item.failureReason === "provider:authentication"
+                ? `Run provider login ${item.provider}, then tasks retry ${item.id}.`
+                : item.status === "interrupted"
+                  ? `Run tasks retry ${item.id} if this work should run again.`
+                  : item.status === "failed"
+                    ? `Run tasks show ${item.jobId} to inspect the failure before retrying.`
+                    : null,
+          }),
+        ),
+      };
+    });
+
+  const listPage = (after: string | null) =>
+    Effect.gen(function* () {
+      if (after !== null) yield* task(after);
+
+      return yield* sql`${tasks} WHERE id > ${after ?? ""} ORDER BY id LIMIT 11`.pipe(
+        decodeRows(Task),
+      );
+    });
+
+  const changes = (id: string, limit = 20) =>
+    sql`SELECT operation_id, receipt, changes, created_at FROM job_operations
+      WHERE job_id = ${id} AND changes IS NOT NULL
+      ORDER BY created_at DESC, rowid DESC LIMIT ${limit}`.pipe(
+      decodeRows(
         Schema.Struct({
-          id: Occurrence.fields.id,
-          jobId: Occurrence.fields.jobId,
-          provider: NewTask.fields.provider,
-          name: NewTask.fields.name,
-          status: Occurrence.fields.status,
-          scheduledAt: Schema.Natural,
-          runId: Occurrence.fields.runId,
-          failureReason: Schema.NullOr(Schema.String),
+          operationId: Schema.String,
+          receipt: Schema.fromJsonString(ControlReceipt),
+          changes: Schema.fromJsonString(Schema.Json),
+          createdAt: Schema.Natural,
         }),
       ),
-    )(recent.all());
+    );
 
-    return {
-      taskCount: jobs.length,
-      providers: [...new Set(jobs.map((job) => job.provider))],
-      pausedTaskCount: jobs.filter((job) => job.paused).length,
-      pendingCount: Schema.decodeUnknownSync(Schema.Struct({ count: Schema.Natural }))(
-        pending.get(),
-      ).count,
-      nextScheduledAt: upcoming.length === 0 ? null : Math.min(...upcoming),
-      providerPauses: providers().map((held) =>
-        Object.assign(held, {
-          action:
-            held.resumeAt === null
-              ? `Run worker resume-provider ${held.provider} when quota is available.`
-              : `Future work can resume at ${new Date(held.resumeAt).toISOString()}.`,
+  const deliveries = (id: string) =>
+    sql`SELECT i.run_id, d.position, d.state, d.message_id, d.attempts
+      FROM gateway_deliveries d JOIN gateway_inbox i ON i.id = d.inbox_id
+      WHERE i.occurrence_id = ${id} ORDER BY i.id, d.position`.pipe(
+      decodeRows(
+        Schema.Struct({
+          runId: Schema.String,
+          position: Schema.Natural,
+          state: Schema.Literals(["pending", "sending", "sent", "failed", "uncertain"]),
+          messageId: Schema.NullOr(Schema.String),
+          attempts: Schema.Natural,
         }),
       ),
-      recent: results.map((item) =>
-        Object.assign(item, {
-          action:
-            item.failureReason === "provider:authentication"
-              ? `Run provider login ${item.provider}, then tasks retry ${item.id}.`
-              : item.status === "interrupted"
-                ? `Run tasks retry ${item.id} if this work should run again.`
-                : item.status === "failed"
-                  ? `Run tasks show ${item.jobId} to inspect the failure before retrying.`
-                  : null,
-        }),
-      ),
-    };
-  };
+    );
 
   return {
     commandLock,
-    list,
-    listPage: (after: string | null) => {
-      if (after !== null) task(after);
-
-      return Schema.decodeUnknownSync(Schema.Array(Task))(
-        database.query(`${taskSql} WHERE id > ? ORDER BY id LIMIT 11`).all(after ?? ""),
-      );
-    },
-    status,
-    task,
-    occurrence,
-    occurrences,
-    nextTarget,
-    control,
-    changes: (id: string, limit = 20) =>
-      Schema.decodeUnknownSync(
-        Schema.Array(
-          Schema.Struct({
-            operationId: Schema.String,
-            receipt: Schema.fromJsonString(ControlReceipt),
-            changes: Schema.fromJsonString(Schema.Json),
-            createdAt: Schema.Natural,
-          }),
-        ),
-      )(
-        database
-          .query(`SELECT operation_id AS operationId, receipt, changes, created_at AS createdAt
-      FROM job_operations WHERE job_id = ? AND changes IS NOT NULL ORDER BY created_at DESC, rowid DESC LIMIT ?`)
-          .all(id, limit),
-      ),
-    deliveries: (id: string) =>
-      Schema.decodeUnknownSync(
-        Schema.Array(
-          Schema.Struct({
-            runId: Schema.String,
-            position: Schema.Natural,
-            state: Schema.Literals(["pending", "sending", "sent", "failed", "uncertain"]),
-            messageId: Schema.NullOr(Schema.String),
-            attempts: Schema.Natural,
-          }),
-        ),
-      )(
-        database
-          .query(`SELECT i.run_id AS runId, d.position, d.state, d.message_id AS messageId, d.attempts
-      FROM gateway_deliveries d JOIN gateway_inbox i ON i.id = d.inbox_id
-      WHERE i.occurrence_id = ? ORDER BY i.id, d.position`)
-          .all(id),
-      ),
-    providers,
-    skips,
-    add,
-    reconcile,
-    recover,
-    pause,
-    clear,
-    resume,
-    cancel,
-    retry,
-    claim,
-    link,
-    finish,
-    blockProvider,
-    resumeProvider,
+    list: operation(list),
+    listPage: operation(listPage),
+    status: operation(status),
+    task: operation(task),
+    occurrence: operation(occurrence),
+    occurrences: operation(occurrencesFor),
+    nextTarget: operation(nextTarget),
+    control: operation(control),
+    changes: operation(changes),
+    deliveries: operation(deliveries),
+    providers: operation(providers),
+    skips: operation(skips),
+    add: operation(add),
+    reconcile: operation(reconcile),
+    recover: operation(recover),
+    pause: operation(pause),
+    clear: operation(clear),
+    resume: operation(resume),
+    cancel: operation(cancel),
+    retry: operation(retry),
+    claim: operation(claim),
+    link: operation(link),
+    finish: operation(finish),
+    blockProvider: operation(blockProvider),
+    resumeProvider: operation(resumeProvider),
   };
 };
 
@@ -580,9 +541,9 @@ export class TaskRepository extends Context.Service<TaskRepository, TaskStore>()
 export const TaskRepositoryLive = Layer.effect(
   TaskRepository,
   Effect.gen(function* () {
-    const { database } = yield* StoreDatabase;
+    const sql = yield* SqlClient.SqlClient;
     const minutes = yield* taskCatchUpMinutes;
 
-    return makeTaskStore(database, minutes * 60_000);
+    return makeTaskStore(sql, minutes * 60_000);
   }),
 );

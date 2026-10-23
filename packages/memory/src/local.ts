@@ -1,47 +1,43 @@
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
-import { StoreDatabase } from "@poppet/store";
-import { DateTime, Effect, Layer, Schema } from "effect";
+import { decodeRow, decodeRows } from "@poppet/store";
+import { Clock, Effect, Layer, Schema } from "effect";
+import { SqlClient } from "effect/sql";
 
 import { memoryLimit, readContextFile } from "#src/context-file";
 import { MemoryFact, MemoryRevision, SnapshotLimits, type MemoryOrigin } from "#src/schema";
 import { Memory, MemoryError } from "#src/service";
 
-const memorySql = `SELECT key, value, origin, source_run_id AS sourceRunId, updated_at AS updatedAt FROM memories`;
+const invalid = () =>
+  new MemoryError({ reason: "invalid-request", message: "The memory request is invalid." });
 
-const revisionSql = `SELECT key, revision, action, value, origin, source_run_id AS sourceRunId, created_at AS createdAt FROM memory_revisions`;
+/** Validates caller input before any query runs. */
+const input = <S extends Schema.Top>(schema: S, value: S["Encoded"]) =>
+  Schema.decodeUnknownEffect(schema)(value).pipe(Effect.mapError(invalid));
 
-const readRecord = <A>(read: () => A): A => {
-  try {
-    return read();
-  } catch (cause) {
-    if (cause instanceof Schema.SchemaError)
-      throw new MemoryError({
-        reason: "corrupt",
-        message: "The memory store contains an invalid fact.",
-      });
-    throw cause;
-  }
-};
+// Caller input is validated first, so a schema failure here means a saved row is invalid.
+const memoryFailure = (cause: unknown) =>
+  cause instanceof MemoryError
+    ? cause
+    : cause instanceof Schema.SchemaError
+      ? new MemoryError({
+          reason: "corrupt",
+          message: "The memory store contains an invalid fact.",
+        })
+      : new MemoryError({
+          reason: "storage",
+          message: "Poppet could not read or write its local memory.",
+        });
 
-const requestFailure = (cause: unknown) => {
-  if (cause instanceof MemoryError) return cause;
+const fail = (reason: MemoryError["reason"], message: string) =>
+  Effect.fail(new MemoryError({ reason, message }));
 
-  return new MemoryError({
-    reason: cause instanceof Schema.SchemaError ? "invalid-request" : "storage",
-    message:
-      cause instanceof Schema.SchemaError
-        ? "The memory request is invalid."
-        : "Poppet could not read or write its local memory.",
-  });
-};
-
-// The host supplies the same scoped database used by conversation storage.
+// The host supplies the same SQLite connection used by conversation storage.
 export const LocalMemoryLive = Layer.effect(
   Memory,
   Effect.gen(function* () {
-    const { database } = yield* StoreDatabase;
+    const sql = yield* SqlClient.SqlClient;
     const config = yield* AppConfig;
 
     const readContext = (name: string, maximum: number, setting: string) => {
@@ -59,47 +55,34 @@ export const LocalMemoryLive = Layer.effect(
       });
     };
 
-    const list = Effect.try({
-      try: () =>
-        readRecord(() => {
-          using statement = database.prepare(`${memorySql} ORDER BY key`);
+    const list = sql`SELECT * FROM memories ORDER BY key`.pipe(
+      decodeRows(MemoryFact),
+      Effect.mapError(memoryFailure),
+    );
 
-          return Schema.decodeUnknownSync(Schema.Array(MemoryFact))(statement.all());
-        }),
-      catch: requestFailure,
+    const current = (key: string) =>
+      sql`SELECT * FROM memories WHERE key = ${key}`.pipe(decodeRow(MemoryFact));
+
+    const requireSource = (sourceRunId: string | null) =>
+      Effect.gen(function* () {
+        if (sourceRunId === null) return;
+
+        const source = yield* sql`SELECT id FROM runs WHERE id = ${sourceRunId}`;
+
+        if (source.length === 0) return yield* fail("not-found", "The source run does not exist.");
+      });
+
+    const requireRoom = Effect.gen(function* () {
+      const saved = yield* sql`SELECT COUNT(*) AS count FROM memories`.pipe(
+        decodeRow(Schema.Struct({ count: Schema.Natural })),
+      );
+
+      if ((saved?.count ?? 0) >= 128)
+        return yield* fail(
+          "conflict",
+          "Memory holds at most 128 facts. Forget a fact before adding another.",
+        );
     });
-
-    const current = (key: string) => {
-      using select = database.prepare(`${memorySql} WHERE key = ?`);
-
-      return readRecord(() => Schema.decodeUnknownSync(Schema.NullOr(MemoryFact))(select.get(key)));
-    };
-
-    const requireSource = (sourceRunId: string | null) => {
-      if (sourceRunId === null) return;
-
-      using source = database.prepare("SELECT id FROM runs WHERE id = ?");
-
-      if (source.get(sourceRunId) === null)
-        throw new MemoryError({
-          reason: "not-found",
-          message: "The source run does not exist.",
-        });
-    };
-
-    const requireRoom = () => {
-      using count = database.prepare("SELECT COUNT(*) AS count FROM memories");
-
-      const total = Schema.decodeUnknownSync(Schema.Struct({ count: Schema.Natural }))(
-        count.get(),
-      ).count;
-
-      if (total >= 128)
-        throw new MemoryError({
-          reason: "conflict",
-          message: "Memory holds at most 128 facts. Forget a fact before adding another.",
-        });
-    };
 
     // Runs inside the caller's transaction so the fact and its revision change together.
     const commit = (
@@ -109,58 +92,41 @@ export const LocalMemoryLive = Layer.effect(
       sourceRunId: string | null,
       origin: MemoryOrigin,
       at: number,
-    ): MemoryFact | null => {
-      const existing = current(key);
-
-      using next = database.prepare(
-        "SELECT COALESCE(MAX(revision), 0) + 1 AS revision FROM memory_revisions WHERE key = ?",
-      );
-
-      const revision = Schema.decodeUnknownSync(Schema.Struct({ revision: Schema.Int }))(
-        next.get(key),
-      ).revision;
-
-      using record = database.prepare(
-        "INSERT INTO memory_revisions (key, revision, action, value, origin, source_run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      );
-
-      record.run(key, revision, action, value, origin, sourceRunId, at);
-
-      if (value === null) {
-        using remove = database.prepare("DELETE FROM memories WHERE key = ?");
-        remove.run(key);
-
-        return null;
-      }
-
-      const fact = Schema.decodeUnknownSync(MemoryFact, { onExcessProperty: "error" })({
-        key,
-        value,
-        origin,
-        sourceRunId,
-        updatedAt: Math.max(at, existing?.updatedAt ?? 0),
-      });
-
-      using write = database.prepare(
-        existing === null
-          ? "INSERT INTO memories (value, origin, source_run_id, updated_at, key) VALUES (?, ?, ?, ?, ?)"
-          : "UPDATE memories SET value = ?, origin = ?, source_run_id = ?, updated_at = ? WHERE key = ?",
-      );
-
-      write.run(fact.value, fact.origin, fact.sourceRunId, fact.updatedAt, fact.key);
-
-      return fact;
-    };
-
-    const transaction = <A>(run: (at: number) => A) =>
+    ) =>
       Effect.gen(function* () {
-        const at = (yield* DateTime.nowAsDate).getTime();
+        const existing = yield* current(key);
 
-        return yield* Effect.try({
-          try: () => database.transaction(() => run(at)).immediate(),
-          catch: requestFailure,
-        });
+        yield* sql`INSERT INTO memory_revisions (key, revision, action, value, origin, source_run_id, created_at)
+          SELECT ${key}, COALESCE(MAX(revision), 0) + 1, ${action}, ${value}, ${origin},
+            ${sourceRunId}, ${at}
+          FROM memory_revisions WHERE key = ${key}`;
+
+        if (value === null) {
+          yield* sql`DELETE FROM memories WHERE key = ${key}`;
+
+          return null;
+        }
+
+        const fact: MemoryFact = {
+          key,
+          value,
+          origin,
+          sourceRunId,
+          updatedAt: Math.max(at, existing?.updatedAt ?? 0),
+        };
+
+        yield* sql`INSERT INTO memories ${sql.insert(fact)}
+          ON CONFLICT (key) DO UPDATE SET value = excluded.value, origin = excluded.origin,
+            source_run_id = excluded.source_run_id, updated_at = excluded.updated_at`;
+
+        return fact;
       });
+
+    const transaction = <A, E, R>(change: (at: number) => Effect.Effect<A, E, R>) =>
+      Clock.currentTimeMillis.pipe(
+        Effect.flatMap((at) => sql.withTransaction(change(at))),
+        Effect.mapError(memoryFailure),
+      );
 
     const saveMemory = (
       key: string,
@@ -168,101 +134,103 @@ export const LocalMemoryLive = Layer.effect(
       sourceRunId: string | null,
       mode: "remember" | "replace",
     ) =>
-      transaction((at) => {
-        Schema.decodeUnknownSync(MemoryFact.fields.key)(key);
-        Schema.decodeUnknownSync(MemoryFact.fields.value)(value);
-        const resolved = sourceRunId === null ? "cli" : "turn";
-        requireSource(sourceRunId);
-        const existing = current(key);
+      transaction((at) =>
+        Effect.gen(function* () {
+          yield* input(MemoryFact.fields.key, key);
+          yield* input(MemoryFact.fields.value, value);
+          yield* requireSource(sourceRunId);
+          const existing = yield* current(key);
 
-        if (mode === "replace" && existing === null)
-          throw new MemoryError({
-            reason: "not-found",
-            message: "The fact does not exist. Use memory remember to create it.",
-          });
+          if (mode === "replace" && existing === null)
+            return yield* fail(
+              "not-found",
+              "The fact does not exist. Use memory remember to create it.",
+            );
 
-        if (mode === "remember" && existing !== null)
-          throw new MemoryError({
-            reason: "conflict",
-            message: "The fact already exists. Use memory replace to change it.",
-          });
+          if (mode === "remember" && existing !== null)
+            return yield* fail(
+              "conflict",
+              "The fact already exists. Use memory replace to change it.",
+            );
 
-        if (mode === "remember") requireRoom();
+          if (mode === "remember") yield* requireRoom;
 
-        return commit(key, mode, value, sourceRunId, resolved, at)!;
-      });
+          return (yield* commit(
+            key,
+            mode,
+            value,
+            sourceRunId,
+            sourceRunId === null ? "cli" : "turn",
+            at,
+          ))!;
+        }),
+      );
 
     return {
       list,
       remember: (key, value, sourceRunId = null) => saveMemory(key, value, sourceRunId, "remember"),
       replace: (key, value, sourceRunId = null) => saveMemory(key, value, sourceRunId, "replace"),
       forget: (key, sourceRunId = null) =>
-        transaction((at) => {
-          Schema.decodeUnknownSync(MemoryFact.fields.key)(key);
-          const resolved = sourceRunId === null ? "cli" : "turn";
-          requireSource(sourceRunId);
+        transaction((at) =>
+          Effect.gen(function* () {
+            yield* input(MemoryFact.fields.key, key);
+            yield* requireSource(sourceRunId);
 
-          if (current(key) === null)
-            throw new MemoryError({ reason: "not-found", message: "The fact does not exist." });
+            if ((yield* current(key)) === null)
+              return yield* fail("not-found", "The fact does not exist.");
 
-          commit(key, "forget", null, sourceRunId, resolved, at);
-        }),
-      history: (key) =>
-        Effect.try({
-          try: () => {
-            Schema.decodeUnknownSync(MemoryFact.fields.key)(key);
-
-            using statement = database.prepare(`${revisionSql} WHERE key = ? ORDER BY revision`);
-
-            return readRecord(() =>
-              Schema.decodeUnknownSync(Schema.Array(MemoryRevision))(statement.all(key)),
+            yield* commit(
+              key,
+              "forget",
+              null,
+              sourceRunId,
+              sourceRunId === null ? "cli" : "turn",
+              at,
             );
-          },
-          catch: requestFailure,
-        }),
+          }),
+        ),
+      history: (key) =>
+        input(MemoryFact.fields.key, key).pipe(
+          Effect.andThen(
+            sql`SELECT * FROM memory_revisions WHERE key = ${key} ORDER BY revision`.pipe(
+              decodeRows(MemoryRevision),
+            ),
+          ),
+          Effect.mapError(memoryFailure),
+        ),
       revert: (key, revision) =>
-        transaction((at) => {
-          Schema.decodeUnknownSync(MemoryFact.fields.key)(key);
+        transaction((at) =>
+          Effect.gen(function* () {
+            yield* input(MemoryFact.fields.key, key);
 
-          using statement = database.prepare(`${revisionSql} WHERE key = ? AND revision = ?`);
+            const target = yield* sql`SELECT * FROM memory_revisions
+              WHERE key = ${key} AND revision = ${revision}`.pipe(decodeRow(MemoryRevision));
 
-          const target = readRecord(() =>
-            Schema.decodeUnknownSync(Schema.NullOr(MemoryRevision))(statement.get(key, revision)),
-          );
+            if (target === null)
+              return yield* fail("not-found", "The fact revision does not exist.");
 
-          if (target === null)
-            throw new MemoryError({
-              reason: "not-found",
-              message: "The fact revision does not exist.",
-            });
+            const existing = yield* current(key);
 
-          const existing = current(key);
+            if (target.value === null) {
+              if (existing === null)
+                return yield* fail("conflict", "The fact is already forgotten.");
 
-          if (target.value === null) {
-            if (existing === null)
-              throw new MemoryError({
-                reason: "conflict",
-                message: "The fact is already forgotten.",
-              });
+              return yield* commit(key, "forget", null, null, "cli", at);
+            }
 
-            return commit(key, "forget", null, null, "cli", at);
-          }
+            if (existing?.value === target.value)
+              return yield* fail("conflict", "The fact already has this value.");
 
-          if (existing?.value === target.value)
-            throw new MemoryError({
-              reason: "conflict",
-              message: "The fact already has this value.",
-            });
+            if (existing === null) yield* requireRoom;
 
-          if (existing === null) requireRoom();
-
-          return commit(key, "revert", target.value, null, "cli", at);
-        }),
+            return yield* commit(key, "revert", target.value, null, "cli", at);
+          }),
+        ),
       snapshot: (limits) =>
         Effect.gen(function* () {
           const budget = yield* Schema.decodeUnknownEffect(SnapshotLimits, {
             onExcessProperty: "error",
-          })(limits).pipe(Effect.mapError(requestFailure));
+          })(limits).pipe(Effect.mapError(invalid));
 
           const soul = yield* readContext("soul.md", budget.soulBytes, "POPPET_SOUL_BYTES");
 
