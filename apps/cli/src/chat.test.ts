@@ -424,9 +424,9 @@ const exampleChannel = (id: string) => {
   return { registration, state, incoming, replies };
 };
 
-describe("chat CLI", () => {
+describe("chat.ts", () => {
   test.each(["local", "worker"])(
-    "manages tasks through %s chat using the current selection",
+    "when %s chat manages tasks, uses the current selection and saves each state change",
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
@@ -486,7 +486,7 @@ describe("chat CLI", () => {
     { mode: "worker", enabled: false },
     { mode: "worker", enabled: true },
   ])(
-    "streams readable interactive thinking through $mode when enabled=$enabled",
+    "when $mode thinking is enabled=$enabled, streams only the permitted interactive output",
     async ({ mode, enabled }) => {
       const chat = await fixture();
       const workerLogs: string[] = [];
@@ -544,7 +544,7 @@ describe("chat CLI", () => {
   );
 
   test.each(["local", "worker"])(
-    "streams chat new thinking before the %s answer is ready",
+    "when the %s answer is pending, streams chat new thinking immediately",
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
@@ -586,7 +586,7 @@ describe("chat CLI", () => {
     },
   );
 
-  test("streams reasoning without sending a second diagnostic copy to the client", async () => {
+  test("when reasoning is streamed, sends no duplicate diagnostic copy to the client", async () => {
     const chat = await fixture();
     chat.environment.POPPET_LOG_REASONING = "true";
     chat.state.reasoning = "Checking the notes.";
@@ -633,7 +633,7 @@ describe("chat CLI", () => {
   });
 
   test.each(["local", "worker"])(
-    "separates interactive thinking around tools through %s execution",
+    "when tools run through %s execution, separates interactive thinking between model turns",
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
@@ -668,7 +668,7 @@ describe("chat CLI", () => {
   );
 
   test.each(["local", "worker"])(
-    "closes interactive thinking after a failed %s turn",
+    "when a %s turn fails, closes interactive thinking",
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
@@ -697,7 +697,7 @@ describe("chat CLI", () => {
   );
 
   test.each(["local", "worker"])(
-    "uses one opt-in setting for %s reasoning output and worker logs",
+    "when reasoning is enabled for %s execution, includes it in output and worker logs",
     async (mode) => {
       const chat = await fixture();
       const log = openWorkerLog(join(chat.directory, "logs"));
@@ -768,7 +768,7 @@ describe("chat CLI", () => {
   );
 
   test.each(["local", "worker"])(
-    "forwards %s timing diagnostics separately from answers and records failures",
+    "when %s timing diagnostics are enabled, separates them from answers and records failures",
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
@@ -829,7 +829,7 @@ describe("chat CLI", () => {
     },
   );
 
-  test("environment overrides file diagnostic settings and invalid values fail configuration", async () => {
+  test("when diagnostic environment settings override the file, applies them and rejects invalid values", async () => {
     const chat = await fixture();
 
     try {
@@ -854,7 +854,7 @@ describe("chat CLI", () => {
   });
 
   test.each(["local", "worker"])(
-    "uses file selection, notes paths, and chat budgets during %s execution",
+    "when %s execution uses file settings, applies model selection, notes paths, and chat budgets",
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
@@ -928,7 +928,7 @@ describe("chat CLI", () => {
   );
 
   test.each(["local", "worker"])(
-    "selects durable project context and current scoped facts through %s execution",
+    "when %s execution selects a project, saves its context and loads current scoped facts",
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
@@ -1034,7 +1034,7 @@ describe("chat CLI", () => {
   );
 
   test.each(["local", "worker"])(
-    "saves explicit skill snapshots for chats and tasks through %s execution",
+    "when %s execution selects a skill, saves its snapshot for chats and tasks",
     async (mode) => {
       const remote = mode === "worker";
       const chat = await fixture();
@@ -1149,7 +1149,7 @@ describe("chat CLI", () => {
   );
 
   test.each(["local", "worker"])(
-    "lists, shows, reverts, deletes and promotes learned skills through %s execution",
+    "when %s execution manages learned skills, lists, shows, reverts, deletes, and promotes them",
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
@@ -1255,7 +1255,7 @@ describe("chat CLI", () => {
   );
 
   test.each(["local", "worker"])(
-    "interactive chat keeps one saved skill and session through %s execution",
+    "when interactive chat continues through %s execution, retains one skill and session",
     async (mode) => {
       const remote = mode === "worker";
       const chat = await fixture();
@@ -1324,7 +1324,7 @@ describe("chat CLI", () => {
   );
 
   test.each(["local", "worker"])(
-    "interactive chat retains its first failed session through %s execution",
+    "when the first interactive turn fails through %s execution, retains its session",
     async (mode) => {
       const remote = mode === "worker";
       const chat = await fixture();
@@ -1367,7 +1367,7 @@ describe("chat CLI", () => {
   );
 
   test.each(["local", "worker"])(
-    "interrupting interactive inference finalizes its run through %s execution",
+    "when interactive inference is interrupted through %s execution, finalizes its run",
     async (mode) => {
       const remote = mode === "worker";
       const chat = await fixture();
@@ -1420,7 +1420,7 @@ describe("chat CLI", () => {
     },
   );
 
-  test("counts the saved skill in the context budget before inference", async () => {
+  test("when a saved skill exceeds the context budget, rejects the request before inference", async () => {
     const chat = await fixture();
 
     try {
@@ -1441,7 +1441,7 @@ describe("chat CLI", () => {
     }
   });
 
-  test("registered channels supply help, setup, lazy startup, isolated sessions and status through the shared host", async () => {
+  test("when channels are registered, provides help, setup, lazy startup, isolated sessions, and status", async () => {
     const first = exampleChannel("example-channel");
     const second = exampleChannel("other-channel");
 
@@ -1586,7 +1586,7 @@ describe("chat CLI", () => {
   });
 
   test.each(["all", "tasks", "gateway"] as const)(
-    "%s worker mode starts only selected services and keeps shared commands available",
+    "when worker mode is %s, starts only selected services and keeps shared commands available",
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
@@ -1664,7 +1664,7 @@ describe("chat CLI", () => {
     },
   );
 
-  test("the worker accepts chats within a larger context budget and explains oversized requests", async () => {
+  test("when the worker uses a larger context budget, accepts fitting chats and explains overflow", async () => {
     const chat = await fixture();
     chat.environment.POPPET_CONTEXT_BYTES = "1048576";
     const prompt = "x".repeat(150_000);
@@ -1690,7 +1690,7 @@ describe("chat CLI", () => {
     }
   });
 
-  test("an incomplete request body cannot keep the worker or its storage open during shutdown", async () => {
+  test("when shutdown encounters an incomplete request body, closes the worker and storage", async () => {
     const chat = await fixture();
     const worker = await chat.startWorker();
     const socket = createConnection(workerSocketPath(chat.directory));
@@ -1722,7 +1722,7 @@ describe("chat CLI", () => {
     }
   });
 
-  test("failed, malformed, and incomplete worker replies never open local storage or replay a command", async () => {
+  test("when worker replies fail or are malformed or incomplete, avoids local fallback and replay", async () => {
     const chat = await fixture();
     const directory = join(chat.directory, "store");
     await mkdir(directory, { mode: 0o700 });
@@ -1767,7 +1767,7 @@ describe("chat CLI", () => {
     }
   });
 
-  test("chat, memory, and inspection use the running worker and return to local execution after stop", async () => {
+  test("when the worker starts and stops, routes chat, memory, and inspection to the current owner", async () => {
     const chat = await fixture();
     const worker = await chat.startWorker();
     const built = chat.state.built;
@@ -1885,7 +1885,7 @@ describe("chat CLI", () => {
     }
   });
 
-  test("stopping the worker interrupts active and queued chats and leaves sessions inspectable locally", async () => {
+  test("when the worker stops, interrupts active and queued chats and allows local inspection", async () => {
     const chat = await fixture();
     const worker = await chat.startWorker();
     chat.state.hold = true;
@@ -1927,7 +1927,7 @@ describe("chat CLI", () => {
     }
   });
 
-  test("a disconnected chat releases the shared runner so queued chat and scheduled work can finish", async () => {
+  test("when a chat disconnects, releases the runner for queued chat and scheduled work", async () => {
     const chat = await fixture();
     const worker = await chat.startWorker();
     chat.state.hold = true;
@@ -1991,7 +1991,7 @@ describe("chat CLI", () => {
     }
   });
 
-  test("loads CLI-managed facts and the editable profile in new and resumed chats", async () => {
+  test("when chats start or resume, loads CLI-managed facts and the editable profile", async () => {
     const saved = await fixture();
 
     try {
@@ -2017,7 +2017,7 @@ describe("chat CLI", () => {
   });
 
   test.each(["local", "worker"])(
-    "model memory changes share the CLI store through %s execution",
+    "when the model changes memory through %s execution, saves it in the CLI store",
     async (mode) => {
       const chat = await fixture();
       const remote = mode === "worker";
@@ -2064,7 +2064,7 @@ describe("chat CLI", () => {
     },
   );
 
-  test("saves a requested note through chat and exposes tool execution in session inspection", async () => {
+  test("when chat saves a requested note, records tool execution for session inspection", async () => {
     const chat = await fixture();
 
     try {
@@ -2093,7 +2093,7 @@ describe("chat CLI", () => {
     }
   });
 
-  test("reopens a coding session using its saved selection and hides continuation when inspecting", async () => {
+  test("when a coding session reopens, uses its saved selection and hides continuation from inspection", async () => {
     const chat = await fixture();
 
     try {
@@ -2139,7 +2139,7 @@ describe("chat CLI", () => {
     }
   });
 
-  test("validates command arguments, model selection and budgets before contacting providers", async () => {
+  test("when arguments, model selection, or budgets are invalid, rejects them before contacting providers", async () => {
     const chat = await fixture();
 
     try {
@@ -2171,7 +2171,7 @@ describe("chat CLI", () => {
     }
   });
 
-  test("generates one title after the answer and supports local and worker manual renames", async () => {
+  test("when an answer completes, generates one title and allows local and worker manual renames", async () => {
     const chat = await fixture();
     let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
 
@@ -2206,7 +2206,7 @@ describe("chat CLI", () => {
     }
   });
 
-  test("a closed output stream interrupts the run and retains only the input", async () => {
+  test("when the output stream closes, interrupts the run and retains only the input", async () => {
     const chat = await fixture();
 
     try {

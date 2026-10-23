@@ -8,18 +8,19 @@ import { Console, Effect } from "effect";
 import type { ChatCommand } from "#src/chat";
 import { interactiveChat } from "#src/chat-prompt";
 
-test.concurrent("readline releases stdin error listeners after completed prompts", async () => {
-  let transcript = "";
-  let prompts = 0;
-  const input = ["first\n", "second\n", "\u0004"];
-  const decoder = new TextDecoder();
-  const finished = Promise.withResolvers<string>();
+describe("readChatLine", () => {
+  test.concurrent("when prompts finish, releases stdin error listeners", async () => {
+    let transcript = "";
+    let prompts = 0;
+    const input = ["first\n", "second\n", "\u0004"];
+    const decoder = new TextDecoder();
+    const finished = Promise.withResolvers<string>();
 
-  const child = Bun.spawn(
-    [
-      process.execPath,
-      "--eval",
-      `
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--eval",
+        `
         import { Effect } from "effect";
         import { readChatLine } from "./chat-prompt.ts";
 
@@ -34,40 +35,41 @@ test.concurrent("readline releases stdin error listeners after completed prompts
         }));
         console.log("RESULT " + JSON.stringify(results));
       `,
-    ],
-    {
-      cwd: fileURLToPath(new URL(".", import.meta.url)),
-      env: { PATH: process.env.PATH ?? "", TERM: "dumb", NO_COLOR: "1" },
-      terminal: {
-        data(terminal, data) {
-          transcript += decoder.decode(data, { stream: true });
-          const count = transcript.split("You> ").length - 1;
+      ],
+      {
+        cwd: fileURLToPath(new URL(".", import.meta.url)),
+        env: { PATH: process.env.PATH ?? "", TERM: "dumb", NO_COLOR: "1" },
+        terminal: {
+          data(terminal, data) {
+            transcript += decoder.decode(data, { stream: true });
+            const count = transcript.split("You> ").length - 1;
 
-          while (prompts < count && prompts < input.length) terminal.write(input[prompts++]!);
+            while (prompts < count && prompts < input.length) terminal.write(input[prompts++]!);
+          },
+          exit: () => finished.resolve(transcript),
         },
-        exit: () => finished.resolve(transcript),
       },
-    },
-  );
-
-  try {
-    const [exitCode, output] = await Effect.runPromise(
-      Effect.promise(() => Promise.all([child.exited, finished.promise])).pipe(
-        Effect.timeout("2 seconds"),
-      ),
     );
 
-    expect(exitCode).toBe(0);
-    expect(JSON.parse(output.match(/RESULT (.+)/)?.[1] ?? "null")).toEqual([
-      { text: "first", listeners: 0 },
-      { text: "second", listeners: 0 },
-      { text: null, listeners: 0 },
-    ]);
-  } finally {
-    child.kill("SIGKILL");
-    child.terminal?.close();
-    await child.exited;
-  }
+    try {
+      const [exitCode, output] = await Effect.runPromise(
+        Effect.promise(() => Promise.all([child.exited, finished.promise])).pipe(
+          Effect.timeout("2 seconds"),
+        ),
+      );
+
+      expect(exitCode).toBe(0);
+      expect(JSON.parse(output.match(/RESULT (.+)/)?.[1] ?? "null")).toEqual([
+        { text: "first", listeners: 0 },
+        { text: "second", listeners: 0 },
+        { text: null, listeners: 0 },
+      ]);
+    } finally {
+      child.kill("SIGKILL");
+      child.terminal?.close();
+      await child.exited;
+    }
+  });
 });
 
 const fixture = (lines: (string | null)[]) => {
@@ -100,8 +102,8 @@ const fixture = (lines: (string | null)[]) => {
   };
 };
 
-describe.concurrent("interactive chat loop", () => {
-  test("continues an acknowledged failed first turn without creating another session or retrying it", async () => {
+describe.concurrent("interactiveChat", () => {
+  test("when the first failed turn is acknowledged, continues the saved session without retrying", async () => {
     const state = fixture(["", "Fail first", "New request", "/exit"]);
     await state.run(
       interactiveChat(
@@ -126,7 +128,7 @@ describe.concurrent("interactive chat loop", () => {
     expect(state.errors.join("\n")).toContain("Lost response. Not retried.");
   });
 
-  test("stops after an unacknowledged failed request instead of creating another session", async () => {
+  test("when a failed request is unacknowledged, stops without creating another session", async () => {
     const state = fixture(["First request", "Must not send"]);
 
     const result = await state.run(
@@ -146,7 +148,7 @@ describe.concurrent("interactive chat loop", () => {
     expect(state.reads()).toBe(1);
   });
 
-  test.each(["output", "session"])("stops on %s failure", async (failure) => {
+  test.each(["output", "session"])("when %s fails, stops the chat loop", async (failure) => {
     const state = fixture(["Send", "Must not send"]);
 
     const result = await state.run(
@@ -164,7 +166,7 @@ describe.concurrent("interactive chat loop", () => {
     expect(state.reads()).toBe(1);
   });
 
-  test.each([null, "/exit"])("%s exits without a request", async (line) => {
+  test.each([null, "/exit"])("when input is %s, exits without a request", async (line) => {
     const state = fixture([line]);
     await state.run(
       interactiveChat({ coding: false }, () => Effect.die("Must not submit"), state.read),
@@ -176,21 +178,24 @@ describe.concurrent("interactive chat loop", () => {
     { coding: true },
     { coding: false, skill: "review" },
     { coding: false, project: "acorn" },
-  ])("rejects resume selection changes before reading input", async (selection) => {
-    const state = fixture([]);
+  ])(
+    "when resuming with selection changes, rejects them before reading input",
+    async (selection) => {
+      const state = fixture([]);
 
-    const result = await state.run(
-      interactiveChat(
-        { ...selection, sessionId: "saved-session" },
-        () => Effect.die("Must not submit"),
-        state.read,
-      ).pipe(Effect.result),
-    );
+      const result = await state.run(
+        interactiveChat(
+          { ...selection, sessionId: "saved-session" },
+          () => Effect.die("Must not submit"),
+          state.read,
+        ).pipe(Effect.result),
+      );
 
-    expect(result).toHaveProperty(
-      "failure.message",
-      expect.stringContaining("saved workload, skill and project"),
-    );
-    expect(state.reads()).toBe(0);
-  });
+      expect(result).toHaveProperty(
+        "failure.message",
+        expect.stringContaining("saved workload, skill and project"),
+      );
+      expect(state.reads()).toBe(0);
+    },
+  );
 });
