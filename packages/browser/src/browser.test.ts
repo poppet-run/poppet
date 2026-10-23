@@ -112,6 +112,9 @@ describe.concurrent("browser.ts", () => {
 
           const tool = tools.find((entry) => entry.toolName === "snapshot")!;
           yield* tool.prepare("{}");
+          yield* tools
+            .find((entry) => entry.toolName === "open")!
+            .prepare('{"url":"https://example.com/"}');
 
           for (const input of [null, true, 1, "text", [], { extra: true }])
             expect(yield* tool.prepare(JSON.stringify(input)).pipe(Effect.flip)).toHaveProperty(
@@ -120,7 +123,8 @@ describe.concurrent("browser.ts", () => {
             );
         }),
       );
-      expect(state.commands.every((command) => command[1] === "--version")).toBe(true);
+      expect(state.commands).toHaveLength(0);
+      expect(state.directories.size).toBe(0);
       await state.cleaned();
     } finally {
       await state.close();
@@ -142,7 +146,17 @@ describe.concurrent("browser.ts", () => {
             "press",
             "scroll",
           ]);
-          yield* call(tools, "open", { url: "https://example.com/" });
+          yield* Effect.scoped(call(tools, "open", { url: "https://example.com/" }));
+          expect(state.commands.filter((command) => command[1] === "--version")).toHaveLength(2);
+          const cwd = [...state.directories][0]!;
+          expect((yield* Effect.promise(() => stat(cwd))).mode & 0o777).toBe(0o700);
+
+          const policy = JSON.parse(
+            yield* Effect.promise(() => readFile(join(cwd, "policy.json"), "utf8")),
+          );
+
+          expect(policy.default).toBe("deny");
+          expect(policy.allow).not.toContain("eval");
           expect(JSON.parse(yield* call(tools, "snapshot"))).toMatchObject({
             url: "https://example.com/",
             truncated: false,
@@ -165,6 +179,7 @@ describe.concurrent("browser.ts", () => {
       await state.cleaned();
       const trace = await readFile(state.trace, "utf8");
       expect(trace.match(/stopped/g)).toHaveLength(2);
+      expect(state.commands.filter((command) => command[1] === "--version")).toHaveLength(4);
       expect(
         state.environments.every(
           (env) =>
@@ -229,18 +244,10 @@ describe.concurrent("browser.ts", () => {
             "reason",
             "tool-arguments",
           );
-          const cwd = [...state.directories][0]!;
-          expect((yield* Effect.promise(() => stat(cwd))).mode & 0o777).toBe(0o700);
-
-          const policy = JSON.parse(
-            yield* Effect.promise(() => readFile(join(cwd, "policy.json"), "utf8")),
-          );
-
-          expect(policy.default).toBe("deny");
-          expect(policy.allow).not.toContain("eval");
         }),
       );
-      expect(state.commands.every((command) => command[1] === "--version")).toBe(true);
+      expect(state.commands).toHaveLength(0);
+      expect(state.directories.size).toBe(0);
       await state.cleaned();
     } finally {
       await state.close();
@@ -413,7 +420,18 @@ describe.concurrent("browser.ts", () => {
         await state.run(browserTools({ enabled: false }, "disabled", 4096, state.launch)),
       ).toEqual([]);
       expect(state.commands).toHaveLength(0);
-      await expect(state.run(state.tools())).rejects.toHaveProperty("reason", "tool-network");
+      await state.run(
+        Effect.gen(function* () {
+          const tools = yield* state.tools();
+          expect(state.commands).toHaveLength(0);
+
+          for (let attempt = 0; attempt < 2; attempt++)
+            expect(
+              yield* call(tools, "open", { url: "https://example.com/" }).pipe(Effect.flip),
+            ).toHaveProperty("reason", "tool-network");
+          expect(state.commands).toHaveLength(2);
+        }),
+      );
       expect(state.environments.every((env) => env.AGENT_BROWSER_DAEMON === undefined)).toBe(true);
       await state.cleaned();
     } finally {

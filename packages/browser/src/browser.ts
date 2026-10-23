@@ -3,7 +3,7 @@ import { access, chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { join } from "node:path";
 
 import { toolParameters, type Tool } from "@poppet/provider";
-import { Effect, Schema } from "effect";
+import { Effect, Schema, Scope } from "effect";
 
 import {
   agentBrowserVersion,
@@ -107,104 +107,6 @@ export const browserTools = (
     if (domains.length === 0)
       return yield* Effect.fail(browserFailure("tool-network", "Invalid browser configuration."));
 
-    const { executable, chromium } = yield* Effect.tryPromise({
-      try: () => browserExecutables(settings),
-      catch: (cause) =>
-        cause instanceof BrowserError
-          ? cause
-          : browserFailure(
-              "tool-network",
-              "Cannot discover browser executables. See docs/browser.md.",
-            ),
-    });
-
-    // A short private path also stays within macOS's 103-byte Unix socket limit.
-    const directory = yield* Effect.tryPromise({
-      try: () => mkdtemp("/tmp/pb-"),
-      catch: () => browserFailure("tool-storage", "Cannot create browser runtime directory."),
-    });
-
-    let daemon: ReturnType<typeof startBrowserDaemon> | undefined;
-    let opened = false;
-    const references = new Set<string>();
-    const namespace = `p${createHash("sha256").update(runId).digest("hex").slice(0, 8)}`;
-
-    yield* Effect.addFinalizer(() =>
-      Effect.promise(async () => {
-        await daemon?.stop();
-        await rm(directory, { recursive: true, force: true });
-      }),
-    );
-
-    const configPath = join(directory, "agent-browser.json");
-    const policyPath = join(directory, "policy.json");
-    const webRTCPath = join(directory, "webrtc.js");
-
-    const environment = {
-      HOME: directory,
-      PATH: process.env.PATH ?? "",
-      TMPDIR: directory,
-      DO_NOT_TRACK: "1",
-      AGENT_BROWSER_CONFIG: configPath,
-      AGENT_BROWSER_SESSION: "browser",
-      AGENT_BROWSER_NAMESPACE: namespace,
-      AGENT_BROWSER_SOCKET_DIR: directory,
-      ...(allowAllDomains ? undefined : { AGENT_BROWSER_ALLOWED_DOMAINS: domains.join(",") }),
-      AGENT_BROWSER_ACTION_POLICY: policyPath,
-      AGENT_BROWSER_EXECUTABLE_PATH: chromium,
-      AGENT_BROWSER_ENGINE: "chrome",
-      AGENT_BROWSER_NO_WEBMCP: "1",
-      AGENT_BROWSER_CONTENT_BOUNDARIES: "1",
-      AGENT_BROWSER_DEFAULT_TIMEOUT: "10000",
-      AGENT_BROWSER_IDLE_TIMEOUT_MS: "60000",
-    };
-
-    yield* Effect.tryPromise({
-      try: async () => {
-        await chmod(directory, 0o700);
-        await writeFile(configPath, "{}", { mode: 0o600 });
-
-        if (allowAllDomains) await writeFile(webRTCPath, webRTCGuard, { mode: 0o600 });
-
-        await writeFile(
-          policyPath,
-          JSON.stringify({
-            default: "deny",
-            allow: ["navigate", "snapshot", "click", "fill", "press", "scroll", "url", "launch"],
-          }),
-          { mode: 0o600 },
-        );
-      },
-      catch: () => browserFailure("tool-storage", "Cannot prepare browser runtime settings."),
-    });
-
-    const version = yield* runBrowserCommand(
-      [executable, "--version"],
-      directory,
-      environment,
-      launch,
-      5000,
-    );
-
-    const chromeVersion = yield* runBrowserCommand(
-      [chromium, "--version"],
-      directory,
-      environment,
-      launch,
-      5000,
-    );
-
-    if (
-      version.trim() !== `agent-browser ${agentBrowserVersion}` ||
-      chromeVersion.trim() !== `Google Chrome for Testing ${chromiumVersion}`
-    )
-      return yield* Effect.fail(
-        browserFailure(
-          "tool-network",
-          `Browser requires agent-browser ${agentBrowserVersion} and Chrome for Testing ${chromiumVersion}. See docs/browser.md.`,
-        ),
-      );
-
     const allowedURL = (value: string) => {
       const url = new URL(value);
 
@@ -222,87 +124,207 @@ export const browserTools = (
       return url.href;
     };
 
-    const start = Effect.tryPromise({
-      try: async (signal) => {
-        if (daemon !== undefined && !daemon.alive())
-          throw browserFailure(
-            "tool-uncertain",
-            "This run's browser stopped. No action was retried.",
-          );
+    let opened = false;
+    const references = new Set<string>();
+    // Lazy resources belong to the run, even when the first tool call has a shorter scope.
+    const scope = yield* Effect.scope;
 
-        if (daemon !== undefined) return;
-        daemon = startBrowserDaemon(executable, directory, environment, launch);
-        const socketDirectory = join(directory, "namespaces", namespace, "run");
-        const deadline = Date.now() + 5000;
+    const initialize = yield* Effect.cached(
+      Effect.gen(function* () {
+        const { executable, chromium } = yield* Effect.tryPromise({
+          try: () => browserExecutables(settings),
+          catch: (cause) =>
+            cause instanceof BrowserError
+              ? cause
+              : browserFailure(
+                  "tool-network",
+                  "Cannot discover browser executables. See docs/browser.md.",
+                ),
+        });
 
-        while (Date.now() < deadline && !signal.aborted && daemon.alive()) {
-          // Readiness belongs to this exact owned child, not an ambient daemon.
-          // eslint-disable-next-line no-await-in-loop
-          const pid = await readFile(join(socketDirectory, "browser.pid"), "utf8").catch(() => "");
-
-          // eslint-disable-next-line no-await-in-loop
-          const ready = await access(join(socketDirectory, "browser.sock")).then(
-            () => true,
-            () => false,
-          );
-
-          if (pid.trim() === String(daemon.pid) && ready) return;
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-
-        throw browserFailure(
-          "tool-network",
-          "Browser daemon did not become ready within five seconds.",
-        );
-      },
-      catch: (cause) =>
-        cause instanceof BrowserError
-          ? cause
-          : browserFailure("tool-network", "Cannot start browser daemon."),
-    });
-
-    const socketPath = join(directory, "namespaces", namespace, "run/browser.sock");
-
-    const command = (args: Schema.JsonObject) => {
-      const id = crypto.randomUUID();
-
-      return runBrowserRequest(socketPath, { ...args, id }).pipe(
-        Effect.flatMap((json) =>
-          Effect.try({
-            try: () => {
-              const reply = Schema.decodeUnknownSync(Schema.fromJsonString(Reply))(json);
-
-              if (reply.id !== id)
-                throw browserFailure(
-                  "tool-uncertain",
-                  "Browser response does not match its request.",
-                );
-
-              if (!reply.success) {
-                const message = reply.error?.trim() || "Browser action failed.";
-
-                throw browserFailure(
-                  reply.code === "outcome_unknown" ? "tool-uncertain" : "tool-reported",
-                  reply.code === "outcome_unknown"
-                    ? `${message} Its effects may be unknown; no action was retried.`
-                    : message,
-                );
-              }
-
-              return reply.data ?? {};
-            },
-            catch: (cause) =>
-              cause instanceof BrowserError
-                ? cause
-                : browserFailure(
-                    "tool-uncertain",
-                    "Browser returned invalid output; effects may be unknown.",
-                  ),
+        // A short private path also stays within macOS's 103-byte Unix socket limit.
+        const directory = yield* Effect.acquireRelease(
+          Effect.tryPromise({
+            try: () => mkdtemp("/tmp/pb-"),
+            catch: () => browserFailure("tool-storage", "Cannot create browser runtime directory."),
           }),
-        ),
-      );
-    };
+          (path) => Effect.promise(() => rm(path, { recursive: true, force: true })),
+        );
+
+        let daemon: ReturnType<typeof startBrowserDaemon> | undefined;
+        const namespace = `p${createHash("sha256").update(runId).digest("hex").slice(0, 8)}`;
+
+        yield* Effect.addFinalizer(() =>
+          Effect.promise(async () => {
+            await daemon?.stop();
+          }),
+        );
+
+        const configPath = join(directory, "agent-browser.json");
+        const policyPath = join(directory, "policy.json");
+        const webRTCPath = join(directory, "webrtc.js");
+
+        const environment = {
+          HOME: directory,
+          PATH: process.env.PATH ?? "",
+          TMPDIR: directory,
+          DO_NOT_TRACK: "1",
+          AGENT_BROWSER_CONFIG: configPath,
+          AGENT_BROWSER_SESSION: "browser",
+          AGENT_BROWSER_NAMESPACE: namespace,
+          AGENT_BROWSER_SOCKET_DIR: directory,
+          ...(allowAllDomains ? undefined : { AGENT_BROWSER_ALLOWED_DOMAINS: domains.join(",") }),
+          AGENT_BROWSER_ACTION_POLICY: policyPath,
+          AGENT_BROWSER_EXECUTABLE_PATH: chromium,
+          AGENT_BROWSER_ENGINE: "chrome",
+          AGENT_BROWSER_NO_WEBMCP: "1",
+          AGENT_BROWSER_CONTENT_BOUNDARIES: "1",
+          AGENT_BROWSER_DEFAULT_TIMEOUT: "10000",
+          AGENT_BROWSER_IDLE_TIMEOUT_MS: "60000",
+        };
+
+        yield* Effect.tryPromise({
+          try: async () => {
+            await chmod(directory, 0o700);
+            await writeFile(configPath, "{}", { mode: 0o600 });
+
+            if (allowAllDomains) await writeFile(webRTCPath, webRTCGuard, { mode: 0o600 });
+
+            await writeFile(
+              policyPath,
+              JSON.stringify({
+                default: "deny",
+                allow: [
+                  "navigate",
+                  "snapshot",
+                  "click",
+                  "fill",
+                  "press",
+                  "scroll",
+                  "url",
+                  "launch",
+                ],
+              }),
+              { mode: 0o600 },
+            );
+          },
+          catch: () => browserFailure("tool-storage", "Cannot prepare browser runtime settings."),
+        });
+
+        const version = yield* runBrowserCommand(
+          [executable, "--version"],
+          directory,
+          environment,
+          launch,
+          5000,
+        );
+
+        const chromeVersion = yield* runBrowserCommand(
+          [chromium, "--version"],
+          directory,
+          environment,
+          launch,
+          5000,
+        );
+
+        if (
+          version.trim() !== `agent-browser ${agentBrowserVersion}` ||
+          chromeVersion.trim() !== `Google Chrome for Testing ${chromiumVersion}`
+        )
+          return yield* Effect.fail(
+            browserFailure(
+              "tool-network",
+              `Browser requires agent-browser ${agentBrowserVersion} and Chrome for Testing ${chromiumVersion}. See docs/browser.md.`,
+            ),
+          );
+
+        const start = Effect.tryPromise({
+          try: async (signal) => {
+            if (daemon !== undefined && !daemon.alive())
+              throw browserFailure(
+                "tool-uncertain",
+                "This run's browser stopped. No action was retried.",
+              );
+
+            if (daemon !== undefined) return;
+            daemon = startBrowserDaemon(executable, directory, environment, launch);
+            const socketDirectory = join(directory, "namespaces", namespace, "run");
+            const deadline = Date.now() + 5000;
+
+            while (Date.now() < deadline && !signal.aborted && daemon.alive()) {
+              // Readiness belongs to this exact owned child, not an ambient daemon.
+              // eslint-disable-next-line no-await-in-loop
+              const pid = await readFile(join(socketDirectory, "browser.pid"), "utf8").catch(
+                () => "",
+              );
+
+              // eslint-disable-next-line no-await-in-loop
+              const ready = await access(join(socketDirectory, "browser.sock")).then(
+                () => true,
+                () => false,
+              );
+
+              if (pid.trim() === String(daemon.pid) && ready) return;
+              // eslint-disable-next-line no-await-in-loop
+              await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+
+            throw browserFailure(
+              "tool-network",
+              "Browser daemon did not become ready within five seconds.",
+            );
+          },
+          catch: (cause) =>
+            cause instanceof BrowserError
+              ? cause
+              : browserFailure("tool-network", "Cannot start browser daemon."),
+        });
+
+        const socketPath = join(directory, "namespaces", namespace, "run/browser.sock");
+
+        const command = (args: Schema.JsonObject) => {
+          const id = crypto.randomUUID();
+
+          return runBrowserRequest(socketPath, { ...args, id }).pipe(
+            Effect.flatMap((json) =>
+              Effect.try({
+                try: () => {
+                  const reply = Schema.decodeUnknownSync(Schema.fromJsonString(Reply))(json);
+
+                  if (reply.id !== id)
+                    throw browserFailure(
+                      "tool-uncertain",
+                      "Browser response does not match its request.",
+                    );
+
+                  if (!reply.success) {
+                    const message = reply.error?.trim() || "Browser action failed.";
+
+                    throw browserFailure(
+                      reply.code === "outcome_unknown" ? "tool-uncertain" : "tool-reported",
+                      reply.code === "outcome_unknown"
+                        ? `${message} Its effects may be unknown; no action was retried.`
+                        : message,
+                    );
+                  }
+
+                  return reply.data ?? {};
+                },
+                catch: (cause) =>
+                  cause instanceof BrowserError
+                    ? cause
+                    : browserFailure(
+                        "tool-uncertain",
+                        "Browser returned invalid output; effects may be unknown.",
+                      ),
+              }),
+            ),
+          );
+        };
+
+        return { start, command, chromium, webRTCPath };
+      }).pipe(Effect.provideService(Scope.Scope, scope)),
+    );
 
     const execute = (name: string, args: Schema.JsonObject) =>
       Effect.gen(function* () {
@@ -318,6 +340,7 @@ export const browserTools = (
           return yield* Effect.fail(
             browserFailure("tool-arguments", "Use a reference from the current browser snapshot."),
           );
+        const { start, command, chromium, webRTCPath } = yield* initialize;
         yield* start;
 
         if (!opened && name === "open")

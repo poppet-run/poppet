@@ -1138,7 +1138,8 @@ credential references, supported schemas, and the live validation path.
 The host composes optional browser tools alongside MCP tools through
 `ExternalAgentToolsLive`. The generic `ExternalTools.snapshot` receives host-owned
 session/run IDs and runs in the conversation stream's resource scope. Browser
-resources therefore close with that run, including failure and cancellation,
+setup is deferred until the first browser action and reused within that run. Its
+resources close with the run, including failure and cancellation,
 while general MCP connections retain worker ownership.
 
 `@poppet/browser` owns strict tool arguments, configured host restrictions, snapshots,

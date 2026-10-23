@@ -71,9 +71,9 @@ to the model.
 
 `POPPET_BROWSER` replaces the complete file section. `{"enabled":false}` disables
 access. `poppet config` shows the invoking process's settings without
-launching a browser. Restart the worker after edits. Missing executables or wrong
-versions produce a sanitized diagnostic and omit browser tools while ordinary
-chat and MCP tools remain available. Poppet never installs or upgrades software.
+launching a browser. Restart the worker after edits. Executables and versions are checked only on the first browser action. Missing
+executables or wrong versions fail that action with a sanitized diagnostic;
+unused browser support does not interfere with ordinary chat or MCP tools. Poppet never installs or upgrades software.
 
 ## Use and lifecycle
 
@@ -88,7 +88,9 @@ refresh it after interacting. Individual navigation/editing keys are supported,
 without arbitrary shortcuts. Form values travel as structured data and cannot
 become flags. The browser closes automatically when the run ends.
 
-Every run has a fresh private home, directory, namespace, daemon, and browser.
+The first browser action creates a fresh private home, directory, namespace,
+daemon, and browser, reused for the rest of that run. Publishing tools and
+validating arguments create no files or processes.
 Cookies, tabs, login state, and references do not persist between messages.
 Fixed native commands use the pinned CLI daemon's private Unix socket. Native
 MCP was checked, but its session/launch overrides and detached CLI lifecycle do

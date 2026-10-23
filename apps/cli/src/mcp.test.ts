@@ -218,7 +218,7 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
 };
 
 describe("ExternalAgentToolsLive", () => {
-  test("when the browser is unavailable, leaves configured MCP tools and ordinary chat usable", async () => {
+  test("when an installed browser is missing but unused, leaves MCP tools and ordinary chat usable", async () => {
     const state = await fixture();
 
     try {
@@ -239,7 +239,7 @@ describe("ExternalAgentToolsLive", () => {
       expect(await state.invoke(["chat", "new", "Read the fixture"])).toContain("Done");
       expect(state.requests[0]!.tools.some((tool) => tool.namespace === "poppet_mcp")).toBe(true);
       expect(state.requests[0]!.tools.some((tool) => tool.namespace === "poppet_browser")).toBe(
-        false,
+        true,
       );
     } finally {
       await state.close();
