@@ -1392,6 +1392,7 @@ describe("CLI", () => {
       profileBytes: 2048,
       factsBytes: 1024,
       skillIndexBytes: 512,
+      learnSkills: true,
     };
 
     try {

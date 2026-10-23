@@ -78,8 +78,31 @@ memory, note, or task changes.
 
 Learned skills are procedures Poppet saves itself. They are stored in the
 conversation database with a revision history, never in the owner `skills/`
-directory. Saving them from chat arrives in a later stage of
-[phase 31](phases/31.md); the storage and owner commands exist now.
+directory. Turn on saving with `POPPET_LEARN_SKILLS=true` (or `chat.learnSkills`)
+and restart a running worker.
+
+With saving on, interactive tool-capable runs get `poppet_skills.manage_skill`.
+Poppet is instructed to save a skill after a multi-step procedure succeeded,
+after recovering from errors, or after you corrected its approach, and to
+prefer patching a similar learned skill over creating another. It records
+when the skill applies, inputs, steps, pitfalls, and verification, not a log of
+the conversation. It mentions each change in its reply.
+
+The host enforces the limits rather than trusting the model:
+
+- Changing an existing skill needs the revision returned by `view_skill` or an
+  earlier change in the same run, so Poppet cannot overwrite a skill it has not
+  read or that changed since.
+- Owner-written skills cannot be created over, changed, or deleted.
+- At most 3 skill changes per run, 64 learned skills, and 8192 bytes each.
+  Content that looks like a credential is rejected.
+- The tool is withdrawn once a fetched page, search result, MCP result, or
+  attachment enters the run, and scheduled runs never receive it.
+- Each change records its run and tool call; inspect it with `skills history`
+  and `chat show`, and undo it with `skills revert`.
+
+Learned skills appear in the [skill index](#skills-the-model-chooses) with
+`source: "learned"` and their revision unless an owner directory shadows them.
 
 ```sh
 poppet skills list                   # owner and learned, with source and revision

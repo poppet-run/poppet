@@ -41,6 +41,7 @@ const FileSettings = Schema.Struct({
       profileBytes: Schema.optionalKey(Schema.Int),
       factsBytes: Schema.optionalKey(Schema.Int),
       skillIndexBytes: Schema.optionalKey(Schema.Int),
+      learnSkills: Schema.optionalKey(Schema.Boolean),
       runDeadlineSeconds: Schema.optionalKey(Schema.Int),
     }),
   ),
@@ -129,6 +130,7 @@ export const loadConfigSource = Effect.gen(function* () {
     POPPET_PROFILE_BYTES: file.chat?.profileBytes,
     POPPET_FACTS_BYTES: file.chat?.factsBytes,
     POPPET_SKILL_INDEX_BYTES: file.chat?.skillIndexBytes,
+    POPPET_LEARN_SKILLS: file.chat?.learnSkills,
     POPPET_RUN_DEADLINE_SECONDS: file.chat?.runDeadlineSeconds,
   };
 
