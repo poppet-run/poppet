@@ -12,8 +12,8 @@ import { pairWhatsApp } from "#src/pair";
 
 const settings = { version: 1 as const, accountPhone: "447700900001", ownerPhone: "447700900002" };
 
-describe.concurrent("WhatsApp foreground pairing", () => {
-  test("the pairing deadline closes a socket that never links", async () => {
+describe.concurrent("pairWhatsApp", () => {
+  test("when pairing never links before its deadline, closes the socket", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-wa-pair-deadline-"));
     const created = Deferred.makeUnsafe<void>();
     let closed = 0;
@@ -62,7 +62,7 @@ describe.concurrent("WhatsApp foreground pairing", () => {
   });
 
   test.each(["paired", "invalid-session", "wrong-account", "cancelled"])(
-    "%s releases its socket and persists only the verified session",
+    "when pairing ends as %s, releases the socket and persists only a verified session",
     async (outcome) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-wa-pair-"));
       const first = Deferred.makeUnsafe<void>();

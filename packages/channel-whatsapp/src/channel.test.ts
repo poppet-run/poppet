@@ -135,8 +135,8 @@ const fixture = async (configuration = settings, paired = true) => {
   };
 };
 
-describe.concurrent("WhatsApp adapter", () => {
-  test("accepts only owner text, resolves private LIDs and ignores other accounts, groups and edits", async () => {
+describe.concurrent("whatsappChannelLayer", () => {
+  test("when WhatsApp messages arrive, accepts only owner text and resolves private LIDs while filtering other messages", async () => {
     const state = await fixture();
 
     try {
@@ -200,7 +200,7 @@ describe.concurrent("WhatsApp adapter", () => {
     }
   });
 
-  test("bounds receive buffering and sends stable plain-text identities without fetching previews", async () => {
+  test("when receive buffering fills or messages are sent, bounds the buffer and preserves identities without fetching previews", async () => {
     const state = await fixture();
 
     try {
@@ -243,7 +243,7 @@ describe.concurrent("WhatsApp adapter", () => {
   });
 
   test.each(["identity", "storage", "replaced"])(
-    "stops safely after %s failure",
+    "when %s fails, stops the WhatsApp connection safely",
     async (reason) => {
       const state = await fixture();
 
@@ -292,7 +292,7 @@ describe.concurrent("WhatsApp adapter", () => {
     },
   );
 
-  test("self-chat echoes cannot start a reply loop, including after a lost acknowledgement and restart", async () => {
+  test("when self-chat echoes arrive after acknowledgement loss or restart, avoids reply loops", async () => {
     const config = { ...settings, ownerPhone: settings.accountPhone };
     const state = await fixture(config);
     state.echo();
@@ -344,7 +344,7 @@ describe.concurrent("WhatsApp adapter", () => {
     }
   });
 
-  test("an unacknowledged send times out as uncertain without retrying", async () => {
+  test("when a send remains unacknowledged, times out as uncertain without retrying", async () => {
     const state = await fixture();
 
     try {
@@ -377,7 +377,7 @@ describe.concurrent("WhatsApp adapter", () => {
     }
   });
 
-  test("does not connect or expose a QR when the worker has not been paired", async () => {
+  test("when the worker is unpaired, neither connects nor exposes a QR code", async () => {
     const state = await fixture(settings, false);
 
     try {
@@ -397,7 +397,7 @@ describe.concurrent("WhatsApp adapter", () => {
   });
 
   test.each(["transient", "unstructured"])(
-    "reconnects a %s disconnect, closes the previous socket and stops after unlinking",
+    "when a %s disconnect occurs, closes the old socket and reconnects until unlinked",
     async (reason) => {
       const state = await fixture();
 

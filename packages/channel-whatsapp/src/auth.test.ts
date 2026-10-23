@@ -12,8 +12,8 @@ import { openWhatsAppAuth } from "#src/auth";
 
 const noFailure = () => undefined;
 
-describe.concurrent("WhatsApp protected authentication", () => {
-  test("reopens binary keys, credentials and outgoing identities with owner-only permissions", async () => {
+describe.concurrent("openWhatsAppAuth", () => {
+  test("when authentication storage reopens, restores binary keys, credentials, and outgoing identities with private permissions", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-wa-auth-"));
 
     try {
@@ -85,7 +85,7 @@ describe.concurrent("WhatsApp protected authentication", () => {
     }
   });
 
-  test("rolls back a failed key batch and stops further writes without exposing key material", async () => {
+  test("when a key batch fails, rolls it back and stops further writes without exposing key material", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-wa-rollback-"));
     let failed = 0;
 
@@ -120,7 +120,7 @@ describe.concurrent("WhatsApp protected authentication", () => {
   });
 
   test.each(["corrupt", "symlink"])(
-    "refuses %s state without silently replacing credentials",
+    "when authentication state is %s, rejects it without replacing credentials",
     async (kind) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-wa-invalid-"));
       const path = join(directory, "channels/whatsapp-auth.sqlite");
@@ -158,12 +158,13 @@ describe.concurrent("WhatsApp protected authentication", () => {
   );
 });
 
-test("the installed Signal dependency never logs private session objects during rotation", async () => {
-  const child = Bun.spawn(
-    [
-      process.execPath,
-      "--eval",
-      `
+describe("SessionRecord", () => {
+  test("when Signal sessions rotate, logs no private session objects", async () => {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--eval",
+        `
     import { createRequire } from "node:module";
     const require = createRequire(import.meta.resolve("baileys"));
     const { SessionRecord } = require("libsignal");
@@ -186,21 +187,22 @@ test("the installed Signal dependency never logs private session objects during 
     record.removeOldSessions();
     console.log("session rotation verified");
   `,
-    ],
-    {
-      cwd: fileURLToPath(new URL("..", import.meta.url)),
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
+      ],
+      {
+        cwd: fileURLToPath(new URL("..", import.meta.url)),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
 
-  const [output, errors, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
+    const [output, errors, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
 
-  expect(code).toBe(0);
-  expect(errors).toBe("");
-  expect(output.trim()).toBe("session rotation verified");
+    expect(code).toBe(0);
+    expect(errors).toBe("");
+    expect(output.trim()).toBe("session rotation verified");
+  });
 });

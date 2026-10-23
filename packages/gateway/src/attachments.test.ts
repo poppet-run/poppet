@@ -20,8 +20,8 @@ const document: Attachment = {
 
 const pdf: Attachment = { ...document, name: "notes.pdf", mime: "application/pdf" };
 
-describe("attachment processing", () => {
-  test("startup removes only owned abandoned directories, preserves other files and symlink targets, and keeps storage private", async () => {
+describe("makeAttachmentProcessor", () => {
+  test("when attachment storage starts, removes only owned abandoned directories and preserves private storage", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-attachment-startup-"));
     const root = join(directory, "attachment-tmp");
     const target = join(directory, "keep");
@@ -54,7 +54,7 @@ describe("attachment processing", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
-  test("accepts complete UTF-8 text and rejects binary, invalid UTF-8, oversized text, and misleading types", async () => {
+  test("when attachments contain text, accepts complete UTF-8 and rejects binary, oversized, or misleading input", async () => {
     const processor = makeAttachmentProcessor("/unused", { enabled: false });
     const text = "# Résumé\n世界\n/cancel\n";
 
@@ -89,7 +89,7 @@ describe("attachment processing", () => {
     ).rejects.toThrow("Forwarded messages and this attachment type are not accepted.");
   });
 
-  test("extracts page-labelled Unicode PDF text, marks omissions, rejects invalid/image-only/over-page-limit input, and removes raw files", async () => {
+  test("when PDFs are extracted, labels Unicode text, marks omissions, rejects unusable input, and removes raw files", async () => {
     const root = await mkdtemp(join(tmpdir(), "poppet-extraction-"));
     const processor = makeAttachmentProcessor(root, { enabled: false });
 
@@ -129,7 +129,7 @@ describe("attachment processing", () => {
     }
   });
 
-  test("enforces subprocess output caps and deadlines without blocking the event loop", async () => {
+  test("when extraction subprocesses exceed output or time limits, stops them without blocking the event loop", async () => {
     await expect(
       Effect.runPromise(
         attachmentCommand(
@@ -161,7 +161,7 @@ describe("attachment processing", () => {
     }
   });
 
-  test("cancellation terminates parsing and removes its private temporary directory", async () => {
+  test("when extraction is cancelled, terminates parsing and removes the private temporary directory", async () => {
     const root = await mkdtemp(join(tmpdir(), "poppet-cancel-"));
 
     try {
@@ -199,7 +199,7 @@ describe("attachment processing", () => {
     }
   });
 
-  test("voice is opt-in, validates actual duration, and uses generated paths for a bounded local transcript", async () => {
+  test("when voice is enabled, validates duration and uses generated paths for a bounded local transcript", async () => {
     const root = await mkdtemp(join(tmpdir(), "poppet-voice-"));
 
     const voice: Attachment = {

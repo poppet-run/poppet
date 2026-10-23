@@ -7,8 +7,8 @@ import { makeBraveSearch } from "#src/brave";
 import { makeKagiSearch } from "#src/kagi";
 import { webSearchResult } from "#src/web-search";
 
-describe("web search results", () => {
-  test("keeps backend order and at most five sources, including empty results", () => {
+describe("webSearchResult", () => {
+  test("when search returns any number of sources, preserves backend order and keeps at most five", () => {
     expect(webSearchResult([], 1024)).toEqual({ results: [], truncated: false });
 
     const result = webSearchResult(
@@ -27,7 +27,7 @@ describe("web search results", () => {
     expect(result.truncated).toBe(true);
   });
 
-  test("omits unsafe source URLs without treating snippet links as sources", () => {
+  test("when source URLs are unsafe, omits them without treating snippet links as sources", () => {
     const result = webSearchResult(
       [
         { title: "Private", url: "http://127.0.0.1/", snippet: "" },
@@ -53,7 +53,7 @@ describe("web search results", () => {
     expect(result.truncated).toBe(true);
   });
 
-  test("fits Unicode text within the serialized budget and omits URLs that cannot fit", () => {
+  test("when Unicode results exceed the budget, truncates safely and omits URLs that cannot fit", () => {
     const title = "界🙂".repeat(2000);
 
     const result = webSearchResult(
@@ -81,7 +81,7 @@ const http = (
 describe.each([
   ["Brave Search", makeBraveSearch],
   ["Kagi Search", makeKagiSearch],
-] as const)("%s transport", (provider, makeSearch) => {
+] as const)("web-search.ts", (provider, makeSearch) => {
   const search = (httpFetch: typeof fetch) =>
     makeSearch(Redacted.make("test-search-key"), 1024, httpFetch).search!("current topic");
 
@@ -95,7 +95,7 @@ describe.each([
           },
         };
 
-  test("sends only the query and fixed options and keeps its key out of results", async () => {
+  test(`when ${provider} sends a search request, includes only the query and fixed options and excludes credentials from results`, async () => {
     const result = await Effect.runPromise(
       search(
         http(async (input, init) => {
@@ -145,7 +145,7 @@ describe.each([
     expect(JSON.stringify(result)).not.toContain("test-search-key");
   });
 
-  test("handles empty results and missing snippets through the shared source filter", async () => {
+  test(`when ${provider} returns empty results or missing snippets, normalizes them through the shared source filter`, async () => {
     expect(
       await Effect.runPromise(search(http(async () => Response.json(responseFor([]))))),
     ).toEqual({ results: [], truncated: false });
@@ -175,23 +175,26 @@ describe.each([
     [429, "tool-rate-limit"],
     [500, "tool-network"],
     [302, "tool-network"],
-  ] as const)("reports HTTP %s without exposing the body or retrying", async (status, reason) => {
-    let calls = 0;
+  ] as const)(
+    `when ${provider} returns HTTP %s, reports it without exposing the body or retrying`,
+    async (status, reason) => {
+      let calls = 0;
 
-    const error = await Effect.runPromise(
-      search(
-        http(async () => {
-          calls++;
+      const error = await Effect.runPromise(
+        search(
+          http(async () => {
+            calls++;
 
-          return new Response("test-search-key private server details", { status });
-        }),
-      ).pipe(Effect.flip),
-    );
+            return new Response("test-search-key private server details", { status });
+          }),
+        ).pipe(Effect.flip),
+      );
 
-    expect(error).toMatchObject({ reason, message: `${provider} returned HTTP ${status}.` });
-    expect(JSON.stringify(error)).not.toContain("test-search-key");
-    expect(calls).toBe(1);
-  });
+      expect(error).toMatchObject({ reason, message: `${provider} returned HTTP ${status}.` });
+      expect(JSON.stringify(error)).not.toContain("test-search-key");
+      expect(calls).toBe(1);
+    },
+  );
 
   test.each([
     () => new Response("not json", { headers: { "Content-Type": "application/json" } }),
@@ -204,13 +207,16 @@ describe.each([
       ),
     () => new Response(new Uint8Array([0xff]), { headers: { "Content-Type": "application/json" } }),
     () => new Response("<html>error</html>", { headers: { "Content-Type": "text/html" } }),
-  ])("rejects malformed or unsupported responses", async (response) => {
-    await expect(Effect.runPromise(search(http(async () => response())))).rejects.toMatchObject({
-      reason: "tool-network",
-    });
-  });
+  ])(
+    `when ${provider} response case %# is malformed or unsupported, rejects it`,
+    async (response) => {
+      await expect(Effect.runPromise(search(http(async () => response())))).rejects.toMatchObject({
+        reason: "tool-network",
+      });
+    },
+  );
 
-  test("stops and cancels an oversized response stream", async () => {
+  test(`when a ${provider} response stream exceeds the byte limit, stops and cancels it`, async () => {
     let cancelled = false;
 
     const body = new ReadableStream<Uint8Array>({
@@ -233,7 +239,7 @@ describe.each([
   });
 
   test.each([false, true])(
-    "aborts the request on cancellation or deadline, timeout: %s",
+    `when ${provider} cancellation or deadline occurs with timeout=%s, aborts the request`,
     async (timeout) => {
       let aborted = false;
 

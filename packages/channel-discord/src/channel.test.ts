@@ -20,8 +20,8 @@ const settings = {
   token: Redacted.make("secret-discord-token"),
 };
 
-describe("Discord adapter", () => {
-  test("uses Discord message/thread objects, recovers thread creation, filters events and suppresses reply mentions", async () => {
+describe("discordChannelLayer", () => {
+  test("when Discord messages and threads are processed, recovers creation, filters events, and suppresses reply mentions", async () => {
     const client = new Client({
       intents: [],
       makeCache: Options.cacheWithLimits({ MessageManager: 0 }),
@@ -345,7 +345,7 @@ describe("Discord adapter", () => {
     }
   });
 
-  test("retries failed login after 30 seconds and redacts connection errors", async () => {
+  test("when Discord login fails, retries after 30 seconds and redacts connection errors", async () => {
     const client = new Client({ intents: [] });
     const login = spyOn(client, "login").mockRejectedValue(new Error("secret-discord-token"));
     const destroy = spyOn(client, "destroy").mockResolvedValue();
