@@ -187,8 +187,7 @@ A worker restart marks running reviews `uncertain` rather than replaying them.
 
 Migration 5 adds nullable JSON `project` columns to sessions and jobs and
 backfills occurrence definitions with `project: null`. New selected snapshots
-contain `name`, saved instruction `content`, and a nullable selected `notes` path
-array. Occurrence sessions and retries use their saved definition snapshot.
+contain `name` and saved instruction `content`. Occurrence sessions and retries use their saved definition snapshot.
 
 Facts retain their values, source runs, and timestamps while migrating to a
 composite `(project, key)` primary key. An empty database scope denotes global

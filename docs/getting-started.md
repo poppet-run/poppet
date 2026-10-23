@@ -70,7 +70,7 @@ consent, credential storage, and logout.
 
 Alternatively, follow the [OpenCode Go](providers/opencode-go.md) or
 [OpenRouter](providers/openrouter.md) guide. OpenCode Go requires coding workloads;
-use ChatGPT or OpenRouter for general assistant chat, notes, and summaries.
+use ChatGPT or OpenRouter for general assistant chat and summaries.
 
 ## Choose a model and chat
 
@@ -123,9 +123,8 @@ Chat consumes provider usage.
 See [command line](cli.md#providers-and-models) for provider commands and
 [chat](chat.md) for session behavior and limits.
 
-## Use notes, memory, and scheduled work
+## Use memory and scheduled work
 
-[Notes tools](notes.md) read, search, and save files within `POPPET_NOTES_DIR`.
 [Memory](memory.md) adds your editable profile and explicitly saved facts to each
 run. [Scheduled tasks](tasks.md) execute one-off or recurring prompts while a
 [worker](worker.md) is running. The same worker can connect

@@ -14,12 +14,11 @@ for persistent settings.
 - [Configuration](configuration.md): environment variables, storage paths, API keys, and run budgets.
 - [Command line](cli.md): commands, provider selection, and verification.
 - [Chat](chat.md): saved sessions, streaming answers, context, and cancellation.
-- [Notes](notes.md): reading, searching, and saving files within the notes directory.
 - [MCP tools](mcp.md): trusted local servers, allowlists, inspection, and scheduled reads.
 - [Browser automation](browser.md): agent-browser setup, isolated runs, website permissions, and limits.
 - [Skills](skills.md): explicitly selected local procedures saved with chats and tasks.
 - [Memory](memory.md): an editable profile and explicitly saved facts shared across sessions.
-- [Projects](projects.md): saved instructions, scoped facts and recall, and selected notes for chats and tasks.
+- [Projects](projects.md): saved instructions, scoped facts and recall for chats and tasks.
 - [Storage](storage.md): the local database, permissions, ownership, and recovery.
 - [Scheduled tasks](tasks.md): one-off and recurring work, change-aware monitoring, results, pauses, and retries.
 - [Worker](worker.md): foreground modes, macOS login startup, lifecycle, and logs.

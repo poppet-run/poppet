@@ -117,7 +117,7 @@ directories. The CLI composes `SkillsLive` with host configuration. When a host
 supplies `Skills` and `POPPET_SKILL_INDEX_BYTES` is nonzero, the conversation
 workflow builds a bounded index at run start and adds the read-only
 `poppet_skills.view_skill` tool, a context-only tool journalled like recall. It
-does not extend notes access. With `POPPET_LEARN_SKILLS`, interactive runs also
+grants no additional tool permissions. With `POPPET_LEARN_SKILLS`, interactive runs also
 get `poppet_skills.manage_skill`, which writes through `LearnedSkills` in
 `@poppet/skills`, with the run and call as provenance. The conversation tracks the revisions each run has
 seen and its write count; the tool is withdrawn with memory after untrusted
@@ -149,9 +149,9 @@ no skill-specific behavior. See [skills](skills.md).
 ## Explicit project context
 
 `ProjectsLive` uses the same bounded filesystem loader as `SkillsLive` for
-`projects/<name>/PROJECT.md` and optional `notes.json`. New CLI and messaging
+`projects/<name>/PROJECT.md`. New CLI and messaging
 requests carry only a validated name. The store owner loads and snapshots the
-instructions and note paths in sessions, jobs, and immutable occurrence
+instructions in sessions, jobs, and immutable occurrence
 definitions. Continued sessions, edited tasks, and retries retain those snapshots.
 Records without a project remain unscoped. Versioned worker routes and strict
 request decoding reject unsupported payloads before dispatch. No provider changes are needed.
@@ -171,10 +171,7 @@ explicit project fact management without inference.
 Conversation search and reads bind the session project in store SQL, including
 null for unscoped sessions. Task tools bind their inspection and controls to the
 same scope, and new tasks inherit the session snapshot. Owner CLI inspection can
-still inspect all scopes. Selected note paths constrain existing note tools
-without bypassing filesystem checks or write authorization; contents are read
-lazily. No selection preserves the notes-root policy and an empty selection
-allows no notes. Directory deletion retains facts and saved history. See
+still inspect all scopes. Directory deletion retains facts and saved history. See
 [project context](projects.md) for the owner interface and retention rules.
 
 ## Provider interface
@@ -435,7 +432,7 @@ continuation together. The newest input must fit by itself or the run fails with
 tokens. Advertised model capacity further limits input and output. The UTF-8 size
 estimate is not an exact tokenizer, and trimming never changes stored history.
 
-Tool-capable models receive the three notes tools, conversation search, explicit
+Tool-capable models receive conversation search, explicit
 memory, page reading, and web search when configured. The conversation workflow
 validates complete tool requests, records them, executes sequentially, and
 continues with the saved results. Models without tool support receive no tools.
@@ -454,9 +451,9 @@ Inspection omits provider continuation while retaining normalized output, usage,
 and run failure reasons. Tool results, profile content, and saved facts each have
 separate content budgets.
 
-## Notes and tool execution
+## Tool execution
 
-`conversation.ts` captures the store, notes and pages services, and chat budgets. It keeps
+`conversation.ts` captures the store, memory and pages services, and chat budgets. It keeps
 one model instance throughout each run. `reply.ts` forwards text but emits a
 completion only after clean source termination and validates continuation,
 finish reason, output limits, and agreement with streamed text. Complete tool
@@ -469,32 +466,19 @@ never trimmed independently of their tool pairs. Definitions and tool results
 count toward the context estimate; overflowing the current exchange fails clearly.
 Recorded usage sums all model turns when complete usage data is available.
 
-`notes.ts` defines argument schemas, tool descriptions, and the scoped `Notes`
-service. Filesystem access begins only when a tool executes, so inspection and
-text-only requests do not create the notes directory. Paths must resolve within
-the configured root, with checked directories and no-follow file opens. Symlinks,
-hard-linked files, non-regular files, and unsupported extensions are rejected.
-Read and search I/O is bounded. Search treats its query as literal text.
-
-Saves create checked parents, write a protected temporary file, sync it, verify
-the parent again, atomically rename it, and sync the directory. The agent keeps
-this save and its durable result recording uninterruptible during graceful
-shutdown. An abrupt crash can still separate a write from result persistence.
-
 `tool_calls` stores durable tool execution. Store methods atomically record an
 assistant tool request with pending calls and a completed tool result with its transcript
 message. The state progresses from pending to running to completed or failed.
 Run failure/reopening interrupts pending calls and marks remaining running calls
 uncertain. Completed calls are immutable; terminal calls cannot restart. Calls
 and model requests are never replayed. `chat show` exposes the ledger for manual
-inspection. An uncertain write requires checking the file before an explicit retry.
+inspection. An uncertain mutation requires inspecting the affected state before an explicit retry.
 
-Reported tool failures, including refused arguments and missing notes, return to
+Reported tool failures, including refused arguments and failed page reads, return to
 the model within the existing budgets. An invalid batch executes none of its
 calls. Uncertain effects end the run without replay. Once page, search, MCP, or
 attachment content enters a run, task management, memory changes, and MCP tools
-are withdrawn until a new owner message. Note tools remain subject to their
-ordinary permissions; voice runs also remove note writes and all external tools.
+are withdrawn until a new owner message. Voice runs also remove all external tools.
 See [chat limits](chat.md#context-and-run-limits).
 
 ## Supplied page reading
@@ -507,7 +491,7 @@ No store migration or new configuration is needed.
 The host extracts canonical HTTP(S) URLs solely from the current user message or
 saved scheduled prompt. Completed web searches can add their returned source URLs
 for this run only. Whole-batch validation checks the requested initial URL against
-that set before any tool executes. History, skills, notes, snippets, and page links
+that set before any tool executes. History, skills, snippets, and page links
 cannot expand it. Page text remains untrusted source material, and guidance asks
 the model to cite the returned final source URL.
 
@@ -545,7 +529,7 @@ Offline checks inject DNS/transport and static fixtures. Loopback integration
 checks use the production HTTP(S) client to prove literal-address connections,
 source Host/SNI and TLS identity, proxy isolation, wire/decompression limits, and
 cancellation. Fake-model and scheduler checks cover authorization, durable results,
-failure without replay, and unchanged read-only notes permissions.
+failure without replay, and unchanged read-only tool permissions.
 
 ## Web search
 
@@ -582,7 +566,7 @@ Grants come from the fresh service result rather than replayed transcript text.
 Whole-batch validation runs first, so search cannot authorize a new fetch in that
 same batch. Results omitted by count or byte limits, snippet links, and previous
 runs never grant access. Scheduled runs use the same path and retain read-only
-notes and memory. Tests cover the request boundary, setup, failure/cancellation,
+memory. Tests cover the request boundary, setup, failure/cancellation,
 limits, grant lifetime, and scheduled execution. Live search-to-page inference
 and scheduled messaging delivery remain separate manual checks.
 
@@ -652,10 +636,10 @@ time. `Store.searchSessions` validates plain-text queries, quotes FTS terms, bin
 parameters, and bounds ranked excerpts and serialized results.
 
 `agent/search.ts` defines the read-only `poppet_history.search_sessions` and
-`poppet_history.read_session` schemas. The conversation loop dispatches them alongside notes, using the same
+`poppet_history.read_session` schemas. The conversation loop dispatches them alongside other tools, using the same
 namespace/permission checks, durable tool lifecycle, and run budgets. Historical
 text is untrusted data, not permission to act. Scheduled runs may search and read without
-gaining note-write permission. The CLI uses the shared worker command schema and
+gaining mutation permissions. The CLI uses the shared worker command schema and
 owning store connection, with local fallback only when the worker is unavailable.
 Search inspection needs neither provider credentials nor model inference. The
 existing single-owner policy governs recall across CLI, task, and messaging
@@ -706,9 +690,9 @@ the default personality. The profile and keyed values are serialized into the
 prompt as personal context. Metadata such as source runs and timestamps stays in
 the store. This prompt is
 kept throughout the tool loop and included in every context-size estimate. The
-next run reads fresh memory even when continuing an existing session. Note tools cannot change facts. Tool-capable chat can use `poppet_memory.memory`
+next run reads fresh memory even when continuing an existing session. Tool-capable chat can use `poppet_memory.memory`
 for explicitly requested remember, replace, and forget operations. Forgetting affects future memory
-snapshots; it does not erase prior messages or notes.
+snapshots; it does not erase prior messages.
 
 `agent/memory-tools.ts` validates the namespaced model arguments using the shared
 key/value schemas and dispatches through `Memory`. A fixed object schema requires
@@ -722,8 +706,7 @@ model rather than a keyword scanner or an extra confirmation interface.
 The existing tool journal records memory calls before dispatch. A mutation and
 its durable result finish together under graceful cancellation. Storage uncertainty
 or failure to persist a committed result never causes automatic replay. A completed
-fact change survives a later run failure. `readOnlyTools` removes both memory and
-note writes from scheduled requests; fabricated calls fail the normal permission
+fact change survives a later run failure. `readOnlyTools` removes memory writes from scheduled requests; fabricated calls fail the normal permission
 check before execution. This extends the existing policy without changing storage
 schemas, provider code, or the worker protocol.
 
@@ -770,14 +753,12 @@ preserve complete exchanges, their continuation data, and tool request/result
 pairs. Limit loaded memory, tool output, model turns, and tool calls. Stop clearly
 when the active exchange alone exceeds the context budget.
 
-Keep credentials separate from notes, memory, and tool-readable files. Limit note tools
-to the configured notes directory and reject symlinks and hard-linked files. The runner
+Keep credentials separate from memory and tool-readable files. The runner
 enforces allowed tools before invoking them. Scheduled runs begin with read-only
 tools.
 
 Do not automatically retry a side effect whose completion is uncertain. Record
-its state and require an explicit retry. Note writes use atomic replacement;
-database updates use transactions. Exactly-once external execution is not assumed.
+its state and require an explicit retry. Database updates use transactions. Exactly-once external execution is not assumed.
 
 ## Change-aware monitoring
 
@@ -789,7 +770,7 @@ reports receive no observation tool. A submission records a candidate in the
 existing tool journal; it cannot update the baseline or send messages.
 
 `packages/tasks/src/monitoring.ts` validates one small stable value against
-completed source reads earlier in that run. Note/page results must be nonempty
+completed source reads earlier in that run. Page results must be nonempty
 and complete; scheduled MCP evidence also rejects omitted or redacted results.
 History recall and snippets cannot establish fresh evidence. Existing source,
 URL, scheduled-tool, and mutation permissions remain in force.
@@ -853,7 +834,7 @@ whitelists safe metadata and caches it before model resolution so it remains
 available while ChatGPT credentials are owned by an active run. Cached status
 includes its observation time. This reports local credentials and consent, not
 live account verification. Running and stopped status derive their provider set
-from the configured provider and saved tasks. Task results and note permissions use the existing
+from the configured provider and saved tasks. Task results and tool permissions use the existing
 store and agent behavior. No second runner or service implementation is added.
 
 Scheduling uses wall-clock UTC times and a one-second wake timer. A timer delayed
@@ -891,7 +872,7 @@ The neutral host's protected socket accepts interactive requests.
 schemas or memory behavior into the task package. The host validates chat,
 memory, and store-status payloads and uses the same command functions as direct
 local execution. New chat payloads include the client's provider, model, and
-workload; continued chats resolve their saved session. Notes paths and chat
+workload; continued chats resolve their saved session. Chat
 budgets come from the worker's existing layers.
 
 The listener owns the full request, including JSON body decoding, in a scoped
@@ -976,7 +957,7 @@ Tests append fake registrations and exercise setup, help, simultaneous message
 handling, separate sessions, shared serialization, status, and resource cleanup.
 
 Channel packages own protected credential storage, separate from model-provider
-credentials, notes, and memory. Reuse compatible protection and locking helpers
+credentials and memory. Reuse compatible protection and locking helpers
 without treating a Discord bot token as a model-provider connection. Tokens stay
 out of logs, command output, launch arguments, and LaunchAgent environment data.
 Persist non-secret channel settings so the installed worker can load them.
@@ -1032,12 +1013,12 @@ and [message content rules](https://docs.discord.com/developers/events/gateway#m
 
 Authorization applies to every incoming message and control command before
 creating a session or invoking the model. A status or cancel command is scoped to
-the current thread's session and the allowed user. Keep personal memory and notes
+the current thread's session and the allowed user. Keep personal memory and conversation content
 available only in channels the owner has explicitly chosen for that context.
 Threads inherit parent-channel visibility: sender authorization does not make
 replies private. Start in an owner-controlled private channel. Supporting other
 users or shared channels requires an explicit memory and tool-access policy;
-separate sessions alone do not isolate the current shared profile, facts, or notes.
+separate sessions alone do not isolate the current shared profile or facts.
 
 ### Acceptance, execution, and delivery
 

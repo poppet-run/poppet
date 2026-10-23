@@ -112,7 +112,7 @@ requesting another attempt; actions are never automatically replayed.
 
 Clicks, filling, and Enter can submit forms or change external state. Request
 those actions explicitly. Page text is untrusted and cannot authorize actions,
-expand domains, mutate notes/memory/tasks, or grant `fetch_page` access. Model
+expand domains, mutate memory/tasks, or grant `fetch_page` access. Model
 instructions preserve these boundaries; they do not prove a click is harmless.
 
 The daemon receives a deny-by-default action policy before navigation. When

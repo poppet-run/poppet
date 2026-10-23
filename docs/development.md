@@ -121,9 +121,8 @@ packages/
     src/skill-index.ts    Bounded skill descriptions and indexing
     src/skill-tools.ts    Skill view and management tools
     src/reply.ts          Validated model stream completion
-    src/notes.ts          Note schemas, bounded access, atomic writes
     src/memory.ts         Global/project snapshots formatted into model instructions
-    src/projects.ts       Project instructions and selected-note validation
+    src/projects.ts       Project instruction loading
     src/context-files.ts  Shared bounded skill/project file access
     src/memory-tools.ts   Validated memory changes with budget checks and source runs
     src/context.ts        Complete-exchange context assembly and limits
@@ -291,8 +290,7 @@ deadlines, error classification, and provider selection. These tests do not prov
 live account access. The earlier phase 1 live ChatGPT check remains separate
 evidence; Go and OpenRouter inference have not been verified against live accounts.
 
-The [notes guide](notes.md#saved-outcomes-and-recovery) and
-[storage guide](storage.md#permissions-and-recovery) describe local recovery checks.
+The [storage guide](storage.md#permissions-and-recovery) describes local recovery checks.
 Live chat, ChatGPT token renewal, Discord, Telegram, and WhatsApp setup and reconnection, and macOS login
 startup and physical sleep/wake remain separate manual checks. Follow the
 [Discord guide](gateways/discord.md) and [worker manual validation](worker.md#manual-validation)
@@ -333,7 +331,7 @@ assistant-capable provider and model for messaging and scheduled tasks.
 
 Automated checks cover local/worker/messaging selection, chat-created task
 inheritance, snapshots through deletion, restart, edits and retries, fresh scoped
-facts with a fixed per-run prompt, recall isolation, selected-note limits, stale
+facts with a fixed per-run prompt, recall isolation, stale
 workers, and migration rollback. They inject models and do not establish live
 instruction-following. Follow the [two-project manual path](projects.md#manual-validation)
 for conflicting preferences, worker restart, a scheduled review, and messaging.

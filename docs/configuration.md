@@ -11,7 +11,6 @@ Save persistent settings in `<data directory>/config.json`, which defaults to
 {
   "provider": "openrouter",
   "model": "replace-with-model-id",
-  "notesDirectory": "notes",
   "chat": {
     "contextBytes": 262144,
     "outputTokens": 2048,
@@ -31,7 +30,7 @@ files larger than 64 KiB, malformed JSON, unknown keys, and wrong value types fa
 with a configuration error.
 
 Use JSON numbers for chat limits. Text must be nonempty without leading or trailing
-whitespace. Relative `notesDirectory` values in the file resolve beside `config.json`.
+whitespace.
 Environment paths resolve against the current working directory. Literal `~` is
 not expanded in either source.
 
@@ -42,39 +41,38 @@ channel settings stay in their existing protected stores.
 
 ## Settings and environment overrides
 
-| Environment variable           | File field                | Default                  | Purpose                                                                                               |
-| ------------------------------ | ------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `POPPET_APP_NAME`              | `applicationName`         | `Poppet`                 | Application name used for initial ChatGPT registration                                                |
-| `POPPET_DATA_DIR`              | Environment only          | `~/.config/poppet`       | Configuration, credentials, and conversation storage                                                  |
-| `POPPET_NOTES_DIR`             | `notesDirectory`          | `<data directory>/notes` | Notes tools' permitted directory                                                                      |
-| `POPPET_PROVIDER`              | `provider`                | `openai-chatgpt`         | `openai-chatgpt`, `opencode-go`, or `openrouter`                                                      |
-| `POPPET_MODEL`                 | `model`                   | Unset                    | Model ID for verification and new sessions and tasks                                                  |
-| `POPPET_MCP_SERVERS`           | `mcpServers`              | `[]`                     | JSON server list replacing file values; local MCP tools and scheduled permissions                     |
-| `POPPET_BROWSER`               | `browser`                 | `{"enabled":false}`      | JSON object replacing browser settings, with native CLI, pinned Chromium, and allowed domains         |
-| `POPPET_VOICE`                 | `voice`                   | `{"enabled":false}`      | JSON object replacing local voice settings; explicit absolute decoder, transcriber and model paths    |
-| `POPPET_WEB_SEARCH`            | `webSearch`               | `false`                  | Enable web search when the selected provider has a key                                                |
-| `POPPET_WEB_SEARCH_PROVIDER`   | `webSearchProvider`       | `"brave"`                | Search provider, `brave` or `kagi`                                                                    |
-| `POPPET_LOG_REASONING`         | `chat.logReasoning`       | `false`                  | Log readable provider reasoning to CLI stderr and worker logs                                         |
-| `POPPET_LOG_TIMINGS`           | `chat.logTimings`         | `false`                  | Log request-stage durations to CLI stderr and worker logs                                             |
-| `POPPET_CONTEXT_BYTES`         | `chat.contextBytes`       | `262144`                 | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576`           |
-| `POPPET_HISTORY_TURNS`         | `chat.historyTurns`       | `20`                     | Previous complete exchanges sent to the model; maximum `100`                                          |
-| `POPPET_OUTPUT_TOKENS`         | `chat.outputTokens`       | `2048`                   | Requested output limit when supported, capped by model metadata; maximum `32768`                      |
-| `POPPET_MODEL_TURNS`           | `chat.modelTurns`         | `8`                      | Model requests per run; range `1–32`                                                                  |
-| `POPPET_TOOL_CALLS`            | `chat.toolCalls`          | `16`                     | Tool calls per run; range `1–64`                                                                      |
-| `POPPET_TOOL_BYTES`            | `chat.toolBytes`          | `16384`                  | UTF-8 bytes per serialized tool result; range `1024–65536`                                            |
-| `POPPET_SOUL_BYTES`            | `chat.soulBytes`          | `8192`                   | UTF-8 bytes in `soul.md`; range `1–65536`                                                             |
-| `POPPET_PROFILE_BYTES`         | `chat.profileBytes`       | `8192`                   | UTF-8 bytes in `profile.md`; range `1–65536`                                                          |
-| `POPPET_FACTS_BYTES`           | `chat.factsBytes`         | `8192`                   | UTF-8 bytes of serialized saved facts sent to the model; range `1–65536`                              |
-| `POPPET_SKILL_INDEX_BYTES`     | `chat.skillIndexBytes`    | `8192`                   | UTF-8 bytes of the skill index sent to the model; `0` disables model-selected skills; range `0–65536` |
-| `POPPET_LEARN_SKILLS`          | `chat.learnSkills`        | `false`                  | Let interactive runs create and change learned skills                                                 |
-| `POPPET_LEARN_MEMORY`          | `chat.learnMemory`        | `false`                  | Let interactive runs save, replace, and forget facts without an explicit request                      |
-| `POPPET_LEARN_REVIEW`          | `chat.learnReview`        | `false`                  | Queue background review of qualifying interactive runs for the worker                                 |
-| `POPPET_REVIEW_MIN_TOOL_CALLS` | `chat.reviewMinToolCalls` | `5`                      | Tool calls that make a run worth reviewing; range `1–64`                                              |
-| `POPPET_REVIEW_TURN_INTERVAL`  | `chat.reviewTurnInterval` | `10`                     | Completed runs in a session since its last review that also qualify; range `1–100`                    |
-| `POPPET_REVIEW_INPUT_BYTES`    | `chat.reviewInputBytes`   | `65536`                  | UTF-8 bytes of the reviewed run sent to the review model; range `4096–262144`                         |
-| `POPPET_REVIEW_MAX_AGE_HOURS`  | `chat.reviewMaxAgeHours`  | `24`                     | Pending reviews older than this are skipped; range `1–168`                                            |
-| `POPPET_RUN_DEADLINE_SECONDS`  | `chat.runDeadlineSeconds` | `300`                    | Absolute deadline for one chat or task run; range `30–3600`                                           |
-| `POPPET_TASK_CATCH_UP_MINUTES` | `tasks.catchUpMinutes`    | `60`                     | How late a missed recurring task time may still run once; `0` skips at startup; range `0–1440`        |
+| Environment variable           | File field                | Default             | Purpose                                                                                               |
+| ------------------------------ | ------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `POPPET_APP_NAME`              | `applicationName`         | `Poppet`            | Application name used for initial ChatGPT registration                                                |
+| `POPPET_DATA_DIR`              | Environment only          | `~/.config/poppet`  | Configuration, credentials, and conversation storage                                                  |
+| `POPPET_PROVIDER`              | `provider`                | `openai-chatgpt`    | `openai-chatgpt`, `opencode-go`, or `openrouter`                                                      |
+| `POPPET_MODEL`                 | `model`                   | Unset               | Model ID for verification and new sessions and tasks                                                  |
+| `POPPET_MCP_SERVERS`           | `mcpServers`              | `[]`                | JSON server list replacing file values; local MCP tools and scheduled permissions                     |
+| `POPPET_BROWSER`               | `browser`                 | `{"enabled":false}` | JSON object replacing browser settings, with native CLI, pinned Chromium, and allowed domains         |
+| `POPPET_VOICE`                 | `voice`                   | `{"enabled":false}` | JSON object replacing local voice settings; explicit absolute decoder, transcriber and model paths    |
+| `POPPET_WEB_SEARCH`            | `webSearch`               | `false`             | Enable web search when the selected provider has a key                                                |
+| `POPPET_WEB_SEARCH_PROVIDER`   | `webSearchProvider`       | `"brave"`           | Search provider, `brave` or `kagi`                                                                    |
+| `POPPET_LOG_REASONING`         | `chat.logReasoning`       | `false`             | Log readable provider reasoning to CLI stderr and worker logs                                         |
+| `POPPET_LOG_TIMINGS`           | `chat.logTimings`         | `false`             | Log request-stage durations to CLI stderr and worker logs                                             |
+| `POPPET_CONTEXT_BYTES`         | `chat.contextBytes`       | `262144`            | Context estimate in UTF-8 bytes, including instructions and continuation; maximum `1048576`           |
+| `POPPET_HISTORY_TURNS`         | `chat.historyTurns`       | `20`                | Previous complete exchanges sent to the model; maximum `100`                                          |
+| `POPPET_OUTPUT_TOKENS`         | `chat.outputTokens`       | `2048`              | Requested output limit when supported, capped by model metadata; maximum `32768`                      |
+| `POPPET_MODEL_TURNS`           | `chat.modelTurns`         | `8`                 | Model requests per run; range `1–32`                                                                  |
+| `POPPET_TOOL_CALLS`            | `chat.toolCalls`          | `16`                | Tool calls per run; range `1–64`                                                                      |
+| `POPPET_TOOL_BYTES`            | `chat.toolBytes`          | `16384`             | UTF-8 bytes per serialized tool result; range `1024–65536`                                            |
+| `POPPET_SOUL_BYTES`            | `chat.soulBytes`          | `8192`              | UTF-8 bytes in `soul.md`; range `1–65536`                                                             |
+| `POPPET_PROFILE_BYTES`         | `chat.profileBytes`       | `8192`              | UTF-8 bytes in `profile.md`; range `1–65536`                                                          |
+| `POPPET_FACTS_BYTES`           | `chat.factsBytes`         | `8192`              | UTF-8 bytes of serialized saved facts sent to the model; range `1–65536`                              |
+| `POPPET_SKILL_INDEX_BYTES`     | `chat.skillIndexBytes`    | `8192`              | UTF-8 bytes of the skill index sent to the model; `0` disables model-selected skills; range `0–65536` |
+| `POPPET_LEARN_SKILLS`          | `chat.learnSkills`        | `false`             | Let interactive runs create and change learned skills                                                 |
+| `POPPET_LEARN_MEMORY`          | `chat.learnMemory`        | `false`             | Let interactive runs save, replace, and forget facts without an explicit request                      |
+| `POPPET_LEARN_REVIEW`          | `chat.learnReview`        | `false`             | Queue background review of qualifying interactive runs for the worker                                 |
+| `POPPET_REVIEW_MIN_TOOL_CALLS` | `chat.reviewMinToolCalls` | `5`                 | Tool calls that make a run worth reviewing; range `1–64`                                              |
+| `POPPET_REVIEW_TURN_INTERVAL`  | `chat.reviewTurnInterval` | `10`                | Completed runs in a session since its last review that also qualify; range `1–100`                    |
+| `POPPET_REVIEW_INPUT_BYTES`    | `chat.reviewInputBytes`   | `65536`             | UTF-8 bytes of the reviewed run sent to the review model; range `4096–262144`                         |
+| `POPPET_REVIEW_MAX_AGE_HOURS`  | `chat.reviewMaxAgeHours`  | `24`                | Pending reviews older than this are skipped; range `1–168`                                            |
+| `POPPET_RUN_DEADLINE_SECONDS`  | `chat.runDeadlineSeconds` | `300`               | Absolute deadline for one chat or task run; range `30–3600`                                           |
+| `POPPET_TASK_CATCH_UP_MINUTES` | `tasks.catchUpMinutes`    | `60`                | How late a missed recurring task time may still run once; `0` skips at startup; range `0–1440`        |
 
 For a temporary override:
 
@@ -82,7 +80,6 @@ Bash / POSIX sh:
 
 ```sh
 export POPPET_DATA_DIR="$HOME/.local/share/poppet"
-export POPPET_NOTES_DIR="$HOME/Documents/Notes"
 poppet config
 ```
 
@@ -90,7 +87,6 @@ fish:
 
 ```fish
 set -lx POPPET_DATA_DIR "$HOME/.local/share/poppet"
-set -lx POPPET_NOTES_DIR "$HOME/Documents/Notes"
 poppet config
 ```
 
@@ -143,14 +139,14 @@ Bash / POSIX sh:
 
 ```sh
 export POPPET_LOG_REASONING=true
-poppet chat new "Review my notes"
+poppet chat new "Review recent conversations"
 ```
 
 fish:
 
 ```fish
 set -lx POPPET_LOG_REASONING true
-poppet chat new "Review my notes"
+poppet chat new "Review recent conversations"
 ```
 
 `chat new` and interactive chat stream readable reasoning to stderr under a
@@ -288,7 +284,7 @@ Queries go to the selected provider's fixed endpoint,
 `https://api.search.brave.com/res/v1/web/search` or `https://kagi.com/api/v1/search`,
 with its search key in the authentication header. Redirects are rejected.
 Poppet sends the query and fixed search options, without adding conversation,
-notes, profile, skills, or inference credentials as extra context. The model can
+profile, skills, or inference credentials as extra context. The model can
 include details in its query, so review requests involving private information.
 Queries and bounded source results remain in the local tool journal. Provider
 reasoning logs may also contain query or result text when enabled.

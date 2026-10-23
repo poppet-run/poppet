@@ -37,7 +37,7 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 2: Provider interface and configured model](phases/2.md)
 - [Phase 3: Durable credentials and storage](phases/3.md)
 - [Phase 4: Persisted chat](phases/4.md)
-- [Phase 5: Tools and notes](phases/5.md)
+- [Phase 5: Tool execution](phases/5.md)
 - [Phase 6: Explicit memory](phases/6.md)
 - [Phase 7: Durable scheduled tasks](phases/7.md)
 - [Phase 8: Unattended operation](phases/8.md)

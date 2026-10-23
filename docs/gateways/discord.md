@@ -13,7 +13,7 @@ your user, server, and parent channel IDs.
 
 Start with a private parent channel that only trusted people can read. The
 configured user is the only person who can invoke Poppet, but everyone with
-channel access can read replies containing personal memory and notes.
+channel access can read replies containing personal memory and conversation content.
 
 Select an assistant-capable provider and model, then save the bot token through
 stdin. The token is never accepted as an argument.

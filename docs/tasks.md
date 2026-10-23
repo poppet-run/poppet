@@ -13,14 +13,13 @@ Select a provider and model as for chat, and sign in before running a task.
 Tasks save that selection when added. The worker uses each saved selection even
 if its environment selects a different model later.
 
-For a quick test, create a note in `POPPET_NOTES_DIR`, then schedule its summary
-one minute from now:
+For a quick test, schedule a review of recent conversations one minute from now:
 
 Bash / POSIX sh:
 
 ```sh
 when=$(bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
-poppet tasks add summary --at "$when" "Read project.md and summarize it"
+poppet tasks add summary --at "$when" "Summarize recent conversations"
 poppet worker run --tasks-only
 ```
 
@@ -28,14 +27,14 @@ fish:
 
 ```fish
 set when (bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
-poppet tasks add summary --at $when "Read project.md and summarize it"
+poppet tasks add summary --at $when "Summarize recent conversations"
 poppet worker run --tasks-only
 ```
 
 The worker prints timestamped lifecycle messages for starts, completed or failed
 runs, interruptions, cancellation, skipped intervals, and task/provider pauses and
 resumes. Occurrence messages include the task name and occurrence ID. Failures use
-reason codes; prompts, note contents, and model answers stay in saved results.
+reason codes; prompts and model answers stay in saved results.
 An idle worker does not print polling messages.
 
 Leave the worker running. In another terminal using the same `POPPET_DATA_DIR`:
@@ -53,7 +52,7 @@ Edit a task without replacing its ID or losing its history:
 
 ```sh
 poppet tasks edit <task-id> --name "Morning review"
-poppet tasks edit <task-id> --prompt "Read project.md and summarize its open decisions."
+poppet tasks edit <task-id> --prompt "Summarize open decisions from recent conversations."
 poppet tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
 poppet tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
 poppet tasks skip-next <task-id>
@@ -123,7 +122,7 @@ worker protocol as other task commands.
 
 Tool-capable models receive `poppet_monitor.report_observation` only inside the
 bound active monitor run. Each check must read fresh evidence, submit exactly
-one value, and complete successfully. Evidence can be a note read, a protected
+one value, and complete successfully. Evidence can be a protected
 page read, or an explicitly allowed scheduled MCP read. Recalled conversations
 and search snippets alone are insufficient. Failed, empty, truncated, omitted,
 or redacted evidence cannot establish the watched value. Use small source
@@ -159,7 +158,7 @@ Tool-capable models can create, list, inspect, pause, and resume tasks when you
 explicitly ask in CLI chat or an authorized messaging conversation. For example:
 
 ```text
-Every Friday at 09:00 Europe/London, summarize my project notes and deliver the result here.
+Every Friday at 09:00 Europe/London, summarize recent project conversations and deliver the result here.
 List my scheduled tasks.
 Show task <task-id>.
 Pause task <task-id>.
@@ -202,7 +201,7 @@ survives a later model failure or interrupted answer. Inspect `tasks list`,
 `tasks show`, or the run's tool records in `chat show` before requesting a new
 creation after an unclear result. Completed calls are not replayed. Scheduled
 runs cannot use this tool, including its read actions. Historical conversations,
-skills, notes, pages, and tool results cannot authorize task changes.
+skills, pages, and tool results cannot authorize task changes.
 
 ## Deliver results to Discord
 
@@ -210,7 +209,7 @@ Configure [Discord](gateways/discord.md), start `poppet worker run`, and copy an
 existing authorized thread's ID. Pass it before the task prompt:
 
 ```sh
-poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --discord-thread <thread-id> "Summarize my notes"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --discord-thread <thread-id> "Summarize recent conversations"
 ```
 
 A running messaging worker validates the thread before creating the task.
@@ -260,15 +259,15 @@ Pass `--skill <name>` before the prompt to save a [local Markdown procedure](ski
 with a new task. Each occurrence copies the task's saved name and text into its
 fresh session. File edits and deletion do not change existing tasks, including
 explicit retries. Create a replacement task to use updated instructions.
-`tasks show` includes the snapshot. Scheduled tools remain read-only: neither note writes nor the memory tool is
+`tasks show` includes the snapshot. Scheduled tools remain read-only: the memory tool is not
 available, including when a selected skill requests changes.
 
 ## Select a project
 
 Pass `--project <name>` before the prompt to save [project context](projects.md),
 optionally with a skill. Edits, restart, and explicit retries retain the project
-instructions and selected note paths. Each occurrence reads current global and
-project facts; note contents are read on demand. Scheduled tools remain read-only.
+instructions. Each occurrence reads current global and
+project facts. Scheduled tools remain read-only.
 Chat-created tasks inherit their owning session's project snapshot. The model can
 inspect and control tasks only in that project, including unscoped tasks from
 unscoped chats; owner CLI commands retain access to all tasks.
@@ -278,7 +277,7 @@ unscoped chats; owner CLI commands retain access to all tasks.
 Use a five-field cron expression and explicit timezone for a recurring task:
 
 ```sh
-poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London "Summarize my notes"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London "Summarize recent conversations"
 ```
 
 One-off timestamps require `Z` or an explicit UTC offset. Cron schedules retain
@@ -286,15 +285,15 @@ local wall time across timezone changes. A missing local time during spring DST
 shifts forward; a repeated time during autumn DST runs once. The database stores
 times as UTC milliseconds. `show` includes final answers, run/session IDs, failures,
 and skipped intervals. Each occurrence has a fresh session, current profile and
-facts, read-only notes and conversation search/recall, page reading, and web search when
-configured. Returned `save_note` and memory calls are rejected.
+facts, conversation search/recall, page reading, and web search when
+configured. Returned memory calls are rejected.
 Use `--coding` before the prompt only for coding work that the chosen provider accepts.
 
 Scheduled runs can use `poppet_history.read_session` after a conversation search
 to read saved context around a match, or page forward with stable message IDs.
 Results fit `POPPET_TOOL_BYTES` and mark shortened or omitted content. Recalled
 statements remain historical data and should be cited by session/message IDs.
-They cannot authorize note, memory, or task changes, or page fetches. Recalled
+They cannot authorize memory or task changes, or page fetches. Recalled
 URLs never become web-search grants. Reading does not resume the saved session or
 import its provider continuation. See [conversation context](chat.md#read-conversation-context).
 
@@ -307,8 +306,8 @@ poppet tasks add page-summary --cron "0 9 * * *" --tz Europe/London "Summarize h
 ```
 
 Each occurrence may read that URL through the same bounded [page reader](chat.md#read-a-supplied-url)
-as chat. URLs mentioned only by a skill, note, prior conversation, or fetched page
-are not authorized. The task retains read-only notes permissions. No page cache,
+as chat. URLs mentioned only by a skill, prior conversation, or fetched page
+are not authorized. The task retains read-only tool permissions. No page cache,
 search account, or additional credentials are needed.
 
 ## Research with web search
@@ -325,8 +324,8 @@ poppet tasks add weekly-research --cron "0 9 * * 5" --tz Europe/London "Search f
 ```
 
 Each occurrence can search and read returned sources on a later model turn.
-Search grants never carry over from older occurrences or saved history. Notes
-and memory stay read-only. Search authentication, service, and rate-limit errors
+Search grants never carry over from older occurrences or saved history. Memory
+stays read-only. Search authentication, service, and rate-limit errors
 return a failed tool result for the model to explain or handle within the run
 budgets. They do not automatically retry or pause the inference provider. Use the
 existing destination flags to deliver completed research through messaging.
@@ -366,7 +365,7 @@ poppet tasks clear
 
 This works with the worker running or stopped. A running worker interrupts active
 work before clearing and continues serving commands. Saved chat sessions and runs,
-notes, facts, credentials, and provider quota pauses are retained. The command
+facts, credentials, and provider quota pauses are retained. The command
 returns the number of tasks removed, and repeating it on an empty list is safe.
 
 See [worker modes](worker.md#foreground-modes) to run scheduling with messaging, and [task architecture](architecture.md#unattended-operation) for package ownership and execution contracts.
@@ -375,4 +374,4 @@ See [worker modes](worker.md#foreground-modes) to run scheduling with messaging,
 
 Each occurrence uses the task name as its session title, shortened to the same
 80-character limit as chat titles. Scheduled runs skip title inference and have
-no extra naming usage. The task prompt and read-only notes policy stay the same.
+no extra naming usage. The task prompt and read-only tool policy stay the same.
