@@ -916,6 +916,8 @@ the same protocol. Saved record migrations are independent of the wire protocol.
 
 ## Messaging gateway
 
+`conversation-naming.ts` owns rename reconciliation and owner-override handling.
+
 Discord thread chat and owner-only Telegram and WhatsApp private chat are implemented.
 The gateway runs
 inside the neutral worker host, with scheduling optional, and shares its store, memory, model
