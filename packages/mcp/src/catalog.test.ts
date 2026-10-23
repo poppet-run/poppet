@@ -14,7 +14,7 @@ describe("toolIdentity", () => {
       ["a", "b-c"],
       ["a", "b.c"],
       ["a", "b_c"],
-      ["a", "save_note"],
+      ["a", "memory"],
     ].map(([server, tool]) => toolIdentity(server!, tool!));
 
     expect(new Set(names.map((name) => name.name)).size).toBe(names.length);

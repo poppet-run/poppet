@@ -30,7 +30,6 @@ import {
 import { AgentError } from "#src/errors";
 import { ExternalTools } from "#src/external-tools";
 import { learningMemoryTool, memoryTool, decodeMemoryCall } from "#src/memory-tools";
-import { decodeNoteCall, noteTools } from "#src/notes";
 import { decodeFetchPageCall, fetchPageTool, suppliedPageURLs } from "#src/pages";
 import { maxTextBytes, streamReply } from "#src/reply";
 import {
@@ -117,7 +116,6 @@ export const conversation = Effect.gen(function* () {
 
         const tools = model.description.capabilities.tools
           ? [
-              ...noteTools,
               ...catalog.map((entry) => entry.definition),
               sessionSearchTool,
               sessionReadTool,
@@ -127,9 +125,7 @@ export const conversation = Effect.gen(function* () {
               ...(learning ? [skillManageTool] : []),
               ...(webSearch.search === null ? [] : [webSearchTool]),
               ...(tasks === null || readOnlyTools ? [] : [taskTool]),
-            ].filter(
-              (tool) => !readOnlyTools || (tool.name !== "save_note" && tool.name !== "memory"),
-            )
+            ].filter((tool) => !readOnlyTools || tool.name !== "memory")
           : [];
 
         const identities = new Set<string>();
@@ -239,7 +235,14 @@ export const conversation = Effect.gen(function* () {
               Match.when({ name: "fetch_page" }, (pageCall) =>
                 decodeFetchPageCall(pageCall, allowedURLs),
               ),
-              Match.orElse(decodeNoteCall),
+              Match.orElse(() =>
+                Effect.fail(
+                  new AgentError({
+                    reason: "tool-permission",
+                    message: "The requested tool is not allowed in this run.",
+                  }),
+                ),
+              ),
             );
 
             return { callId: call.callId, plan };

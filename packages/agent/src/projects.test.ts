@@ -9,7 +9,6 @@ import { type ModelRequest, type Output } from "@poppet/provider";
 import { Store, StoreLive } from "@poppet/store";
 import { Effect, Layer, Stream } from "effect";
 
-import { Notes, NotesLive } from "#src/notes";
 import { Pages } from "#src/pages";
 import { Projects, ProjectsLive } from "#src/projects";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
@@ -28,7 +27,6 @@ const fixture = async (contextBytes = defaultPolicy.contextBytes) => {
   const config = Layer.succeed(AppConfig, {
     applicationName: "Test",
     dataDirectory: directory,
-    notesDirectory: join(directory, "notes"),
     provider: "test",
     model: "model",
   });
@@ -40,7 +38,6 @@ const fixture = async (contextBytes = defaultPolicy.contextBytes) => {
     store,
     LocalMemoryLive.pipe(Layer.provide(store)),
     ProjectsLive.pipe(Layer.provide(config)),
-    NotesLive.pipe(Layer.provide([config, settings])),
     settings,
     Layer.succeed(Pages, { fetch: () => Effect.die("No page access") }),
     Layer.succeed(WebSearch, { search: null }),
@@ -82,7 +79,6 @@ const fixture = async (contextBytes = defaultPolicy.contextBytes) => {
   );
 
   const layer = AgentLive.pipe(Layer.provideMerge(dependencies));
-  await mkdir(join(directory, "notes"));
 
   await Array.fromAsync(["acorn", "blue"], async (name) => {
     await mkdir(join(directory, "projects", name), { recursive: true });
@@ -93,7 +89,7 @@ const fixture = async (contextBytes = defaultPolicy.contextBytes) => {
     directory,
     state,
     requests,
-    run: <A, E>(program: Effect.Effect<A, E, Agent | Store | Memory | Projects | Notes>) =>
+    run: <A, E>(program: Effect.Effect<A, E, Agent | Store | Memory | Projects>) =>
       Effect.runPromise(program.pipe(Effect.provide(layer))),
     close: () => rm(directory, { recursive: true, force: true }),
   };
@@ -278,102 +274,11 @@ describe.concurrent("projects.ts", () => {
     }
   });
 
-  test("when note selections restrict a project, limits reads, searches, and writes and distinguishes null from empty", async () => {
-    const state = await fixture();
-
-    try {
-      await writeFile(join(state.directory, "notes", "selected.md"), "needle selected");
-      await writeFile(join(state.directory, "notes", "other.md"), "needle private");
-      await writeFile(join(state.directory, "projects", "acorn", "notes.json"), '["selected.md"]');
-      await state.run(
-        Effect.gen(function* () {
-          const project = yield* (yield* Projects).load("acorn");
-          const notes = yield* Notes;
-
-          const result = JSON.parse(
-            yield* notes.execute({ name: "search_notes", query: "needle" }, project.notes),
-          );
-
-          expect(result.matches.map((match: { path: string }) => match.path)).toEqual([
-            "selected.md",
-          ]);
-
-          for (const name of ["read_note", "save_note"] as const) {
-            expect(
-              yield* notes
-                .execute({ name, path: "other.md", content: "Do not write" }, project.notes)
-                .pipe(Effect.result),
-            ).toMatchObject({ failure: { reason: "tool-permission" } });
-          }
-
-          expect(
-            JSON.parse(yield* notes.execute({ name: "search_notes", query: "needle" }, [])).matches,
-          ).toEqual([]);
-          expect(
-            JSON.parse(yield* notes.execute({ name: "search_notes", query: "needle" }, null))
-              .matches,
-          ).toHaveLength(2);
-
-          const session = yield* (yield* Store).createSession("test", "model", { project });
-          state.state.output = (request) =>
-            toolThenDone(request, call("search_notes", "poppet_notes", { query: "needle" }));
-          yield* Stream.runDrain((yield* Agent).send(session.id, "Search my notes"));
-
-          const response = state.requests
-            .at(-1)
-            ?.messages.findLast((message) => message.role === "tool");
-
-          expect(
-            response?.role === "tool" &&
-              JSON.parse(response.output).matches.map((match: { path: string }) => match.path),
-          ).toEqual(["selected.md"]);
-          state.state.output = (request) =>
-            toolThenDone(request, call("read_note", "poppet_notes", { path: "other.md" }));
-          yield* Stream.runDrain((yield* Agent).send(session.id, "Read other.md"));
-          const store = yield* Store;
-          const run = (yield* store.runs(session.id)).at(-1)!;
-          expect(run.status).toBe("completed");
-          expect(yield* store.toolCalls(run.id)).toMatchObject([
-            { status: "failed", failureReason: "agent:tool-permission" },
-          ]);
-        }),
-      );
-      await rm(join(state.directory, "notes", "selected.md"));
-      await state.run(
-        Effect.gen(function* () {
-          expect(
-            yield* (yield* Notes)
-              .execute({ name: "read_note", path: "selected.md" }, ["selected.md"])
-              .pipe(Effect.result),
-          ).toMatchObject({ failure: { reason: "tool-arguments" } });
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
-
-  test("when project files or note selections are unsafe, rejects them without inference", async () => {
+  test("when project files are unsafe, rejects them without inference", async () => {
     const state = await fixture();
     const root = join(state.directory, "projects", "acorn");
 
     try {
-      await Array.fromAsync(
-        [
-          '["../outside.md"]',
-          '["/outside.md"]',
-          '["same.md","same.md"]',
-          JSON.stringify(Array.from({ length: 9 }, (_, index) => `${index}.md`)),
-        ],
-        async (json) => {
-          await writeFile(join(root, "notes.json"), json);
-          await expect(
-            state.run(Projects.use((projects) => projects.load("acorn"))),
-          ).rejects.toThrow();
-        },
-      );
-
-      await rm(join(root, "notes.json"));
       await writeFile(join(root, "PROJECT.md"), "x".repeat(8193));
       await expect(state.run(Projects.use((projects) => projects.load("acorn")))).rejects.toThrow(
         "8192",

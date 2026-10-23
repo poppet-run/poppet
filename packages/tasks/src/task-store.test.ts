@@ -15,7 +15,7 @@ const start = Date.parse("2026-10-14T09:00:00Z");
 
 const recurring: NewTask = {
   name: "Summary",
-  prompt: "Summarize my notes",
+  prompt: "Summarize recent conversations",
   provider: "test-provider",
   model: "test-model",
   workload: "assistant",
@@ -35,7 +35,6 @@ const fixture = async (catchUpMs = 0) => {
   const config = Layer.succeed(AppConfig, {
     applicationName: "Test",
     dataDirectory: directory,
-    notesDirectory: join(directory, "notes"),
     provider: "test-provider",
     model: "test-model",
   });
@@ -114,7 +113,7 @@ describe.concurrent("TaskRepository", () => {
     try {
       await state.run((repo) =>
         Effect.sync(() => {
-          const skill = { name: "review", content: "Read the selected note." };
+          const skill = { name: "review", content: "Read the selected conversation." };
           const job = repo.add(once, start, skill);
           repo.reconcile(start);
           const original = repo.occurrences(job.id)[0]!;

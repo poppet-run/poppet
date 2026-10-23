@@ -24,7 +24,6 @@ import { runtimeLayers } from "#src/runtime";
 const config: Settings = {
   applicationName: "Test",
   dataDirectory: "/unused",
-  notesDirectory: "/unused/notes",
   provider: "openai-chatgpt",
   model: "selected-model",
 };

@@ -60,7 +60,6 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     POPPET_PROVIDER: "chat-provider",
     POPPET_MODEL: "chat-model",
     POPPET_DATA_DIR: directory,
-    POPPET_NOTES_DIR: join(directory, "notes"),
     POPPET_CONTEXT_BYTES: "65536",
     POPPET_HISTORY_TURNS: "20",
     POPPET_OUTPUT_TOKENS: "2048",
@@ -91,7 +90,6 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     built: 0,
     writeFails: false,
     useTools: false,
-    memoryChange: false,
     taskAction: null as "create" | "list" | "show" | "pause" | "resume" | null,
     taskId: null as string | null,
     hold: false,
@@ -176,7 +174,9 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                                       : state.taskId,
                                   name: state.taskAction === "create" ? "Chat summary" : null,
                                   prompt:
-                                    state.taskAction === "create" ? "Summarize the notes" : null,
+                                    state.taskAction === "create"
+                                      ? "Summarize recent conversations"
+                                      : null,
                                   schedule:
                                     state.taskAction === "create"
                                       ? {
@@ -201,13 +201,10 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                                   taskCall ?? {
                                     type: "tool-call" as const,
                                     callId: "save",
-                                    name: state.memoryChange ? "memory" : "save_note",
-                                    namespace: state.memoryChange
-                                      ? "poppet_memory"
-                                      : "poppet_notes",
-                                    arguments: state.memoryChange
-                                      ? '{"action":"remember","key":"answer.style","value":"Keep answers concise"}'
-                                      : '{"path":"summary.md","content":"A saved summary"}',
+                                    name: "memory",
+                                    namespace: "poppet_memory",
+                                    arguments:
+                                      '{"action":"remember","key":"answer.style","value":"Keep answers concise"}',
                                   },
                                 ]
                               : [{ type: "text" as const, text: "Answer" }],
@@ -440,7 +437,7 @@ describe("chat.ts", () => {
         const task = JSON.parse(chat.lines.at(-1)!)[0];
         expect(task).toMatchObject({
           name: "Chat summary",
-          prompt: "Summarize the notes",
+          prompt: "Summarize recent conversations",
           provider: description.provider,
           model: description.id,
           workload: "assistant",
@@ -855,23 +852,24 @@ describe("chat.ts", () => {
   });
 
   test.each(["local", "worker"])(
-    "when %s execution uses file settings, applies model selection, notes paths, and chat budgets",
+    "when %s execution uses file settings, applies model selection and chat budgets",
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
 
-      for (const key of [
-        "POPPET_PROVIDER",
-        "POPPET_MODEL",
-        "POPPET_NOTES_DIR",
-        "POPPET_MODEL_TURNS",
-      ] as const)
+      for (const key of ["POPPET_PROVIDER", "POPPET_MODEL", "POPPET_MODEL_TURNS"] as const)
         delete chat.environment[key];
+
+      const inspect = async (args: string[]) => {
+        chat.chunks.length = 0;
+        await chat.invoke(args);
+
+        return JSON.parse(mode === "worker" ? chat.chunks.join("") : chat.lines.at(-1)!);
+      };
 
       const settings = {
         provider: "chat-provider",
         model: "chat-model",
-        notesDirectory: "file-notes",
       };
 
       try {
@@ -883,11 +881,13 @@ describe("chat.ts", () => {
 
         if (mode === "worker") worker = await chat.startWorker();
 
-        await expect(chat.invoke(["chat", "new", "Save a note"])).rejects.toMatchObject({
+        await expect(
+          chat.invoke(["chat", "new", "Remember my answer preference"]),
+        ).rejects.toMatchObject({
           message: "The run has no model turn left to use tool results.",
         });
         expect(chat.requests).toHaveLength(1);
-        expect(await Bun.file(join(chat.directory, "file-notes/summary.md")).exists()).toBe(false);
+        expect(await inspect(["memory", "list"])).toEqual([]);
         await writeFile(
           join(chat.directory, "config.json"),
           JSON.stringify({ ...settings, chat: { modelTurns: 2 } }),
@@ -905,10 +905,10 @@ describe("chat.ts", () => {
           worker = await chat.startWorker();
         }
 
-        await chat.invoke(["chat", "new", "Save a note after reloading"]);
-        expect(await readFile(join(chat.directory, "file-notes/summary.md"), "utf8")).toBe(
-          "A saved summary",
-        );
+        await chat.invoke(["chat", "new", "Remember my answer preference after reloading"]);
+        expect(await inspect(["memory", "list"])).toMatchObject([
+          { key: "answer.style", value: "Keep answers concise" },
+        ]);
         await chat.invoke([
           "tasks",
           "add",
@@ -945,15 +945,11 @@ describe("chat.ts", () => {
       try {
         const root = join(chat.directory, "projects", "acorn");
         await mkdir(root, { recursive: true });
-        await mkdir(join(chat.directory, "notes"), { recursive: true });
-        await writeFile(join(chat.directory, "notes", "selected.md"), "Selected note");
         await writeFile(join(root, "PROJECT.md"), "Acorn uses plain wording.");
-        await writeFile(join(root, "notes.json"), '["selected.md"]');
         expect(await inspect(["projects", "list"])).toEqual(["acorn"]);
         expect(await inspect(["projects", "show", "acorn"])).toEqual({
           name: "acorn",
           content: "Acorn uses plain wording.",
-          notes: ["selected.md"],
         });
         expect(chat.state.built).toBe(0);
 
@@ -989,7 +985,6 @@ describe("chat.ts", () => {
         expect(job.project).toEqual({
           name: "acorn",
           content: "Acorn uses plain wording.",
-          notes: ["selected.md"],
         });
         await writeFile(join(root, "PROJECT.md"), "Edited instructions");
         await chat.invoke([
@@ -1092,7 +1087,7 @@ describe("chat.ts", () => {
           "--skill=weekly-review",
           "--at",
           "2099-01-01T00:00:00Z",
-          "Review notes",
+          "Review recent conversations",
         ]);
 
         expect(job.skill).toEqual({ name: "weekly-review", content: "Original weekly procedure" });
@@ -1180,7 +1175,6 @@ describe("chat.ts", () => {
                   Layer.succeed(AppConfig, {
                     applicationName: "Test",
                     dataDirectory: chat.directory,
-                    notesDirectory: join(chat.directory, "notes"),
                     provider: "test-provider",
                     model: null,
                   }),
@@ -1838,12 +1832,10 @@ describe("chat.ts", () => {
       expect(await readOutput(["chat", "new", "--coding", "Save a summary"])).toBe("Answer\n");
       const session = chat.errors.find((line) => line.startsWith("Session: "))!.slice(9);
       expect(chat.requests[0]?.instructions).toContain("Acorn");
-      expect(await readFile(join(chat.directory, "notes/summary.md"), "utf8")).toBe(
-        "A saved summary",
-      );
+
       expect(JSON.parse(await readOutput(["chat", "show", session]))).toMatchObject({
         runs: [{ status: "completed", workload: "coding" }],
-        toolCalls: [{ status: "completed", name: "save_note" }],
+        toolCalls: [{ status: "completed", name: "memory" }],
       });
       expect(chat.chunks.join("")).not.toContain("secretOpaqueState");
       expect(JSON.parse(await readOutput(["chat", "sessions"]))).toHaveLength(1);
@@ -1869,6 +1861,7 @@ describe("chat.ts", () => {
       expect(await readOutput(["chat", "send", session, "Continue"])).toBe("Answer\n");
       expect(chat.requests.at(-1)?.instructions).toContain("Birch");
       await readOutput(["memory", "forget", "project"]);
+      await readOutput(["memory", "forget", "answer.style"]);
       expect(await readOutput(["memory", "list"])).toBe("[]\n");
       expect(chat.lines.join("\n")).not.toContain("Save a summary");
       expect(chat.lines.join("\n")).not.toContain("Answer");
@@ -2035,7 +2028,6 @@ describe("chat.ts", () => {
 
       try {
         chat.state.useTools = true;
-        chat.state.memoryChange = true;
 
         if (remote) worker = await chat.startWorker();
         await chat.invoke(["chat", "new", "Remember that I prefer concise answers"]);
@@ -2067,23 +2059,21 @@ describe("chat.ts", () => {
     },
   );
 
-  test("when chat saves a requested note, records tool execution for session inspection", async () => {
+  test("when chat saves a requested fact, records tool execution for session inspection", async () => {
     const chat = await fixture();
 
     try {
       chat.state.useTools = true;
-      await chat.invoke(["chat", "new", "Save a summary as summary.md"]);
+      await chat.invoke(["chat", "new", "Remember that I prefer concise answers"]);
       expect(chat.state.open).toBe(false);
       expect(chat.chunks.join("")).toBe("Answer\n");
-      expect(await readFile(join(chat.directory, "notes/summary.md"), "utf8")).toBe(
-        "A saved summary",
-      );
+
       await chat.invoke(["chat", "show", chat.errors[0]?.slice("Session: ".length) ?? ""]);
       const saved = JSON.parse(chat.lines.at(-1) ?? "");
       expect(saved.toolCalls).toEqual([
         expect.objectContaining({
-          name: "save_note",
-          namespace: "poppet_notes",
+          name: "memory",
+          namespace: "poppet_memory",
           status: "completed",
         }),
       ]);

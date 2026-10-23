@@ -15,8 +15,6 @@ export { Skills, SkillsLive } from "#src/skills";
 
 export { Projects, ProjectsLive, loadProject } from "#src/projects";
 
-export { Notes, NotesLive } from "#src/notes";
-
 export { ChatSettings, ChatSettingsLive, defaultPolicy, type ChatPolicy } from "#src/settings";
 
 export { sessionTitle } from "#src/title";

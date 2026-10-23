@@ -14,12 +14,6 @@ export const Observation = Schema.Struct({
 
 const sourceText = Schema.String.check(Schema.makeFilter((value) => value.trim().length > 0));
 
-const NoteEvidence = Schema.Struct({
-  content: sourceText,
-  path: sourceText,
-  truncated: Schema.Literal(false),
-});
-
 const PageEvidence = Schema.Struct({
   text: sourceText,
   url: sourceText,
@@ -95,14 +89,7 @@ export const monitoringRecords = (database: Database) => {
 
       let locator: string;
 
-      if (call.namespace === "poppet_notes" && call.name === "read_note") {
-        const data = Option.getOrNull(
-          Schema.decodeUnknownOption(Schema.fromJsonString(NoteEvidence))(call.output),
-        );
-
-        if (data === null) throw invalid();
-        locator = data.path;
-      } else if (call.namespace === "poppet_web" && call.name === "fetch_page") {
+      if (call.namespace === "poppet_web" && call.name === "fetch_page") {
         const data = Option.getOrNull(
           Schema.decodeUnknownOption(Schema.fromJsonString(PageEvidence))(call.output),
         );

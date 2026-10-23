@@ -95,28 +95,10 @@ export type SkillSnapshot = typeof SkillSnapshot.Type;
 
 export const ProjectName = SkillName;
 
-export const ProjectNotes = Schema.Array(
-  Schema.NonEmptyString.check(
-    Schema.isMaxLength(1024),
-    Schema.makeFilter(
-      (path) =>
-        !path.includes("\\") &&
-        !path.includes("\0") &&
-        !path.startsWith("/") &&
-        !path.split("/").some((part) => !part || part === "." || part === "..") &&
-        /\.(md|markdown|txt)$/i.test(path),
-    ),
-  ),
-).check(
-  Schema.isMaxLength(8),
-  Schema.makeFilter((paths) => new Set(paths).size === paths.length),
-);
-
-/** Instructions and optional note selection saved at creation, never refreshed implicitly. */
+/** Project instructions saved at creation, never refreshed implicitly. */
 export const ProjectSnapshot = Schema.Struct({
   name: ProjectName,
   content: SkillSnapshot.fields.content,
-  notes: Schema.NullOr(ProjectNotes),
 });
 
 export type ProjectSnapshot = typeof ProjectSnapshot.Type;

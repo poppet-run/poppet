@@ -25,7 +25,7 @@ const now = Date.parse("2026-10-17T10:00:00Z");
 const create: ChatTaskAction = {
   action: "create",
   name: "Summary",
-  prompt: "Summarize the notes",
+  prompt: "Summarize recent conversations",
   schedule: { type: "once", at: "2026-10-18T09:00:00+01:00" },
   delivery: "local",
   skill: null,
@@ -37,7 +37,6 @@ const fixture = async (toolBytes = 16384) => {
   const config = Layer.succeed(AppConfig, {
     applicationName: "Test",
     dataDirectory: directory,
-    notesDirectory: join(directory, "notes"),
     provider: "test-provider",
     model: "test-model",
   });
@@ -130,7 +129,6 @@ describe("ChatTasks", () => {
           const project = {
             name: "acorn",
             content: "Original project instructions",
-            notes: ["selected.md"],
           };
 
           const session = yield* store.createSession("test-provider", "test-model", { project });

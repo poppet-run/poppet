@@ -3,7 +3,6 @@ import {
   ChatSettingsLive,
   ChatSettings,
   ModelResolver,
-  NotesLive,
   PageTransportLive,
   PagesLive,
   SkillsLive,
@@ -164,7 +163,6 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   const pages = PagesLive.pipe(Layer.provide([PageTransportLive, chatSettings]));
   const searchCredentials = ApiKeyStoreLive.pipe(Layer.provide(environment), Layer.provide(config));
   const webSearch = WebSearchLive.pipe(Layer.provide([config, chatSettings, searchCredentials]));
-  const notes = NotesLive.pipe(Layer.provide([config, chatSettings]));
   const chatTasks = ChatTasksLive.pipe(Layer.provide([tasks, store, skills, chatSettings]));
 
   const mcp = Layer.unwrap(
@@ -187,7 +185,6 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
       chatSettings,
       connections,
       pages,
-      notes,
       webSearch,
       chatTasks,
       externalTools,

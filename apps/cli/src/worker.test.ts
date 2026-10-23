@@ -54,7 +54,6 @@ describe("runWorker", () => {
       const config = Layer.succeed(AppConfig, {
         applicationName: "Test",
         dataDirectory: directory,
-        notesDirectory: join(directory, "notes"),
         provider: "test-provider",
         model: "test-model",
       });
@@ -102,7 +101,7 @@ describe("runWorker", () => {
                 action: "add",
                 task: {
                   name: "Summary",
-                  prompt: "Summarize notes",
+                  prompt: "Summarize recent conversations",
                   provider: "test-provider",
                   model: "test-model",
                   workload: "assistant",

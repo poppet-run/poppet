@@ -15,7 +15,7 @@ export const codingFlag = Flag.Boolean("coding").pipe(
 
 export const projectFlag = Flag.String("project").pipe(
   Flag.withSchema(ProjectName),
-  Flag.withDescription("Select a project and save its current instructions and note selection"),
+  Flag.withDescription("Select a project and save its current instructions"),
   Flag.atMost(1),
   Flag.map(([value]) => value),
 );

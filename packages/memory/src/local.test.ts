@@ -17,7 +17,6 @@ const fixture = async () => {
   const config = Layer.succeed(AppConfig, {
     applicationName: "Test",
     dataDirectory: directory,
-    notesDirectory: join(directory, "notes"),
     provider: "first-provider",
     model: null,
   });

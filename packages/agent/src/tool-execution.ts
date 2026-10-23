@@ -7,7 +7,6 @@ import { Effect, Match, Option } from "effect";
 import { AgentError } from "#src/errors";
 import type { PreparedExternalCall } from "#src/external-tools";
 import { executeMemoryCall, type MemoryCall } from "#src/memory-tools";
-import { Notes, type NoteCall } from "#src/notes";
 import { Pages, type FetchPageCall } from "#src/pages";
 import type { SessionReadCall, SessionSearchCall } from "#src/search";
 import { ChatSettings } from "#src/settings";
@@ -23,7 +22,6 @@ import type { PreparedTaskCall } from "#src/task-tools";
 import { WebSearch, type WebSearchCall } from "#src/web-search";
 
 type ToolPlan =
-  | NoteCall
   | SessionSearchCall
   | SessionReadCall
   | FetchPageCall
@@ -53,13 +51,6 @@ const reportedStoreReasons: ReadonlySet<string> = new Set([
   "conflict",
 ]);
 
-// Note saves commit by renaming; these reasons are raised before that point.
-const unsavedNoteReasons: ReadonlySet<string> = new Set([
-  "tool-arguments",
-  "tool-permission",
-  "tool-limit",
-]);
-
 /**
  * Reported failures become the call's reply. Uncertain failures may have changed state, so
  * they end the run without replay. Fatal failures also end the run.
@@ -77,8 +68,6 @@ export const toolFailureKind = (
   }
 
   if (name === "external") return error.reason === "tool-reported" ? "reported" : "uncertain";
-
-  if (name === "save_note") return unsavedNoteReasons.has(error.reason) ? "reported" : "uncertain";
 
   if (name === "memory" && error.reason === "memory-storage") return "uncertain";
 
@@ -101,8 +90,6 @@ export const failureReply = (reason: string, message: string) =>
 
 // Results from these tools only add context, so an oversized one can be refused without loss.
 const contextOnlyTools: ReadonlySet<string> = new Set([
-  "read_note",
-  "search_notes",
   "search_sessions",
   "read_session",
   "fetch_page",
@@ -112,7 +99,6 @@ const contextOnlyTools: ReadonlySet<string> = new Set([
 
 export const toolExecution = Effect.gen(function* () {
   const store = yield* Store;
-  const notes = yield* Notes;
   const memory = yield* Memory;
   const pages = yield* Pages;
   const webSearch = yield* WebSearch;
@@ -197,7 +183,7 @@ export const toolExecution = Effect.gen(function* () {
             ? executeMemoryCall(memory, plan, run.id, policy.factsBytes)
             : executeMemoryCall(memory.forProject(project.name), plan, run.id, 8192),
         ),
-        Match.orElse((plan) => notes.execute(plan, project?.notes)),
+        Match.exhaustive,
       );
 
       const outcome = yield* measureTiming("tool", result).pipe(
@@ -237,7 +223,7 @@ export const toolExecution = Effect.gen(function* () {
     });
 
     // Keep an atomic write and its durable result together on graceful cancellation.
-    return call.name === "save_note" || call.name === "memory" || call.name === "manage_skill"
+    return call.name === "memory" || call.name === "manage_skill"
       ? Effect.uninterruptible(operation)
       : operation;
   };

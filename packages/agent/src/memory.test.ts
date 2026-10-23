@@ -16,7 +16,6 @@ import { Store, StoreLive } from "@poppet/store";
 import { Effect, Fiber, Layer, Stream } from "effect";
 
 import { instructions, learningInstructions } from "#src/context";
-import { Notes } from "#src/notes";
 import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
@@ -28,9 +27,9 @@ const completion = (calls = false): Completion => ({
         {
           type: "tool-call",
           callId: "read",
-          name: "read_note",
-          namespace: "poppet_notes",
-          arguments: '{"path":"a.md"}',
+          name: "search_sessions",
+          namespace: "poppet_history",
+          arguments: '{"query":"Acorn"}',
         },
       ]
     : [{ type: "text", text: "Done" }],
@@ -58,7 +57,6 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Mem
   const config = Layer.succeed(AppConfig, {
     applicationName: "Test",
     dataDirectory: directory,
-    notesDirectory: join(directory, "notes"),
     provider: "test-provider",
     model: "test-model",
   });
@@ -100,7 +98,6 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Mem
         Layer.succeed(ChatSettings, { ...defaultPolicy, ...overrides }),
         Layer.succeed(WebSearch, { search: null }),
         Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
-        Layer.succeed(Notes, { execute: () => Effect.succeed("Note contents") }),
         Layer.succeed(ModelResolver, {
           resolve: () =>
             Effect.sync(() => {

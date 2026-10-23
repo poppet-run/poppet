@@ -19,7 +19,6 @@ describe("loadConfig", () => {
       withEnvironment({
         POPPET_APP_NAME: "My Poppet",
         POPPET_DATA_DIR: "./test-data",
-        POPPET_NOTES_DIR: "./my-notes",
         POPPET_PROVIDER: "other-provider",
         POPPET_MODEL: "glm-5.3",
       }),
@@ -28,20 +27,13 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       applicationName: "My Poppet",
       dataDirectory: resolve("./test-data"),
-      notesDirectory: resolve("./my-notes"),
       provider: "other-provider",
       model: "glm-5.3",
     });
   });
 
   test("when configured values are invalid, fails without selecting defaults", () => {
-    for (const key of [
-      "POPPET_APP_NAME",
-      "POPPET_DATA_DIR",
-      "POPPET_NOTES_DIR",
-      "POPPET_PROVIDER",
-      "POPPET_MODEL",
-    ]) {
+    for (const key of ["POPPET_APP_NAME", "POPPET_DATA_DIR", "POPPET_PROVIDER", "POPPET_MODEL"]) {
       for (const value of ["", "   ", " trailing-space "]) {
         const exit = Effect.runSyncExit(withEnvironment({ [key]: value }));
 

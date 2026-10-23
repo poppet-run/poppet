@@ -30,7 +30,6 @@ const fixture = async () => {
       Layer.succeed(AppConfig, {
         applicationName: "Test",
         dataDirectory: directory,
-        notesDirectory: join(directory, "notes"),
         provider: "test-provider",
         model: "test-model",
       }),
@@ -107,11 +106,11 @@ const source = (store: Store["Service"], run: Run, value = "A") =>
   record(
     store,
     run,
-    "read_note",
-    "poppet_notes",
+    "fetch_page",
+    "poppet_web",
     "source",
-    '{"path":"release.md"}',
-    JSON.stringify({ path: "release.md", content: value, truncated: false }),
+    '{"url":"https://example.com/release"}',
+    JSON.stringify({ url: "https://example.com/release", text: value, truncated: false }),
   );
 
 const candidate = (store: Store["Service"], run: Run, value: string, id = "observation") =>
@@ -477,7 +476,6 @@ describe.concurrent("monitoring.ts", () => {
           repo.add(task, start, null, null, undefined, true);
           const { run } = yield* begin(repo, store, start + 60_000);
           const mcp = kind.includes("mcp");
-          const page = kind === "valid-page";
 
           const output = mcp
             ? {
@@ -488,23 +486,18 @@ describe.concurrent("monitoring.ts", () => {
                 omittedStructuredContent: false,
                 redacted: kind === "mcp-redacted",
               }
-            : page
-              ? { text: "A", url: "https://example.com/release", truncated: false }
-              : {
-                  content: kind === "empty" ? "  " : "A",
-                  path: "release.md",
-                  truncated: kind === "truncated",
-                };
+            : {
+                text: kind === "empty" ? "  " : "A",
+                url: "https://example.com/release",
+                truncated: kind === "truncated",
+              };
 
-          let name = "read_note";
-          let namespace = "poppet_notes";
+          let name = "fetch_page";
+          let namespace = "poppet_web";
 
           if (mcp) {
             name = "read";
             namespace = "poppet_mcp";
-          } else if (page) {
-            name = "fetch_page";
-            namespace = "poppet_web";
           } else if (kind === "recalled") {
             name = "read_session";
             namespace = "poppet_history";

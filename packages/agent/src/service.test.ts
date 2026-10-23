@@ -19,7 +19,6 @@ import { Console, Deferred, Effect, Fiber, Layer, Match, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { AgentError } from "#src/errors";
-import { Notes } from "#src/notes";
 import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver, type ChatEvent } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
@@ -102,7 +101,6 @@ const fixture = async (
       Layer.succeed(AppConfig, {
         applicationName: "Test",
         dataDirectory: directory,
-        notesDirectory: join(directory, "notes"),
         provider: "test-provider",
         model: "test-model",
       }),
@@ -116,12 +114,6 @@ const fixture = async (
         LocalMemoryLive.pipe(Layer.provide(store)),
         Layer.succeed(WebSearch, { search: null }),
         Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
-        Layer.succeed(Notes, {
-          execute: () =>
-            Effect.fail(
-              new AgentError({ reason: "tool-permission", message: "No fixture tools allowed" }),
-            ),
-        }),
         Layer.succeed(ModelResolver, { resolve }),
         Layer.succeed(ChatSettings, { ...defaultPolicy, logReasoning, ...policy }),
       ),

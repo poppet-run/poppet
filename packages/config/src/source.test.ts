@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
@@ -324,7 +324,6 @@ describe("loadConfigSource", () => {
 
       expect(result.settings).toMatchObject({
         dataDirectory: data,
-        notesDirectory: join(data, "notes"),
         provider: "test-provider",
         model: null,
       });
@@ -338,7 +337,7 @@ describe("loadConfigSource", () => {
     }
   });
 
-  test("when file settings and environment overrides coexist, resolves file paths locally and applies overrides per field", async () => {
+  test("when file settings and environment overrides coexist, applies overrides per field", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-config-"));
 
     try {
@@ -346,7 +345,6 @@ describe("loadConfigSource", () => {
         join(directory, "config.json"),
         JSON.stringify({
           applicationName: "File name",
-          notesDirectory: "local-notes",
           provider: "other-provider",
           model: "file-model",
           chat: { outputTokens: 4096, toolCalls: 4 },
@@ -357,7 +355,6 @@ describe("loadConfigSource", () => {
       expect(file.settings).toEqual({
         applicationName: "File name",
         dataDirectory: directory,
-        notesDirectory: join(directory, "local-notes"),
         provider: "other-provider",
         model: "file-model",
       });
@@ -366,7 +363,6 @@ describe("loadConfigSource", () => {
         load({
           POPPET_DATA_DIR: directory,
           POPPET_APP_NAME: "Environment name",
-          POPPET_NOTES_DIR: "relative-notes",
           POPPET_OUTPUT_TOKENS: "1024",
           POPPET_OPENROUTER_API_KEY: "must-not-appear",
         }),
@@ -375,16 +371,10 @@ describe("loadConfigSource", () => {
       expect(overridden.settings).toEqual({
         ...file.settings,
         applicationName: "Environment name",
-        notesDirectory: resolve("relative-notes"),
       });
       expect(overridden.source).toEqual({
         configFile: { path: join(directory, "config.json"), exists: true },
-        environmentOverrides: [
-          "POPPET_DATA_DIR",
-          "POPPET_APP_NAME",
-          "POPPET_NOTES_DIR",
-          "POPPET_OUTPUT_TOKENS",
-        ],
+        environmentOverrides: ["POPPET_DATA_DIR", "POPPET_APP_NAME", "POPPET_OUTPUT_TOKENS"],
       });
       expect(
         await Effect.runPromise(

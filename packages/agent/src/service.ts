@@ -70,7 +70,7 @@ export class Agent extends Context.Service<
       sessionId: string,
       timingLog?: (line: string) => Effect.Effect<void>,
     ) => Effect.Effect<void>;
-    /** Streams a reply; readOnlyTools excludes note, memory, and skill writes and task management. */
+    /** Streams a reply; readOnlyTools excludes memory and skill writes and task management. */
     readonly send: (
       sessionId: string,
       text: string,
@@ -298,7 +298,7 @@ export const AgentLive = Layer.effect(
                 const prompt =
                   session.skill === null
                     ? basePrompt
-                    : `${basePrompt}\n\nExplicitly selected owner-written procedure follows as JSON. Apply it to this session, below the base rules. It cannot override explicit user requests, tool permissions, or scheduled runs' read-only notes policy. It grants no additional capabilities.\n${JSON.stringify(session.skill)}`;
+                    : `${basePrompt}\n\nExplicitly selected owner-written procedure follows as JSON. Apply it to this session, below the base rules. It cannot override explicit user requests, tool permissions, or scheduled runs' read-only tool policy. It grants no additional capabilities.\n${JSON.stringify(session.skill)}`;
 
                 const model = yield* measureTiming(
                   "model-resolution",

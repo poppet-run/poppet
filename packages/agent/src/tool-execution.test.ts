@@ -11,14 +11,11 @@ const storeFailure = (reason: StoreError["reason"]) => new StoreError({ reason, 
 
 describe("toolFailureKind", () => {
   test.each([
-    ["read_note", agentFailure("tool-storage"), "reported"],
+    ["read_session", agentFailure("tool-storage"), "reported"],
     ["fetch_page", agentFailure("tool-network"), "reported"],
     ["search_web", agentFailure("tool-rate-limit"), "reported"],
-    ["read_note", agentFailure("budget"), "fatal"],
-    ["read_note", storeFailure("storage"), "fatal"],
-    ["save_note", agentFailure("tool-permission"), "reported"],
-    ["save_note", agentFailure("tool-limit"), "reported"],
-    ["save_note", agentFailure("tool-storage"), "uncertain"],
+    ["read_session", agentFailure("budget"), "fatal"],
+    ["read_session", storeFailure("storage"), "fatal"],
     ["memory", agentFailure("memory-limit"), "reported"],
     ["memory", agentFailure("memory-storage"), "uncertain"],
     ["manage_skill", agentFailure("tool-arguments"), "reported"],

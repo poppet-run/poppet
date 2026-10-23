@@ -18,7 +18,6 @@ export const dataDirectory = Config.schema(ConfigText, "POPPET_DATA_DIR").pipe(
 
 const FileSettings = Schema.Struct({
   applicationName: Schema.optionalKey(ConfigText),
-  notesDirectory: Schema.optionalKey(ConfigText),
   provider: Schema.optionalKey(ConfigText),
   model: Schema.optionalKey(ConfigText),
   webSearch: Schema.optionalKey(Schema.Boolean),
@@ -114,8 +113,6 @@ export const loadConfigSource = Effect.gen(function* () {
 
   const values = {
     POPPET_APP_NAME: file.applicationName,
-    POPPET_NOTES_DIR:
-      file.notesDirectory === undefined ? undefined : resolve(directory, file.notesDirectory),
     POPPET_PROVIDER: file.provider,
     POPPET_MODEL: file.model,
     POPPET_WEB_SEARCH: file.webSearch,
