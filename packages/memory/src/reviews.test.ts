@@ -46,8 +46,8 @@ const runs = (count: number) =>
     return { sessionId: session.id, ids };
   });
 
-describe.concurrent("learning reviews", () => {
-  test("queues one review per run, claims oldest first, and records outcomes", async () => {
+describe.concurrent("LearningReviews", () => {
+  test("when runs are queued, deduplicates reviews, claims oldest first, and records outcomes", async () => {
     const state = await fixture();
 
     try {
@@ -136,7 +136,7 @@ describe.concurrent("learning reviews", () => {
     }
   });
 
-  test("skips pending reviews older than the maximum age", async () => {
+  test("when pending reviews exceed the maximum age, skips them", async () => {
     const state = await fixture();
 
     try {

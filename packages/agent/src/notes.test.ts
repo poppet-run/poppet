@@ -48,8 +48,8 @@ const fixture = async (toolBytes = defaultPolicy.toolBytes) => {
   };
 };
 
-describe("note filesystem boundary", () => {
-  test("creates and atomically replaces notes in checked subdirectories, with relative and absolute reads", async () => {
+describe("Notes", () => {
+  test("when notes use checked subdirectories, creates and atomically replaces them and accepts relative or absolute reads", async () => {
     const state = await fixture();
 
     try {
@@ -79,45 +79,48 @@ describe("note filesystem boundary", () => {
     "file symlink",
     "directory symlink",
     "hard link",
-  ])("rejects %s without reading or replacing outside data", async (kind) => {
-    const state = await fixture();
+  ])(
+    "when a path contains %s, rejects it without reading or replacing outside data",
+    async (kind) => {
+      const state = await fixture();
 
-    try {
-      await mkdir(state.notesDirectory);
-      const outside = join(state.directory, "outside.md");
-      await writeFile(outside, "Keep outside data");
-      let path = "../outside.md";
+      try {
+        await mkdir(state.notesDirectory);
+        const outside = join(state.directory, "outside.md");
+        await writeFile(outside, "Keep outside data");
+        let path = "../outside.md";
 
-      if (kind === "absolute escape") path = outside;
+        if (kind === "absolute escape") path = outside;
 
-      if (kind === "file symlink") {
-        path = "linked.md";
-        await symlink(outside, join(state.notesDirectory, path));
+        if (kind === "file symlink") {
+          path = "linked.md";
+          await symlink(outside, join(state.notesDirectory, path));
+        }
+
+        if (kind === "directory symlink") {
+          path = "linked/outside.md";
+          await symlink(state.directory, join(state.notesDirectory, "linked"));
+        }
+
+        if (kind === "hard link") {
+          path = "linked.md";
+          await link(outside, join(state.notesDirectory, path));
+        }
+
+        await expect(state.execute({ name: "read_note", path })).rejects.toMatchObject({
+          reason: "tool-permission",
+        });
+        await expect(
+          state.execute({ name: "save_note", path, content: "Overwrite" }),
+        ).rejects.toMatchObject({ reason: "tool-permission" });
+        expect(await readFile(outside, "utf8")).toBe("Keep outside data");
+      } finally {
+        await state.close();
       }
+    },
+  );
 
-      if (kind === "directory symlink") {
-        path = "linked/outside.md";
-        await symlink(state.directory, join(state.notesDirectory, "linked"));
-      }
-
-      if (kind === "hard link") {
-        path = "linked.md";
-        await link(outside, join(state.notesDirectory, path));
-      }
-
-      await expect(state.execute({ name: "read_note", path })).rejects.toMatchObject({
-        reason: "tool-permission",
-      });
-      await expect(
-        state.execute({ name: "save_note", path, content: "Overwrite" }),
-      ).rejects.toMatchObject({ reason: "tool-permission" });
-      expect(await readFile(outside, "utf8")).toBe("Keep outside data");
-    } finally {
-      await state.close();
-    }
-  });
-
-  test("rejects a symlink used as the configured root", async () => {
+  test("when the configured root is a symlink, rejects it", async () => {
     const state = await fixture();
 
     try {
@@ -133,7 +136,7 @@ describe("note filesystem boundary", () => {
     }
   });
 
-  test("caps UTF-8 read/search results and explicitly reports truncation without following search symlinks", async () => {
+  test("when read or search results exceed the UTF-8 budget, marks truncation without following symlinks", async () => {
     const state = await fixture(1024);
 
     try {
@@ -160,7 +163,7 @@ describe("note filesystem boundary", () => {
     }
   });
 
-  test("rejects oversized writes before touching existing content and reports missing/non-note targets", async () => {
+  test("when writes are oversized or targets are invalid, rejects them without changing existing content", async () => {
     const state = await fixture();
 
     try {

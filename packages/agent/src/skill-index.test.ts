@@ -17,7 +17,7 @@ const service = (names: ReadonlyArray<string>): Skills["Service"] => ({
 const index = (names: ReadonlyArray<string>, bytes: number) =>
   Effect.runPromise(skillIndex(service(names), bytes));
 
-describe("skill index", () => {
+describe("skill-index.ts", () => {
   test.each([
     [
       "# Weekly review\n\nSummarize progress\nand next actions.\n\nMore.",
@@ -26,17 +26,20 @@ describe("skill index", () => {
     ["Plain first paragraph.", "Plain first paragraph."],
     ["## Only heading", "Only heading"],
     ["", ""],
-  ])("describes %j", (content, description) => {
-    expect(skillDescription(content)).toBe(description);
-  });
+  ])(
+    "when skill content is %j, extracts its heading and first paragraph",
+    (content, description) => {
+      expect(skillDescription(content)).toBe(description);
+    },
+  );
 
-  test("bounds long descriptions", () => {
+  test("when a description exceeds 240 bytes, truncates it with an ellipsis", () => {
     const description = skillDescription(`# Title\n\n${"word ".repeat(200)}`);
     expect(Buffer.byteLength(description)).toBeLessThanOrEqual(240);
     expect(description.endsWith("…")).toBe(true);
   });
 
-  test("omits invalid skills and returns null when none remain", async () => {
+  test("when skills are invalid or absent, omits them and returns null if none remain", async () => {
     expect(await index(["alpha", "bad"], 8192)).toEqual({
       skills: [{ name: "alpha", description: "alpha: Does alpha things." }],
       truncated: false,
@@ -45,7 +48,7 @@ describe("skill index", () => {
     expect(await index([], 8192)).toBeNull();
   });
 
-  test("falls back to names, then fewer names, within the budget", async () => {
+  test("when descriptions exceed the index budget, falls back to names and then fewer names", async () => {
     const names = ["alpha", "beta", "gamma"];
     expect(await index(names, 80)).toEqual({
       skills: [{ name: "alpha" }, { name: "beta" }, { name: "gamma" }],
@@ -58,7 +61,7 @@ describe("skill index", () => {
     expect(await index(names, 10)).toBeNull();
   });
 
-  test("marks more than 64 skills as truncated", async () => {
+  test("when more than 64 skills exist, limits the index and marks it truncated", async () => {
     const names = Array.from({ length: 70 }, (_, i) => `s${String(i).padStart(2, "0")}`);
     const result = await index(names, 65536);
     expect(result?.skills).toHaveLength(64);

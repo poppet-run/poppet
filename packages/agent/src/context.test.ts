@@ -63,8 +63,8 @@ const toolExchange = [
   assistant,
 ] as const satisfies ReadonlyArray<Message>;
 
-describe("chat context", () => {
-  test("keeps complete tool exchanges and continuation together under turn and byte limits", () => {
+describe("context.ts", () => {
+  test("when history reaches turn or byte limits, keeps complete tool exchanges and continuation together", () => {
     const history = stored([{ role: "user", text: "Old question" }, assistant, ...toolExchange]);
     expect(
       assembleContext(history, [], [incoming], model, { ...defaultPolicy, historyTurns: 1 }),
@@ -85,7 +85,7 @@ describe("chat context", () => {
     ).toEqual([incoming]);
   });
 
-  test("converts model capacity from tokens and never drops an oversized new message silently", () => {
+  test("when model capacity constrains context, converts tokens to bytes and rejects oversized new messages", () => {
     // Leaves 512 bytes beyond the instructions after output and overhead tokens, at 3 bytes per token.
     const smallModel: ModelDescription = {
       ...model,
@@ -121,7 +121,7 @@ describe("chat context", () => {
     [toolExchange[0], toolExchange[2], assistant],
     [...toolExchange.slice(0, 4), toolExchange[3], assistant],
     [toolExchange[0], assistant, toolExchange[2], assistant],
-  ])("rejects orphaned, duplicate or unresolved tool history", (...messages) => {
+  ])("when tool history is orphaned, duplicate, or unresolved, rejects it", (...messages) => {
     expect(() => assembleContext(stored(messages), [], [incoming], model, defaultPolicy)).toThrow(
       "incomplete or invalid exchange",
     );

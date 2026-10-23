@@ -254,9 +254,9 @@ const learning = (
     true,
   );
 
-describe.concurrent("notes conversation", () => {
+describe.concurrent("conversation", () => {
   test.each([false, true])(
-    "external resources close with each run, scheduled=%s",
+    "when a run finishes with scheduled=%s, closes its external resources",
     async (scheduled) => {
       const opened: string[] = [];
       const closed: string[] = [];
@@ -300,7 +300,7 @@ describe.concurrent("notes conversation", () => {
     },
   );
 
-  test("external preflight reports an invalid batch before its first call executes", async () => {
+  test("when external preflight finds an invalid batch, reports it before executing any call", async () => {
     let executed = 0;
 
     const entry: ExternalTool = {
@@ -363,7 +363,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("untrusted page content withdraws task, memory and MCP tools for the rest of the run", async () => {
+  test("when page content is untrusted, withdraws task, memory, and MCP tools for the rest of the run", async () => {
     let turns = 0;
 
     const state = await fixture(
@@ -430,8 +430,8 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  describe("learned skills", () => {
-    test("creates a skill, then views and patches it in a later run with turn provenance", async () => {
+  describe("executeSkillManage", () => {
+    test("when a skill is created then viewed and patched in a later run, preserves turn provenance", async () => {
       const state = await learning(
         scripted([
           [manage({ action: "create", name: "triage", content: "# Triage\n\nSort the inbox." })],
@@ -489,7 +489,7 @@ describe.concurrent("notes conversation", () => {
       }
     });
 
-    test("reviews a qualifying run in the background and reports its changes once", async () => {
+    test("when a run qualifies for background review, saves changes and reports them once", async () => {
       let ownerTurns = 0;
       let reviewTurns = 0;
 
@@ -590,7 +590,7 @@ describe.concurrent("notes conversation", () => {
       }
     });
 
-    test("skips runs with untrusted content and leaves review off by default", async () => {
+    test("when review is disabled or a run contains untrusted content, makes no review changes", async () => {
       let turns = 0;
 
       const state = await learning(
@@ -644,7 +644,7 @@ describe.concurrent("notes conversation", () => {
       }
     });
 
-    test("rejects unviewed or stale changes and owner skill names without writing", async () => {
+    test("when changes are unviewed, stale, or target owner skills, rejects them without writing", async () => {
       const state = await learning(
         scripted([
           [manage({ action: "create", name: "triage", content: "First" })],
@@ -680,7 +680,7 @@ describe.concurrent("notes conversation", () => {
       }
     });
 
-    test(`allows at most ${maxSkillWrites} skill changes per run`, async () => {
+    test(`when a run exceeds ${maxSkillWrites} skill changes, rejects further writes`, async () => {
       const state = await learning(
         scripted([
           Array.from({ length: maxSkillWrites + 1 }, (_, index) =>
@@ -706,7 +706,7 @@ describe.concurrent("notes conversation", () => {
       }
     });
 
-    test("is withdrawn after untrusted content, absent from scheduled runs, and off by default", async () => {
+    test("when learning is disabled, scheduled, or follows untrusted content, withholds skill mutation tools", async () => {
       const untrusted = await learning(
         scripted([
           [tool("fetch_page", '{"url":"https://example.com/"}', "page", "poppet_web")],
@@ -757,8 +757,8 @@ describe.concurrent("notes conversation", () => {
     });
   });
 
-  describe("model-selected skills", () => {
-    test("lists valid skills in the instructions and returns a viewed skill in the journal", async () => {
+  describe("executeSkillView", () => {
+    test("when valid skills exist, lists them in instructions and journals viewed content", async () => {
       const state = await skilled(viewing("weekly-review"));
 
       try {
@@ -796,7 +796,7 @@ describe.concurrent("notes conversation", () => {
       }
     });
 
-    test("a missing skill is reported to the model", async () => {
+    test("when a requested skill is missing, reports the failure to the model", async () => {
       const state = await skilled(viewing("broken"));
 
       try {
@@ -814,7 +814,7 @@ describe.concurrent("notes conversation", () => {
       }
     });
 
-    test("a zero index budget disables the index and view tool", async () => {
+    test("when the index budget is zero, disables the index and view tool", async () => {
       const state = await skilled(() => final(), { skillIndexBytes: 0 });
 
       try {
@@ -832,7 +832,7 @@ describe.concurrent("notes conversation", () => {
       }
     });
 
-    test("scheduled runs and runs after untrusted content may still view skills", async () => {
+    test("when a run is scheduled or contains untrusted content, still permits viewing skills", async () => {
       let turns = 0;
 
       const state = await skilled(
@@ -875,7 +875,7 @@ describe.concurrent("notes conversation", () => {
     });
   });
 
-  test("the remaining tools still work after untrusted content enters the run", async () => {
+  test("when untrusted content withdraws tools, keeps the remaining tools usable", async () => {
     let turns = 0;
 
     const state = await fixture(
@@ -905,7 +905,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("an attachment withdraws task and memory tools from the first request", async () => {
+  test("when a request includes an attachment, withdraws task and memory tools before inference", async () => {
     const state = await fixture(() => final(), {}, undefined, undefined, undefined, {
       prepare: () => Effect.die("Task tools are withdrawn"),
     });
@@ -938,50 +938,53 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test.each(["collision", "unknown"])("reports external %s tools before dispatch", async (mode) => {
-    const entry: ExternalTool = {
-      serverId: "fixture",
-      toolName: "original-tool",
-      definition: noteTools[0]!,
-      prepare: () => Effect.die("Must not prepare denied tools"),
-    };
+  test.each(["collision", "unknown"])(
+    "when external tools have a %s error, reports it before dispatch",
+    async (mode) => {
+      const entry: ExternalTool = {
+        serverId: "fixture",
+        toolName: "original-tool",
+        definition: noteTools[0]!,
+        prepare: () => Effect.die("Must not prepare denied tools"),
+      };
 
-    const state = await fixture(
-      () => completed([tool("unknown", "{}", "denied", "poppet_mcp")]),
-      {},
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { snapshot: () => Effect.succeed(mode === "collision" ? [entry] : []) },
-    );
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-          const session = yield* store.createSession("test-provider", "test-model");
-
-          if (mode === "collision")
-            expect(
-              yield* (yield* Agent)
-                .send(session.id, "Run the tool")
-                .pipe(Stream.runDrain, Effect.flip),
-            ).toHaveProperty("reason", "tool-permission");
-          else
-            expect(yield* reportedFailures(session.id, "Run the tool")).toEqual([
-              "agent:tool-permission",
-            ]);
-        }),
+      const state = await fixture(
+        () => completed([tool("unknown", "{}", "denied", "poppet_mcp")]),
+        {},
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { snapshot: () => Effect.succeed(mode === "collision" ? [entry] : []) },
       );
 
-      if (mode === "collision") expect(state.requests).toHaveLength(0);
-    } finally {
-      await state.close();
-    }
-  });
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
 
-  test("task preflight validates the whole batch before an earlier note can change", async () => {
+            if (mode === "collision")
+              expect(
+                yield* (yield* Agent)
+                  .send(session.id, "Run the tool")
+                  .pipe(Stream.runDrain, Effect.flip),
+              ).toHaveProperty("reason", "tool-permission");
+            else
+              expect(yield* reportedFailures(session.id, "Run the tool")).toEqual([
+                "agent:tool-permission",
+              ]);
+          }),
+        );
+
+        if (mode === "collision") expect(state.requests).toHaveLength(0);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when task preflight finds an invalid batch, rejects it before an earlier note changes", async () => {
     const state = await fixture(
       () =>
         completed([
@@ -1034,7 +1037,7 @@ describe.concurrent("notes conversation", () => {
   });
 
   test.each([false, true])(
-    "omitted search sources grant no page access, omitted by budget: %s",
+    "when search sources are omitted by budget=%s, grants no access to their pages",
     async (budget) => {
       const omitted = budget ? `https://example.com/${"x".repeat(2000)}` : "https://example.com/5";
 
@@ -1087,7 +1090,7 @@ describe.concurrent("notes conversation", () => {
   );
 
   test.each([false, true])(
-    "search results grant later page reads only within their run, read-only: %s",
+    "when search returns sources with read-only=%s, authorizes later page reads only in that run",
     async (readOnlyTools) => {
       let turns = 0;
       const fetched: string[] = [];
@@ -1157,7 +1160,7 @@ describe.concurrent("notes conversation", () => {
     },
   );
 
-  test("a search cannot authorize a fetch in its own batch", async () => {
+  test("when search and fetch share a batch, rejects the unauthorized fetch", async () => {
     let searched = false;
 
     const state = await fixture(
@@ -1195,7 +1198,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("search snippets cannot grant access to another URL", async () => {
+  test("when search snippets contain other URLs, grants no access to them", async () => {
     let turns = 0;
 
     const state = await fixture(
@@ -1237,7 +1240,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("a search failure is durable and reported to the model without an automatic retry", async () => {
+  test("when search fails, records and reports the failure without retrying", async () => {
     const state = await fixture(
       () => completed([tool("search_web", '{"query":"topic"}', "search", "poppet_web")]),
       {},
@@ -1281,7 +1284,7 @@ describe.concurrent("notes conversation", () => {
   });
 
   test.each([false, true])(
-    "reads an explicitly supplied page with durable results, read-only tools: %s",
+    "when a page URL is explicitly supplied with read-only tools=%s, reads it and records durable results",
     async (readOnlyTools) => {
       const fetched: string[] = [];
       let turns = 0;
@@ -1361,7 +1364,7 @@ describe.concurrent("notes conversation", () => {
     },
   );
 
-  test("page links cannot authorize further retrieval or note writes in an invalid batch", async () => {
+  test("when page links appear in an invalid batch, grants no further retrieval or note-write authority", async () => {
     const fetched: string[] = [];
     let turns = 0;
 
@@ -1411,7 +1414,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("a failed page read is reported to the model without an automatic retry", async () => {
+  test("when page reading fails, reports the failure without retrying", async () => {
     let fetches = 0;
 
     const state = await fixture(
@@ -1446,7 +1449,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("prior history and a saved skill cannot authorize a URL in a later turn", async () => {
+  test("when prior history or a saved skill contains a URL, grants no access in a later turn", async () => {
     let turns = 0;
 
     const state = await fixture(() =>
@@ -1479,7 +1482,7 @@ describe.concurrent("notes conversation", () => {
   });
 
   test.each([false, true])(
-    "searches then reads saved context with durable calls, read-only tools: %s",
+    "when saved context is searched and read with read-only tools=%s, records durable calls",
     async (readOnlyTools) => {
       let turn = 0;
 
@@ -1627,7 +1630,7 @@ describe.concurrent("notes conversation", () => {
     },
   );
 
-  test("saves the Acorn note through Responses with strict schemas and an unreserved namespace", async () => {
+  test("when Responses requests a note save, uses strict schemas and saves the Acorn note", async () => {
     const WireTools = Schema.Array(
       Schema.Struct({
         type: Schema.Literal("namespace"),
@@ -1782,7 +1785,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("reports a result that exceeds the remaining context budget instead of failing the run", async () => {
+  test("when a tool result exceeds remaining context, reports the limit without failing the run", async () => {
     const state = await fixture(() => completed([tool("read_note", '{"path":"large.md"}')]), {
       contextBytes: 8192,
     });
@@ -1815,7 +1818,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("rejects duplicate IDs and invalid later calls before any write in the batch", async () => {
+  test("when a batch contains duplicate IDs or invalid later calls, rejects it before any write", async () => {
     let duplicate = true;
 
     const state = await fixture(() =>
@@ -1851,7 +1854,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("a missing note is reported to the model as a failed tool", async () => {
+  test("when a note is missing, reports a failed tool call to the model", async () => {
     const state = await fixture(() => completed([tool("read_note", '{"path":"missing.md"}')]));
 
     try {
@@ -1872,7 +1875,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("graceful cancellation lets an in-flight save record its result before interrupting the run", async () => {
+  test("when graceful cancellation occurs during a save, journals its result before interrupting", async () => {
     const started = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     let target = "";
@@ -1926,7 +1929,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("finds, reads and saves a summary, then reopens with tool results and continuation intact", async () => {
+  test("when a summary workflow reopens, retains the saved note, tool results, and continuation", async () => {
     let turn = 0;
 
     const state = await fixture(() => {
@@ -2097,7 +2100,7 @@ describe.concurrent("notes conversation", () => {
       call: tool("read_note", '{"path":"a.md","other":true}'),
       reason: "tool-arguments",
     },
-  ])("reports $name before any filesystem work", async ({ call, reason }) => {
+  ])("when a batch contains $name, reports it before filesystem work", async ({ call, reason }) => {
     const state = await fixture(() => completed([call]));
 
     try {
@@ -2147,30 +2150,33 @@ describe.concurrent("notes conversation", () => {
         ),
       ],
     },
-  ])("exhausts $name before executing a new batch", async ({ policy, calls }) => {
-    const state = await fixture(() => completed(calls), policy);
+  ])(
+    "when $name is exhausted, rejects the next batch before execution",
+    async ({ policy, calls }) => {
+      const state = await fixture(() => completed(calls), policy);
 
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-          const session = yield* store.createSession("test-provider", "test-model");
-          expect(
-            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Hello"))),
-          ).toMatchObject({ reason: "budget" });
-          expect((yield* store.runs(session.id))[0]).toMatchObject({
-            status: "failed",
-            failureReason: "agent:budget",
-          });
-        }),
-      );
-      expect(await readdir(state.directory)).toEqual(["store"]);
-    } finally {
-      await state.close();
-    }
-  });
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            expect(
+              yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Hello"))),
+            ).toMatchObject({ reason: "budget" });
+            expect((yield* store.runs(session.id))[0]).toMatchObject({
+              status: "failed",
+              failureReason: "agent:budget",
+            });
+          }),
+        );
+        expect(await readdir(state.directory)).toEqual(["store"]);
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
-  test("requires clean stream completion before recording or executing a write", async () => {
+  test("when the stream fails to complete cleanly, records and executes no write", async () => {
     const state = await fixture(() =>
       Stream.concat(
         completed([tool("save_note", '{"path":"a.md","content":"no"}')]),
@@ -2203,7 +2209,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("a write whose result cannot be recorded stays uncertain across reopening and is never replayed", async () => {
+  test("when a write result cannot be journaled, retains uncertainty across reopening without replay", async () => {
     let calls = 0;
 
     const state = await fixture(() =>
@@ -2258,7 +2264,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("cancels an executing read and preserves its uncertain execution without a model follow-up", async () => {
+  test("when an executing read is cancelled, records uncertainty without a model follow-up", async () => {
     const started = Promise.withResolvers<void>();
 
     const state = await fixture(
@@ -2293,7 +2299,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("missing recall records a failed durable call without a model follow-up", async () => {
+  test("when recalled content is missing, records a failed call without a model follow-up", async () => {
     const state = await fixture(() =>
       completed([
         tool(
@@ -2326,7 +2332,7 @@ describe.concurrent("notes conversation", () => {
     }
   });
 
-  test("cancels after recall without changing the source session or replaying the read", async () => {
+  test("when cancellation follows recall, preserves the source session without replaying the read", async () => {
     const followedUp = Promise.withResolvers<void>();
 
     const state = await fixture((request) => {

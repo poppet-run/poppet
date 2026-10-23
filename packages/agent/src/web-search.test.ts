@@ -12,8 +12,8 @@ const call = (args: string) => ({
   arguments: args,
 });
 
-describe("web search arguments", () => {
-  test("validates complete bounded query arguments", async () => {
+describe("decodeWebSearchCall", () => {
+  test("when query arguments are supplied, accepts complete bounded text and rejects invalid fields or limits", async () => {
     const query = "é".repeat(256);
     expect(await Effect.runPromise(decodeWebSearchCall(call(JSON.stringify({ query }))))).toEqual({
       name: "search_web",

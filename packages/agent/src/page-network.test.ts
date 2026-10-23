@@ -38,7 +38,7 @@ const close = (server: ReturnType<typeof createServer>) =>
   });
 
 // These cases span the non-public IANA ranges and both sides of subnet boundaries.
-describe.concurrent("page destinations", () => {
+describe.concurrent("page-network.ts", () => {
   test.each([
     "0.1.2.3",
     "10.0.0.1",
@@ -79,7 +79,7 @@ describe.concurrent("page destinations", () => {
     "fe80::1",
     "ff02::1",
     "not-an-ip",
-  ])("blocks %s", (address) => {
+  ])("when the destination is %s, blocks it", (address) => {
     expect(publicAddress(address)).toBe(false);
   });
 
@@ -96,11 +96,11 @@ describe.concurrent("page destinations", () => {
     "2001:4860:4860::8888",
     "2001:200::1",
     "3ffe::1",
-  ])("allows ordinary public unicast %s", (address) => {
+  ])("when the destination is public unicast %s, permits it", (address) => {
     expect(publicAddress(address)).toBe(true);
   });
 
-  test("canonicalizes alternative IPv4 literals before policy checks and never resolves literals", async () => {
+  test("when IPv4 literals use alternative forms, canonicalizes them before checks without DNS lookup", async () => {
     for (const input of ["http://127.1", "http://2130706433", "http://0x7f000001"]) {
       const url = pageURL(input);
       expect(url.hostname).toBe("127.0.0.1");
@@ -113,8 +113,8 @@ describe.concurrent("page destinations", () => {
   });
 });
 
-describe.concurrent("production page transport", () => {
-  test("connects only to the chosen IP with the original Host, no credentials, and no implicit redirect", async () => {
+describe.concurrent("requestPage", () => {
+  test("when connecting to a pinned IP, retains the original Host without credentials or implicit redirects", async () => {
     const received: {
       host: string | undefined;
       authorization: string | undefined;
@@ -155,7 +155,7 @@ describe.concurrent("production page transport", () => {
   });
 
   test.each(["identity", "gzip", "deflate", "br"])(
-    "bounds both wire and decoded %s bodies",
+    "when a %s body exceeds wire or decoded limits, rejects it",
     async (encoding) => {
       const compress = (body: Buffer) => {
         switch (encoding) {
@@ -195,7 +195,7 @@ describe.concurrent("production page transport", () => {
     },
   );
 
-  test("rejects an oversized compressed wire body even if decompression would be small", async () => {
+  test("when compressed wire bytes exceed the limit, rejects the body even if decoded output is small", async () => {
     const server = createServer((_request, response) => {
       response.writeHead(200, { "Content-Type": "text/plain", "Content-Encoding": "gzip" });
       response.end(Buffer.concat([gzipSync("small"), Buffer.alloc(maxPageBytes)]));
@@ -218,7 +218,7 @@ describe.concurrent("production page transport", () => {
     }
   });
 
-  test("cancellation closes a stalled body connection", async () => {
+  test("when a stalled body read is cancelled, closes the connection", async () => {
     const received = Promise.withResolvers<void>();
     const disconnected = Promise.withResolvers<void>();
 
@@ -253,7 +253,7 @@ describe.concurrent("production page transport", () => {
     }
   });
 
-  test("TLS retains hostname verification and SNI on a pinned connection and ignores ambient proxy and TLS bypass", async () => {
+  test("when TLS uses a pinned connection, verifies the hostname and SNI despite ambient bypass settings", async () => {
     const seen: string[] = [];
 
     const server = createTLSServer(

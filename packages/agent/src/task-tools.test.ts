@@ -18,8 +18,8 @@ const fields = {
   until: null,
 } as const;
 
-describe("chat task arguments", () => {
-  test("requires inspected revisions/targets for controls and rejects mixed fields and empty patches", async () => {
+describe("decodeTaskCall", () => {
+  test("when task controls lack revisions or targets or mix invalid fields, rejects the arguments", async () => {
     const input = {
       type: "tool-call" as const,
       callId: "control",
@@ -83,7 +83,7 @@ describe("chat task arguments", () => {
     );
   });
 
-  test("decodes an explicit schedule without accepting host authority from the model", async () => {
+  test("when a task includes an explicit schedule, decodes it without accepting model-supplied host authority", async () => {
     const input = {
       type: "tool-call" as const,
       callId: "task",

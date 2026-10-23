@@ -111,8 +111,8 @@ const call = (name: string, namespace: string, args: Record<string, string | nul
 const toolThenDone = (request: ModelRequest, tool: Output): ReadonlyArray<Output> =>
   request.messages.at(-1)?.role === "tool" ? [{ type: "text", text: "Done" }] : [tool];
 
-describe.concurrent("project context boundaries", () => {
-  test("rejects oversized project facts before resolution and counts saved instructions in the context budget", async () => {
+describe.concurrent("projects.ts", () => {
+  test("when project facts or instructions exceed the context budget, rejects them before model resolution", async () => {
     const state = await fixture();
 
     try {
@@ -154,7 +154,7 @@ describe.concurrent("project context boundaries", () => {
       await small.close();
     }
   });
-  test("loads fixed instructions, snapshots current scoped facts once, and binds writes to the run's project", async () => {
+  test("when a run selects a project, fixes instructions and scoped facts and binds writes to that project", async () => {
     const state = await fixture();
     let id = "";
 
@@ -211,7 +211,7 @@ describe.concurrent("project context boundaries", () => {
     }
   });
 
-  test("scopes model recall for selected and unscoped sessions, while owner inspection can read either", async () => {
+  test("when model recall uses a selected or unscoped session, restricts access while owner inspection can read either", async () => {
     const state = await fixture();
 
     try {
@@ -279,7 +279,7 @@ describe.concurrent("project context boundaries", () => {
     }
   });
 
-  test("restricts selected note search/read/write without loading other notes, and preserves null versus empty selections", async () => {
+  test("when note selections restrict a project, limits reads, searches, and writes and distinguishes null from empty", async () => {
     const state = await fixture();
 
     try {
@@ -354,7 +354,7 @@ describe.concurrent("project context boundaries", () => {
     }
   });
 
-  test("rejects unsafe project files and note selections without inference", async () => {
+  test("when project files or note selections are unsafe, rejects them without inference", async () => {
     const state = await fixture();
     const root = join(state.directory, "projects", "acorn");
 

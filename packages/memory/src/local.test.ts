@@ -50,8 +50,8 @@ const reject = <A>(operation: Effect.Effect<A, MemoryError>, reason: MemoryError
     }),
   );
 
-describe.concurrent("local memory", () => {
-  test("creates, replaces and forgets keyed facts across reopening with source-run provenance", async () => {
+describe.concurrent("LocalMemoryLive", () => {
+  test("when keyed facts change across reopening, preserves create, replace, forget, and source-run provenance", async () => {
     const saved = await fixture();
 
     try {
@@ -104,7 +104,7 @@ describe.concurrent("local memory", () => {
     }
   });
 
-  test("rejects invalid facts, unknown source runs and capacity overflow without changing saved values", async () => {
+  test("when facts, source runs, or capacity are invalid, rejects changes without altering saved values", async () => {
     const saved = await fixture();
 
     try {
@@ -150,7 +150,7 @@ describe.concurrent("local memory", () => {
       { file, kind: "directory", reason: "storage" } as const,
     ]),
     { file: "profile.md", kind: "facts bytes", reason: "limit" } as const,
-  ])("rejects $file $kind through the local snapshot operation", async ({ file, kind, reason }) => {
+  ])("when $file is $kind, rejects the local snapshot", async ({ file, kind, reason }) => {
     const saved = await fixture();
     const path = join(saved.directory, file);
 
@@ -189,7 +189,7 @@ describe.concurrent("local memory", () => {
     }
   });
 
-  test("records every change with its origin and reverts as new revisions", async () => {
+  test("when facts change or revert, records their origins and appends revisions", async () => {
     const saved = await fixture();
 
     try {

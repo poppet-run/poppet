@@ -12,7 +12,7 @@ const call = (args: string, namespace = "poppet_memory") => ({
   arguments: args,
 });
 
-describe.concurrent("memory tool arguments", () => {
+describe.concurrent("decodeMemoryCall", () => {
   test.each([
     "{",
     '{"action":"replace","key":"answer.style","value":null}',
@@ -21,12 +21,12 @@ describe.concurrent("memory tool arguments", () => {
     '{"action":"remember","key":"../profile.md","value":"Concise"}',
     '{"action":"remember","key":"answer.style","value":"Concise","sourceRunId":"forged"}',
     JSON.stringify({ action: "remember", key: "answer.style", value: "😀".repeat(1025) }),
-  ])("rejects invalid or forged memory arguments %#", async (args) => {
+  ])("when memory arguments are invalid or forged in case %#, rejects them", async (args) => {
     const result = await Effect.runPromise(decodeMemoryCall(call(args)).pipe(Effect.result));
     expect(result).toHaveProperty("failure.reason", "tool-arguments");
   });
 
-  test("rejects a matching name in another namespace", async () => {
+  test("when the tool name matches in another namespace, rejects the call", async () => {
     const result = await Effect.runPromise(
       decodeMemoryCall(call('{"action":"forget","key":"answer.style","value":null}', "other")).pipe(
         Effect.result,
