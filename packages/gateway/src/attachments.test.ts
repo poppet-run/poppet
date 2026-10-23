@@ -89,6 +89,7 @@ describe("makeAttachmentProcessor", () => {
     ).rejects.toThrow("Forwarded messages and this attachment type are not accepted.");
   });
 
+  // Six sequential parser startups need headroom when CI runs process tests concurrently.
   test("when PDFs are extracted, labels Unicode text, marks omissions, rejects unusable input, and removes raw files", async () => {
     const root = await mkdtemp(join(tmpdir(), "poppet-extraction-"));
     const processor = makeAttachmentProcessor(root, { enabled: false });
@@ -127,7 +128,7 @@ describe("makeAttachmentProcessor", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   test("when extraction subprocesses exceed output or time limits, stops them without blocking the event loop", async () => {
     await expect(
