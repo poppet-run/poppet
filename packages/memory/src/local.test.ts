@@ -118,7 +118,7 @@ describe.concurrent("LocalMemoryLive", () => {
           // Seed in one transaction, then exercise real writes at the capacity boundary.
           database.transaction(() => {
             using insert = database.prepare(
-              "INSERT INTO memories (key, value, source_run_id, updated_at) VALUES (?, ?, NULL, ?)",
+              "INSERT INTO memories (key, value, origin, source_run_id, updated_at) VALUES (?, ?, 'cli', NULL, ?)",
             );
 
             for (let index = 0; index < 127; index++) insert.run(`fact-${index}`, "Original", 1);
@@ -199,16 +199,6 @@ describe.concurrent("LocalMemoryLive", () => {
           const session = yield* store.createSession("first-provider", "selected-model");
           const run = yield* store.queueRun(session.id, [{ role: "user", text: "Hello" }]);
 
-          const { database } = yield* StoreDatabase;
-          database
-            .query(
-              "INSERT INTO memories (project, key, value, origin, updated_at) VALUES ('acorn', 'answer.style', 'Archived', 'cli', 1)",
-            )
-            .run();
-          database
-            .query("UPDATE sessions SET project = ? WHERE id = ?")
-            .run(JSON.stringify({ name: "acorn", content: "Archived context" }), session.id);
-
           yield* memory.remember("answer.style", "Concise");
           yield* memory.replace("answer.style", "Detailed", run.id);
           yield* memory.forget("answer.style", run.id);
@@ -253,9 +243,6 @@ describe.concurrent("LocalMemoryLive", () => {
           });
 
           yield* reject(memory.forget("missing"), "not-found");
-          expect(
-            database.query("SELECT value FROM memories WHERE project = 'acorn'").get(),
-          ).toEqual({ value: "Archived" });
           expect(yield* memory.list).toEqual([]);
         }),
       );

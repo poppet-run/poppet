@@ -59,11 +59,10 @@ export const LocalMemoryLive = Layer.effect(
       });
     };
 
-    // Preserve retired project facts without merging their keys into active memory.
     const list = Effect.try({
       try: () =>
         readRecord(() => {
-          using statement = database.prepare(`${memorySql} WHERE project = '' ORDER BY key`);
+          using statement = database.prepare(`${memorySql} ORDER BY key`);
 
           return Schema.decodeUnknownSync(Schema.Array(MemoryFact))(statement.all());
         }),
@@ -71,7 +70,7 @@ export const LocalMemoryLive = Layer.effect(
     });
 
     const current = (key: string) => {
-      using select = database.prepare(`${memorySql} WHERE project = '' AND key = ?`);
+      using select = database.prepare(`${memorySql} WHERE key = ?`);
 
       return readRecord(() => Schema.decodeUnknownSync(Schema.NullOr(MemoryFact))(select.get(key)));
     };
@@ -89,7 +88,7 @@ export const LocalMemoryLive = Layer.effect(
     };
 
     const requireRoom = () => {
-      using count = database.prepare("SELECT COUNT(*) AS count FROM memories WHERE project = ''");
+      using count = database.prepare("SELECT COUNT(*) AS count FROM memories");
 
       const total = Schema.decodeUnknownSync(Schema.Struct({ count: Schema.Natural }))(
         count.get(),
@@ -114,7 +113,7 @@ export const LocalMemoryLive = Layer.effect(
       const existing = current(key);
 
       using next = database.prepare(
-        "SELECT COALESCE(MAX(revision), 0) + 1 AS revision FROM memory_revisions WHERE project = '' AND key = ?",
+        "SELECT COALESCE(MAX(revision), 0) + 1 AS revision FROM memory_revisions WHERE key = ?",
       );
 
       const revision = Schema.decodeUnknownSync(Schema.Struct({ revision: Schema.Int }))(
@@ -122,13 +121,13 @@ export const LocalMemoryLive = Layer.effect(
       ).revision;
 
       using record = database.prepare(
-        "INSERT INTO memory_revisions (project, key, revision, action, value, origin, source_run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO memory_revisions (key, revision, action, value, origin, source_run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       );
 
-      record.run("", key, revision, action, value, origin, sourceRunId, at);
+      record.run(key, revision, action, value, origin, sourceRunId, at);
 
       if (value === null) {
-        using remove = database.prepare("DELETE FROM memories WHERE project = '' AND key = ?");
+        using remove = database.prepare("DELETE FROM memories WHERE key = ?");
         remove.run(key);
 
         return null;
@@ -144,8 +143,8 @@ export const LocalMemoryLive = Layer.effect(
 
       using write = database.prepare(
         existing === null
-          ? "INSERT INTO memories (value, origin, source_run_id, updated_at, project, key) VALUES (?, ?, ?, ?, '', ?)"
-          : "UPDATE memories SET value = ?, origin = ?, source_run_id = ?, updated_at = ? WHERE project = '' AND key = ?",
+          ? "INSERT INTO memories (value, origin, source_run_id, updated_at, key) VALUES (?, ?, ?, ?, ?)"
+          : "UPDATE memories SET value = ?, origin = ?, source_run_id = ?, updated_at = ? WHERE key = ?",
       );
 
       write.run(fact.value, fact.origin, fact.sourceRunId, fact.updatedAt, fact.key);
@@ -213,9 +212,7 @@ export const LocalMemoryLive = Layer.effect(
           try: () => {
             Schema.decodeUnknownSync(MemoryFact.fields.key)(key);
 
-            using statement = database.prepare(
-              `${revisionSql} WHERE project = '' AND key = ? ORDER BY revision`,
-            );
+            using statement = database.prepare(`${revisionSql} WHERE key = ? ORDER BY revision`);
 
             return readRecord(() =>
               Schema.decodeUnknownSync(Schema.Array(MemoryRevision))(statement.all(key)),
@@ -227,9 +224,7 @@ export const LocalMemoryLive = Layer.effect(
         transaction((at) => {
           Schema.decodeUnknownSync(MemoryFact.fields.key)(key);
 
-          using statement = database.prepare(
-            `${revisionSql} WHERE project = '' AND key = ? AND revision = ?`,
-          );
+          using statement = database.prepare(`${revisionSql} WHERE key = ? AND revision = ?`);
 
           const target = readRecord(() =>
             Schema.decodeUnknownSync(Schema.NullOr(MemoryRevision))(statement.get(key, revision)),

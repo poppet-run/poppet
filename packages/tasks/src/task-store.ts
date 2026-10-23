@@ -442,7 +442,6 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
       runs.failure_reason AS failureReason
       FROM job_occurrences AS occurrences JOIN jobs ON jobs.id = occurrences.job_id
       LEFT JOIN runs ON runs.id = occurrences.run_id
-      WHERE jobs.monitor = 0
       ORDER BY COALESCE(occurrences.finished_at, occurrences.scheduled_at) DESC, occurrences.id DESC LIMIT 5`);
 
     const upcoming = jobs

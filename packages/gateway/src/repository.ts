@@ -142,8 +142,7 @@ const repository = Effect.gen(function* () {
         database
           .query(`SELECT o.id, o.run_id AS runId, o.destination FROM job_occurrences o
       JOIN jobs j ON j.id = o.job_id
-      WHERE j.monitor = 0
-        AND o.status = 'completed' AND o.run_id IS NOT NULL
+      WHERE o.status = 'completed' AND o.run_id IS NOT NULL
         AND json_extract(o.destination, '$.adapter') = ?
         AND NOT EXISTS (SELECT 1 FROM gateway_inbox i WHERE i.occurrence_id = o.id AND i.run_id = o.run_id)
       ORDER BY o.scheduled_at, o.id LIMIT 64`)
