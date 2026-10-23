@@ -14,7 +14,7 @@ export interface ConnectionStatus {
 export const reconnect = () =>
   new ConnectionError({
     reason: "reconnect",
-    message: "Sign in first with bun run start provider login.",
+    message: "Sign in first with poppet provider login.",
   });
 
 // Expose connection metadata to the CLI without including any tokens.

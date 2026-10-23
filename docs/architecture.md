@@ -63,9 +63,8 @@ defined in each workspace's `package.json` and mapped to `./src/*.ts`.
 Provider workflow helpers and test fixtures remain internal. Bun and TypeScript
 resolve these package-local aliases without extra `tsconfig` path mappings.
 
-The root package exposes `poppet` through its `bin` entry. Root scripts preserve `bun run start`, `bun run dev`, and `bun run check`.
-Start and dev run the CLI without changing the working directory. Root checks
-cover formatting, linting, tooling configuration types, every workspace's types,
+The root package exposes `poppet` through its `bin` entry. `bun run check`
+covers formatting, linting, tooling configuration types, every workspace's types,
 and all tests. The workspaces share `tsconfig.base.json` and one lockfile.
 
 The CLI owns `runtime.ts` and selects complete provider layers from

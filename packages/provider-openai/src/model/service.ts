@@ -153,7 +153,7 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
           return yield* Effect.fail(
             new ConnectionError({
               reason: "unsupported",
-              message: "Choose a model from bun run start provider models.",
+              message: "Choose a model from poppet provider models.",
             }),
           );
         yield* verifyModel(selectedModel(entry)).pipe(Effect.mapError(connectionFailure));

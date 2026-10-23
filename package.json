@@ -13,8 +13,6 @@
   ],
   "type": "module",
   "scripts": {
-    "start": "bun apps/cli/src/main.ts",
-    "dev": "bun --watch apps/cli/src/main.ts",
     "typecheck": "bun --check && bun run --workspaces typecheck",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",

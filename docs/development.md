@@ -8,8 +8,9 @@ Use Bun 1.4.3, pinned in `mise.toml` and `package.json`.
 
 ```sh
 bun install --frozen-lockfile
-bun run start --help
-bun run start config
+bun link
+poppet --help
+poppet config
 bun run check
 ```
 
@@ -20,10 +21,7 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/memory`, `@poppet/skills`, `@poppet/tasks`, `@poppet/web-search`,
 `@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`,
 `@poppet/channel-discord`.
-Root `start` and `dev` commands run the CLI from the
-repository directory, so relative configuration paths keep the same meaning.
-
-`bun run dev` watches the CLI source. `bun run format` formats files with Oxfmt.
+`bun run format` formats files with Oxfmt.
 `bun run lint:fix` applies safe Oxlint fixes. `bun run check` checks formatting,
 linting, types, and Bun tests. GitHub Actions runs the same checks on pushes
 and pull requests. Bun's built-in type checker covers each workspace and the root
