@@ -794,6 +794,21 @@ describe("CLI", () => {
       );
       expect((await invoke(["memory", "forget", "answer.style"], environment)).exitCode).toBe(0);
       expect((await invoke(["memory", "list"], environment)).stdout.trim()).toBe("[]");
+
+      const history = await invoke(["memory", "history", "answer.style"], environment);
+      expect(
+        JSON.parse(history.stdout).map(
+          (entry: { action: string; origin: string }) => `${entry.action}:${entry.origin}`,
+        ),
+      ).toEqual(["remember:cli", "replace:cli", "forget:cli"]);
+
+      const reverted = await invoke(["memory", "revert", "answer.style", "1"], environment);
+      expect(reverted.exitCode).toBe(0);
+      expect(JSON.parse(reverted.stdout)).toMatchObject({ value: "Keep answers concise" });
+      expect(
+        (await invoke(["memory", "revert", "answer.style", "3"], environment)).stdout,
+      ).toContain("Forgot answer.style.");
+      expect((await invoke(["memory", "history", "missing"], environment)).exitCode).toBe(1);
       expect((await invoke(["memory", "replace", "missing", "Value"], environment)).exitCode).toBe(
         1,
       );
@@ -942,7 +957,7 @@ describe("CLI", () => {
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
         path: join(directory, "store/poppet.sqlite"),
-        schemaVersion: 6,
+        schemaVersion: 7,
         sessions: 0,
         messages: 0,
         runs: 0,
@@ -1393,6 +1408,7 @@ describe("CLI", () => {
       factsBytes: 1024,
       skillIndexBytes: 512,
       learnSkills: true,
+      learnMemory: true,
     };
 
     try {

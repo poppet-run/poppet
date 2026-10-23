@@ -1,5 +1,5 @@
 import { MemoryKey, MemoryValue } from "@poppet/memory";
-import { Console, Effect } from "effect";
+import { Console, Effect, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
@@ -58,6 +58,35 @@ export const memoryCommand = (context: CLIContext) => {
             project === undefined ? { action: "forget", key } : { action: "forget", key, project },
           ),
       ).pipe(Command.withDescription("Delete a fact")),
+      Command.make(
+        "history",
+        {
+          key: Argument.String("key").pipe(Argument.withSchema(MemoryKey)),
+          project: memoryProjectFlag,
+        },
+        ({ key, project }) =>
+          runMemory(
+            project === undefined
+              ? { action: "history", key }
+              : { action: "history", key, project },
+          ),
+      ).pipe(Command.withDescription("Show a fact's revisions and their sources")),
+      Command.make(
+        "revert",
+        {
+          key: Argument.String("key").pipe(Argument.withSchema(MemoryKey)),
+          revision: Argument.Int("revision").pipe(
+            Argument.withSchema(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+          ),
+          project: memoryProjectFlag,
+        },
+        ({ key, revision, project }) =>
+          runMemory(
+            project === undefined
+              ? { action: "revert", key, revision }
+              : { action: "revert", key, revision, project },
+          ),
+      ).pipe(Command.withDescription("Restore an earlier fact revision as a new revision")),
     ]),
   );
 };

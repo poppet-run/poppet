@@ -92,4 +92,51 @@ describe("store migrations", () => {
       unrelated.query("SELECT name FROM sqlite_master WHERE name = 'schema_migrations'").get(),
     ).toBeNull();
   });
+
+  test("backfills fact origins and first revisions when adding memory history", () => {
+    using database = new Database(":memory:");
+    applyMigrations(database, migrations.slice(0, 6), 10);
+    database.run(
+      "INSERT INTO sessions (id, provider, model, created_at, updated_at) VALUES ('s', 'openrouter', 'model', 1, 1)",
+    );
+    database.run(
+      "INSERT INTO runs (id, session_id, provider, model, status, created_at) VALUES ('r', 's', 'openrouter', 'model', 'pending', 1)",
+    );
+    database.run(
+      "INSERT INTO memories (project, key, value, source_run_id, updated_at) VALUES ('', 'cli.fact', 'From CLI', NULL, 5), ('', 'chat.fact', 'From chat', 'r', 6)",
+    );
+
+    applyMigrations(database, migrations, 20);
+
+    expect(database.query("SELECT key, origin FROM memories ORDER BY key").all()).toEqual([
+      { key: "chat.fact", origin: "turn" },
+      { key: "cli.fact", origin: "cli" },
+    ]);
+    expect(
+      database
+        .query(
+          "SELECT key, revision, action, value, origin, source_run_id AS run, created_at AS at FROM memory_revisions ORDER BY key",
+        )
+        .all(),
+    ).toEqual([
+      {
+        key: "chat.fact",
+        revision: 1,
+        action: "remember",
+        value: "From chat",
+        origin: "turn",
+        run: "r",
+        at: 6,
+      },
+      {
+        key: "cli.fact",
+        revision: 1,
+        action: "remember",
+        value: "From CLI",
+        origin: "cli",
+        run: null,
+        at: 5,
+      },
+    ]);
+  });
 });

@@ -128,12 +128,14 @@ Select `--project <name>` before a new chat message or task prompt. See
 
 ## Memory
 
-| Command                                            | Action                       |
-| -------------------------------------------------- | ---------------------------- |
-| `memory list [--project <name>]`                   | List explicitly saved facts. |
-| `memory remember [--project <name>] <key> <value>` | Create a new fact.           |
-| `memory replace [--project <name>] <key> <value>`  | Change an existing fact.     |
-| `memory forget [--project <name>] <key>`           | Delete a saved fact.         |
+| Command                                             | Action                                              |
+| --------------------------------------------------- | --------------------------------------------------- |
+| `memory list [--project <name>]`                    | List explicitly saved facts.                        |
+| `memory remember [--project <name>] <key> <value>`  | Create a new fact.                                  |
+| `memory replace [--project <name>] <key> <value>`   | Change an existing fact.                            |
+| `memory forget [--project <name>] <key>`            | Delete a saved fact.                                |
+| `memory history [--project <name>] <key>`           | Show a fact's revisions with origin and source run. |
+| `memory revert [--project <name>] <key> <revision>` | Restore an earlier revision as a new revision.      |
 
 Memory commands default to global facts; `--project` selects only that scope.
 See [memory](memory.md) for keys, limits, profiles, and deletion behavior.

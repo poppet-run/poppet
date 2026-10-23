@@ -15,7 +15,7 @@ import {
 import { Store, StoreLive } from "@poppet/store";
 import { Effect, Fiber, Layer, Stream } from "effect";
 
-import { instructions } from "#src/context";
+import { instructions, learningInstructions } from "#src/context";
 import { Notes } from "#src/notes";
 import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
@@ -157,6 +157,78 @@ const reportedFailures = (id: string) =>
 
     return (yield* store.toolCalls(run.id)).map((call) => [call.status, call.failureReason]);
   });
+
+describe.concurrent("agent-curated memory", () => {
+  test("learning instructions let the model save facts with turn provenance and history", async () => {
+    const saved = await fixture({ learnMemory: true });
+    let turns = 0;
+
+    saved.state.stream = () => {
+      turns++;
+
+      if (turns === 1) return toolReply(memoryCall("remember", "answer.style", "Concise"));
+
+      if (turns === 3) return toolReply(memoryCall("forget", "answer.style", null, "forget"));
+
+      return Stream.make({ type: "completed" as const, response: completion() });
+    };
+
+    try {
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const memory = yield* Memory;
+          const session = yield* store.createSession("test-provider", "test-model");
+          yield* send(session.id);
+          expect(yield* memory.list).toMatchObject([
+            { key: "answer.style", value: "Concise", origin: "turn" },
+          ]);
+          yield* send(session.id);
+
+          const runs = yield* store.runs(session.id);
+          expect(
+            (yield* memory.history!("answer.style")).map(({ action, origin, sourceRunId }) => ({
+              action,
+              origin,
+              sourceRunId,
+            })),
+          ).toEqual([
+            { action: "remember", origin: "turn", sourceRunId: runs[0]!.id },
+            { action: "forget", origin: "turn", sourceRunId: runs[1]!.id },
+          ]);
+        }),
+      );
+
+      const request = saved.requests[0]!;
+      expect(request.instructions).toBe(learningInstructions);
+      expect(request.instructions).toContain("Save them without being asked");
+      expect(request.instructions).not.toContain("Never infer or automatically save facts.");
+      expect(request.tools.find((tool) => tool.name === "memory")?.description).toContain(
+        "help in future sessions",
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test("explicit-only rules stay the default", async () => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Effect.gen(function* () {
+          yield* send((yield* (yield* Store).createSession("test-provider", "test-model")).id);
+        }),
+      );
+      expect(saved.requests[0]!.instructions).toContain("Never infer or automatically save facts.");
+      expect(
+        saved.requests[0]!.tools.find((tool) => tool.name === "memory")?.description,
+      ).toContain("only when the current user explicitly requests");
+    } finally {
+      await saved.close();
+    }
+  });
+});
 
 describe.concurrent("explicit memory in chat", () => {
   test("loads personality without personal memory, reloads on resume and restores defaults when cleared", async () => {
@@ -629,7 +701,7 @@ describe.concurrent("explicit memory in chat", () => {
         Effect.promise(async () => {
           started.resolve();
           await release.promise;
-          const fact = { key, value, sourceRunId, updatedAt: 0 };
+          const fact = { key, value, origin: "turn" as const, sourceRunId, updatedAt: 0 };
           facts.push(fact);
 
           return fact;
@@ -660,7 +732,13 @@ describe.concurrent("explicit memory in chat", () => {
             output: JSON.stringify({ action: "remember", key: "preference", changed: true }),
           });
           expect(facts).toEqual([
-            { key: "preference", value: "Saved once", sourceRunId: run.id, updatedAt: 0 },
+            {
+              key: "preference",
+              value: "Saved once",
+              origin: "turn",
+              sourceRunId: run.id,
+              updatedAt: 0,
+            },
           ]);
         }),
       );
