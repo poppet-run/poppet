@@ -152,7 +152,6 @@ export const ControlReceipt = Schema.Struct({
   paused: Schema.Literals([0, 1]),
   occurrenceId: Schema.NullOr(Session.fields.id),
   replacedOccurrenceIds: Schema.Array(Session.fields.id),
-  baselineReset: Schema.Boolean,
   snoozeCleared: Schema.Boolean,
   scheduledAt: Schema.NullOr(Schema.Natural),
   availableAt: Schema.NullOr(Schema.Natural),
@@ -162,7 +161,7 @@ export const ControlReceipt = Schema.Struct({
 export const TaskCommand = Schema.Union([
   TaskControl,
   Schema.Struct({
-    action: Schema.Literals(["add", "add-monitor"]),
+    action: Schema.Literal("add"),
     task: NewTask,
     skill: Schema.optionalKey(SkillName),
     delivery: Schema.optionalKey(
@@ -185,10 +184,7 @@ export type TaskCommand = typeof TaskCommand.Type;
 /** A persisted task row whose JSON schedule is decoded on read; times are Unix milliseconds. */
 export const Task = Schema.Struct({
   ...NewTask.fields,
-  monitor: Schema.BooleanFromBit,
   revision: Schema.Natural,
-  monitorRevision: Schema.Natural,
-  monitorBaselineAfter: Schema.Natural,
   destination: Schema.NullOr(Schema.fromJsonString(DeliveryDestination)),
   skill: Schema.NullOr(Schema.fromJsonString(SkillSnapshot)),
   schedule: Schema.fromJsonString(Schedule),
@@ -203,7 +199,6 @@ export type Task = typeof Task.Type;
 /** Immutable execution fields, independent of later edits and host defaults. */
 export const TaskDefinition = Schema.Struct({
   ...NewTask.fields,
-  monitor: Schema.Boolean,
   skill: Schema.NullOr(SkillSnapshot),
 });
 

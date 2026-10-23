@@ -2,7 +2,6 @@ import { AgentError, ChatSettings, ExternalTools } from "@poppet/agent";
 import { browserInstructions, browserTools, type BrowserError } from "@poppet/browser";
 import { browserSettings } from "@poppet/config";
 import { MCP, MCPError, mcpInstructions } from "@poppet/mcp";
-import { TaskRepository, monitorTools, monitorInstructions } from "@poppet/tasks";
 import { Console, Effect, Layer } from "effect";
 
 const agentFailure = (error: MCPError | BrowserError) =>
@@ -13,12 +12,11 @@ export const ExternalAgentToolsLive = Layer.effect(
   ExternalTools,
   Effect.gen(function* () {
     const mcp = yield* MCP;
-    const tasks = yield* TaskRepository;
     const browser = yield* browserSettings;
     const { toolBytes } = yield* ChatSettings;
 
     return {
-      instructions: `${mcpInstructions} ${browser.enabled ? browserInstructions : ""} ${monitorInstructions}`,
+      instructions: `${mcpInstructions} ${browser.enabled ? browserInstructions : ""}`,
       snapshot: (scheduled, run) =>
         Effect.gen(function* () {
           const external = yield* mcp.snapshot(scheduled).pipe(Effect.mapError(agentFailure));
@@ -52,7 +50,7 @@ export const ExternalAgentToolsLive = Layer.effect(
               }).pipe(Effect.mapError(agentFailure)),
           }));
 
-          return [...adapted, ...monitorTools(tasks, scheduled, run, toolBytes)];
+          return adapted;
         }),
     };
   }),

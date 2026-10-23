@@ -121,7 +121,7 @@ packages/
     src/skill-index.ts    Bounded skill descriptions and indexing
     src/skill-tools.ts    Skill view and management tools
     src/reply.ts          Validated model stream completion
-    src/memory.ts         Global/project snapshots formatted into model instructions
+    src/memory.ts         Memory snapshots formatted into model instructions
     src/context-files.ts  Shared bounded skill/project file access
     src/memory-tools.ts   Validated memory changes with budget checks and source runs
     src/context.ts        Complete-exchange context assembly and limits
@@ -167,8 +167,6 @@ packages/
     src/task-records.ts   Shared task and occurrence records
     src/task-schema.ts    Typed commands, cron expressions, and timestamps
     src/task-socket.ts    Task command client and JSON responses
-    src/monitoring.ts     Validated evidence, durable comparisons, recovery projections
-    src/monitor-tools.ts  Run-bound observation tool and host-owned instructions
   worker/                 @poppet/worker
     src/socket.ts         Protected command transport and request ownership
   platform/               @poppet/platform

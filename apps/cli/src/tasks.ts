@@ -109,13 +109,9 @@ export const prepareTask = (
   prompt: string,
   skill?: string,
   delivery?: { readonly adapter: string; readonly conversationId: string },
-  monitor = false,
 ) =>
   Effect.gen(function* () {
     yield* taskOperation(() => {
-      if (monitor && schedule.type !== "cron")
-        throw new TaskError({ message: "Monitoring requires --cron and an explicit timezone." });
-
       return nextOccurrence(schedule, Date.now());
     });
     const config = yield* AppConfig;
@@ -128,7 +124,7 @@ export const prepareTask = (
       );
 
     const command = {
-      action: monitor ? "add-monitor" : "add",
+      action: "add",
       task: {
         name,
         schedule,

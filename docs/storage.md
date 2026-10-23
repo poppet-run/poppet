@@ -52,7 +52,7 @@ history. All pending migrations commit together; a failure rolls back the pendin
 batch.
 
 The unreleased base migration history was consolidated into schema version 1;
-the current schema is version 8. Existing version-1 through version-7 databases upgrade in place.
+the current schema is version 9. Existing version-1 through version-8 databases upgrade in place.
 Development databases created with the former 14-step history are still rejected.
 Those legacy databases require a fresh data directory; databases are never reset
 automatically.
@@ -87,35 +87,6 @@ Migration 3 rebuilds occurrence uniqueness while preserving original IDs,
 monitor-result ordering, child foreign keys, and all unrelated records. The child
 monitoring table is copied before replacing its parent; migration rollback leaves
 both original tables and the version ledger intact.
-
-## Monitoring observations
-
-`jobs.monitor` distinguishes recurring monitors from reporting tasks and defaults
-to false for existing jobs. `job_monitor_results` records one successful decision
-per occurrence, with the stable value, summary, source-call references, original
-observation time, previous value, and `baseline`, `unchanged`, or `changed`
-decision. Changed decisions also save the notification payload. Commit order
-selects the most recent successful observation even when timestamps tie or move
-backward. No separate baseline store or raw-source copy is maintained.
-
-`monitor_baseline_after` is a per-job result-ID boundary. A prompt edit advances
-it without deleting old observations; future comparisons use results after that
-boundary and establish a new quiet baseline. `monitor_revision` prevents explicit
-retry of occurrences from before that prompt change. Name and schedule edits do
-not move the boundary. Inspection retains historical `lastObservation` and exposes
-the current `baselineObservation` separately.
-
-The decision and completed occurrence commit in one transaction after the linked
-model run completes. Recovery uses the same validation and comparison against
-saved tool calls, without invoking the model or reading sources again. A missing
-or invalid observation fails the occurrence while retaining the completed run
-for inspection. Failed, interrupted, and cancelled checks cannot advance the
-baseline. Repeated finalization cannot create another decision.
-
-Only changed monitor results enter the existing gateway queue. The unique
-occurrence identity prevents duplicate enqueueing. Baseline advancement and
-remote delivery success remain separate. Clearing tasks cascades to monitoring
-results while retaining saved runs and queued gateway replies.
 
 ## Scheduled delivery destinations
 
@@ -253,3 +224,12 @@ facts you still need and save them explicitly with `memory remember`.
 Existing conversations and tasks still load. Recall and task controls now cover
 all saved records. Review task prompts that depended on project instructions;
 put required context in the prompt or a skill when creating replacement tasks.
+
+## Retired monitoring data
+
+Migration 9 pauses existing monitor jobs, clears their next run, cancels pending
+checks, and interrupts unfinished checks. It stops pending alerts and marks
+in-flight deliveries uncertain. Completed runs and observation history remain
+in SQLite. Archived monitors are excluded from task commands and new delivery.
+Ordinary one-off and recurring tasks are unchanged. To replace a monitor, create
+a regular cron task; it reports every successful run.

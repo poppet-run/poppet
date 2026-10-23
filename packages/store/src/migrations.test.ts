@@ -6,6 +6,82 @@ import { applyMigrations, migrations } from "#src/migrations";
 const initial = migrations.slice(0, 1);
 
 describe("applyMigrations", () => {
+  test("when monitoring is retired, stops checks and queued alerts while preserving cron and history", () => {
+    using database = new Database(":memory:");
+    applyMigrations(database, migrations.slice(0, 8));
+
+    for (const [id, monitor, status] of [
+      ["cron", 0, "pending"],
+      ["pending", 1, "pending"],
+      ["running", 1, "running"],
+      ["saved", 1, "completed"],
+    ] as const) {
+      database
+        .query(
+          "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, monitor) VALUES (?, ?, 'Read release', 'openrouter', 'model', 'assistant', '{}', 100, 1, ?)",
+        )
+        .run(id, id, monitor);
+      database
+        .query(
+          "INSERT INTO job_occurrences (id, job_id, revision, definition, scheduled_at, available_at, status) VALUES (?, ?, 0, '{}', 100, 100, ?)",
+        )
+        .run(id, id, status);
+    }
+
+    database.run(
+      "INSERT INTO job_monitor_results (occurrence_id, job_id, value, summary, sources, observed_at, decision) VALUES ('saved', 'saved', 'v1', 'Release', '[]', 1, 'baseline')",
+    );
+
+    for (const [id, occurrence] of [
+      [1, "saved"],
+      [2, "cron"],
+    ] as const) {
+      database
+        .query(
+          "INSERT INTO gateway_inbox (id, adapter, account, external_id, payload, run_id, state, occurrence_id) VALUES (?, 'telegram', 'bot', ?, '{}', ?, 'completed', ?)",
+        )
+        .run(id, occurrence, occurrence, occurrence);
+
+      for (const [position, state] of [
+        [0, "pending"],
+        [1, "sending"],
+        [2, "sent"],
+      ] as const)
+        database
+          .query(
+            "INSERT INTO gateway_deliveries (inbox_id, position, text, state) VALUES (?, ?, 'Saved alert', ?)",
+          )
+          .run(id, position, state);
+    }
+
+    applyMigrations(database);
+    expect(database.query("SELECT id, paused, next_at FROM jobs ORDER BY id").all()).toEqual([
+      { id: "cron", paused: 0, next_at: 100 },
+      { id: "pending", paused: 1, next_at: null },
+      { id: "running", paused: 1, next_at: null },
+      { id: "saved", paused: 1, next_at: null },
+    ]);
+    expect(database.query("SELECT id, status FROM job_occurrences ORDER BY id").all()).toEqual([
+      { id: "cron", status: "pending" },
+      { id: "pending", status: "cancelled" },
+      { id: "running", status: "interrupted" },
+      { id: "saved", status: "completed" },
+    ]);
+    expect(
+      database
+        .query("SELECT state FROM gateway_deliveries WHERE inbox_id = 1 ORDER BY position")
+        .all(),
+    ).toEqual([{ state: "failed" }, { state: "uncertain" }, { state: "sent" }]);
+    expect(
+      database
+        .query("SELECT state FROM gateway_deliveries WHERE inbox_id = 2 ORDER BY position")
+        .all(),
+    ).toEqual([{ state: "pending" }, { state: "sending" }, { state: "sent" }]);
+    expect(database.query("SELECT value FROM job_monitor_results").get()).toEqual({ value: "v1" });
+    expect(database.query("PRAGMA foreign_key_check").all()).toEqual([]);
+    expect(applyMigrations(database)).toBe(migrations.length);
+  });
+
   test("when a later migration fails during initial setup, rolls back schema creation", () => {
     using database = new Database(":memory:");
 

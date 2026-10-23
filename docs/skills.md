@@ -88,8 +88,7 @@ Review the draft against what actually worked. Keep the procedure self-contained
 within the 8192-byte limit, and limited to tools and permissions Poppet already
 has. Replace account names, paths, and destinations with inputs where appropriate.
 Check for credentials and private information before placing it in the shared
-local skill library. Project permissions still depend on the project selected
-for the future chat or task, not the conversation that produced the draft.
+local skill library.
 
 The source is the conversation available to that model turn, which may omit older
 exchanges under the history/context budgets. Recalled conversations expose bounded

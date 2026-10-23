@@ -243,43 +243,6 @@ describe("ChatTasks", () => {
     }
   });
 
-  test("when creating a monitor, commits a quiet-baseline receipt and rejects one-off monitoring", async () => {
-    const state = await fixture();
-
-    const action: ChatTaskAction = {
-      ...create,
-      action: "create_monitor",
-      schedule: { type: "cron", expression: "0 9 * * *", timezone: "Europe/London" },
-    };
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const first = yield* recorded(action);
-          const receipt = JSON.parse(yield* execute(action, first.context));
-          expect(receipt).toMatchObject({
-            action: "create_monitor",
-            baseline: "pending-first-success",
-            task: { monitor: true },
-          });
-          expect((yield* TaskRepository).list()).toHaveLength(1);
-          expect(yield* (yield* (yield* ChatTasks).prepare(action, first.context)).execute).toBe(
-            JSON.stringify(receipt),
-          );
-          yield* first.store.finishRun(first.run.id, { status: "failed", reason: "test" });
-          const invalid: ChatTaskAction = { ...create, action: "create_monitor" };
-          const second = yield* recorded(invalid);
-          expect(
-            yield* (yield* ChatTasks).prepare(invalid, second.context).pipe(Effect.result),
-          ).toHaveProperty("failure.reason", "tool-arguments");
-          expect((yield* TaskRepository).list()).toHaveLength(1);
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
-
   test("when inference fails or acknowledgement is lost after task creation, retains the skill and receipt without duplication", async () => {
     const state = await fixture();
     await mkdir(join(state.directory, "skills/weekly"), { recursive: true });

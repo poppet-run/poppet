@@ -5,7 +5,6 @@ import { taskCatchUpMinutes } from "@poppet/config";
 import { DeliveryDestination, StoreDatabase, SkillSnapshot } from "@poppet/store";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 
-import { monitoringRecords } from "#src/monitoring";
 import { taskControls } from "#src/task-controls";
 import { taskRecords, taskSql, occurrenceSql, recurringExpiry } from "#src/task-records";
 import {
@@ -36,7 +35,6 @@ interface TaskSkip {
  */
 export const makeTaskStore = (database: Database, catchUpMs = 0) => {
   const commandLock = Semaphore.makeUnsafe(1);
-  const monitoring = monitoringRecords(database);
 
   const { task, occurrence, insertOccurrence, activeOccurrence, nextTarget } =
     taskRecords(database);
@@ -96,7 +94,6 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
       WHERE occurrences.status = 'running' AND runs.failure_reason = 'provider:quota'
       ON CONFLICT (provider) DO UPDATE SET reason = 'quota', resume_at = NULL`);
 
-        // Monitoring recovery uses the same comparison and validation as normal completion.
         const running = Schema.decodeUnknownSync(Schema.Array(Occurrence))(
           database.query(`${occurrenceSql} WHERE status = 'running'`).all(),
         );
@@ -201,7 +198,6 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
     skill: SkillSnapshot | null = null,
     destination: DeliveryDestination | null = null,
     source?: { readonly runId: string; readonly callId: string },
-    monitor = false,
   ) => {
     if (source) {
       const existing = Schema.decodeUnknownSync(
@@ -218,16 +214,13 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
     if (destination !== null) Schema.decodeUnknownSync(DeliveryDestination)(destination);
     const valid = Schema.decodeUnknownSync(NewTask)(input);
 
-    if (monitor && valid.schedule.type !== "cron")
-      throw new TaskError({ message: "Monitoring requires --cron and an explicit timezone." });
-
     const nextAt =
       valid.schedule.type === "once" ? valid.schedule.at : nextOccurrence(valid.schedule, now);
 
     const id = randomUUID();
 
     using statement = database.prepare(
-      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id, monitor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO jobs (id, name, prompt, provider, model, workload, schedule, next_at, created_at, skill, destination, source_run_id, source_call_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
 
     statement.run(
@@ -244,7 +237,6 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
       destination === null ? null : JSON.stringify(destination),
       source?.runId ?? null,
       source?.callId ?? null,
-      monitor ? 1 : 0,
     );
 
     return task(id);
@@ -327,12 +319,6 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
         if (hasActive(job.id))
           throw new TaskError({ message: "The task already has an active occurrence." });
 
-        if (item.definition.monitor && item.revision < job.monitorRevision)
-          throw new TaskError({
-            message:
-              "This monitor predates a prompt change. Use the next current-definition check.",
-          });
-
         if (item.definition.schedule.type === "cron" && item.availableAt <= now - recurringExpiry)
           throw new TaskError({ message: "This summary expired. Add a new one-off task instead." });
 
@@ -386,19 +372,6 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
     database
       .transaction(() => {
         // Explicit cancellation wins over the run's cleanup callback.
-        const item = occurrence(id);
-        const job = executionTask(item);
-
-        if (item.status === "running" && status === "completed" && job.monitor) {
-          try {
-            monitoring.finish(id, job);
-          } catch (cause) {
-            if (!(cause instanceof TaskError)) throw cause;
-            status = "failed";
-            reason = cause.message;
-          }
-        }
-
         database.run(
           "UPDATE job_occurrences SET status = ?, reason = ?, finished_at = ? WHERE id = ? AND status = 'running'",
           [status, reason, now, id],
@@ -466,9 +439,10 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
       database.prepare(`SELECT occurrences.id, jobs.id AS jobId, json_extract(occurrences.definition, '$.provider') AS provider,
       json_extract(occurrences.definition, '$.name') AS name, occurrences.status,
       occurrences.scheduled_at AS scheduledAt, occurrences.run_id AS runId,
-      CASE WHEN occurrences.reason LIKE 'monitor:%' THEN occurrences.reason ELSE runs.failure_reason END AS failureReason
+      runs.failure_reason AS failureReason
       FROM job_occurrences AS occurrences JOIN jobs ON jobs.id = occurrences.job_id
       LEFT JOIN runs ON runs.id = occurrences.run_id
+      WHERE jobs.monitor = 0
       ORDER BY COALESCE(occurrences.finished_at, occurrences.scheduled_at) DESC, occurrences.id DESC LIMIT 5`);
 
     const upcoming = jobs
@@ -531,7 +505,6 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
 
   return {
     commandLock,
-    monitoring,
     list,
     listPage: (after: string | null) => {
       if (after !== null) task(after);

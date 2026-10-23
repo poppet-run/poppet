@@ -62,6 +62,29 @@ const fixture = async (catchUpMs = 0) => {
 };
 
 describe.concurrent("TaskRepository", () => {
+  test("when a monitor is archived, excludes it from task controls and keeps ordinary cron runnable", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo, _store, database) =>
+        Effect.sync(() => {
+          const archived = repo.add(recurring, start);
+          database
+            .query("UPDATE jobs SET monitor = 1, paused = 1, next_at = NULL WHERE id = ?")
+            .run(archived.id);
+          const active = repo.add(recurring, start);
+          expect(repo.list().map(({ id }) => id)).toEqual([active.id]);
+          expect(() => repo.resume(archived.id, start)).toThrow("does not exist");
+          repo.reconcile(start + 60_000);
+          expect(repo.claim(start + 60_000)?.task.id).toBe(active.id);
+          expect(repo.status().taskCount).toBe(1);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when saved records contain retired project snapshots, reads them without activating project context", async () => {
     const state = await fixture();
 
@@ -161,7 +184,6 @@ describe.concurrent("TaskRepository", () => {
           expect(receipt).toMatchObject({
             revision: 1,
             replacedOccurrenceIds: [original.id],
-            baselineReset: false,
           });
           expect(repo.occurrence(original.id)).toMatchObject({
             status: "cancelled",

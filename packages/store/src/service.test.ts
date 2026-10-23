@@ -715,7 +715,7 @@ describe("Store", () => {
             { role: "assistant", output: response.output, continuation: response.continuation },
           ]);
           expect(yield* store.status).toMatchObject({
-            schemaVersion: 8,
+            schemaVersion: 9,
             sessions: 1,
             messages: 4,
             runs: 1,
@@ -966,7 +966,7 @@ describe("Store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 8,
+        schemaVersion: 9,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));

@@ -19,7 +19,7 @@ for persistent settings.
 - [Skills](skills.md): explicitly selected local procedures saved with chats and tasks.
 - [Memory](memory.md): an editable profile and explicitly saved facts shared across sessions.
 - [Storage](storage.md): the local database, permissions, ownership, and recovery.
-- [Scheduled tasks](tasks.md): one-off and recurring work, change-aware monitoring, results, pauses, and retries.
+- [Scheduled tasks](tasks.md): one-off and recurring work, results, pauses, and retries.
 - [Worker](worker.md): foreground modes, macOS login startup, lifecycle, and logs.
 
 ## Gateways

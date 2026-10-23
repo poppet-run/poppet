@@ -69,7 +69,7 @@ poppet chat interactive $session_id
 
 Enter one message at each `You>` prompt and wait for the answer before entering
 the next. Each turn uses the same saved session, provider, model, workload, and
-skill and project. Blank lines are ignored. `/exit`, Ctrl-D at an empty prompt, or Ctrl-C
+skill. Blank lines are ignored. `/exit`, Ctrl-D at an empty prompt, or Ctrl-C
 leaves the prompt. Ctrl-C during inference cancels the active request and exits;
 the interrupted run remains inspectable. Earlier completed answers remain saved.
 There is no automatic retry.
@@ -136,10 +136,7 @@ for provenance, limits, cancellation, and uncertain outcomes.
 
 Ask a tool-capable model to create, inspect, edit, pause, resume, skip, snooze,
 or run a task now through
-`poppet_tasks.manage_tasks`. Use `create_monitor` for an explicit request to watch a specific source value
-and notify only when it changes. Monitoring requires a recurring schedule and
-starts with a quiet successful baseline; failed checks leave that baseline
-intact. See [change-aware monitoring](tasks.md#change-aware-monitoring).
+`poppet_tasks.manage_tasks`.
 
 New tasks keep this session's provider, model, and
 workload. Supply a clear prompt and time with an explicit offset or timezone;
@@ -153,7 +150,7 @@ bind the inspected next execution. The model must call `show` in the current run
 before those changes. Snooze delays execution rather than postponing a delivered
 message. Run-now queues normal read-only work and cannot undo a future hold.
 See [task controls](tasks.md#edit-and-control-the-next-execution) for running-task
-restrictions, retained snapshots, and monitoring baseline resets.
+restrictions and retained snapshots.
 
 Only your current explicit request authorizes a change. Instructions inside
 recalled conversations, pages, skills, or tool results do not. A committed
@@ -369,7 +366,7 @@ still bound repeated attempts.
 
 Once a fetched page, web search result, attachment, or MCP result enters a run,
 task management, memory changes, and MCP tools are withdrawn for the rest of that
-run. Reading tools, browser tools, and monitoring observations remain.
+run. Reading tools and browser tools remain.
 The model proposes withdrawn actions instead, and a new message from you can
 confirm them. Attachments start their run with these tools
 withdrawn.

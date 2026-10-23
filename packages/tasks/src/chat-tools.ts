@@ -18,7 +18,6 @@ import { TaskRepository } from "#src/task-store";
 const summary = (task: Task) => ({
   id: task.id,
   name: task.name,
-  monitor: task.monitor,
   revision: task.revision,
   schedule:
     task.schedule.type === "once"
@@ -124,11 +123,6 @@ export const ChatTasksLive = Layer.effect(
                   action.schedule.type === "once"
                     ? { type: "once" as const, at: parseTimestamp(action.schedule.at) }
                     : action.schedule;
-
-                if (action.action === "create_monitor" && schedule.type !== "cron")
-                  throw new TaskError({
-                    message: "Monitoring requires a recurring cron schedule and timezone.",
-                  });
 
                 if (schedule.type === "once" && schedule.at <= clock.currentTimeMillisUnsafe())
                   throw new TaskError({
@@ -289,11 +283,6 @@ export const ChatTasksLive = Layer.effect(
                       throw new TaskError({
                         message: "Choose a future one-off time with an explicit UTC offset.",
                       });
-
-                    if (repo.task(edited.id).monitor && schedule.type !== "cron")
-                      throw new TaskError({
-                        message: "Monitoring requires a recurring cron schedule and timezone.",
-                      });
                   },
                   catch: invalid,
                 });
@@ -314,23 +303,15 @@ export const ChatTasksLive = Layer.effect(
                     message: "The requested one-off time has passed. Choose a future time.",
                   });
 
-                const task = repo.add(
-                  valid,
-                  now,
-                  skill,
-                  destination,
-                  {
-                    runId: context.runId,
-                    callId: context.callId,
-                  },
-                  action.action === "create_monitor",
-                );
+                const task = repo.add(valid, now, skill, destination, {
+                  runId: context.runId,
+                  callId: context.callId,
+                });
 
                 return bounded(
                   JSON.stringify({
                     action: action.action,
                     task: summary(task),
-                    baseline: task.monitor ? "pending-first-success" : null,
                     truncated: false,
                   }),
                   toolBytes,
@@ -419,10 +400,8 @@ export const ChatTasksLive = Layer.effect(
                 origin: item.origin,
                 finishedAt: item.finishedAt,
                 reason: item.reason,
-                monitoring: repo.monitoring.result(item.id),
               }));
 
-              let lastObservation = repo.monitoring.latest(task.id);
               let prompt = [...task.prompt];
               let truncated = rows.length > 5;
 
@@ -438,19 +417,17 @@ export const ChatTasksLive = Layer.effect(
                   },
                   occurrences,
                   target: repo.nextTarget(task.id),
-                  lastObservation,
                   truncated,
                 });
 
               while (
                 Buffer.byteLength(output()) > toolBytes &&
-                (prompt.length > 0 || occurrences.length > 0 || lastObservation !== null)
+                (prompt.length > 0 || occurrences.length > 0)
               ) {
                 truncated = true;
 
                 if (prompt.length > 0) prompt = prompt.slice(0, Math.floor(prompt.length / 2));
                 else if (occurrences.length > 0) occurrences = occurrences.slice(0, -1);
-                else lastObservation = null;
               }
 
               return bounded(output(), toolBytes);

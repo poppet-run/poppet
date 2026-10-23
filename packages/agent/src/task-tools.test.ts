@@ -100,18 +100,6 @@ describe("decodeTaskCall", () => {
       delivery: "local",
       skill: null,
     });
-    expect(
-      await Effect.runPromise(
-        decodeTaskCall({
-          ...input,
-          arguments: JSON.stringify({
-            ...fields,
-            action: "create_monitor",
-            schedule: { type: "cron", expression: "0 9 * * *", timezone: "UTC" },
-          }),
-        }),
-      ),
-    ).toMatchObject({ action: "create_monitor" });
     await Promise.all(
       [
         { ...fields, provider: "other-provider" },

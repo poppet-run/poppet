@@ -46,7 +46,6 @@ export const commandArgs = (
         offset += 2;
       else if (
         token === "--coding" ||
-        token === "--monitor" ||
         /^--(?:at|cron|tz|skill|discord-thread|telegram-chat|whatsapp-chat)=/.test(token)
       )
         offset++;

@@ -61,7 +61,6 @@ export const taskControls = (database: Database) => {
         let selected: Occurrence | null = null;
         let replacedOccurrenceIds: string[] = [];
         let changedFields: string[] = [];
-        let baselineReset = false;
         let snoozeCleared = false;
         let details: Schema.Json = null;
 
@@ -78,11 +77,6 @@ export const taskControls = (database: Database) => {
             const scheduleChanged = changedFields.includes("schedule");
             const schedule = patch.schedule ?? job.schedule;
 
-            if (job.monitor && schedule.type !== "cron")
-              throw new TaskError({
-                message: "Monitoring requires a recurring cron schedule and timezone.",
-              });
-
             if (scheduleChanged && schedule.type === "once" && schedule.at <= now)
               throw new TaskError({
                 message: "Choose a future one-off time with an explicit UTC offset.",
@@ -94,26 +88,15 @@ export const taskControls = (database: Database) => {
                 : nextOccurrence(schedule, now)
               : job.nextAt;
 
-            baselineReset = job.monitor && changedFields.includes("prompt");
-
-            const boundary = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.Natural }))(
-              database
-                .query(
-                  "SELECT COALESCE(MAX(id), 0) AS id FROM job_monitor_results WHERE job_id = ?",
-                )
-                .get(job.id),
-            ).id;
-
             database
-              .query(`UPDATE jobs SET name = ?, prompt = ?, schedule = ?, next_at = ?, revision = revision + 1,
-            monitor_revision = ?, monitor_baseline_after = ? WHERE id = ?`)
+              .query(
+                `UPDATE jobs SET name = ?, prompt = ?, schedule = ?, next_at = ?, revision = revision + 1 WHERE id = ?`,
+              )
               .run(
                 patch.name ?? job.name,
                 patch.prompt ?? job.prompt,
                 JSON.stringify(schedule),
                 nextAt,
-                baselineReset ? job.revision + 1 : job.monitorRevision,
-                baselineReset ? boundary : job.monitorBaselineAfter,
                 job.id,
               );
 
@@ -275,7 +258,6 @@ export const taskControls = (database: Database) => {
           nextAt: updated.nextAt,
           paused: updated.paused,
           replacedOccurrenceIds,
-          baselineReset,
           snoozeCleared,
           occurrenceId: selected?.id ?? null,
           scheduledAt: selected?.scheduledAt ?? null,

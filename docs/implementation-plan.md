@@ -2,7 +2,7 @@
 
 [Documentation index](README.md)
 
-Phases 1–21 and 23–25 are implemented with automated checks. Live validation
+Phases 1–21 and 24–25 are implemented with automated checks. Live validation
 remains outstanding where listed in each phase.
 Phases 28–30 are planned only. Plans do not authorize implementation.
 
@@ -51,7 +51,6 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 19: Deeper conversation recall](phases/19.md)
 - [Phase 20: MCP server support](phases/20.md)
 - [Phase 21: Browser automation with agent-browser](phases/21.md)
-- [Phase 23: Change-aware monitoring](phases/23.md)
 - [Phase 24: Editable tasks and snoozing](phases/24.md)
 - [Phase 25: Text attachments](phases/25.md)
 - [Phase 28: Browser login state across requests](phases/28.md)

@@ -12,6 +12,7 @@ import { projects } from "#src/migrations/20261021230000_projects";
 import { learnedSkills } from "#src/migrations/20261023120000_learned-skills";
 import { memoryRevisions } from "#src/migrations/20261023130000_memory-revisions";
 import { learningReviews } from "#src/migrations/20261023140000_learning-reviews";
+import { retireMonitoring } from "#src/migrations/20261023150000_retire-monitoring";
 
 export interface Migration {
   readonly version: number;
@@ -30,6 +31,7 @@ export const migrations: ReadonlyArray<Migration> = [
   { version: 6, name: "learned-skills", sql: learnedSkills },
   { version: 7, name: "memory-revisions", sql: memoryRevisions },
   { version: 8, name: "learning-reviews", sql: learningReviews },
+  { version: 9, name: "retire-monitoring", sql: retireMonitoring },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });

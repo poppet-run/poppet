@@ -30,5 +30,3 @@ export { executeOccurrence, makeTaskWorker, WorkerConnections } from "#src/sched
 export { remoteTaskCommand, taskResponse } from "#src/task-socket";
 
 export { ChatTasksLive } from "#src/chat-tools";
-
-export { monitorTools, monitorInstructions } from "#src/monitor-tools";

@@ -280,53 +280,6 @@ describe("makeCLI", () => {
     }
   });
 
-  test("when creating monitors locally, accepts recurring schedules and rejects one-off schedules before storage", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-monitor-cli-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "saved-model" };
-
-    try {
-      const invalid = await invoke(
-        ["tasks", "add", "Release", "--monitor", "--at", "2099-10-14T09:00:00Z", "Read release.md"],
-        environment,
-      );
-
-      expect(invalid.exitCode).toBe(1);
-      expect(invalid.stderr).toContain("Monitoring requires");
-      expect(await readdir(directory)).toEqual([]);
-
-      const added = await invoke(
-        [
-          "tasks",
-          "add",
-          "Release",
-          "--monitor",
-          "--cron",
-          "0 9 * * *",
-          "--tz",
-          "UTC",
-          "Read release.md and report the release tag",
-        ],
-        environment,
-      );
-
-      expect(added.exitCode).toBe(0);
-      const monitor = JSON.parse(added.stdout);
-      expect(monitor).toMatchObject({
-        monitor: true,
-        baseline: "pending-first-success",
-        model: "saved-model",
-      });
-      const shown = await invoke(["tasks", "show", monitor.id], environment);
-      expect(JSON.parse(shown.stdout)).toMatchObject({
-        task: { monitor: true },
-        lastObservation: null,
-        occurrences: [],
-      });
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
   test("when Kagi credentials are configured, leaves Brave credentials intact", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-kagi-cli-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_WEB_SEARCH_PROVIDER: "kagi" };
@@ -693,7 +646,6 @@ describe("makeCLI", () => {
           "tasks",
           "add",
           "Later",
-          "--monitor",
           "--cron",
           "0 9 * * *",
           "--tz",
@@ -706,7 +658,6 @@ describe("makeCLI", () => {
       expect(added.exitCode).toBe(0);
       const task = JSON.parse(added.stdout);
       expect(task.model).toBe("saved-model");
-      expect(task.monitor).toBe(true);
       const remembered = await invoke(["memory", "remember", "project", "Acorn"], environment);
       expect(remembered.exitCode).toBe(0);
       expect(JSON.parse(remembered.stdout)).toMatchObject({ key: "project", value: "Acorn" });
@@ -980,7 +931,7 @@ describe("makeCLI", () => {
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
         path: join(directory, "store/poppet.sqlite"),
-        schemaVersion: 8,
+        schemaVersion: 9,
         sessions: 0,
         messages: 0,
         runs: 0,

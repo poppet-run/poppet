@@ -132,15 +132,13 @@ const repository = Effect.gen(function* () {
             id: Schema.String,
             runId: Schema.String,
             destination: Schema.fromJsonString(DeliveryDestination),
-            notificationText: Schema.NullOr(Schema.String),
           }),
         ),
       )(
         database
-          .query(`SELECT o.id, o.run_id AS runId, o.destination, m.notification_text AS notificationText FROM job_occurrences o
+          .query(`SELECT o.id, o.run_id AS runId, o.destination FROM job_occurrences o
       JOIN jobs j ON j.id = o.job_id
-      LEFT JOIN job_monitor_results m ON m.occurrence_id = o.id
-      WHERE (j.monitor = 0 OR (m.decision = 'changed' AND m.notification_text IS NOT NULL))
+      WHERE j.monitor = 0
         AND o.status = 'completed' AND o.run_id IS NOT NULL
         AND json_extract(o.destination, '$.adapter') = ?
         AND NOT EXISTS (SELECT 1 FROM gateway_inbox i WHERE i.occurrence_id = o.id)

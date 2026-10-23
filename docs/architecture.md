@@ -570,8 +570,7 @@ snapshot; a pending edit cancels and replaces the original without rewriting
 history. Snooze changes persisted `available_at`, not the cron schedule or
 logical slot, and run-now queues through normal permissions/provider holds.
 Task-specific operation records retain atomic replay receipts and bounded change
-history. Monitor prompt edits establish a fresh comparison boundary while retaining
-old observations. See [task controls](tasks.md#edit-and-control-the-next-execution).
+history. See [task controls](tasks.md#edit-and-control-the-next-execution).
 
 `Store.commitToolCall` runs the synchronous task operation and completion of its
 tool journal/message in one SQLite transaction. A receipt failure rolls back the
@@ -719,35 +718,6 @@ tools.
 
 Do not automatically retry a side effect whose completion is uncertain. Record
 its state and require an explicit retry. Database updates use transactions. Exactly-once external execution is not assumed.
-
-## Change-aware monitoring
-
-Recurring jobs may opt into monitoring. The scheduler keeps the same fresh
-session and read-only tool policy. Host composition offers a task-owned
-`poppet_monitor.report_observation` through `ExternalTools` only when the current
-session/run is linked to an active monitoring occurrence. Ordinary chats and
-reports receive no observation tool. A submission records a candidate in the
-existing tool journal; it cannot update the baseline or send messages.
-
-`packages/tasks/src/monitoring.ts` validates one small stable value against
-completed source reads earlier in that run. Page results must be nonempty
-and complete; scheduled MCP evidence also rejects omitted or redacted results.
-History recall and snippets cannot establish fresh evidence. Existing source,
-URL, scheduled-tool, and mutation permissions remain in force.
-
-On successful run completion, the repository atomically stores a baseline,
-unchanged, or changed decision and finishes the occurrence. The latest committed
-result is the baseline. Comparison is exact; the model's prose does not decide
-notification eligibility. Recovery projects completed journal entries through
-the same path. Cancellation, source/model failure, or invalid evidence cannot
-advance the baseline.
-
-The gateway filters quiet decisions before its delivery query limit. Changed
-observations use a saved host-rendered notification through the normal durable
-queue, destination authorization, and uncertain-send rules. Delivery failure does
-not undo an observation or cause another alert on an unchanged check. There is
-no second scheduler, event bus, provider protocol, or background mutation grant.
-See [monitoring behavior](tasks.md#change-aware-monitoring) for limits and commands.
 
 ## Unattended operation
 
