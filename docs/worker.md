@@ -179,7 +179,8 @@ which leaves room for the supported 1 MiB serialized chat context and command
 metadata. Oversized requests report a size error without being retried.
 Only an absent socket or refused connection permits local fallback. A lost,
 incomplete, or incompatible response fails without replaying the command. Restart
-an older worker with `worker stop` followed by `worker start` after updating code.
+the worker with `worker stop` followed by `worker start` after updating code.
+The current protocol uses `/v1/commands` and `/v1/tasks`; other routes are rejected.
 
 ## Sleep and missed schedules
 
@@ -239,8 +240,7 @@ Chat rename commands use the same local-or-worker routing as chat inspection.
 `chat interactive [session]` uses the same worker transport for each entered
 message. Waiting at the prompt does not hold storage. Session metadata is returned
 with the existing stderr announcement, so one-shot clients keep their output and
-interactive clients can retain the session after a failed turn. Restart the worker
-after updating to this version before starting a new interactive session.
+interactive clients can retain the session after a failed turn.
 
 After printing an interactive answer, the worker finishes the optional bounded
 title request before completing that command response. The gateway starts naming

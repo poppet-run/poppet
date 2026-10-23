@@ -1,4 +1,4 @@
-import { Agent, Skills } from "@poppet/agent";
+import { Agent, Projects, Skills } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { LearningReviews } from "@poppet/memory";
 import { Store } from "@poppet/store";
@@ -26,7 +26,7 @@ export const runWorker = (mode: WorkerMode) =>
       const commands = yield* WorkerRequests;
       const tasks = mode === "gateway" ? null : yield* makeTaskWorker;
       const messaging = Option.getOrNull(yield* Effect.serviceOption(MessagingWorker));
-      const services = yield* Effect.context<Store | TaskRepository | Skills>();
+      const services = yield* Effect.context<Store | TaskRepository | Skills | Projects>();
       const startedAt = yield* Clock.currentTimeMillis;
       const agent = Option.getOrNull(yield* Effect.serviceOption(Agent));
       const reviews = Option.getOrNull(yield* Effect.serviceOption(LearningReviews));
@@ -56,8 +56,7 @@ export const runWorker = (mode: WorkerMode) =>
       };
 
       yield* serveWorker(workerSocketPath(config.dataDirectory), (request, body) => {
-        if (!["/tasks", "/project-tasks"].includes(new URL(request.url).pathname))
-          return commands.handle(request, body);
+        if (new URL(request.url).pathname !== "/v1/tasks") return commands.handle(request, body);
 
         return taskResponse(body, (command) =>
           Effect.gen(function* () {

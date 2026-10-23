@@ -968,7 +968,7 @@ describe.concurrent("task worker", () => {
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
           const store = yield* Store;
-          yield* (yield* Memory).forProject!("acorn").remember("review", "Current project fact");
+          yield* (yield* Memory).forProject("acorn").remember("review", "Current project fact");
           repo.reconcile(0);
           const claimed = repo.claim(0)!;
           yield* executeOccurrence(repo, claimed.occurrence, claimed.task);

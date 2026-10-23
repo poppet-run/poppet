@@ -119,7 +119,7 @@ describe.concurrent("project context boundaries", () => {
       await state.run(
         Effect.gen(function* () {
           const project = yield* (yield* Projects).load("acorn");
-          const memory = (yield* Memory).forProject!("acorn");
+          const memory = (yield* Memory).forProject("acorn");
 
           for (const key of ["a", "b", "c"]) yield* memory.remember(key, "x".repeat(4096));
           const session = yield* (yield* Store).createSession("test", "model", { project });
@@ -163,8 +163,8 @@ describe.concurrent("project context boundaries", () => {
         Effect.gen(function* () {
           const memory = yield* Memory;
           yield* memory.remember("style", "global preference");
-          yield* memory.forProject!("acorn").remember("style", "acorn preference");
-          yield* memory.forProject!("blue").remember("style", "blue private preference");
+          yield* memory.forProject("acorn").remember("style", "acorn preference");
+          yield* memory.forProject("blue").remember("style", "blue private preference");
           const project = yield* (yield* Projects).load("acorn");
           const session = yield* (yield* Store).createSession("test", "model", { project });
           id = session.id;
@@ -181,11 +181,11 @@ describe.concurrent("project context boundaries", () => {
             (yield* Agent).send(id, "Remember this decision for this project"),
           );
           expect(yield* memory.list).toHaveLength(1);
-          expect(yield* memory.forProject!("acorn").list).toMatchObject([
+          expect(yield* memory.forProject("acorn").list).toMatchObject([
             { key: "decision", value: "new project decision", sourceRunId: expect.any(String) },
             { key: "style", value: "acorn preference" },
           ]);
-          expect(yield* memory.forProject!("blue").list).toHaveLength(1);
+          expect(yield* memory.forProject("blue").list).toHaveLength(1);
         }),
       );
       expect(state.requests).toHaveLength(2);

@@ -97,8 +97,8 @@ and does not restore the snooze. Recurring expiration and retry freshness use
 `availableAt`, with the existing 24-hour window after that time; one-offs do not
 expire. Retries use the historical occurrence definition. A monitor occurrence
 older than its latest prompt change cannot be retried against the new baseline.
-Restart an older worker before using these new commands; unsupported actions
-fail explicitly. No additional login or model is required to manage saved tasks.
+Unsupported actions fail explicitly. No additional login or model is required
+to manage saved tasks.
 
 ## Change-aware monitoring
 
@@ -118,8 +118,8 @@ One-off monitoring is rejected. Each check uses normal provider quota.
 
 Add an existing Discord, Telegram, or WhatsApp destination flag to deliver
 changes there. Without a destination, decisions remain local. A combined worker
-runs checks and delivery. Restart an older worker before using monitoring; an
-unsupported worker rejects creation rather than creating an ordinary report.
+runs checks and delivery. Monitoring creation uses the same strict, versioned
+worker protocol as other task commands.
 
 Tool-capable models receive `poppet_monitor.report_observation` only inside the
 bound active monitor run. Each check must read fresh evidence, submit exactly

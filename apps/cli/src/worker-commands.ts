@@ -1,4 +1,11 @@
-import { Agent, ChatSettings, logChatDiagnostic, Skills, type AgentError } from "@poppet/agent";
+import {
+  Agent,
+  ChatSettings,
+  logChatDiagnostic,
+  Projects,
+  Skills,
+  type AgentError,
+} from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { MCP, MCPCommand, inspectMCP } from "@poppet/mcp";
 import { LearningReviews, Memory } from "@poppet/memory";
@@ -40,7 +47,7 @@ export type WorkerCommand = typeof WorkerCommand.Type;
 
 const Frame = Schema.Union([
   Schema.Struct({
-    type: Schema.Literals(["stdout", "stderr", "reasoning-log"]),
+    type: Schema.Literals(["stdout", "stderr"]),
     text: Schema.String,
     sessionId: Schema.optionalKey(Session.fields.id),
   }),
@@ -115,28 +122,33 @@ export const WorkerRequestsLive = Layer.effect(
   WorkerRequests,
   Effect.gen(function* () {
     const services = yield* Effect.context<
-      Agent | AppConfig | Store | Memory | LearnedSkills | LearningReviews | ChatSettings | Skills
+      | Agent
+      | AppConfig
+      | Store
+      | Memory
+      | LearnedSkills
+      | LearningReviews
+      | ChatSettings
+      | Skills
+      | Projects
+      | MCP
     >();
 
     const messaging = yield* Effect.serviceOption(MessagingWorker);
 
-    const mcp = yield* Effect.serviceOption(MCP);
-    const base = Option.isSome(mcp) ? Context.add(services, MCP, mcp.value) : services;
-
     const provided = Option.isSome(messaging)
-      ? Context.add(base, MessagingWorker, messaging.value)
-      : base;
+      ? Context.add(services, MessagingWorker, messaging.value)
+      : services;
 
     return {
       handle: (request, payload): Effect.Effect<Response, never, Scope.Scope> =>
         Effect.gen(function* () {
-          if (
-            request.method !== "POST" ||
-            !["/commands", "/project-commands"].includes(new URL(request.url).pathname)
-          )
+          if (request.method !== "POST" || new URL(request.url).pathname !== "/v1/commands")
             return new Response("Not found", { status: 404 });
 
-          const command = Schema.decodeUnknownOption(WorkerCommand)(payload);
+          const command = Schema.decodeUnknownOption(WorkerCommand, { onExcessProperty: "error" })(
+            payload,
+          );
 
           if (Option.isNone(command))
             return Response.json({ message: "Invalid worker command." }, { status: 400 });
@@ -233,11 +245,7 @@ export const remoteWorkerCommand = (
         try: (signal) =>
           requestWorker(
             path,
-            (command.kind === "chat" || command.kind === "memory") &&
-              "project" in command.command &&
-              command.command.project !== undefined
-              ? "/project-commands"
-              : "/commands",
+            "/v1/commands",
             command.kind === "chat" && writeReasoning !== undefined
               ? { ...command, streamReasoning: true }
               : command,
@@ -284,10 +292,6 @@ export const remoteWorkerCommand = (
 
           if (frame.type === "reasoning-delta" || frame.type === "reasoning-end")
             return writeReasoning?.(frame) ?? Effect.void;
-
-          // Suppress reasoning logs when the caller renders streamed reasoning.
-          if (frame.type === "reasoning-log")
-            return writeReasoning === undefined ? logChatDiagnostic(frame.text) : Effect.void;
 
           if (frame.type === "stderr")
             return Effect.gen(function* () {

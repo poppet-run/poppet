@@ -187,7 +187,7 @@ describe.concurrent("agent-curated memory", () => {
 
           const runs = yield* store.runs(session.id);
           expect(
-            (yield* memory.history!("answer.style")).map(({ action, origin, sourceRunId }) => ({
+            (yield* memory.history("answer.style")).map(({ action, origin, sourceRunId }) => ({
               action,
               origin,
               sourceRunId,
@@ -370,6 +370,11 @@ describe.concurrent("explicit memory in chat", () => {
     "records an injected $reason memory failure before resolving the model",
     async ({ reason, expected }) => {
       const injected: Memory["Service"] = {
+        forProject: () => {
+          throw new Error("Unexpected project memory");
+        },
+        history: () => Effect.die("Unexpected memory history"),
+        revert: () => Effect.die("Unexpected memory revert"),
         snapshot: () => Effect.fail(new MemoryError({ reason, message: "Snapshot unavailable" })),
         list: Effect.die("Chat must use the snapshot operation."),
         remember: () => Effect.die("Chat must not create facts."),
@@ -695,6 +700,11 @@ describe.concurrent("explicit memory in chat", () => {
     const facts: MemoryFact[] = [];
 
     const injected: Memory["Service"] = {
+      forProject: () => {
+        throw new Error("Unexpected project memory");
+      },
+      history: () => Effect.die("Unexpected memory history"),
+      revert: () => Effect.die("Unexpected memory revert"),
       snapshot: () => Effect.succeed({ soul: "", profile: "", facts: [] }),
       list: Effect.sync(() => facts),
       remember: (key, value, sourceRunId = null) =>

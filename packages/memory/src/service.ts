@@ -15,7 +15,7 @@ export class MemoryError extends Data.TaggedError("MemoryError")<{
 }> {}
 
 interface MemoryOperations {
-  readonly forProject?: (name: string) => MemoryOperations;
+  readonly forProject: (name: string) => MemoryOperations;
   /** Reads prompt files and saved facts, failing rather than truncating content over budget. */
   readonly snapshot: (limits: SnapshotLimits) => Effect.Effect<MemorySnapshot, MemoryError>;
   readonly list: Effect.Effect<ReadonlyArray<MemoryFact>, MemoryError>;
@@ -40,12 +40,9 @@ interface MemoryOperations {
     origin?: MemoryOrigin,
   ) => Effect.Effect<void, MemoryError>;
   /** Every change to one key in this scope, oldest first. */
-  readonly history?: (key: string) => Effect.Effect<ReadonlyArray<MemoryRevision>, MemoryError>;
+  readonly history: (key: string) => Effect.Effect<ReadonlyArray<MemoryRevision>, MemoryError>;
   /** Restores an earlier revision as a new owner revision; a tombstone forgets the fact. */
-  readonly revert?: (
-    key: string,
-    revision: number,
-  ) => Effect.Effect<MemoryFact | null, MemoryError>;
+  readonly revert: (key: string, revision: number) => Effect.Effect<MemoryFact | null, MemoryError>;
 }
 
 /** Explicit fact storage and bounded prompt context, separate from conversation history. */
