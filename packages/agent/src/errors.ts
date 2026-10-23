@@ -20,7 +20,6 @@ export class AgentError extends Data.TaggedError("AgentError")<{
     | "tool-uncertain"
     | "budget"
     | "memory-storage"
-    | "memory-limit"
-    | "skill-storage";
+    | "memory-limit";
   readonly message: string;
 }> {}

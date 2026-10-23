@@ -154,11 +154,6 @@ packages/
     src/schema.ts         Facts, snapshot data, and snapshot limits
     src/local.ts          Local fact operations and bounded snapshots
     src/context-file.ts   Bounded UTF-8 personality and profile reads
-  skills/                 @poppet/skills
-    src/schema.ts         Learned skill content and revisions
-    src/service.ts        Learned skill storage and revision operations
-    src/errors.ts         Skill storage and request errors
-    src/promotion.ts      Exclusive owner-file creation
   store/                  @poppet/store
     src/database.ts       Scoped SQLite connection, ownership, and permissions
     src/migrations.ts     Ordered migrations and transactional migration ledger

@@ -1410,13 +1410,6 @@ describe("makeCLI", () => {
       profileBytes: 2048,
       factsBytes: 1024,
       skillIndexBytes: 512,
-      learnSkills: true,
-      learnMemory: true,
-      learnReview: true,
-      reviewMinToolCalls: 3,
-      reviewTurnInterval: 4,
-      reviewInputBytes: 8192,
-      reviewMaxAgeHours: 2,
     };
 
     try {

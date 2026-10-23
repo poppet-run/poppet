@@ -15,7 +15,7 @@ export const MemoryValue = Schema.NonEmptyString.check(
 
 const RunId = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/));
 
-/** Who made a change: the owner through the CLI, a chat turn, or background review. */
+/** Who made a change: the owner through the CLI, a chat turn, or a historical background review. */
 export const MemoryOrigin = Schema.Literals(["cli", "turn", "review"]);
 
 export type MemoryOrigin = typeof MemoryOrigin.Type;

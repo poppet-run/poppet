@@ -153,17 +153,12 @@ snapshot into the new session; no later run rereads the skill file. Inspection
 exposes snapshots without provider
 continuation or credentials. See [skills](skills.md).
 
-## Learned skills
+## Retired learning data
 
-Migration 6 adds `learned_skills`, holding each learned skill's current name,
-revision, and content, and the append-only `skill_revisions` table. Every
-create, patch, replace, delete, or revert adds a revision with its action,
-content (null for a deletion), origin (`owner`, `turn`, or `review`), and source
-run and call for model changes. Revisions continue across deletion and
-recreation. A unique index allows at most one revision per source tool call.
-Content is limited to 8192 UTF-8 bytes, and at most 64 learned skills exist at
-once. `LearnedSkills` in `@poppet/memory` owns this SQL on the shared database
-connection. See [skills](skills.md#learned-skills).
+Migrations 6 and 8 remain unchanged so existing databases still open. Their
+`learned_skills`, `skill_revisions`, and `learning_reviews` tables are retained
+as archived data. Poppet no longer reads, writes, or runs background reviews.
+Export any learned procedures you want to keep into owner-written `SKILL.md` files.
 
 ## Fact history
 
@@ -173,15 +168,6 @@ append-only `memory_revisions` table records every remember, replace, forget,
 and revert per project scope and key, with the value (null when forgotten),
 origin, source run, and time. Existing facts are backfilled as revision 1. CLI
 changes have no source run; model changes always do.
-
-## Background reviews
-
-Migration 8 adds `learning_reviews`, one row per reviewed source run, with its
-session, state (`pending`, `running`, `completed`, `skipped`, `failed`, or
-`uncertain`), reason, bounded summary, a JSON array of the skill and fact
-changes it made, and when its notice was shown. Reviews write no messages or
-runs; their skill and fact revisions name the reviewed run with origin `review`.
-A worker restart marks running reviews `uncertain` rather than replaying them.
 
 ## Project snapshots and facts
 

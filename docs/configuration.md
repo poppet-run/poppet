@@ -63,13 +63,6 @@ channel settings stay in their existing protected stores.
 | `POPPET_PROFILE_BYTES`         | `chat.profileBytes`       | `8192`              | UTF-8 bytes in `profile.md`; range `1–65536`                                                          |
 | `POPPET_FACTS_BYTES`           | `chat.factsBytes`         | `8192`              | UTF-8 bytes of serialized saved facts sent to the model; range `1–65536`                              |
 | `POPPET_SKILL_INDEX_BYTES`     | `chat.skillIndexBytes`    | `8192`              | UTF-8 bytes of the skill index sent to the model; `0` disables model-selected skills; range `0–65536` |
-| `POPPET_LEARN_SKILLS`          | `chat.learnSkills`        | `false`             | Let interactive runs create and change learned skills                                                 |
-| `POPPET_LEARN_MEMORY`          | `chat.learnMemory`        | `false`             | Let interactive runs save, replace, and forget facts without an explicit request                      |
-| `POPPET_LEARN_REVIEW`          | `chat.learnReview`        | `false`             | Queue background review of qualifying interactive runs for the worker                                 |
-| `POPPET_REVIEW_MIN_TOOL_CALLS` | `chat.reviewMinToolCalls` | `5`                 | Tool calls that make a run worth reviewing; range `1–64`                                              |
-| `POPPET_REVIEW_TURN_INTERVAL`  | `chat.reviewTurnInterval` | `10`                | Completed runs in a session since its last review that also qualify; range `1–100`                    |
-| `POPPET_REVIEW_INPUT_BYTES`    | `chat.reviewInputBytes`   | `65536`             | UTF-8 bytes of the reviewed run sent to the review model; range `4096–262144`                         |
-| `POPPET_REVIEW_MAX_AGE_HOURS`  | `chat.reviewMaxAgeHours`  | `24`                | Pending reviews older than this are skipped; range `1–168`                                            |
 | `POPPET_RUN_DEADLINE_SECONDS`  | `chat.runDeadlineSeconds` | `300`               | Absolute deadline for one chat or task run; range `30–3600`                                           |
 | `POPPET_TASK_CATCH_UP_MINUTES` | `tasks.catchUpMinutes`    | `60`                | How late a missed recurring task time may still run once; `0` skips at startup; range `0–1440`        |
 
@@ -299,3 +292,7 @@ PDF processing and voice transcription are no longer supported. Remove the
 `voice` section from an existing `config.json`; unknown settings are rejected.
 `POPPET_VOICE` is no longer read. Send a text message or UTF-8 text attachment
 instead. Previously saved document text and transcripts remain in history.
+
+Automatic learning and background review settings have been removed. Remove
+`chat.learnSkills`, `chat.learnMemory`, `chat.learnReview`, and `chat.review*`
+from old configuration files; unknown keys are rejected.

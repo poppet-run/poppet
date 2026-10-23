@@ -201,7 +201,7 @@ describe.concurrent("LocalMemoryLive", () => {
 
           yield* memory.remember("answer.style", "Concise");
           yield* memory.replace("answer.style", "Detailed", run.id);
-          yield* memory.forget("answer.style", run.id, "review");
+          yield* memory.forget("answer.style", run.id);
 
           const history = yield* memory.history("answer.style");
           expect(
@@ -221,7 +221,7 @@ describe.concurrent("LocalMemoryLive", () => {
               origin: "turn",
               sourceRunId: run.id,
             },
-            { revision: 3, action: "forget", value: null, origin: "review", sourceRunId: run.id },
+            { revision: 3, action: "forget", value: null, origin: "turn", sourceRunId: run.id },
           ]);
 
           expect(yield* memory.revert("answer.style", 1)).toMatchObject({
@@ -242,9 +242,7 @@ describe.concurrent("LocalMemoryLive", () => {
             action: "forget",
           });
 
-          yield* reject(memory.remember("bad", "No run", null, "review"), "invalid-request");
           yield* reject(memory.forget("missing"), "not-found");
-          expect(yield* memory.history("bad")).toEqual([]);
 
           // Project history is separate from global history.
           const project = memory.forProject("acorn");

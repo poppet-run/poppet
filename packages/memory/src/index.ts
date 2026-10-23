@@ -11,11 +11,3 @@ export {
 } from "#src/schema";
 
 export { LocalMemoryLive } from "#src/local";
-
-export {
-  LearningReview,
-  LearningReviews,
-  LearningReviewsLive,
-  ReviewChange,
-  ReviewState,
-} from "#src/reviews";

@@ -32,7 +32,6 @@
     "@poppet/provider-openai": "workspace:*",
     "@poppet/provider-opencode": "workspace:*",
     "@poppet/provider-openrouter": "workspace:*",
-    "@poppet/skills": "workspace:*",
     "@poppet/store": "workspace:*",
     "@poppet/tasks": "workspace:*",
     "@poppet/web-search": "workspace:*",

@@ -45,7 +45,6 @@ The Bun monorepo uses private workspaces:
 | `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                        | Provider contract                                                                    |
 | `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle              | Config, credentials, provider contract                                               |
 | `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                   | Config and store for the local implementation                                        |
-| `@poppet/skills`              | Learned skill schemas, revision storage, and owner-file promotion                  | Store and Effect                                                                     |
 | `@poppet/platform`            | Worker actions, errors, and a host-supplied launch description                     | None                                                                                 |
 | `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                       | Platform contract                                                                    |
 | `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                          | Config, agent, store, worker transport, provider contract                            |
@@ -108,21 +107,12 @@ open the conversation database.
 
 ## Explicit local skills
 
-`@poppet/skills` owns learned-skill schemas, revision storage, and owner-file
-promotion. The agent keeps owner-file loading in `skills.ts`, bounded indexing
-in `skill-index.ts`, and view/manage tools in `skill-tools.ts`.
-
 `Skills` in the agent package loads one validated `SKILL.md` or lists local skill
 directories. The CLI composes `SkillsLive` with host configuration. When a host
 supplies `Skills` and `POPPET_SKILL_INDEX_BYTES` is nonzero, the conversation
 workflow builds a bounded index at run start and adds the read-only
 `poppet_skills.view_skill` tool, a context-only tool journalled like recall. It
-grants no additional tool permissions. With `POPPET_LEARN_SKILLS`, interactive runs also
-get `poppet_skills.manage_skill`, which writes through `LearnedSkills` in
-`@poppet/skills`, with the run and call as provenance. The conversation tracks the revisions each run has
-seen and its write count; the tool is withdrawn with memory after untrusted
-content and excluded by `readOnlyTools`. Storage failures leave the call
-uncertain rather than replaying it. Creation requests carry only the selected
+grants no additional tool permissions. Creation requests carry only the selected
 name; the process owning the store resolves it, including worker chat and task
 commands. Missing or invalid selections fail before creating a session or task.
 

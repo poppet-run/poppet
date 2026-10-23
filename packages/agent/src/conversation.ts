@@ -9,7 +9,6 @@ import type {
   TextSource,
   Tool,
 } from "@poppet/provider";
-import { LearnedSkills } from "@poppet/skills";
 import {
   Store,
   StoreError,
@@ -29,7 +28,7 @@ import {
 } from "#src/context";
 import { AgentError } from "#src/errors";
 import { ExternalTools } from "#src/external-tools";
-import { learningMemoryTool, memoryTool, decodeMemoryCall } from "#src/memory-tools";
+import { memoryTool, decodeMemoryCall } from "#src/memory-tools";
 import { decodeFetchPageCall, fetchPageTool, suppliedPageURLs } from "#src/pages";
 import { maxTextBytes, streamReply } from "#src/reply";
 import {
@@ -40,13 +39,7 @@ import {
 } from "#src/search";
 import { ChatSettings } from "#src/settings";
 import { skillIndex, skillIndexGuidance } from "#src/skill-index";
-import {
-  decodeSkillManageCall,
-  skillLearningGuidance,
-  skillManageTool,
-  decodeSkillViewCall,
-  skillViewTool,
-} from "#src/skill-tools";
+import { decodeSkillViewCall, skillViewTool } from "#src/skill-tools";
 import { Skills } from "#src/skills";
 import { ChatTasks, decodeTaskCall, taskTool } from "#src/task-tools";
 import { toolExecution, preflightReported, failureReason, failureReply } from "#src/tool-execution";
@@ -65,7 +58,6 @@ export const conversation = Effect.gen(function* () {
   const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
   const external = Option.getOrNull(yield* Effect.serviceOption(ExternalTools));
   const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
-  const learned = Option.getOrNull(yield* Effect.serviceOption(LearnedSkills));
   const clock = yield* Clock.Clock;
 
   const executeTool = yield* toolExecution;
@@ -105,14 +97,9 @@ export const conversation = Effect.gen(function* () {
         const skillTools =
           model.description.capabilities.tools && skills !== null && policy.skillIndexBytes > 0;
 
-        // Learning needs the index and view tool, so the model can see revisions to change.
-        const learning = skillTools && learned !== null && policy.learnSkills && !readOnlyTools;
-
         const skillsIndex = skillTools
-          ? yield* measureTiming("skill-index", skillIndex(skills, policy.skillIndexBytes, learned))
+          ? yield* measureTiming("skill-index", skillIndex(skills, policy.skillIndexBytes))
           : null;
-
-        const skillState = { seen: new Map<string, number>(), writes: 0 };
 
         const tools = model.description.capabilities.tools
           ? [
@@ -120,9 +107,8 @@ export const conversation = Effect.gen(function* () {
               sessionSearchTool,
               sessionReadTool,
               fetchPageTool,
-              policy.learnMemory ? learningMemoryTool : memoryTool,
-              ...(skillsIndex === null && !learning ? [] : [skillViewTool]),
-              ...(learning ? [skillManageTool] : []),
+              memoryTool,
+              ...(skillsIndex === null ? [] : [skillViewTool]),
               ...(webSearch.search === null ? [] : [webSearchTool]),
               ...(tasks === null || readOnlyTools ? [] : [taskTool]),
             ].filter((tool) => !readOnlyTools || tool.name !== "memory")
@@ -145,13 +131,12 @@ export const conversation = Effect.gen(function* () {
 
         const allowedURLs = source?.kind === "voice" ? new Set<string>() : suppliedPageURLs(text);
 
-        // Untrusted content withdraws task, memory, and skill mutations; external tools need explicit opt-in to remain.
+        // Untrusted content withdraws task and memory mutations; external tools need explicit opt-in to remain.
         let untrusted = source !== undefined;
 
         const withdrawn = (tool: Tool) =>
           tool.name === taskTool.name ||
           tool.name === memoryTool.name ||
-          tool.name === skillManageTool.name ||
           catalog.some(
             (entry) =>
               entry.availableAfterUntrusted !== true &&
@@ -161,12 +146,10 @@ export const conversation = Effect.gen(function* () {
 
         const activeTools = () => (untrusted ? tools.filter((tool) => !withdrawn(tool)) : tools);
 
-        const skillPrompt = [
-          ...(skillsIndex === null
+        const skillPrompt =
+          skillsIndex === null
             ? []
-            : [`${skillIndexGuidance(selectedSkill)}\n${JSON.stringify(skillsIndex)}`]),
-          ...(learning ? [skillLearningGuidance] : []),
-        ];
+            : [`${skillIndexGuidance(selectedSkill)}\n${JSON.stringify(skillsIndex)}`];
 
         const indexedPrompt =
           skillPrompt.length === 0 ? prompt : `${prompt}\n\n${skillPrompt.join("\n\n")}`;
@@ -218,7 +201,6 @@ export const conversation = Effect.gen(function* () {
               Match.when({ name: "read_session" }, decodeSessionReadCall),
               Match.when({ name: "memory" }, decodeMemoryCall),
               Match.when({ name: "view_skill" }, decodeSkillViewCall),
-              Match.when({ name: "manage_skill" }, decodeSkillManageCall),
               Match.when({ name: "search_web" }, decodeWebSearchCall),
               Match.when({ name: "manage_tasks" }, (taskCall) =>
                 decodeTaskCall(taskCall).pipe(
@@ -496,7 +478,6 @@ export const conversation = Effect.gen(function* () {
                           plan,
                           project,
                           guard,
-                          skillState,
                         );
 
                         for (const url of urls) allowedURLs.add(url);

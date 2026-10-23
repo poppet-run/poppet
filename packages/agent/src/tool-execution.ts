@@ -1,6 +1,5 @@
 import { Memory } from "@poppet/memory";
 import { measureTiming } from "@poppet/provider";
-import { LearnedSkills } from "@poppet/skills";
 import { Store, StoreError, type Run, type ProjectSnapshot } from "@poppet/store";
 import { Effect, Match, Option } from "effect";
 
@@ -10,13 +9,7 @@ import { executeMemoryCall, type MemoryCall } from "#src/memory-tools";
 import { Pages, type FetchPageCall } from "#src/pages";
 import type { SessionReadCall, SessionSearchCall } from "#src/search";
 import { ChatSettings } from "#src/settings";
-import {
-  executeSkillManage,
-  maxSkillWrites,
-  type SkillManageCall,
-  executeSkillView,
-  type SkillViewCall,
-} from "#src/skill-tools";
+import { executeSkillView, type SkillViewCall } from "#src/skill-tools";
 import { Skills } from "#src/skills";
 import type { PreparedTaskCall } from "#src/task-tools";
 import { WebSearch, type WebSearchCall } from "#src/web-search";
@@ -27,7 +20,6 @@ type ToolPlan =
   | FetchPageCall
   | MemoryCall
   | SkillViewCall
-  | SkillManageCall
   | WebSearchCall
   | PreparedTaskCall
   | PreparedExternalCall;
@@ -71,8 +63,6 @@ export const toolFailureKind = (
 
   if (name === "memory" && error.reason === "memory-storage") return "uncertain";
 
-  if (name === "manage_skill" && error.reason === "skill-storage") return "uncertain";
-
   return reportedReasons.has(error.reason) ? "reported" : "fatal";
 };
 
@@ -104,7 +94,6 @@ export const toolExecution = Effect.gen(function* () {
   const webSearch = yield* WebSearch;
   const policy = yield* ChatSettings;
   const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
-  const learned = Option.getOrNull(yield* Effect.serviceOption(LearnedSkills));
 
   return (
     run: Run,
@@ -112,7 +101,6 @@ export const toolExecution = Effect.gen(function* () {
     call: ToolPlan,
     project: ProjectSnapshot | null,
     guard: (output: string) => Effect.Effect<void, AgentError>,
-    skillState: { readonly seen: Map<string, number>; writes: number },
   ) => {
     const operation = Effect.gen(function* () {
       yield* store.startToolCall(run.id, callId);
@@ -135,27 +123,7 @@ export const toolExecution = Effect.gen(function* () {
             ? Effect.fail(
                 new AgentError({ reason: "tool-permission", message: "Skills are unavailable." }),
               )
-            : executeSkillView(skills, plan, learned, skillState.seen),
-        ),
-        Match.when({ name: "manage_skill" }, (plan) =>
-          skills === null || learned === null
-            ? Effect.fail(
-                new AgentError({ reason: "tool-permission", message: "Skills are unavailable." }),
-              )
-            : ++skillState.writes > maxSkillWrites
-              ? Effect.fail(
-                  new AgentError({
-                    reason: "tool-limit",
-                    message: `This run already made ${maxSkillWrites} skill changes. Continue without changing more skills.`,
-                  }),
-                )
-              : executeSkillManage(
-                  skills,
-                  learned,
-                  plan,
-                  { runId: run.id, callId },
-                  skillState.seen,
-                ),
+            : executeSkillView(skills, plan),
         ),
         Match.when({ name: "manage_tasks" }, (plan) => plan.execute),
         Match.when({ name: "external" }, (plan) => plan.execute),
@@ -223,8 +191,6 @@ export const toolExecution = Effect.gen(function* () {
     });
 
     // Keep an atomic write and its durable result together on graceful cancellation.
-    return call.name === "memory" || call.name === "manage_skill"
-      ? Effect.uninterruptible(operation)
-      : operation;
+    return call.name === "memory" ? Effect.uninterruptible(operation) : operation;
   };
 });

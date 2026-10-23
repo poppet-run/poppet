@@ -2,7 +2,7 @@ import type { SkillSnapshot } from "@poppet/store";
 import { Context, type Effect, Layer } from "effect";
 
 import { contextFiles } from "#src/context-files";
-import { AgentError } from "#src/errors";
+import type { AgentError } from "#src/errors";
 
 /** Owner-written procedures; viewing one grants no additional capabilities. */
 export class Skills extends Context.Service<
@@ -14,10 +14,3 @@ export class Skills extends Context.Service<
 >()("poppet/Skills") {}
 
 export const SkillsLive = Layer.effect(Skills, contextFiles("skills", "SKILL.md"));
-
-export const skillStorage = (error: { readonly reason: string; readonly message: string }) =>
-  new AgentError({
-    reason:
-      error.reason === "storage" || error.reason === "corrupt" ? "skill-storage" : "tool-arguments",
-    message: error.message,
-  });

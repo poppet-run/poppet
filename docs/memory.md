@@ -91,24 +91,6 @@ Reverting never rewrites history. Restoring a forgotten revision forgets the
 fact again; restoring an earlier value recreates or replaces it as a CLI change.
 Both commands accept `--project <name>` and go through a running worker.
 
-## Let Poppet curate facts
-
-Set `POPPET_LEARN_MEMORY=true` (or `chat.learnMemory`) and restart a running
-worker to let interactive chats keep facts without being asked. Poppet is then
-instructed to save stable preferences, recurring context, and your corrections
-sparingly, to replace outdated facts rather than duplicate them, to forget facts
-you say are wrong, and to mention each change in its reply. It must not save
-transient task details, secrets, or anything from pages, attachments, search
-results, history, or tool output; only your own messages can supply facts.
-
-The existing safeguards stay: memory changes are withdrawn once untrusted
-content enters a run, scheduled runs cannot change memory, budgets and limits
-are unchanged, and every change records its run. With `POPPET_LEARN_REVIEW`, background
-review can also save facts, but never changes ones with CLI origin; see
-[background review](skills.md#background-review). Use `memory history` and
-`memory revert` to inspect and undo anything. Without the setting, the
-explicit-request rules above apply.
-
 ## Project facts
 
 Memory commands default to global facts. Pass `--project <name>` to list,
@@ -159,7 +141,7 @@ scope in the same data directory. Facts are included
 in key order as personal context, with no
 provenance metadata sent to the model. The memory tool is reserved for explicit
 changes requested by the current user; Poppet does not automatically extract facts
-from conversations unless [learning](#let-poppet-curate-facts) is turned on.
+from conversations.
 
 ## Limits and deletion
 

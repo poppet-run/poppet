@@ -26,10 +26,9 @@ poppet tasks add weekly-review --cron "0 9 * * 1" --tz Europe/London --skill wee
 ```
 
 Put `--skill` and other options before the message or prompt. Select at most one
-skill. `skills list` lists named directories and any
-[learned skills](#learned-skills); `skills show` reads and validates the selected
+skill. `skills list` lists named directories; `skills show` reads and validates the selected
 file. A missing skills root lists as empty. Inspection needs no selected model
-or credentials, and showing an owner file needs no database. Symlinks, hard links, non-regular files,
+or credentials and does not open the database. Symlinks, hard links, non-regular files,
 invalid UTF-8, and oversized content are rejected. Names cannot be paths.
 
 Poppet reads the skill when creating the session or task and saves its name and
@@ -72,71 +71,6 @@ the budget to `0` to turn the index and tool off. A skill selected with
 Viewing is read-only and remains available in scheduled runs and after untrusted
 content enters a run. A viewed skill grants no permissions and cannot authorize
 memory or task changes.
-
-## Learned skills
-
-Learned skills are procedures Poppet saves itself. They are stored in the
-conversation database with a revision history, never in the owner `skills/`
-directory. Turn on saving with `POPPET_LEARN_SKILLS=true` (or `chat.learnSkills`)
-and restart a running worker.
-
-With saving on, interactive tool-capable runs get `poppet_skills.manage_skill`.
-Poppet is instructed to save a skill after a multi-step procedure succeeded,
-after recovering from errors, or after you corrected its approach, and to
-prefer patching a similar learned skill over creating another. It records
-when the skill applies, inputs, steps, pitfalls, and verification, not a log of
-the conversation. It mentions each change in its reply.
-
-The host enforces the limits rather than trusting the model:
-
-- Changing an existing skill needs the revision returned by `view_skill` or an
-  earlier change in the same run, so Poppet cannot overwrite a skill it has not
-  read or that changed since.
-- Owner-written skills cannot be created over, changed, or deleted.
-- At most 3 skill changes per run, 64 learned skills, and 8192 bytes each.
-  Content that looks like a credential is rejected.
-- The tool is withdrawn once a fetched page, search result, MCP result, or
-  attachment enters the run, and scheduled runs never receive it.
-- Each change records its run and tool call; inspect it with `skills history`
-  and `chat show`, and undo it with `skills revert`.
-
-Learned skills appear in the [skill index](#skills-the-model-chooses) with
-`source: "learned"` and their revision unless an owner directory shadows them.
-
-```sh
-poppet skills list                   # owner and learned, with source and revision
-poppet skills show triage            # owner file first, otherwise the learned skill
-poppet skills history triage         # every revision, its action, origin, and source run
-poppet skills revert triage 2        # restore revision 2 as a new revision
-poppet skills delete triage          # remove it; history keeps a tombstone
-poppet skills promote triage         # copy it to skills/triage/SKILL.md
-```
-
-An owner directory always takes precedence over a learned skill with the same
-name; `skills list` marks the learned one `shadowed`. Reverting never rewrites
-history: it adds a revision, and reverting to a deletion deletes the skill.
-Promoting creates the owner file without replacing or following anything that
-already exists, then validates it like any other owner skill. These commands go
-through a running worker, like memory commands, and otherwise open the store
-directly.
-
-## Background review
-
-With `POPPET_LEARN_REVIEW=true`, the worker also reviews qualifying interactive
-runs after they finish, as Hermes Agent does. A run qualifies after at least 5
-tool calls (`POPPET_REVIEW_MIN_TOOL_CALLS`) or every 10 completed runs in a
-session (`POPPET_REVIEW_TURN_INTERVAL`). Runs that read pages, search results,
-MCP results, attachments, or recalled history are skipped, so fetched text
-cannot plant a skill. The review is one extra model request with the session's
-model and only the skill tools (with `POPPET_LEARN_SKILLS`) and the memory tool
-(with `POPPET_LEARN_MEMORY`); it never changes facts you saved from the CLI.
-
-Reviews run one at a time, never alongside your own chats or tasks, and only
-in a running worker. Changes are attributed to the reviewed run with origin
-`review`. The next CLI chat in that session prints them once, for example
-`Since last time: learned skill triage (r1).` Inspect every review with
-`poppet learning reviews`, and undo changes with `skills revert` or
-`memory revert`. Each review costs a model request against your provider.
 
 ## Draft a skill from a completed procedure
 
@@ -182,8 +116,7 @@ scheduled read-only permissions. Editing the file requires another new chat or
 task to test the revised snapshot.
 
 This flow changes only an owner-saved instruction file. It does not modify
-Poppet's code, base rules, configuration, or permissions. Agent-written skills are
-planned in [phase 31](phases/31.md). Skill hubs, downloads,
+Poppet's code, base rules, configuration, or permissions. Skill hubs, downloads,
 reference bundles, script execution, and a publishing command are deferred.
 
 ## Messaging sessions

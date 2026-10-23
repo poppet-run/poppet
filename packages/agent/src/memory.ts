@@ -2,7 +2,7 @@ import { Memory } from "@poppet/memory";
 import type { ProjectSnapshot } from "@poppet/store";
 import { Effect } from "effect";
 
-import { instructions, learningInstructions } from "#src/context";
+import { instructions } from "#src/context";
 import { AgentError } from "#src/errors";
 import { ChatSettings } from "#src/settings";
 
@@ -36,7 +36,7 @@ export const memoryPrompt = Effect.gen(function* () {
       ),
       Effect.flatMap(({ soul, profile, facts }) =>
         Effect.gen(function* () {
-          const base = policy.learnMemory ? learningInstructions : instructions;
+          const base = instructions;
 
           const prompt =
             soul.trim().length === 0

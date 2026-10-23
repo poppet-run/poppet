@@ -15,7 +15,7 @@ import {
 import { Store, StoreLive } from "@poppet/store";
 import { Effect, Fiber, Layer, Stream } from "effect";
 
-import { instructions, learningInstructions } from "#src/context";
+import { instructions } from "#src/context";
 import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
@@ -156,59 +156,7 @@ const reportedFailures = (id: string) =>
   });
 
 describe.concurrent("memoryPrompt", () => {
-  test("when memory learning is enabled, supplies instructions and saves facts with provenance and history", async () => {
-    const saved = await fixture({ learnMemory: true });
-    let turns = 0;
-
-    saved.state.stream = () => {
-      turns++;
-
-      if (turns === 1) return toolReply(memoryCall("remember", "answer.style", "Concise"));
-
-      if (turns === 3) return toolReply(memoryCall("forget", "answer.style", null, "forget"));
-
-      return Stream.make({ type: "completed" as const, response: completion() });
-    };
-
-    try {
-      await saved.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-          const memory = yield* Memory;
-          const session = yield* store.createSession("test-provider", "test-model");
-          yield* send(session.id);
-          expect(yield* memory.list).toMatchObject([
-            { key: "answer.style", value: "Concise", origin: "turn" },
-          ]);
-          yield* send(session.id);
-
-          const runs = yield* store.runs(session.id);
-          expect(
-            (yield* memory.history("answer.style")).map(({ action, origin, sourceRunId }) => ({
-              action,
-              origin,
-              sourceRunId,
-            })),
-          ).toEqual([
-            { action: "remember", origin: "turn", sourceRunId: runs[0]!.id },
-            { action: "forget", origin: "turn", sourceRunId: runs[1]!.id },
-          ]);
-        }),
-      );
-
-      const request = saved.requests[0]!;
-      expect(request.instructions).toBe(learningInstructions);
-      expect(request.instructions).toContain("Save them without being asked");
-      expect(request.instructions).not.toContain("Never infer or automatically save facts.");
-      expect(request.tools.find((tool) => tool.name === "memory")?.description).toContain(
-        "help in future sessions",
-      );
-    } finally {
-      await saved.close();
-    }
-  });
-
-  test("when memory learning is not enabled, requires explicit instructions to save facts", async () => {
+  test("when saving facts, requires explicit owner instructions", async () => {
     const saved = await fixture();
 
     try {

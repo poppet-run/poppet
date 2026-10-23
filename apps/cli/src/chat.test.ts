@@ -6,7 +6,6 @@ import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 
 import { AgentError } from "@poppet/agent";
-import { AppConfig } from "@poppet/config";
 import {
   ChannelEnvironment,
   ChannelError,
@@ -22,8 +21,6 @@ import {
   type ModelRequest,
   type ProviderRegistration,
 } from "@poppet/provider";
-import { LearnedSkills, LearnedSkillsLive } from "@poppet/skills";
-import { StoreLive } from "@poppet/store";
 import { requestWorker, workerSocketPath } from "@poppet/worker";
 import {
   ConfigProvider,
@@ -1053,9 +1050,7 @@ describe("chat.ts", () => {
         expect(chat.state.built).toBe(0);
 
         if (remote) worker = await chat.startWorker();
-        expect(await inspect(["skills", "list"])).toEqual([
-          { name: "weekly-review", source: "owner" },
-        ]);
+        expect(await inspect(["skills", "list"])).toEqual(["weekly-review"]);
 
         await chat.invoke([
           "chat",
@@ -1137,111 +1132,6 @@ describe("chat.ts", () => {
         expect(await inspect(["tasks", "show", job.id])).toMatchObject({
           task: { skill: job.skill },
         });
-      } finally {
-        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
-        await chat.close();
-      }
-    },
-  );
-
-  test.each(["local", "worker"])(
-    "when %s execution manages learned skills, lists, shows, reverts, deletes, and promotes them",
-    async (mode) => {
-      const chat = await fixture();
-      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-
-      const inspect = async (args: ReadonlyArray<string>) => {
-        chat.lines.length = 0;
-        chat.chunks.length = 0;
-        await chat.invoke(args);
-
-        return chat.lines.at(-1) ?? chat.chunks.join("").trimEnd();
-      };
-
-      try {
-        // Seed learned skills through the shared service before the worker owns the store.
-        await Effect.runPromise(
-          Effect.gen(function* () {
-            const learned = yield* LearnedSkills;
-            const owner = { origin: "owner" } as const;
-            yield* learned.write({ action: "create", name: "triage", content: "First" }, owner);
-            yield* learned.write({ action: "replace", name: "triage", content: "Second" }, owner);
-            yield* learned.write({ action: "create", name: "shadowed", content: "Learned" }, owner);
-          }).pipe(
-            Effect.provide(
-              LearnedSkillsLive.pipe(
-                Layer.provideMerge(StoreLive),
-                Layer.provide(
-                  Layer.succeed(AppConfig, {
-                    applicationName: "Test",
-                    dataDirectory: chat.directory,
-                    provider: "test-provider",
-                    model: null,
-                  }),
-                ),
-              ),
-            ),
-          ),
-        );
-        await mkdir(join(chat.directory, "skills", "shadowed"), { recursive: true });
-        await writeFile(join(chat.directory, "skills", "shadowed", "SKILL.md"), "Owner");
-
-        if (mode === "worker") worker = await chat.startWorker();
-
-        expect(JSON.parse(await inspect(["skills", "list"]))).toEqual([
-          {
-            name: "shadowed",
-            source: "learned",
-            revision: 1,
-            updatedAt: expect.any(Number),
-            shadowed: true,
-          },
-          { name: "shadowed", source: "owner" },
-          {
-            name: "triage",
-            source: "learned",
-            revision: 2,
-            updatedAt: expect.any(Number),
-            shadowed: false,
-          },
-        ]);
-        expect(await inspect(["skills", "show", "shadowed"])).toBe("Owner");
-        expect(await inspect(["skills", "show", "triage"])).toBe("Second");
-
-        await chat.invoke(["skills", "revert", "triage", "1"]);
-        expect(await inspect(["skills", "show", "triage"])).toBe("First");
-        expect(
-          JSON.parse(await inspect(["skills", "history", "triage"])).map(
-            (entry: { action: string }) => entry.action,
-          ),
-        ).toEqual(["create", "replace", "revert"]);
-
-        await chat.invoke(["skills", "promote", "triage"]);
-        expect(await readFile(join(chat.directory, "skills", "triage", "SKILL.md"), "utf8")).toBe(
-          "First",
-        );
-        await expect(chat.invoke(["skills", "promote", "triage"])).rejects.toMatchObject({
-          message: expect.stringContaining("already exists"),
-        });
-
-        await chat.invoke(["skills", "delete", "shadowed"]);
-        await expect(chat.invoke(["skills", "history", "missing"])).rejects.toMatchObject({
-          message: expect.stringContaining("No owner or learned skill"),
-        });
-        await expect(chat.invoke(["skills", "delete", "shadowed"])).rejects.toMatchObject({
-          message: expect.stringContaining("does not exist"),
-        });
-        expect(JSON.parse(await inspect(["skills", "list"]))).toEqual([
-          { name: "shadowed", source: "owner" },
-          {
-            name: "triage",
-            source: "learned",
-            revision: 3,
-            updatedAt: expect.any(Number),
-            shadowed: true,
-          },
-          { name: "triage", source: "owner" },
-        ]);
       } finally {
         if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
         await chat.close();

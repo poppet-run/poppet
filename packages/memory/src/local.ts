@@ -37,19 +37,6 @@ const requestFailure = (cause: unknown) => {
   });
 };
 
-// CLI changes have no source run; model changes default to a chat turn.
-const originFor = (sourceRunId: string | null, origin: MemoryOrigin | undefined) => {
-  const resolved = origin ?? (sourceRunId === null ? "cli" : "turn");
-
-  if ((resolved === "cli") !== (sourceRunId === null))
-    throw new MemoryError({
-      reason: "invalid-request",
-      message: "Only CLI changes omit a source run.",
-    });
-
-  return resolved;
-};
-
 // The host supplies the same scoped database used by conversation storage.
 export const LocalMemoryLive = Layer.effect(
   Memory,
@@ -185,12 +172,11 @@ export const LocalMemoryLive = Layer.effect(
         value: string,
         sourceRunId: string | null,
         mode: "remember" | "replace",
-        origin: MemoryOrigin | undefined,
       ) =>
         transaction((at) => {
           Schema.decodeUnknownSync(MemoryFact.fields.key)(key);
           Schema.decodeUnknownSync(MemoryFact.fields.value)(value);
-          const resolved = originFor(sourceRunId, origin);
+          const resolved = sourceRunId === null ? "cli" : "turn";
           requireSource(sourceRunId);
           const existing = current(key);
 
@@ -214,14 +200,13 @@ export const LocalMemoryLive = Layer.effect(
       return {
         forProject: (name) => scoped(Schema.decodeUnknownSync(ProjectName)(name)),
         list,
-        remember: (key, value, sourceRunId = null, origin) =>
-          saveMemory(key, value, sourceRunId, "remember", origin),
-        replace: (key, value, sourceRunId = null, origin) =>
-          saveMemory(key, value, sourceRunId, "replace", origin),
-        forget: (key, sourceRunId = null, origin) =>
+        remember: (key, value, sourceRunId = null) =>
+          saveMemory(key, value, sourceRunId, "remember"),
+        replace: (key, value, sourceRunId = null) => saveMemory(key, value, sourceRunId, "replace"),
+        forget: (key, sourceRunId = null) =>
           transaction((at) => {
             Schema.decodeUnknownSync(MemoryFact.fields.key)(key);
-            const resolved = originFor(sourceRunId, origin);
+            const resolved = sourceRunId === null ? "cli" : "turn";
             requireSource(sourceRunId);
 
             if (current(key) === null)

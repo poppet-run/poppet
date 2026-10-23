@@ -12,7 +12,7 @@ import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import { ApiKeyStoreLive } from "@poppet/credentials";
 import { GatewayRepositoryLive } from "@poppet/gateway";
 import { makeMCPLive } from "@poppet/mcp";
-import { LearningReviewsLive, LocalMemoryLive } from "@poppet/memory";
+import { LocalMemoryLive } from "@poppet/memory";
 import {
   Provider,
   ProviderEnvironment,
@@ -22,7 +22,6 @@ import {
   type ProviderRegistration,
   type ProviderError,
 } from "@poppet/provider";
-import { LearnedSkillsLive } from "@poppet/skills";
 import { StoreLive } from "@poppet/store";
 import { ChatTasksLive, TaskRepositoryLive, WorkerConnections } from "@poppet/tasks";
 import { Context, Effect, Layer, Schema } from "effect";
@@ -110,8 +109,6 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   const store = StoreLive.pipe(Layer.provide(config));
 
   const memory = LocalMemoryLive.pipe(Layer.provide([store, config]));
-  const learnedSkills = LearnedSkillsLive.pipe(Layer.provide(store));
-  const learningReviews = LearningReviewsLive.pipe(Layer.provide(store));
   const skills = Layer.merge(SkillsLive, ProjectsLive).pipe(Layer.provide(config));
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store), Layer.provideMerge(skills));
 
@@ -179,8 +176,6 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
       store,
       skills,
       memory,
-      learnedSkills,
-      learningReviews,
       resolver,
       chatSettings,
       connections,
@@ -200,8 +195,6 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     selectedProvider,
     store,
     memory,
-    learnedSkills,
-    learningReviews,
     tasks,
     skills,
     chat,

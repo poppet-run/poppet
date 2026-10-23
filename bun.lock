@@ -34,7 +34,6 @@
         "@poppet/provider-openai": "workspace:*",
         "@poppet/provider-opencode": "workspace:*",
         "@poppet/provider-openrouter": "workspace:*",
-        "@poppet/skills": "workspace:*",
         "@poppet/store": "workspace:*",
         "@poppet/tasks": "workspace:*",
         "@poppet/web-search": "workspace:*",
@@ -50,7 +49,6 @@
         "@poppet/io": "workspace:*",
         "@poppet/memory": "workspace:*",
         "@poppet/provider": "workspace:*",
-        "@poppet/skills": "workspace:*",
         "@poppet/store": "workspace:*",
         "@poppet/web-search": "workspace:*",
         "effect": "4.0.4",
@@ -217,17 +215,6 @@
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
         "openai": "7.32.0",
-      },
-    },
-    "packages/skills": {
-      "name": "@poppet/skills",
-      "version": "0.0.0",
-      "dependencies": {
-        "@poppet/store": "workspace:*",
-        "effect": "4.0.4",
-      },
-      "devDependencies": {
-        "@poppet/config": "workspace:*",
       },
     },
     "packages/store": {
@@ -483,8 +470,6 @@
     "@poppet/provider-opencode": ["@poppet/provider-opencode@workspace:packages/provider-opencode"],
 
     "@poppet/provider-openrouter": ["@poppet/provider-openrouter@workspace:packages/provider-openrouter"],
-
-    "@poppet/skills": ["@poppet/skills@workspace:packages/skills"],
 
     "@poppet/store": ["@poppet/store@workspace:packages/store"],
 

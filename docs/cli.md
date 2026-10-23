@@ -104,25 +104,13 @@ and the tools available during a run.
 
 ## Skills
 
-| Command                           | Action                                                                     |
-| --------------------------------- | -------------------------------------------------------------------------- |
-| `skills list`                     | List owner skill directories and learned skills with source and revision.  |
-| `skills show <name>`              | Show an owner SKILL.md file, or a learned skill when no owner file exists. |
-| `skills history <name>`           | Show a learned skill's revisions and their sources.                        |
-| `skills revert <name> <revision>` | Restore an earlier learned revision as a new revision.                     |
-| `skills delete <name>`            | Delete a learned skill, keeping its history.                               |
-| `skills promote <name>`           | Copy a learned skill to a new owner skill file.                            |
+| Command              | Action                        |
+| -------------------- | ----------------------------- |
+| `skills list`        | List owner skill directories. |
+| `skills show <name>` | Show an owner SKILL.md file.  |
 
 Use `--skill <name>` before a new chat message or task prompt to save the current
 procedure with that session or task. See [skills](skills.md) for examples and limits.
-
-## Learning
-
-| Command                                      | Action                                                              |
-| -------------------------------------------- | ------------------------------------------------------------------- |
-| `learning reviews [--state <s>] [--limit n]` | List background reviews, their outcomes, and the changes they made. |
-
-See [skills](skills.md#background-review) for when reviews run.
 
 ## Projects
 
