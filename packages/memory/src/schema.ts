@@ -13,17 +13,36 @@ export const MemoryValue = Schema.NonEmptyString.check(
   ),
 );
 
-/** An explicitly saved fact with an optional source run and a Unix millisecond update time. */
+const RunId = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/));
+
+/** Who made a change: the owner through the CLI, a chat turn, or background review. */
+export const MemoryOrigin = Schema.Literals(["cli", "turn", "review"]);
+
+export type MemoryOrigin = typeof MemoryOrigin.Type;
+
+/** A saved fact with its latest origin, optional source run, and Unix millisecond update time. */
 export const MemoryFact = Schema.Struct({
   key: MemoryKey,
   value: MemoryValue,
-  sourceRunId: Schema.NullOr(
-    Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/)),
-  ),
+  origin: MemoryOrigin,
+  sourceRunId: Schema.NullOr(RunId),
   updatedAt: Schema.Natural,
 });
 
 export type MemoryFact = typeof MemoryFact.Type;
+
+/** One append-only fact change; forgetting keeps a null-valued revision so it can be reverted. */
+export const MemoryRevision = Schema.Struct({
+  key: MemoryKey,
+  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  action: Schema.Literals(["remember", "replace", "forget", "revert"]),
+  value: Schema.NullOr(MemoryValue),
+  origin: MemoryOrigin,
+  sourceRunId: Schema.NullOr(RunId),
+  createdAt: Schema.Natural,
+});
+
+export type MemoryRevision = typeof MemoryRevision.Type;
 
 const Bytes = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65536 }));
 

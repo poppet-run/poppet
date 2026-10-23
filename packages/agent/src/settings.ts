@@ -17,6 +17,8 @@ export interface ChatPolicy {
   readonly skillIndexBytes: number;
   /** Lets interactive runs create and change learned skills. */
   readonly learnSkills: boolean;
+  /** Lets interactive runs save, replace, and forget facts without an explicit request. */
+  readonly learnMemory: boolean;
   /** Absolute deadline for one chat request, including every model turn and tool call. */
   readonly runDeadlineSeconds: number;
 }
@@ -40,6 +42,7 @@ export const defaultPolicy: ChatPolicy = {
   factsBytes: 8192,
   skillIndexBytes: 8192,
   learnSkills: false,
+  learnMemory: false,
   runDeadlineSeconds: 300,
 };
 
@@ -90,6 +93,9 @@ export const ChatSettingsLive = Layer.effect(
         ).pipe(Config.withDefault(defaultPolicy.skillIndexBytes)),
         learnSkills: Config.Boolean("POPPET_LEARN_SKILLS").pipe(
           Config.withDefault(defaultPolicy.learnSkills),
+        ),
+        learnMemory: Config.Boolean("POPPET_LEARN_MEMORY").pipe(
+          Config.withDefault(defaultPolicy.learnMemory),
         ),
         runDeadlineSeconds: Config.schema(
           Schema.Int.check(Schema.isBetween({ minimum: 30, maximum: 3600 })),

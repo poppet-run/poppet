@@ -30,6 +30,7 @@ import {
 import { AgentError } from "#src/errors";
 import { ExternalTools, type PreparedExternalCall } from "#src/external-tools";
 import {
+  learningMemoryTool,
   memoryTool,
   decodeMemoryCall,
   executeMemoryCall,
@@ -360,7 +361,7 @@ export const conversation = Effect.gen(function* () {
               sessionSearchTool,
               sessionReadTool,
               fetchPageTool,
-              memoryTool,
+              policy.learnMemory ? learningMemoryTool : memoryTool,
               ...(skillsIndex === null && !learning ? [] : [skillViewTool]),
               ...(learning ? [skillManageTool] : []),
               ...(webSearch.search === null ? [] : [webSearchTool]),

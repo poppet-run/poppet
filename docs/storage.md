@@ -43,7 +43,8 @@ base schema; migration 2 adds change-aware monitoring, migration 3 adds task
 controls and immutable occurrence definitions, and migration 4 adds attachment
 processing results and source-aware recall. Migration 5 adds project snapshots
 and scoped facts without resetting saved data. Migration 6 adds learned skills
-and their revision history.
+and their revision history. Migration 7 adds fact origins and fact revision
+history.
 Migration SQL lives in timestamped TypeScript files under
 `packages/store/src/migrations/`, registered in order by `migrations.ts`.
 A checksummed migration ledger rejects newer schemas and changed migration
@@ -51,7 +52,7 @@ history. All pending migrations commit together; a failure rolls back the pendin
 batch.
 
 The unreleased base migration history was consolidated into schema version 1;
-the current schema is version 6. Existing version-1 through version-5 databases upgrade in place.
+the current schema is version 7. Existing version-1 through version-6 databases upgrade in place.
 Development databases created with the former 14-step history are still rejected.
 Those legacy databases require a fresh data directory; databases are never reset
 automatically.
@@ -163,6 +164,15 @@ recreation. A unique index allows at most one revision per source tool call.
 Content is limited to 8192 UTF-8 bytes, and at most 64 learned skills exist at
 once. `LearnedSkills` in `@poppet/memory` owns this SQL on the shared database
 connection. See [skills](skills.md#learned-skills).
+
+## Fact history
+
+Migration 7 adds an `origin` column to `memories` (`cli`, `turn`, or `review`),
+set to `turn` for existing facts with a source run and `cli` otherwise. The
+append-only `memory_revisions` table records every remember, replace, forget,
+and revert per project scope and key, with the value (null when forgotten),
+origin, source run, and time. Existing facts are backfilled as revision 1. CLI
+changes have no source run; model changes always do.
 
 ## Project snapshots and facts
 

@@ -188,4 +188,73 @@ describe.concurrent("local memory", () => {
       await saved.close();
     }
   });
+
+  test("records every change with its origin and reverts as new revisions", async () => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const memory = yield* Memory;
+          const session = yield* store.createSession("first-provider", "selected-model");
+          const run = yield* store.queueRun(session.id, [{ role: "user", text: "Hello" }]);
+
+          yield* memory.remember("answer.style", "Concise");
+          yield* memory.replace("answer.style", "Detailed", run.id);
+          yield* memory.forget("answer.style", run.id, "review");
+
+          const history = yield* memory.history!("answer.style");
+          expect(
+            history.map(({ revision, action, value, origin, sourceRunId }) => ({
+              revision,
+              action,
+              value,
+              origin,
+              sourceRunId,
+            })),
+          ).toEqual([
+            { revision: 1, action: "remember", value: "Concise", origin: "cli", sourceRunId: null },
+            {
+              revision: 2,
+              action: "replace",
+              value: "Detailed",
+              origin: "turn",
+              sourceRunId: run.id,
+            },
+            { revision: 3, action: "forget", value: null, origin: "review", sourceRunId: run.id },
+          ]);
+
+          expect(yield* memory.revert!("answer.style", 1)).toMatchObject({
+            value: "Concise",
+            origin: "cli",
+            sourceRunId: null,
+          });
+          expect((yield* memory.list).map(({ key, origin }) => ({ key, origin }))).toEqual([
+            { key: "answer.style", origin: "cli" },
+          ]);
+          yield* reject(memory.revert!("answer.style", 4), "conflict");
+          expect(yield* memory.revert!("answer.style", 3)).toBeNull();
+          expect(yield* memory.list).toEqual([]);
+          yield* reject(memory.revert!("answer.style", 3), "conflict");
+          yield* reject(memory.revert!("answer.style", 99), "not-found");
+          expect((yield* memory.history!("answer.style")).at(-1)).toMatchObject({
+            revision: 5,
+            action: "forget",
+          });
+
+          yield* reject(memory.remember("bad", "No run", null, "review"), "invalid-request");
+          yield* reject(memory.forget("missing"), "not-found");
+          expect(yield* memory.history!("bad")).toEqual([]);
+
+          // Project history is separate from global history.
+          const project = memory.forProject!("acorn");
+          yield* project.remember("answer.style", "Project");
+          expect((yield* project.history!("answer.style")).length).toBe(1);
+        }),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
 });
