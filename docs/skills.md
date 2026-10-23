@@ -52,8 +52,26 @@ supplies a procedure within those limits. Both snapshots persist independently.
 Messaging accepts `/new --project acorn --skill weekly-review Review progress`.
 
 Skills are single files. Poppet does not parse YAML metadata, follow references,
-run scripts, download skills, choose them automatically, or let the agent write
-them.
+run scripts, download skills, or let the agent write them.
+
+## Skills the model chooses
+
+Tool-capable runs also receive an index of valid local skills: each name with a
+description taken from the first heading and the start of the first paragraph.
+Write those two parts so they say when the skill applies. Before multi-step work
+the model checks the index and calls `poppet_skills.view_skill` to read a
+matching skill. The result is saved in the tool journal, so continuing the
+session uses the text the model saw even if the file later changes.
+
+The index is read once per run, considers at most 64 skills, omits invalid
+files, and is bounded by `POPPET_SKILL_INDEX_BYTES` (default 8192). When it does
+not fit, it lists names only, then fewer names, and says it was truncated. Set
+the budget to `0` to turn the index and tool off. A skill selected with
+`--skill` stays in the instructions as before and is marked as already supplied.
+
+Viewing is read-only and remains available in scheduled runs and after untrusted
+content enters a run. A viewed skill grants no permissions and cannot authorize
+memory, note, or task changes.
 
 ## Draft a skill from a completed procedure
 
@@ -99,8 +117,8 @@ scheduled read-only permissions. Editing the file requires another new chat or
 task to test the revised snapshot.
 
 This flow changes only an owner-saved instruction file. It does not modify
-Poppet's code, base rules, configuration, or permissions. Automatic learning and
-selection are planned in [phase 31](phases/31.md). Skill hubs, downloads,
+Poppet's code, base rules, configuration, or permissions. Agent-written skills are
+planned in [phase 31](phases/31.md). Skill hubs, downloads,
 reference bundles, script execution, and a publishing command are deferred.
 
 ## Messaging sessions

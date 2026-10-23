@@ -53,6 +53,15 @@ import {
   type SessionSearchCall,
 } from "#src/search";
 import { ChatSettings } from "#src/settings";
+import {
+  Skills,
+  decodeSkillViewCall,
+  executeSkillView,
+  skillIndex,
+  skillIndexGuidance,
+  skillViewTool,
+  type SkillViewCall,
+} from "#src/skills";
 import { ChatTasks, decodeTaskCall, taskTool, type PreparedTaskCall } from "#src/task-tools";
 import { WebSearch, decodeWebSearchCall, webSearchTool, type WebSearchCall } from "#src/web-search";
 
@@ -64,6 +73,7 @@ type ToolPlan =
   | SessionReadCall
   | FetchPageCall
   | MemoryCall
+  | SkillViewCall
   | WebSearchCall
   | PreparedTaskCall
   | PreparedExternalCall;
@@ -142,6 +152,7 @@ const contextOnlyTools: ReadonlySet<string> = new Set([
   "read_session",
   "fetch_page",
   "search_web",
+  "view_skill",
 ]);
 
 /** Builds the bounded model/tool loop; the caller owns the run's final outcome. */
@@ -154,6 +165,7 @@ export const conversation = Effect.gen(function* () {
   const policy = yield* ChatSettings;
   const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
   const external = Option.getOrNull(yield* Effect.serviceOption(ExternalTools));
+  const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
   const clock = yield* Clock.Clock;
 
   const executeTool = (
@@ -179,6 +191,13 @@ export const conversation = Effect.gen(function* () {
             .pipe(Effect.map((value) => JSON.stringify(value))),
         ),
         Match.when({ name: "fetch_page" }, (plan) => pages.fetch(plan.url)),
+        Match.when({ name: "view_skill" }, (plan) =>
+          skills === null
+            ? Effect.fail(
+                new AgentError({ reason: "tool-permission", message: "Skills are unavailable." }),
+              )
+            : executeSkillView(skills, plan),
+        ),
         Match.when({ name: "manage_tasks" }, (plan) => plan.execute),
         Match.when({ name: "external" }, (plan) => plan.execute),
         Match.when({ name: "search_web" }, (plan) =>
@@ -268,6 +287,7 @@ export const conversation = Effect.gen(function* () {
     here: Effect.Effect<DeliveryDestination, AgentError> | null = null,
     source?: TextSource,
     project: ProjectSnapshot | null = null,
+    selectedSkill: string | null = null,
   ) =>
     Stream.unwrap(
       Effect.gen(function* () {
@@ -287,6 +307,12 @@ export const conversation = Effect.gen(function* () {
               )
             : [];
 
+        // A frozen per-run index; the model loads a matching skill only when it needs one.
+        const skillsIndex =
+          model.description.capabilities.tools && skills !== null && policy.skillIndexBytes > 0
+            ? yield* measureTiming("skill-index", skillIndex(skills, policy.skillIndexBytes))
+            : null;
+
         const tools = model.description.capabilities.tools
           ? [
               ...noteTools,
@@ -295,6 +321,7 @@ export const conversation = Effect.gen(function* () {
               sessionReadTool,
               fetchPageTool,
               memoryTool,
+              ...(skillsIndex === null ? [] : [skillViewTool]),
               ...(webSearch.search === null ? [] : [webSearchTool]),
               ...(tasks === null || readOnlyTools ? [] : [taskTool]),
             ].filter(
@@ -334,8 +361,15 @@ export const conversation = Effect.gen(function* () {
 
         const activeTools = () => (untrusted ? tools.filter((tool) => !withdrawn(tool)) : tools);
 
+        const indexedPrompt =
+          skillsIndex === null
+            ? prompt
+            : `${prompt}\n\n${skillIndexGuidance(selectedSkill)}\n${JSON.stringify(skillsIndex)}`;
+
         const baseInstructions =
-          external?.instructions === undefined ? prompt : `${prompt}\n\n${external.instructions}`;
+          external?.instructions === undefined
+            ? indexedPrompt
+            : `${indexedPrompt}\n\n${external.instructions}`;
 
         const instructions =
           (tasks !== null && !readOnlyTools) || source?.kind === "voice"
@@ -378,6 +412,7 @@ export const conversation = Effect.gen(function* () {
               Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
               Match.when({ name: "read_session" }, decodeSessionReadCall),
               Match.when({ name: "memory" }, decodeMemoryCall),
+              Match.when({ name: "view_skill" }, decodeSkillViewCall),
               Match.when({ name: "search_web" }, decodeWebSearchCall),
               Match.when({ name: "manage_tasks" }, (taskCall) =>
                 decodeTaskCall(taskCall).pipe(

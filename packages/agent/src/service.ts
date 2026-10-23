@@ -261,6 +261,7 @@ export const AgentLive = Layer.effect(
                   options.taskDestination ?? null,
                   options.source,
                   session.project,
+                  session.skill?.name ?? null,
                 );
               }),
             ).pipe(

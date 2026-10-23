@@ -1391,6 +1391,7 @@ describe("CLI", () => {
       soulBytes: 4096,
       profileBytes: 2048,
       factsBytes: 1024,
+      skillIndexBytes: 512,
     };
 
     try {

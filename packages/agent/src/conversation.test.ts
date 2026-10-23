@@ -26,6 +26,7 @@ import { Notes, NotesLive, noteTools } from "#src/notes";
 import { Pages } from "#src/pages";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
+import { Skills } from "#src/skills";
 import { ChatTasks } from "#src/task-tools";
 
 const tool = (
@@ -90,6 +91,7 @@ const fixture = async (
   webSearch: WebSearch["Service"] = { search: null },
   chatTasks?: ChatTasks["Service"],
   externalTools?: ExternalTools["Service"],
+  injectedSkills?: Skills["Service"],
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-tools-"));
   const notesDirectory = join(directory, "notes");
@@ -141,6 +143,7 @@ const fixture = async (
         Layer.succeed(WebSearch, webSearch),
         chatTasks === undefined ? Layer.empty : Layer.succeed(ChatTasks, chatTasks),
         externalTools === undefined ? Layer.empty : Layer.succeed(ExternalTools, externalTools),
+        injectedSkills === undefined ? Layer.empty : Layer.succeed(Skills, injectedSkills),
         Layer.succeed(Pages, injectedPages ?? { fetch: () => Effect.die("Unexpected page fetch") }),
         Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),
       ),
@@ -174,6 +177,37 @@ const toolNames = (request: ModelRequest) => request.tools.map((entry) => entry.
 const agentFailure = (reason: AgentError["reason"]) => new AgentError({ reason, message: reason });
 
 const storeFailure = (reason: StoreError["reason"]) => new StoreError({ reason, message: reason });
+
+const skillLibrary = new Map([
+  ["weekly-review", "# Weekly review\n\nSummarize progress and next actions.\n\nStep details."],
+  ["broken", ""],
+]);
+
+const librarySkills: Skills["Service"] = {
+  list: Effect.succeed([...skillLibrary.keys()].toSorted()),
+  load: (name) => {
+    const content = skillLibrary.get(name);
+
+    return content === undefined || content === ""
+      ? Effect.fail(new AgentError({ reason: "invalid-request", message: "invalid" }))
+      : Effect.succeed({ name, content });
+  },
+};
+
+const viewing = (name: string) => {
+  let turns = 0;
+
+  return () =>
+    ++turns === 1
+      ? completed([tool("view_skill", JSON.stringify({ name }), "skill", "poppet_skills")])
+      : final();
+};
+
+const skilled = (
+  stream: ModelOperations["stream"],
+  overrides: Partial<ChatPolicy> = {},
+  pages?: Pages["Service"],
+) => fixture(stream, overrides, undefined, pages, undefined, undefined, undefined, librarySkills);
 
 describe("tool failure classification", () => {
   test.each([
@@ -374,6 +408,124 @@ describe.concurrent("notes conversation", () => {
     } finally {
       await state.close();
     }
+  });
+
+  describe("model-selected skills", () => {
+    test("lists valid skills in the instructions and returns a viewed skill in the journal", async () => {
+      const state = await skilled(viewing("weekly-review"));
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            expect(yield* reportedFailures(session.id, "Review my week")).toEqual([]);
+            const run = (yield* store.runs(session.id)).at(-1)!;
+            const [call] = yield* store.toolCalls(run.id);
+            expect(call).toMatchObject({ status: "completed" });
+            expect(JSON.parse(call!.output!)).toEqual({
+              name: "weekly-review",
+              content: skillLibrary.get("weekly-review"),
+            });
+          }),
+        );
+        const instructions = state.requests[0]!.instructions;
+        expect(instructions).toContain("poppet_skills.view_skill");
+        expect(instructions).toContain(
+          JSON.stringify({
+            skills: [
+              {
+                name: "weekly-review",
+                description: "Weekly review: Summarize progress and next actions.",
+              },
+            ],
+            truncated: false,
+          }),
+        );
+        expect(instructions).not.toContain('"broken"');
+        expect(toolNames(state.requests[0]!)).toContain("view_skill");
+      } finally {
+        await state.close();
+      }
+    });
+
+    test("a missing skill is reported to the model", async () => {
+      const state = await skilled(viewing("broken"));
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            expect(yield* reportedFailures(session.id, "Review my week")).toEqual([
+              "agent:tool-arguments",
+            ]);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    });
+
+    test("a zero index budget disables the index and view tool", async () => {
+      const state = await skilled(() => final(), { skillIndexBytes: 0 });
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            expect(yield* reportedFailures(session.id, "Hello")).toEqual([]);
+          }),
+        );
+        expect(state.requests[0]!.instructions).not.toContain("view_skill");
+        expect(toolNames(state.requests[0]!)).not.toContain("view_skill");
+      } finally {
+        await state.close();
+      }
+    });
+
+    test("scheduled runs and runs after untrusted content may still view skills", async () => {
+      let turns = 0;
+
+      const state = await skilled(
+        () => {
+          turns++;
+
+          if (turns === 1)
+            return completed([
+              tool("fetch_page", '{"url":"https://example.com/"}', "page", "poppet_web"),
+            ]);
+
+          if (turns === 2)
+            return completed(
+              [tool("view_skill", '{"name":"weekly-review"}', "skill", "poppet_skills")],
+              turns,
+            );
+
+          return final();
+        },
+        {},
+        { fetch: () => Effect.succeed("Page text") },
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            expect(
+              yield* reportedFailures(session.id, "Summarize https://example.com/", {
+                readOnlyTools: true,
+              }),
+            ).toEqual([]);
+          }),
+        );
+        expect(toolNames(state.requests[1]!)).toContain("view_skill");
+      } finally {
+        await state.close();
+      }
+    });
   });
 
   test("the remaining tools still work after untrusted content enters the run", async () => {
