@@ -224,7 +224,7 @@ const gateway = Effect.gen(function* () {
     for (const item of yield* gatewayStorage(() => repo.scheduled(channel.id))) {
       const run = yield* store.run(item.runId);
 
-      if (run?.status !== "completed") continue;
+      if (run === null || !["completed", "failed"].includes(run.status)) continue;
       const destination = item.destination;
 
       const enabled =
@@ -238,7 +238,12 @@ const gateway = Effect.gen(function* () {
           item.id,
           item.runId,
           destination,
-          chunks(answer(run), channel.textLimit),
+          chunks(
+            item.status === "failed"
+              ? `Scheduled task failed: ${item.reason ?? run.failureReason ?? "Unknown failure"}.\nInspect this occurrence before retrying; earlier commands may have completed.`
+              : answer(run),
+            channel.textLimit,
+          ),
           enabled,
         ),
       );

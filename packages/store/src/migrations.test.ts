@@ -6,6 +6,26 @@ import { applyMigrations, migrations } from "#src/migrations";
 const initial = migrations.slice(0, 1);
 
 describe("applyMigrations", () => {
+  test("when scheduled delivery gains per-run identity, retains old receipts and permits a retry result", () => {
+    using database = new Database(":memory:");
+    applyMigrations(database, migrations.slice(0, 9));
+
+    const insert = (external: string, run: string) =>
+      database.run(
+        "INSERT INTO gateway_inbox (adapter, account, external_id, payload, run_id, state, occurrence_id) VALUES ('discord', 'bot', ?, '{}', ?, 'completed', 'occurrence')",
+        [external, run],
+      );
+
+    insert("original", "first-run");
+    applyMigrations(database);
+    insert("retry", "second-run");
+    expect(() => insert("duplicate", "second-run")).toThrow();
+    expect(database.query("SELECT external_id FROM gateway_inbox ORDER BY id").all()).toEqual([
+      { external_id: "original" },
+      { external_id: "retry" },
+    ]);
+  });
+
   test("when monitoring is retired, stops checks and queued alerts while preserving cron and history", () => {
     using database = new Database(":memory:");
     applyMigrations(database, migrations.slice(0, 8));

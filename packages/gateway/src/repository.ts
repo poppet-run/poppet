@@ -133,16 +133,21 @@ const repository = Effect.gen(function* () {
             id: Schema.String,
             runId: Schema.String,
             destination: Schema.fromJsonString(DeliveryDestination),
+            status: Schema.String,
+            reason: Schema.NullOr(Schema.String),
           }),
         ),
       )(
         database
-          .query(`SELECT o.id, o.run_id AS runId, o.destination FROM job_occurrences o
+          .query(`SELECT o.id, o.run_id AS runId, o.destination, o.status, o.reason FROM job_occurrences o
       JOIN jobs j ON j.id = o.job_id
       WHERE j.monitor = 0
-        AND o.status = 'completed' AND o.run_id IS NOT NULL
+        AND (o.status = 'completed' OR (o.status = 'failed' AND EXISTS (
+          SELECT 1 FROM tool_calls c WHERE c.run_id = o.run_id
+            AND c.namespace = 'poppet_system' AND c.name = 'bash'
+        ))) AND o.run_id IS NOT NULL
         AND json_extract(o.destination, '$.adapter') = ?
-        AND NOT EXISTS (SELECT 1 FROM gateway_inbox i WHERE i.occurrence_id = o.id)
+        AND NOT EXISTS (SELECT 1 FROM gateway_inbox i WHERE i.occurrence_id = o.id AND i.run_id = o.run_id)
       ORDER BY o.scheduled_at, o.id LIMIT 64`)
           .all(adapter),
       ),
@@ -156,7 +161,7 @@ const repository = Effect.gen(function* () {
       database
         .transaction(() => {
           const message: IncomingMessage = {
-            messageId: `task-${id}`,
+            messageId: `task-${id}-${runId}`,
             senderId: destination.ownerId,
             scopeId: destination.scopeId,
             parentId: destination.parentId,

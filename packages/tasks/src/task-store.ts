@@ -539,6 +539,7 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
       Schema.decodeUnknownSync(
         Schema.Array(
           Schema.Struct({
+            runId: Schema.String,
             position: Schema.Natural,
             state: Schema.Literals(["pending", "sending", "sent", "failed", "uncertain"]),
             messageId: Schema.NullOr(Schema.String),
@@ -547,9 +548,9 @@ export const makeTaskStore = (database: Database, catchUpMs = 0) => {
         ),
       )(
         database
-          .query(`SELECT d.position, d.state, d.message_id AS messageId, d.attempts
+          .query(`SELECT i.run_id AS runId, d.position, d.state, d.message_id AS messageId, d.attempts
       FROM gateway_deliveries d JOIN gateway_inbox i ON i.id = d.inbox_id
-      WHERE i.occurrence_id = ? ORDER BY d.position`)
+      WHERE i.occurrence_id = ? ORDER BY i.id, d.position`)
           .all(id),
       ),
     providers,
