@@ -42,7 +42,8 @@ for synchronization, and whether external edits or failures disabled naming.
 base schema; migration 2 adds change-aware monitoring, migration 3 adds task
 controls and immutable occurrence definitions, and migration 4 adds attachment
 processing results and source-aware recall. Migration 5 adds project snapshots
-and scoped facts without resetting saved data.
+and scoped facts without resetting saved data. Migration 6 adds learned skills
+and their revision history.
 Migration SQL lives in timestamped TypeScript files under
 `packages/store/src/migrations/`, registered in order by `migrations.ts`.
 A checksummed migration ledger rejects newer schemas and changed migration
@@ -50,7 +51,7 @@ history. All pending migrations commit together; a failure rolls back the pendin
 batch.
 
 The unreleased base migration history was consolidated into schema version 1;
-the current schema is version 5. Existing version-1 through version-4 databases upgrade in place.
+the current schema is version 6. Existing version-1 through version-5 databases upgrade in place.
 Development databases created with the former 14-step history are still rejected.
 Those legacy databases require a fresh data directory; databases are never reset
 automatically.
@@ -150,6 +151,18 @@ without a selected skill have no snapshot. Task occurrences copy their task's
 snapshot into the new session; no later run rereads the skill file. Inspection
 exposes snapshots without provider
 continuation or credentials. See [skills](skills.md).
+
+## Learned skills
+
+Migration 6 adds `learned_skills`, holding each learned skill's current name,
+revision, and content, and the append-only `skill_revisions` table. Every
+create, patch, replace, delete, or revert adds a revision with its action,
+content (null for a deletion), origin (`owner`, `turn`, or `review`), and source
+run and call for model changes. Revisions continue across deletion and
+recreation. A unique index allows at most one revision per source tool call.
+Content is limited to 8192 UTF-8 bytes, and at most 64 learned skills exist at
+once. `LearnedSkills` in `@poppet/memory` owns this SQL on the shared database
+connection. See [skills](skills.md#learned-skills).
 
 ## Project snapshots and facts
 

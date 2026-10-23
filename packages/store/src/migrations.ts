@@ -9,6 +9,7 @@ import { changeAwareMonitoring } from "#src/migrations/20261021120000_change-awa
 import { taskControls } from "#src/migrations/20261021210000_task-controls";
 import { attachments } from "#src/migrations/20261021220000_attachments";
 import { projects } from "#src/migrations/20261021230000_projects";
+import { learnedSkills } from "#src/migrations/20261023120000_learned-skills";
 
 export interface Migration {
   readonly version: number;
@@ -24,6 +25,7 @@ export const migrations: ReadonlyArray<Migration> = [
   { version: 3, name: "task-controls", sql: taskControls },
   { version: 4, name: "attachments", sql: attachments },
   { version: 5, name: "projects", sql: projects },
+  { version: 6, name: "learned-skills", sql: learnedSkills },
 ];
 
 const Version = Schema.Struct({ user_version: Schema.Natural });
