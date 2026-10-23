@@ -1,10 +1,6 @@
-import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath } from "node:fs/promises";
-import { join } from "node:path";
-
 import { Skills } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
-import { LearnedSkills, MemoryError } from "@poppet/memory";
+import { LearnedSkills, SkillError, promoteSkill } from "@poppet/skills";
 import { SkillName } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
@@ -25,56 +21,9 @@ export const SkillsCommand = Schema.Union([
 export type SkillsCommand = typeof SkillsCommand.Type;
 
 const notFound = (name: string) =>
-  new MemoryError({
+  new SkillError({
     reason: "not-found",
     message: `No owner or learned skill is named ${JSON.stringify(name)}.`,
-  });
-
-const promotionFailure = (cause: unknown) =>
-  cause instanceof MemoryError
-    ? cause
-    : new MemoryError({
-        reason: "storage",
-        message:
-          "Could not create the owner skill file. Check that <data directory>/skills is a regular directory without symlinks.",
-      });
-
-/** Creates skills/<name>/SKILL.md without replacing or following anything already there. */
-const publish = (dataDirectory: string, name: string, content: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      const root = join(await realpath(dataDirectory), "skills");
-
-      await mkdir(root, { mode: 0o700 }).catch((cause: unknown) => {
-        if (!(cause instanceof Error && "code" in cause && cause.code === "EEXIST")) throw cause;
-      });
-
-      const info = await lstat(root);
-
-      if (!info.isDirectory() || info.isSymbolicLink()) throw promotionFailure(null);
-
-      await mkdir(join(root, name), { mode: 0o700 }).catch((cause: unknown) => {
-        if (cause instanceof Error && "code" in cause && cause.code === "EEXIST")
-          throw new MemoryError({
-            reason: "conflict",
-            message: `An owner skill directory named ${JSON.stringify(name)} already exists.`,
-          });
-        throw cause;
-      });
-
-      const handle = await open(
-        join(root, name, "SKILL.md"),
-        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
-        0o600,
-      );
-
-      try {
-        await handle.writeFile(content);
-      } finally {
-        await handle.close();
-      }
-    },
-    catch: promotionFailure,
   });
 
 export const manageSkills = (command: SkillsCommand) =>
@@ -134,7 +83,7 @@ export const manageSkills = (command: SkillsCommand) =>
 
     if (skill === null) return yield* Effect.fail(notFound(name));
     const { dataDirectory } = yield* AppConfig;
-    yield* publish(dataDirectory, name, skill.content);
+    yield* promoteSkill(dataDirectory, name, skill.content);
     // Validate the published file through the same loader that chats use.
     yield* skills.load(name);
 

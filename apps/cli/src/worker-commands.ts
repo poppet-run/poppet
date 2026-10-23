@@ -1,7 +1,8 @@
 import { Agent, ChatSettings, logChatDiagnostic, Skills, type AgentError } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { MCP, MCPCommand, inspectMCP } from "@poppet/mcp";
-import { LearnedSkills, LearningReviews, Memory } from "@poppet/memory";
+import { LearningReviews, Memory } from "@poppet/memory";
+import { LearnedSkills } from "@poppet/skills";
 import { Session, Store } from "@poppet/store";
 import { WorkerRequests, WorkerRequestError, requestWorker } from "@poppet/worker";
 import { Cause, Context, Effect, Layer, Option, Queue, Schema, Stream, Scope } from "effect";

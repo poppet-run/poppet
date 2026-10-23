@@ -1,5 +1,4 @@
 import {
-  LearnedSkills,
   Memory,
   type LearningReviews,
   type MemoryError,
@@ -7,6 +6,7 @@ import {
   type ReviewChange,
 } from "@poppet/memory";
 import { ProviderError, type Message, type Output, type Tool } from "@poppet/provider";
+import { LearnedSkills } from "@poppet/skills";
 import { Store, StoreError, type StoredMessage, type ToolCall } from "@poppet/store";
 import { Effect, Option, Schema, Stream } from "effect";
 
@@ -16,19 +16,17 @@ import { decodeMemoryCall, executeMemoryCall, learningMemoryTool } from "#src/me
 import { streamReply } from "#src/reply";
 import type { ModelResolver } from "#src/service";
 import type { ChatPolicy } from "#src/settings";
+import { skillIndex } from "#src/skill-index";
 import {
   decodeSkillManageCall,
   executeSkillManage,
   maxSkillWrites,
   skillManageTool,
-} from "#src/skill-tools";
-import {
-  Skills,
   decodeSkillViewCall,
   executeSkillView,
-  skillIndex,
   skillViewTool,
-} from "#src/skills";
+} from "#src/skill-tools";
+import { Skills } from "#src/skills";
 
 // Tools whose results the owner did not write; reviewing them could persist injected text.
 const untrustedTools: ReadonlySet<string> = new Set(["fetch_page", "search_web"]);

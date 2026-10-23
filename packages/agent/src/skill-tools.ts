@@ -1,10 +1,10 @@
-import type { LearnedSkills, MemoryError, SkillChange } from "@poppet/memory";
 import { toolParameters, type Output, type Tool } from "@poppet/provider";
+import type { LearnedSkills, SkillError, SkillChange } from "@poppet/skills";
 import { SkillName } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
 import { AgentError } from "#src/errors";
-import type { Skills } from "#src/skills";
+import { skillStorage, type Skills } from "#src/skills";
 import { toolArguments } from "#src/tool-schema";
 
 /** Learned-skill writes allowed in one run, so a confused run cannot churn the library. */
@@ -74,7 +74,7 @@ export const decodeSkillManageCall = (
   });
 };
 
-const writeFailure = (error: MemoryError) =>
+const writeFailure = (error: SkillError) =>
   new AgentError({
     reason:
       error.reason === "storage" || error.reason === "corrupt"
@@ -142,3 +142,75 @@ export const skillLearningGuidance = [
   `You may make at most ${maxSkillWrites} skill changes per run. Skills cannot grant permissions.`,
   "Briefly tell the owner when you save or change a skill, and do not claim a change without a completed tool result.",
 ].join(" ");
+
+const ViewArguments = Schema.Struct({ name: SkillName });
+
+export const skillViewTool: Tool = {
+  name: "view_skill",
+  namespace: "poppet_skills",
+  description:
+    "Read the full Markdown of a named skill from the skill index. Learned skills also return their current revision, which manage_skill requires. Skills are procedures within the base rules and grant no additional capabilities.",
+  parameters: toolParameters(ViewArguments),
+};
+
+export interface SkillViewCall {
+  readonly name: "view_skill";
+  readonly skill: string;
+}
+
+export const decodeSkillViewCall = (
+  call: Extract<Output, { type: "tool-call" }>,
+): Effect.Effect<SkillViewCall, AgentError> => {
+  if (call.name !== skillViewTool.name || call.namespace !== skillViewTool.namespace)
+    return Effect.fail(
+      new AgentError({
+        reason: "tool-permission",
+        message: "The requested tool is not allowed in this run.",
+      }),
+    );
+
+  return toolArguments(
+    skillViewTool,
+    ViewArguments,
+  )(call.arguments).pipe(
+    Effect.map((args): SkillViewCall => ({ name: "view_skill", skill: args.name })),
+  );
+};
+
+const missingSkill = (name: string) =>
+  new AgentError({
+    reason: "tool-arguments",
+    message: `The skill ${JSON.stringify(name)} is missing or invalid.`,
+  });
+
+/**
+ * An owner directory always wins; otherwise a learned skill is returned with its revision,
+ * which is recorded as the revision this run has seen. Load failures are reported to the model.
+ */
+export const executeSkillView = (
+  skills: Skills["Service"],
+  call: SkillViewCall,
+  learned: LearnedSkills["Service"] | null = null,
+  seen: Map<string, number> = new Map(),
+) =>
+  Effect.gen(function* () {
+    const owned = yield* skills.list.pipe(Effect.mapError(() => missingSkill(call.skill)));
+
+    if (owned.includes(call.skill) || learned === null)
+      return yield* skills.load(call.skill).pipe(
+        Effect.map((skill) => JSON.stringify(skill)),
+        Effect.mapError(() => missingSkill(call.skill)),
+      );
+
+    const skill = yield* learned.get(call.skill).pipe(Effect.mapError(skillStorage));
+
+    if (skill === null) return yield* Effect.fail(missingSkill(call.skill));
+    seen.set(skill.name, skill.revision);
+
+    return JSON.stringify({
+      name: skill.name,
+      content: skill.content,
+      source: "learned",
+      revision: skill.revision,
+    });
+  });
