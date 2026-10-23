@@ -57,8 +57,10 @@ Discord; CLI commands the reviewer allows run normally.
 ## Scheduled runs
 
 Cron uses the same review. A command requiring human approval fails the
-occurrence immediately and is never left waiting. Its saved invocation and
-reason are included in the failure delivered to the task's messaging destination.
+occurrence immediately and is never left waiting. The worker logs its failure
+reason code; the full reason and blocked invocation remain available in `tasks show`.
+Failures do not post messages or approval prompts to the task's destination.
+Successful results still go to the destination configured for that task.
 The recurring schedule remains active. Earlier commands may have completed;
 failure does not roll them back. Inspect the saved task and machine state before
 requesting a retry.
@@ -72,10 +74,11 @@ The reviewed Bash tool can perform host changes authorized by the saved prompt.
 Automated checks use fixture model decisions and isolated local shell commands.
 They cover execution, bounded output, process cleanup, denied and unavailable
 reviews, owner approvals, conversation isolation, expiry, replay rejection, and
-failed cron delivery. They do not establish a live model's review accuracy.
+logged cron failures and successful result delivery. They do not establish a live model's review accuracy.
 
 For a manual smoke test, ask for a harmless filesystem check in Discord, verify
 its Bash receipt, then request an operation whose review asks for approval and
 deny it. Confirm no command ran. Repeat with approval, then schedule a harmless
 job and verify its result arrives. Finally, verify a scheduled command needing
-approval produces a failure notification without executing.
+approval logs a failure without executing or posting to the destination, and
+retains the reason in `tasks show`.

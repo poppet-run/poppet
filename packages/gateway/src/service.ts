@@ -219,12 +219,12 @@ const gateway = Effect.gen(function* () {
 
   // Reconcile saved results rather than rerun inference after a crash or failed send.
   const scheduleResults = Effect.gen(function* () {
-    yield* gatewayStorage(() => repo.rejectChangedAccounts(channel.id, account));
+    yield* gatewayStorage(() => repo.rejectScheduledDeliveries(channel.id, account));
 
     for (const item of yield* gatewayStorage(() => repo.scheduled(channel.id))) {
       const run = yield* store.run(item.runId);
 
-      if (run === null || !["completed", "failed"].includes(run.status)) continue;
+      if (run?.status !== "completed") continue;
       const destination = item.destination;
 
       const enabled =
@@ -238,12 +238,7 @@ const gateway = Effect.gen(function* () {
           item.id,
           item.runId,
           destination,
-          chunks(
-            item.status === "failed"
-              ? `Scheduled task failed: ${item.reason ?? run.failureReason ?? "Unknown failure"}.\nInspect this occurrence before retrying; earlier commands may have completed.`
-              : answer(run),
-            channel.textLimit,
-          ),
+          chunks(answer(run), channel.textLimit),
           enabled,
         ),
       );

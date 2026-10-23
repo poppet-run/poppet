@@ -16,10 +16,10 @@ fails that occurrence immediately, without trying another command or waiting for
 a person. The recurring schedule stays intact. Earlier completed commands are
 not rolled back.
 
-Failed runs that attempted Bash and have a messaging destination are delivered through the
-same durable queue as successful results. Approval failures include the blocked
-invocation and reason. Inspect `tasks show` before retrying; later occurrences
-still run on their normal schedule.
+Failed runs only log their failure reason code and retain details in `tasks show`;
+they do not post to a messaging destination. Approval failures retain the blocked
+invocation and reason. Inspect them before retrying; later occurrences still run
+on their normal schedule. Successful results go to the task's configured destination.
 
 ## Create and inspect tasks
 
@@ -177,9 +177,11 @@ configuration. The worker rechecks the saved bot account, owner, server, allowed
 parent channel, and current thread permissions before sending. It never chooses
 the last active conversation or redirects a result to another thread.
 
-Completed results and failed runs that attempted Bash enter the gateway delivery queue. `tasks show`
+Only completed results enter the gateway delivery queue, using the task's saved
+destination. Pending failure notices from older versions are stopped. `tasks show`
 includes the destination and a `delivery` array of run IDs, chunk states, message
-IDs, and attempt counts. Each explicitly retried run has its own delivery receipt. An empty array means no reply has been queued. Temporary failures
+IDs, and attempt counts. Each delivered run has its own receipt. An empty array
+means no reply has been queued. Temporary delivery failures
 retry with bounded backoff. Failed and uncertain sends remain inspectable;
 uncertain sends are not resent automatically. Inspect the saved output before
 manually reposting it. Delivery failures never change a completed occurrence or

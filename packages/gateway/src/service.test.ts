@@ -333,100 +333,139 @@ describe.concurrent("Gateway", () => {
     },
   );
 
-  test("when cron needs command approval, fails without executing and delivers the saved failure once", async () => {
-    let executed = 0;
-    let allow = false;
+  test.each([false, true])(
+    "when cron needs approval with an old queued notice=%s, logs the failure and delivers only a successful retry",
+    async (queuedNotice) => {
+      let executed = 0;
+      let allow = false;
+      const errors: string[] = [];
 
-    const state = await fixture(
-      {},
-      (request) => {
-        if (request.settings.toolChoice === "none")
-          return response(
-            JSON.stringify({
-              decision: allow ? "allow" : "needs_approval",
-              reason: "Needs owner confirmation",
-            }),
-          );
+      const state = await fixture(
+        {},
+        (request) => {
+          if (request.settings.toolChoice === "none")
+            return response(
+              JSON.stringify({
+                decision: allow ? "allow" : "needs_approval",
+                reason: "Needs owner confirmation",
+              }),
+            );
 
-        if (request.messages.at(-1)?.role === "tool") return response("Service restarted");
+          if (request.messages.at(-1)?.role === "tool") return response("Service restarted");
 
-        return Stream.make({
-          type: "completed",
-          response: {
-            output: [
-              {
-                type: "tool-call",
-                namespace: "poppet_system",
-                name: "bash",
-                callId: "bash-1",
-                arguments: JSON.stringify({
-                  command: "restart-service",
-                  cwd: "/tmp",
-                  timeoutSeconds: 5,
-                }),
+          return Stream.make({
+            type: "completed",
+            response: {
+              output: [
+                {
+                  type: "tool-call",
+                  namespace: "poppet_system",
+                  name: "bash",
+                  callId: "bash-1",
+                  arguments: JSON.stringify({
+                    command: "restart-service",
+                    cwd: "/tmp",
+                    timeoutSeconds: 5,
+                  }),
+                },
+              ],
+              continuation: {
+                version: 1,
+                provider: "test-provider",
+                model: "test-model",
+                data: {},
               },
-            ],
-            continuation: { version: 1, provider: "test-provider", model: "test-model", data: {} },
-            finishReason: "tool-calls",
-            usage: null,
-          },
-        });
-      },
-      true,
-      {},
-      undefined,
-      {
-        run: () =>
-          Effect.sync(() => {
-            executed++;
+              finishReason: "tool-calls",
+              usage: null,
+            },
+          });
+        },
+        true,
+        {},
+        undefined,
+        {
+          run: () =>
+            Effect.sync(() => {
+              executed++;
 
-            return { stdout: "done", stderr: "", exitCode: 0, truncated: false };
+              return { stdout: "done", stderr: "", exitCode: 0, truncated: false };
+            }),
+        },
+      );
+
+      try {
+        const id = await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            const destination = yield* gateway.resolveDestination("scheduled-thread");
+
+            const item = yield* scheduled(destination).pipe(
+              Effect.provideService(Console.Console, {
+                ...quietConsole,
+                error: (...values) => {
+                  errors.push(values.join(" "));
+                },
+              }),
+            );
+
+            expect(item.status).toBe("failed");
+            expect(item.reason).toContain("Command needs approval");
+            expect(item.reason).toContain("restart-service");
+            expect(executed).toBe(0);
+            expect(errors[0]).toContain(
+              `occurrence=${item.id} failed reason=agent:command-approval-required`,
+            );
+
+            if (queuedNotice)
+              (yield* GatewayRepository).scheduleResult(
+                item.id,
+                item.runId!,
+                destination,
+                ["Saved failure notification"],
+                true,
+              );
+            yield* gateway.deliverNext;
+
+            return item.id;
           }),
-      },
-    );
+        );
 
-    try {
-      const id = await state.run(
-        Effect.gen(function* () {
-          const gateway = yield* Gateway;
-          const item = yield* scheduled(yield* gateway.resolveDestination("scheduled-thread"));
-          expect(item.status).toBe("failed");
-          expect(item.reason).toContain("Command needs approval");
-          expect(item.reason).toContain("restart-service");
-          expect(executed).toBe(0);
-          yield* gateway.deliverNext;
-
-          return item.id;
-        }),
-      );
-
-      await state.run(Gateway.use((gateway) => gateway.deliverNext));
-      expect(state.sent).toHaveLength(1);
-      expect(state.sent[0]!.text).toContain("Scheduled task failed");
-      expect(state.sent[0]!.text).toContain("restart-service");
-      expect(state.sent[0]!.text).not.toContain("Reply /approve");
-      await state.run(
-        Effect.gen(function* () {
-          const tasks = yield* TaskRepository;
-          expect(tasks.occurrence(id).status).toBe("failed");
-          expect(tasks.list()).toHaveLength(1);
-          allow = true;
-          tasks.retry(id, 0);
-          const claimed = tasks.claim(0)!;
-          yield* executeOccurrence(tasks, claimed.occurrence, claimed.task);
-          expect(tasks.occurrence(id).status).toBe("completed");
-          yield* (yield* Gateway).deliverNext;
-          expect(tasks.deliveries(id)).toHaveLength(2);
-          expect(new Set(tasks.deliveries(id).map((part) => part.runId)).size).toBe(2);
-        }),
-      );
-      expect(executed).toBe(1);
-      expect(state.sent).toHaveLength(2);
-      expect(state.sent[1]!.text).toBe("Service restarted");
-    } finally {
-      await state.close();
-    }
-  });
+        await state.run(Gateway.use((gateway) => gateway.deliverNext));
+        expect(state.sent).toEqual([]);
+        await state.run(
+          Effect.gen(function* () {
+            const tasks = yield* TaskRepository;
+            expect(tasks.occurrence(id).status).toBe("failed");
+            expect(tasks.occurrence(id).reason).toContain("restart-service");
+            expect(tasks.deliveries(id).map((part) => part.state)).toEqual(
+              queuedNotice ? ["failed"] : [],
+            );
+            expect(tasks.list()).toHaveLength(1);
+            allow = true;
+            tasks.retry(id, 0);
+            const claimed = tasks.claim(0)!;
+            yield* executeOccurrence(tasks, claimed.occurrence, claimed.task);
+            expect(tasks.occurrence(id).status).toBe("completed");
+            yield* (yield* Gateway).deliverNext;
+            expect(tasks.deliveries(id).map((part) => part.state)).toEqual(
+              queuedNotice ? ["failed", "sent"] : ["sent"],
+            );
+            expect(tasks.deliveries(id).at(-1)!.runId).toBe(tasks.occurrence(id).runId!);
+          }),
+        );
+        expect(executed).toBe(1);
+        expect(state.sent).toHaveLength(1);
+        expect(state.sent[0]).toMatchObject({
+          destination: "scheduled-thread",
+          text: "Service restarted",
+        });
+        await state.run(Gateway.use((gateway) => gateway.deliverNext));
+        expect(state.sent).toHaveLength(1);
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
   test("when skill selections change across restart, preserves valid snapshots and resets only with new", async () => {
     const state = await fixture();

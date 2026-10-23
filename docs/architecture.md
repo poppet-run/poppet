@@ -459,11 +459,12 @@ The gateway holds pending approval IDs in memory for at most two minutes. Owner
 controls resolve them outside the inference queue and only in the originating
 conversation, with access rechecked before execution. Restart expires pending
 requests. Scheduled runs never wait for approval; a blocked command fails the
-occurrence. Failed occurrences that attempted Bash use the existing durable result
-delivery queue without restarting inference or changing their recurring schedule.
-Migration 10 makes delivery unique per occurrence/run, so an explicit retry can
-deliver a new result while preserving earlier failure receipts. Unrelated historical
-failures are not newly delivered.
+occurrence. Failed occurrences log a reason code and retain details in task history
+without posting to their destination or changing their recurring schedule.
+Only completed results enter the durable delivery queue. Pending failure notices
+from older versions are stopped before delivery. Migration 10 keeps delivery unique
+per occurrence/run, preserving old receipts while allowing a successful retry to
+deliver its result to the task's saved destination.
 
 ## Supplied page reading
 

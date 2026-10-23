@@ -113,8 +113,9 @@ conversation can answer. Each ID permits one invocation and expires after two
 minutes, cancellation, or worker restart. `/cancel` also cancels the pending run.
 
 Approval controls bypass the model queue. Unknown, expired, and reused IDs never
-start commands. Cron jobs do not create approval prompts; their occurrence fails
-and its failure is delivered to the saved destination.
+start commands. Cron jobs do not create approval prompts; their occurrence fails,
+logs a reason code, and retains the details in `tasks show` without posting.
+Successful cron results go to each task's configured destination.
 
 ## Validation
 

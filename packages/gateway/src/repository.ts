@@ -119,11 +119,14 @@ const repository = Effect.gen(function* () {
         .query(`INSERT INTO gateway_cursors (adapter, account, cursor) VALUES (?, ?, ?)
       ON CONFLICT (adapter, account) DO UPDATE SET cursor = excluded.cursor`)
         .run(adapter, account, cursor),
-    rejectChangedAccounts: (adapter: string, account: string) =>
+    rejectScheduledDeliveries: (adapter: string, account: string) =>
       database
         .query(`UPDATE gateway_deliveries
       SET state = 'failed' WHERE state = 'pending' AND inbox_id IN (
-        SELECT id FROM gateway_inbox WHERE adapter = ? AND account != ? AND occurrence_id IS NOT NULL
+        SELECT id FROM gateway_inbox WHERE adapter = ? AND occurrence_id IS NOT NULL
+          AND (account != ? OR EXISTS (
+            SELECT 1 FROM runs r WHERE r.id = gateway_inbox.run_id AND r.status != 'completed'
+          ))
       )`)
         .run(adapter, account),
     scheduled: (adapter: string) =>
@@ -133,19 +136,14 @@ const repository = Effect.gen(function* () {
             id: Schema.String,
             runId: Schema.String,
             destination: Schema.fromJsonString(DeliveryDestination),
-            status: Schema.String,
-            reason: Schema.NullOr(Schema.String),
           }),
         ),
       )(
         database
-          .query(`SELECT o.id, o.run_id AS runId, o.destination, o.status, o.reason FROM job_occurrences o
+          .query(`SELECT o.id, o.run_id AS runId, o.destination FROM job_occurrences o
       JOIN jobs j ON j.id = o.job_id
       WHERE j.monitor = 0
-        AND (o.status = 'completed' OR (o.status = 'failed' AND EXISTS (
-          SELECT 1 FROM tool_calls c WHERE c.run_id = o.run_id
-            AND c.namespace = 'poppet_system' AND c.name = 'bash'
-        ))) AND o.run_id IS NOT NULL
+        AND o.status = 'completed' AND o.run_id IS NOT NULL
         AND json_extract(o.destination, '$.adapter') = ?
         AND NOT EXISTS (SELECT 1 FROM gateway_inbox i WHERE i.occurrence_id = o.id AND i.run_id = o.run_id)
       ORDER BY o.scheduled_at, o.id LIMIT 64`)
