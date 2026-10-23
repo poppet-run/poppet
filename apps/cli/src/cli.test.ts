@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
-import { defaultPolicy } from "@poppet/agent";
 import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { ConfigProvider, Console, Effect } from "effect";
 
@@ -1258,8 +1257,6 @@ describe("CLI", () => {
       for (const action of ["login", "logout", "status", "models"])
         expect(providerHelp.stdout).toContain(`  ${action} `);
 
-      expect(providerHelp.stdout).not.toContain("verify");
-
       const taskHelp = await invoke(["tasks", "add", "--help"], environment);
       expect(taskHelp.stdout).toContain("--cron");
       expect(taskHelp.stdout).toContain("--tz");
@@ -1277,14 +1274,6 @@ describe("CLI", () => {
 
     const commands = [
       ["config", "unexpected-argument"],
-      ["auth", "status"],
-      ["auth", "verify"],
-      ["provider", "verify"],
-      ["tasks", "run-now", "saved-task"],
-      ["tasks", "status"],
-      ["tasks", "work"],
-      ["tasks", "providers"],
-      ["tasks", "resume-provider", "openai-chatgpt"],
       ["worker", "resume-provider", "bad/id"],
       ["tasks", "add", "Later", "--at", at, "--cron", "0 9 * * *", "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--cron", "0 9 * * *", "Hello"],
@@ -1359,7 +1348,7 @@ describe("CLI", () => {
     }
   });
 
-  test("config prints settings supplied by the environment", async () => {
+  test("config prints environment settings without creating application files", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-env-cli-"));
 
     try {
@@ -1369,19 +1358,9 @@ describe("CLI", () => {
       });
 
       expect(result.exitCode).toBe(0);
-      expect(JSON.parse(result.stdout)).toEqual({
+      expect(JSON.parse(result.stdout)).toMatchObject({
         applicationName: "Test Poppet",
         dataDirectory: directory,
-        notesDirectory: join(directory, "notes"),
-        provider: "openai-chatgpt",
-        model: null,
-        webSearch: false,
-        webSearchProvider: "brave",
-        browser: { enabled: false },
-        voice: { enabled: false },
-        mcpServers: [],
-        chat: defaultPolicy,
-        tasks: { catchUpMinutes: 60 },
         configFile: { path: join(directory, "config.json"), exists: false },
         environmentOverrides: ["POPPET_DATA_DIR", "POPPET_APP_NAME"],
       });

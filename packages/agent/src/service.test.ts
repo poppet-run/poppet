@@ -183,11 +183,14 @@ describe.concurrent("persisted agent", () => {
     }
   });
 
-  test("interrupts a run at the configured deadline", async () => {
+  test.each([
+    { name: "default", policy: {}, seconds: 300 },
+    { name: "custom", policy: { runDeadlineSeconds: 30 }, seconds: 30 },
+  ])("interrupts a run at the $name deadline", async ({ policy, seconds }) => {
     const state = await fixture(
       () => Effect.succeed({ description, stream: () => Stream.never }),
       false,
-      { runDeadlineSeconds: 30 },
+      policy,
     );
 
     try {
@@ -200,14 +203,18 @@ describe.concurrent("persisted agent", () => {
             Stream.runDrain((yield* Agent).send(session.id, "Wait")),
           ).pipe(Effect.forkChild);
 
-          yield* TestClock.adjust("29 seconds");
+          yield* TestClock.adjust((seconds - 1) * 1000);
           expect(running.pollUnsafe()).toBeUndefined();
+          expect((yield* store.runs(session.id))[0]?.status).toBe("running");
           yield* TestClock.adjust("1 second");
           expect(yield* Fiber.join(running)).toMatchObject({
             reason: "interrupted",
             message: "The chat request deadline expired.",
           });
           expect((yield* store.runs(session.id))[0]?.status).toBe("interrupted");
+          expect((yield* store.messages(session.id)).map((entry) => entry.message)).toEqual([
+            { role: "user", text: "Wait" },
+          ]);
         }).pipe(Effect.provide(TestClock.layer())),
       );
     } finally {
@@ -780,36 +787,6 @@ describe.concurrent("persisted agent", () => {
             "pending",
           );
         }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
-
-  test("allows runs beyond 90 seconds but interrupts a nonterminating model after five minutes", async () => {
-    const state = await fixture(() => Effect.succeed({ description, stream: () => Stream.never }));
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-          const session = yield* store.createSession("test-provider", "test-model");
-          const started = yield* Deferred.make<void>();
-
-          const fiber = yield* Effect.forkChild(
-            Stream.runForEach((yield* Agent).send(session.id, "Hello"), () =>
-              Deferred.succeed(started, undefined),
-            ),
-          );
-
-          yield* Deferred.await(started);
-          yield* TestClock.adjust("90 seconds");
-          expect((yield* store.runs(session.id))[0]?.status).toBe("running");
-          yield* TestClock.adjust("210 seconds");
-          expect(yield* failure(Fiber.join(fiber))).toMatchObject({ reason: "interrupted" });
-          expect((yield* store.runs(session.id))[0]?.status).toBe("interrupted");
-          expect((yield* store.messages(session.id)).length).toBe(1);
-        }).pipe(Effect.provide(TestClock.layer())),
       );
     } finally {
       await state.close();

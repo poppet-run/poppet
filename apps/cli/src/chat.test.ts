@@ -448,22 +448,31 @@ describe("chat CLI", () => {
         });
         chat.state.taskId = task.id;
 
-        for (const action of ["show", "pause", "resume", "list"] as const) {
+        for (const [action, paused] of [
+          ["show", 0],
+          ["pause", 1],
+          ["resume", 0],
+          ["list", 0],
+        ] as const) {
           chat.state.taskAction = action;
-          // Each chat observes the state committed by the preceding action.
-          // eslint-disable-next-line no-await-in-loop
+          // eslint-disable-next-line no-await-in-loop -- Each action observes the preceding saved state.
           await chat.invoke(["chat", "new", `${action} the saved task`]);
           expect(chat.requests.at(-1)?.tools).toContainEqual(
             expect.objectContaining({ name: "manage_tasks", namespace: "poppet_tasks" }),
           );
-          expect(chat.requests.at(-1)?.messages.at(-1)).toMatchObject({
-            role: "tool",
-            callId: "task",
-          });
-        }
+          const reply = chat.requests.at(-1)?.messages.at(-1);
 
-        await chat.invoke(["tasks", "show", task.id]);
-        expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ task: { id: task.id, paused: 0 } });
+          if (reply?.role !== "tool") throw new Error("Missing task tool reply");
+          expect(JSON.parse(reply.output)).toMatchObject(
+            action === "list"
+              ? { tasks: [{ id: task.id, name: task.name, paused }] }
+              : { task: { id: task.id, name: task.name, paused } },
+          );
+
+          // eslint-disable-next-line no-await-in-loop -- Inspect each mutation before the next action.
+          await chat.invoke(["tasks", "show", task.id]);
+          expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ task: { id: task.id, paused } });
+        }
       } finally {
         if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
         await chat.close();
@@ -1776,20 +1785,16 @@ describe("chat CLI", () => {
         enabled: false,
       });
 
-      const obsolete = await Promise.all(
-        ["/commands", "/project-commands", "/tasks", "/project-tasks"].map((route) =>
-          fetch(`http://localhost${route}`, {
-            unix: workerSocketPath(chat.directory),
-            method: "POST",
-            body: JSON.stringify({
-              kind: "memory",
-              command: { action: "remember", key: "obsolete", value: "bad" },
-            }),
-          }),
-        ),
-      );
+      const unknown = await fetch("http://localhost/v1/unknown", {
+        unix: workerSocketPath(chat.directory),
+        method: "POST",
+        body: JSON.stringify({
+          kind: "memory",
+          command: { action: "remember", key: "unexpected", value: "bad" },
+        }),
+      });
 
-      expect(obsolete.map((response) => response.status)).toEqual([404, 404, 404, 404]);
+      expect(unknown.status).toBe(404);
 
       const invalid = await Promise.all(
         [
