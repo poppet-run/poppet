@@ -119,8 +119,8 @@ const fixture = (catalogIds = ["gpt-6-luna", "glm-5.3", "minimax-m3"]) => {
   return { provider, requests, keyReads: () => keyReads, catalogReads: () => catalogReads };
 };
 
-describe("OpenCode Go", () => {
-  test("aborts a stalled catalog body when discovery times out", async () => {
+describe("makeOpenCodeProvider", () => {
+  test("when catalog discovery times out, aborts its stalled body", async () => {
     const reading = Promise.withResolvers<void>();
     const signals: AbortSignal[] = [];
 
@@ -161,39 +161,42 @@ describe("OpenCode Go", () => {
     expect(signals[0]?.aborted).toBe(true);
   });
 
-  test.each([false, true])("streams reasoning_content only when enabled=%s", async (enabled) => {
-    const harness = fixture();
-    const model = await Effect.runPromise(harness.provider.resolve("glm-5.3"));
+  test.each([false, true])(
+    "when reasoning_content is enabled=%s, streams only permitted reasoning",
+    async (enabled) => {
+      const harness = fixture();
+      const model = await Effect.runPromise(harness.provider.resolve("glm-5.3"));
 
-    const events = await Effect.runPromise(
-      Stream.runCollect(
-        model.stream({
-          ...request,
-          settings: { reasoningSummary: enabled },
-          tools: [
-            {
-              name: "get_verification_token",
-              namespace: "poppet_verification",
-              description: "Test tool",
-              parameters: { type: "object" },
-            },
-          ],
-        }),
-      ),
-    );
+      const events = await Effect.runPromise(
+        Stream.runCollect(
+          model.stream({
+            ...request,
+            settings: { reasoningSummary: enabled },
+            tools: [
+              {
+                name: "get_verification_token",
+                namespace: "poppet_verification",
+                description: "Test tool",
+                parameters: { type: "object" },
+              },
+            ],
+          }),
+        ),
+      );
 
-    expect(events.filter((event) => event.type === "reasoning-delta")).toEqual(
-      enabled ? [{ type: "reasoning-delta", text: "go-reasoning" }] : [],
-    );
-    expect(events.at(-1)).toMatchObject({
-      type: "completed",
-      response: {
-        continuation: { data: { reasoningContent: "go-reasoning" } },
-      },
-    });
-  });
+      expect(events.filter((event) => event.type === "reasoning-delta")).toEqual(
+        enabled ? [{ type: "reasoning-delta", text: "go-reasoning" }] : [],
+      );
+      expect(events.at(-1)).toMatchObject({
+        type: "completed",
+        response: {
+          continuation: { data: { reasoningContent: "go-reasoning" } },
+        },
+      });
+    },
+  );
 
-  test("discovers only the tested model/protocol set without reading a key", async () => {
+  test("when discovering models without credentials, returns only the supported model and protocol set", async () => {
     const harness = fixture();
     const models = await Effect.runPromise(harness.provider.models);
 
@@ -203,7 +206,7 @@ describe("OpenCode Go", () => {
   });
 
   test.each(["gpt-6-luna", "glm-5.3"])(
-    "resolves %s and completes a shared tool exchange on its documented endpoint",
+    "when %s is resolved, completes the tool exchange on its documented endpoint",
     async (modelId) => {
       const harness = fixture();
       const model = await Effect.runPromise(harness.provider.resolve(modelId));
@@ -235,7 +238,7 @@ describe("OpenCode Go", () => {
     },
   );
 
-  test("rejects general assistant workloads and unsupported settings before reading credentials", async () => {
+  test("when workloads or settings are unsupported, rejects them before reading credentials", async () => {
     const harness = fixture();
     const model = await Effect.runPromise(harness.provider.resolve("gpt-6-luna"));
 
@@ -249,7 +252,7 @@ describe("OpenCode Go", () => {
     expect(harness.requests).toHaveLength(0);
   });
 
-  test("rejects unsupported or removed models without selecting an alternative", async () => {
+  test("when a model is unsupported or absent from the catalog, rejects it without selecting an alternative", async () => {
     const harness = fixture(["glm-5.3"]);
 
     await expect(Effect.runPromise(harness.provider.resolve("minimax-m3"))).rejects.toMatchObject({

@@ -47,8 +47,8 @@ const catalogFixture = () => {
   return { state, http, auth };
 };
 
-describe("ChatGPT model catalog cache", () => {
-  test("shares successful lookups across rebuilt services and concurrent resolves, but refreshes explicit listings and unknown models", async () => {
+describe("makeChatGPTModel", () => {
+  test("when services rebuild or resolve concurrently, shares cached lookups and refreshes explicit listings or unknown models", async () => {
     const { state, http, auth } = catalogFixture();
     const timings: { cached?: boolean }[] = [];
 
@@ -81,7 +81,7 @@ describe("ChatGPT model catalog cache", () => {
     expect(JSON.stringify(timings)).not.toContain("first-token");
   });
 
-  test("expires after one minute, invalidates when credentials change, and checks authentication on hits", async () => {
+  test("when cache entries age or credentials change, expires or invalidates them and checks authentication on hits", async () => {
     const { state, http, auth } = catalogFixture();
 
     await Effect.runPromise(
@@ -105,7 +105,7 @@ describe("ChatGPT model catalog cache", () => {
   });
 
   test.each(["fail", "malformed"] as const)(
-    "does not cache a %s catalog response",
+    "when catalog responses are %s, does not cache them",
     async (mode) => {
       const { state, http, auth } = catalogFixture();
       state[mode] = true;
@@ -124,8 +124,8 @@ describe("ChatGPT model catalog cache", () => {
   );
 });
 
-describe("ChatGPT model verification", () => {
-  test("retains completed streamed items in output order when the terminal response omits them", async () => {
+describe("ChatGPTModel", () => {
+  test("when terminal responses omit streamed items, retains completed items in output order", async () => {
     const harness = await createHarness();
 
     try {
@@ -143,7 +143,7 @@ describe("ChatGPT model verification", () => {
       await harness.close();
     }
   });
-  test("signs in, stores protected credentials, and verifies a complete namespaced tool round trip", async () => {
+  test("when sign-in succeeds, protects credentials and verifies a namespaced tool round trip", async () => {
     const harness = await createHarness();
 
     try {
@@ -174,7 +174,7 @@ describe("ChatGPT model verification", () => {
     }
   });
   test.each(["truncated", "failed", "incomplete", "wrong_tool", "wrong_token"] as const)(
-    "does not record verification for %s model responses",
+    "when model responses are %s, records no successful verification",
     async (mode) => {
       const harness = await createHarness();
 
@@ -201,14 +201,14 @@ describe("ChatGPT model verification", () => {
   );
 });
 
-describe("ChatGPT provider inference", () => {
+describe("makeChatGPTProvider", () => {
   test.each([
     ["subscription_sharing_invalid_user", "authentication"],
     ["subscription_sharing_user_not_eligible", "permission"],
     ["subscription_sharing_usage_limit_exceeded", "quota"],
     ["subscription_sharing_usage_unavailable", "temporary"],
   ] as const)(
-    "classifies %s through the shared model interface without retrying or exposing server details",
+    "when inference fails with %s, classifies it without retrying or exposing server details",
     async (code, reason) => {
       let inferenceRequests = 0;
 

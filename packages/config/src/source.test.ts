@@ -34,8 +34,8 @@ const load = (environment: Record<string, string>) =>
     ),
   );
 
-describe("configuration sources", () => {
-  test("local voice defaults off, requires absolute explicit paths, and environment settings replace file settings", async () => {
+describe("loadConfigSource", () => {
+  test("when voice settings are loaded, defaults off, requires absolute paths, and lets environment settings replace the file", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-voice-config-"));
 
     try {
@@ -85,7 +85,7 @@ describe("configuration sources", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
-  test("browser defaults off, resolves a file executable, and honors complete environment replacement", async () => {
+  test("when browser settings are loaded, defaults off, resolves file paths, and honors environment replacement", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-browser-config-"));
 
     try {
@@ -172,7 +172,7 @@ describe("configuration sources", () => {
     }
   });
 
-  test("MCP defaults to no servers, resolves file paths, and environment replacement preserves disabled servers", async () => {
+  test("when MCP settings are loaded, defaults to no servers, resolves paths, and preserves disabled servers on replacement", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-config-"));
 
     const server = {
@@ -219,7 +219,7 @@ describe("configuration sources", () => {
     }
   });
 
-  test("web search is opt-in and environment overrides the file without exposing keys", async () => {
+  test("when web search settings are loaded, requires opt-in and applies environment overrides without exposing keys", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-search-config-"));
 
     try {
@@ -261,7 +261,7 @@ describe("configuration sources", () => {
     }
   });
 
-  test("search provider defaults to Brave, accepts Kagi, and rejects unknown providers", async () => {
+  test("when the search provider is configured, defaults to Brave, accepts Kagi, and rejects unknown providers", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-search-provider-"));
 
     const read = (environment: Record<string, string> = {}) =>
@@ -291,7 +291,7 @@ describe("configuration sources", () => {
     }
   });
 
-  test("the task catch-up window defaults to an hour and accepts file and environment values", async () => {
+  test("when the catch-up window is configured, defaults to an hour and accepts file or environment overrides", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-config-"));
 
     const read = (environment: Record<string, string>) =>
@@ -315,7 +315,7 @@ describe("configuration sources", () => {
     }
   });
 
-  test("a missing file keeps defaults and does not create the data directory", async () => {
+  test("when the configuration file is missing, keeps defaults without creating the data directory", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-config-"));
     const data = join(directory, "missing");
 
@@ -338,7 +338,7 @@ describe("configuration sources", () => {
     }
   });
 
-  test("file settings resolve paths beside the file and environment overrides win per field", async () => {
+  test("when file settings and environment overrides coexist, resolves file paths locally and applies overrides per field", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-config-"));
 
     try {
@@ -400,7 +400,7 @@ describe("configuration sources", () => {
     }
   });
 
-  test("empty and invalid environment values never fall back to valid file settings", async () => {
+  test("when environment values are empty or invalid, fails without falling back to file settings", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-config-"));
 
     try {
@@ -436,24 +436,29 @@ describe("configuration sources", () => {
     ["null setting", '{"model":null}'],
     ["non-object settings", "[]"],
     ["oversized file", " ".repeat(65537)],
-  ])("rejects %s without printing file contents", async (_, contents) => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-config-invalid-"));
-    const path = join(directory, "config.json");
+  ])(
+    "when configuration contains %s, rejects it without printing file contents",
+    async (_, contents) => {
+      const directory = await mkdtemp(join(tmpdir(), "poppet-config-invalid-"));
+      const path = join(directory, "config.json");
 
-    try {
-      await writeFile(path, contents);
+      try {
+        await writeFile(path, contents);
 
-      const error = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }).pipe(Effect.flip));
+        const error = await Effect.runPromise(
+          load({ POPPET_DATA_DIR: directory }).pipe(Effect.flip),
+        );
 
-      expect(error).toHaveProperty("_tag", "ConfigError");
-      expect(error.message).toContain(path);
-      expect(error.message).not.toContain("must-not-appear");
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
+        expect(error).toHaveProperty("_tag", "ConfigError");
+        expect(error.message).toContain(path);
+        expect(error.message).not.toContain("must-not-appear");
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
-  test("unreadable configuration fails instead of being treated as a missing file", async () => {
+  test("when the configuration file is unreadable, fails instead of treating it as missing", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-config-unreadable-"));
 
     try {

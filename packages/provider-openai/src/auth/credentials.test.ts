@@ -9,8 +9,8 @@ import { createHarness, login, status } from "#src/test/fixtures/chatgpt";
 
 import { makeFIFO } from "../../../../tools/testing/fifo";
 
-describe("Credential storage", () => {
-  test("rejects malformed stored credentials and competing owners", async () => {
+describe("CredentialStore", () => {
+  test("when stored credentials are malformed or another owner holds them, rejects access", async () => {
     const harness = await createHarness();
 
     try {
@@ -36,7 +36,7 @@ describe("Credential storage", () => {
     }
   });
   test.each(["symlink", "hardlink", "fifo"])(
-    "rejects credential %s files without reading or changing their targets",
+    "when credential files are %s, rejects them without reading or changing targets",
     async (kind) => {
       const harness = await createHarness();
 

@@ -54,8 +54,8 @@ const harness = async () => {
   };
 };
 
-describe("API-key storage", () => {
-  test("inference key loading uses saved keys, gives environment keys precedence, and rejects empty overrides", async () => {
+describe("ApiKeyStore", () => {
+  test("when loading inference keys, prefers environment keys over saved keys and rejects empty overrides", async () => {
     const store = await harness();
 
     try {
@@ -87,7 +87,7 @@ describe("API-key storage", () => {
     }
   });
 
-  test("rejects unsafe provider IDs before creating or touching credential files", async () => {
+  test("when provider IDs are unsafe, rejects them before touching credential files", async () => {
     const store = await harness();
 
     try {
@@ -110,7 +110,7 @@ describe("API-key storage", () => {
     }
   });
 
-  test("keeps provider keys separate across replacement and logout with protected permissions", async () => {
+  test("when provider keys are replaced or removed, keeps other providers separate and files private", async () => {
     const store = await harness();
 
     try {
@@ -145,7 +145,7 @@ describe("API-key storage", () => {
     ["corrupted", "bad-json"],
     ["foreign", JSON.stringify({ version: 1, provider: "other-provider", key: "foreign-secret" })],
   ])(
-    "rejects %s credentials without overwriting them and repairs file permissions",
+    "when credentials are %s, rejects them without overwriting and repairs file permissions",
     async (_label, contents) => {
       const store = await harness();
 
@@ -167,7 +167,7 @@ describe("API-key storage", () => {
     },
   );
 
-  test("rejects symlinks and competing writers without touching unrelated data", async () => {
+  test("when credential paths are symlinked or another writer owns them, rejects access without touching unrelated data", async () => {
     const store = await harness();
 
     try {
@@ -210,7 +210,7 @@ describe("API-key storage", () => {
   });
 
   test.each(["hardlink", "fifo"])(
-    "rejects %s credentials before changing file permissions",
+    "when credentials are stored in a %s, rejects access before changing permissions",
     async (kind) => {
       const store = await harness();
 
@@ -236,55 +236,57 @@ describe("API-key storage", () => {
   );
 });
 
-test("login saves a key for inference and logout removes access", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "poppet-api-key-provider-"));
-  const keys: string[] = [];
+describe("apiKeyProvider", () => {
+  test("when login saves a key and logout follows, enables then removes inference access", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-api-key-provider-"));
+    const keys: string[] = [];
 
-  const { registration } = apiKeyProvider({
-    id: "test-provider",
-    name: "Test provider",
-    environment: "TEST_PROVIDER_KEY",
-    make: (key) => ({
+    const { registration } = apiKeyProvider({
       id: "test-provider",
-      models: key.pipe(
-        Effect.tap((value) => Effect.sync(() => keys.push(Redacted.value(value)))),
-        Effect.as([]),
-      ),
-      resolve: () => Effect.die("No model resolution expected"),
-    }),
+      name: "Test provider",
+      environment: "TEST_PROVIDER_KEY",
+      make: (key) => ({
+        id: "test-provider",
+        models: key.pipe(
+          Effect.tap((value) => Effect.sync(() => keys.push(Redacted.value(value)))),
+          Effect.as([]),
+        ),
+        resolve: () => Effect.die("No model resolution expected"),
+      }),
+    });
+
+    try {
+      const [provider, connection] = await Effect.runPromise(
+        Effect.all([Provider, ProviderConnection]).pipe(
+          Effect.provide(registration.layer),
+          Effect.provideService(ProviderEnvironment, {
+            applicationName: "Test",
+            dataDirectory: directory,
+          }),
+        ),
+      );
+
+      expect(await Effect.runPromise(connection.status)).toMatchObject({ connected: false });
+      await Effect.runPromise(
+        connection.login({ keyStdin: true }).pipe(
+          Effect.provideService(CredentialInput, {
+            readKey: () => Effect.succeed(Redacted.make("saved-key")),
+          }),
+        ),
+      );
+      expect(await Effect.runPromise(connection.status)).toMatchObject({
+        connected: true,
+        source: "stored",
+      });
+      await Effect.runPromise(provider.models);
+      expect(keys).toContain("saved-key");
+      await Effect.runPromise(connection.logout);
+      expect(await Effect.runPromise(connection.status)).toMatchObject({ connected: false });
+      await expect(Effect.runPromise(provider.models)).rejects.toMatchObject({
+        reason: "authentication",
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
-
-  try {
-    const [provider, connection] = await Effect.runPromise(
-      Effect.all([Provider, ProviderConnection]).pipe(
-        Effect.provide(registration.layer),
-        Effect.provideService(ProviderEnvironment, {
-          applicationName: "Test",
-          dataDirectory: directory,
-        }),
-      ),
-    );
-
-    expect(await Effect.runPromise(connection.status)).toMatchObject({ connected: false });
-    await Effect.runPromise(
-      connection.login({ keyStdin: true }).pipe(
-        Effect.provideService(CredentialInput, {
-          readKey: () => Effect.succeed(Redacted.make("saved-key")),
-        }),
-      ),
-    );
-    expect(await Effect.runPromise(connection.status)).toMatchObject({
-      connected: true,
-      source: "stored",
-    });
-    await Effect.runPromise(provider.models);
-    expect(keys).toContain("saved-key");
-    await Effect.runPromise(connection.logout);
-    expect(await Effect.runPromise(connection.status)).toMatchObject({ connected: false });
-    await expect(Effect.runPromise(provider.models)).rejects.toMatchObject({
-      reason: "authentication",
-    });
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
 });

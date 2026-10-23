@@ -28,9 +28,9 @@ const callbackFor = (authorizationUrl: string) => {
 const browserError = () =>
   new ConnectionError({ reason: "callback", message: "Test browser failed." });
 
-describe("Browser sign-in", () => {
+describe("makeBrowserSignIn", () => {
   test.each(["accepted", "declined"])(
-    "delivers the %s callback page before shutdown",
+    "when authorization is %s, delivers its callback page before shutdown",
     async (outcome) => {
       const declined = outcome === "declined";
       const opened = Promise.withResolvers<URL>();
@@ -69,7 +69,7 @@ describe("Browser sign-in", () => {
     },
   );
 
-  test("rejects a foreign host and consumes a callback only once", async () => {
+  test("when callbacks use a foreign host or repeat, rejects them and consumes the valid callback once", async () => {
     const statuses: number[] = [];
 
     const browser = makeBrowserSignIn((url) =>
@@ -96,7 +96,7 @@ describe("Browser sign-in", () => {
     expect(statuses).toEqual([400, 200, 410]);
   });
 
-  test("ignores callbacks with another state so the real callback still completes", async () => {
+  test("when callback state mismatches, ignores it so the valid callback can complete", async () => {
     const statuses: number[] = [];
 
     const browser = makeBrowserSignIn((url) =>
@@ -123,7 +123,7 @@ describe("Browser sign-in", () => {
   });
 
   test.each(["missing", "placeholder", "changed", "duplicate"] as const)(
-    "rejects a %s callback registration",
+    "when callback registration is %s, rejects it",
     async (failure) => {
       const browser = makeBrowserSignIn((url) =>
         Effect.tryPromise({
@@ -153,7 +153,7 @@ describe("Browser sign-in", () => {
     },
   );
 
-  test("closes the listener when the sign-in deadline expires", async () => {
+  test("when the sign-in deadline expires, closes the listener", async () => {
     const opened = Promise.withResolvers<string>();
 
     const browser = makeBrowserSignIn(
@@ -176,7 +176,7 @@ describe("Browser sign-in", () => {
     await expect(fetch(callback)).rejects.toThrow();
   });
 
-  test("closes the listener when sign-in is interrupted", async () => {
+  test("when sign-in is interrupted, closes the listener", async () => {
     const opened = Promise.withResolvers<string>();
 
     const browser = makeBrowserSignIn((url) =>

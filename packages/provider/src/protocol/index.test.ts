@@ -353,10 +353,10 @@ const fixture = (
 };
 
 for (const adapter of cases) {
-  describe(adapter.name, () => {
+  describe(adapter.protocol === "responses" ? "responsesModel" : "chatCompletionsModel", () => {
     if (adapter.protocol === "responses") {
       test.each([false, true])(
-        "requests and streams reasoning summaries only when enabled=%s",
+        "when reasoning summaries are enabled=%s, requests and streams only permitted summaries",
         async (enabled) => {
           const harness = fixture(adapter);
 
@@ -377,7 +377,7 @@ for (const adapter of cases) {
         },
       );
 
-      test("separates reasoning sections while preserving chunks within each section", async () => {
+      test("when reasoning has multiple sections, separates sections and preserves their chunks", async () => {
         const harness = fixture(adapter, "reasoning-parts");
 
         const events = await Effect.runPromise(
@@ -404,7 +404,7 @@ for (const adapter of cases) {
       });
     }
 
-    test("completes the shared tool exchange and preserves reasoning and session identity", async () => {
+    test("when a tool exchange completes, preserves reasoning and session identity", async () => {
       const harness = fixture(adapter);
       await Effect.runPromise(verifyModel(harness.model));
 
@@ -420,7 +420,7 @@ for (const adapter of cases) {
       expect(harness.signals.every((signal) => signal.aborted)).toBe(true);
     });
 
-    test("streams text and then returns authoritative output and usage", async () => {
+    test("when text streams before completion, returns authoritative final output and usage", async () => {
       const harness = fixture(adapter, "text");
       const events = await Effect.runPromise(Stream.runCollect(harness.model.stream(request)));
 
@@ -435,7 +435,7 @@ for (const adapter of cases) {
     });
 
     if (adapter.protocol === "chat-completions")
-      test("rejects repeated terminal choices without an accounting-frame extension", async () => {
+      test("when terminal choices repeat without an accounting extension, rejects the stream", async () => {
         const harness = fixture(adapter, "trailing-usage");
         await expect(
           Effect.runPromise(completeModel(harness.model, toolRequest)),
@@ -446,7 +446,7 @@ for (const adapter of cases) {
         expect(harness.requests).toHaveLength(1);
       });
 
-    test("preserves authoritative output or tool-call index order", async () => {
+    test("when output or tool calls arrive out of order, preserves authoritative output or tool-call index order", async () => {
       const harness = fixture(adapter, "ordered");
       const completed = await Effect.runPromise(completeModel(harness.model, toolRequest));
 
@@ -465,7 +465,7 @@ for (const adapter of cases) {
       "incomplete",
       "gap",
       "invalid-json",
-    ] as const)("rejects %s output without completing", async (mode) => {
+    ] as const)("when output is %s, rejects it without completing", async (mode) => {
       const harness = fixture(adapter, mode);
       const events: string[] = [];
 
@@ -480,7 +480,7 @@ for (const adapter of cases) {
       expect(harness.requests).toHaveLength(1);
     });
 
-    test("classifies a failed stream and does not repeat inference", async () => {
+    test("when the stream fails, classifies the failure without repeating inference", async () => {
       const harness = fixture(adapter, "failed");
 
       await expect(Effect.runPromise(completeModel(harness.model, request))).rejects.toMatchObject({
@@ -489,7 +489,7 @@ for (const adapter of cases) {
       expect(harness.requests).toHaveLength(1);
     });
 
-    test("classifies network failure as temporary without retrying or exposing its details", async () => {
+    test("when the network fails, reports a temporary failure without retrying or exposing details", async () => {
       const harness = fixture(adapter, "network-failure");
 
       const failure = await Effect.runPromise(
@@ -504,7 +504,7 @@ for (const adapter of cases) {
     });
 
     if (adapter.protocol === "responses")
-      test("accepts completed function calls with the SDK's optional status omitted", async () => {
+      test("when completed function calls omit optional SDK status, accepts them", async () => {
         const harness = fixture(adapter, "missing-status");
         await Effect.runPromise(verifyModel(harness.model));
         expect(harness.requests).toHaveLength(2);
@@ -518,7 +518,7 @@ for (const adapter of cases) {
       ["503", 503, "request_failed", "temporary"],
       ["context limit", 400, "context_length_exceeded", "context-limit"],
     ] as const)(
-      "classifies HTTP %s safely and never retries",
+      "when HTTP returns %s, classifies the failure safely without retrying",
       async (_label, status, errorCode, reason) => {
         const harness = fixture(adapter, "normal", status, errorCode);
 
@@ -534,7 +534,7 @@ for (const adapter of cases) {
       },
     );
 
-    test("rejects unsupported settings and foreign continuation before making a request", async () => {
+    test("when settings are unsupported or continuation is foreign, rejects the request before sending", async () => {
       const harness = fixture(adapter);
 
       await expect(
@@ -571,7 +571,7 @@ for (const adapter of cases) {
       expect(harness.requests).toHaveLength(0);
     });
 
-    test("aborts the request when the consumer stops after a delta", async () => {
+    test("when the consumer stops after a delta, aborts the request", async () => {
       const harness = fixture(adapter, "stall");
 
       const events = await Effect.runPromise(
@@ -582,7 +582,7 @@ for (const adapter of cases) {
       expect(harness.signals[0]?.aborted).toBe(true);
     });
 
-    test("aborts a pending network read on interruption", async () => {
+    test("when a pending network read is interrupted, aborts it", async () => {
       const harness = fixture(adapter, "stall");
       const fiber = Effect.runFork(Stream.runCollect(harness.model.stream(request)));
       await harness.reading;
@@ -591,7 +591,7 @@ for (const adapter of cases) {
       expect(harness.signals[0]?.aborted).toBe(true);
     });
 
-    test("enforces an absolute deadline using the Effect clock", async () => {
+    test("when the absolute deadline expires, aborts the request using the Effect clock", async () => {
       const harness = fixture(adapter, "stall");
 
       const error = await Effect.runPromise(
