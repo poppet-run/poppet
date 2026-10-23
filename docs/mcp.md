@@ -111,7 +111,7 @@ honestly.
 Each run takes a catalog snapshot. List-change notifications cannot expand it;
 restart the owner to refresh discovery. Server instructions are ignored.
 Descriptions, schemas, and results remain untrusted data. They cannot authorize
-note, memory, or task mutations, expand permissions, or grant URL access. URLs
+memory or task mutations, expand permissions, or grant URL access. URLs
 returned by MCP do not receive web-search grants. Scheduled runs retain the
 built-in mutation restrictions. Poppet sends the validated arguments and selected
 child credentials, without automatically attaching history or global memory.

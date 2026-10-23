@@ -99,8 +99,8 @@ Enable `webSearch` separately and restart any running worker. See
 | `chat sessions`                                                             | List saved sessions.                                        |
 | `chat show <session>`                                                       | Print saved messages, tool calls, and run outcomes as JSON. |
 
-See [chat](chat.md) for session selection, streaming, cancellation, and limits,
-and [notes](notes.md) for the tools available during a run.
+See [chat](chat.md) for session selection, streaming, cancellation, limits,
+and the tools available during a run.
 
 ## Skills
 
@@ -126,13 +126,13 @@ See [skills](skills.md#background-review) for when reviews run.
 
 ## Projects
 
-| Command                | Action                                                                |
-| ---------------------- | --------------------------------------------------------------------- |
-| `projects list`        | List named project directories without opening storage.               |
-| `projects show <name>` | Validate and display current project instructions and note selection. |
+| Command                | Action                                                  |
+| ---------------------- | ------------------------------------------------------- |
+| `projects list`        | List named project directories without opening storage. |
+| `projects show <name>` | Validate and display current project instructions.      |
 
 Select `--project <name>` before a new chat message or task prompt. See
-[project context](projects.md) for saved snapshots, facts, note limits, and messaging.
+[project context](projects.md) for saved snapshots, facts and messaging.
 
 ## Memory
 

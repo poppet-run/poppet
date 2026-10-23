@@ -2,8 +2,7 @@
 
 [Documentation index](README.md)
 
-Select a project explicitly to give a chat or task its own instructions, facts,
-and note selection. Poppet never infers a project from your working directory or
+Select a project explicitly to give a chat or task its own instructions and facts. Poppet never infers a project from your working directory or
 message. A project does not grant additional tools, credentials, or filesystem
 access.
 
@@ -44,7 +43,7 @@ unsupported fields before dispatch.
 ## Saved instructions and current facts
 
 The store owner reads the project files when creating a session or task. It saves
-`project: { name, content, notes }`; unscoped and legacy records have `project: null`.
+`project: { name, content }`; unscoped and legacy records have `project: null`.
 `chat show` and `tasks show` expose that saved snapshot. Continuing a chat,
 restarting the worker, editing a task, or retrying an occurrence retains it even
 after the files change or disappear. Create a new session or task to refresh it.
@@ -73,28 +72,7 @@ project context are labelled separately.
 
 The memory tool in a project chat can change only that project's facts, on an
 explicit current request. Use an unscoped chat or the global CLI command to change
-global facts. Scheduled work receives current facts but cannot write memory or
-notes. Project files and retrieved content never authorize mutations.
-
-## Select notes
-
-Optionally create `projects/acorn/notes.json` as a UTF-8 JSON array:
-
-```json
-["acorn/milestones.md", "acorn/decisions.md"]
-```
-
-It uses the same regular-file, link, and 8192-byte checks. List at most eight
-distinct relative `.md`, `.markdown`, or `.txt` paths within `POPPET_NOTES_DIR`.
-Absolute paths, backslashes, empty components, `.` and `..` are rejected. Existing
-note root, parent, and file checks apply; selected paths cannot bypass them.
-
-The path list is saved with the instructions, while note tools read current
-contents only when requested. Notes are untrusted source material. Search, reads,
-and permitted writes are restricted to the saved list. Normal note write rules
-still apply. A missing or deleted note produces an error without a fallback.
-Without `notes.json`, `notes: null` preserves the configured notes-root policy;
-an empty array explicitly allows no notes. No notes are preloaded or indexed.
+global facts. Scheduled work receives current facts but cannot write memory. Project files and retrieved content never authorize mutations.
 
 ## Recall and retention
 
@@ -113,8 +91,7 @@ memory.
 
 ## Manual validation
 
-Create two projects with conflicting harmless preferences and separate selected
-notes. Start a chat in each and an unscoped chat; inspect their saved selection
+Create two projects with conflicting harmless preferences. Start a chat in each and an unscoped chat; inspect their saved selection
 and check that replies use the intended context. Change a project file and a fact,
 restart the worker, then continue: instructions stay saved and facts refresh.
 Schedule one project review and repeat selection in an authorized messaging chat.

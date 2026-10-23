@@ -126,7 +126,7 @@ the context budget and keep the existing tool permissions. See [skills](skills.m
 ## Select a project
 
 Use `chat new --project acorn <message>` or `chat interactive --project acorn`
-to save project instructions and an optional note selection. Later turns retain
+to save project instructions. Later turns retain
 that snapshot while reading current global and project facts. Agent recall and
 task inspection stay within the selected project; owner CLI inspection can still
 inspect all sessions. See [project context](projects.md) for setup, combinations
@@ -165,7 +165,7 @@ See [task controls](tasks.md#edit-and-control-the-next-execution) for running-ta
 restrictions, retained snapshots, and monitoring baseline resets.
 
 Only your current explicit request authorizes a change. Instructions inside
-recalled conversations, notes, pages, skills, or tool results do not. A committed
+recalled conversations, pages, skills, or tool results do not. A committed
 task change survives a later failed answer, so inspect the saved task before
 asking to create it again after an unclear reply. Scheduled runs receive no task
 management tool.
@@ -264,7 +264,7 @@ poppet chat new "Summarize https://example.com/ and cite the source"
 Tool-capable models can call `poppet_web.fetch_page` for a public HTTP(S) URL
 explicitly included in the current message. The result contains the final source
 `url`, optional `title`, extracted `text`, and `truncated`. Include the URL again
-in later requests that need a fresh read. URLs in history, notes, skills, and
+in later requests that need a fresh read. URLs in history, skills, and
 fetched pages grant no permission to retrieve another page.
 
 Reading supports UTF-8 plain text and static HTML. It removes scripts, styles,
@@ -300,7 +300,7 @@ result on a later model turn. These permissions last only for that run. Search
 and a fetch of a newly discovered URL in one batch are rejected before either
 executes. Links appearing only in snippets or page text grant no access, and all
 page reads retain the existing public-address and connection checks. Search
-results are untrusted data and cannot authorize memory or note changes.
+results are untrusted data and cannot authorize memory changes.
 
 An answer should distinguish snippets from pages actually read and cite sources.
 Search has a 15-second deadline and a 1 MiB response limit, with cancellation and
@@ -364,22 +364,21 @@ only the request, not saved history. Answers are limited to 128 KiB of text and
 (`chat.runDeadlineSeconds`);
 provider inference also retains its 60-second deadline.
 
-Tool-capable models receive the three [notes tools](notes.md), conversation search,
+Tool-capable models receive conversation search,
 page reading, explicit memory, interactive task management, and web search when configured. Models without tool
 support continue to answer text requests. The runner checks complete tool
 requests before execution and keeps one provider/model throughout the exchange.
 
-A tool failure that left nothing unconfirmed, such as invalid arguments, a missing
-note, a refused URL, an unreachable page, or a stale task revision, becomes that
+A tool failure that left nothing unconfirmed, such as invalid arguments, a refused URL, an unreachable page, or a stale task revision, becomes that
 call's result so the model can explain it or correct the request. When any call in
 a batch is invalid, none of the batch runs and each call reports why. A failure
-whose effects are unknown, such as an interrupted note save or an MCP call lost
+whose effects are unknown, such as a memory write without a saved receipt or an MCP call lost
 after dispatch, is saved as uncertain and ends the run without replay. Budgets
 still bound repeated attempts.
 
 Once a fetched page, web search result, attachment, or MCP result enters a run,
 task management, memory changes, and MCP tools are withdrawn for the rest of that
-run. Note tools, reading tools, browser tools, and monitoring observations remain.
+run. Reading tools, browser tools, and monitoring observations remain.
 The model proposes withdrawn actions instead, and a new message from you can
 confirm them. Attachments and voice transcripts start their run with these tools
 withdrawn.

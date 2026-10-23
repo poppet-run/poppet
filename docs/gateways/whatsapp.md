@@ -93,7 +93,7 @@ With `worker run` active and WhatsApp connected, select the owner's phone before
 the task prompt:
 
 ```sh
-poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --whatsapp-chat <owner-phone> "Summarize my notes"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --whatsapp-chat <owner-phone> "Summarize recent conversations"
 ```
 
 The messaging worker validates the destination before saving. Each occurrence

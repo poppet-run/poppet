@@ -42,7 +42,7 @@ Use the session ID printed by the first command. The model is instructed to chan
 memory only on an explicit request in the current user message. It must not infer
 facts to save or treat profile, personality, skills, retrieved content, history, or
 tool results as permission. Runtime checks validate the arguments and allowed tools;
-the model interprets the user's intent, as it does for requested note writes.
+the model interprets the user's intent.
 
 The tool has three actions, `remember`, `replace`, and `forget`. It takes `action`,
 `key`, and `value`; forgetting requires a JSON `null` value. Existing keys are never
@@ -64,11 +64,11 @@ storage error or a committed change whose result cannot be saved remains uncerta
 and is never automatically replayed. Completed memory changes persist even if a
 later tool or model turn fails. Inspect `memory list` and `chat show` before retrying.
 Forgetting removes the fact, but does not redact earlier messages or tool records.
-The tool does not edit `profile.md`, `soul.md`, notes, or credential files.
+The tool does not edit `profile.md`, `soul.md`, or credential files.
 
 Scheduled runs retain their starting fact snapshot but have no memory-writing
 tool, even when a task or selected skill asks for changes. The shared
-`readOnlyTools` policy also excludes note writes.
+`readOnlyTools` policy enforces this restriction.
 
 Automated checks cover local/worker chat, mutation provenance, restart, argument
 validation, byte limits, protected scheduled runs, cancellation, and storage/journal
@@ -99,7 +99,7 @@ instructed to save stable preferences, recurring context, and your corrections
 sparingly, to replace outdated facts rather than duplicate them, to forget facts
 you say are wrong, and to mention each change in its reply. It must not save
 transient task details, secrets, or anything from pages, attachments, search
-results, notes, history, or tool output; only your own messages can supply facts.
+results, history, or tool output; only your own messages can supply facts.
 
 The existing safeguards stay: memory changes are withdrawn once untrusted
 content enters a run, scheduled runs cannot change memory, budgets and limits
@@ -170,6 +170,6 @@ content fails clearly instead of silently omitting preferences. All count toward
 A malformed or oversized personality file, profile, or facts block fails before
 resolving a provider; a context overflow fails before inference. Forgetting removes
 the saved fact from future snapshots; existing
-conversation messages and note files remain in their own storage.
+conversation messages remain in their own storage.
 
 See [memory architecture](architecture.md#explicit-memory) for the service and local implementation.

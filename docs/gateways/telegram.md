@@ -89,8 +89,7 @@ and pages. Oversized text files are rejected rather than shortened. Combined
 caption, source, instructions and tools must still fit the configured chat budget.
 
 Attachment contents and links are untrusted source material. They cannot grant
-URL access or authorize note, memory or task changes. A separate caption can
-request a permitted note write under the ordinary chat rules. Attachment runs
+URL access or authorize memory or task changes. Attachment runs
 withhold memory changes, task management, and MCP tools; confirm proposed actions
 in a subsequent text message. `/new`, `/status` and `/cancel`
 are parsed only from your text/caption. File contents cannot invoke them.
@@ -101,8 +100,7 @@ the worker. Telegram Ogg/Opus voice messages must be at most 8 MiB and 2 minutes
 accepted transcripts are at most 16 KiB. Audio decoding and transcription stay
 on your machine. The transcript is sent to the selected text model.
 
-Every voice reply shows the exact accepted transcript. Voice runs have no note,
-memory or task write tools and no external MCP/browser tools. For a dictated
+Every voice reply shows the exact accepted transcript. Voice runs have no memory or task write tools and no external MCP/browser tools. For a dictated
 reminder, Poppet proposes the task and resolved time/timezone, then asks you to
 confirm in a subsequent text message. Correct unclear words or times before
 confirming; speech recognition does not authenticate a speaker.
@@ -143,7 +141,7 @@ Run `poppet worker run` to enable scheduling and messaging together, then
 select the configured owner's private chat before the prompt:
 
 ```sh
-poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --telegram-chat <owner-id> "Summarize my notes"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --telegram-chat <owner-id> "Summarize recent conversations"
 ```
 
 The messaging worker checks the destination before saving. Each occurrence keeps

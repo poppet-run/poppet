@@ -56,7 +56,7 @@ poppet worker status
 poppet worker logs
 ```
 
-Save persistent provider, model, notes-directory, and chat-limit settings in
+Save persistent provider, model, and chat-limit settings in
 `<data directory>/config.json` before installing. See [configuration](configuration.md).
 Shell overrides apply to foreground commands and workers; installation does not
 save them for the background worker.
@@ -116,7 +116,7 @@ poppet tasks show <task-id>
 ```
 
 Lifecycle logs go to `<data directory>/logs/worker.log`, with `0700` directory and
-`0600` file permissions. They exclude prompts, notes, model output, and tokens.
+`0600` file permissions. They exclude prompts, model output, and tokens.
 The background launcher limits each new log file to 5 MiB and retains three
 archives, `worker.log.1` through `worker.log.3`, newest first. It appends after
 restart and rotates between writes, including when a single output chunk exceeds
@@ -142,7 +142,7 @@ poppet worker uninstall
 Stopping removes the running launchd registration and sends SIGTERM. Scoped
 cleanup interrupts active work, records its outcome, closes the socket, and
 releases storage. `stop` keeps login startup configured; `uninstall` disables it
-and retains tasks, results, notes, credentials, and logs. Inspection errors fail
+and retains tasks, results, credentials, and logs. Inspection errors fail
 the command and preserve the installed configuration. Lifecycle mutations finish
 before an interruption returns; each launchctl subprocess has a 35-second timeout.
 Starting an already
@@ -170,7 +170,7 @@ poppet store status
 ```
 
 New chats use the invoking terminal's provider, model, and workload; continued
-chats use their saved selection. The worker's startup notes directory and budgets
+chats use their saved selection. The worker's startup budgets
 apply to remote requests, including conversation-search result limits. Search
 runs on the owning store connection and needs no provider request. Memory changes are loaded on the next run. Chat output
 and session IDs go to the client terminal and are excluded from worker logs.

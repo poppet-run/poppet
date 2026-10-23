@@ -12,9 +12,8 @@ For example, save this as `skills/weekly-review/SKILL.md` under your data direct
 ```markdown
 # Weekly review
 
-Search the notes for the project named in the user's prompt. Read relevant notes,
-then summarize progress, unresolved questions, and next actions. Cite note paths.
-Save the review only if the user explicitly asks and note writes are permitted.
+Search past conversations within the selected project. Read relevant exchanges,
+then summarize progress, unresolved questions, and next actions. Cite session IDs.
 ```
 
 Inspect and select it:
@@ -44,12 +43,12 @@ The process owning the store loads the file. Commands sent through a running wor
 use its data directory and the same validation as local commands. Skills join the
 run's instructions below the base rules and count toward the existing context
 budget. They cannot override explicit user requests or grant tool permissions.
-Scheduled notes and memory remain read-only. A skill cannot authorize memory
+Scheduled runs cannot write memory. A skill cannot authorize memory
 changes; ordinary chat needs an explicit request in the current user message. Automatic session naming does not receive skills.
 
 Combine a skill with `--project <name>` to add [project context](projects.md).
-The project supplies instructions, facts, and optional note limits; the skill
-supplies a procedure within those limits. Both snapshots persist independently.
+The project supplies instructions and facts; the skill
+supplies a procedure within the existing tool permissions. Both snapshots persist independently.
 Messaging accepts `/new --project acorn --skill weekly-review Review progress`.
 
 Skills are single files. Poppet does not parse YAML metadata, follow references,
@@ -72,7 +71,7 @@ the budget to `0` to turn the index and tool off. A skill selected with
 
 Viewing is read-only and remains available in scheduled runs and after untrusted
 content enters a run. A viewed skill grants no permissions and cannot authorize
-memory, note, or task changes.
+memory or task changes.
 
 ## Learned skills
 

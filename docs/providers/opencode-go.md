@@ -32,7 +32,7 @@ supported. Both protocols send `poppet/0.0.0` and a stable `x-opencode-session`
 header for the exchange.
 
 Go documents coding-agent traffic. Poppet's Go adapter requires a `coding`
-workload and rejects general assistant, notes, and scheduled-summary requests
+workload and rejects general assistant and scheduled-summary requests
 before reading its key or making inference requests.
 [OpenCode Go requirements and endpoints](https://opencode.ai/v2/docs/console/go/)
 
