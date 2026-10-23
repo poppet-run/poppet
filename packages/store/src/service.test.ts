@@ -75,8 +75,8 @@ const reject = <A>(operation: Effect.Effect<A, StoreError>, reason: StoreError["
   );
 
 // Durable SQLite writes run sequentially to avoid disk contention on CI runners.
-describe("conversation store", () => {
-  test("indexes only completed user text and final answers, retaining titles and results across restart", async () => {
+describe("Store", () => {
+  test("when runs complete and storage restarts, indexes user text and final answers and retains titles and results", async () => {
     const saved = await fixture();
 
     try {
@@ -235,7 +235,7 @@ describe("conversation store", () => {
     }
   });
 
-  test("pages in session order around stable matches and past appended exchanges, validating session anchors", async () => {
+  test("when history grows around search matches, pages in session order with stable validated anchors", async () => {
     const saved = await fixture();
 
     try {
@@ -317,7 +317,7 @@ describe("conversation store", () => {
   });
 
   test.each([1024, 65536])(
-    "bounds recall to %s bytes without splitting Unicode or trapping oversized messages",
+    "when recall has a %s-byte budget, preserves Unicode and advances past oversized messages",
     async (maxBytes) => {
       const saved = await fixture();
 
@@ -405,7 +405,7 @@ describe("conversation store", () => {
     },
   );
 
-  test("treats queries as plain text and bounds ranked results, UTF-8 excerpts and serialized bytes", async () => {
+  test("when search receives plain-text queries, returns bounded ranked results and UTF-8 excerpts", async () => {
     const saved = await fixture();
 
     try {
@@ -506,7 +506,7 @@ describe("conversation store", () => {
       matched: "CAFÉ",
       maxBytes: 1024,
     },
-  ])("keeps matching text in shortened excerpts within $maxBytes bytes", async (input) => {
+  ])("when excerpts are shortened to $maxBytes bytes, retains matching text", async (input) => {
     const saved = await fixture();
 
     try {
@@ -539,7 +539,7 @@ describe("conversation store", () => {
     }
   });
 
-  test("an indexing failure rolls back the completed run and final message", async () => {
+  test("when indexing fails, rolls back run completion and the final message", async () => {
     const saved = await fixture();
 
     try {
@@ -577,7 +577,7 @@ describe("conversation store", () => {
   });
 
   test.each(["pending", "running"])(
-    "recovers abandoned %s tool calls without replaying them",
+    "when %s tool calls are abandoned, recovers them without replay",
     async (state) => {
       const fixtureStore = await fixture();
 
@@ -648,7 +648,7 @@ describe("conversation store", () => {
     },
   );
 
-  test("persists messages, tools, continuation and completed runs across reopening", async () => {
+  test("when storage reopens, retains messages, tools, continuation, and completed runs", async () => {
     const provider = "new-provider";
     const fixtureStore = await fixture();
 
@@ -731,7 +731,7 @@ describe("conversation store", () => {
     }
   });
 
-  test("completes a run whose failed calls replied to the model, but not one with a silent failure", async () => {
+  test("when tool calls fail, permits completion only if their failures were reported to the model", async () => {
     const provider = "new-provider";
     const fixtureStore = await fixture();
 
@@ -798,7 +798,7 @@ describe("conversation store", () => {
     }
   });
 
-  test("rolls back partial input and completion writes when SQLite rejects a later operation", async () => {
+  test("when SQLite rejects a later operation, rolls back partial input and completion writes", async () => {
     const fixtureStore = await fixture();
 
     try {
@@ -847,7 +847,7 @@ describe("conversation store", () => {
     }
   });
 
-  test("enforces one active run, session ownership, continuation identity and terminal transitions", async () => {
+  test("when run ownership, identity, or transitions are invalid, rejects them and enforces one active run", async () => {
     const fixtureStore = await fixture();
 
     try {
@@ -907,7 +907,7 @@ describe("conversation store", () => {
   });
 
   test.each(["pending", "running"])(
-    "marks an abandoned %s run interrupted on reopening without replay",
+    "when storage reopens with an abandoned %s run, marks it interrupted without replay",
     async (state) => {
       const fixtureStore = await fixture();
 
@@ -946,7 +946,7 @@ describe("conversation store", () => {
     },
   );
 
-  test("rejects another owner and closes the database and lock on interruption", async () => {
+  test("when another owner opens storage or the current owner is interrupted, enforces ownership and closes resources", async () => {
     const fixtureStore = await fixture();
     const opened = Promise.withResolvers<Store["Service"]>();
 
@@ -976,7 +976,7 @@ describe("conversation store", () => {
   });
 
   test.each(["workload", "continuation"])(
-    "rejects a run's foreign %s through both single and session reads",
+    "when a run contains foreign %s, rejects both direct and session reads",
     async (kind) => {
       const saved = await fixture();
 
@@ -1021,7 +1021,7 @@ describe("conversation store", () => {
   );
 
   test.each(["malformed-json", "foreign-continuation"])(
-    "rejects %s rows without exposing payloads",
+    "when stored rows contain %s, rejects them without exposing payloads",
     async (kind) => {
       const fixtureStore = await fixture();
 
@@ -1065,7 +1065,7 @@ describe("conversation store", () => {
     },
   );
 
-  test("releases ownership after initialization fails and rejects database symlinks", async () => {
+  test("when initialization fails or the database is symlinked, releases ownership and rejects unsafe storage", async () => {
     const fixtureStore = await fixture();
 
     try {
@@ -1088,7 +1088,7 @@ describe("conversation store", () => {
     }
   });
 
-  test("releases ownership when a newer database schema prevents startup", async () => {
+  test("when a newer schema prevents startup, releases ownership", async () => {
     const fixtureStore = await fixture();
 
     try {

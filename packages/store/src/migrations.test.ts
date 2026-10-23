@@ -5,8 +5,8 @@ import { applyMigrations, migrations } from "#src/migrations";
 
 const initial = migrations.slice(0, 1);
 
-describe("store migrations", () => {
-  test("rolls back initial schema creation when a later migration fails", () => {
+describe("applyMigrations", () => {
+  test("when a later migration fails during initial setup, rolls back schema creation", () => {
     using database = new Database(":memory:");
 
     const broken = {
@@ -24,7 +24,7 @@ describe("store migrations", () => {
     expect(applyMigrations(database)).toBe(migrations.length);
   });
 
-  test("rolls back every pending migration and ledger entry while preserving saved data", () => {
+  test("when a pending migration fails, rolls back pending changes and ledger entries while preserving data", () => {
     using database = new Database(":memory:");
     applyMigrations(database, initial, 10);
     database.run(
@@ -68,7 +68,7 @@ describe("store migrations", () => {
   });
 
   test.each(["future-version", "changed-checksum", "missing-ledger"])(
-    "rejects %s before applying further changes",
+    "when the migration ledger has %s, rejects further changes",
     (failure) => {
       using database = new Database(":memory:");
       applyMigrations(database);
@@ -84,7 +84,7 @@ describe("store migrations", () => {
     },
   );
 
-  test("does not claim an unrelated database", () => {
+  test("when a database belongs to another application, refuses to claim it", () => {
     using unrelated = new Database(":memory:");
     unrelated.run("CREATE TABLE other_data (id INTEGER)");
     expect(() => applyMigrations(unrelated)).toThrow("unsupported or changed migration history");
@@ -93,7 +93,7 @@ describe("store migrations", () => {
     ).toBeNull();
   });
 
-  test("backfills fact origins and first revisions when adding memory history", () => {
+  test("when memory history is added, backfills fact origins and first revisions", () => {
     using database = new Database(":memory:");
     applyMigrations(database, migrations.slice(0, 6), 10);
     database.run(
