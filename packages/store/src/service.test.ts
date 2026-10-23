@@ -8,6 +8,7 @@ import { AppConfig } from "@poppet/config";
 import { type Completion, type Message, type ProviderId } from "@poppet/provider";
 import { Effect, Fiber, Layer } from "effect";
 
+import { StoreDatabase } from "#src/database";
 import { StoreError } from "#src/errors";
 import type { SessionReadResult } from "#src/schema";
 import { Store, StoreLive } from "#src/service";
@@ -28,7 +29,7 @@ const fixture = async () => {
     ),
   );
 
-  const run = <A>(program: Effect.Effect<A, StoreError, Store>) =>
+  const run = <A>(program: Effect.Effect<A, StoreError, Store | StoreDatabase>) =>
     Effect.runPromise(program.pipe(Effect.provide(layer)));
 
   return {
@@ -165,11 +166,17 @@ describe("conversation store", () => {
           ]);
 
           yield* store.finishRun(interrupted.id, { status: "interrupted", reason: "test" });
-          yield* store.appendMessages({
-            sessionId: session.id,
-            runId: null,
-            messages: [{ role: "user", text: "unownedonly" }],
-          });
+          const { database } = yield* StoreDatabase;
+          // Saved history can contain messages created before run ownership was recorded.
+          database
+            .query(`INSERT INTO messages (session_id, run_id, position, created_at, payload)
+            SELECT ?, NULL, COALESCE(MAX(position), -1) + 1, ?, ? FROM messages WHERE session_id = ?`)
+            .run(
+              session.id,
+              session.createdAt,
+              JSON.stringify({ role: "user", text: "unownedonly" }),
+              session.id,
+            );
 
           for (const query of ["failedonly", "interruptedonly", "unownedonly"]) {
             expect((yield* store.searchSessions(query, 16384)).matches).toEqual([]);
@@ -648,20 +655,14 @@ describe("conversation store", () => {
     try {
       const response = responseFor(provider);
 
+      const request: Completion = {
+        ...response,
+        output: [{ ...toolCall("call-1"), arguments: '{"path":"test.md"}' }],
+        finishReason: "tool-calls",
+      };
+
       const exchange: ReadonlyArray<Message> = [
-        {
-          role: "assistant",
-          output: [
-            {
-              type: "tool-call",
-              callId: "call-1",
-              name: "read_note",
-              namespace: "notes",
-              arguments: '{"path":"test.md"}',
-            },
-          ],
-          continuation: response.continuation,
-        },
+        { role: "assistant", output: request.output, continuation: request.continuation },
         { role: "tool", callId: "call-1", output: "A note" },
       ];
 
@@ -684,10 +685,11 @@ describe("conversation store", () => {
           });
           const running = yield* store.startRun(pending.id);
           expect(running.status).toBe("running");
-          yield* store.appendMessages({
-            sessionId: session.id,
-            runId: pending.id,
-            messages: exchange,
+          yield* store.recordToolCalls(pending.id, request);
+          yield* store.startToolCall(pending.id, "call-1");
+          yield* store.finishToolCall(pending.id, "call-1", {
+            status: "completed",
+            output: "A note",
           });
           const completed = yield* store.finishRun(pending.id, { status: "completed", response });
 
@@ -872,16 +874,8 @@ describe("conversation store", () => {
             }),
             "conflict",
           );
-          yield* reject(
-            store.appendMessages({ sessionId: first.id, runId: null, messages: [user] }),
-            "conflict",
-          );
           yield* store.startRun(pending.id);
           yield* reject(store.startRun(pending.id), "conflict");
-          yield* reject(
-            store.appendMessages({ sessionId: other.id, runId: pending.id, messages: [user] }),
-            "conflict",
-          );
           yield* reject(
             store.finishRun(pending.id, {
               status: "completed",
@@ -901,10 +895,6 @@ describe("conversation store", () => {
               status: "completed",
               response: responseFor("new-provider"),
             }),
-            "conflict",
-          );
-          yield* reject(
-            store.appendMessages({ sessionId: first.id, runId: pending.id, messages: [user] }),
             "conflict",
           );
           const next = yield* store.queueRun(other.id, [user]);

@@ -15,7 +15,6 @@ import { StoreError, storageFailure, corruptRecord, readRecord } from "#src/erro
 import { readSession } from "#src/recall";
 import {
   Id,
-  MessageBatch,
   ModelId,
   Run,
   RunOutcome,
@@ -73,8 +72,6 @@ interface StoreOperations {
   ) => Effect.Effect<SessionReadResult, StoreError>;
   /** Reads messages in session order and rejects continuation belonging to another model. */
   readonly messages: (sessionId: string) => Effect.Effect<ReadonlyArray<StoredMessage>, StoreError>;
-  /** Appends the entire batch atomically; active sessions require their running run's ID. */
-  readonly appendMessages: (batch: MessageBatch) => Effect.Effect<void, StoreError>;
   /** Saves a pending run and its inputs together; rejects any other pending or running run. */
   readonly queueRun: (
     sessionId: string,
@@ -521,46 +518,6 @@ export const StoreLive = Layer.effect(
           .immediate(),
       );
 
-    const appendMessages = (batch: MessageBatch) =>
-      atTime((at) =>
-        database
-          .transaction(() => {
-            const decoded = Schema.decodeUnknownSync(MessageBatch, { onExcessProperty: "error" })(
-              batch,
-            );
-
-            const session = requireSession(database, decoded.sessionId);
-
-            if (decoded.runId !== null) {
-              const run = requireRun(database, decoded.runId);
-
-              if (run.sessionId !== session.id || run.status !== "running")
-                throw new StoreError({
-                  reason: "conflict",
-                  message: "Messages must belong to a running run in this session.",
-                });
-            } else if (
-              database
-                .query(
-                  "SELECT id FROM runs WHERE session_id = ? AND status IN ('pending', 'running')",
-                )
-                .get(session.id)
-            )
-              throw new StoreError({
-                reason: "conflict",
-                message: "Append messages through the active run.",
-              });
-            append(
-              database,
-              session,
-              decoded.runId,
-              decoded.messages,
-              Math.max(at, session.createdAt),
-            );
-          })
-          .immediate(),
-      );
-
     const recordToolCalls: StoreOperations["recordToolCalls"] = (
       runId,
       response,
@@ -774,7 +731,6 @@ export const StoreLive = Layer.effect(
       queueRun,
       startRun,
       finishRun,
-      appendMessages,
       searchSessions: (query, maxBytes, project) =>
         Effect.try({
           try: () => searchSessions(database, query, maxBytes, project),

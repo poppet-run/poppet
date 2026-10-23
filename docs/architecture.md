@@ -404,8 +404,8 @@ index permits only one pending or running run.
 
 `queueRun` persists its pending run and input messages in one transaction.
 `startRun` accepts only pending work. Pending work can fail or be interrupted;
-successful completion requires a running run. `appendMessages` preserves exchanges inside
-a running run. `finishRun` atomically saves a successful response and assistant
+successful completion requires a running run. `recordToolCalls`, `startToolCall`, and
+`finishToolCall` journal tool exchanges and their outcomes. `finishRun` atomically saves a successful response and assistant
 message, or records a failure/interruption reason. Read methods retain message
 order and provider continuation. The `Store` record API exposes no raw SQLite
 handle; repositories use the separate scoped `StoreDatabase` service.

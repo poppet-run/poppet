@@ -180,13 +180,6 @@ export const RunOutcome = Schema.Union([
   }),
 ]);
 
-/** Messages appended together to one session, optionally through its active run. */
-export const MessageBatch = Schema.Struct({
-  sessionId: Id,
-  runId: Schema.NullOr(Id),
-  messages: Schema.Array(Message),
-});
-
 /** A saved tool invocation; uncertain means its effects could not be confirmed. */
 export const ToolCall = Schema.Struct({
   runId: Id,
@@ -240,8 +233,6 @@ export type StoredMessage = typeof StoredMessage.Type;
 export type Run = typeof Run.Type;
 
 export type RunOutcome = typeof RunOutcome.Type;
-
-export type MessageBatch = typeof MessageBatch.Type;
 
 /** Database location, migration version, and saved record counts for status commands. */
 export interface StoreStatus {
