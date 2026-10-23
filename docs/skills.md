@@ -27,9 +27,10 @@ poppet tasks add weekly-review --cron "0 9 * * 1" --tz Europe/London --skill wee
 ```
 
 Put `--skill` and other options before the message or prompt. Select at most one
-skill. `skills list` lists named directories; `skills show` reads and validates
-the selected file. A missing skills root lists as empty. Inspection needs no
-selected model, credentials, or database. Symlinks, hard links, non-regular files,
+skill. `skills list` lists named directories and any
+[learned skills](#learned-skills); `skills show` reads and validates the selected
+file. A missing skills root lists as empty. Inspection needs no selected model
+or credentials, and showing an owner file needs no database. Symlinks, hard links, non-regular files,
 invalid UTF-8, and oversized content are rejected. Names cannot be paths.
 
 Poppet reads the skill when creating the session or task and saves its name and
@@ -72,6 +73,30 @@ the budget to `0` to turn the index and tool off. A skill selected with
 Viewing is read-only and remains available in scheduled runs and after untrusted
 content enters a run. A viewed skill grants no permissions and cannot authorize
 memory, note, or task changes.
+
+## Learned skills
+
+Learned skills are procedures Poppet saves itself. They are stored in the
+conversation database with a revision history, never in the owner `skills/`
+directory. Saving them from chat arrives in a later stage of
+[phase 31](phases/31.md); the storage and owner commands exist now.
+
+```sh
+poppet skills list                   # owner and learned, with source and revision
+poppet skills show triage            # owner file first, otherwise the learned skill
+poppet skills history triage         # every revision, its action, origin, and source run
+poppet skills revert triage 2        # restore revision 2 as a new revision
+poppet skills delete triage          # remove it; history keeps a tombstone
+poppet skills promote triage         # copy it to skills/triage/SKILL.md
+```
+
+An owner directory always takes precedence over a learned skill with the same
+name; `skills list` marks the learned one `shadowed`. Reverting never rewrites
+history: it adds a revision, and reverting to a deletion deletes the skill.
+Promoting creates the owner file without replacing or following anything that
+already exists, then validates it like any other owner skill. These commands go
+through a running worker, like memory commands, and otherwise open the store
+directly.
 
 ## Draft a skill from a completed procedure
 

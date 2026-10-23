@@ -1,6 +1,7 @@
 import { Agent, ChatSettings, logChatDiagnostic, Skills, type AgentError } from "@poppet/agent";
+import { AppConfig } from "@poppet/config";
 import { MCP, MCPCommand, inspectMCP } from "@poppet/mcp";
-import { Memory } from "@poppet/memory";
+import { LearnedSkills, Memory } from "@poppet/memory";
 import { Session, Store } from "@poppet/store";
 import { WorkerRequests, WorkerRequestError, requestWorker } from "@poppet/worker";
 import { Cause, Context, Effect, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
@@ -16,6 +17,7 @@ import {
   type ChatReasoningWriter,
 } from "#src/chat";
 import { MemoryCommand, manageMemory } from "#src/memory";
+import { SkillsCommand, manageSkills } from "#src/skills";
 
 const WorkerCommand = Schema.Union([
   Schema.Struct({
@@ -24,6 +26,7 @@ const WorkerCommand = Schema.Union([
     streamReasoning: Schema.optionalKey(Schema.Boolean),
   }),
   Schema.Struct({ kind: Schema.Literal("memory"), command: MemoryCommand }),
+  Schema.Struct({ kind: Schema.Literal("skills"), command: SkillsCommand }),
   Schema.Struct({ kind: Schema.Literal("store") }),
   Schema.Struct({ kind: Schema.Literal("gateway") }),
   Schema.Struct({ kind: Schema.Literal("mcp"), command: MCPCommand }),
@@ -74,6 +77,11 @@ const execute = (
         Effect.flatMap((text) => write(`${text}\n`)),
       );
 
+    if (request.kind === "skills")
+      return yield* manageSkills(request.command).pipe(
+        Effect.flatMap((text) => write(`${text}\n`)),
+      );
+
     if (request.kind === "store") {
       const store = yield* Store;
 
@@ -98,7 +106,10 @@ const execute = (
 export const WorkerRequestsLive = Layer.effect(
   WorkerRequests,
   Effect.gen(function* () {
-    const services = yield* Effect.context<Agent | Store | Memory | ChatSettings | Skills>();
+    const services = yield* Effect.context<
+      Agent | AppConfig | Store | Memory | LearnedSkills | ChatSettings | Skills
+    >();
+
     const messaging = yield* Effect.serviceOption(MessagingWorker);
 
     const mcp = yield* Effect.serviceOption(MCP);
