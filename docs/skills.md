@@ -99,9 +99,9 @@ scheduled read-only permissions. Editing the file requires another new chat or
 task to test the revised snapshot.
 
 This flow changes only an owner-saved instruction file. It does not modify
-Poppet's code, base rules, configuration, or permissions. Automatic learning or
-selection, skill hubs, downloads, reference bundles, script execution, and a
-publishing command are deferred.
+Poppet's code, base rules, configuration, or permissions. Automatic learning and
+selection are planned in [phase 31](phases/31.md). Skill hubs, downloads,
+reference bundles, script execution, and a publishing command are deferred.
 
 ## Messaging sessions
 

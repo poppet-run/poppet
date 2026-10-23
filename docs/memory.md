@@ -126,7 +126,8 @@ scope in the same data directory. Facts are included
 in key order as personal context, with no
 provenance metadata sent to the model. The memory tool is reserved for explicit
 changes requested by the current user; Poppet does not automatically extract facts
-from conversations.
+from conversations. Agent-curated facts with revision history
+are planned in [phase 31](phases/31.md).
 
 ## Limits and deletion
 

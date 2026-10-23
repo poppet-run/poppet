@@ -4,7 +4,7 @@
 
 Phases 1–21 and 23–26 are implemented with automated checks. Live validation
 remains outstanding where listed in each phase.
-Phases 28–30 are planned only. Plans do not authorize implementation.
+Phases 28–31 are planned only. Plans do not authorize implementation.
 
 Completed phases retain short status summaries, evidence, and outstanding checks.
 Use the linked guides for current behavior and setup. Git history retains the
@@ -15,10 +15,12 @@ briefing and weekly review trials using existing tools. Independent work such as
 doctor need not wait for earlier phases.
 
 Reusable workflows start with [drafting a skill in chat](skills.md#draft-a-skill-from-a-completed-procedure),
-owner review, and manual saving into the local skill library. This uses existing
-chat and skill selection, with no approval system or new runtime phase.
+owner review, and manual saving into the local skill library. Phase 31 plans
+self-improvement without approval: model-selected skills, learned skills and
+facts, and background review, with revision history and change notices instead
+of a general approval system.
 
-Updated: 2026-10-22
+Updated: 2026-10-23
 
 Storage history: the unreleased base schema was consolidated into version 1.
 Phases 23–26 add migrations 2–5 for monitoring, task controls, attachments, and
@@ -58,6 +60,7 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 28: Browser login state across requests](phases/28.md)
 - [Phase 29: A useful `poppet doctor`](phases/29.md)
 - [Phase 30: Calendar briefings and weekly reviews](phases/30.md)
+- [Phase 31: Self-improvement from completed work](phases/31.md)
 
 ## Validation
 
