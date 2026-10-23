@@ -49,15 +49,7 @@ export const memoryPrompt = Effect.gen(function* () {
               : `${prompt}\n\nGlobal ${memoryGuidance}\n${JSON.stringify({ profile, facts })}`;
 
           if (project === null) return global;
-          const scoped = memory.forProject?.(project.name);
-
-          if (scoped === undefined)
-            return yield* Effect.fail(
-              new AgentError({
-                reason: "memory-storage",
-                message: "Project memory is unavailable. No global fallback is allowed.",
-              }),
-            );
+          const scoped = memory.forProject(project.name);
 
           const snapshot = yield* scoped
             .snapshot({

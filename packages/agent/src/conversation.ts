@@ -256,14 +256,7 @@ export const conversation = Effect.gen(function* () {
         Match.when({ name: "memory" }, (plan) =>
           project === null
             ? executeMemoryCall(memory, plan, run.id, policy.factsBytes)
-            : memory.forProject === undefined
-              ? Effect.fail(
-                  new AgentError({
-                    reason: "invalid-request",
-                    message: "This host does not support project memory.",
-                  }),
-                )
-              : executeMemoryCall(memory.forProject(project.name), plan, run.id, 8192),
+            : executeMemoryCall(memory.forProject(project.name), plan, run.id, 8192),
         ),
         Match.orElse((plan) => notes.execute(plan, project?.notes)),
       );

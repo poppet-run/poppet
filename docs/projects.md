@@ -38,8 +38,8 @@ Put options before the prompt. Combine `--project acorn` with one
 In a Discord parent channel, mention the bot before the command. `/status` shows
 the saved project name. `/new <message>` starts an unscoped session; follow-ups
 retain their current selection. Invalid selections leave the active binding
-unchanged. Restart an older worker before using project commands; project-aware
-requests are rejected rather than silently run without their selection.
+unchanged. Worker requests use the current versioned protocol and reject
+unsupported fields before dispatch.
 
 ## Saved instructions and current facts
 

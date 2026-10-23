@@ -97,7 +97,7 @@ A session is created only when you submit its first nonblank message. Failed tur
 keep the acknowledged session so a fresh message can continue it. If the first
 worker response is lost before its session identity arrives, the prompt stops
 rather than creating another session. Inspect saved sessions before trying again.
-Restart an older worker if it does not return structured session metadata.
+The worker returns structured session metadata alongside its session announcement.
 
 The prompt uses the existing worker when one is running, and local execution
 otherwise. It opens storage for each request rather than holding it while waiting

@@ -186,9 +186,7 @@ export const reviewRunner = (reviews: LearningReviews["Service"]) =>
           return { state: "skipped" as const, reason: "model-without-tools" };
 
         const project = session.project?.name ?? null;
-        const scoped = project === null ? memory : memory.forProject?.(project);
-
-        if (scoped === undefined) return { state: "skipped" as const, reason: "project-memory" };
+        const scoped = project === null ? memory : memory.forProject(project);
 
         const index =
           skills === null

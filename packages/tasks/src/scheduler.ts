@@ -180,11 +180,8 @@ interface ActiveOccurrence {
 export const makeTaskWorker = Effect.gen(function* () {
   const config = yield* AppConfig;
   const skills = yield* Skills;
-  const projects = yield* Effect.serviceOption(Projects);
-
-  const projectContext = Option.isSome(projects)
-    ? Context.make(Projects, projects.value)
-    : Context.empty();
+  const projects = yield* Projects;
+  const projectContext = Context.make(Projects, projects);
 
   const store = yield* Store;
   const agent = yield* Agent;

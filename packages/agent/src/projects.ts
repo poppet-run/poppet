@@ -1,6 +1,6 @@
 import { AppConfig } from "@poppet/config";
 import { ProjectNotes, ProjectSnapshot } from "@poppet/store";
-import { Context, Effect, Layer, Option, Schema } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 
 import { contextFiles } from "#src/context-files";
 import { AgentError } from "#src/errors";
@@ -49,18 +49,4 @@ export const ProjectsLive = Layer.effect(
   }),
 );
 
-/** Loading a named project requires the Projects service; missing context fails the request. */
-export const loadProject = (name: string) =>
-  Effect.gen(function* () {
-    const projects = yield* Effect.serviceOption(Projects);
-
-    if (Option.isNone(projects))
-      return yield* Effect.fail(
-        new AgentError({
-          reason: "invalid-request",
-          message: "Project context is unavailable. Restart the worker with the current code.",
-        }),
-      );
-
-    return yield* projects.value.load(name);
-  });
+export const loadProject = (name: string) => Projects.use((projects) => projects.load(name));

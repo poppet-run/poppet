@@ -1,7 +1,7 @@
 import { Projects } from "@poppet/agent";
 import { Memory, MemoryError, MemoryKey, MemoryValue } from "@poppet/memory";
 import { ProjectName } from "@poppet/store";
-import { Effect, Option, Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 /** Explicit fact-management requests shared by direct CLI execution and worker routing. */
 export const MemoryCommand = Schema.Union([
@@ -35,38 +35,19 @@ export type MemoryCommand = typeof MemoryCommand.Type;
 export const manageMemory = (command: MemoryCommand) =>
   Effect.gen(function* () {
     const global = yield* Memory;
-    const memory = command.project === undefined ? global : global.forProject?.(command.project);
-
-    if (memory === undefined)
-      return yield* Effect.fail(
-        new MemoryError({
-          reason: "invalid-request",
-          message: "Project memory is unavailable. Restart the worker.",
-        }),
-      );
+    const memory = command.project === undefined ? global : global.forProject(command.project);
 
     if (command.action === "list") {
       const facts = yield* memory.list;
 
       if (command.project === undefined) return JSON.stringify(facts, null, 2);
-      const projects = yield* Effect.serviceOption(Projects);
-
-      const orphaned = Option.isSome(projects)
-        ? !(yield* projects.value.list).includes(command.project)
-        : null;
+      const projects = yield* Projects;
+      const orphaned = !(yield* projects.list).includes(command.project);
 
       return JSON.stringify({ project: command.project, orphaned, facts }, null, 2);
     }
 
     if (command.action === "history" || command.action === "revert") {
-      if (memory.history === undefined || memory.revert === undefined)
-        return yield* Effect.fail(
-          new MemoryError({
-            reason: "invalid-request",
-            message: "Memory history is unavailable. Restart the worker.",
-          }),
-        );
-
       if (command.action === "history") {
         const history = yield* memory.history(command.key);
 

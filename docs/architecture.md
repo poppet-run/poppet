@@ -153,8 +153,8 @@ no skill-specific behavior. See [skills](skills.md).
 requests carry only a validated name. The store owner loads and snapshots the
 instructions and note paths in sessions, jobs, and immutable occurrence
 definitions. Continued sessions, edited tasks, and retries retain those snapshots.
-Legacy records remain unscoped. Project-aware worker routes let older workers
-reject selection rather than silently discard it. No provider changes are needed.
+Records without a project remain unscoped. Versioned worker routes and strict
+request decoding reject unsupported payloads before dispatch. No provider changes are needed.
 
 At run start, `agent/memory.ts` reads global context and the host-selected project
 facts once. They are labelled separately and kept fixed through the tool loop.
@@ -878,16 +878,15 @@ mode never builds the messaging layer. Status includes the selected services.
 Fatal service failures stop the host and its siblings before storage is released.
 
 `@poppet/worker` owns request protection, body limits, deadlines, disconnect and
-shutdown handling. The endpoint retains `store/tasks.sock` so existing clients
-can still reach the single store owner. The task package retains only task RPC
-validation and response formatting. New macOS installations launch `worker run`;
-older installations need uninstall/install once to replace their saved `tasks work`
-command. Restart alone continues using the saved launch arguments.
+shutdown handling. The host exposes `/v1/tasks` and `/v1/commands` through
+`store/tasks.sock`. Both routes reject unknown request fields; unsupported routes
+return 404. The task package owns task RPC validation and response formatting.
+macOS installations launch `worker run`.
 
 ## Interactive worker commands
 
 The neutral host's protected socket accepts interactive requests.
-`WorkerRequests` lets the CLI supply `/commands` without importing CLI command
+`WorkerRequests` lets the CLI supply `/v1/commands` without importing CLI command
 schemas or memory behavior into the task package. The host validates chat,
 memory, and store-status payloads and uses the same command functions as direct
 local execution. New chat payloads include the client's provider, model, and
@@ -911,8 +910,8 @@ not the worker log. Memory edits affect subsequent run snapshots.
 Clients check the same socket ownership and permissions as task commands. Only
 absence or connection refusal permits direct local execution. Once delivered,
 commands are never replayed after a transport error, malformed frame, or missing
-completion. Older workers must be restarted to expose the new endpoint. No saved
-record schema or migration changes are needed.
+completion. Restart the worker after updating code so the client and host use
+the same protocol. Saved record migrations are independent of the wire protocol.
 
 ## Messaging gateway
 

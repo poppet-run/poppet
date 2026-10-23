@@ -1,13 +1,6 @@
 import { createHash } from "node:crypto";
 
-import {
-  Agent,
-  AgentError,
-  Skills,
-  loadProject,
-  sessionTitle,
-  type ChatFailure,
-} from "@poppet/agent";
+import { Agent, AgentError, Skills, Projects, sessionTitle, type ChatFailure } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { DeliveryDestination, Store, StoreError, type Run } from "@poppet/store";
 import {
@@ -90,6 +83,7 @@ const gateway = Effect.gen(function* () {
   const store = yield* Store;
   const agent = yield* Agent;
   const skills = yield* Skills;
+  const projects = yield* Projects;
   const config = yield* AppConfig;
   const clock = yield* Clock.Clock;
   const processor = Option.getOrNull(yield* Effect.serviceOption(AttachmentProcessor));
@@ -380,7 +374,7 @@ const gateway = Effect.gen(function* () {
           );
 
         const project = yield* (
-          request.project === null ? Effect.succeed(null) : loadProject(request.project)
+          request.project === null ? Effect.succeed(null) : projects.load(request.project)
         ).pipe(Effect.result);
 
         if (Result.isFailure(project))

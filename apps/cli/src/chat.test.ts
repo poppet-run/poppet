@@ -586,7 +586,7 @@ describe("chat CLI", () => {
     try {
       const response = await requestWorker(
         workerSocketPath(chat.directory),
-        "/commands",
+        "/v1/commands",
         {
           kind: "chat",
           command: {
@@ -609,7 +609,6 @@ describe("chat CLI", () => {
         .map((line) => JSON.parse(line));
 
       expect(frames).toContainEqual({ type: "reasoning-delta", text: chat.state.reasoning });
-      expect(frames).not.toContainEqual(expect.objectContaining({ type: "reasoning-log" }));
       expect(frames).not.toContainEqual(
         expect.objectContaining({
           type: "stderr",
@@ -1693,7 +1692,7 @@ describe("chat CLI", () => {
         socket.once("error", reject);
       });
       socket.write(
-        "POST /commands HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{",
+        "POST /v1/commands HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{",
       );
       await Effect.runPromise(Effect.sleep("50 millis"));
       const stopping = Effect.runPromise(Fiber.interrupt(worker)).then(() => true);
@@ -1777,6 +1776,21 @@ describe("chat CLI", () => {
         enabled: false,
       });
 
+      const obsolete = await Promise.all(
+        ["/commands", "/project-commands", "/tasks", "/project-tasks"].map((route) =>
+          fetch(`http://localhost${route}`, {
+            unix: workerSocketPath(chat.directory),
+            method: "POST",
+            body: JSON.stringify({
+              kind: "memory",
+              command: { action: "remember", key: "obsolete", value: "bad" },
+            }),
+          }),
+        ),
+      );
+
+      expect(obsolete.map((response) => response.status)).toEqual([404, 404, 404, 404]);
+
       const invalid = await Promise.all(
         [
           { kind: "memory", command: { action: "remember", key: "../bad", value: "Acorn" } },
@@ -1792,8 +1806,13 @@ describe("chat CLI", () => {
           },
           { kind: "chat", command: { action: "search", query: " " } },
           { kind: "unknown" },
+          {
+            kind: "memory",
+            command: { action: "remember", key: "extra", value: "bad", ignored: true },
+          },
+          { kind: "store", ignored: true },
         ].map((command) =>
-          fetch("http://localhost/commands", {
+          fetch("http://localhost/v1/commands", {
             unix: workerSocketPath(chat.directory),
             method: "POST",
             body: JSON.stringify(command),
@@ -1801,7 +1820,8 @@ describe("chat CLI", () => {
         ),
       );
 
-      expect(invalid.map((response) => response.status)).toEqual([400, 400, 400, 400]);
+      expect(invalid.map((response) => response.status)).toEqual([400, 400, 400, 400, 400, 400]);
+      expect(JSON.parse(await readOutput(["memory", "list"]))).toEqual([]);
       expect(
         JSON.parse(await readOutput(["memory", "remember", "project", "Acorn"])),
       ).toMatchObject({ key: "project", value: "Acorn" });
