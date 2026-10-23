@@ -107,6 +107,7 @@ packages/
   agent/                  @poppet/agent
     src/service.ts        Persisted chat runner, deadlines, run finalization
     src/conversation.ts   Sequential model/tool loop and run budgets
+    src/tool-execution.ts Tool dispatch, outcomes, and journal writes
     src/skills.ts         Owner skill-file access
     src/skill-index.ts    Bounded skill descriptions and indexing
     src/skill-tools.ts    Skill view and management tools
