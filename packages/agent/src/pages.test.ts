@@ -53,8 +53,8 @@ const call = (url: string, extra = {}) => ({
   arguments: JSON.stringify({ url, ...extra }),
 });
 
-describe.concurrent("supplied page reading", () => {
-  test("authorizes only explicit normalized URLs and keeps balanced URL punctuation", async () => {
+describe.concurrent("pages.ts", () => {
+  test("when URLs are explicitly supplied, authorizes normalized forms and preserves balanced punctuation", async () => {
     const urls = suppliedPageURLs(
       "Read [this](https://EXAMPLE.com:443/a#section), https://example.com/a_(b). and <http://[2606:4700::1111]/>.",
     );
@@ -89,15 +89,18 @@ describe.concurrent("supplied page reading", () => {
     { text: "Read 'https://example.com/ready?'", url: "https://example.com/ready?" },
     { text: "Read [this](https://example.com/Yahoo!).", url: "https://example.com/Yahoo!" },
     { text: "Read <https://example.com/path)>", url: "https://example.com/path)" },
-  ])("preserves punctuation in an explicitly delimited URL: $text", async ({ text, url }) => {
-    const urls = suppliedPageURLs(text);
+  ])(
+    "when a URL is explicitly delimited in $text, preserves its punctuation",
+    async ({ text, url }) => {
+      const urls = suppliedPageURLs(text);
 
-    expect([...urls]).toEqual([url]);
-    expect(await Effect.runPromise(decodeFetchPageCall(call(url), urls))).toEqual({
-      name: "fetch_page",
-      url,
-    });
-  });
+      expect([...urls]).toEqual([url]);
+      expect(await Effect.runPromise(decodeFetchPageCall(call(url), urls))).toEqual({
+        name: "fetch_page",
+        url,
+      });
+    },
+  );
 
   test.each([
     "http://127.1",
@@ -108,7 +111,7 @@ describe.concurrent("supplied page reading", () => {
     "https://example.com:8443",
     "file:///tmp/file",
     "https://example.com/a b",
-  ])("rejects unsafe or malformed destination %s", async (url) => {
+  ])("when the destination is unsafe or malformed %s, rejects it", async (url) => {
     let requests = 0;
     expect(
       await Effect.runPromise(
@@ -132,7 +135,7 @@ describe.concurrent("supplied page reading", () => {
     { addresses: ["93.184.215.14", "127.0.0.1"] },
     { addresses: ["2606:4700::1111", "fc00::1"] },
     { addresses: ["::ffff:93.184.215.14"] },
-  ])("requires every DNS answer to be public: %j", async ({ addresses }) => {
+  ])("when DNS returns %j, requires every answer to be public", async ({ addresses }) => {
     expect(
       await Effect.runPromise(
         failure(
@@ -145,7 +148,7 @@ describe.concurrent("supplied page reading", () => {
     ).toMatchObject({ reason: "tool-permission" });
   });
 
-  test("validates redirect DNS afresh and pins the selected address without another lookup", async () => {
+  test("when a redirect changes destination, revalidates DNS and pins the address without another lookup", async () => {
     const resolutions: string[] = [];
     const requests: string[] = [];
 
@@ -179,7 +182,7 @@ describe.concurrent("supplied page reading", () => {
     });
   });
 
-  test("rejects rebinding to a private address even on a same-host redirect", async () => {
+  test("when a same-host redirect resolves privately, rejects DNS rebinding", async () => {
     let resolutions = 0;
     let requests = 0;
     expect(
@@ -205,7 +208,7 @@ describe.concurrent("supplied page reading", () => {
     "file:///tmp/file",
     "https://user:secret@example.com/",
     "https://example.com:8080/",
-  ])("rejects redirected destination %s", async (location) => {
+  ])("when a redirect targets %s, rejects the destination", async (location) => {
     let requests = 0;
     expect(
       await Effect.runPromise(
@@ -225,22 +228,25 @@ describe.concurrent("supplied page reading", () => {
     expect(requests).toBe(1);
   });
 
-  test.each([3, 4])("allows at most three redirects, attempt %i", async (count) => {
-    let requests = 0;
+  test.each([3, 4])(
+    "when redirect attempt %i is reached, enforces the three-redirect limit",
+    async (count) => {
+      let requests = 0;
 
-    const result = await Effect.runPromise(
-      Effect.exit(
-        fetch("https://example.com", {
-          request: () => Effect.succeed(++requests <= count ? redirect("/next") : response()),
-        }),
-      ),
-    );
+      const result = await Effect.runPromise(
+        Effect.exit(
+          fetch("https://example.com", {
+            request: () => Effect.succeed(++requests <= count ? redirect("/next") : response()),
+          }),
+        ),
+      );
 
-    expect(Exit.isSuccess(result)).toBe(count === 3);
-    expect(requests).toBe(4);
-  });
+      expect(Exit.isSuccess(result)).toBe(count === 3);
+      expect(requests).toBe(4);
+    },
+  );
 
-  test("extracts structural HTML, entities, title and readable boundaries without scripts or hidden content", async () => {
+  test("when HTML contains structure and hidden content, extracts readable text and title without scripts or hidden text", async () => {
     const html = await Bun.file(
       new URL("./test/fixtures/pages/article.html", import.meta.url),
     ).text();
@@ -263,7 +269,7 @@ describe.concurrent("supplied page reading", () => {
     expect(result.truncated).toBe(false);
   });
 
-  test("preserves preformatted code whitespace while normalizing surrounding prose", async () => {
+  test("when HTML contains preformatted code, preserves its whitespace while normalizing prose", async () => {
     const html = `<p>Before   example.</p><pre><code>if ready:
     deploy()
 
@@ -283,7 +289,7 @@ log(&quot;done&quot;)
     );
   });
 
-  test("reads UTF-8 plain text and bounds serialized output including escaping and Unicode", async () => {
+  test("when plain text contains UTF-8 and escaping, bounds the serialized result", async () => {
     const plain = await Bun.file(
       new URL("./test/fixtures/pages/plain.txt", import.meta.url),
     ).text();
@@ -327,36 +333,42 @@ log(&quot;done&quot;)
     ),
     response("   "),
     response("a".repeat(maxPageBytes + 1)),
-  ])("rejects unsupported, empty, failed or oversized response %#", async (page) => {
-    expect(
+  ])(
+    "when response case %# is unsupported, empty, failed, or oversized, rejects it",
+    async (page) => {
+      expect(
+        await Effect.runPromise(
+          failure(fetch("https://example.com", { request: () => Effect.succeed(page) })),
+        ),
+      ).toBeInstanceOf(AgentError);
+    },
+  );
+
+  test.each(["DNS", "body"])(
+    "when %s work stalls past the overall deadline, cancels it",
+    async (stage) => {
+      let cancelled = false;
       await Effect.runPromise(
-        failure(fetch("https://example.com", { request: () => Effect.succeed(page) })),
-      ),
-    ).toBeInstanceOf(AgentError);
-  });
+        Effect.gen(function* () {
+          const stalled = Effect.never.pipe(
+            Effect.onInterrupt(() =>
+              Effect.sync(() => {
+                cancelled = true;
+              }),
+            ),
+          );
 
-  test.each(["DNS", "body"])("the overall deadline cancels stalled %s work", async (stage) => {
-    let cancelled = false;
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const stalled = Effect.never.pipe(
-          Effect.onInterrupt(() =>
-            Effect.sync(() => {
-              cancelled = true;
-            }),
-          ),
-        );
+          const work = fetch(
+            "https://example.com",
+            stage === "DNS" ? { resolve: () => stalled } : { request: () => stalled },
+          );
 
-        const work = fetch(
-          "https://example.com",
-          stage === "DNS" ? { resolve: () => stalled } : { request: () => stalled },
-        );
-
-        const fiber = yield* Effect.forkChild(failure(work));
-        yield* TestClock.adjust("15 seconds");
-        expect(yield* Fiber.join(fiber)).toMatchObject({ reason: "tool-network" });
-        expect(cancelled).toBe(true);
-      }).pipe(Effect.provide(TestClock.layer())),
-    );
-  });
+          const fiber = yield* Effect.forkChild(failure(work));
+          yield* TestClock.adjust("15 seconds");
+          expect(yield* Fiber.join(fiber)).toMatchObject({ reason: "tool-network" });
+          expect(cancelled).toBe(true);
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+    },
+  );
 });

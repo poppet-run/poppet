@@ -25,14 +25,15 @@ import { Agent, AgentLive, ModelResolver, type ChatEvent } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
 import { WebSearch } from "#src/web-search";
 
-test.each([false, true])(
-  "diagnostics honour NO_COLOR=%s when colour is forced",
-  async (disabled) => {
-    const child = Bun.spawn(
-      [
-        process.execPath,
-        "--eval",
-        `
+describe("logChatDiagnostic", () => {
+  test.each([false, true])(
+    "when colour is forced with NO_COLOR=%s, honors the diagnostic colour preference",
+    async (disabled) => {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          "--eval",
+          `
       import { Console, Effect } from "effect";
       import { logChatDiagnostic } from "./service.ts";
       await Effect.runPromise(logChatDiagnostic("Session: example").pipe(
@@ -42,27 +43,28 @@ test.each([false, true])(
         }),
       ));
     `,
-      ],
-      {
-        cwd: fileURLToPath(new URL(".", import.meta.url)),
-        env: disabled ? { FORCE_COLOR: "1", NO_COLOR: "1" } : { FORCE_COLOR: "1" },
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
+        ],
+        {
+          cwd: fileURLToPath(new URL(".", import.meta.url)),
+          env: disabled ? { FORCE_COLOR: "1", NO_COLOR: "1" } : { FORCE_COLOR: "1" },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
 
-    const [output, errors, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
+      const [output, errors, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
 
-    expect({ code, errors }).toEqual({ code: 0, errors: "" });
-    expect(JSON.parse(output)).toBe(
-      disabled ? "Session: example" : "\u001b[90mSession: example\u001b[39m",
-    );
-  },
-);
+      expect({ code, errors }).toEqual({ code: 0, errors: "" });
+      expect(JSON.parse(output)).toBe(
+        disabled ? "Session: example" : "\u001b[90mSession: example\u001b[39m",
+      );
+    },
+  );
+});
 
 const response = (text = "Hello"): Completion => ({
   output: [{ type: "text", text }],
@@ -136,8 +138,8 @@ const fixture = async (
 const failure = <A, E, R>(program: Effect.Effect<A, E, R>) =>
   program.pipe(Effect.match({ onSuccess: () => null, onFailure: (error) => error }));
 
-describe.concurrent("persisted agent", () => {
-  test("names a finished session while another request holds the shared runner", async () => {
+describe.concurrent("Agent", () => {
+  test("when another request holds the shared runner, still names a finished session", async () => {
     const state = await fixture(() =>
       Effect.succeed({
         description,
@@ -186,43 +188,46 @@ describe.concurrent("persisted agent", () => {
   test.each([
     { name: "default", policy: {}, seconds: 300 },
     { name: "custom", policy: { runDeadlineSeconds: 30 }, seconds: 30 },
-  ])("interrupts a run at the $name deadline", async ({ policy, seconds }) => {
-    const state = await fixture(
-      () => Effect.succeed({ description, stream: () => Stream.never }),
-      false,
-      policy,
-    );
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-          const session = yield* store.createSession("test-provider", "test-model");
-
-          const running = yield* failure(
-            Stream.runDrain((yield* Agent).send(session.id, "Wait")),
-          ).pipe(Effect.forkChild);
-
-          yield* TestClock.adjust((seconds - 1) * 1000);
-          expect(running.pollUnsafe()).toBeUndefined();
-          expect((yield* store.runs(session.id))[0]?.status).toBe("running");
-          yield* TestClock.adjust("1 second");
-          expect(yield* Fiber.join(running)).toMatchObject({
-            reason: "interrupted",
-            message: "The chat request deadline expired.",
-          });
-          expect((yield* store.runs(session.id))[0]?.status).toBe("interrupted");
-          expect((yield* store.messages(session.id)).map((entry) => entry.message)).toEqual([
-            { role: "user", text: "Wait" },
-          ]);
-        }).pipe(Effect.provide(TestClock.layer())),
+  ])(
+    "when a run reaches the $name deadline, interrupts it and preserves its input",
+    async ({ policy, seconds }) => {
+      const state = await fixture(
+        () => Effect.succeed({ description, stream: () => Stream.never }),
+        false,
+        policy,
       );
-    } finally {
-      await state.close();
-    }
-  });
 
-  test("keeps attachment reasoning out of diagnostics, including later turns with saved source history", async () => {
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+
+            const running = yield* failure(
+              Stream.runDrain((yield* Agent).send(session.id, "Wait")),
+            ).pipe(Effect.forkChild);
+
+            yield* TestClock.adjust((seconds - 1) * 1000);
+            expect(running.pollUnsafe()).toBeUndefined();
+            expect((yield* store.runs(session.id))[0]?.status).toBe("running");
+            yield* TestClock.adjust("1 second");
+            expect(yield* Fiber.join(running)).toMatchObject({
+              reason: "interrupted",
+              message: "The chat request deadline expired.",
+            });
+            expect((yield* store.runs(session.id))[0]?.status).toBe("interrupted");
+            expect((yield* store.messages(session.id)).map((entry) => entry.message)).toEqual([
+              { role: "user", text: "Wait" },
+            ]);
+          }).pipe(Effect.provide(TestClock.layer())),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when attachments appear in current or saved history, excludes reasoning from diagnostics", async () => {
     const logs: string[] = [];
     const requests: ModelRequest[] = [];
 
@@ -280,7 +285,7 @@ describe.concurrent("persisted agent", () => {
     }
   });
   test.each([false, true])(
-    "logs reasoning only when enabled=%s without changing the answer",
+    "when reasoning is enabled=%s, logs only permitted reasoning without changing the answer",
     async (enabled) => {
       const requests: ModelRequest[] = [];
       const logs: string[] = [];
@@ -351,7 +356,7 @@ describe.concurrent("persisted agent", () => {
   );
 
   test.each(["failed", "interrupted"])(
-    "flushes remaining reasoning logs for a %s run",
+    "when a run is %s, flushes remaining reasoning logs",
     async (status) => {
       const logs: string[] = [];
       const thinking = "x".repeat(4097);
@@ -409,7 +414,7 @@ describe.concurrent("persisted agent", () => {
     },
   );
 
-  test("streams and resumes after reopening with pinned identity, workload and opaque continuation", async () => {
+  test("when a session reopens, resumes streaming with its saved identity, workload, and continuation", async () => {
     const requests: ModelRequest[] = [];
     const events: ChatEvent[] = [];
 
@@ -498,7 +503,7 @@ describe.concurrent("persisted agent", () => {
     "context-limit",
     "interrupted",
   ] as const)(
-    "persists provider %s failures without retry, partial answers or failed input in subsequent context",
+    "when the provider fails with %s, persists the failure without retry or partial answers in later context",
     async (reason) => {
       let calls = 0;
       const requests: ModelRequest[] = [];
@@ -557,7 +562,7 @@ describe.concurrent("persisted agent", () => {
     },
   );
 
-  test("records resolution failures after persisting the input", async () => {
+  test("when model resolution fails, records the failure after saving the input", async () => {
     const state = await fixture(() =>
       Effect.fail(
         new ProviderError({
@@ -588,7 +593,7 @@ describe.concurrent("persisted agent", () => {
     }
   });
 
-  test("rejects oversized input and mismatched model selection without calling inference", async () => {
+  test("when input is oversized or model selection mismatches, rejects it without inference", async () => {
     let calls = 0;
     let wrongModel = false;
 
@@ -710,34 +715,37 @@ describe.concurrent("persisted agent", () => {
     },
   ];
 
-  test.each(completionCases)("does not commit a $name completion", async ({ events, reason }) => {
-    const state = await fixture(() =>
-      Effect.succeed({ description, stream: () => Stream.fromIterable(events) }),
-    );
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-          const session = yield* store.createSession("test-provider", "test-model");
-          expect(
-            yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Hello"))),
-          ).toMatchObject({
-            reason,
-          });
-          expect((yield* store.runs(session.id))[0]).toMatchObject({
-            status: "failed",
-            result: null,
-          });
-          expect((yield* store.messages(session.id)).length).toBe(1);
-        }),
+  test.each(completionCases)(
+    "when a completion is $name, refuses to commit it",
+    async ({ events, reason }) => {
+      const state = await fixture(() =>
+        Effect.succeed({ description, stream: () => Stream.fromIterable(events) }),
       );
-    } finally {
-      await state.close();
-    }
-  });
 
-  test("early consumption and cancellation release the active run for the next request", async () => {
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            expect(
+              yield* failure(Stream.runDrain((yield* Agent).send(session.id, "Hello"))),
+            ).toMatchObject({
+              reason,
+            });
+            expect((yield* store.runs(session.id))[0]).toMatchObject({
+              status: "failed",
+              result: null,
+            });
+            expect((yield* store.messages(session.id)).length).toBe(1);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when consumption ends early or is cancelled, releases the active run for the next request", async () => {
     let resolved = 0;
     const ready = Promise.withResolvers<void>();
 
@@ -794,8 +802,8 @@ describe.concurrent("persisted agent", () => {
   });
 });
 
-describe("session naming", () => {
-  test("claims once across restart and isolates title input, continuation, tools and usage", async () => {
+describe("Agent.nameSession", () => {
+  test("when naming spans a restart, claims once and isolates title input, continuation, tools, and usage", async () => {
     const requests: ModelRequest[] = [];
 
     const state = await fixture(() =>
@@ -866,7 +874,7 @@ describe("session naming", () => {
     }
   });
 
-  test("a manual title wins while generation is in flight", async () => {
+  test("when a manual title arrives during generation, preserves the manual title", async () => {
     const started = Deferred.makeUnsafe<void>();
     const release = Deferred.makeUnsafe<void>();
 
@@ -915,7 +923,7 @@ describe("session naming", () => {
   });
 
   test.each(["empty", "invalid", "oversized", "deadline", "cancelled"])(
-    "keeps the successful answer and fallback after %s naming, without retry",
+    "when naming is %s, preserves the successful answer and fallback title without retrying",
     async (mode) => {
       let names = 0;
       const errors: string[] = [];
@@ -1003,7 +1011,7 @@ describe("session naming", () => {
     },
   );
 
-  test("failed exchanges remain eligible and naming always uses the first original prompt", async () => {
+  test("when earlier exchanges fail, keeps naming eligible and uses the first original prompt", async () => {
     let fail = true;
     const requests: ModelRequest[] = [];
 

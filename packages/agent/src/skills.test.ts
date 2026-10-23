@@ -38,8 +38,8 @@ const fixture = async () => {
   };
 };
 
-describe.concurrent("local Markdown skills", () => {
-  test("lists missing roots as empty without creating them and loads exact UTF-8 byte limits", async () => {
+describe.concurrent("Skills", () => {
+  test("when roots are missing or content reaches the byte limit, lists no missing files and loads exact-limit content", async () => {
     const state = await fixture();
 
     try {
@@ -60,7 +60,7 @@ describe.concurrent("local Markdown skills", () => {
   });
 
   test.each(["../outside", "/tmp/outside", "a/b", ".", "..", "bad\0name", "", "x".repeat(129)])(
-    "rejects skill paths and invalid names: %s",
+    "when a skill name is %s, rejects paths and invalid names",
     async (name) => {
       const state = await fixture();
 
@@ -73,7 +73,7 @@ describe.concurrent("local Markdown skills", () => {
   );
 
   test.each(["x".repeat(8193), "😀".repeat(2049), Buffer.from([0xff]), "nul\0text"])(
-    "rejects oversized or invalid UTF-8 content",
+    "when skill content is oversized or invalid UTF-8 in case %#, rejects it",
     async (content) => {
       const state = await fixture();
 
@@ -87,7 +87,7 @@ describe.concurrent("local Markdown skills", () => {
   );
 
   test.each(["root-link", "directory-link", "file-link", "hard-link", "directory-file", "missing"])(
-    "rejects %s without using the target",
+    "when a skill has a %s target, rejects it without using the target",
     async (kind) => {
       const state = await fixture();
 

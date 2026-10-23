@@ -48,8 +48,8 @@ const sourceRun = Effect.gen(function* () {
   return (yield* store.queueRun(session.id, [{ role: "user", text: "Hello" }])).id;
 });
 
-describe.concurrent("learned skills", () => {
-  test("creates, patches, replaces and deletes with an append-only history", async () => {
+describe.concurrent("LearnedSkills", () => {
+  test("when skills are created, patched, replaced, or deleted, appends each change to history", async () => {
     const state = await fixture();
 
     try {
@@ -116,7 +116,7 @@ describe.concurrent("learned skills", () => {
     }
   });
 
-  test("reverts to earlier content and tombstones as new revisions", async () => {
+  test("when reverting to earlier content or tombstones, records a new revision", async () => {
     const state = await fixture();
 
     try {
@@ -148,7 +148,7 @@ describe.concurrent("learned skills", () => {
     }
   });
 
-  test("rejects stale revisions, ambiguous patches, conflicts, and missing skills", async () => {
+  test("when revisions are stale, patches ambiguous, or skills conflicting or missing, rejects the change", async () => {
     const state = await fixture();
 
     try {
@@ -200,7 +200,7 @@ describe.concurrent("learned skills", () => {
     }
   });
 
-  test("model writes need an existing run, cannot repeat a call, and reject secrets", async () => {
+  test("when the model writes skills, requires an existing run, prevents duplicate calls, and rejects secrets", async () => {
     const state = await fixture();
 
     try {
@@ -241,7 +241,7 @@ describe.concurrent("learned skills", () => {
     }
   });
 
-  test(`keeps at most ${maxLearnedSkills} learned skills`, async () => {
+  test(`when learned skills reach ${maxLearnedSkills}, rejects further creation`, async () => {
     const state = await fixture();
 
     try {
@@ -270,7 +270,7 @@ describe.concurrent("learned skills", () => {
     ["Authorization: Bearer abcdefghijklmnopqrstuvwxyz.123", true],
     ["Use the API key saved in the provider settings.", false],
     ["Ask the skeptic.", false],
-  ])("detects secret-shaped text in %j", (text, expected) => {
+  ])("when text contains secret-shaped content %j, detects it", (text, expected) => {
     expect(containsSecret(text)).toBe(expected);
   });
 });

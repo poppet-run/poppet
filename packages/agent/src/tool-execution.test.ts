@@ -9,7 +9,7 @@ const agentFailure = (reason: AgentError["reason"]) => new AgentError({ reason, 
 
 const storeFailure = (reason: StoreError["reason"]) => new StoreError({ reason, message: reason });
 
-describe("tool failure classification", () => {
+describe("toolFailureKind", () => {
   test.each([
     ["read_note", agentFailure("tool-storage"), "reported"],
     ["fetch_page", agentFailure("tool-network"), "reported"],
@@ -32,7 +32,7 @@ describe("tool failure classification", () => {
     ["external", agentFailure("tool-reported"), "reported"],
     ["external", agentFailure("tool-network"), "uncertain"],
     ["external", agentFailure("tool-uncertain"), "uncertain"],
-  ] as const)("%s failing with %o is %s", (name, error, kind) => {
+  ] as const)("when %s fails with %o, classifies it as %s", (name, error, kind) => {
     expect(toolFailureKind(name, error)).toBe(kind);
   });
 });

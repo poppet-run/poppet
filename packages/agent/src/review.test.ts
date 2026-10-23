@@ -8,7 +8,7 @@ const policy = { reviewMinToolCalls: 3, reviewTurnInterval: 5 };
 
 const call = (name: string, serverId: string | null = null) => ({ name, serverId });
 
-describe("background review", () => {
+describe("review.ts", () => {
   test.each([
     [[call("read_note")], 0, false, null],
     [[call("read_note"), call("read_note"), call("save_note")], 0, false, "pending"],
@@ -18,13 +18,13 @@ describe("background review", () => {
     [[call("search_sessions"), call("read_note"), call("read_note")], 0, false, "skipped"],
     [[], 5, true, "skipped"],
   ] as const)(
-    "decides %j after %i runs (attachment %s) as %s",
+    "when calls are %j after %i runs with attachment %s, returns %s",
     (calls, runs, attachment, state) => {
       expect(reviewDecision(calls, runs, attachment, policy)?.state ?? null).toBe(state);
     },
   );
 
-  test("bounds the transcript by shrinking tool content before giving up", () => {
+  test("when the transcript exceeds its byte budget, shrinks tool content or returns null", () => {
     const messages: StoredMessage[] = [
       {
         id: 1,

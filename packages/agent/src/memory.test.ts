@@ -158,8 +158,8 @@ const reportedFailures = (id: string) =>
     return (yield* store.toolCalls(run.id)).map((call) => [call.status, call.failureReason]);
   });
 
-describe.concurrent("agent-curated memory", () => {
-  test("learning instructions let the model save facts with turn provenance and history", async () => {
+describe.concurrent("memoryPrompt", () => {
+  test("when memory learning is enabled, supplies instructions and saves facts with provenance and history", async () => {
     const saved = await fixture({ learnMemory: true });
     let turns = 0;
 
@@ -211,7 +211,7 @@ describe.concurrent("agent-curated memory", () => {
     }
   });
 
-  test("explicit-only rules stay the default", async () => {
+  test("when memory learning is not enabled, requires explicit instructions to save facts", async () => {
     const saved = await fixture();
 
     try {
@@ -230,8 +230,8 @@ describe.concurrent("agent-curated memory", () => {
   });
 });
 
-describe.concurrent("explicit memory in chat", () => {
-  test("loads personality without personal memory, reloads on resume and restores defaults when cleared", async () => {
+describe.concurrent("memory.ts", () => {
+  test("when personality is edited or cleared, reloads it on resume and restores defaults without personal memory", async () => {
     const saved = await fixture();
 
     try {
@@ -271,7 +271,7 @@ describe.concurrent("explicit memory in chat", () => {
     }
   });
 
-  test("uses saved preferences in fresh sessions, reloads edits on resume and forgets across reopening", async () => {
+  test("when saved preferences change, reloads edits on resume and preserves forgetting across reopening", async () => {
     const saved = await fixture();
 
     try {
@@ -323,7 +323,7 @@ describe.concurrent("explicit memory in chat", () => {
     }
   });
 
-  test("keeps the starting memory snapshot throughout a multi-turn tool run", async () => {
+  test("when a tool run spans multiple turns, retains its starting memory snapshot", async () => {
     const saved = await fixture();
 
     try {
@@ -367,7 +367,7 @@ describe.concurrent("explicit memory in chat", () => {
     { reason: "limit", expected: "memory-limit" },
     { reason: "storage", expected: "memory-storage" },
   ] as const)(
-    "records an injected $reason memory failure before resolving the model",
+    "when memory fails with $reason, records the failure before resolving the model",
     async ({ reason, expected }) => {
       const injected: Memory["Service"] = {
         forProject: () => {
@@ -410,7 +410,7 @@ describe.concurrent("explicit memory in chat", () => {
   );
 
   test.each(["profile", "soul"] as const)(
-    "counts %s toward the overall context budget before inference",
+    "when %s exceeds the context budget, rejects the request before inference",
     async (file) => {
       const saved = await fixture({ contextBytes: 8192 });
 
@@ -452,7 +452,7 @@ describe.concurrent("explicit memory in chat", () => {
     { content: "😀".repeat(17), expected: "memory-limit" },
     { content: Buffer.from([0xff]), expected: "memory-storage" },
   ])(
-    "rejects an invalid soul.md with $expected before resolving the model",
+    "when soul.md is invalid, reports $expected before resolving the model",
     async ({ content, expected }) => {
       const saved = await fixture({ soulBytes: 64 });
 
@@ -482,7 +482,7 @@ describe.concurrent("explicit memory in chat", () => {
     },
   );
 
-  test("remembers, replaces and forgets across restart with provenance and fixed per-run snapshots", async () => {
+  test("when facts are remembered, replaced, or forgotten across restart, retains provenance and per-run snapshots", async () => {
     const saved = await fixture();
     let action: "remember" | "replace" | "forget" = "remember";
     let value: string | null = "Keep answers concise";
@@ -566,7 +566,7 @@ describe.concurrent("explicit memory in chat", () => {
     }
   });
 
-  test("validates the entire batch before changing a fact", async () => {
+  test("when a memory batch contains an invalid call, rejects it before changing any fact", async () => {
     const saved = await fixture();
     saved.state.stream = () =>
       toolReply(
@@ -593,7 +593,7 @@ describe.concurrent("explicit memory in chat", () => {
   });
 
   test.each(["remember", "replace"] as const)(
-    "rejects %s before exceeding the next snapshot budget",
+    "when %s would exceed the next snapshot budget, rejects the change",
     async (action) => {
       const saved = await fixture({ factsBytes: 64 });
       saved.state.stream = () =>
@@ -619,7 +619,7 @@ describe.concurrent("explicit memory in chat", () => {
     },
   );
 
-  test("rejects accidental overwrites and bounds acknowledgements for a maximum-size fact", async () => {
+  test("when a fact already exists or reaches its size limit, rejects overwrites and bounds acknowledgements", async () => {
     const saved = await fixture({ toolBytes: 1024 });
     saved.state.stream = (request) =>
       request.messages.at(-1)?.role === "tool"
@@ -646,7 +646,7 @@ describe.concurrent("explicit memory in chat", () => {
   });
 
   test.each(["write", "journal"])(
-    "preserves %s failure without retrying a memory change after restart",
+    "when a memory %s fails, preserves the failure across restart without retrying the change",
     async (stage) => {
       const saved = await fixture();
       saved.state.stream = () => toolReply(memoryCall("remember", "preference", "Saved once"));
@@ -694,7 +694,7 @@ describe.concurrent("explicit memory in chat", () => {
     },
   );
 
-  test("cancellation finishes an in-flight memory mutation and journals its result once", async () => {
+  test("when cancellation occurs during a memory mutation, finishes and journals it once", async () => {
     const started = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     const facts: MemoryFact[] = [];
