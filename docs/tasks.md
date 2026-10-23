@@ -7,6 +7,20 @@ must be an explicitly reviewed read-only subset of its interactive `tools`.
 Annotations cannot grant permission. Restart the worker after changing these
 lists. MCP results cannot authorize built-in mutations or page fetching.
 
+## Host commands
+
+Scheduled runs can use the [Bash tool](commands.md). Each command is reviewed
+against the saved job prompt using the job's provider and model. Allowed commands
+can modify the machine. A denial, unavailable reviewer, or need for human approval
+fails that occurrence immediately, without trying another command or waiting for
+a person. The recurring schedule stays intact. Earlier completed commands are
+not rolled back.
+
+Failed runs that attempted Bash and have a messaging destination are delivered through the
+same durable queue as successful results. Approval failures include the blocked
+invocation and reason. Inspect `tasks show` before retrying; later occurrences
+still run on their normal schedule.
+
 ## Create and inspect tasks
 
 Select a provider and model as for chat, and sign in before running a task.
@@ -79,7 +93,7 @@ a different future schedule to rearm it.
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `skip-next` | Consume exactly the selected pending occurrence or next slot. A recurring task keeps its cadence; a one-off has no next execution.                                                                                                  |
 | `snooze`    | Delay that execution until a later future instant. `scheduledAt` keeps its original slot; `availableAt` is its effective ready time. The hold survives restart, and intervening cron slots do not build a backlog.                  |
-| `run`       | Queue through the normal read-only runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
+| `run`       | Queue through the normal scheduled runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
 
 The CLI inspects the revision and exact target before sending a mutation. The
 worker rechecks both when committing and rejects stale requests instead of
@@ -163,9 +177,9 @@ configuration. The worker rechecks the saved bot account, owner, server, allowed
 parent channel, and current thread permissions before sending. It never chooses
 the last active conversation or redirects a result to another thread.
 
-Only completed results enter the existing gateway delivery queue. `tasks show`
-includes the destination and a `delivery` array of chunk states, message IDs, and
-attempt counts. An empty array means no reply has been queued. Temporary failures
+Completed results and failed runs that attempted Bash enter the gateway delivery queue. `tasks show`
+includes the destination and a `delivery` array of run IDs, chunk states, message
+IDs, and attempt counts. Each explicitly retried run has its own delivery receipt. An empty array means no reply has been queued. Temporary failures
 retry with bounded backoff. Failed and uncertain sends remain inspectable;
 uncertain sends are not resent automatically. Inspect the saved output before
 manually reposting it. Delivery failures never change a completed occurrence or
@@ -186,8 +200,8 @@ Pass `--skill <name>` before the prompt to save a [local Markdown procedure](ski
 with a new task. Each occurrence copies the task's saved name and text into its
 fresh session. File edits and deletion do not change existing tasks, including
 explicit retries. Create a replacement task to use updated instructions.
-`tasks show` includes the snapshot. Scheduled tools remain read-only: the memory tool is not
-available, including when a selected skill requests changes.
+`tasks show` includes the snapshot. Scheduled runs can use reviewed Bash commands. Memory writes and task management
+remain unavailable, including when a selected skill requests them.
 
 ## Recurring schedules
 
@@ -224,7 +238,7 @@ poppet tasks add page-summary --cron "0 9 * * *" --tz Europe/London "Summarize h
 
 Each occurrence may read that URL through the same bounded [page reader](chat.md#read-a-supplied-url)
 as chat. URLs mentioned only by a skill, prior conversation, or fetched page
-are not authorized. The task retains read-only tool permissions. No page cache,
+are not authorized. The task retains its scheduled tool restrictions; Bash commands are reviewed separately. No page cache,
 search account, or additional credentials are needed.
 
 ## Research with web search
@@ -242,7 +256,7 @@ poppet tasks add weekly-research --cron "0 9 * * 5" --tz Europe/London "Search f
 
 Each occurrence can search and read returned sources on a later model turn.
 Search grants never carry over from older occurrences or saved history. Memory
-stays read-only. Search authentication, service, and rate-limit errors
+keeps its scheduled tool restrictions. Search authentication, service, and rate-limit errors
 return a failed tool result for the model to explain or handle within the run
 budgets. They do not automatically retry or pause the inference provider. Use the
 existing destination flags to deliver completed research through messaging.
@@ -291,4 +305,4 @@ See [worker modes](worker.md#foreground-modes) to run scheduling with messaging,
 
 Each occurrence uses the task name as its session title, shortened to the same
 80-character limit as chat titles. Scheduled runs skip title inference and have
-no extra naming usage. The task prompt and read-only tool policy stay the same.
+no extra naming usage. The task prompt and scheduled tool policy stay the same.

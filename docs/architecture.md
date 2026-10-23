@@ -440,6 +440,31 @@ attachment content enters a run, task management, memory changes, and MCP tools
 are withdrawn until a new owner message. Voice runs also remove all external tools.
 See [chat limits](chat.md#context-and-run-limits).
 
+### Reviewed host commands
+
+`agent/bash.ts` defines the native Bash tool and an isolated reviewer request to
+the run's resolved model. Review has no tools or continuation and receives only
+the owner request, command, working directory, and timeout. It must return a
+validated allow/needs-approval/deny decision within thirty seconds. Review failure
+stops execution. Each invocation is independently reviewed; approvals are not cached.
+
+The CLI supplies the process runner in `apps/cli/src/bash.ts`. It launches
+`/bin/bash` as the host account without profile/startup scripts, bounds output,
+and kills the process group on exit, timeout, or cancellation. The tool journal
+records invocation and outcome; fatal review failures also save their reason in
+the transcript and end the run. Command output is untrusted, but Bash stays
+available for subsequent independently reviewed commands.
+
+The gateway holds pending approval IDs in memory for at most two minutes. Owner
+controls resolve them outside the inference queue and only in the originating
+conversation, with access rechecked before execution. Restart expires pending
+requests. Scheduled runs never wait for approval; a blocked command fails the
+occurrence. Failed occurrences that attempted Bash use the existing durable result
+delivery queue without restarting inference or changing their recurring schedule.
+Migration 10 makes delivery unique per occurrence/run, so an explicit retry can
+deliver a new result while preserving earlier failure receipts. Unrelated historical
+failures are not newly delivered.
+
 ## Supplied page reading
 
 `agent/pages.ts` defines `poppet_web.fetch_page` and the injected `Pages` service.
@@ -488,7 +513,7 @@ Offline checks inject DNS/transport and static fixtures. Loopback integration
 checks use the production HTTP(S) client to prove literal-address connections,
 source Host/SNI and TLS identity, proxy isolation, wire/decompression limits, and
 cancellation. Fake-model and scheduler checks cover authorization, durable results,
-failure without replay, and unchanged read-only tool permissions.
+failure without replay, and unchanged restrictions on built-in writes and MCP tools.
 
 ## Web search
 
@@ -710,8 +735,9 @@ pairs. Limit loaded memory, tool output, model turns, and tool calls. Stop clear
 when the active exchange alone exceeds the context budget.
 
 Keep credentials separate from memory and tool-readable files. The runner
-enforces allowed tools before invoking them. Scheduled runs begin with read-only
-tools.
+enforces allowed tools before invoking them. Scheduled runs retain read-only MCP tools and exclude memory/task writes.
+The host Bash tool follows the same command review as interactive runs, but
+fails the occurrence when human approval is needed.
 
 Do not automatically retry a side effect whose completion is uncertain. Record
 its state and require an explicit retry. Database updates use transactions. Exactly-once external execution is not assumed.
@@ -840,7 +866,7 @@ Scheduled task delivery uses the same durable reply queue. The host supplies
 gateways. Each task and occurrence saves a `DeliveryDestination` containing the
 adapter, account, owner, scope, parent, and conversation identity. The gateway
 reconciles completed occurrences into completed inbox entries without creating
-bindings or model requests. A unique occurrence index makes this idempotent;
+bindings or model requests. A unique occurrence/run index makes this idempotent;
 queue insertion and chunk creation commit together. The normal delivery loop
 rechecks current policy and adapter permissions and preserves bounded retries
 and uncertain-send handling. Delivery status never changes execution status.

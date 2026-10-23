@@ -24,6 +24,7 @@ for persistent settings.
 
 ## Gateways
 
+- [Host commands](commands.md): reviewed Bash execution, Discord approval, and cron behavior.
 - [Discord](gateways/discord.md): bot setup, thread sessions, permissions, and delivery.
 
 ## Providers

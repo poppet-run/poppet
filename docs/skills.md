@@ -106,7 +106,7 @@ file does not change the current session or any existing session/task snapshots.
 
 Validate a new procedure on a harmless input in a fresh chat first. Check actual
 results and tool receipts, then try it in a scheduled task only if it works with
-scheduled read-only permissions. Editing the file requires another new chat or
+scheduled tool restrictions and unattended command review. Editing the file requires another new chat or
 task to test the revised snapshot.
 
 This flow changes only an owner-saved instruction file. It does not modify

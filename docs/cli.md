@@ -137,7 +137,7 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 | `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> --tz <timezone>]`                | Edit definition fields while retaining task identity and history.  |
 | `tasks skip-next <task>`                                                                                                         | Consume exactly the inspected next execution.                      |
 | `tasks snooze <task> --until <timestamp>`                                                                                        | Delay the next execution to a later offset-qualified instant.      |
-| `tasks run <task>`                                                                                                               | Queue normal read-only work without shifting recurring cadence.    |
+| `tasks run <task>`                                                                                                               | Queue normal scheduled work without shifting recurring cadence.    |
 | `tasks list`                                                                                                                     | List saved tasks.                                                  |
 | `tasks show <task>`                                                                                                              | Show occurrences, results, delivery states, and skipped intervals. |
 | `tasks pause <task>`                                                                                                             | Pause scheduling and cancel pending work.                          |

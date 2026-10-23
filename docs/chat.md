@@ -2,6 +2,10 @@
 
 [Documentation index](README.md)
 
+The [Bash tool](commands.md) can inspect and manage the host machine. Every
+invocation is reviewed. CLI runs execute commands the reviewer allows; commands
+requiring a human stop with instructions to request approval in Discord.
+
 ## Start and continue a session
 
 After signing in, choose a model ID returned by `provider models` and start a session:
@@ -148,7 +152,7 @@ for examples, receipts, inspection limits, and the actions available in this ver
 Edits require an inspected definition revision; skip-next, snooze and run-now also
 bind the inspected next execution. The model must call `show` in the current run
 before those changes. Snooze delays execution rather than postponing a delivered
-message. Run-now queues normal read-only work and cannot undo a future hold.
+message. Run-now queues normal scheduled work and cannot undo a future hold.
 See [task controls](tasks.md#edit-and-control-the-next-execution) for running-task
 restrictions and retained snapshots.
 

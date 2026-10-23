@@ -103,6 +103,19 @@ them. Scheduled results use the same queue and do not alter thread sessions.
 Discord is the only bundled adapter. Additional adapters can use the
 [external package contract](../development.md#adding-a-channel).
 
+## Command approval
+
+The [Bash tool](../commands.md) can manage the host machine. If command review
+requires a person, Poppet posts the exact command, working directory, timeout,
+and reason in the original thread. Reply `/approve <id>` or `/deny <id>` using
+the ID in that message. Only the configured owner in that same authorized
+conversation can answer. Each ID permits one invocation and expires after two
+minutes, cancellation, or worker restart. `/cancel` also cancels the pending run.
+
+Approval controls bypass the model queue. Unknown, expired, and reused IDs never
+start commands. Cron jobs do not create approval prompts; their occurrence fails
+and its failure is delivered to the saved destination.
+
 ## Validation
 
 Automated tests use injected Discord events and API responses. Live bot setup,
