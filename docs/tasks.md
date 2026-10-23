@@ -147,7 +147,7 @@ Configure [Discord](gateways/discord.md), start `poppet worker run`, and copy an
 existing authorized thread's ID. Pass it before the task prompt:
 
 ```sh
-poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --discord-thread <thread-id> "Summarize recent conversations"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --channel discord --conversation <thread-id> "Summarize recent conversations"
 ```
 
 A running messaging worker validates the thread before creating the task.
@@ -175,6 +175,8 @@ Results are standalone posts. They do not change the destination's conversation
 history, session binding, or name. A stopped gateway resumes queued delivery when
 it starts again. Already queued replies remain queued if task history is cleared.
 
+Both `--channel` and `--conversation` are required when selecting a destination.
+The selected adapter validates its conversation ID and access before the task is saved.
 Existing Discord task destinations keep their stored format. Tasks for removed adapters
 retain their history and results but cannot deliver until that adapter is available again.
 

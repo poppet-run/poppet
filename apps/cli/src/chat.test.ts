@@ -393,6 +393,12 @@ const exampleChannel = (id: string) => {
               messages: Stream.fromQueue(incoming),
               conversation: (message) => Effect.succeed(message.conversationId ?? "thread"),
               checkAccess: () => Effect.void,
+              destination: (conversationId) =>
+                conversationId === "thread"
+                  ? Effect.succeed("parent")
+                  : Effect.fail(
+                      new ChannelError({ reason: "permission", message: "Unknown thread" }),
+                    ),
               typing: () => Effect.void,
               mark: () => Effect.void,
               send: (_conversation, text) =>
@@ -419,6 +425,41 @@ const exampleChannel = (id: string) => {
 };
 
 describe("chat.ts", () => {
+  test("when generic task destinations select an adapter, validates access before saving", async () => {
+    const channel = exampleChannel("example-channel");
+    const chat = await fixture([channel.registration]);
+    let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
+
+    try {
+      await chat.invoke(["gateway", "example-channel", "setup"]);
+      worker = await chat.startWorker();
+      const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z"];
+
+      await expect(
+        chat.invoke([...command, "--channel=unknown", "--conversation=thread", "Summary"]),
+      ).rejects.toMatchObject({ message: expect.stringContaining("Configure and enable") });
+      await expect(
+        chat.invoke([...command, "--channel=example-channel", "--conversation=denied", "Summary"]),
+      ).rejects.toMatchObject({ message: expect.stringContaining("Unknown thread") });
+      await chat.invoke(["tasks", "list"]);
+      expect(JSON.parse(chat.lines.at(-1)!)).toEqual([]);
+
+      await chat.invoke([
+        ...command,
+        "--channel=example-channel",
+        "--conversation=thread",
+        "Summary --literal",
+      ]);
+      expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
+        prompt: "Summary --literal",
+        destination: { adapter: "example-channel", conversationId: "thread", parentId: "parent" },
+      });
+    } finally {
+      if (worker) await Effect.runPromise(Fiber.interrupt(worker));
+      await chat.close();
+    }
+  });
+
   test.each(["local", "worker"])(
     "when %s chat manages tasks, uses the current selection and saves each state change",
     async (mode) => {

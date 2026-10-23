@@ -794,16 +794,29 @@ describe("makeCLI", () => {
   test("when a Discord task destination is supplied, requires messaging-worker validation", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-destination-"));
     const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
-    const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z", "--discord-thread"];
+
+    const command = [
+      "tasks",
+      "add",
+      "Summary",
+      "--at",
+      "2099-10-15T09:00:00Z",
+      "--channel",
+      "discord",
+      "--conversation",
+    ];
 
     try {
-      const invalid = await invoke(
-        [...command, "invalid", "Summarize recent conversations"],
-        environment,
-      );
+      await Array.fromAsync([["--channel=discord"], ["--conversation", "400"]], async (flags) => {
+        const incomplete = await invoke(
+          ["tasks", "add", "Incomplete", "--at", "2099-10-15T09:00:00Z", ...flags, "Summary"],
+          environment,
+        );
 
-      expect(invalid.exitCode).toBe(1);
-      expect(await readdir(directory)).toEqual([]);
+        expect(incomplete.exitCode).toBe(1);
+        expect(incomplete.stderr).toContain("Use --channel and --conversation together");
+        expect(await readdir(directory)).toEqual([]);
+      });
 
       const rejected = await invoke(
         [...command, "400", "Summarize recent conversations"],
@@ -1159,6 +1172,18 @@ describe("makeCLI", () => {
       ["tasks", "add", "Later", "--cron", "0 9 * * *", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--at", at, "Hello"],
+      ["tasks", "add", "Later", "--at", at, "--discord-thread", "400", "Hello"],
+      [
+        "tasks",
+        "add",
+        "Later",
+        "--at",
+        at,
+        "--channel=a",
+        "--channel=b",
+        "--conversation=400",
+        "Hello",
+      ],
       ["provider", "status", "--provider", "openrouter", "--provider", "opencode-go"],
       ["provider", "login", "--key-stdin", "--key-stdin"],
       ["worker", "start", "extra"],

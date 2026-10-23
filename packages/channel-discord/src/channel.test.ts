@@ -225,6 +225,14 @@ describe("discordChannelLayer", () => {
             yield* naming.rename(incoming, "400", "😀".repeat(50), "Blocked").pipe(Effect.result),
           ).toHaveProperty("failure.reason", "permission");
           thread.thread_metadata.locked = false;
+
+          for (const id of ["invalid", "1".repeat(21)]) {
+            expect(yield* channel.destination!(id).pipe(Effect.result)).toHaveProperty(
+              "failure.reason",
+              "configuration",
+            );
+          }
+
           expect(yield* channel.destination!("400")).toBe("300");
           expect(yield* channel.destination!("900").pipe(Effect.result)).toHaveProperty(
             "failure.reason",

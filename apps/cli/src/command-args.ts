@@ -32,9 +32,12 @@ export const commandArgs = (
     while (offset < args.length) {
       const token = args[offset]!;
 
-      if (["--at", "--cron", "--tz", "--skill", "--discord-thread"].includes(token)) offset += 2;
-      else if (token === "--coding" || /^--(?:at|cron|tz|skill|discord-thread)=/.test(token))
+      if (["--at", "--cron", "--tz", "--skill", "--channel", "--conversation"].includes(token))
+        offset += 2;
+      else if (token === "--coding" || /^--(?:at|cron|tz|skill|channel|conversation)=/.test(token))
         offset++;
+      // Unknown options must fail, rather than silently becoming a local task's prompt.
+      else if (token.startsWith("-") && token !== "--") return args;
       else break;
     }
   } else return args;

@@ -277,6 +277,12 @@ export const discordChannelLayer = (
         destination: (conversationId) =>
           Effect.tryPromise({
             try: async () => {
+              if (!/^[0-9]{1,20}$/.test(conversationId))
+                throw new ChannelError({
+                  reason: "configuration",
+                  message: "Choose a numeric Discord thread ID of at most 20 digits.",
+                });
+
               requireReady();
               const thread = await client.channels.fetch(conversationId, { force: true });
 

@@ -114,21 +114,32 @@ export const tasksCommand = (context: CLIContext) => {
           ),
           coding: codingFlag,
           skill: skillFlag,
-          discordThread: Flag.String("discord-thread").pipe(
-            Flag.withSchema(Schema.NonEmptyString.check(Schema.isPattern(/^[0-9]{1,20}$/))),
-            Flag.withDescription("Send each completed result to this authorized Discord thread"),
+          channel: Flag.String("channel").pipe(
+            Flag.withSchema(Schema.NonEmptyString),
+            Flag.withDescription("Gateway ID for scheduled result delivery"),
+            Flag.atMost(1),
+            Flag.map(([value]) => value),
+          ),
+          conversation: Flag.String("conversation").pipe(
+            Flag.withSchema(Schema.NonEmptyString),
+            Flag.withDescription("Conversation ID to receive scheduled results"),
             Flag.atMost(1),
             Flag.map(([value]) => value),
           ),
           prompt: textArgument("prompt"),
         },
-        ({ name, at, cron, tz, coding, prompt, skill, discordThread }) =>
+        ({ name, at, cron, tz, coding, prompt, skill, channel, conversation }) =>
           Effect.gen(function* () {
             const schedule = yield* taskOperation(() => parseTaskSchedule(at, cron, tz));
 
+            if ((channel === undefined) !== (conversation === undefined))
+              return yield* Effect.fail(
+                new TaskError({ message: "Use --channel and --conversation together." }),
+              );
+
             const delivery =
-              discordThread !== undefined
-                ? { adapter: "discord", conversationId: discordThread }
+              channel !== undefined && conversation !== undefined
+                ? { adapter: channel, conversationId: conversation }
                 : undefined;
 
             const command = yield* prepareTask(name, schedule, coding, prompt, skill, delivery);
