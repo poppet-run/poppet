@@ -36,8 +36,8 @@ const model = (events: ReadonlyArray<ModelEvent>): ModelOperations => ({
   stream: () => Stream.fromIterable(events),
 });
 
-describe("shared provider contract", () => {
-  test("rejects missing or duplicate completion", async () => {
+describe("service.ts", () => {
+  test("when completion is missing or duplicated, rejects the stream", async () => {
     const sequences = [
       [],
       [
@@ -55,7 +55,7 @@ describe("shared provider contract", () => {
     );
   });
 
-  test("closes an invalid stream before consuming more output", async () => {
+  test("when completion order is invalid, closes the stream before consuming more output", async () => {
     const invalid = model([
       { type: "completed", response },
       { type: "text-delta", text: "late" },
@@ -85,7 +85,7 @@ describe("shared provider contract", () => {
     expect(closed).toBe(true);
   });
 
-  test("validates tool capabilities, required tools, and generation bounds", async () => {
+  test("when requests exceed tool capabilities or generation bounds, rejects them", async () => {
     const description = model([]).description;
 
     const tool = {

@@ -4,8 +4,8 @@ import { Effect, Redacted } from "effect";
 
 import { createHarness, login, verify } from "#src/test/fixtures/chatgpt";
 
-describe.concurrent("ChatGPT sign-in", () => {
-  test("reuses host and issued registration across restarts with fresh sign-in values", async () => {
+describe.concurrent("loginWorkflow", () => {
+  test("when signing in across restarts, reuses registration with fresh state and nonce values", async () => {
     const harness = await createHarness();
 
     try {
@@ -29,7 +29,7 @@ describe.concurrent("ChatGPT sign-in", () => {
       await harness.close();
     }
   });
-  test("retains a valid identity without plan permission and prevents inference", async () => {
+  test("when identity is valid but plan permission is missing, retains identity and blocks inference", async () => {
     const harness = await createHarness();
 
     try {
@@ -41,7 +41,7 @@ describe.concurrent("ChatGPT sign-in", () => {
       await harness.close();
     }
   });
-  test("requests consent again when saved credentials lack plan permission", async () => {
+  test("when saved credentials lack plan permission, requests consent again", async () => {
     const harness = await createHarness();
 
     try {
@@ -57,7 +57,7 @@ describe.concurrent("ChatGPT sign-in", () => {
     }
   });
   test.each(["invalid-url", "https://untrusted.invalid/authorize"])(
-    "rejects discovery endpoint %s before opening the browser",
+    "when discovery returns endpoint %s, rejects it before opening the browser",
     async (endpoint) => {
       const harness = await createHarness();
 
@@ -77,7 +77,7 @@ describe.concurrent("ChatGPT sign-in", () => {
     },
   );
   test.each(["audience", "nonce", "expiry", "signature", "future"] as const)(
-    "rejects invalid identity %s without persisting credentials",
+    "when identity %s is invalid, rejects it without saving credentials",
     async (failure) => {
       const harness = await createHarness();
 
@@ -90,7 +90,7 @@ describe.concurrent("ChatGPT sign-in", () => {
       }
     },
   );
-  test("ignores wrong callback state and rejects declined authorization without redeeming a code", async () => {
+  test("when callback state mismatches or consent is declined, ignores the mismatch and rejects denial without redeeming a code", async () => {
     const harness = await createHarness();
 
     try {
@@ -115,7 +115,7 @@ describe.concurrent("ChatGPT sign-in", () => {
       await harness.close();
     }
   });
-  test("preserves the issued registration when code exchange fails", async () => {
+  test("when code exchange fails, preserves the issued registration", async () => {
     const harness = await createHarness();
 
     try {
@@ -129,7 +129,7 @@ describe.concurrent("ChatGPT sign-in", () => {
       await harness.close();
     }
   });
-  test("rejects account changes without replacing the existing token set", async () => {
+  test("when the signed-in account changes, rejects it without replacing existing tokens", async () => {
     const harness = await createHarness();
 
     try {

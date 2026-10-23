@@ -24,8 +24,8 @@ const expectReaped = (child: ReturnType<typeof launch>) => {
   expect(child.stderr.locked).toBe(false);
 };
 
-describe("bounded streams", () => {
-  test("accepts the exact byte limit across chunks and decodes split UTF-8", async () => {
+describe("io.ts", () => {
+  test("when chunks split UTF-8 at the exact byte limit, decodes the complete text", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new Uint8Array([0xc3]));
@@ -41,7 +41,7 @@ describe("bounded streams", () => {
     );
   });
 
-  test("stops one byte over the limit and releases the reader even when cancellation rejects", async () => {
+  test("when a stream exceeds its limit by one byte, stops and releases the reader even if cancellation rejects", async () => {
     let reads = 0;
     let cancellations = 0;
     let failures = 0;
@@ -76,7 +76,7 @@ describe("bounded streams", () => {
     stream.getReader().releaseLock();
   });
 
-  test("preserves read failures and releases the reader", async () => {
+  test("when reading fails, preserves the failure and releases the reader", async () => {
     const failure = new Error("Read failed");
 
     const stream = new ReadableStream<Uint8Array>({
@@ -89,7 +89,7 @@ describe("bounded streams", () => {
     expect(stream.locked).toBe(false);
   });
 
-  test("rejects invalid UTF-8 after releasing the reader", async () => {
+  test("when stream bytes are invalid UTF-8, releases the reader and rejects decoding", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new Uint8Array([0xff]));
@@ -102,8 +102,8 @@ describe("bounded streams", () => {
   });
 });
 
-describe("bounded subprocesses", () => {
-  test("drains both pipes and returns stdout and the exit code for caller policy", async () => {
+describe("runBounded", () => {
+  test("when a subprocess writes both pipes and fails, drains output and returns stdout and its exit code", async () => {
     const child = launch(
       'process.stdout.write("hello"); process.stderr.write("diagnostic"); process.exitCode = 3;',
     );
@@ -122,42 +122,48 @@ describe("bounded subprocesses", () => {
     }
   });
 
-  test.each(["timeout", "abort", "already aborted"])("kills and reaps on %s", async (mode) => {
-    const child = launch("setInterval(() => {}, 1000)");
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
+  test.each(["timeout", "abort", "already aborted"])(
+    "when a subprocess is %s, kills and reaps it",
+    async (mode) => {
+      const child = launch("setInterval(() => {}, 1000)");
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
 
-    try {
-      if (mode === "already aborted") controller.abort();
+      try {
+        if (mode === "already aborted") controller.abort();
 
-      if (mode === "abort") timer = setTimeout(() => controller.abort(), 30);
+        if (mode === "abort") timer = setTimeout(() => controller.abort(), 30);
 
-      const result = await runBounded(child, {
-        ...options(controller.signal),
-        timeout: mode === "timeout" ? 30 : 2000,
-      });
+        const result = await runBounded(child, {
+          ...options(controller.signal),
+          timeout: mode === "timeout" ? 30 : 2000,
+        });
 
-      expect(result.expired).toBe(mode === "timeout");
-      expect(result.aborted).toBe(mode !== "timeout");
-      expect(child.signalCode).toBe("SIGKILL");
-      expectReaped(child);
-    } finally {
-      clearTimeout(timer);
-      child.kill("SIGKILL");
-      await child.exited;
-    }
-  });
+        expect(result.expired).toBe(mode === "timeout");
+        expect(result.aborted).toBe(mode !== "timeout");
+        expect(child.signalCode).toBe("SIGKILL");
+        expectReaped(child);
+      } finally {
+        clearTimeout(timer);
+        child.kill("SIGKILL");
+        await child.exited;
+      }
+    },
+  );
 
-  test.each(["stdout", "stderr"])("kills and reaps after %s exceeds its limit", async (pipe) => {
-    const child = launch(`process.${pipe}.write("x".repeat(17)); setInterval(() => {}, 1000);`);
+  test.each(["stdout", "stderr"])(
+    "when %s exceeds its subprocess limit, kills and reaps the child",
+    async (pipe) => {
+      const child = launch(`process.${pipe}.write("x".repeat(17)); setInterval(() => {}, 1000);`);
 
-    try {
-      await expect(runBounded(child, options())).rejects.toThrow("Too large");
-      expect(child.signalCode).toBe("SIGKILL");
-      expectReaped(child);
-    } finally {
-      child.kill("SIGKILL");
-      await child.exited;
-    }
-  });
+      try {
+        await expect(runBounded(child, options())).rejects.toThrow("Too large");
+        expect(child.signalCode).toBe("SIGKILL");
+        expectReaped(child);
+      } finally {
+        child.kill("SIGKILL");
+        await child.exited;
+      }
+    },
+  );
 });

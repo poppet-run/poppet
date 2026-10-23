@@ -163,8 +163,8 @@ const fixture = (
   };
 };
 
-describe("OpenRouter", () => {
-  test("aborts a stalled catalog body when discovery times out", async () => {
+describe("makeOpenRouterProvider", () => {
+  test("when catalog discovery times out, aborts its stalled body", async () => {
     const reading = Promise.withResolvers<void>();
     const signals: AbortSignal[] = [];
 
@@ -214,7 +214,7 @@ describe("OpenRouter", () => {
     expect(signals[0]?.aborted).toBe(true);
   });
 
-  test("discovers concrete text models and their catalog capabilities without credentials", async () => {
+  test("when discovering models without credentials, returns concrete text models and catalog capabilities", async () => {
     const harness = fixture([
       catalogEntry("vendor/model"),
       catalogEntry("vendor/text-only", ["max_completion_tokens"]),
@@ -261,7 +261,7 @@ describe("OpenRouter", () => {
   });
 
   test.each([false, true])(
-    "streams readable reasoning once, excluding encrypted details, when enabled=%s",
+    "when reasoning is enabled=%s, streams readable reasoning once without encrypted details",
     async (enabled) => {
       const harness = fixture(undefined, () =>
         sse([
@@ -317,7 +317,7 @@ describe("OpenRouter", () => {
     },
   );
 
-  test("preserves the complete reasoning sequence through a tool round trip and keeps routing explicit", async () => {
+  test("when tools round-trip, preserves the full reasoning sequence and explicit routing", async () => {
     const harness = fixture();
     const model = await Effect.runPromise(harness.provider.resolve("vendor/model"));
     expect(harness.keyReads()).toBe(0);
@@ -361,7 +361,7 @@ describe("OpenRouter", () => {
       [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: "stop" }],
     ],
   ] satisfies ReadonlyArray<readonly [string, ReadonlyArray<Schema.JsonObject>]>)(
-    "accepts final accounting with %s without duplicating output and retains its usage",
+    "when final accounting contains %s, retains usage without duplicating output",
     async (_label, choices) => {
       const harness = fixture(undefined, () =>
         sse([
@@ -386,7 +386,7 @@ describe("OpenRouter", () => {
     },
   );
 
-  test("rejects another accounting choice after accepting the final usage frame", async () => {
+  test("when another accounting choice follows final usage, rejects the stream", async () => {
     const accounting = {
       choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
       usage: { prompt_tokens: 10, completion_tokens: 5 },
@@ -444,7 +444,7 @@ describe("OpenRouter", () => {
     ],
     ["missing usage", { choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: null }],
   ] satisfies ReadonlyArray<readonly [string, Schema.JsonObject]>)(
-    "rejects %s in a frame after the terminal choice without completing",
+    "when %s follows the terminal choice, rejects the frame without completing",
     async (_label, frame) => {
       const harness = fixture(undefined, () =>
         sse([
@@ -468,7 +468,7 @@ describe("OpenRouter", () => {
   );
 
   test.each(["max_tokens", "max_completion_tokens"])(
-    "supports assistant text with %s and omits unused tool fields",
+    "when assistant text uses %s, sends that setting without unused tool fields",
     async (parameter) => {
       const harness = fixture([catalogEntry("vendor/text-only", [parameter, "temperature"])], () =>
         sse([{ choices: [{ index: 0, delta: { content: "Hello" }, finish_reason: "stop" }] }]),
@@ -491,7 +491,7 @@ describe("OpenRouter", () => {
     },
   );
 
-  test("rejects unsupported tools, settings, output bounds and malformed continuation before reading a key", async () => {
+  test("when tools, settings, output bounds, or continuation are invalid, rejects them before reading credentials", async () => {
     const harness = fixture([catalogEntry("vendor/text-only", ["max_tokens"])]);
     const model = await Effect.runPromise(harness.provider.resolve("vendor/text-only"));
 
@@ -538,7 +538,7 @@ describe("OpenRouter", () => {
     [503, "temporary"],
     ["server_error", "temporary"],
   ] as const)(
-    "classifies an HTTP 200 stream error %s safely without retrying",
+    "when an HTTP 200 stream contains error %s, classifies it safely without retrying",
     async (code, reason) => {
       const harness = fixture(undefined, () =>
         sse([
@@ -564,7 +564,7 @@ describe("OpenRouter", () => {
     },
   );
 
-  test("reports insufficient credits before streaming without exposing server details", async () => {
+  test("when credits are insufficient, reports quota failure before streaming without exposing details", async () => {
     const harness = fixture(undefined, () =>
       Response.json({ error: { code: 402, message: "secret-provider-details" } }, { status: 402 }),
     );
@@ -586,7 +586,7 @@ describe("OpenRouter", () => {
     [() => Response.json({ data: [{ id: "secret-provider-details" }] }), "unsupported"],
     [() => new Response("secret-provider-details"), "invalid"],
   ] as const)(
-    "reports malformed catalogs without exposing response details",
+    "when catalogs are malformed in case %#, reports failure without exposing response details",
     async (response, kind) => {
       const provider = makeOpenRouterProvider(Effect.die("Key must not be read"), async () =>
         response(),
@@ -607,29 +607,32 @@ describe("OpenRouter", () => {
     [401, "authentication"],
     [402, "quota"],
     [503, "temporary"],
-  ] as const)("reports catalog HTTP %i and releases its response body", async (status, reason) => {
-    let cancelled = false;
+  ] as const)(
+    "when catalog HTTP status is %i, reports it and releases the response body",
+    async (status, reason) => {
+      let cancelled = false;
 
-    const provider = makeOpenRouterProvider(
-      Effect.die("Key must not be read"),
-      async () =>
-        new Response(
-          new ReadableStream({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode("secret-provider-details"));
-            },
-            cancel() {
-              cancelled = true;
-            },
-          }),
-          { status },
-        ),
-    );
+      const provider = makeOpenRouterProvider(
+        Effect.die("Key must not be read"),
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode("secret-provider-details"));
+              },
+              cancel() {
+                cancelled = true;
+              },
+            }),
+            { status },
+          ),
+      );
 
-    const failure = await Effect.runPromise(provider.models.pipe(Effect.flip));
+      const failure = await Effect.runPromise(provider.models.pipe(Effect.flip));
 
-    expect(failure).toMatchObject({ provider: "openrouter", status, reason });
-    expect(JSON.stringify(failure)).not.toContain("secret-provider-details");
-    expect(cancelled).toBe(true);
-  });
+      expect(failure).toMatchObject({ provider: "openrouter", status, reason });
+      expect(JSON.stringify(failure)).not.toContain("secret-provider-details");
+      expect(cancelled).toBe(true);
+    },
+  );
 });

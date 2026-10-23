@@ -13,8 +13,8 @@ const withEnvironment = (environment: Record<string, string>) =>
     ),
   );
 
-describe("configuration", () => {
-  test("explicit values override defaults and resolve relative paths", async () => {
+describe("loadConfig", () => {
+  test("when explicit settings override defaults, resolves their relative paths", async () => {
     const config = await Effect.runPromise(
       withEnvironment({
         POPPET_APP_NAME: "My Poppet",
@@ -34,7 +34,7 @@ describe("configuration", () => {
     });
   });
 
-  test("invalid values fail instead of silently selecting defaults", () => {
+  test("when configured values are invalid, fails without selecting defaults", () => {
     for (const key of [
       "POPPET_APP_NAME",
       "POPPET_DATA_DIR",
@@ -50,7 +50,7 @@ describe("configuration", () => {
     }
   });
 
-  test("rejects an unregistered provider without falling back", () => {
+  test("when the provider is unregistered, rejects it without falling back", () => {
     expect(
       Exit.isFailure(Effect.runSyncExit(withEnvironment({ POPPET_PROVIDER: "unknown" }))),
     ).toBe(true);

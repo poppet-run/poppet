@@ -7,8 +7,8 @@ import { Effect, Redacted } from "effect";
 import { ChatGPTAuth } from "#src/auth/service";
 import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt";
 
-describe.concurrent("ChatGPT token lifecycle", () => {
-  test("serializes renewal and atomically retains the rotated refresh token", async () => {
+describe.concurrent("refresh.ts", () => {
+  test("when renewals run concurrently, serializes them and atomically saves the rotated refresh token", async () => {
     const harness = await createHarness();
 
     try {
@@ -39,7 +39,7 @@ describe.concurrent("ChatGPT token lifecycle", () => {
       await harness.close();
     }
   });
-  test("renews access while preserving omitted refresh credentials and scopes", async () => {
+  test("when renewal omits refresh credentials or scopes, preserves their saved values", async () => {
     const harness = await createHarness();
 
     try {
@@ -62,7 +62,7 @@ describe.concurrent("ChatGPT token lifecycle", () => {
       await harness.close();
     }
   });
-  test("rejects renewed tokens for another account without replacing saved credentials", async () => {
+  test("when renewed tokens belong to another account, rejects them without replacing saved credentials", async () => {
     const harness = await createHarness();
 
     try {
@@ -79,7 +79,7 @@ describe.concurrent("ChatGPT token lifecycle", () => {
       await harness.close();
     }
   });
-  test("preserves tokens on temporary refresh failure and clears terminally unusable tokens", async () => {
+  test("when refresh fails, preserves temporarily usable tokens and clears terminally unusable ones", async () => {
     const harness = await createHarness();
 
     try {
@@ -97,7 +97,7 @@ describe.concurrent("ChatGPT token lifecycle", () => {
     }
   });
   test.each([false, true])(
-    "deletes all local provider details on sign-out with revocation failure %s and starts a fresh registration",
+    "when sign-out has revocation failure=%s, deletes local provider details and starts a fresh registration",
     async (revokeFailure) => {
       const harness = await createHarness();
 
