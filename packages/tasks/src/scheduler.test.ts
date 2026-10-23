@@ -191,8 +191,8 @@ const fixture = async (
   };
 };
 
-describe.concurrent("task worker", () => {
-  test("worker control requests preserve snapshots and execute run-now through the ordinary read-only runner", async () => {
+describe.concurrent("makeTaskWorker", () => {
+  test("when worker controls queue immediate execution, preserves snapshots and uses the scheduled read-only runner", async () => {
     const state = await fixture(() => final());
 
     try {
@@ -286,7 +286,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("monitoring captures fresh note evidence through the agent while retaining scheduled restrictions", async () => {
+  test("when monitoring reads notes through the agent, captures fresh evidence within scheduled restrictions", async () => {
     const state = await fixture((request) => {
       expect(request.tools.some((tool) => tool.namespace === "poppet_monitor")).toBe(true);
       expect(
@@ -360,7 +360,7 @@ describe.concurrent("task worker", () => {
   });
 
   test.each(["page", "note", "memory", "task"])(
-    "recalled text cannot authorize a scheduled %s action",
+    "when recalled text requests a scheduled %s action, grants no authority",
     async (kind) => {
       let jobId = "";
 
@@ -491,7 +491,7 @@ describe.concurrent("task worker", () => {
     },
   );
 
-  test("chat can pause a task while its running occurrence waits for the shared agent", async () => {
+  test("when an occurrence waits for the shared agent, lets chat pause its task", async () => {
     const entered = await Effect.runPromise(Deferred.make<void>());
     const release = await Effect.runPromise(Deferred.make<void>());
     let jobId = "";
@@ -567,7 +567,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("scheduled runs refuse fabricated task calls", async () => {
+  test("when scheduled runs fabricate task calls, rejects them", async () => {
     const state = await fixture((request) => {
       expect(request.tools.some((tool) => tool.name === "manage_tasks")).toBe(false);
 
@@ -614,7 +614,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("task creation expires before the transport deadline, including queue wait, without a late save", async () => {
+  test("when task creation expires while queued, fails before the transport deadline without a late save", async () => {
     const state = await fixture(final);
     const blocked = Deferred.makeUnsafe<void>();
     const release = Deferred.makeUnsafe<void>();
@@ -693,7 +693,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("scheduled prompts authorize their saved URL while notes remain read-only", async () => {
+  test("when a scheduled prompt contains a saved URL, permits its retrieval while notes remain read-only", async () => {
     let turns = 0;
     const fetched: string[] = [];
 
@@ -747,7 +747,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("scheduled search can read returned sources without acquiring write tools or pausing inference", async () => {
+  test("when scheduled search returns sources, permits reads without write tools or inference pauses", async () => {
     let turns = 0;
 
     const state = await fixture(
@@ -808,7 +808,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("search rate limits are reported to the model without pausing its inference provider", async () => {
+  test("when search is rate-limited, reports it to the model without pausing the inference provider", async () => {
     const state = await fixture(
       () =>
         response([
@@ -850,7 +850,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("persists a task's skill and copies it into occurrence sessions after restart and file deletion", async () => {
+  test("when a task skill file changes or disappears after restart, retains its snapshot in occurrence sessions", async () => {
     const state = await fixture(final);
     const root = join(state.directory, "skills", "weekly-review");
 
@@ -911,7 +911,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("project snapshots survive edits, deletion and retry while occurrences read current project facts without write tools", async () => {
+  test("when project files change or disappear before retry, retains snapshots and reads current facts without write tools", async () => {
     let fail = true;
 
     const state = await fixture(() => {
@@ -997,7 +997,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("records an expired deadline as interrupted in both the occurrence and its run", async () => {
+  test("when a scheduled deadline expires, marks both the occurrence and run interrupted", async () => {
     const started = await Effect.runPromise(Deferred.make<void>());
 
     const state = await fixture(() =>
@@ -1033,7 +1033,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("clears active and pending work through the worker, retains its run, and continues serving", async () => {
+  test("when the worker clears active and pending tasks, retains runs and continues serving", async () => {
     const started = await Effect.runPromise(Deferred.make<void>());
 
     const state = await fixture(() =>
@@ -1079,7 +1079,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("logs committed downtime and busy skips once, without logging rolled-back changes", async () => {
+  test("when downtime or busy skips commit, logs them once and excludes rolled-back changes", async () => {
     const state = await fixture(final);
     const start = Date.parse("2026-10-14T09:00:00Z");
     const schedule = { type: "cron", expression: "* * * * *", timezone: "UTC" } as const;
@@ -1121,7 +1121,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("propagates a failed outcome write even when the model also failed", async () => {
+  test("when outcome storage and the model both fail, propagates the storage failure", async () => {
     const state = await fixture(() =>
       Stream.fail(
         new ProviderError({
@@ -1162,7 +1162,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("uses fresh sessions and current memory, reads notes, and stores final answers", async () => {
+  test("when tasks execute, uses fresh sessions and current memory, reads notes, and saves final answers", async () => {
     const state = await fixture((request) =>
       request.messages.some((message) => message.role === "tool")
         ? final()
@@ -1249,7 +1249,7 @@ describe.concurrent("task worker", () => {
   });
 
   test.each(["note", "memory"])(
-    "refuses attempted %s writes in scheduled runs without changing saved state",
+    "when scheduled runs attempt %s writes, rejects them without changing saved state",
     async (kind) => {
       const state = await fixture(() =>
         response([
@@ -1302,7 +1302,7 @@ describe.concurrent("task worker", () => {
     },
   );
 
-  test("persists quota pauses across restart and retains failed one-offs until explicit retry", async () => {
+  test("when quota pauses or one-off failures survive restart, retains them until explicit recovery", async () => {
     let quota = true;
 
     const state = await fixture(() =>
@@ -1370,7 +1370,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("accepts protected local commands while owning SQLite, cancels active work, and keeps serving", async () => {
+  test("when protected local commands reach the storage owner, permits cancellation and continues serving", async () => {
     const started = await Effect.runPromise(Deferred.make<void>());
     const finished = await Effect.runPromise(Deferred.make<void>());
     let hang = true;
@@ -1438,7 +1438,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("a sleeping worker resumes one overdue summary and one-off, records skips, and does not replay them", async () => {
+  test("when a sleeping worker resumes, runs one overdue summary and one-off and records skips without replay", async () => {
     const started = await Effect.runPromise(Deferred.make<void>());
 
     const state = await fixture(() =>
@@ -1499,7 +1499,7 @@ describe.concurrent("task worker", () => {
     }
   });
 
-  test("advances due work under a controllable clock without duplicating occurrences", async () => {
+  test("when the clock advances to due work, executes each occurrence once", async () => {
     const done = await Effect.runPromise(Deferred.make<void>());
 
     const state = await fixture(() =>

@@ -62,8 +62,8 @@ const fixture = async (catchUpMs = 0) => {
   };
 };
 
-describe.concurrent("task schedules", () => {
-  test("retains a one-off rearmed while paused and defers it behind an older explicit retry", async () => {
+describe.concurrent("TaskRepository", () => {
+  test("when a paused one-off is rearmed, retains it behind an older explicit retry", async () => {
     const state = await fixture();
 
     try {
@@ -108,7 +108,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("edits a queued one-off with a new snapshot, preserving identity, destination and replay receipts", async () => {
+  test("when a queued one-off is edited, replaces its snapshot while preserving identity, destination, and receipts", async () => {
     const state = await fixture();
 
     try {
@@ -174,7 +174,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("edits paused and completed one-offs without resuming or rerunning them, and rearms only an explicit schedule", async () => {
+  test("when paused or completed one-offs are edited, rearms only explicit schedule changes without resuming or rerunning", async () => {
     const state = await fixture();
 
     try {
@@ -244,7 +244,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("rejects stale definitions and running edits, and rolls back edits when recording their receipt fails", async () => {
+  test("when definitions are stale, tasks are running, or receipts fail, rejects or rolls back edits", async () => {
     const state = await fixture();
 
     try {
@@ -286,7 +286,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("skip-next consumes exactly the inspected queued or future slot and cannot skip a second slot on replay", async () => {
+  test("when skip-next is replayed, consumes only the inspected queued or future slot", async () => {
     const state = await fixture();
 
     try {
@@ -332,7 +332,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("persists a long snooze across restart, skips intervening slots and expires relative to ready time", async () => {
+  test("when a long snooze survives restart, skips intervening slots and expires relative to ready time", async () => {
     const state = await fixture();
     const until = start + 3 * recurringExpiry;
 
@@ -402,7 +402,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("keeps a snooze through prompt edits, clears it on schedule replacement and cancels it on pause", async () => {
+  test("when snoozed tasks change, retains snooze for prompt edits and clears it for schedule replacement or pause", async () => {
     const state = await fixture();
 
     try {
@@ -486,7 +486,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("run-now preserves cron cadence, reuses eligible work, rejects held work and consumes a one-off early", async () => {
+  test("when run-now is requested, preserves cadence, reuses eligible work, rejects held work, and consumes one-offs early", async () => {
     const state = await fixture();
 
     try {
@@ -569,7 +569,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("retries use historical definitions and their scheduling kind after the live task changes", async () => {
+  test("when the live task changes before retry, uses the historical definition and schedule kind", async () => {
     const state = await fixture();
 
     try {
@@ -602,7 +602,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("keeps the queued destination on restart and explicit execution retry despite a changed task", async () => {
+  test("when a task destination changes before restart or retry, retains the queued destination", async () => {
     const state = await fixture();
 
     const destination = {
@@ -643,7 +643,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("status reports reconnect and quota actions without exposing failure messages or prompts", async () => {
+  test("when status reports reconnect or quota actions, excludes failure messages and prompts", async () => {
     const state = await fixture();
 
     try {
@@ -689,7 +689,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("rolls back a failed quota-pause write and restores the pause from the saved run on restart", async () => {
+  test("when a quota-pause write fails, rolls it back and restores the pause from the saved run after restart", async () => {
     const state = await fixture();
 
     try {
@@ -739,7 +739,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("clears tasks and their history while retaining conversations, facts, and provider pauses", async () => {
+  test("when tasks are cleared, deletes their history while retaining conversations, facts, and provider pauses", async () => {
     const state = await fixture();
 
     try {
@@ -805,7 +805,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("rolls back enqueued occurrences and schedule advancement together if reconciliation fails", async () => {
+  test("when reconciliation fails, rolls back occurrences and schedule advancement together", async () => {
     const state = await fixture();
 
     try {
@@ -828,7 +828,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("recovers an answer committed before the task outcome, without replaying it", async () => {
+  test("when an answer commits before its task outcome, recovers it without replay", async () => {
     const state = await fixture();
 
     try {
@@ -876,7 +876,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("keeps local wall time across DST, shifts missing times forward, and runs repeated times once", () => {
+  test("when DST changes local time, shifts missing times forward and runs repeated times once", () => {
     const schedule = { type: "cron", expression: "30 1 * * *", timezone: "Europe/London" } as const;
     const spring = nextOccurrence(schedule, Date.parse("2026-03-28T23:00:00Z"));
     const autumn = nextOccurrence(schedule, Date.parse("2026-10-24T23:00:00Z"));
@@ -899,7 +899,7 @@ describe.concurrent("task schedules", () => {
     );
   });
 
-  test("atomically advances schedules, skips downtime, and runs an overdue one-off once", async () => {
+  test("when schedules advance after downtime, commits atomically and runs overdue one-offs once", async () => {
     const state = await fixture();
 
     try {
@@ -928,7 +928,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("runs the latest missed recurring time once within the catch-up window", async () => {
+  test("when recurring work is missed within the catch-up window, runs the latest missed slot once", async () => {
     const state = await fixture(60 * 60_000);
 
     try {
@@ -950,7 +950,7 @@ describe.concurrent("task schedules", () => {
   });
 
   test.each([true, false])(
-    "skips recurring times older than the catch-up window, at startup: %s",
+    "when recurring times exceed the catch-up window with startup=%s, skips them",
     async (startup) => {
       const state = await fixture(60 * 60_000);
 
@@ -974,7 +974,7 @@ describe.concurrent("task schedules", () => {
     },
   );
 
-  test("after a long outage runs only the most recent recurring time and records the rest", async () => {
+  test("when a long outage ends, runs only the latest recurring slot and records the rest", async () => {
     const state = await fixture(60 * 60_000);
 
     try {
@@ -995,7 +995,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("long-running work skips later occurrences; pausing leaves active work for explicit cancellation", async () => {
+  test("when work overruns or is paused, skips later occurrences and leaves active work for explicit cancellation", async () => {
     const state = await fixture();
 
     try {
@@ -1034,7 +1034,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("preserves pending work across restart and interrupts active work for manual retry", async () => {
+  test("when pending and active work survive restart, preserves pending work and interrupts active work for manual retry", async () => {
     const state = await fixture();
 
     try {
@@ -1074,7 +1074,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("holds one recurring occurrence during quota pause, expires stale summaries, and retains one-offs", async () => {
+  test("when quota is paused, holds one recurring occurrence, expires stale summaries, and retains one-offs", async () => {
     const state = await fixture();
 
     try {
@@ -1103,7 +1103,7 @@ describe.concurrent("task schedules", () => {
     }
   });
 
-  test("temporary failures delay future work with bounded backoff without replaying failed occurrences", async () => {
+  test("when temporary failures occur, delays future work with bounded backoff without replaying failed occurrences", async () => {
     const state = await fixture();
 
     try {

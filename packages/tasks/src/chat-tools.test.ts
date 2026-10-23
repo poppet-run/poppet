@@ -118,8 +118,8 @@ const execute = (action: ChatTaskAction, context: ChatTaskContext) =>
     return yield* planned.execute;
   });
 
-describe("chat task operations", () => {
-  test("tasks inherit the session project and inspection cannot cross its scope", async () => {
+describe("ChatTasks", () => {
+  test("when tasks belong to a project session, inherits that project and restricts inspection to its scope", async () => {
     const state = await fixture();
 
     try {
@@ -173,7 +173,7 @@ describe("chat task operations", () => {
       await state.close();
     }
   });
-  test("edits and snoozes through host-bound atomic receipts, revalidates stale targets and rolls back history on journal failure", async () => {
+  test("when tasks are edited or snoozed, binds atomic receipts to the host and rolls back stale or failed changes", async () => {
     const state = await fixture();
 
     try {
@@ -260,7 +260,7 @@ describe("chat task operations", () => {
     }
   });
 
-  test("validates one-off edit deadlines again at commit", async () => {
+  test("when a one-off edit reaches commit, revalidates its deadline", async () => {
     const state = await fixture();
 
     try {
@@ -298,7 +298,7 @@ describe("chat task operations", () => {
     }
   });
 
-  test("creates a monitor with an atomic quiet-baseline receipt and rejects one-off monitoring", async () => {
+  test("when creating a monitor, commits a quiet-baseline receipt and rejects one-off monitoring", async () => {
     const state = await fixture();
 
     const action: ChatTaskAction = {
@@ -335,7 +335,7 @@ describe("chat task operations", () => {
     }
   });
 
-  test("commits a selected skill and receipt, retains them after failed inference and restart, and deduplicates acknowledgement loss", async () => {
+  test("when inference fails or acknowledgement is lost after task creation, retains the skill and receipt without duplication", async () => {
     const state = await fixture();
     await mkdir(join(state.directory, "skills/weekly"), { recursive: true });
     await writeFile(join(state.directory, "skills/weekly/SKILL.md"), "Original procedure");
@@ -377,7 +377,7 @@ describe("chat task operations", () => {
     }
   });
 
-  test("rolls back the task if writing its tool receipt fails", async () => {
+  test("when writing a task tool receipt fails, rolls back the task", async () => {
     const state = await fixture();
 
     try {
@@ -413,25 +413,28 @@ describe("chat task operations", () => {
       schedule: { type: "cron" as const, expression: "0 9 * * *", timezone: "Unknown/Zone" },
     },
     { ...create, skill: "missing" },
-  ])("rejects invalid schedules and missing selected skills before mutation", async (action) => {
-    const state = await fixture();
+  ])(
+    "when schedules or selected skills are invalid in case %#, rejects them before mutation",
+    async (action) => {
+      const state = await fixture();
 
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const { context } = yield* recorded(action);
-          expect(
-            yield* (yield* ChatTasks).prepare(action, context).pipe(Effect.flip),
-          ).toBeInstanceOf(AgentError);
-          expect((yield* TaskRepository).list()).toEqual([]);
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const { context } = yield* recorded(action);
+            expect(
+              yield* (yield* ChatTasks).prepare(action, context).pipe(Effect.flip),
+            ).toBeInstanceOf(AgentError);
+            expect((yield* TaskRepository).list()).toEqual([]);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
-  test("rejects a prepared task once its one-off time has passed", async () => {
+  test("when a prepared one-off task expires, rejects it before saving", async () => {
     const state = await fixture();
 
     const action: ChatTaskAction = {
@@ -457,7 +460,7 @@ describe("chat task operations", () => {
     }
   });
 
-  test("rejects scheduled origin, unavailable here delivery, and unauthorized destinations", async () => {
+  test("when origin or delivery lacks authority, rejects scheduled, unavailable-here, and unauthorized task requests", async () => {
     const state = await fixture();
     const action: ChatTaskAction = { ...create, delivery: "here" };
 
@@ -490,7 +493,7 @@ describe("chat task operations", () => {
     }
   });
 
-  test("cancellation during destination lookup cannot create a task later", async () => {
+  test("when destination lookup is cancelled, prevents later task creation", async () => {
     const state = await fixture();
     const action: ChatTaskAction = { ...create, delivery: "here" };
 
@@ -520,7 +523,7 @@ describe("chat task operations", () => {
     }
   });
 
-  test("the destination deadline cancels lookup before creating a task", async () => {
+  test("when the destination deadline expires, cancels lookup before creating a task", async () => {
     const state = await fixture();
     const action: ChatTaskAction = { ...create, delivery: "here" };
     let cancelled = false;
@@ -556,7 +559,7 @@ describe("chat task operations", () => {
     }
   });
 
-  test("pages task inspection within the byte budget and truncates long prompts", async () => {
+  test("when task inspection exceeds the byte budget, pages results and truncates long prompts", async () => {
     const state = await fixture(1024);
 
     try {

@@ -136,8 +136,8 @@ const complete = (store: Store["Service"], run: Run) =>
     },
   });
 
-describe.concurrent("change-aware monitoring", () => {
-  test("preserves comparisons for rename/schedule edits and starts a quiet baseline after prompt edits without deleting history", async () => {
+describe.concurrent("monitoring.ts", () => {
+  test("when monitor metadata or prompts change, preserves comparisons or starts a quiet baseline without deleting history", async () => {
     const state = await fixture();
 
     try {
@@ -232,7 +232,7 @@ describe.concurrent("change-aware monitoring", () => {
     }
   });
 
-  test("compares values rather than summaries, saves transitions once, and clears projections with tasks", async () => {
+  test("when observations change, compares values, records transitions once, and clears projections with tasks", async () => {
     const state = await fixture();
 
     try {
@@ -279,7 +279,7 @@ describe.concurrent("change-aware monitoring", () => {
     }
   });
 
-  test("rolls back a failed projection, then recovers a completed journal exactly once after restart", async () => {
+  test("when projection writes fail, rolls back and recovers the completed journal once after restart", async () => {
     const state = await fixture();
 
     try {
@@ -340,7 +340,7 @@ describe.concurrent("change-aware monitoring", () => {
   });
 
   test.each(["missing", "duplicate", "late-source", "failed", "interrupted", "cancelled"])(
-    "%s check preserves the previous baseline and explicit retry uses a fresh run",
+    "when a check is %s, preserves its baseline and uses a fresh run for explicit retry",
     async (failure) => {
       const state = await fixture();
 
@@ -402,7 +402,7 @@ describe.concurrent("change-aware monitoring", () => {
     },
   );
 
-  test("offers the observation tool only for the bound active monitoring run and rechecks cancellation", async () => {
+  test("when monitoring requests observations, offers the tool only to the bound active run and rechecks cancellation", async () => {
     const state = await fixture();
 
     try {
@@ -468,7 +468,7 @@ describe.concurrent("change-aware monitoring", () => {
     "mcp-redacted",
     "valid-page",
     "valid-mcp",
-  ])("validates %s evidence before accepting an observation", async (kind) => {
+  ])("when evidence is %s, validates it before accepting an observation", async (kind) => {
     const state = await fixture();
 
     try {
