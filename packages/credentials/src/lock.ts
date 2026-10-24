@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open, rename, unlink } from "node:fs/promises";
 
+import { isMissingFile } from "@poppet/io";
 import { Data, Effect, Schema } from "effect";
 
 /** Reports an existing storage owner or a failure to protect the ownership files. */
@@ -10,8 +11,6 @@ export class OwnerLockError extends Data.TaggedError("OwnerLockError")<{
   readonly reason: "busy" | "storage";
   readonly message: string;
 }> {}
-
-const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 
 const BusyDatabase = Schema.Struct({ code: Schema.Literal("SQLITE_BUSY") });
 
@@ -47,7 +46,7 @@ export const acquireOwnerLock = (path: string) =>
             path,
             constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
           ).catch((cause: unknown) => {
-            if (Schema.is(MissingFile)(cause)) return null;
+            if (isMissingFile(cause)) return null;
             throw cause;
           });
 

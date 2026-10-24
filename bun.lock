@@ -211,6 +211,7 @@
         "@effect/sql-sqlite-bun": "4.0.4",
         "@poppet/config": "workspace:*",
         "@poppet/credentials": "workspace:*",
+        "@poppet/io": "workspace:*",
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
       },
@@ -243,6 +244,7 @@
       "name": "@poppet/worker",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/io": "workspace:*",
         "effect": "4.0.4",
       },
     },

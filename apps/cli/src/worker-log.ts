@@ -12,11 +12,9 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
-import { Schema } from "effect";
+import { isMissingFile } from "@poppet/io";
 
 export const workerLogBytes = 5 * 1024 * 1024;
-
-const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 
 export const prepareWorkerLogDirectory = (directory: string) => {
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -59,7 +57,7 @@ export const openWorkerLog = (directory: string) => {
       try {
         closeSync(openFile(file, constants.O_RDONLY));
       } catch (error) {
-        if (!Schema.is(MissingFile)(error)) throw error;
+        if (!isMissingFile(error)) throw error;
       }
     }
   };
@@ -80,7 +78,7 @@ export const openWorkerLog = (directory: string) => {
         if (index === paths.length - 1) unlinkSync(file);
         else renameSync(file, paths[index + 1]!);
       } catch (error) {
-        if (!Schema.is(MissingFile)(error)) throw error;
+        if (!isMissingFile(error)) throw error;
       }
     }
 

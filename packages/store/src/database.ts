@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { AppConfig } from "@poppet/config";
 import { acquireOwnerLock } from "@poppet/credentials/lock";
-import { Context, Effect, Layer, Schema, String as Str } from "effect";
+import { isMissingFile } from "@poppet/io";
+import { Context, Effect, Layer, String as Str } from "effect";
 import { Reactivity } from "effect/reactivity";
 import { SqlClient } from "effect/sql";
 
@@ -16,8 +17,6 @@ import { migrate, storeSchema } from "#src/migrations";
 export class StoreDatabase extends Context.Service<StoreDatabase, { readonly path: string }>()(
   "poppet/StoreDatabase",
 ) {}
-
-const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 
 // The store only migrates databases it created. Anything else is left untouched.
 const checkOrigin = Effect.gen(function* () {
@@ -73,7 +72,7 @@ export const StoreDatabaseLive = Layer.effectContext(
         await Promise.all(
           [path, `${path}-wal`, `${path}-shm`].map(async (candidate) => {
             const info = await lstat(candidate).catch((cause: unknown) => {
-              if (Schema.is(MissingFile)(cause)) return null;
+              if (isMissingFile(cause)) return null;
               throw cause;
             });
 
@@ -122,7 +121,7 @@ export const StoreDatabaseLive = Layer.effectContext(
         Promise.all(
           [`${path}-wal`, `${path}-shm`].map((candidate) =>
             chmod(candidate, 0o600).catch((cause: unknown) => {
-              if (!Schema.is(MissingFile)(cause)) throw cause;
+              if (!isMissingFile(cause)) throw cause;
             }),
           ),
         ),
