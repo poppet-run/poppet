@@ -41,7 +41,7 @@ The Bun monorepo uses private workspaces:
 | `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                    | Config, I/O helpers, memory, skills, store, web search, provider contract            |
 | `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation   | None                                                                                 |
 | `@poppet/web-search`          | Brave/Kagi search adapters, validation, and bounded source results                 | I/O helpers, Effect                                                                  |
-| `@poppet/config`              | Validated settings and the `AppConfig` service                                     | Provider contract, browser and MCP configuration schemas                             |
+| `@poppet/config`              | Validated settings and the `AppConfig` service                                     | Provider contract, credential locks, browser and MCP configuration schemas           |
 | `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                        | Provider contract                                                                    |
 | `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle              | Config, credentials, provider contract                                               |
 | `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                   | Config and store for the local implementation                                        |
@@ -106,7 +106,7 @@ open the conversation database.
 
 `Skills` in the agent package loads one validated `SKILL.md` or lists local skill
 directories. The CLI composes `SkillsLive` with host configuration. When a host
-supplies `Skills` and `POPPET_SKILL_INDEX_BYTES` is nonzero, the conversation
+supplies `Skills` and the 8 KiB skill-index limit is nonzero, the conversation
 workflow builds a bounded index at run start and adds the read-only
 `poppet_skills.view_skill` tool, a context-only tool journalled like recall. It
 grants no additional tool permissions. Creation requests carry only the selected
@@ -156,7 +156,7 @@ settings. Requests require parameter support, disable provider fallbacks, and
 send a stable session ID. Continuation preserves structured reasoning deltas in
 arrival order, including signatures and opaque provider metadata.
 
-Auth commands accept an explicit provider or default to `POPPET_PROVIDER`.
+Auth commands accept an explicit provider or default to the provider in `config.json`.
 ChatGPT uses its existing OAuth services. API-key providers use the shared
 credentials workspace, which stores versioned provider-specific files under
 `<data directory>/auth` and returns redacted keys. Environment overrides take
@@ -265,12 +265,11 @@ reasoning and protocol-specific response items. Only the matching adapter
 interprets this payload. Validate its version and provider/model identity; keep
 credentials out of transcripts and continuation data.
 
-The optional `<data directory>/config.json` supplies application settings and chat
-limits. Environment variables override individual file values; `POPPET_DATA_DIR`
-selects the data directory and file. Application settings and chat limits share
-one configuration source, while retaining their own validation.
-Provider selection uses `provider` and `model`, overridden by `POPPET_PROVIDER`
-and `POPPET_MODEL`.
+The optional `<data directory>/config.json` supplies ordinary settings and
+the four editable chat controls. `POPPET_DATA_DIR`
+selects the data directory and file. Other environment settings are limited to
+credentials. Internal context/tool/memory limits use fixed defaults. Provider
+selection uses the file's `provider` and `model` fields.
 The registered providers are `openai-chatgpt`, `opencode-go`, and `openrouter`.
 An explicit model is required for provider verification and new chat sessions.
 Help, configuration, and connection commands remain usable before selection.
@@ -632,7 +631,7 @@ sessions; multiple users would need an explicit access policy.
 uses the existing search index for eligibility and the shared projection over
 original messages for text, returning no raw message or provider records. SQL
 caps row counts and text length; serialization caps the whole result to
-`POPPET_TOOL_BYTES` with per-message truncation flags. Around-message reads keep
+the 16 KiB tool-output limit with per-message truncation flags. Around-message reads keep
 the match when the budget reduces the context window. The forward cursor passes
 every returned message even if shortened, so large messages cannot trap paging.
 
@@ -1138,7 +1137,7 @@ native domain filter also blocks WebRTC, wildcard launches retain that protectio
 through a fixed private startup script and Chrome's non-proxied UDP restriction.
 
 The package exports its settings schema through `@poppet/browser/config`;
-`@poppet/config` reads it alongside other file settings and environment overrides.
+`@poppet/config` reads it alongside other file settings.
 The CLI adapts browser tools and `BrowserError` to the generic agent contract.
 Browser calls use the existing external-tool identity and durable
 uncertain outcomes. Scheduled catalogs omit every browser operation. See

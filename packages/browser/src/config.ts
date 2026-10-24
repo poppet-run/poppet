@@ -35,8 +35,8 @@ export const BrowserSettings = Schema.Struct({
 
 export type BrowserSettings = typeof BrowserSettings.Type;
 
-/** An environment override replaces the complete browser configuration. */
-export const browserSettings = Config.String("POPPET_BROWSER").pipe(
+/** Browser settings supplied by the host configuration file. */
+export const browserSettings = Config.String("browser").pipe(
   Config.withDefault('{"enabled":false}'),
   Effect.flatMap((json) =>
     Schema.decodeUnknownEffect(Schema.fromJsonString(BrowserSettings), {
@@ -46,7 +46,9 @@ export const browserSettings = Config.String("POPPET_BROWSER").pipe(
   Effect.mapError(
     () =>
       new Config.ConfigError(
-        new ConfigProvider.SourceError({ message: "Invalid POPPET_BROWSER. See docs/browser.md." }),
+        new ConfigProvider.SourceError({
+          message: "Invalid browser settings in config.json. See docs/browser.md.",
+        }),
       ),
   ),
 );

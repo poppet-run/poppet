@@ -31,6 +31,7 @@ import {
   ManagedRuntime,
   Queue,
   Stream,
+  type Schema,
 } from "effect";
 import { TestClock } from "effect/testing";
 
@@ -53,21 +54,20 @@ const description: ModelDescription = {
 const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-chat-cli-"));
 
-  const defaults = {
-    POPPET_PROVIDER: "chat-provider",
-    POPPET_MODEL: "chat-model",
-    POPPET_DATA_DIR: directory,
-    POPPET_CONTEXT_BYTES: "65536",
-    POPPET_HISTORY_TURNS: "20",
-    POPPET_OUTPUT_TOKENS: "2048",
-    POPPET_MODEL_TURNS: "8",
-    POPPET_TOOL_CALLS: "16",
-    POPPET_TOOL_BYTES: "16384",
-    POPPET_LOG_REASONING: "false",
-    POPPET_LOG_TIMINGS: "false",
-  };
+  const environment = { POPPET_DATA_DIR: directory };
+  await writeFile(
+    join(directory, "config.json"),
+    JSON.stringify({ provider: "chat-provider", model: "chat-model" }),
+  );
 
-  const environment: Partial<typeof defaults> = defaults;
+  const configure = async (settings: {
+    provider?: string | undefined;
+    model?: string | undefined;
+    chat?: Schema.JsonObject;
+  }) => {
+    const current = JSON.parse(await readFile(join(directory, "config.json"), "utf8"));
+    await writeFile(join(directory, "config.json"), JSON.stringify({ ...current, ...settings }));
+  };
 
   const requests: ModelRequest[] = [];
   const titleRequests: ModelRequest[] = [];
@@ -315,6 +315,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
   return {
     directory,
     environment,
+    configure,
     requests,
     titleRequests,
     lines,
@@ -527,7 +528,7 @@ describe("chat.ts", () => {
       const chat = await fixture();
       const workerLogs: string[] = [];
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-      chat.environment.POPPET_LOG_REASONING = String(enabled);
+      await chat.configure({ chat: { logReasoning: enabled } });
       chat.state.reasoning = "Checking the notes.";
 
       try {
@@ -585,7 +586,7 @@ describe("chat.ts", () => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
       let request: Fiber.Fiber<void, unknown> | null = null;
-      chat.environment.POPPET_LOG_REASONING = "true";
+      await chat.configure({ chat: { logReasoning: true } });
       chat.state.reasoning = "Checking the notes.";
       chat.state.hold = true;
       chat.state.useTools = true;
@@ -624,7 +625,7 @@ describe("chat.ts", () => {
 
   test("when reasoning is streamed, sends no duplicate diagnostic copy to the client", async () => {
     const chat = await fixture();
-    chat.environment.POPPET_LOG_REASONING = "true";
+    await chat.configure({ chat: { logReasoning: true } });
     chat.state.reasoning = "Checking the notes.";
     const worker = await chat.startWorker();
 
@@ -673,7 +674,7 @@ describe("chat.ts", () => {
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-      chat.environment.POPPET_LOG_REASONING = "true";
+      await chat.configure({ chat: { logReasoning: true } });
       chat.state.reasoning = "Checking the notes.";
       chat.state.useTools = true;
 
@@ -708,7 +709,7 @@ describe("chat.ts", () => {
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-      chat.environment.POPPET_LOG_REASONING = "true";
+      await chat.configure({ chat: { logReasoning: true } });
       chat.state.reasoning = "Checking before failure.";
       chat.state.useTools = true;
       chat.state.failNext = true;
@@ -738,13 +739,10 @@ describe("chat.ts", () => {
       const chat = await fixture();
       const log = openWorkerLog(join(chat.directory, "logs"));
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-      delete chat.environment.POPPET_LOG_REASONING;
+      await chat.configure({ chat: {} });
 
       try {
-        await writeFile(
-          join(chat.directory, "config.json"),
-          JSON.stringify({ chat: { logReasoning: true } }),
-        );
+        await chat.configure({ chat: { logReasoning: true } });
         chat.state.reasoning = "Check the notes before answering.";
         chat.state.useTools = true;
 
@@ -809,13 +807,10 @@ describe("chat.ts", () => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
       const workerLogs: string[] = [];
-      delete chat.environment.POPPET_LOG_TIMINGS;
+      await chat.configure({ chat: {} });
 
       try {
-        await writeFile(
-          join(chat.directory, "config.json"),
-          JSON.stringify({ chat: { logTimings: true } }),
-        );
+        await chat.configure({ chat: { logTimings: true } });
 
         if (mode === "worker")
           worker = await chat.startWorker("all", {
@@ -865,106 +860,24 @@ describe("chat.ts", () => {
     },
   );
 
-  test("when diagnostic environment settings override the file, applies them and rejects invalid values", async () => {
+  test("when diagnostic file settings change, applies them and rejects invalid values", async () => {
     const chat = await fixture();
 
     try {
-      await writeFile(
-        join(chat.directory, "config.json"),
-        JSON.stringify({ chat: { logReasoning: true, logTimings: true } }),
-      );
+      await chat.configure({ chat: { logReasoning: true, logTimings: true } });
       chat.state.reasoning = "Private thinking";
       await chat.invoke(["chat", "new", "Hello"]);
-      expect(chat.errors.some((line) => line.includes("Thinking session="))).toBe(false);
-      expect(chat.thinkingChunks).toEqual([]);
-      expect(chat.errors.some((line) => line.includes("Timing session="))).toBe(false);
-      expect(chat.requests[0]?.settings.reasoningSummary).toBeUndefined();
-      chat.environment.POPPET_LOG_REASONING = "invalid";
+      expect(chat.thinkingChunks.join("")).toContain("Private thinking");
+      expect(chat.errors.some((line) => line.includes("Timing session="))).toBe(true);
+      await chat.configure({ chat: { logReasoning: "invalid" } });
       await expect(chat.invoke(["config"])).rejects.toHaveProperty("_tag", "ConfigError");
-      chat.environment.POPPET_LOG_REASONING = "false";
-      chat.environment.POPPET_LOG_TIMINGS = "invalid";
+      await chat.configure({ chat: { logReasoning: false } });
+      await chat.configure({ chat: { logTimings: "invalid" } });
       await expect(chat.invoke(["config"])).rejects.toHaveProperty("_tag", "ConfigError");
     } finally {
       await chat.close();
     }
   });
-
-  test.each(["local", "worker"])(
-    "when %s execution uses file settings, applies model selection and chat budgets",
-    async (mode) => {
-      const chat = await fixture();
-      let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-
-      for (const key of ["POPPET_PROVIDER", "POPPET_MODEL", "POPPET_MODEL_TURNS"] as const)
-        delete chat.environment[key];
-
-      const inspect = async (args: string[]) => {
-        chat.chunks.length = 0;
-        await chat.invoke(args);
-
-        return JSON.parse(mode === "worker" ? chat.chunks.join("") : chat.lines.at(-1)!);
-      };
-
-      const settings = {
-        provider: "chat-provider",
-        model: "chat-model",
-      };
-
-      try {
-        await writeFile(
-          join(chat.directory, "config.json"),
-          JSON.stringify({ ...settings, chat: { modelTurns: 1 } }),
-        );
-        chat.state.useTools = true;
-
-        if (mode === "worker") worker = await chat.startWorker();
-
-        await expect(
-          chat.invoke(["chat", "new", "Remember my answer preference"]),
-        ).rejects.toMatchObject({
-          message: "The run has no model turn left to use tool results.",
-        });
-        expect(chat.requests).toHaveLength(1);
-        expect(await inspect(["memory", "list"])).toEqual([]);
-        await writeFile(
-          join(chat.directory, "config.json"),
-          JSON.stringify({ ...settings, chat: { modelTurns: 2 } }),
-        );
-
-        if (worker !== null) {
-          await expect(
-            chat.invoke(["chat", "new", "Still using the old budget"]),
-          ).rejects.toMatchObject({
-            message: "The run has no model turn left to use tool results.",
-          });
-          await Effect.runPromise(Fiber.interrupt(worker));
-          worker = null;
-          chat.lines.length = 0;
-          worker = await chat.startWorker();
-        }
-
-        await chat.invoke(["chat", "new", "Remember my answer preference after reloading"]);
-        expect(await inspect(["memory", "list"])).toMatchObject([
-          { key: "answer.style", value: "Keep answers concise" },
-        ]);
-        await chat.invoke([
-          "tasks",
-          "add",
-          "File task",
-          "--at",
-          "2099-10-15T09:00:00Z",
-          "Summarize",
-        ]);
-        expect(JSON.parse(chat.lines.at(-1) ?? "")).toMatchObject({
-          provider: "chat-provider",
-          model: "chat-model",
-        });
-      } finally {
-        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
-        await chat.close();
-      }
-    },
-  );
 
   test.each(["local", "worker"])(
     "when %s execution selects a skill, saves its snapshot for chats and tasks",
@@ -1116,8 +1029,8 @@ describe("chat.ts", () => {
           worker = undefined;
         }
 
-        delete chat.environment.POPPET_MODEL;
-        chat.environment.POPPET_PROVIDER = "unused-provider";
+        await chat.configure({ model: undefined });
+        await chat.configure({ provider: "unused-provider" });
         await rm(join(chat.directory, "skills"), { recursive: true });
         const resumed = ["After restart", null];
         await Effect.runPromise(
@@ -1244,27 +1157,6 @@ describe("chat.ts", () => {
       }
     },
   );
-
-  test("when a saved skill exceeds the context budget, rejects the request before inference", async () => {
-    const chat = await fixture();
-
-    try {
-      await mkdir(join(chat.directory, "skills", "large"), { recursive: true });
-      await writeFile(join(chat.directory, "skills", "large", "SKILL.md"), "x".repeat(8192));
-      chat.environment.POPPET_CONTEXT_BYTES = "4096";
-      await expect(
-        chat.invoke(["chat", "new", "--skill", "large", "Review"]),
-      ).rejects.toMatchObject({ reason: "context-limit" });
-      expect(chat.requests).toHaveLength(0);
-      const id = chat.errors.find((line) => line.startsWith("Session: "))!.slice(9);
-      await chat.invoke(["chat", "show", id]);
-      expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
-        runs: [{ status: "failed", failureReason: "agent:context-limit" }],
-      });
-    } finally {
-      await chat.close();
-    }
-  });
 
   test("when channels are registered, provides help, setup, lazy startup, isolated sessions, and status", async () => {
     const first = exampleChannel("example-channel");
@@ -1467,9 +1359,9 @@ describe("chat.ts", () => {
     },
   );
 
-  test("when the worker uses a larger context budget, accepts fitting chats and explains overflow", async () => {
+  test("when prompts fit the fixed context limit, accepts them locally and through the worker and rejects oversized transport bodies", async () => {
     const chat = await fixture();
-    chat.environment.POPPET_CONTEXT_BYTES = "1048576";
+
     const prompt = "x".repeat(150_000);
 
     try {
@@ -1664,8 +1556,8 @@ describe("chat.ts", () => {
 
       await readOutput(["memory", "replace", "project", "Birch"]);
       chat.state.useTools = false;
-      chat.environment.POPPET_PROVIDER = "unused-provider";
-      delete chat.environment.POPPET_MODEL;
+      await chat.configure({ provider: "unused-provider" });
+      await chat.configure({ model: undefined });
       expect(await readOutput(["chat", "send", session, "Continue"])).toBe("Answer\n");
       expect(chat.requests.at(-1)?.instructions).toContain("Birch");
       await readOutput(["memory", "forget", "project"]);
@@ -1911,9 +1803,9 @@ describe("chat.ts", () => {
         workload: "coding",
       });
       const built = chat.state.built;
-      chat.environment.POPPET_PROVIDER = "unused-provider";
-      delete chat.environment.POPPET_MODEL;
-      chat.environment.POPPET_CONTEXT_BYTES = "invalid";
+      await chat.configure({ provider: "unused-provider" });
+      await chat.configure({ model: undefined });
+      await chat.configure({ chat: { outputTokens: 0 } });
       await chat.invoke(["chat", "show", session.id]);
       expect(chat.lines.at(-1)).not.toContain("secretOpaqueState");
       expect(chat.lines.at(-1)).not.toContain("continuation");
@@ -1921,7 +1813,8 @@ describe("chat.ts", () => {
         runs: [expect.objectContaining({ status: "completed", workload: "coding" })],
       });
       expect(chat.state.built).toBe(built);
-      chat.environment.POPPET_CONTEXT_BYTES = "65536";
+
+      await chat.configure({ chat: {} });
       await chat.invoke(["chat", "send", session.id, "--unknown", "Second", "question"]);
       expect(chat.state.open).toBe(false);
       expect(chat.requests[1]).toMatchObject({
@@ -1953,14 +1846,14 @@ describe("chat.ts", () => {
         ].map((args) => expect(chat.invoke(args)).rejects.toHaveProperty("_tag", "UsageError")),
       );
 
-      delete chat.environment.POPPET_MODEL;
+      await chat.configure({ model: undefined });
       await expect(chat.invoke(["chat", "new", "Hello"])).rejects.toMatchObject({
         reason: "invalid-request",
-        message: expect.stringContaining("POPPET_MODEL"),
+        message: expect.stringContaining("config.json"),
       });
-      expect(await readdir(chat.directory)).toEqual([]);
-      chat.environment.POPPET_MODEL = "chat-model";
-      chat.environment.POPPET_OUTPUT_TOKENS = "0";
+      expect(await readdir(chat.directory)).toEqual(["config.json"]);
+      await chat.configure({ model: "chat-model" });
+      await chat.configure({ chat: { outputTokens: 0 } });
       await expect(chat.invoke(["chat", "new", "Hello"])).rejects.toHaveProperty(
         "_tag",
         "ConfigError",

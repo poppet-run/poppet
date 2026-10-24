@@ -224,8 +224,8 @@ Use `--coding` before the prompt only for coding work that the chosen provider a
 
 Scheduled runs can use `poppet_history.read_session` after a conversation search
 to read saved context around a match, or page forward with stable message IDs.
-Results are sized from `POPPET_TOOL_BYTES`, may run slightly over it, and mark
-shortened or omitted content. Recalled
+Results are sized from the fixed 16 KiB tool-output budget, may run slightly over
+it, and mark shortened or omitted content. Recalled
 statements remain historical data and should be cited by session/message IDs.
 They cannot authorize memory or task changes, or page fetches. Recalled
 URLs never become web-search grants. Reading does not resume the saved session or

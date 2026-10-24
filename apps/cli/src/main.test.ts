@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm, stat, symlink } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,12 +77,13 @@ describe("main.ts", () => {
   test.concurrent("when API-key login reads stdin, saves a nonempty key without printing it and rejects empty input", async () => {
     const provider = "openrouter";
     const directory = await mkdtemp(join(tmpdir(), "poppet-stdin-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: provider };
+    await writeFile(join(directory, "config.json"), JSON.stringify({ provider }));
+    const environment = { POPPET_DATA_DIR: directory };
 
     try {
       const empty = await invokeProcess(["provider", "login", "--key-stdin"], environment, "\n");
       expect(empty.exitCode).toBe(1);
-      expect(await readdir(directory)).toEqual([]);
+      expect(await readdir(directory)).toEqual(["config.json"]);
 
       const saved = await invokeProcess(
         ["provider", "login", "--key-stdin"],

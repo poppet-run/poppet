@@ -28,25 +28,22 @@ See [configuration](configuration.md) and [storage](storage.md).
 
 ## Providers and models
 
-Select a provider and an explicit model. Provider commands default to `POPPET_PROVIDER`.
+Select a provider and an explicit model. Provider commands default to the `provider` in `config.json`.
 Pass a provider after `login`, `status`, `models`, or `logout`, or use
 `--provider <id>`. This selects which provider to inspect or manage without
 changing the configured inference provider. These commands need no selected model.
 
-Bash / POSIX sh:
+Save the provider and model in `config.json`:
 
-```sh
-export POPPET_PROVIDER=openai-chatgpt
-poppet provider models
-export POPPET_MODEL='replace-with-model-id'
+```json
+{
+  "provider": "openai-chatgpt",
+  "model": "replace-with-model-id"
+}
 ```
 
-fish:
-
-```fish
-set -lx POPPET_PROVIDER openai-chatgpt
-poppet provider models
-set -lx POPPET_MODEL 'replace-with-model-id'
+```sh
+poppet provider models openai-chatgpt
 ```
 
 The runtime builds only the selected provider's dependencies and never falls

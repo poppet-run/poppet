@@ -139,6 +139,8 @@ describe("external gateway registrations", () => {
         },
       );
 
+      await writeFile(join(directory, "config.json"), JSON.stringify({ gatewayPackages: [] }));
+
       const overridden = await Effect.runPromise(
         loadRegisteredChannels.pipe(
           Effect.provideService(

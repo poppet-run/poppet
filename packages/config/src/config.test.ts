@@ -5,22 +5,22 @@ import { ConfigProvider, Effect, Exit } from "effect";
 
 import { loadConfig } from "#src/config";
 
-const withEnvironment = (environment: Record<string, string>) =>
+const withSettings = (settings: Record<string, string>) =>
   loadConfig("test-provider", ["test-provider", "other-provider"]).pipe(
     Effect.provideService(
       ConfigProvider.ConfigProvider,
-      ConfigProvider.fromEnv({ env: environment, preserveEmptyStrings: true }),
+      ConfigProvider.fromUnknown(settings, { preserveEmptyStrings: true }),
     ),
   );
 
 describe("loadConfig", () => {
   test("when explicit settings override defaults, resolves their relative paths", async () => {
     const config = await Effect.runPromise(
-      withEnvironment({
-        POPPET_APP_NAME: "My Poppet",
+      withSettings({
+        applicationName: "My Poppet",
         POPPET_DATA_DIR: "./test-data",
-        POPPET_PROVIDER: "other-provider",
-        POPPET_MODEL: "glm-5.3",
+        provider: "other-provider",
+        model: "glm-5.3",
       }),
     );
 
@@ -33,9 +33,9 @@ describe("loadConfig", () => {
   });
 
   test("when configured values are invalid, fails without selecting defaults", () => {
-    for (const key of ["POPPET_APP_NAME", "POPPET_DATA_DIR", "POPPET_PROVIDER", "POPPET_MODEL"]) {
+    for (const key of ["applicationName", "POPPET_DATA_DIR", "provider", "model"]) {
       for (const value of ["", "   ", " trailing-space "]) {
-        const exit = Effect.runSyncExit(withEnvironment({ [key]: value }));
+        const exit = Effect.runSyncExit(withSettings({ [key]: value }));
 
         expect(Exit.isFailure(exit)).toBe(true);
       }
@@ -43,8 +43,6 @@ describe("loadConfig", () => {
   });
 
   test("when the provider is unregistered, rejects it without falling back", () => {
-    expect(
-      Exit.isFailure(Effect.runSyncExit(withEnvironment({ POPPET_PROVIDER: "unknown" }))),
-    ).toBe(true);
+    expect(Exit.isFailure(Effect.runSyncExit(withSettings({ provider: "unknown" })))).toBe(true);
   });
 });

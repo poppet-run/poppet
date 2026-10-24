@@ -28,7 +28,7 @@ describe("config.ts", () => {
           Effect.provideService(
             ConfigProvider.ConfigProvider,
             ConfigProvider.fromUnknown({
-              POPPET_MCP_SERVERS: JSON.stringify([{ ...server, token: "secret-literal" }]),
+              mcpServers: JSON.stringify([{ ...server, token: "secret-literal" }]),
             }),
           ),
         ),

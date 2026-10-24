@@ -5,22 +5,18 @@
 For OpenCode Go, discovery uses its public catalog without an API key. Log in
 with a hidden key prompt, then select a model:
 
-Bash / POSIX sh:
+Save the provider and model in `config.json`:
 
-```sh
-export POPPET_PROVIDER=opencode-go
-export POPPET_MODEL=glm-5.3
-poppet provider login opencode-go
-poppet provider models
+```json
+{
+  "provider": "opencode-go",
+  "model": "glm-5.3"
+}
 ```
 
-fish:
-
-```fish
-set -lx POPPET_PROVIDER opencode-go
-set -lx POPPET_MODEL glm-5.3
+```sh
 poppet provider login opencode-go
-poppet provider models
+poppet provider models opencode-go
 ```
 
 ## Models and workloads

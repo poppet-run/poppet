@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -34,328 +34,80 @@ const load = (environment: Record<string, string>) =>
   );
 
 describe("loadConfigSource", () => {
-  test("when browser settings are loaded, defaults off, resolves file paths, and honors environment replacement", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-browser-config-"));
-
-    try {
-      const defaults = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-      expect(
-        await Effect.runPromise(browserSettings.pipe(Effect.provide(defaults.context))),
-      ).toEqual({ enabled: false });
-      await writeFile(
-        join(directory, "config.json"),
-        JSON.stringify({
-          browser: {
-            enabled: true,
-            command: "bin/agent-browser",
-            chromiumExecutable: "/opt/chromium",
-            allowedDomains: ["example.com"],
-          },
-        }),
-      );
-      const file = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-      expect(
-        await Effect.runPromise(browserSettings.pipe(Effect.provide(file.context))),
-      ).toMatchObject({
-        enabled: true,
-        command: join(directory, "bin/agent-browser"),
-        allowedDomains: ["example.com"],
-      });
-
-      const wildcard = {
-        enabled: true,
-        chromiumExecutable: "/opt/chromium",
-        allowedDomains: ["*"],
-      };
-
-      const wildcardEnvironment = await Effect.runPromise(
-        load({ POPPET_DATA_DIR: directory, POPPET_BROWSER: JSON.stringify(wildcard) }),
-      );
-
-      expect(
-        await Effect.runPromise(browserSettings.pipe(Effect.provide(wildcardEnvironment.context))),
-      ).toEqual(wildcard);
-      await writeFile(join(directory, "config.json"), JSON.stringify({ browser: wildcard }));
-      const wildcardFile = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-      expect(
-        await Effect.runPromise(browserSettings.pipe(Effect.provide(wildcardFile.context))),
-      ).toEqual(wildcard);
-
-      const overridden = await Effect.runPromise(
-        load({ POPPET_DATA_DIR: directory, POPPET_BROWSER: '{"enabled":false}' }),
-      );
-
-      expect(
-        await Effect.runPromise(browserSettings.pipe(Effect.provide(overridden.context))),
-      ).toEqual({ enabled: false });
-      expect(overridden.source.environmentOverrides).toContain("POPPET_BROWSER");
-
-      const discovered = { enabled: true, allowedDomains: ["example.com"] };
-      await writeFile(join(directory, "config.json"), JSON.stringify({ browser: discovered }));
-      const discoveredFile = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-      expect(
-        await Effect.runPromise(browserSettings.pipe(Effect.provide(discoveredFile.context))),
-      ).toEqual(discovered);
-
-      await Promise.all(
-        [
-          "",
-          '{"enabled":true}',
-          '{"enabled":true,"chromiumExecutable":"relative/chrome","allowedDomains":["example.com"]}',
-          '{"enabled":true,"chromiumExecutable":"/chrome"}',
-          '{"enabled":true,"chromiumExecutable":"/chrome","allowedDomains":[]}',
-          '{"enabled":true,"chromiumExecutable":"/chrome","allowedDomains":["*.example.com"]}',
-          '{"enabled":false,"extraArgs":[]}',
-        ].map(async (value) => {
-          const invalid = await Effect.runPromise(
-            load({ POPPET_DATA_DIR: directory, POPPET_BROWSER: value }),
-          );
-
-          await expect(
-            Effect.runPromise(browserSettings.pipe(Effect.provide(invalid.context))),
-          ).rejects.toHaveProperty("_tag", "ConfigError");
-        }),
-      );
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  test("when MCP settings are loaded, defaults to no servers, resolves paths, and preserves disabled servers on replacement", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-config-"));
-
-    const server = {
-      id: "local",
-      enabled: true,
-      command: "/usr/bin/example",
-      args: ["server"],
-      cwd: "local",
-      tools: ["read", "write"],
-      scheduledTools: ["read"],
-      environment: { TOKEN: { credential: "mcp-local" } },
-    };
+  test("file settings control the host while only the data directory and secrets come from the environment", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-file-config-"));
 
     try {
       const initial = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-      expect(await Effect.runPromise(mcpServers.pipe(Effect.provide(initial.context)))).toEqual([]);
-      await writeFile(join(directory, "config.json"), JSON.stringify({ mcpServers: [server] }));
-      const file = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-      expect(await Effect.runPromise(mcpServers.pipe(Effect.provide(file.context)))).toEqual([
-        { ...server, cwd: join(directory, "local") },
-      ]);
-
-      const overridden = await Effect.runPromise(
-        load({
-          POPPET_DATA_DIR: directory,
-          POPPET_MCP_SERVERS: JSON.stringify([{ ...server, enabled: false }]),
-        }),
-      );
-
-      expect(
-        (await Effect.runPromise(mcpServers.pipe(Effect.provide(overridden.context))))[0],
-      ).toMatchObject({ enabled: false });
-
-      const disabled = await Effect.runPromise(
-        load({ POPPET_DATA_DIR: directory, POPPET_MCP_SERVERS: "[]" }),
-      );
-
-      expect(await Effect.runPromise(mcpServers.pipe(Effect.provide(disabled.context)))).toEqual(
-        [],
-      );
-      expect(disabled.source.environmentOverrides).toContain("POPPET_MCP_SERVERS");
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  test("when web search settings are loaded, requires opt-in and applies environment overrides without exposing keys", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-search-config-"));
-
-    try {
-      const defaults = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-      expect(await Effect.runPromise(webSearchEnabled.pipe(Effect.provide(defaults.context)))).toBe(
-        false,
-      );
-      await writeFile(join(directory, "config.json"), '{"webSearch":true}');
-      const file = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-      expect(await Effect.runPromise(webSearchEnabled.pipe(Effect.provide(file.context)))).toBe(
-        true,
-      );
-
-      const overridden = await Effect.runPromise(
-        load({
-          POPPET_DATA_DIR: directory,
-          POPPET_WEB_SEARCH: "false",
-          POPPET_BRAVE_SEARCH_API_KEY: "must-not-appear",
-        }),
-      );
-
-      expect(
-        await Effect.runPromise(webSearchEnabled.pipe(Effect.provide(overridden.context))),
-      ).toBe(false);
-      expect(overridden.source.environmentOverrides).toEqual([
-        "POPPET_DATA_DIR",
-        "POPPET_WEB_SEARCH",
-      ]);
-
-      const invalid = await Effect.runPromise(
-        load({ POPPET_DATA_DIR: directory, POPPET_WEB_SEARCH: "" }),
-      );
-
-      await expect(
-        Effect.runPromise(webSearchEnabled.pipe(Effect.provide(invalid.context))),
-      ).rejects.toHaveProperty("_tag", "ConfigError");
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  test("when the search provider is configured, defaults to Brave, accepts Kagi, and rejects unknown providers", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-search-provider-"));
-
-    const read = (environment: Record<string, string> = {}) =>
-      Effect.runPromise(
-        load({ POPPET_DATA_DIR: directory, ...environment }).pipe(
-          Effect.flatMap(({ context }) => webSearchProvider.pipe(Effect.provide(context))),
-        ),
-      );
-
-    try {
-      expect(await read()).toBe("brave");
-      await writeFile(join(directory, "config.json"), '{"webSearchProvider":"kagi"}');
-      expect(await read()).toBe("kagi");
-      expect(await read({ POPPET_WEB_SEARCH_PROVIDER: "brave" })).toBe("brave");
-      await expect(read({ POPPET_WEB_SEARCH_PROVIDER: "unknown" })).rejects.toHaveProperty(
-        "_tag",
-        "ConfigError",
-      );
-      await expect(read({ POPPET_WEB_SEARCH_PROVIDER: "" })).rejects.toHaveProperty(
-        "_tag",
-        "ConfigError",
-      );
-      await writeFile(join(directory, "config.json"), '{"webSearchProvider":"unknown"}');
-      await expect(read()).rejects.toHaveProperty("_tag", "ConfigError");
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  test("when the catch-up window is configured, defaults to an hour and accepts file or environment overrides", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-task-config-"));
-
-    const read = (environment: Record<string, string>) =>
-      Effect.runPromise(
-        load({ POPPET_DATA_DIR: directory, ...environment }).pipe(
-          Effect.flatMap(({ context }) => taskCatchUpMinutes.pipe(Effect.provide(context))),
-        ),
-      );
-
-    try {
-      expect(await read({})).toBe(60);
-      await writeFile(join(directory, "config.json"), '{"tasks":{"catchUpMinutes":0}}');
-      expect(await read({})).toBe(0);
-      expect(await read({ POPPET_TASK_CATCH_UP_MINUTES: "15" })).toBe(15);
-      await expect(read({ POPPET_TASK_CATCH_UP_MINUTES: "1441" })).rejects.toHaveProperty(
-        "_tag",
-        "ConfigError",
-      );
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  test("when the configuration file is missing, keeps defaults without creating the data directory", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-config-"));
-    const data = join(directory, "missing");
-
-    try {
-      const result = await Effect.runPromise(load({ POPPET_DATA_DIR: data }));
-
-      expect(result.settings).toMatchObject({
-        dataDirectory: data,
-        provider: "test-provider",
-        model: null,
-      });
-      expect(result.source).toEqual({
-        configFile: { path: join(data, "config.json"), exists: false },
-        environmentOverrides: ["POPPET_DATA_DIR"],
-      });
+      expect(initial.settings.model).toBeNull();
       expect(await readdir(directory)).toEqual([]);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
 
-  test("when file settings and environment overrides coexist, applies overrides per field", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-config-"));
-
-    try {
-      await writeFile(
-        join(directory, "config.json"),
-        JSON.stringify({
-          applicationName: "File name",
-          provider: "other-provider",
-          model: "file-model",
-          chat: { outputTokens: 4096, toolCalls: 4 },
-        }),
-      );
-      const file = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-
-      expect(file.settings).toEqual({
-        applicationName: "File name",
-        dataDirectory: directory,
+      const file = {
         provider: "other-provider",
         model: "file-model",
-      });
+        webSearch: true,
+        webSearchProvider: "kagi",
+        tasks: { catchUpMinutes: 15 },
+        chat: { outputTokens: 4096 },
+        browser: { enabled: true, command: "bin/browser", allowedDomains: ["example.com"] },
+        mcpServers: [
+          {
+            id: "local",
+            enabled: true,
+            command: "server",
+            args: [],
+            cwd: "local",
+            tools: ["read"],
+            scheduledTools: ["read"],
+          },
+        ],
+      };
 
-      const overridden = await Effect.runPromise(
+      await writeFile(join(directory, "config.json"), JSON.stringify(file));
+
+      const loaded = await Effect.runPromise(
         load({
           POPPET_DATA_DIR: directory,
-          POPPET_APP_NAME: "Environment name",
-          POPPET_OUTPUT_TOKENS: "1024",
-          POPPET_OPENROUTER_API_KEY: "must-not-appear",
+          POPPET_PROVIDER: "",
+          POPPET_MODEL: "wrong",
+          POPPET_WEB_SEARCH: "false",
+          POPPET_WEB_SEARCH_PROVIDER: "unknown",
+          POPPET_BROWSER: '{"enabled":false}',
+          POPPET_MCP_SERVERS: "[]",
+          POPPET_TASK_CATCH_UP_MINUTES: "1441",
+          POPPET_OUTPUT_TOKENS: "0",
+          POPPET_OPENROUTER_API_KEY: "secret-key",
         }),
       );
 
-      expect(overridden.settings).toEqual({
-        ...file.settings,
-        applicationName: "Environment name",
-      });
-      expect(overridden.source).toEqual({
+      expect(loaded.settings).toMatchObject({ provider: "other-provider", model: "file-model" });
+      expect(loaded.source).toEqual({
         configFile: { path: join(directory, "config.json"), exists: true },
-        environmentOverrides: ["POPPET_DATA_DIR", "POPPET_APP_NAME", "POPPET_OUTPUT_TOKENS"],
+        environmentOverrides: ["POPPET_DATA_DIR"],
       });
-      expect(
-        await Effect.runPromise(
-          Config.all({
-            outputTokens: Config.schema(Schema.Int, "POPPET_OUTPUT_TOKENS"),
-            toolCalls: Config.schema(Schema.Int, "POPPET_TOOL_CALLS"),
-          }).pipe(Effect.provide(overridden.context)),
-        ),
-      ).toEqual({ outputTokens: 1024, toolCalls: 4 });
-      expect(await readdir(directory)).toEqual(["config.json"]);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
 
-  test("when environment values are empty or invalid, fails without falling back to file settings", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-config-"));
-
-    try {
-      await writeFile(
-        join(directory, "config.json"),
-        JSON.stringify({ provider: "other-provider", model: "file-model" }),
+      const resolved = await Effect.runPromise(
+        Effect.all({
+          search: webSearchEnabled,
+          provider: webSearchProvider,
+          catchUp: taskCatchUpMinutes,
+          browser: browserSettings,
+          mcp: mcpServers,
+          output: Config.schema(Schema.Int, "outputTokens"),
+          secret: Config.String("POPPET_OPENROUTER_API_KEY"),
+        }).pipe(Effect.provide(loaded.context)),
       );
 
-      await Promise.all(
-        [{ POPPET_PROVIDER: "" }, { POPPET_PROVIDER: "unknown" }, { POPPET_MODEL: " " }].map(
-          (override) =>
-            expect(
-              Effect.runPromise(load({ POPPET_DATA_DIR: directory, ...override })),
-            ).rejects.toHaveProperty("_tag", "ConfigError"),
-        ),
-      );
+      expect(resolved).toMatchObject({
+        search: true,
+        provider: "kagi",
+        catchUp: 15,
+        output: 4096,
+        secret: "secret-key",
+        browser: { command: join(directory, "bin/browser") },
+        mcp: [{ cwd: join(directory, "local") }],
+      });
+      expect(JSON.stringify(loaded.source)).not.toContain("secret-key");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -363,6 +115,7 @@ describe("loadConfigSource", () => {
 
   test.each([
     ["malformed JSON", '{"token":"must-not-appear",'],
+    ["removed internal limit", '{"chat":{"contextBytes":4096}}'],
     ["removed voice setting", '{"voice":{"enabled":false}}'],
     ["unknown setting", '{"token":"must-not-appear"}'],
     ["unknown chat setting", '{"chat":{"outputToken":1024}}'],
@@ -397,6 +150,30 @@ describe("loadConfigSource", () => {
       }
     },
   );
+
+  test("authorization configuration rejects symlinks and files writable by other users", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-config-permissions-"));
+
+    try {
+      const path = join(directory, "config.json");
+      const target = join(directory, "target.json");
+      await writeFile(target, "{}");
+      await symlink(target, path);
+      await expect(Effect.runPromise(load({ POPPET_DATA_DIR: directory }))).rejects.toHaveProperty(
+        "_tag",
+        "ConfigError",
+      );
+      await rm(path);
+      await writeFile(path, "{}");
+      await chmod(path, 0o666);
+      await expect(Effect.runPromise(load({ POPPET_DATA_DIR: directory }))).rejects.toHaveProperty(
+        "_tag",
+        "ConfigError",
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 
   test("when the configuration file is unreadable, fails instead of treating it as missing", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-config-unreadable-"));

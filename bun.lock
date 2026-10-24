@@ -79,6 +79,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@poppet/browser": "workspace:*",
+        "@poppet/credentials": "workspace:*",
         "@poppet/mcp": "workspace:*",
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",

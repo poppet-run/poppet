@@ -87,7 +87,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
       return yield* Effect.fail(
         invalidRequest(
           settings.provider,
-          "Set model in config.json or POPPET_MODEL to a model from provider models.",
+          "Set model in config.json to a model from provider models.",
         ),
       );
 

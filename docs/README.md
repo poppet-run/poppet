@@ -11,7 +11,7 @@ for persistent settings.
 
 ## Guides
 
-- [Configuration](configuration.md): environment variables, storage paths, API keys, and run budgets.
+- [Configuration](configuration.md): one settings file, credentials, Discord migration, and run controls.
 - [Command line](cli.md): commands, provider selection, and verification.
 - [Chat](chat.md): saved sessions, streaming answers, context, and cancellation.
 - [MCP tools](mcp.md): trusted local servers, allowlists, inspection, and scheduled reads.

@@ -58,9 +58,8 @@ matching skill. The result is saved in the tool journal, so continuing the
 session uses the text the model saw even if the file later changes.
 
 The index is read once per run, considers at most 64 skills, omits invalid
-files, and is bounded by `POPPET_SKILL_INDEX_BYTES` (default 8192). When it does
-not fit, it lists names only, then fewer names, and says it was truncated. Set
-the budget to `0` to turn the index and tool off. A skill selected with
+files, and is bounded by the 8 KiB skill-index limit. When it does
+not fit, it lists names only, then fewer names, and says it was truncated. A skill selected with
 `--skill` stays in the instructions as before and is marked as already supplied.
 
 Viewing is read-only and remains available in scheduled runs and after untrusted

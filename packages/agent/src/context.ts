@@ -141,7 +141,7 @@ export const assembleContext = (
     throw new AgentError({
       reason: "context-limit",
       message:
-        "The current exchange exceeds the context budget. Shorten it or increase POPPET_CONTEXT_BYTES within the model's capacity.",
+        "The current exchange exceeds the context budget. Shorten the request or start a new conversation.",
     });
 
   for (const exchange of exchanges.slice(-policy.historyTurns).toReversed()) {

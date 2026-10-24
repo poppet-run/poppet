@@ -69,7 +69,7 @@ mode preserves WebRTC blocking with a fixed host-owned startup script and
 Chrome's restriction on non-proxied UDP; it exposes no script or launch options
 to the model.
 
-`POPPET_BROWSER` replaces the complete file section. `{"enabled":false}` disables
+Set `browser.enabled` to `false` in `config.json` to disable
 access. `poppet config` shows the invoking process's settings without
 launching a browser. Restart the worker after edits. Executables and versions are checked only on the first browser action. Missing
 executables or wrong versions fail that action with a sanitized diagnostic;
@@ -97,7 +97,7 @@ MCP was checked, but its session/launch overrides and detached CLI lifecycle do
 not directly meet these ownership requirements. Existing MCP tools remain available.
 
 Results contain the current URL, text, and a `truncated` flag within
-`POPPET_TOOL_BYTES`. Raw responses and each process pipe are capped at 256 KiB,
+the 16 KiB tool-output limit. Raw responses and each process pipe are capped at 256 KiB,
 arguments at 64 KiB, form text at 8192 characters, and snapshot depth at 12.
 Oversized raw responses fail. Version probes and readiness have five-second
 deadlines; native requests have 35 seconds, and element waits default to ten
