@@ -9,14 +9,14 @@ const baseline: ReadonlyArray<string> = [
     prompt TEXT NOT NULL,
     provider TEXT NOT NULL,
     model TEXT NOT NULL,
-    workload TEXT NOT NULL CHECK (workload IN ('assistant', 'coding')),
-    schedule TEXT NOT NULL CHECK (json_valid(schedule)),
-    revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+    workload TEXT NOT NULL,
+    schedule TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 0,
     next_at INTEGER,
-    paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
-    created_at INTEGER NOT NULL CHECK (created_at >= 0),
-    skill TEXT CHECK (skill IS NULL OR json_valid(skill)),
-    destination TEXT CHECK (destination IS NULL OR json_valid(destination)),
+    paused INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    skill TEXT,
+    destination TEXT,
     source_run_id TEXT REFERENCES runs (id),
     source_call_id TEXT CHECK ((source_run_id IS NULL) = (source_call_id IS NULL))
   ) STRICT`,
@@ -27,19 +27,17 @@ const baseline: ReadonlyArray<string> = [
   `CREATE TABLE job_occurrences (
     id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
-    revision INTEGER NOT NULL CHECK (revision >= 0),
-    definition TEXT NOT NULL CHECK (json_valid(definition)),
-    scheduled_at INTEGER NOT NULL CHECK (scheduled_at >= 0),
-    available_at INTEGER NOT NULL CHECK (available_at >= 0),
-    origin TEXT NOT NULL DEFAULT 'scheduled' CHECK (origin IN ('scheduled', 'manual')),
-    status TEXT NOT NULL CHECK (status IN (
-      'pending', 'running', 'completed', 'failed', 'interrupted', 'cancelled', 'expired'
-    )),
+    revision INTEGER NOT NULL,
+    definition TEXT NOT NULL,
+    scheduled_at INTEGER NOT NULL,
+    available_at INTEGER NOT NULL,
+    origin TEXT NOT NULL DEFAULT 'scheduled',
+    status TEXT NOT NULL,
     session_id TEXT REFERENCES sessions (id),
     run_id TEXT REFERENCES runs (id),
     finished_at INTEGER,
     reason TEXT,
-    destination TEXT CHECK (destination IS NULL OR json_valid(destination)),
+    destination TEXT,
     UNIQUE (job_id, revision, scheduled_at)
   ) STRICT`,
 
@@ -58,19 +56,19 @@ const baseline: ReadonlyArray<string> = [
 
   `CREATE TABLE job_provider_pauses (
     provider TEXT PRIMARY KEY,
-    reason TEXT NOT NULL CHECK (reason IN ('quota', 'temporary', 'rate-limit')),
+    reason TEXT NOT NULL,
     resume_at INTEGER,
-    failures INTEGER NOT NULL CHECK (failures > 0)
+    failures INTEGER NOT NULL
   ) STRICT`,
 
   // Owner edits to a task, kept so a repeated operation ID replays its receipt.
   `CREATE TABLE job_operations (
     operation_id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
-    command TEXT NOT NULL CHECK (json_valid(command)),
-    receipt TEXT NOT NULL CHECK (json_valid(receipt)),
-    changes TEXT CHECK (changes IS NULL OR json_valid(changes)),
-    created_at INTEGER NOT NULL CHECK (created_at >= 0)
+    command TEXT NOT NULL,
+    receipt TEXT NOT NULL,
+    changes TEXT,
+    created_at INTEGER NOT NULL
   ) STRICT`,
 
   `CREATE INDEX task_change_history ON job_operations (job_id, created_at DESC)`,

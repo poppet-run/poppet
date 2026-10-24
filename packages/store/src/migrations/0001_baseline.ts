@@ -1,30 +1,29 @@
 // The conversation schema. Each statement runs separately because SQLite prepares one at a time.
-// Table checks are the source of truth for valid states; services do not repeat them.
+// Checks guard only state combinations that row decoding cannot see; typed code and row schemas cover values.
 // Memory, tasks, and gateway define their own tables in their packages.
 export const baseline: ReadonlyArray<string> = [
   `CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
     provider TEXT NOT NULL,
     model TEXT NOT NULL,
-    workload TEXT NOT NULL CHECK (workload IN ('assistant', 'coding')),
-    created_at INTEGER NOT NULL CHECK (created_at >= 0),
-    updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+    workload TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
     title TEXT,
-    title_source TEXT CHECK (title_source IN ('fallback', 'generated', 'manual', 'task')),
-    title_attempted INTEGER NOT NULL DEFAULT 0 CHECK (title_attempted IN (0, 1)),
+    title_source TEXT,
+    title_attempted INTEGER NOT NULL DEFAULT 0,
     title_usage TEXT,
-    skill TEXT CHECK (skill IS NULL OR json_valid(skill))
+    skill TEXT
   ) STRICT`,
 
   // A run uses its session's fixed provider, model, and workload; reads join them in.
   `CREATE TABLE runs (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions (id),
-    status TEXT NOT NULL
-      CHECK (status IN ('pending', 'running', 'completed', 'failed', 'interrupted')),
-    created_at INTEGER NOT NULL CHECK (created_at >= 0),
-    started_at INTEGER CHECK (started_at >= created_at),
-    finished_at INTEGER CHECK (finished_at >= created_at),
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    started_at INTEGER,
+    finished_at INTEGER,
     result TEXT,
     failure_reason TEXT,
     UNIQUE (session_id, id),
@@ -48,9 +47,9 @@ export const baseline: ReadonlyArray<string> = [
     id INTEGER PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions (id),
     run_id TEXT,
-    position INTEGER NOT NULL CHECK (position >= 0),
-    created_at INTEGER NOT NULL CHECK (created_at >= 0),
-    payload TEXT NOT NULL CHECK (json_valid(payload)),
+    position INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    payload TEXT NOT NULL,
     UNIQUE (session_id, position),
     FOREIGN KEY (session_id, run_id) REFERENCES runs (session_id, id)
   ) STRICT`,
@@ -61,17 +60,16 @@ export const baseline: ReadonlyArray<string> = [
   `CREATE TABLE tool_calls (
     run_id TEXT NOT NULL REFERENCES runs (id),
     call_id TEXT NOT NULL,
-    position INTEGER NOT NULL CHECK (position >= 0),
+    position INTEGER NOT NULL,
     name TEXT NOT NULL,
     namespace TEXT,
     arguments TEXT NOT NULL,
     server_id TEXT,
     tool_name TEXT CHECK ((server_id IS NULL) = (tool_name IS NULL)),
-    status TEXT NOT NULL
-      CHECK (status IN ('pending', 'running', 'completed', 'failed', 'interrupted', 'uncertain')),
-    created_at INTEGER NOT NULL CHECK (created_at >= 0),
-    started_at INTEGER CHECK (started_at >= created_at),
-    finished_at INTEGER CHECK (finished_at >= created_at),
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    started_at INTEGER,
+    finished_at INTEGER,
     output TEXT,
     failure_reason TEXT,
     PRIMARY KEY (run_id, call_id),
