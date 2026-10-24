@@ -1,9 +1,10 @@
+import type { ChatFailure } from "@poppet/agent";
 import type { Store } from "@poppet/store";
-import { type Clock, type Duration, Effect, Queue } from "effect";
+import { type Clock, type Duration, Effect, type Fiber, Queue } from "effect";
 
-import type { ChannelPolicy, IncomingMessage, MessagingChannel } from "#src/channel";
+import type { ChannelError, ChannelPolicy, IncomingMessage, MessagingChannel } from "#src/channel";
 import { chunks } from "#src/replies";
-import { type GatewayRepository, gatewayStorage } from "#src/repository";
+import { type GatewayRepository, gatewayStorage, type Inbox } from "#src/repository";
 
 /** Signals that let a loop run as soon as another loop gives it work. */
 export interface GatewayWakes {
@@ -19,6 +20,11 @@ export interface GatewayContext {
   readonly store: Store["Service"];
   readonly clock: Clock.Clock;
   readonly wakes: GatewayWakes;
+}
+
+/** The request processNext is executing, which /cancel interrupts in its conversation. */
+export interface RunningRequest {
+  current: { entry: Inbox; readonly fiber: Fiber.Fiber<void, ChatFailure | ChannelError> } | null;
 }
 
 export const authorized = (policy: ChannelPolicy, message: IncomingMessage) =>
