@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { TextSource } from "@poppet/provider";
-import { DeliveryDestination, StoreError, decodeRow, decodeRows } from "@poppet/store";
+import { DeliveryDestination, StoreError, decodeRow, decodeRows, reportAs } from "@poppet/store";
 import { Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
@@ -56,7 +56,7 @@ const gatewayFailure = (cause: unknown) =>
 
 /** Reports a repository failure as the gateway's storage or overload error. */
 export const gatewayStorage = <A, E, R>(operation: Effect.Effect<A, E, R>) =>
-  operation.pipe(Effect.mapError(gatewayFailure));
+  operation.pipe(reportAs(gatewayFailure));
 
 const conflictingSession = () => new Error("Conflicting messaging session");
 

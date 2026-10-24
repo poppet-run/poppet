@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { taskCatchUpMinutes } from "@poppet/config";
-import { DeliveryDestination, SkillSnapshot, decodeRow, decodeRows } from "@poppet/store";
+import { DeliveryDestination, SkillSnapshot, decodeRow, decodeRows, reportAs } from "@poppet/store";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 import { SqlClient } from "effect/sql";
 
@@ -31,7 +31,7 @@ const Count = Schema.Struct({ count: Schema.Natural });
 const operation =
   <Args extends ReadonlyArray<unknown>, A, E, R>(run: (...args: Args) => Effect.Effect<A, E, R>) =>
   (...args: Args) =>
-    run(...args).pipe(Effect.mapError(taskFailure));
+    run(...args).pipe(reportAs(taskFailure));
 
 /**
  * Builds task operations on the shared database connection.

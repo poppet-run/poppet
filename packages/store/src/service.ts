@@ -11,7 +11,14 @@ import { Clock, Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { StoreDatabase, StoreDatabaseLive } from "#src/database";
-import { StoreError, decodeInput, storageFailure, storeFailure } from "#src/errors";
+import {
+  StoreError,
+  decodeInput,
+  logStorageCause,
+  reportAs,
+  storageFailure,
+  storeFailure,
+} from "#src/errors";
 import { schemaVersion } from "#src/migrations";
 import { readSession } from "#src/recall";
 import {
@@ -151,7 +158,7 @@ export const StoreLive = Layer.effect(
 
     // Internal steps fail with SQL, schema, or store errors; public operations report StoreError.
     const transaction = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-      sql.withTransaction(effect).pipe(Effect.mapError(storeFailure));
+      sql.withTransaction(effect).pipe(reportAs(storeFailure));
 
     const findSession = (id: string) =>
       sql`SELECT * FROM sessions WHERE id = ${id}`.pipe(decodeRow(SessionRow));
@@ -294,7 +301,7 @@ export const StoreLive = Layer.effect(
         })}`;
 
         return yield* requireSession(id);
-      }).pipe(Effect.mapError(storeFailure));
+      }).pipe(reportAs(storeFailure));
 
     const queueRun: StoreOperations["queueRun"] = (
       sessionId,
@@ -531,12 +538,12 @@ export const StoreLive = Layer.effect(
             Effect.gen(function* () {
               const saved = yield* toolCallsFor(runId).pipe(
                 Effect.map((calls) => calls.find((call) => call.callId === callId)),
-                Effect.mapError(storeFailure),
+                reportAs(storeFailure),
               );
 
               if (saved?.status === "completed") return saved.output!;
 
-              const { call } = yield* activeTool(runId, callId).pipe(Effect.mapError(storeFailure));
+              const { call } = yield* activeTool(runId, callId).pipe(reportAs(storeFailure));
 
               if (call.status !== "running")
                 return yield* conflict("Only a started tool call can commit a mutation.");
@@ -544,19 +551,23 @@ export const StoreLive = Layer.effect(
               const output = yield* operation;
 
               yield* finishTool(runId, callId, { status: "completed", output }).pipe(
-                Effect.mapError(storeFailure),
+                reportAs(storeFailure),
               );
 
               return output;
             }),
           )
-          .pipe(Effect.catchTag("SqlError", (error) => Effect.fail(storageFailure(error)))),
+          .pipe(
+            Effect.catchTag("SqlError", (error) =>
+              logStorageCause(error).pipe(Effect.andThen(Effect.fail(storageFailure(error)))),
+            ),
+          ),
       toolCalls: (runId) =>
         Effect.gen(function* () {
           yield* requireRun(yield* decodeInput(Id, runId));
 
           return yield* toolCallsFor(runId);
-        }).pipe(Effect.mapError(storeFailure)),
+        }).pipe(reportAs(storeFailure)),
       renameSession: (id, title) =>
         transaction(
           Effect.gen(function* () {
@@ -598,14 +609,14 @@ export const StoreLive = Layer.effect(
           }),
         ),
       searchSessions: (query, maxBytes) =>
-        searchSessions(sql, query, maxBytes).pipe(Effect.mapError(storeFailure)),
+        searchSessions(sql, query, maxBytes).pipe(reportAs(storeFailure)),
       readSession: (query, maxBytes) =>
-        readSession(sql, query, maxBytes).pipe(Effect.mapError(storeFailure)),
+        readSession(sql, query, maxBytes).pipe(reportAs(storeFailure)),
       session: (id) =>
-        decodeInput(Id, id).pipe(Effect.flatMap(findSession), Effect.mapError(storeFailure)),
+        decodeInput(Id, id).pipe(Effect.flatMap(findSession), reportAs(storeFailure)),
       sessions: sql`SELECT * FROM sessions ORDER BY created_at, id`.pipe(
         decodeRows(SessionRow),
-        Effect.mapError(storeFailure),
+        reportAs(storeFailure),
       ),
       messages: (sessionId) =>
         Effect.gen(function* () {
@@ -615,15 +626,15 @@ export const StoreLive = Layer.effect(
             FROM messages WHERE session_id = ${sessionId} ORDER BY position`.pipe(
             decodeRows(MessageRow),
           );
-        }).pipe(Effect.mapError(storeFailure)),
-      run: (id) => decodeInput(Id, id).pipe(Effect.flatMap(findRun), Effect.mapError(storeFailure)),
+        }).pipe(reportAs(storeFailure)),
+      run: (id) => decodeInput(Id, id).pipe(Effect.flatMap(findRun), reportAs(storeFailure)),
       runs: (sessionId) =>
         Effect.gen(function* () {
           yield* requireSession(yield* decodeInput(Id, sessionId));
 
           return yield* sql`SELECT * FROM runs WHERE session_id = ${sessionId}
             ORDER BY created_at, id`.pipe(decodeRows(RunRow));
-        }).pipe(Effect.mapError(storeFailure)),
+        }).pipe(reportAs(storeFailure)),
       status: sql`SELECT (SELECT COUNT(*) FROM sessions) AS sessions,
           (SELECT COUNT(*) FROM messages) AS messages, (SELECT COUNT(*) FROM runs) AS runs`.pipe(
         decodeRow(
@@ -640,7 +651,7 @@ export const StoreLive = Layer.effect(
           messages: counts?.messages ?? 0,
           runs: counts?.runs ?? 0,
         })),
-        Effect.mapError(storeFailure),
+        reportAs(storeFailure),
       ),
     } satisfies StoreOperations;
   }),

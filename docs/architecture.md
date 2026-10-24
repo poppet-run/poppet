@@ -613,7 +613,9 @@ which indexes new exchanges inside the completion transaction. Tool content,
 intermediate responses, failed/interrupted inputs, and continuation are excluded.
 Messages remain the source of truth; current titles join from sessions at query
 time. `Store.searchSessions` validates plain-text queries, quotes FTS terms, binds
-parameters, and bounds ranked excerpts and serialized results.
+parameters, and sizes ranked excerpts from the byte budget. Search and recall
+derive a result count and per-item byte cap from the budget instead of fitting
+serialized output exactly, so results can run slightly over it.
 
 `agent/search.ts` defines the read-only `poppet_history.search_sessions` and
 `poppet_history.read_session` schemas. The conversation loop dispatches them alongside other tools, using the same

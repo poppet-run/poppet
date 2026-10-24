@@ -10,7 +10,28 @@ import { decodeRows } from "#src/sql";
 /** Bounds a caller-supplied JSON byte budget. */
 export const MaxBytes = Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 }));
 
-/** Searches completed exchanges and keeps excerpts around their match within the JSON byte budget. */
+// Approximate JSON bytes a result spends on IDs, title, and field names.
+const overhead = 250;
+
+/** Cuts text to at most `bytes` UTF-8 bytes without splitting a character. */
+export const clip = (text: string, bytes: number) => {
+  let used = 0;
+  let end = 0;
+
+  for (const character of text) {
+    used += Buffer.byteLength(character);
+
+    if (used > bytes) break;
+    end += character.length;
+  }
+
+  return text.slice(0, end);
+};
+
+/**
+ * Searches completed exchanges. The budget sets how many matches return and how long
+ * each excerpt is; results stay close to it but are not fitted exactly.
+ */
 export const searchSessions = Effect.fn(function* (
   sql: SqlClient.SqlClient,
   query: string,
@@ -26,7 +47,10 @@ export const searchSessions = Effect.fn(function* (
 
   if (terms.length === 0) return { matches: [], truncated: false } satisfies SessionSearchResult;
 
-  // Use a fresh marker so stored text cannot be mistaken for a match boundary.
+  const limit = Math.min(10, Math.max(1, Math.floor(maxBytes / 400)));
+  const excerptBytes = Math.min(4000, Math.floor(maxBytes / limit) - overhead);
+
+  // snippet() centres each excerpt on its match; a fresh marker locates the match safely.
   const marker = randomUUID();
 
   const rows = yield* sql`SELECT m.session_id, m.id AS message_id, s.title, m.created_at,
@@ -36,46 +60,23 @@ export const searchSessions = Effect.fn(function* (
     FROM session_search JOIN messages AS m ON m.id = session_search.rowid
     JOIN sessions AS s ON s.id = m.session_id
     WHERE session_search MATCH ${terms.join(" AND ")}
-    ORDER BY rank, m.id LIMIT 11`.pipe(
+    ORDER BY rank, m.id LIMIT ${limit + 1}`.pipe(
     decodeRows(Schema.Struct({ ...SessionSearchMatch.fields, textLength: Schema.Natural })),
   );
 
-  const matches: Array<typeof SessionSearchMatch.Type> = [];
-  let truncated = rows.length > 10;
+  let truncated = rows.length > limit;
 
-  for (const { textLength, ...row } of rows.slice(0, 10)) {
-    const [before = "", hit = ""] = row.excerpt.split(marker);
-    const characters = [...row.excerpt.replaceAll(marker, "")];
-    const offset = [...before].length;
-    const hitLength = [...hit].length;
-    truncated ||= characters.length > 1000 || characters.length < textLength;
-    let length = Math.min(1000, characters.length);
+  const matches = rows.slice(0, limit).map(({ textLength, ...row }) => {
+    const [before = "", hit = "", after = ""] = row.excerpt.split(marker);
+    // Keep the match and spend the remaining bytes evenly on either side of it.
+    const side = Math.max(0, Math.floor((excerptBytes - Buffer.byteLength(hit)) / 2));
+    const lead = [...clip([...before].toReversed().join(""), side)].toReversed().join("");
+    const excerpt = `${lead}${hit}${clip(after, side)}`;
 
-    if (hitLength > length) continue;
+    truncated ||= excerpt.length < textLength;
 
-    const excerpt = () => {
-      const start = Math.max(
-        0,
-        Math.min(offset - Math.floor((length - hitLength) / 2), characters.length - length),
-      );
-
-      return characters.slice(start, start + length).join("");
-    };
-
-    let match = { ...row, excerpt: excerpt() };
-
-    while (
-      Buffer.byteLength(JSON.stringify({ matches: [...matches, match], truncated: true })) >
-      maxBytes
-    ) {
-      if (length === hitLength) return { matches, truncated: true } satisfies SessionSearchResult;
-      length = Math.max(hitLength, Math.floor(length / 2));
-      match = { ...row, excerpt: excerpt() };
-      truncated = true;
-    }
-
-    matches.push(match);
-  }
+    return { ...row, excerpt };
+  });
 
   return { matches, truncated } satisfies SessionSearchResult;
 });

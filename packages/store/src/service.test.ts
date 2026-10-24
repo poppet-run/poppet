@@ -11,7 +11,7 @@ import { SqlClient } from "effect/sql";
 
 import { StoreDatabase } from "#src/database";
 import { StoreError } from "#src/errors";
-import type { SessionReadResult } from "#src/schema";
+import type { SessionReadResult, SessionSearchResult } from "#src/schema";
 import { Store, StoreLive } from "#src/service";
 
 const fixture = async () => {
@@ -54,6 +54,10 @@ const responseFor = (provider: ProviderId, text = "Complete"): Completion => ({
 });
 
 const user: Message = { role: "user", text: "Hello" };
+
+// Search and recall size results from their budget but may run slightly over it.
+const expectNearBudget = (result: SessionReadResult | SessionSearchResult, maxBytes: number) =>
+  expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(maxBytes * 1.25);
 
 const toolCall = (callId: string) =>
   ({
@@ -350,7 +354,7 @@ describe("Store", () => {
                   maxBytes,
                 );
 
-                expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(maxBytes);
+                expectNearBudget(page, maxBytes);
                 expect(page.messages.length).toBeGreaterThan(0);
                 expect(page.messages.length).toBeLessThanOrEqual(10);
                 expect(page.messages.some((message) => message.text.length > 0)).toBe(true);
@@ -389,7 +393,7 @@ describe("Store", () => {
               );
 
               expect(around.messages.some((message) => message.messageId === match)).toBe(true);
-              expect(Buffer.byteLength(JSON.stringify(around))).toBeLessThanOrEqual(maxBytes);
+              expectNearBudget(around, maxBytes);
               expect(around.truncated).toBe(true);
             }),
           ),
@@ -463,12 +467,12 @@ describe("Store", () => {
             expect(small.truncated).toBe(true);
             expect(small.matches.length).toBeGreaterThan(0);
             expect(small.matches.every((match) => match.excerpt.includes("equalrank"))).toBe(true);
-            expect(Buffer.byteLength(JSON.stringify(small))).toBeLessThanOrEqual(1024);
+            expectNearBudget(small, 1024);
             yield* complete("needle " + "🙂".repeat(5000));
             const bounded = yield* store.searchSessions("needle", 1024);
             expect(bounded.matches).toHaveLength(1);
             expect(bounded.truncated).toBe(true);
-            expect(Buffer.byteLength(JSON.stringify(bounded))).toBeLessThanOrEqual(1024);
+            expectNearBudget(bounded, 1024);
             expect(bounded.matches[0]?.excerpt).toContain("needle");
             expect(bounded.matches[0]?.excerpt).not.toContain("\ufffd");
             yield* complete("nebula " + "padding ".repeat(100));
@@ -525,7 +529,7 @@ describe("Store", () => {
             expect([...excerpt].length).toBeLessThanOrEqual(1000);
             expect(excerpt).not.toContain("\ufffd");
             expect(result.truncated).toBe(true);
-            expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(input.maxBytes);
+            expectNearBudget(result, input.maxBytes);
           }),
         ),
       );

@@ -3,7 +3,7 @@ import type { SqlClient } from "effect/sql";
 
 import { StoreError, decodeInput } from "#src/errors";
 import { Session, SessionReadMessage, SessionReadQuery, type SessionReadResult } from "#src/schema";
-import { MaxBytes } from "#src/search";
+import { MaxBytes, clip } from "#src/search";
 import { decodeRow, decodeRows } from "#src/sql";
 
 const RecallRow = Schema.Struct({
@@ -70,83 +70,36 @@ export const readSession = Effect.fn(function* (
         ) ORDER BY position ${direction}`.pipe(decodeRows(RecallRow));
   };
 
+  // The budget sets the page size and each message's text length; results stay close to it.
+  const pageSize = Math.min(10, Math.max(1, Math.floor(maxBytes / 400)));
+  const textBytes = Math.floor(maxBytes / pageSize) - 150;
+
+  // An around-read spends about half the page on the anchor and the messages before it,
+  // always including at least one earlier message when the page has room.
+  const leading =
+    aroundMessageId === null ? 0 : Math.min(pageSize, Math.max(2, Math.ceil(pageSize / 2)));
+
   const before =
-    aroundMessageId === null ? [] : (yield* window(true, anchor!.position, 6)).toReversed();
+    leading === 0 ? [] : (yield* window(true, anchor!.position, leading + 1)).toReversed();
 
-  let omittedBefore = before.length > 5;
+  const kept = before.slice(-leading);
 
-  const rows = [
-    ...before.slice(-5),
-    ...(yield* window(false, anchor?.position ?? -1, aroundMessageId === null ? 11 : 6)),
-  ];
+  const after = yield* window(false, anchor?.position ?? -1, pageSize - kept.length + 1);
+  const rows = [...kept, ...after];
+  const page = rows.slice(0, pageSize);
+  const more = rows.length > pageSize;
 
-  const selected = rows.slice(0, 10).map((row) => ({
-    messageId: row.messageId,
-    role: row.role,
-    createdAt: row.createdAt,
-    textBytes: row.textBytes,
-    characters: [...row.text],
-    text: row.text,
-    truncated: Buffer.byteLength(row.text) < row.textBytes,
-  }));
+  const messages = page.map(({ text, textBytes: savedBytes, ...row }) => {
+    const shown = clip(text, textBytes);
 
-  const result = (): SessionReadResult => {
-    const last = selected.at(-1)?.messageId ?? null;
-    const more = last !== null && last !== rows.at(-1)?.messageId;
+    return { ...row, text: shown, truncated: Buffer.byteLength(shown) < savedBytes };
+  });
 
-    return {
-      sessionId,
-      title: session.title,
-      messages: selected.map(({ messageId, role, createdAt, text, truncated }) => ({
-        messageId,
-        role,
-        createdAt,
-        text,
-        truncated,
-      })),
-      nextAfterMessageId: more ? last : null,
-      truncated: omittedBefore || more || selected.some((row) => row.truncated),
-    };
-  };
-
-  const size = () => Buffer.byteLength(JSON.stringify(result()));
-
-  if (size() <= maxBytes) return result();
-
-  for (const row of selected) {
-    row.text = "";
-    row.truncated = row.textBytes > 0;
-  }
-
-  // Keep the requested match even when metadata alone forces a smaller window.
-  while (size() > maxBytes) {
-    if (aroundMessageId !== null && selected[0]?.messageId !== aroundMessageId) {
-      selected.shift();
-      omittedBefore = true;
-    } else selected.pop();
-  }
-
-  for (const [index, row] of selected.entries()) {
-    const allowance = Math.floor((maxBytes - size()) / (selected.length - index));
-    const ceiling = size() + allowance;
-    let lower = 0;
-    let upper = row.characters.length;
-
-    const setText = (length: number) => {
-      row.text = row.characters.slice(0, length).join("");
-      row.truncated = Buffer.byteLength(row.text) < row.textBytes;
-    };
-
-    while (lower < upper) {
-      const middle = Math.ceil((lower + upper) / 2);
-      setText(middle);
-
-      if (size() <= ceiling) lower = middle;
-      else upper = middle - 1;
-    }
-
-    setText(lower);
-  }
-
-  return result();
+  return {
+    sessionId,
+    title: session.title,
+    messages,
+    nextAfterMessageId: more ? (page.at(-1)?.messageId ?? null) : null,
+    truncated: before.length > leading || more || messages.some((message) => message.truncated),
+  } satisfies SessionReadResult;
 });
