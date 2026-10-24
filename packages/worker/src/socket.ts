@@ -1,6 +1,7 @@
 import { chmod, lstat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { isMissingFile } from "@poppet/io";
 import { Context, Data, Effect, Exit, Fiber, Option, Schema, Scope } from "effect";
 
 /** A rejected local request or a failure to use the protected worker endpoint. */
@@ -22,8 +23,6 @@ export class WorkerRequests extends Context.Service<
   }
 >()("poppet/WorkerRequests") {}
 
-const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
-
 // Bun uses FailedToOpenSocket for a refused Unix-socket connection.
 const UnavailableSocket = Schema.Struct({
   code: Schema.Literals(["ECONNREFUSED", "FailedToOpenSocket"]),
@@ -37,7 +36,7 @@ export const requestWorker = async (
   signal: AbortSignal,
 ) => {
   const info = await lstat(path).catch((cause: unknown) => {
-    if (Schema.is(MissingFile)(cause)) return null;
+    if (isMissingFile(cause)) return null;
     throw cause;
   });
 
@@ -91,7 +90,7 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
       return yield* Effect.tryPromise({
         try: async () => {
           const info = await lstat(path).catch((cause: unknown) => {
-            if (Schema.is(MissingFile)(cause)) return null;
+            if (isMissingFile(cause)) return null;
             throw cause;
           });
 
@@ -174,7 +173,7 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
         // Request scopes have already interrupted their streams. Drain responses before releasing SQLite.
         await server.stop();
         await unlink(path).catch((cause: unknown) => {
-          if (!Schema.is(MissingFile)(cause)) throw cause;
+          if (!isMissingFile(cause)) throw cause;
         });
       }),
   );

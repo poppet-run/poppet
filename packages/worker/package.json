@@ -15,6 +15,7 @@
     "test": "bun --no-env-file ../../tools/testing/run.ts"
   },
   "dependencies": {
+    "@poppet/io": "workspace:*",
     "effect": "4.0.4"
   }
 }
