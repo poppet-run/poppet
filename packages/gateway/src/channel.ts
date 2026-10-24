@@ -47,7 +47,7 @@ export class MessagingChannel extends Context.Service<
       conversationId: string,
     ) => Effect.Effect<void, ChannelError>;
     /** Resolves an existing destination's parent; the gateway rechecks its policy and access. */
-    readonly destination?: (conversationId: string) => Effect.Effect<string, ChannelError>;
+    readonly destination: (conversationId: string) => Effect.Effect<string, ChannelError>;
     readonly typing: (conversationId: string) => Effect.Effect<void, ChannelError>;
     /** Updates a source message's progress indicator; the gateway treats failures as best effort. */
     readonly mark: (
@@ -62,8 +62,8 @@ export class MessagingChannel extends Context.Service<
     ) => Effect.Effect<string, ChannelError>;
     readonly status: Effect.Effect<Schema.JsonObject>;
     readonly textLimit: number;
-    /** Optional naming for conversations whose creation ownership the adapter can prove. */
-    readonly naming?: {
+    /** Naming for conversations whose creation ownership the adapter can prove. */
+    readonly naming: {
       readonly sanitize: (title: string) => string;
       readonly conversation: (
         message: IncomingMessage,

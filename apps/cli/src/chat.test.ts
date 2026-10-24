@@ -412,6 +412,14 @@ const exampleChannel = (id: string) => {
                 }),
               status: Effect.succeed({ connected: true }),
               textLimit: 2000,
+              naming: {
+                sanitize: (title) => title,
+                changes: Stream.never,
+                conversation: (message) =>
+                  Effect.succeed({ id: message.conversationId ?? "thread", managedName: null }),
+                current: () => Effect.die("Unexpected name lookup"),
+                rename: () => Effect.die("Unexpected rename"),
+              },
             } satisfies MessagingChannel["Service"];
           }),
           () =>

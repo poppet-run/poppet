@@ -103,6 +103,17 @@ const fixture = async (
       }),
     status: Effect.succeed({ connected: true }),
     textLimit: 2000,
+    naming: {
+      sanitize: (title) => title,
+      changes: Stream.never,
+      conversation: (input) =>
+        Effect.succeed({
+          id: input.conversationId ?? `thread-${input.messageId}`,
+          managedName: null,
+        }),
+      current: () => Effect.die("Unexpected name lookup"),
+      rename: () => Effect.die("Unexpected rename"),
+    },
     ...overrides,
   });
 
@@ -1425,12 +1436,18 @@ describe.concurrent("Gateway", () => {
     let attempts = 0;
 
     const state = await fixture({
-      conversation: () =>
-        ++attempts === 1
-          ? Effect.fail(
-              new ChannelError({ reason: "uncertain", message: "Lost creation acknowledgement" }),
-            )
-          : Effect.succeed("recovered-thread"),
+      naming: {
+        sanitize: (title) => title,
+        changes: Stream.never,
+        conversation: () =>
+          ++attempts === 1
+            ? Effect.fail(
+                new ChannelError({ reason: "uncertain", message: "Lost creation acknowledgement" }),
+              )
+            : Effect.succeed({ id: "recovered-thread", managedName: null }),
+        current: () => Effect.die("Unexpected name lookup"),
+        rename: () => Effect.die("Unexpected rename"),
+      },
     });
 
     try {
@@ -1725,7 +1742,7 @@ describe("conversationNaming", () => {
       const renames: string[] = [];
       let titleRequests = 0;
 
-      const naming: NonNullable<MessagingChannel["Service"]["naming"]> = {
+      const naming: MessagingChannel["Service"]["naming"] = {
         sanitize: (title) => title,
         changes: Stream.never,
         conversation: (input, title) =>
