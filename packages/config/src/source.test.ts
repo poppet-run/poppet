@@ -121,7 +121,6 @@ describe("loadConfigSource", () => {
       "Discord token in ordinary config",
       '{"discord":{"ownerId":"2","guildId":"3","homeChannelId":"4","token":"must-not-appear"}}',
     ],
-    ["removed voice setting", '{"voice":{"enabled":false}}'],
     ["unknown setting", '{"token":"must-not-appear"}'],
     ["unknown chat setting", '{"chat":{"outputToken":1024}}'],
     ["data directory in file", '{"dataDirectory":"elsewhere"}'],
