@@ -1,5 +1,5 @@
 import type { ModelOperations, Output, Tool } from "@poppet/provider";
-import type { DeliveryDestination, Run, StoreError } from "@poppet/store";
+import type { DeliveryDestination, Run, StoredMessage, StoreError } from "@poppet/store";
 import type { Effect } from "effect";
 
 import type { ApproveCommand } from "#src/bash";
@@ -7,17 +7,27 @@ import type { AgentError } from "#src/errors";
 
 export type ToolCall = Extract<Output, { type: "tool-call" }>;
 
-/** What a call sees while preparing: the run it belongs to and the page URLs it may read so far. */
-export interface ToolContext {
+/** One conversation run's inputs; the caller owns the run's final outcome. */
+export interface RunContext {
   readonly run: Run;
   readonly model: ModelOperations;
   /** The owner's request, or the saved prompt of a scheduled task. */
   readonly text: string;
+  readonly history: ReadonlyArray<StoredMessage>;
+  readonly runs: ReadonlyArray<Run>;
+  readonly prompt: string;
   /** Scheduled runs exclude mutating tools and cannot ask the owner to approve commands. */
   readonly readOnlyTools: boolean;
+  readonly selectedSkill: string | null;
   readonly approveCommand: ApproveCommand | null;
+  /** Host-only validation of this run's authorized messaging conversation. */
   readonly here: Effect.Effect<DeliveryDestination, AgentError> | null;
+  /** Host-only validation of the configured home channel. */
   readonly home: Effect.Effect<DeliveryDestination, AgentError> | null;
+}
+
+/** What a call sees while preparing: the run's inputs and the page URLs it may read so far. */
+export interface ToolContext extends RunContext {
   readonly pageURLs: ReadonlySet<string>;
 }
 

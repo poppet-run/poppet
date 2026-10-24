@@ -463,12 +463,12 @@ const gateway = Effect.gen(function* () {
             agent.send(session.id, prompt, {
               runId: entry.runId,
               approveCommand: (request) => approveCommand(entry.message, conversation, request),
-              homeTaskDestination: resolveDestination().pipe(
+              home: resolveDestination().pipe(
                 Effect.mapError(
                   (error) => new AgentError({ reason: "tool-permission", message: error.message }),
                 ),
               ),
-              taskDestination: Effect.gen(function* () {
+              here: Effect.gen(function* () {
                 if (!authorized(entry.message))
                   return yield* Effect.fail(
                     new AgentError({

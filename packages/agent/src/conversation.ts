@@ -1,22 +1,10 @@
 import { measureTiming, recordTiming } from "@poppet/provider";
-import type {
-  Completion,
-  Message,
-  ModelEvent,
-  ModelOperations,
-  ProviderError,
-} from "@poppet/provider";
-import {
-  Store,
-  StoreError,
-  type Run,
-  type StoredMessage,
-  type DeliveryDestination,
-} from "@poppet/store";
+import type { Completion, Message, ModelEvent, ProviderError } from "@poppet/provider";
+import { Store, StoreError } from "@poppet/store";
 import { Cause, Clock, Effect, Exit, Option, Result, Stream } from "effect";
 
-import { type AgentTool, type ToolCall, type ToolContext } from "#src/agent-tool";
-import { bashTool, type ApproveCommand } from "#src/bash";
+import type { AgentTool, RunContext, ToolCall, ToolContext } from "#src/agent-tool";
+import { bashTool } from "#src/bash";
 import {
   assembleContext,
   byteSize,
@@ -65,21 +53,12 @@ export const conversation = Effect.gen(function* () {
 
   const executeTool = yield* toolExecution;
 
-  return (
-    run: Run,
-    model: ModelOperations,
-    text: string,
-    history: ReadonlyArray<StoredMessage>,
-    runs: ReadonlyArray<Run>,
-    prompt: string,
-    readOnlyTools: boolean,
-    here: Effect.Effect<DeliveryDestination, AgentError> | null = null,
-    selectedSkill: string | null = null,
-    approveCommand: ApproveCommand | null = null,
-    home: Effect.Effect<DeliveryDestination, AgentError> | null = null,
-  ) =>
+  return (runContext: RunContext) =>
     Stream.unwrap(
       Effect.gen(function* () {
+        const { run, model, text, history, runs, prompt, readOnlyTools, selectedSkill } =
+          runContext;
+
         const catalog =
           model.description.capabilities.tools && external !== null
             ? yield* measureTiming(
@@ -151,16 +130,7 @@ export const conversation = Effect.gen(function* () {
             ? `${baseInstructions}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
             : baseInstructions;
 
-        const context: ToolContext = {
-          run,
-          model,
-          text,
-          readOnlyTools,
-          approveCommand,
-          here,
-          home,
-          pageURLs: allowedURLs,
-        };
+        const context: ToolContext = { ...runContext, pageURLs: allowedURLs };
 
         const findTool = (call: ToolCall) =>
           tools.find(

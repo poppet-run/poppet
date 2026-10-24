@@ -8,13 +8,7 @@ import {
   type ModelOperations,
   type ProviderId,
 } from "@poppet/provider";
-import {
-  Store,
-  StoreError,
-  type Run,
-  type RunOutcome,
-  type DeliveryDestination,
-} from "@poppet/store";
+import { Store, StoreError, type Run, type RunOutcome } from "@poppet/store";
 import {
   Cause,
   Clock,
@@ -29,6 +23,7 @@ import {
   type Scope,
 } from "effect";
 
+import type { RunContext } from "#src/agent-tool";
 import type { ApproveCommand } from "#src/bash";
 import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
@@ -58,6 +53,17 @@ export type ChatEvent =
 /** Failures from orchestration, model inference, or persistence of a chat request. */
 export type ChatFailure = AgentError | ProviderError | StoreError;
 
+export interface SendOptions {
+  /** Excludes memory writes and task management, as scheduled runs require. */
+  readonly readOnlyTools?: boolean;
+  readonly approveCommand?: ApproveCommand;
+  readonly runId?: string;
+  readonly reasoningLog?: (line: string) => Effect.Effect<void>;
+  readonly timingLog?: (line: string) => Effect.Effect<void>;
+  readonly here?: RunContext["here"];
+  readonly home?: RunContext["home"];
+}
+
 /** Coordinates model requests, tool execution, and saved conversation history. */
 export class Agent extends Context.Service<
   Agent,
@@ -67,20 +73,11 @@ export class Agent extends Context.Service<
       sessionId: string,
       timingLog?: (line: string) => Effect.Effect<void>,
     ) => Effect.Effect<void>;
-    /** Streams a reply; readOnlyTools excludes memory writes and task management. */
+    /** Streams a reply to one message. */
     readonly send: (
       sessionId: string,
       text: string,
-      options?: {
-        readonly readOnlyTools?: boolean;
-        readonly approveCommand?: ApproveCommand;
-        readonly runId?: string;
-        readonly reasoningLog?: (line: string) => Effect.Effect<void>;
-        readonly timingLog?: (line: string) => Effect.Effect<void>;
-        /** Host-only validation of this run's authorized messaging conversation. */
-        readonly taskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
-        readonly homeTaskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
-      },
+      options?: SendOptions,
     ) => Stream.Stream<ChatEvent, ChatFailure>;
   }
 >()("poppet/Agent") {}
@@ -122,15 +119,7 @@ export const AgentLive = Layer.effect(
     const send = (
       sessionId: string,
       text: string,
-      options: {
-        readonly readOnlyTools?: boolean;
-        readonly approveCommand?: ApproveCommand;
-        readonly runId?: string;
-        readonly reasoningLog?: (line: string) => Effect.Effect<void>;
-        readonly timingLog?: (line: string) => Effect.Effect<void>;
-        readonly taskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
-        readonly homeTaskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
-      } = {},
+      options: SendOptions = {},
     ): Stream.Stream<ChatEvent, ChatFailure> =>
       Stream.suspend(() => {
         let active: Run | null = null;
@@ -235,19 +224,19 @@ export const AgentLive = Layer.effect(
                 const history = yield* store.messages(sessionId);
                 const runs = yield* store.runs(sessionId);
 
-                return converse(
+                return converse({
                   run,
                   model,
                   text,
                   history,
                   runs,
                   prompt,
-                  options.readOnlyTools ?? false,
-                  options.taskDestination ?? null,
-                  session.skill?.name ?? null,
-                  options.approveCommand ?? null,
-                  options.homeTaskDestination ?? null,
-                );
+                  readOnlyTools: options.readOnlyTools ?? false,
+                  selectedSkill: session.skill?.name ?? null,
+                  approveCommand: options.approveCommand ?? null,
+                  here: options.here ?? null,
+                  home: options.home ?? null,
+                });
               }),
             ).pipe(
               Stream.mapEffect((event) =>
