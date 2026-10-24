@@ -107,14 +107,6 @@ const repository = Effect.gen(function* () {
         )} ${sql.literal(ignoreExisting ? "ON CONFLICT DO NOTHING" : "")}`.pipe(Effect.asVoid);
 
   return {
-    cursor: (adapter: string, account: string) =>
-      sql`SELECT cursor FROM gateway_cursors WHERE adapter = ${adapter} AND account = ${account}`.pipe(
-        decodeRow(Schema.Struct({ cursor: Schema.String })),
-        Effect.map((row) => row?.cursor ?? null),
-      ),
-    checkpoint: (adapter: string, account: string, cursor: string) =>
-      sql`INSERT INTO gateway_cursors (adapter, account, cursor) VALUES (${adapter}, ${account}, ${cursor})
-        ON CONFLICT (adapter, account) DO UPDATE SET cursor = excluded.cursor`.pipe(Effect.asVoid),
     // Scheduled results stay deliverable only to the current account and only for completed runs.
     rejectScheduledDeliveries: (adapter: string, account: string) =>
       sql`UPDATE gateway_deliveries SET state = 'failed' WHERE state = 'pending' AND inbox_id IN (
@@ -238,12 +230,7 @@ const repository = Effect.gen(function* () {
         ORDER BY id`.pipe(decodeRows(Inbox)),
     item,
     binding,
-    accept: (
-      adapter: string,
-      account: string,
-      message: IncomingMessage,
-      overloadReply?: ReadonlyArray<string>,
-    ) =>
+    accept: (adapter: string, account: string, message: IncomingMessage) =>
       sql.withTransaction(
         Effect.gen(function* () {
           const duplicate = yield* sql`SELECT id FROM gateway_inbox WHERE adapter = ${adapter}
@@ -262,9 +249,7 @@ const repository = Effect.gen(function* () {
             message.text === "/cancel" ||
             isCommandApproval(message.text);
 
-          const overloaded = (queued?.count ?? 0) >= 64 && !control;
-
-          if (overloaded && overloadReply === undefined)
+          if ((queued?.count ?? 0) >= 64 && !control)
             return yield* new ChannelError({
               reason: "overloaded",
               message: "Messaging queue is full. Try again later.",
@@ -277,16 +262,10 @@ const repository = Effect.gen(function* () {
             payload: JSON.stringify(message),
             conversationId: message.conversationId,
             runId: randomUUID(),
-            state: overloaded ? "failed" : control ? "cancelled" : "queued",
+            state: control ? "cancelled" : "queued",
           })} RETURNING id`.pipe(decodeRows(Schema.Struct({ id: Schema.Natural })));
 
-          const id = inserted[0]!.id;
-
-          // Save rejection and reply together before polling advances its cursor.
-          if (overloaded && overloadReply !== undefined)
-            yield* insertDeliveries(id, overloadReply, "pending");
-
-          return yield* item(id);
+          return yield* item(inserted[0]!.id);
         }),
       ),
     // A delayed request blocks later input in the same conversation to preserve history order.
