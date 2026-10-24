@@ -311,7 +311,8 @@ describe.concurrent("requestPage", () => {
       expect({ code, stderr }).toMatchObject({ code: 0 });
       expect(stdout).toContain("hostname rejected");
       expect(seen).toEqual([`page.test:${port}`]);
-      expect(sni).toEqual(["page.test", "wrong.test"]);
+      // A rejected handshake may never emit secureConnection on the server.
+      expect(sni).toContain("page.test");
       expect(
         await failedRequest(
           requestPage(
