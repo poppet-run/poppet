@@ -1,13 +1,9 @@
 /* eslint-disable no-await-in-loop -- A bounded file read must handle short filesystem reads sequentially. */
-import { constants } from "node:fs";
-import { open } from "node:fs/promises";
 import { basename } from "node:path";
 
-import { Schema } from "effect";
+import { openNoFollow } from "@poppet/io";
 
 import { MemoryError } from "#src/service";
-
-const missing = Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }));
 
 export const memoryLimit = (part: string, maximum: number) =>
   new MemoryError({
@@ -16,13 +12,7 @@ export const memoryLimit = (part: string, maximum: number) =>
   });
 
 export const readContextFile = async (path: string, maximum: number) => {
-  const file = await open(
-    path,
-    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-  ).catch((cause: unknown) => {
-    if (missing(cause)) return null;
-    throw cause;
-  });
+  const file = await openNoFollow(path);
 
   if (file === null) return "";
 
