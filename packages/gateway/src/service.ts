@@ -30,6 +30,7 @@ import {
   type GatewayContext,
 } from "#src/context";
 import { conversationNaming } from "#src/conversation-naming";
+import { failureDecision } from "#src/failure";
 import { answer, chunks } from "#src/replies";
 import { GatewayRepository, gatewayStorage, type Inbox } from "#src/repository";
 import { messagingRequest, isCommandApproval, isControl } from "#src/request";
@@ -409,32 +410,24 @@ const gateway = Effect.gen(function* () {
 
           if (Cause.hasInterrupts(exit.cause)) return;
 
-          const error = Option.getOrNull(Cause.findErrorOption(exit.cause));
+          const { retryAfterMs, reply } = failureDecision(
+            Option.getOrNull(Cause.findErrorOption(exit.cause)),
+            entry.attempts,
+          );
 
-          if (
-            error instanceof ChannelError &&
-            ["unavailable", "uncertain"].includes(error.reason) &&
-            entry.attempts < 3 &&
-            (yield* store.run(entry.runId)) === null
-          ) {
-            const retryAt =
-              clock.currentTimeMillisUnsafe() +
-              Math.max(1000 * 2 ** entry.attempts, error.retryAfterMs ?? 0);
+          if (retryAfterMs !== null && (yield* store.run(entry.runId)) === null) {
+            yield* gatewayStorage(
+              repo.retry(entry, clock.currentTimeMillisUnsafe() + retryAfterMs),
+            );
 
-            yield* gatewayStorage(repo.retry(entry, retryAt));
-          } else {
-            const saved = yield* gatewayStorage(repo.item(entry.id));
-
-            if (saved.conversationId !== null && error !== null && !(error instanceof StoreError)) {
-              yield* finish(
-                entry.id,
-                error instanceof AgentError && error.reason.startsWith("command-")
-                  ? error.message
-                  : "The request failed. Use /status in this conversation to inspect its session before sending a new request.",
-                "failed",
-              );
-            } else yield* gatewayStorage(repo.state(entry.id, "failed"));
+            return;
           }
+
+          const saved = yield* gatewayStorage(repo.item(entry.id));
+
+          if (reply !== null && saved.conversationId !== null)
+            yield* finish(entry.id, reply, "failed");
+          else yield* gatewayStorage(repo.state(entry.id, "failed"));
         }),
       ),
     );
