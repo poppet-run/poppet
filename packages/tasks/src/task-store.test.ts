@@ -818,7 +818,7 @@ describe.concurrent("TaskRepository", () => {
           yield* repo.link(active.occurrence.id, session.id, completed.id);
           yield* repo.finish(active.occurrence.id, "completed", null, start + 60_000);
           yield* sql.unsafe(
-            "INSERT INTO memories (key, value, origin, source_run_id, updated_at) VALUES ('project', 'Acorn', 'turn', ?, ?)",
+            "INSERT INTO memory_revisions (key, revision, action, value, origin, source_run_id, created_at) VALUES ('project', 1, 'remember', 'Acorn', 'turn', ?, ?)",
             [completed.id, start],
           );
           yield* repo.blockProvider("test-provider", "quota", start);

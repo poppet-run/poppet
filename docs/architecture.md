@@ -351,8 +351,8 @@ also refuses databases it did not create.
 `schema.ts` defines session, message, run, and terminal-outcome records with
 Effect Schema. `service.ts` validates caller input, checks continuation identity
 before saving messages, and decodes rows on read. Table checks enforce valid run
-and tool-call states, a foreign key keeps each run's provider, model, and workload
-equal to its session's, and a partial unique index permits only one pending or
+and tool-call states, runs take their provider, model, and workload from their
+session when read, and a partial unique index permits only one pending or
 running run. Services rely on these rules instead of repeating them.
 
 `queueRun` persists its pending run and input messages in one transaction.
@@ -646,11 +646,11 @@ requires no additional socket command or migration.
 
 `@poppet/memory` owns the `Memory` service, fact and snapshot schemas, and
 `MemoryError`. Its operations are `snapshot`, `list`, `remember`, `replace`, and
-`forget`. `LocalMemoryLive` implements these operations using the existing
-`memories` table and editable `<data directory>/profile.md` and `soul.md` files.
+`forget`. `LocalMemoryLive` implements these operations by appending to
+`memory_revisions`, reading current facts from the `memories` view, and using editable `<data directory>/profile.md` and `soul.md` files.
 It retains up to 128 facts of at most 4096 UTF-8 bytes each.
 
-The store owns database acquisition and the `memories` table schema. `StoreLive`
+The store owns database acquisition; the memory package owns its schema. `StoreLive`
 also exposes the shared Effect `SqlClient`, allowing the CLI to supply one connection and
 owner lock to conversation storage and local memory. The memory implementation
 owns fact SQL; the conversation `Store` has no memory operations or dependency on

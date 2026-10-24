@@ -78,8 +78,8 @@ inspect `memory list` and `chat show` after each step, including from a fresh ch
 
 ## Fact history
 
-Every change is kept. Each fact records its origin: `cli` for commands, `turn`
-for a chat's memory tool, or `review` for background review. `memory list`
+Every change is kept. Each fact records its origin: `cli` for commands, or `turn`
+for a chat's memory tool. `memory list`
 shows the latest origin and source run.
 
 ```sh

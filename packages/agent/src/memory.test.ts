@@ -601,7 +601,7 @@ describe.concurrent("memory.ts", () => {
             using database = new Database(join(saved.directory, "store/poppet.sqlite"));
             database.run(
               stage === "write"
-                ? "CREATE TRIGGER reject_write BEFORE INSERT ON memories BEGIN SELECT RAISE(ABORT, 'private'); END"
+                ? "CREATE TRIGGER reject_write BEFORE INSERT ON memory_revisions BEGIN SELECT RAISE(ABORT, 'private'); END"
                 : "CREATE TRIGGER reject_result BEFORE UPDATE ON tool_calls WHEN NEW.status = 'completed' BEGIN SELECT RAISE(ABORT, 'private'); END",
             );
             const result = yield* send(session.id).pipe(Effect.result);

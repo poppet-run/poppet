@@ -30,7 +30,7 @@ poppet store status
 ## Schema and saved records
 
 The initial schema includes durable tool calls and their execution states,
-explicitly saved facts in `memories`, and session titles with their source,
+explicitly saved facts and their revisions, and session titles with their source,
 a durable automatic-attempt claim, and separate title-request usage.
 Manual titles take precedence over automatic results, and metadata
 updates leave session activity timestamps unchanged. Gateway bindings also retain
@@ -112,11 +112,11 @@ continuation or credentials. See [skills](skills.md).
 
 ## Fact history
 
-Each fact in `memories` records its `origin`: `cli`, `turn`, or `review`. The
-append-only `memory_revisions` table records every remember, replace, forget,
-and revert per key, with the value (null when forgotten),
-origin, source run, and time. CLI changes have no source run; model changes
-always do.
+The append-only `memory_revisions` table is the only place facts are stored. It
+records every remember, replace, forget, and revert per key, with the value (null
+when forgotten), origin (`cli` or `turn`), source run, and time. The `memories`
+view shows each key's latest revision unless that revision forgot it. CLI changes
+have no source run; model changes always do.
 
 ## Conversation search index
 

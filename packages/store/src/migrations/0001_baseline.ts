@@ -13,17 +13,13 @@ export const baseline: ReadonlyArray<string> = [
     title_source TEXT CHECK (title_source IN ('fallback', 'generated', 'manual', 'task')),
     title_attempted INTEGER NOT NULL DEFAULT 0 CHECK (title_attempted IN (0, 1)),
     title_usage TEXT,
-    skill TEXT CHECK (skill IS NULL OR json_valid(skill)),
-    UNIQUE (id, provider, model, workload)
+    skill TEXT CHECK (skill IS NULL OR json_valid(skill))
   ) STRICT`,
 
-  // A run copies its session's model identity; the foreign key keeps the two in agreement.
+  // A run uses its session's fixed provider, model, and workload; reads join them in.
   `CREATE TABLE runs (
     id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    provider TEXT NOT NULL,
-    model TEXT NOT NULL,
-    workload TEXT NOT NULL,
+    session_id TEXT NOT NULL REFERENCES sessions (id),
     status TEXT NOT NULL
       CHECK (status IN ('pending', 'running', 'completed', 'failed', 'interrupted')),
     created_at INTEGER NOT NULL CHECK (created_at >= 0),
@@ -32,8 +28,6 @@ export const baseline: ReadonlyArray<string> = [
     result TEXT,
     failure_reason TEXT,
     UNIQUE (session_id, id),
-    FOREIGN KEY (session_id, provider, model, workload)
-      REFERENCES sessions (id, provider, model, workload),
     CHECK (CASE status
       WHEN 'pending' THEN started_at IS NULL AND finished_at IS NULL
         AND result IS NULL AND failure_reason IS NULL
