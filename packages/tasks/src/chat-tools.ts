@@ -155,7 +155,11 @@ export const ChatTasksLive = Layer.effect(
             if (action.skill !== null) skill = yield* skills.load(action.skill);
 
             if (action.delivery !== "local") {
-              const target = action.delivery === "here" ? context.here : context.home;
+              const target = Match.value(action.delivery).pipe(
+                Match.when("here", () => context.here),
+                Match.when("home", () => context.home),
+                Match.orElse(({ conversationId }) => context.destination?.(conversationId)),
+              );
 
               if (target == null)
                 return yield* Effect.fail(

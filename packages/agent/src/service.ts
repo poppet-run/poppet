@@ -62,6 +62,7 @@ export interface SendOptions {
   readonly timingLog?: (line: string) => Effect.Effect<void>;
   readonly here?: RunContext["here"];
   readonly home?: RunContext["home"];
+  readonly destination?: RunContext["destination"];
 }
 
 /** Coordinates model requests, tool execution, and saved conversation history. */
@@ -236,6 +237,7 @@ export const AgentLive = Layer.effect(
                   approveCommand: options.approveCommand ?? null,
                   here: options.here ?? null,
                   home: options.home ?? null,
+                  destination: options.destination ?? null,
                 });
               }),
             ).pipe(

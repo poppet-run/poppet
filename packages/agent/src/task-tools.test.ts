@@ -57,6 +57,13 @@ describe("decodeTaskCall", () => {
     });
   });
 
+  test("when a task selects another channel, decodes its destination", async () => {
+    expect(await decode({ ...fields, delivery: { conversationId: "123456789" } })).toMatchObject({
+      action: "create",
+      delivery: { conversationId: "123456789" },
+    });
+  });
+
   test.each([
     [{ ...fields, name: null, schedule: null }, "The create action needs name, schedule."],
     [{ ...fields, delivery: null }, "The create action needs delivery."],
@@ -77,6 +84,10 @@ describe("decodeTaskCall", () => {
         { ...fields, origin: "interactive" },
         { ...fields, conversationId: "other-thread" },
         { ...fields, revision: 2 },
+        { ...fields, delivery: { conversationId: "" } },
+        { ...fields, delivery: { conversationId: "x".repeat(129) } },
+        { ...fields, delivery: { conversationId: "other-thread", ownerId: "other-owner" } },
+        { ...fields, delivery: { conversationId: "other-thread", adapter: "other-gateway" } },
         { ...fields, prompt: "🙂".repeat(4097) },
         { ...fields, action: "clear" },
       ].map((args) => expect(decode(args)).rejects.toMatchObject({ reason: "tool-arguments" })),

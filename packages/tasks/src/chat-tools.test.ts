@@ -108,6 +108,7 @@ const recorded = (action: ChatTaskAction, callId = "task", run?: Run) =>
       callId,
       here: null,
       home: null,
+      destination: null,
     };
 
     return { store, run: active, context };
@@ -345,7 +346,7 @@ describe("ChatTasks", () => {
     }
   });
 
-  test.each(["here", "home"] as const)(
+  test.each(["here", "home", { conversationId: "other-channel" }] as const)(
     "when %s delivery lacks authority, rejects scheduled, unavailable, and unauthorized task requests",
     async (delivery) => {
       const state = await fixture();
@@ -362,13 +363,18 @@ describe("ChatTasks", () => {
             expect(yield* tasks.prepare(action, context).pipe(Effect.flip)).toMatchObject({
               reason: "tool-permission",
             });
+
+            const denied = Effect.fail(
+              new AgentError({ reason: "tool-permission", message: "Forbidden" }),
+            );
+
             expect(
               yield* tasks
                 .prepare(action, {
                   ...context,
-                  [delivery]: Effect.fail(
-                    new AgentError({ reason: "tool-permission", message: "Forbidden" }),
-                  ),
+                  here: denied,
+                  home: denied,
+                  destination: () => denied,
                 })
                 .pipe(Effect.flip),
             ).toMatchObject({ reason: "tool-permission" });
@@ -413,7 +419,7 @@ describe("ChatTasks", () => {
 
   test("when the destination deadline expires, cancels lookup before creating a task", async () => {
     const state = await fixture();
-    const action: ChatTaskAction = { ...create, delivery: "here" };
+    const action: ChatTaskAction = { ...create, delivery: { conversationId: "other-channel" } };
     let cancelled = false;
 
     try {
@@ -421,16 +427,17 @@ describe("ChatTasks", () => {
         Effect.gen(function* () {
           const { context } = yield* recorded(action);
 
-          const here = Effect.never.pipe(
-            Effect.onInterrupt(() =>
-              Effect.sync(() => {
-                cancelled = true;
-              }),
-            ),
-          );
+          const destination = () =>
+            Effect.never.pipe(
+              Effect.onInterrupt(() =>
+                Effect.sync(() => {
+                  cancelled = true;
+                }),
+              ),
+            );
 
           const fiber = yield* (yield* ChatTasks)
-            .prepare(action, { ...context, here })
+            .prepare(action, { ...context, destination })
             .pipe(Effect.forkChild);
 
           yield* TestClock.adjust("8 seconds");
