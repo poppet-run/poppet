@@ -32,7 +32,7 @@ import {
 import { conversationNaming } from "#src/conversation-naming";
 import { answer, chunks } from "#src/replies";
 import { GatewayRepository, gatewayStorage, type Inbox } from "#src/repository";
-import { messagingRequest, isCommandApproval } from "#src/request";
+import { messagingRequest, isCommandApproval, isControl } from "#src/request";
 
 const gateway = Effect.gen(function* () {
   const channel = yield* MessagingChannel;
@@ -170,6 +170,51 @@ const gateway = Effect.gen(function* () {
     }
   });
 
+  /** Answers /status, /cancel, or an approval reply in a bound conversation without the model. */
+  const handleControl = (
+    entry: Inbox,
+    message: IncomingMessage,
+    conversation: string,
+    session: string,
+  ) =>
+    Effect.gen(function* () {
+      yield* mark(message, "working");
+      yield* finish(entry.id, yield* controlReply(entry, message, conversation, session));
+      yield* mark(message, "completed");
+    });
+
+  const controlReply = (
+    entry: Inbox,
+    message: IncomingMessage,
+    conversation: string,
+    session: string,
+  ) =>
+    Effect.gen(function* () {
+      if (isCommandApproval(message.text)) {
+        yield* channel.checkAccess(message, conversation);
+
+        return yield* approvals.answer(conversation, message.text);
+      }
+
+      if (message.text === "/cancel") {
+        yield* gatewayStorage(repo.cancel(channel.id, entry.account, conversation));
+
+        if (active?.entry.conversationId === conversation) {
+          const current = active;
+          yield* gatewayStorage(repo.state(current.entry.id, "cancelled"));
+          yield* Fiber.interrupt(current.fiber);
+        }
+
+        return "Cancelled this thread's queued and active request.";
+      }
+
+      const latestId = (yield* store.messages(session)).at(-1)?.runId;
+      const latest = latestId ? yield* store.run(latestId) : null;
+      const savedSession = yield* store.session(session);
+
+      return `Session: ${session}\nTitle: ${savedSession?.title ?? session}\nSkill: ${savedSession?.skill?.name ?? "none"}\nLatest run: ${latest?.status ?? "none"}`;
+    });
+
   /** Validates and deduplicates authorized input; status and cancellation bypass inference. */
   const accept = (input: IncomingMessage) =>
     Effect.gen(function* () {
@@ -196,43 +241,12 @@ const gateway = Effect.gen(function* () {
       if (entry === null) return;
       yield* wake(inboxWake);
 
-      if (
-        message.text !== "/status" &&
-        message.text !== "/cancel" &&
-        !isCommandApproval(message.text)
-      )
-        return;
+      if (!isControl(message.text)) return;
       // Controls never create sessions or wait behind the model they may need to cancel.
       yield* gatewayStorage(repo.state(entry.id, "cancelled"));
 
       if (conversation === null || session === null) return;
-
-      yield* mark(message, "working");
-
-      if (isCommandApproval(message.text)) {
-        yield* channel.checkAccess(message, conversation);
-        yield* finish(entry.id, yield* approvals.answer(conversation, message.text));
-      } else if (message.text === "/cancel") {
-        yield* gatewayStorage(repo.cancel(channel.id, account, conversation));
-
-        if (active?.entry.conversationId === conversation) {
-          const current = active;
-          yield* gatewayStorage(repo.state(current.entry.id, "cancelled"));
-          yield* Fiber.interrupt(current.fiber);
-        }
-
-        yield* finish(entry.id, "Cancelled this thread's queued and active request.");
-      } else {
-        const latestId = (yield* store.messages(session)).at(-1)?.runId;
-        const latest = latestId ? yield* store.run(latestId) : null;
-        const savedSession = yield* store.session(session);
-        yield* finish(
-          entry.id,
-          `Session: ${session}\nTitle: ${savedSession?.title ?? session}\nSkill: ${savedSession?.skill?.name ?? "none"}\nLatest run: ${latest?.status ?? "none"}`,
-        );
-      }
-
-      yield* mark(message, "completed");
+      yield* handleControl(entry, message, conversation, session);
     });
 
   /** Resolves and binds a session before inference, reusing saved IDs and skill snapshots on recovery. */

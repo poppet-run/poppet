@@ -38,3 +38,7 @@ export const messagingRequest = (text: string) =>
 
 /** Approval replies are owner controls, never prompts for the model. */
 export const isCommandApproval = (text: string) => /^\/(?:approve|deny)(?:\s|$)/.test(text);
+
+/** Owner controls answered by the gateway without invoking the model. */
+export const isControl = (text: string) =>
+  text === "/status" || text === "/cancel" || isCommandApproval(text);
