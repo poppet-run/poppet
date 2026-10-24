@@ -1,7 +1,7 @@
 import { migrationStatements } from "@poppet/store";
 import { Migrator } from "effect/sql";
 
-// Scheduled tasks. An occurrence snapshots its task definition. Each statement runs separately; append new migrations, never edit applied ones.
+// Scheduled tasks. Deleting a task deletes its history. An occurrence snapshots its task definition. Each statement runs separately; append new migrations, never edit applied ones.
 const baseline: ReadonlyArray<string> = [
   `CREATE TABLE jobs (
     id TEXT PRIMARY KEY,
@@ -26,7 +26,7 @@ const baseline: ReadonlyArray<string> = [
 
   `CREATE TABLE job_occurrences (
     id TEXT PRIMARY KEY,
-    job_id TEXT NOT NULL REFERENCES jobs (id),
+    job_id TEXT NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
     revision INTEGER NOT NULL CHECK (revision >= 0),
     definition TEXT NOT NULL CHECK (json_valid(definition)),
     scheduled_at INTEGER NOT NULL CHECK (scheduled_at >= 0),
@@ -50,7 +50,7 @@ const baseline: ReadonlyArray<string> = [
 
   `CREATE TABLE job_skips (
     id INTEGER PRIMARY KEY,
-    job_id TEXT NOT NULL REFERENCES jobs (id),
+    job_id TEXT NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
     first_at INTEGER NOT NULL,
     last_at INTEGER NOT NULL,
     reason TEXT NOT NULL

@@ -250,11 +250,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         if (running.length > 0)
           return yield* new TaskError({ message: "Interrupt active work before clearing tasks." });
 
-        // Task history references conversations; deleting it leaves those conversations intact.
-        yield* sql`DELETE FROM job_operations`;
-        yield* sql`DELETE FROM job_skips`;
-        yield* sql`DELETE FROM job_occurrences`;
-
+        // History cascades with each task; the conversations it references stay.
         return (yield* sql`DELETE FROM jobs RETURNING id`).length;
       }),
     );
