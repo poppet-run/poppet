@@ -712,8 +712,6 @@ describe.concurrent("conversation", () => {
               delivery: "local",
               skill: null,
               after: null,
-              revision: null,
-              target: null,
               until: null,
             }),
             "task",

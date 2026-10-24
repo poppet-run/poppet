@@ -95,10 +95,10 @@ a different future schedule to rearm it.
 | `snooze`    | Delay that execution until a later future instant. `scheduledAt` keeps its original slot; `availableAt` is its effective ready time. The hold survives restart, and intervening cron slots do not build a backlog.                  |
 | `run`       | Queue through the normal scheduled runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
 
-The CLI inspects the revision and exact target before sending a mutation. The
-worker rechecks both when committing and rejects stale requests instead of
-selecting another slot. Receipts include revisions, changed fields, affected
-occurrence IDs, next time, and snooze changes. Lost responses never trigger local
+Skip-next, snooze, and run act on the task's next execution when the command
+commits: its pending occurrence if one exists, otherwise its next scheduled time.
+A task with no upcoming execution needs a schedule edit first. Receipts include
+changed fields, affected occurrence IDs, next time, and snooze changes. Lost responses never trigger local
 fallback or replay. Inspect `tasks show` before issuing another command after an
 unclear result.
 
@@ -142,10 +142,9 @@ Inspection uses bounded pages and flags shortened prompts or omitted occurrence
 status. Use stable task IDs to pause or resume; duplicate names need clarification.
 Pause cancels pending work and leaves active work running. Resume does not replay
 missed recurring occurrences. Use `edit`, `skip_next`, `snooze`, and `run_now` for
-the corresponding controls above. The host requires a completed `show` inspection
-earlier in the current run, and validates its revision and exact target again at
-commit. A snooze uses an absolute `until` timestamp with an offset; ask about an
-unclear timezone. Deleting tasks, retrying occurrences, cancelling active runs,
+the corresponding controls above. They act on the task's current state, so no
+earlier `show` is needed. A snooze uses an absolute `until` timestamp with an
+offset; ask about an unclear timezone. Deleting tasks, retrying occurrences, cancelling active runs,
 and changing provider pauses remain CLI operations.
 
 Task changes and their durable tool receipts commit together. A saved change

@@ -51,15 +51,6 @@ export const executeTaskCommand = (
   now: number,
 ) =>
   Effect.gen(function* () {
-    if (command.action === "inspect") {
-      const job = yield* repo.task(command.id);
-
-      return {
-        task: { id: job.id, revision: job.revision },
-        target: yield* repo.nextTarget(job.id),
-      };
-    }
-
     if (command.action === "show") {
       const deliveries = Option.getOrNull(yield* Effect.serviceOption(TaskDeliveries));
       const job = yield* repo.task(command.id);

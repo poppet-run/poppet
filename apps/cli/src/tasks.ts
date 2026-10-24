@@ -3,9 +3,6 @@ import {
   remoteTaskCommand,
   executeLocalTaskCommand,
   TaskCommand,
-  TaskControl,
-  TaskPatch,
-  TaskInspection,
   TaskError,
   nextOccurrence,
   parseTimestamp,
@@ -17,72 +14,18 @@ import { Console, Effect, Option, Schema } from "effect";
 
 import type { CLIContext } from "#src/commands/context";
 
-export const runTaskCommand = (
-  runtime: CLIContext["runtime"],
-  command: TaskCommand,
-  prepare?: (inspection: typeof TaskInspection.Type) => TaskCommand,
-) =>
+export const runTaskCommand = (runtime: CLIContext["runtime"], command: TaskCommand) =>
   Effect.gen(function* () {
     const config = yield* AppConfig;
     const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), command);
 
-    if (reply !== null) {
-      if (prepare === undefined) return yield* Console.log(JSON.stringify(reply.value, null, 2));
-
-      const mutation = yield* taskOperation(() =>
-        prepare(Schema.decodeUnknownSync(TaskInspection)(reply.value)),
-      );
-
-      const changed = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), mutation);
-
-      if (changed === null)
-        return yield* Effect.fail(
-          new TaskError({
-            message:
-              "The inspected worker stopped. Inspect the task again; the command was not retried locally.",
-          }),
-        );
-
-      return yield* Console.log(JSON.stringify(changed.value, null, 2));
-    }
-
-    const result = yield* Effect.gen(function* () {
-      const inspected = yield* executeLocalTaskCommand(command);
-
-      return prepare === undefined
-        ? inspected
-        : yield* executeLocalTaskCommand(
-            yield* taskOperation(() =>
-              prepare(Schema.decodeUnknownSync(TaskInspection)(inspected)),
-            ),
-          );
-    }).pipe(Effect.provide(runtime.tasks));
+    const result =
+      reply !== null
+        ? reply.value
+        : yield* executeLocalTaskCommand(command).pipe(Effect.provide(runtime.tasks));
 
     yield* Console.log(JSON.stringify(result, null, 2));
   }).pipe(Effect.provide(runtime.config));
-
-/** Bind a CLI mutation to the exact task/next execution returned by inspection. */
-export const prepareTaskControl = (
-  inspection: typeof TaskInspection.Type,
-  action: TaskControl["action"],
-  patch?: typeof TaskPatch.Type,
-  until?: number,
-): TaskControl => {
-  const { task, target } = inspection;
-  const base = { id: task.id, revision: task.revision };
-
-  if (action === "edit") return Schema.decodeUnknownSync(TaskControl)({ ...base, action, patch });
-
-  if (target === null)
-    throw new TaskError({
-      message: "This task has no upcoming execution. Edit its schedule to rearm it.",
-    });
-
-  if (action === "snooze")
-    return Schema.decodeUnknownSync(TaskControl)({ ...base, action, target, until });
-
-  return Schema.decodeUnknownSync(TaskControl)({ ...base, action, target });
-};
 
 export const parseTaskSchedule = (
   at: Option.Option<string>,

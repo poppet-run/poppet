@@ -613,8 +613,6 @@ describe.concurrent("Gateway", () => {
                   delivery,
                   skill: null,
                   after: null,
-                  revision: null,
-                  target: null,
                   until: null,
                 }),
               },

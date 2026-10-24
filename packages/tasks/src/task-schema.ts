@@ -100,38 +100,20 @@ export const TaskPatch = Schema.Struct({
   schedule: Schema.optionalKey(Schedule),
 }).check(Schema.makeFilter((patch) => Object.keys(patch).length > 0));
 
-/** An inspected pending occurrence or the exact unqueued next slot. */
-export const TaskTarget = Schema.Struct({
-  occurrenceId: Schema.NullOr(Session.fields.id),
-  scheduledAt: Schema.Natural,
-  availableAt: Schema.Natural,
-});
+/** The next execution: the pending occurrence, or the unqueued next slot. */
+export interface TaskTarget {
+  readonly occurrenceId: string | null;
+  readonly scheduledAt: number;
+  readonly availableAt: number;
+}
 
-export type TaskTarget = typeof TaskTarget.Type;
-
-export const TaskInspection = Schema.Struct({
-  task: Schema.Struct({ id: Session.fields.id, revision: Schema.Natural }),
-  target: Schema.NullOr(TaskTarget),
-});
-
+/** Owner changes to a task's definition or its next execution. */
 export const TaskControl = Schema.Union([
-  Schema.Struct({
-    action: Schema.Literal("edit"),
-    id: Session.fields.id,
-    revision: Schema.Natural,
-    patch: TaskPatch,
-  }),
-  Schema.Struct({
-    action: Schema.Literals(["skip-next", "run-now"]),
-    id: Session.fields.id,
-    revision: Schema.Natural,
-    target: TaskTarget,
-  }),
+  Schema.Struct({ action: Schema.Literal("edit"), id: Session.fields.id, patch: TaskPatch }),
+  Schema.Struct({ action: Schema.Literals(["skip-next", "run-now"]), id: Session.fields.id }),
   Schema.Struct({
     action: Schema.Literal("snooze"),
     id: Session.fields.id,
-    revision: Schema.Natural,
-    target: TaskTarget,
     until: Schema.Natural,
   }),
 ]);
@@ -154,7 +136,7 @@ export const TaskCommand = Schema.Union([
   }),
   Schema.Struct({ action: Schema.Literals(["list", "providers", "clear", "status"]) }),
   Schema.Struct({
-    action: Schema.Literals(["show", "inspect", "pause", "resume", "cancel", "retry"]),
+    action: Schema.Literals(["show", "pause", "resume", "cancel", "retry"]),
     id: Session.fields.id,
   }),
   Schema.Struct({ action: Schema.Literal("resume-provider"), provider: ProviderId }),

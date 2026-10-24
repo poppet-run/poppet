@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -164,27 +164,22 @@ describe("makeCLI", () => {
     }
   });
 
-  test("when a worker disappears after inspection, rejects the task mutation without local fallback", async () => {
+  test("when a worker is running, sends a task control once without inspecting first or falling back locally", async () => {
     const directory = await mkdtemp("/tmp/p24-owner-");
     const storeDirectory = join(directory, "store");
     await mkdir(storeDirectory, { mode: 0o700 });
     const path = workerSocketPath(directory);
-    let requests = 0;
+    const bodies: Schema.Json[] = [];
 
     try {
       await Effect.runPromise(
         Effect.scoped(
           Effect.gen(function* () {
             yield* serveWorker(path, (_request, body) =>
-              Effect.promise(async () => {
-                requests++;
-                expect(body).toEqual({ action: "inspect", id: "saved-task" });
-                await unlink(path);
+              Effect.sync(() => {
+                bodies.push(body);
 
-                return Response.json({
-                  ok: true,
-                  value: { task: { id: "saved-task", revision: 0 }, target: null },
-                });
+                return Response.json({ ok: true, value: { taskId: "saved-task" } });
               }),
             );
 
@@ -194,10 +189,11 @@ describe("makeCLI", () => {
               }),
             );
 
-            expect(reply.exitCode).toBe(1);
-            expect(reply.stderr).toContain("not retried locally");
-            expect(requests).toBe(1);
-            expect(yield* Effect.promise(() => readdir(storeDirectory))).toEqual([]);
+            expect(reply.exitCode).toBe(0);
+            expect(bodies).toEqual([
+              { action: "edit", id: "saved-task", patch: { name: "Changed" } },
+            ]);
+            expect(yield* Effect.promise(() => readdir(storeDirectory))).toEqual(["tasks.sock"]);
           }),
         ),
       );
@@ -236,7 +232,7 @@ describe("makeCLI", () => {
       expect(edited.exitCode).toBe(0);
       const replacement = JSON.parse(edited.stdout);
       expect(replacement).toMatchObject({
-        revision: 1,
+        changedFields: ["name", "prompt"],
         availableAt: held.availableAt,
         replacedOccurrenceIds: [held.occurrenceId],
       });
@@ -257,9 +253,9 @@ describe("makeCLI", () => {
       expect(immediate.exitCode).toBe(0);
       const queued = JSON.parse(immediate.stdout);
       expect(queued.nextAt).toBe(nextAt);
-      const replay = await invoke(["tasks", "run", id], offline);
-      expect(replay.exitCode).toBe(0);
-      expect(JSON.parse(replay.stdout).occurrenceId).toBe(queued.occurrenceId);
+      const repeated = await invoke(["tasks", "run", id], offline);
+      expect(repeated.exitCode).toBe(0);
+      expect(JSON.parse(repeated.stdout).occurrenceId).toBe(queued.occurrenceId);
       const shown = await invoke(["tasks", "show", id], offline);
       expect(shown.exitCode).toBe(0);
       expect(JSON.parse(shown.stdout)).toMatchObject({

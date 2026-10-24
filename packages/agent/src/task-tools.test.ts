@@ -13,13 +13,11 @@ const fields = {
   delivery: "local",
   skill: null,
   after: null,
-  revision: null,
-  target: null,
   until: null,
 } as const;
 
 describe("decodeTaskCall", () => {
-  test("when task controls lack revisions or targets or mix invalid fields, rejects the arguments", async () => {
+  test("when task controls lack required fields or mix invalid fields, rejects the arguments", async () => {
     const input = {
       type: "tool-call" as const,
       callId: "control",
@@ -28,14 +26,12 @@ describe("decodeTaskCall", () => {
     };
 
     const empty = { ...fields, name: null, prompt: null, schedule: null, delivery: null };
-    const target = { occurrenceId: null, scheduledAt: 1000, availableAt: 1000 };
-    const edit = { ...empty, action: "edit", id: "job", revision: 2, prompt: "Updated" };
+    const edit = { ...empty, action: "edit", id: "job", prompt: "Updated" };
     expect(
       await Effect.runPromise(decodeTaskCall({ ...input, arguments: JSON.stringify(edit) })),
     ).toEqual({
       action: "edit",
       id: "job",
-      revision: 2,
       name: null,
       prompt: "Updated",
       schedule: null,
@@ -47,34 +43,24 @@ describe("decodeTaskCall", () => {
           ...empty,
           action,
           id: "job",
-          revision: 2,
-          target,
           until: action === "snooze" ? "2099-10-22T09:00:00Z" : null,
         };
 
         expect(
           await Effect.runPromise(decodeTaskCall({ ...input, arguments: JSON.stringify(control) })),
-        ).toMatchObject({ action, id: "job", revision: 2, target });
+        ).toMatchObject({ action, id: "job" });
       }),
     );
 
     await Promise.all(
       [
-        { ...edit, revision: null },
         { ...edit, prompt: null },
         { ...edit, skill: "other" },
-        { ...edit, target },
+        { ...edit, revision: 2 },
         { ...edit, origin: "interactive" },
-        { ...empty, action: "snooze", id: "job", revision: 2, target, until: null },
-        { ...empty, action: "run_now", id: "job", revision: 2, target: null },
-        {
-          ...empty,
-          action: "skip_next",
-          id: "job",
-          revision: 2,
-          target,
-          until: "2099-10-22T09:00:00Z",
-        },
+        { ...empty, action: "snooze", id: "job", until: null },
+        { ...empty, action: "run_now", id: null },
+        { ...empty, action: "skip_next", id: "job", until: "2099-10-22T09:00:00Z" },
       ].map((invalid) =>
         expect(
           Effect.runPromise(decodeTaskCall({ ...input, arguments: JSON.stringify(invalid) })),

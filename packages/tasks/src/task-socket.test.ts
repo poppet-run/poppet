@@ -8,7 +8,7 @@ import { Effect } from "effect";
 import { remoteTaskCommand, taskResponse } from "#src/task-socket";
 
 describe("task-socket.ts", () => {
-  test("when task controls omit bindings or add mutation fields, rejects them before dispatch", async () => {
+  test("when task controls omit required fields or add unknown fields, rejects them before dispatch", async () => {
     let dispatched = 0;
 
     const handle = () =>
@@ -18,20 +18,16 @@ describe("task-socket.ts", () => {
         return {};
       });
 
-    const edit = {
-      action: "edit",
-      id: "task",
-      revision: 0,
-      patch: { name: "Renamed" },
-    };
+    const edit = { action: "edit", id: "task", patch: { name: "Renamed" } };
 
     await Promise.all(
       [
         { ...edit, patch: {} },
         { ...edit, patch: { provider: "other" } },
-        { ...edit, revision: null },
+        { ...edit, revision: 0 },
         { ...edit, destination: "other" },
-        { action: "snooze", id: "task", revision: 0, until: 1000 },
+        { action: "snooze", id: "task" },
+        { action: "skip-next", id: "task", target: null },
       ].map(async (body) => {
         const response = await Effect.runPromise(taskResponse(body, handle));
         expect(response.status).toBe(400);

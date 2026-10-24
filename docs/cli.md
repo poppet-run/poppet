@@ -151,7 +151,7 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 | `tasks add <name> --at <timestamp> [--coding] [--skill <name>] [--channel <id> [--conversation <id>]] <prompt>`                    | Schedule a one-off request.                                        |
 | `tasks add <name> --cron <expression> --tz <timezone> [--coding] [--skill <name>] [--channel <id> [--conversation <id>]] <prompt>` | Schedule recurring work.                                           |
 | `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> --tz <timezone>]`                  | Edit definition fields while retaining task identity and history.  |
-| `tasks skip-next <task>`                                                                                                           | Consume exactly the inspected next execution.                      |
+| `tasks skip-next <task>`                                                                                                           | Consume exactly the next execution.                                |
 | `tasks snooze <task> --until <timestamp>`                                                                                          | Delay the next execution to a later offset-qualified instant.      |
 | `tasks run <task>`                                                                                                                 | Queue normal scheduled work without shifting recurring cadence.    |
 | `tasks list`                                                                                                                       | List saved tasks.                                                  |

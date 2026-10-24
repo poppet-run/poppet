@@ -7,8 +7,6 @@ export {
   Occurrence,
   TaskControl,
   TaskPatch,
-  TaskTarget,
-  TaskInspection,
   ProviderPause,
   nextOccurrence,
   parseTimestamp,

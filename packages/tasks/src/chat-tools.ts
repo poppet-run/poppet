@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import { AgentError, ChatSettings, ChatTasks, Skills } from "@poppet/agent";
 import { Store, StoreError, type DeliveryDestination, type SkillSnapshot } from "@poppet/store";
-import { Clock, Effect, Layer, Match, Option, Schema } from "effect";
+import { Clock, Effect, Layer, Match, Schema } from "effect";
 
 import {
   NewTask,
@@ -10,7 +10,6 @@ import {
   parseTimestamp,
   TaskError,
   TaskControl,
-  TaskInspection,
   type Task,
 } from "#src/task-schema";
 import { TaskRepository } from "#src/task-store";
@@ -18,7 +17,6 @@ import { TaskRepository } from "#src/task-store";
 const summary = (task: Task) => ({
   id: task.id,
   name: task.name,
-  revision: task.revision,
   schedule:
     task.schedule.type === "once"
       ? { type: "once", at: new Date(task.schedule.at).toISOString() }
@@ -89,8 +87,9 @@ export const ChatTasksLive = Layer.effect(
             );
           const run = yield* store.run(context.runId);
 
-          const journal = yield* store.toolCalls(context.runId);
-          const saved = journal.find((call) => call.callId === context.callId);
+          const saved = (yield* store.toolCalls(context.runId)).find(
+            (call) => call.callId === context.callId,
+          );
 
           if (run === null || saved?.name !== "manage_tasks" || saved.namespace !== "poppet_tasks")
             return yield* Effect.fail(
@@ -192,11 +191,6 @@ export const ChatTasksLive = Layer.effect(
             ) {
               change = yield* Effect.try({
                 try: () => {
-                  const base = {
-                    id: action.id,
-                    revision: action.revision,
-                  };
-
                   if (action.action === "edit") {
                     const patch: Record<string, Schema.Json> = {};
 
@@ -211,7 +205,7 @@ export const ChatTasksLive = Layer.effect(
                           : action.schedule;
 
                     return Schema.decodeUnknownSync(TaskControl, { onExcessProperty: "error" })({
-                      ...base,
+                      id: action.id,
                       action: "edit",
                       patch,
                     });
@@ -219,62 +213,19 @@ export const ChatTasksLive = Layer.effect(
 
                   if (action.action === "snooze")
                     return {
-                      ...base,
+                      id: action.id,
                       action: "snooze" as const,
-                      target: action.target,
                       until: parseTimestamp(action.until),
                     };
 
                   return {
-                    ...base,
+                    id: action.id,
                     action:
                       action.action === "skip_next" ? ("skip-next" as const) : ("run-now" as const),
-                    target: action.target,
                   };
                 },
                 catch: invalid,
               });
-              const requested = change;
-
-              const inspected = journal.some((call) => {
-                if (
-                  call.namespace !== "poppet_tasks" ||
-                  call.name !== "manage_tasks" ||
-                  call.status !== "completed" ||
-                  call.position >= saved.position ||
-                  call.output === null
-                )
-                  return false;
-
-                const args = Option.getOrNull(
-                  Schema.decodeUnknownOption(
-                    Schema.fromJsonString(
-                      Schema.Struct({ action: Schema.Literal("show"), id: Schema.String }),
-                    ),
-                  )(call.arguments),
-                );
-
-                const observed = Option.getOrNull(
-                  Schema.decodeUnknownOption(Schema.fromJsonString(TaskInspection))(call.output),
-                );
-
-                return (
-                  args?.id === requested.id &&
-                  observed?.task.id === requested.id &&
-                  observed.task.revision === requested.revision &&
-                  (requested.action === "edit" ||
-                    isDeepStrictEqual(observed.target, requested.target))
-                );
-              });
-
-              if (!inspected)
-                return yield* Effect.fail(
-                  new AgentError({
-                    reason: "tool-arguments",
-                    message:
-                      "Inspect the task with show earlier in this run, then copy its revision and target.",
-                  }),
-                );
 
               if (change.action === "edit" && change.patch.schedule !== undefined) {
                 const schedule = change.patch.schedule;
@@ -399,7 +350,6 @@ export const ChatTasksLive = Layer.effect(
               status: item.status,
               scheduledAt: item.scheduledAt,
               availableAt: item.availableAt,
-              revision: item.revision,
               origin: item.origin,
               finishedAt: item.finishedAt,
               reason: item.reason,

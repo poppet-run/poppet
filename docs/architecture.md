@@ -576,11 +576,11 @@ worker commands and occurrence claiming. Chat executes directly in that process
 and never reacquires the agent permit or calls its own worker socket. The existing
 timer reconciles new work. Pause and resume retain repository semantics.
 
-Task controls bind an inspected definition revision and, for skip/snooze/run-now,
-the exact occurrence/ready time or unqueued slot. Chat requires a completed `show`
-receipt earlier in the current run; the CLI uses a small `inspect` worker request.
-`task-controls.ts` rechecks revision, target, paused/running state, and future times
-inside the same transaction as the mutation and receipt. `task-records.ts` shares
+Task controls act on the task's current definition and, for skip/snooze/run-now,
+its current next execution: the pending occurrence if one exists, otherwise the
+unqueued `next_at` slot. Neither chat nor the CLI inspects the task first.
+`task-controls.ts` checks paused/running state, holds, expiry, and future times
+inside the same transaction as the mutation. `task-records.ts` shares
 record access with the scheduler on the owned connection. A lost worker response
 never falls back to local mutation.
 
