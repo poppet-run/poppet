@@ -158,6 +158,9 @@ race require validation in the private test channel.
 With a tool-capable model, ask to create, inspect, pause, or resume a task in this
 authorized conversation. Scheduled results default to the configured home channel.
 Request delivery here to save the current thread instead, or local delivery to
-keep results on the machine. Both messaging destinations require an access check.
-The model cannot supply an arbitrary chat ID or identity. See [task management](../tasks.md#manage-tasks-through-chat) for time,
+keep results on the machine. To deliver to another channel or thread, include its
+Discord channel mention or numeric ID in the request. The destination must be in
+the configured server and pass the bot's access checks. A plain channel name
+requires a mention or ID before the task can be created.
+See [task management](../tasks.md#manage-tasks-through-chat) for time,
 receipt, and recovery behavior. Scheduled runs cannot manage other tasks.

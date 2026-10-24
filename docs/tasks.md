@@ -116,6 +116,7 @@ explicitly ask in CLI chat or an authorized messaging conversation. For example:
 
 ```text
 Every Friday at 09:00 Europe/London, summarize recent project conversations and deliver the result here.
+Every weekday at 09:00 Europe/London, summarize recent project conversations and post in #daily-updates.
 List my scheduled tasks.
 Show task <task-id>.
 Pause task <task-id>.
@@ -132,11 +133,15 @@ explicit timezone. A receipt reports the saved ID, schedule, state, next time,
 and destination.
 
 Messaging tasks default to "home", the configured home channel. "Here" selects
-the current conversation instead; "local" keeps results on the machine. The gateway rechecks
-access before saving its normal destination snapshot; future delivery retains
-the existing authorization checks. CLI chat supports local results only. Use
-the existing CLI destination flags to select another authorized conversation.
-The model cannot supply an arbitrary destination, account, owner, or provider.
+the current conversation instead; "local" keeps results on the machine. To select
+another channel or thread, include a channel mention or its ID in your request.
+For the example above, select `#daily-updates` from Discord's channel mention picker.
+A plain channel name requires clarification. The tool passes the selected ID as
+`delivery: { conversationId: "..." }` to the current gateway, which validates the
+destination and access before saving it. Discord destinations must be in the
+configured server. Delivery rechecks access when the task finishes.
+CLI chat supports local results only; use the CLI destination flags for messaging.
+The model cannot select another gateway, account, owner, or provider.
 
 Inspection uses bounded pages and flags shortened prompts or omitted occurrence
 status. Use stable task IDs to pause or resume; duplicate names need clarification.

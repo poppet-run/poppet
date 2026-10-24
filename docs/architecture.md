@@ -562,10 +562,11 @@ Provider packages and channel transports remain unchanged.
 Only interactive runs advertise the tool. All model calls, including task
 preparation, pass whole-batch validation before any tool executes. Preparation
 checks action-specific fields, existing IDs, schedules, future one-off times,
-selected skill files, and current-conversation delivery authorization. The current
-run supplies provider, model, and workload. Gateway code supplies an effect that
-rechecks the accepted owner and resolves only the current conversation; model
-arguments cannot supply identities, destinations, or permission flags. The host
+selected skill files, and delivery authorization. The current run supplies provider,
+model, and workload. Gateway code rechecks the accepted owner and resolves the
+current conversation, home channel, or an explicitly selected channel or thread ID
+through the same destination and access checks. Model arguments cannot select
+another gateway or supply account identities or permission flags. The host
 clock supplies a current UTC timestamp to help resolve relative dates. Current
 explicit user intent remains an instruction requirement, without a keyword or
 model-based permission classifier.

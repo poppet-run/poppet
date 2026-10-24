@@ -24,6 +24,10 @@ export interface RunContext {
   readonly here: Effect.Effect<DeliveryDestination, AgentError> | null;
   /** Host-only validation of the configured home channel. */
   readonly home: Effect.Effect<DeliveryDestination, AgentError> | null;
+  /** Resolves an explicit destination through the current messaging gateway's access checks. */
+  readonly destination:
+    | ((conversationId: string) => Effect.Effect<DeliveryDestination, AgentError>)
+    | null;
 }
 
 /** What a call sees while preparing: the run's inputs and the page URLs it may read so far. */

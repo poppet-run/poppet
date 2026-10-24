@@ -78,6 +78,23 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
     if (prepared === null) return;
     const { conversation, session, prompt } = prepared;
 
+    const taskDestination = (requested: string | null = null) =>
+      Effect.gen(function* () {
+        if (!authorized(channel.policy, entry.message))
+          return yield* Effect.fail(
+            new AgentError({
+              reason: "tool-permission",
+              message: "The current messaging owner is no longer authorized.",
+            }),
+          );
+
+        return yield* resolveDestination(channel, requested).pipe(
+          Effect.mapError(
+            (error) => new AgentError({ reason: "tool-permission", message: error.message }),
+          ),
+        );
+      });
+
     if (running.current !== null)
       running.current.entry = { ...entry, conversationId: conversation, sessionId: session.id };
     yield* gatewayStorage(repo.state(entry.id, "executing"));
@@ -94,26 +111,9 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
           agent.send(session.id, prompt, {
             runId: entry.runId,
             approveCommand: (request) => approvals.request(entry.message, conversation, request),
-            home: resolveDestination(channel).pipe(
-              Effect.mapError(
-                (error) => new AgentError({ reason: "tool-permission", message: error.message }),
-              ),
-            ),
-            here: Effect.gen(function* () {
-              if (!authorized(channel.policy, entry.message))
-                return yield* Effect.fail(
-                  new AgentError({
-                    reason: "tool-permission",
-                    message: "The current messaging owner is no longer authorized.",
-                  }),
-                );
-
-              return yield* resolveDestination(channel, conversation).pipe(
-                Effect.mapError(
-                  (error) => new AgentError({ reason: "tool-permission", message: error.message }),
-                ),
-              );
-            }),
+            home: taskDestination(),
+            here: taskDestination(conversation),
+            destination: taskDestination,
           }),
         );
       }),

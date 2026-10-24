@@ -29,7 +29,7 @@ import {
   executeTaskCommand,
   executeOccurrence,
 } from "@poppet/tasks";
-import { Console, Deferred, Effect, Fiber, Layer, Queue, Stream } from "effect";
+import { Console, Deferred, Effect, Fiber, Layer, Match, Queue, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
@@ -576,17 +576,35 @@ describe.concurrent("Gateway", () => {
     }
   });
   test.each([
-    { delivery: "here", revoked: false },
-    { delivery: "here", revoked: true },
-    { delivery: "home", revoked: false },
-    { delivery: "home", revoked: true },
-  ])("validates $delivery task delivery with revoked=$revoked", async ({ delivery, revoked }) => {
+    { delivery: "here", blocked: null },
+    { delivery: "here", blocked: "access" },
+    { delivery: "home", blocked: null },
+    { delivery: "home", blocked: "access" },
+    { delivery: { conversationId: "other-channel" }, blocked: null },
+    { delivery: { conversationId: "other-channel" }, blocked: "access" },
+    { delivery: { conversationId: "foreign-channel" }, blocked: "destination" },
+  ] as const)("checks $delivery delivery with $blocked", async ({ delivery, blocked }) => {
     let denied = false;
     let calls = 0;
+
+    const conversationId = Match.value(delivery).pipe(
+      Match.when("here", () => "thread-schedule"),
+      Match.when("home", () => "home"),
+      Match.orElse((target) => target.conversationId),
+    );
 
     const state = await fixture(
       {
         homeConversationId: "home",
+        destination: (id) =>
+          id === "foreign-channel"
+            ? Effect.fail(
+                new ChannelError({
+                  reason: "permission",
+                  message: "Outside the configured server",
+                }),
+              )
+            : Effect.succeed("parent"),
         checkAccess: () =>
           denied
             ? Effect.fail(new ChannelError({ reason: "permission", message: "Access revoked" }))
@@ -594,7 +612,7 @@ describe.concurrent("Gateway", () => {
       },
       () => {
         if (++calls > 1) return response("Task saved");
-        denied = revoked;
+        denied = blocked === "access";
 
         return Stream.make({
           type: "completed" as const,
@@ -637,12 +655,12 @@ describe.concurrent("Gateway", () => {
         Effect.gen(function* () {
           const gateway = yield* Gateway;
           yield* gateway.accept(
-            message("schedule", null, "Create a weekly review and deliver it here"),
+            message("schedule", null, `Create a weekly review and deliver it to ${conversationId}`),
           );
           yield* gateway.processNext;
           const tasks = yield* (yield* TaskRepository).list();
 
-          if (revoked) {
+          if (blocked !== null) {
             expect(tasks).toEqual([]);
             const store = yield* Store;
             const run = (yield* store.runs((yield* store.sessions)[0]!.id))[0]!;
@@ -661,12 +679,12 @@ describe.concurrent("Gateway", () => {
                 ownerId: "owner",
                 scopeId: "guild",
                 parentId: "parent",
-                conversationId: delivery === "home" ? "home" : "thread-schedule",
+                conversationId,
               },
             });
         }),
       );
-      expect(calls).toBe(revoked ? 1 : 2);
+      expect(calls).toBe(blocked !== null ? 1 : 2);
       expect(state.requests).toHaveLength(2);
     } finally {
       await state.close();
