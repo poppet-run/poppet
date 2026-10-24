@@ -13,18 +13,18 @@ import { bashFixtures } from "../../../tools/testing/bash-fixtures";
 const signal = () => new AbortController().signal;
 
 // A killed orphan stays signalable until init reaps it, so wait briefly for it to disappear.
-const exited = async (pid: number) => {
-  for (const deadline = Date.now() + 2000; Date.now() < deadline;) {
-    try {
-      process.kill(pid, 0);
-    } catch {
-      return true;
-    }
-
-    await Bun.sleep(10);
+const exited = async (pid: number, deadline = Date.now() + 2000): Promise<boolean> => {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return true;
   }
 
-  return false;
+  if (Date.now() >= deadline) return false;
+
+  await Bun.sleep(10);
+
+  return exited(pid, deadline);
 };
 
 describe("Bash execution", () => {
