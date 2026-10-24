@@ -86,11 +86,9 @@ describe("makeCLI", () => {
           id: "discord",
           name: "Discord",
           settings: {
-            version: 1,
-            botId: "100",
             ownerId: "200",
             guildId: "300",
-            channelIds: ["400"],
+            homeChannelId: "400",
             token: "discord-secret",
           },
         },
@@ -99,13 +97,15 @@ describe("makeCLI", () => {
       try {
         await mkdir(join(directory, "channels"), { mode: 0o700 });
         await Promise.all(
-          channels.map(({ id, settings }) =>
-            writeFile(
+          channels.map(async ({ id, settings }) => {
+            const { token, ...policy } = settings;
+            await configure(directory, { discord: policy });
+            await writeFile(
               join(directory, `channels/${id}.json`),
-              unreadable ? "invalid-channel-secret" : JSON.stringify(settings),
+              unreadable ? "invalid-channel-secret" : JSON.stringify({ token }),
               { mode: 0o600 },
-            ),
-          ),
+            );
+          }),
         );
         const result = await invoke(["gateway", "status"], { POPPET_DATA_DIR: directory });
 
@@ -113,12 +113,13 @@ describe("makeCLI", () => {
         expect(JSON.parse(result.stdout)).toMatchObject({
           running: false,
           enabled: !unreadable,
-          channels: channels.map(({ id, name }) =>
+          channels: channels.map(({ id }) =>
             unreadable
               ? {
                   id,
                   enabled: false,
-                  error: `Cannot read or write protected ${name} settings. Run gateway ${id} setup again.`,
+                  error:
+                    "Cannot load Discord configuration or credentials. Check config.json and run gateway discord setup again.",
                 }
               : { id, enabled: true },
           ),
@@ -813,14 +814,14 @@ describe("makeCLI", () => {
     ];
 
     try {
-      await Array.fromAsync([["--channel=discord"], ["--conversation", "400"]], async (flags) => {
+      await Array.fromAsync([["--conversation", "400"]], async (flags) => {
         const incomplete = await invoke(
           ["tasks", "add", "Incomplete", "--at", "2099-10-15T09:00:00Z", ...flags, "Summary"],
           environment,
         );
 
         expect(incomplete.exitCode).toBe(1);
-        expect(incomplete.stderr).toContain("Use --channel and --conversation together");
+        expect(incomplete.stderr).toContain("Use --channel when selecting --conversation");
         expect(await readdir(directory)).toEqual(["config.json"]);
       });
 
@@ -1111,6 +1112,7 @@ describe("makeCLI", () => {
     const environment = await configure(directory, { provider: "invalid/provider" });
 
     const paths = [
+      "setup",
       "config",
       "provider",
       "provider login",

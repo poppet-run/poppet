@@ -15,6 +15,8 @@
     "test": "bun --no-env-file ../../tools/testing/run.ts"
   },
   "dependencies": {
+    "@poppet/config": "workspace:*",
+    "@poppet/credentials": "workspace:*",
     "@poppet/gateway": "workspace:*",
     "discord.js": "14.27.0",
     "effect": "4.0.4"

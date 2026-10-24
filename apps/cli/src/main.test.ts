@@ -143,7 +143,7 @@ describe("main.ts", () => {
 
   test.concurrent("when channel setup reads stdin, bounds and saves the token without printing it", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-channel-input-"));
-    const args = ["gateway", "discord", "setup", "100", "200", "300", "400", "--key-stdin"];
+    const args = ["gateway", "discord", "setup", "200", "300", "400", "--key-stdin"];
     const environment = { POPPET_DATA_DIR: directory };
 
     try {

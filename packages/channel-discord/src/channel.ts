@@ -11,7 +11,7 @@ import {
   RateLimitError,
   type Message,
 } from "discord.js";
-import { Effect, Layer, Queue, Redacted, Stream } from "effect";
+import { Deferred, Effect, Layer, Queue, Redacted, Stream } from "effect";
 
 import type { DiscordSettings } from "#src/settings";
 
@@ -71,7 +71,7 @@ export const discordChannelLayer = (
         Effect.promise(() => owned.destroy()),
       );
 
-      const ready = () => client.isReady() && client.user.id === settings.botId;
+      const identity = yield* Deferred.make<string>();
 
       const reportError = (error: ChannelError) =>
         Effect.sync(() => {
@@ -79,16 +79,18 @@ export const discordChannelLayer = (
         });
 
       const requireReady = () => {
-        if (!ready())
+        if (!client.isReady())
           throw new ChannelError({
             reason: "unavailable",
-            message: "Discord is disconnected or the token belongs to another bot.",
+            message: "Discord is disconnected.",
           });
+
+        return client.user.id;
       };
 
       const incoming = (message: Message) => {
         if (
-          !ready() ||
+          !client.isReady() ||
           !message.inGuild() ||
           message.author.bot ||
           message.webhookId !== null ||
@@ -102,12 +104,13 @@ export const discordChannelLayer = (
         if (!thread && message.channel.type !== ChannelType.GuildText) return;
         const parentId = thread ? message.channel.parentId : message.channelId;
 
-        if (parentId === null || !settings.channelIds.includes(parentId)) return;
-        const mentioned = message.mentions.users.has(settings.botId);
+        if (parentId === null) return;
+        const botId = client.user.id;
+        const mentioned = message.mentions.users.has(botId);
 
         const text = message.content
-          .replaceAll(`<@${settings.botId}>`, "")
-          .replaceAll(`<@!${settings.botId}>`, "")
+          .replaceAll(`<@${botId}>`, "")
+          .replaceAll(`<@!${botId}>`, "")
           .trim();
 
         if (!text || text.length > 8192) return;
@@ -142,10 +145,9 @@ export const discordChannelLayer = (
             ? "Enable the Message Content intent for this bot."
             : "Discord disconnected; waiting for reconnect.";
       });
-      client.on(Events.ClientReady, () => {
-        connectionError = ready()
-          ? null
-          : "The Discord token does not match the configured bot ID.";
+      client.on(Events.ClientReady, (connected) => {
+        Deferred.doneUnsafe(identity, Effect.succeed(connected.user.id));
+        connectionError = null;
       });
 
       const login = Effect.tryPromise({
@@ -167,30 +169,37 @@ export const discordChannelLayer = (
       const checkAccess = (message: IncomingMessage, conversationId: string) =>
         Effect.tryPromise({
           try: async () => {
-            requireReady();
-            const thread = await client.channels.fetch(conversationId, { force: true });
-            const parent = await client.channels.fetch(message.parentId, { force: true });
+            const botId = requireReady();
+            const target = await client.channels.fetch(conversationId, { force: true });
+
+            const parent =
+              conversationId === message.parentId
+                ? target
+                : await client.channels.fetch(message.parentId, { force: true });
 
             if (
-              !thread?.isThread() ||
+              (target?.type !== ChannelType.GuildText && !target?.isThread()) ||
               parent?.type !== ChannelType.GuildText ||
-              thread.guildId !== settings.guildId ||
+              parent.guildId !== settings.guildId ||
+              target.guildId !== settings.guildId ||
               message.scopeId !== settings.guildId ||
               message.senderId !== settings.ownerId ||
-              thread.parentId !== message.parentId ||
-              !settings.channelIds.includes(message.parentId) ||
-              thread.locked ||
-              !thread
-                .permissionsFor(settings.botId)
+              (target.isThread()
+                ? target.parentId !== message.parentId || target.locked
+                : target.id !== message.parentId) ||
+              !target
+                .permissionsFor(botId)
                 ?.has([
                   PermissionFlagsBits.ViewChannel,
                   PermissionFlagsBits.ReadMessageHistory,
-                  PermissionFlagsBits.SendMessagesInThreads,
+                  target.isThread()
+                    ? PermissionFlagsBits.SendMessagesInThreads
+                    : PermissionFlagsBits.SendMessages,
                 ])
             )
               throw new ChannelError({
                 reason: "permission",
-                message: "Discord thread access is missing or the thread is locked.",
+                message: "Discord channel access is missing or the thread is locked.",
               });
           },
           catch: discordFailure,
@@ -199,7 +208,7 @@ export const discordChannelLayer = (
       const conversation = (message: IncomingMessage, title: string) =>
         Effect.tryPromise({
           try: async () => {
-            requireReady();
+            const botId = requireReady();
 
             if (message.conversationId !== null)
               return { id: message.conversationId, managedName: null };
@@ -208,9 +217,8 @@ export const discordChannelLayer = (
             if (
               parent?.type !== ChannelType.GuildText ||
               parent.guildId !== settings.guildId ||
-              !settings.channelIds.includes(parent.id) ||
               !parent
-                .permissionsFor(settings.botId)
+                .permissionsFor(botId)
                 ?.has([
                   PermissionFlagsBits.ViewChannel,
                   PermissionFlagsBits.ReadMessageHistory,
@@ -248,9 +256,7 @@ export const discordChannelLayer = (
             return {
               id: thread.id,
               managedName:
-                thread.ownerId === settings.botId && thread.id === source.id
-                  ? threadName(title)
-                  : null,
+                thread.ownerId === botId && thread.id === source.id ? threadName(title) : null,
             };
           },
           catch: discordFailure,
@@ -258,18 +264,18 @@ export const discordChannelLayer = (
 
       return {
         id: "discord",
-        accountId: settings.botId,
+        accountId: Deferred.await(identity),
         policy: {
           ownerId: settings.ownerId,
           scopeId: settings.guildId,
-          parentIds: settings.channelIds,
         },
+        homeConversationId: settings.homeChannelId,
         messages: Stream.fromQueue(messages),
         textLimit: 2000,
         status: Effect.sync(() => ({
           adapter: "discord",
-          account: settings.botId,
-          connected: ready(),
+          account: client.user?.id ?? null,
+          connected: client.isReady(),
           error: connectionError,
           dropped,
         })),
@@ -280,19 +286,24 @@ export const discordChannelLayer = (
               if (!/^[0-9]{1,20}$/.test(conversationId))
                 throw new ChannelError({
                   reason: "configuration",
-                  message: "Choose a numeric Discord thread ID of at most 20 digits.",
+                  message: "Choose a numeric Discord channel or thread ID of at most 20 digits.",
                 });
 
               requireReady();
-              const thread = await client.channels.fetch(conversationId, { force: true });
+              const target = await client.channels.fetch(conversationId, { force: true });
 
-              if (!thread?.isThread() || thread.guildId !== settings.guildId || !thread.parentId)
+              if (
+                (target?.type !== ChannelType.GuildText && !target?.isThread()) ||
+                target.guildId !== settings.guildId ||
+                (target.isThread() && !target.parentId)
+              )
                 throw new ChannelError({
                   reason: "permission",
-                  message: "Choose an existing thread in the configured Discord server.",
+                  message:
+                    "Choose an existing text channel or thread in the configured Discord server.",
                 });
 
-              return thread.parentId;
+              return target.isThread() ? target.parentId! : target.id;
             },
             catch: discordFailure,
           }),
@@ -307,10 +318,7 @@ export const discordChannelLayer = (
 
               if (
                 (channel?.type !== ChannelType.GuildText && !channel?.isThread()) ||
-                channel.guildId !== settings.guildId ||
-                !settings.channelIds.includes(
-                  channel.isThread() ? (channel.parentId ?? "") : channel.id,
-                )
+                channel.guildId !== settings.guildId
               )
                 throw new ChannelError({
                   reason: "permission",
@@ -391,10 +399,10 @@ export const discordChannelLayer = (
               Effect.andThen(
                 Effect.tryPromise({
                   try: async () => {
-                    requireReady();
+                    const botId = requireReady();
                     const thread = await client.channels.fetch(id, { force: true });
 
-                    if (!thread?.isThread() || thread.ownerId !== settings.botId || thread.locked)
+                    if (!thread?.isThread() || thread.ownerId !== botId || thread.locked)
                       throw new ChannelError({
                         reason: "permission",
                         message: "Cannot rename this Discord thread.",
@@ -413,16 +421,19 @@ export const discordChannelLayer = (
           Effect.tryPromise({
             try: async () => {
               requireReady();
-              const thread = await client.channels.fetch(conversationId);
+              const target = await client.channels.fetch(conversationId);
 
-              if (!thread?.isThread())
+              if (
+                (target?.type !== ChannelType.GuildText && !target?.isThread()) ||
+                target.guildId !== settings.guildId
+              )
                 throw new ChannelError({
                   reason: "permission",
-                  message: "Discord thread no longer exists.",
+                  message: "Discord text channel or thread is unavailable.",
                 });
 
               return (
-                await thread.send({
+                await target.send({
                   content: text,
                   nonce,
                   enforceNonce: true,

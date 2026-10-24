@@ -16,7 +16,14 @@ export const dataDirectory = Config.schema(ConfigText, "POPPET_DATA_DIR").pipe(
   Config.map((directory) => resolve(directory)),
 );
 
+export const DiscordConfiguration = Schema.Struct({
+  ownerId: Schema.String.check(Schema.isPattern(/^\d{1,20}$/)),
+  guildId: Schema.String.check(Schema.isPattern(/^\d{1,20}$/)),
+  homeChannelId: Schema.String.check(Schema.isPattern(/^\d{1,20}$/)),
+});
+
 const FileSettings = Schema.Struct({
+  discord: Schema.optionalKey(DiscordConfiguration),
   applicationName: Schema.optionalKey(ConfigText),
   provider: Schema.optionalKey(ConfigText),
   model: Schema.optionalKey(ConfigText),
@@ -42,6 +49,7 @@ export class ConfigSource extends Context.Service<
   {
     readonly configFile: { readonly path: string; readonly exists: boolean };
     readonly environmentOverrides: ReadonlyArray<string>;
+    readonly discord: typeof DiscordConfiguration.Type | null;
   }
 >()("poppet/ConfigSource") {}
 
@@ -142,6 +150,7 @@ export const loadConfigSource = Effect.gen(function* () {
 
   return Context.make(ConfigSource, {
     configFile: { path, exists },
+    discord: file.discord ?? null,
     environmentOverrides,
   }).pipe(
     Context.add(

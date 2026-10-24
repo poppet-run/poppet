@@ -80,6 +80,7 @@ export const conversation = Effect.gen(function* () {
     source?: TextSource,
     selectedSkill: string | null = null,
     approveCommand: ApproveCommand | null = null,
+    home: Effect.Effect<DeliveryDestination, AgentError> | null = null,
   ) =>
     Stream.unwrap(
       Effect.gen(function* () {
@@ -233,6 +234,7 @@ export const conversation = Effect.gen(function* () {
                       runId: run.id,
                       callId: taskCall.callId,
                       here,
+                      home,
                     }),
                   ),
                 ),

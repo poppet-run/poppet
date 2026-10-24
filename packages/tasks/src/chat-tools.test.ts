@@ -371,38 +371,41 @@ describe("ChatTasks", () => {
     }
   });
 
-  test("when origin or delivery lacks authority, rejects scheduled, unavailable-here, and unauthorized task requests", async () => {
-    const state = await fixture();
-    const action: ChatTaskAction = { ...create, delivery: "here" };
+  test.each(["here", "home"] as const)(
+    "when %s delivery lacks authority, rejects scheduled, unavailable, and unauthorized task requests",
+    async (delivery) => {
+      const state = await fixture();
+      const action: ChatTaskAction = { ...create, delivery };
 
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const { context } = yield* recorded(action);
-          const tasks = yield* ChatTasks;
-          expect(
-            yield* tasks.prepare(action, { ...context, origin: "scheduled" }).pipe(Effect.flip),
-          ).toMatchObject({ reason: "tool-permission" });
-          expect(yield* tasks.prepare(action, context).pipe(Effect.flip)).toMatchObject({
-            reason: "tool-permission",
-          });
-          expect(
-            yield* tasks
-              .prepare(action, {
-                ...context,
-                here: Effect.fail(
-                  new AgentError({ reason: "tool-permission", message: "Forbidden" }),
-                ),
-              })
-              .pipe(Effect.flip),
-          ).toMatchObject({ reason: "tool-permission" });
-          expect(yield* (yield* TaskRepository).list()).toEqual([]);
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const { context } = yield* recorded(action);
+            const tasks = yield* ChatTasks;
+            expect(
+              yield* tasks.prepare(action, { ...context, origin: "scheduled" }).pipe(Effect.flip),
+            ).toMatchObject({ reason: "tool-permission" });
+            expect(yield* tasks.prepare(action, context).pipe(Effect.flip)).toMatchObject({
+              reason: "tool-permission",
+            });
+            expect(
+              yield* tasks
+                .prepare(action, {
+                  ...context,
+                  [delivery]: Effect.fail(
+                    new AgentError({ reason: "tool-permission", message: "Forbidden" }),
+                  ),
+                })
+                .pipe(Effect.flip),
+            ).toMatchObject({ reason: "tool-permission" });
+            expect(yield* (yield* TaskRepository).list()).toEqual([]);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
   test("when destination lookup is cancelled, prevents later task creation", async () => {
     const state = await fixture();
@@ -459,7 +462,7 @@ describe("ChatTasks", () => {
           yield* TestClock.adjust("8 seconds");
           expect(yield* Fiber.join(fiber).pipe(Effect.flip)).toMatchObject({
             reason: "tool-permission",
-            message: "Current-conversation validation timed out.",
+            message: "Messaging destination validation timed out.",
           });
           expect(cancelled).toBe(true);
           expect(yield* (yield* TaskRepository).list()).toEqual([]);

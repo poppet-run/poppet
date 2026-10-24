@@ -127,33 +127,33 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 
 ## Scheduled tasks
 
-| Command                                                                                                                          | Action                                                             |
-| -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `tasks add <name> --at <timestamp> [--coding] [--skill <name>] [--channel <id> --conversation <id>] <prompt>`                    | Schedule a one-off request.                                        |
-| `tasks add <name> --cron <expression> --tz <timezone> [--coding] [--skill <name>] [--channel <id> --conversation <id>] <prompt>` | Schedule recurring work.                                           |
-| `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> --tz <timezone>]`                | Edit definition fields while retaining task identity and history.  |
-| `tasks skip-next <task>`                                                                                                         | Consume exactly the inspected next execution.                      |
-| `tasks snooze <task> --until <timestamp>`                                                                                        | Delay the next execution to a later offset-qualified instant.      |
-| `tasks run <task>`                                                                                                               | Queue normal scheduled work without shifting recurring cadence.    |
-| `tasks list`                                                                                                                     | List saved tasks.                                                  |
-| `tasks show <task>`                                                                                                              | Show occurrences, results, delivery states, and skipped intervals. |
-| `tasks pause <task>`                                                                                                             | Pause scheduling and cancel pending work.                          |
-| `tasks resume <task>`                                                                                                            | Resume future occurrences.                                         |
-| `tasks cancel <occurrence>`                                                                                                      | Cancel pending or active work.                                     |
-| `tasks retry <occurrence>`                                                                                                       | Explicitly retry an unsuccessful occurrence.                       |
-| `tasks clear`                                                                                                                    | Interrupt active work and remove all tasks and task history.       |
+| Command                                                                                                                            | Action                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `tasks add <name> --at <timestamp> [--coding] [--skill <name>] [--channel <id> [--conversation <id>]] <prompt>`                    | Schedule a one-off request.                                        |
+| `tasks add <name> --cron <expression> --tz <timezone> [--coding] [--skill <name>] [--channel <id> [--conversation <id>]] <prompt>` | Schedule recurring work.                                           |
+| `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> --tz <timezone>]`                  | Edit definition fields while retaining task identity and history.  |
+| `tasks skip-next <task>`                                                                                                           | Consume exactly the inspected next execution.                      |
+| `tasks snooze <task> --until <timestamp>`                                                                                          | Delay the next execution to a later offset-qualified instant.      |
+| `tasks run <task>`                                                                                                                 | Queue normal scheduled work without shifting recurring cadence.    |
+| `tasks list`                                                                                                                       | List saved tasks.                                                  |
+| `tasks show <task>`                                                                                                                | Show occurrences, results, delivery states, and skipped intervals. |
+| `tasks pause <task>`                                                                                                               | Pause scheduling and cancel pending work.                          |
+| `tasks resume <task>`                                                                                                              | Resume future occurrences.                                         |
+| `tasks cancel <occurrence>`                                                                                                        | Cancel pending or active work.                                     |
+| `tasks retry <occurrence>`                                                                                                         | Explicitly retry an unsuccessful occurrence.                       |
+| `tasks clear`                                                                                                                      | Interrupt active work and remove all tasks and task history.       |
 
 See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what
 `clear` deletes or retains. Tasks execute while a worker with scheduling enabled
-is running. Use `--channel` and `--conversation` together to select a messaging destination.
+is running. Use `--channel` to deliver to that gateway's home channel. Add `--conversation` to select another channel or thread.
 
 ## Messaging
 
-| Command                                                                                   | Action                                                   |
-| ----------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `gateway discord setup <bot-id> <owner-id> <guild-id> <parent-channel-id>... --key-stdin` | Save Discord settings and read the bot token from stdin. |
-| `gateway work`                                                                            | Run messaging only in the foreground.                    |
-| `gateway status`                                                                          | Show connection, queue, and delivery status.             |
+| Command                                                                     | Action                                                   |
+| --------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `gateway discord setup <owner-id> <guild-id> <home-channel-id> --key-stdin` | Save Discord settings and read the bot token from stdin. |
+| `gateway work`                                                              | Run messaging only in the foreground.                    |
+| `gateway status`                                                            | Show connection, queue, and delivery status.             |
 
 See [Discord](gateways/discord.md) for setup, conversation behavior,
 controls, and uncertain deliveries. The bot token is never accepted as a command-line argument.

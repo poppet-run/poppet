@@ -6,17 +6,17 @@
 
 Create a bot in the [Discord Developer Portal](https://discord.com/developers/applications).
 Enable its Message Content intent and install it in your server with the bot
-scope. In the intended parent text channel, give it View Channel, Read Message
-History, Create Public Threads, Send Messages in Threads, and Add Reactions permissions. It
-does not need Administrator. Use Discord's Developer Mode to copy the bot user,
-your user, server, and parent channel IDs.
+scope. In the text channels where you want to use it, give it View Channel, Read Message
+History, Send Messages, Create Public Threads, Send Messages in Threads, and Add Reactions permissions. It
+does not need Administrator. Use Discord's Developer Mode to copy your user,
+server, and home channel IDs. Poppet gets the bot's identity after login.
 
-Start with a private parent channel that only trusted people can read. The
+Choose a private home channel that only trusted people can read. The
 configured user is the only person who can invoke Poppet, but everyone with
 channel access can read replies containing personal memory and conversation content.
 
-Select an assistant-capable provider and model, then save the bot token through
-stdin. The token is never accepted as an argument.
+Save the bot token through stdin as shown below. The token is never accepted as
+an argument.
 
 Bash / POSIX sh:
 
@@ -30,7 +30,7 @@ Bash / POSIX sh:
     IFS= read -r discord_token || exit 1
     stty "$saved_tty"
     printf '\n'
-    printf '%s\n' "$discord_token" | poppet gateway discord setup <bot-id> <your-user-id> <server-id> <parent-channel-id> --key-stdin
+    printf '%s\n' "$discord_token" | poppet gateway discord setup <your-user-id> <server-id> <home-channel-id> --key-stdin
 )
 poppet gateway work
 ```
@@ -39,25 +39,26 @@ fish:
 
 ```fish
 read --silent --prompt-str 'Discord bot token: ' discord_token
-printf '%s\n' $discord_token | poppet gateway discord setup <bot-id> <your-user-id> <server-id> <parent-channel-id> --key-stdin
+printf '%s\n' $discord_token | poppet gateway discord setup <your-user-id> <server-id> <home-channel-id> --key-stdin
 set -e discord_token
 poppet gateway work
 ```
 
 Replace the angle-bracket placeholders with Discord IDs before running the
-setup command. Additional parent channel IDs can follow the first one. Settings
-and the redacted token live in `<POPPET_DATA_DIR>/channels/discord.json`, protected
-with `0600` file and `0700` directory permissions. Model-provider credentials
-remain separate. Restart an existing worker after changing channel settings;
+setup command. The home channel receives proactive messages and is the default
+destination for scheduled results. It does not restrict where you can use the bot. Ordinary
+settings are merged into the `discord` section of `config.json`. The token stays in `<POPPET_DATA_DIR>/channels/discord.json`, protected with `0600`
+file and `0700` directory permissions. Removing the `discord` section disables
+Discord. Model-provider credentials remain separate. Restart an existing worker
+after changing channel settings;
 on macOS, use `worker stop` followed by `worker start`. The installed worker reads
 the saved settings without placing the bot token in its LaunchAgent environment.
 
 ## Thread sessions
 
-Mention `@Poppet` with a message in an allowed parent text channel. The bot starts
-a thread and replies there. Inside any thread under an allowed parent channel,
-your text messages are addressed to the bot without a mention. The first message
-attaches a session, and subsequent messages continue it. Each thread keeps its own history and selected model
+Mention `@Poppet` with a message in any accessible text channel in the configured
+server. The bot starts a thread and replies there. You can also mention it in an
+existing thread to attach a session. Once attached, your follow-ups need no mention. Each thread keeps its own history and selected model
 across worker restarts, renames, and archiving. Start a new thread for a new
 session. Earlier messages in an existing thread are not imported.
 
@@ -97,8 +98,9 @@ are saved before sending; a delivery retry never repeats model or tool work.
 Uncertain sends are recorded without automatic resending, since Discord may
 already have posted them. Use the session ID and `chat show <session>` to inspect
 the saved answer before manually reposting it. No reply is redirected to another
-channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#deliver-results-to-discord) can select an explicit
-thread with `--channel discord --conversation <thread-id>`. Use the combined worker to execute and deliver
+channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#deliver-results-to-discord) default to the home
+channel with `--channel discord`. Add `--conversation <channel-or-thread-id>` to
+select another destination. Use the combined worker to execute and deliver
 them. Scheduled results use the same queue and do not alter thread sessions.
 Discord is the only bundled adapter. Additional adapters can use the
 [external package contract](../development.md#adding-a-channel).
@@ -151,7 +153,8 @@ race require validation in the private test channel.
 ## Schedule through chat
 
 With a tool-capable model, ask to create, inspect, pause, or resume a task in this
-authorized conversation. Request delivery here to save this conversation as the
-result destination after an access check. The model cannot select another chat
-or identity. See [task management](../tasks.md#manage-tasks-through-chat) for time,
+authorized conversation. Scheduled results default to the configured home channel.
+Request delivery here to save the current thread instead, or local delivery to
+keep results on the machine. Both messaging destinations require an access check.
+The model cannot supply an arbitrary chat ID or identity. See [task management](../tasks.md#manage-tasks-through-chat) for time,
 receipt, and recovery behavior. Scheduled runs cannot manage other tasks.

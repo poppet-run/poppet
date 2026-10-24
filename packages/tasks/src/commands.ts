@@ -11,7 +11,7 @@ export class TaskDestinations extends Context.Service<
   {
     readonly resolve: (
       adapter: string,
-      conversationId: string,
+      conversationId: string | null,
     ) => Effect.Effect<DeliveryDestination, TaskError>;
   }
 >()("poppet/TaskDestinations") {}

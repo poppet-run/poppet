@@ -108,7 +108,7 @@ export const prepareTask = (
   coding: boolean,
   prompt: string,
   skill?: string,
-  delivery?: { readonly adapter: string; readonly conversationId: string },
+  delivery?: { readonly adapter: string; readonly conversationId: string | null },
 ) =>
   Effect.gen(function* () {
     yield* taskOperation(() => {

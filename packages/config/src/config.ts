@@ -11,6 +11,7 @@ export {
   ConfigSource,
   ConfigSourceLive,
   dataDirectory,
+  DiscordConfiguration,
   readConfigFile,
   updateConfigFile,
 } from "#src/source";

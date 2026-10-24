@@ -276,8 +276,13 @@ entry point and import heavy SDK code only when its layer is built.
 The messaging host builds a gateway per configured registration, sharing the
 existing store and serialized agent. Configuration errors appear per channel and
 do not prevent other configured channels from running. All resources close with
-the worker. The existing Discord setup syntax and `channels/discord.json` file
-remain compatible. Shared `loadChannelSettings` and `saveChannelSettings` preserve
+the worker. Discord keeps ordinary settings in `config.json` and only its token
+in `channels/discord.json`. Its `accountId` effect resolves when Discord reports
+the authenticated bot identity; status remains available while login retries.
+The channel policy limits incoming requests to one owner and scope. Adapters
+validate platform permissions in `checkAccess`. An optional `homeConversationId`
+supplies the default proactive destination; `destination` resolves its parent.
+Shared `loadChannelSettings` and `saveChannelSettings` preserve
 bounded reads, ownership checks, atomic replacement, and protected file modes
 while adapters own their schemas.
 

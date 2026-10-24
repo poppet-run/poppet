@@ -122,7 +122,9 @@ export const tasksCommand = (context: CLIContext) => {
           ),
           conversation: Flag.String("conversation").pipe(
             Flag.withSchema(Schema.NonEmptyString),
-            Flag.withDescription("Conversation ID to receive scheduled results"),
+            Flag.withDescription(
+              "Channel or thread ID for results (defaults to the gateway home channel)",
+            ),
             Flag.atMost(1),
             Flag.map(([value]) => value),
           ),
@@ -132,14 +134,14 @@ export const tasksCommand = (context: CLIContext) => {
           Effect.gen(function* () {
             const schedule = yield* taskOperation(() => parseTaskSchedule(at, cron, tz));
 
-            if ((channel === undefined) !== (conversation === undefined))
+            if (channel === undefined && conversation !== undefined)
               return yield* Effect.fail(
-                new TaskError({ message: "Use --channel and --conversation together." }),
+                new TaskError({ message: "Use --channel when selecting --conversation." }),
               );
 
             const delivery =
-              channel !== undefined && conversation !== undefined
-                ? { adapter: channel, conversationId: conversation }
+              channel !== undefined
+                ? { adapter: channel, conversationId: conversation ?? null }
                 : undefined;
 
             const command = yield* prepareTask(name, schedule, coding, prompt, skill, delivery);

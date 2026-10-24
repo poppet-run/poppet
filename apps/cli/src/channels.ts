@@ -32,7 +32,7 @@ export class MessagingWorker extends Context.Service<
   {
     readonly resolveDestination: (
       adapter: string,
-      conversationId: string,
+      conversationId: string | null,
     ) => Effect.Effect<DeliveryDestination, ChannelError>;
     readonly run: Effect.Effect<void, ChatFailure | ChannelError>;
     readonly status: Effect.Effect<Schema.JsonObject, StoreError | ChannelError>;

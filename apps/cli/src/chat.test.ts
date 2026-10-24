@@ -389,14 +389,15 @@ const exampleChannel = (id: string) => {
 
             return {
               id,
-              accountId: "bot",
-              policy: { ownerId: "owner", scopeId: "guild", parentIds: ["parent"] },
+              accountId: Effect.succeed("bot"),
+              policy: { ownerId: "owner", scopeId: "guild" },
+              homeConversationId: "home",
               messages: Stream.fromQueue(incoming),
               conversation: (message) => Effect.succeed(message.conversationId ?? "thread"),
               checkAccess: () => Effect.void,
               destination: (conversationId) =>
-                conversationId === "thread"
-                  ? Effect.succeed("parent")
+                ["thread", "home"].includes(conversationId)
+                  ? Effect.succeed(conversationId === "home" ? "home" : "parent")
                   : Effect.fail(
                       new ChannelError({ reason: "permission", message: "Unknown thread" }),
                     ),
@@ -454,6 +455,11 @@ describe("chat.ts", () => {
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
         prompt: "Summary --literal",
         destination: { adapter: "example-channel", conversationId: "thread", parentId: "parent" },
+      });
+      await chat.invoke([...command, "--channel=example-channel", "Send home"]);
+      expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
+        prompt: "Send home",
+        destination: { adapter: "example-channel", conversationId: "home", parentId: "home" },
       });
     } finally {
       if (worker) await Effect.runPromise(Fiber.interrupt(worker));
@@ -1227,7 +1233,7 @@ describe("chat.ts", () => {
               conversationId: "thread",
               senderId: "owner",
               text: channel.registration.id,
-              mentioned: false,
+              mentioned: true,
             }),
           ),
         ),
@@ -1323,7 +1329,7 @@ describe("chat.ts", () => {
               id: "discord",
               enabled: false,
               error:
-                "Cannot read or write protected Discord settings. Run gateway discord setup again.",
+                "Cannot load Discord configuration or credentials. Check config.json and run gateway discord setup again.",
             },
           ]);
         await chat.clock.runPromise(TestClock.adjust("61 seconds"));
