@@ -16,6 +16,7 @@ import { gatewayCommand } from "#src/commands/gateway";
 import { mcpCommand } from "#src/commands/mcp";
 import { memoryCommand } from "#src/commands/memory";
 import { providerCommand } from "#src/commands/provider";
+import { setupCommand } from "#src/commands/setup";
 import { skillsCommand } from "#src/commands/skills";
 import { storeCommand } from "#src/commands/store";
 import { tasksCommand } from "#src/commands/tasks";
@@ -50,6 +51,7 @@ export const makeCLI = (
       mcpCommand(context),
       memoryCommand(context),
       providerCommand(context),
+      setupCommand(context),
       skillsCommand(context),
       storeCommand(context),
       tasksCommand(context),

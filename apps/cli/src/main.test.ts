@@ -30,6 +30,20 @@ const invokeProcess = async (
 };
 
 describe("main.ts", () => {
+  test("setup rejects piped input before creating configuration or credentials", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-setup-pipe-"));
+
+    try {
+      const result = await invokeProcess(["setup"], { POPPET_DATA_DIR: directory }, "secret\n");
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("Setup needs an interactive terminal");
+      expect(result.stdout + result.stderr).not.toContain("secret");
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
   test("when the CLI bin runs outside the checkout, shows help without loading configuration", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-entry-"));
     const root = fileURLToPath(new URL("../../..", import.meta.url));

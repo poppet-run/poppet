@@ -18,13 +18,32 @@ flag-like text; unknown task options are rejected.
 
 ## Configuration and storage
 
-| Command        | Action                                                                             |
-| -------------- | ---------------------------------------------------------------------------------- |
-| `config`       | Print validated configuration without opening storage or contacting a provider.    |
-| `store status` | Open or migrate the local database and print its path, schema version, and counts. |
-| `--help`       | Print command help.                                                                |
+| Command        | Action                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------- |
+| `setup`        | Interactively choose a provider and model, configure Discord, and offer worker startup. |
+| `config`       | Print validated configuration without opening storage or contacting a provider.         |
+| `store status` | Open or migrate the local database and print its path, schema version, and counts.      |
+| `--help`       | Print command help.                                                                     |
 
 See [configuration](configuration.md) and [storage](storage.md).
+
+`setup` requires an interactive terminal. It reuses saved choices, offers reconnect
+for an existing provider, and lists models from that provider. Discord is optional;
+skipping it leaves its policy and token unchanged. Discord token input displays
+asterisks. Other settings in `config.json` are preserved.
+
+If the selected provider uses an API key from the shell environment, setup saves
+it through the existing login command so the background worker can use it too.
+
+Authentication saves immediately. Provider and model choices save after the
+prompts, followed by Discord if selected. Cancellation or a later failure keeps
+completed saves and reports that they remain. Invalid configuration is never
+overwritten. Setup does not run inference or test Discord access.
+
+On macOS, setup offers to install and start the combined worker, start an installed
+worker, or explicitly restart a loaded worker. Restarting can interrupt active runs.
+Other platforms get the foreground command. Use the individual provider, gateway,
+and worker commands for scripts; setup has no noninteractive mode.
 
 ## Providers and models
 

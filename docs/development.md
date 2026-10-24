@@ -266,6 +266,11 @@ lazy configuration loader. The CLI generates setup help and dispatches
 `gateway <id> setup ...` through that registration.
 Lint restricts concrete channel imports to registration modules.
 
+The optional `promptSetup` operation collects interactive choices and returns a
+save effect, or `null` when skipped. The host runs that effect after collecting
+the remaining choices. `poppet setup` currently uses only the bundled Discord
+registration and does not load external adapters.
+
 The host supplies `ChannelEnvironment` with the data directory and `ChannelInput`
 with bounded, redacted secret input. The package owns argument validation,
 credential storage, setup messages, and connection construction. `load` returns

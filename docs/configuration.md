@@ -8,6 +8,10 @@ Keep ordinary settings in `~/.config/poppet/config.json`. The file and every
 field are optional. To use another data directory, set `POPPET_DATA_DIR` before
 running any Poppet command. Credentials stay in protected files outside this file.
 
+Run `poppet setup` to choose a provider and model, optionally configure Discord,
+and offer worker startup. It preserves settings outside those choices. See
+[getting started](getting-started.md#run-setup) for the interactive flow.
+
 A minimal configuration is:
 
 ```json

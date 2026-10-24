@@ -7,10 +7,12 @@ import {
 import { Effect, Layer, Redacted, Schema } from "effect";
 
 import { DiscordSettings, loadDiscordSettings, saveDiscordSettings } from "#src/settings";
+import { promptDiscordSetup } from "#src/setup";
 
 export const discord: ChannelRegistration = {
   id: "discord",
   name: "Discord",
+  promptSetup: promptDiscordSetup,
   setupHelp: "setup <owner-id> <guild-id> <home-channel-id> --key-stdin",
   setup: (args) =>
     Effect.gen(function* () {

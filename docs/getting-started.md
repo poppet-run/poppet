@@ -53,6 +53,32 @@ All examples use `poppet`, which can run from any directory. Relative
 configuration paths resolve from the current working directory. The default data
 directory is `~/.config/poppet`; see [configuration](configuration.md) to change it.
 
+## Run setup
+
+```sh
+poppet setup
+```
+
+Choose a provider, sign in if needed, and search its model list by typing. You can
+also configure Discord and, on macOS, install and start the combined scheduling
+and messaging worker. Have your Discord bot token, user ID, server ID, and
+home channel ID ready if you want messaging. See the [Discord guide](gateways/discord.md)
+for bot permissions and intents.
+
+Setup saves ordinary settings in `config.json` and credentials in protected files.
+Rerunning it uses saved choices as defaults. Skipping Discord preserves its settings.
+It asks before starting or restarting the worker. Other platforms use `poppet worker run`.
+
+Authentication is saved immediately. Cancelling later keeps completed steps;
+setup reports each save. Finishing setup does not verify live inference or a Discord
+connection. Check `poppet worker status`, then send a chat message to try it.
+
+OpenCode Go supports coding workloads only. Choose ChatGPT or OpenRouter for a
+general personal agent. Browser access, web search, and MCP remain separate settings.
+
+After setup, continue with [chat](#choose-a-model-and-chat). The manual commands
+below are also available for scripts and individual changes.
+
 ## Connect a provider
 
 For ChatGPT, sign in through the system browser and list the models available to
@@ -74,8 +100,8 @@ use ChatGPT or OpenRouter for general assistant chat and summaries.
 
 ## Choose a model and chat
 
-Save the provider and model in `~/.config/poppet/config.json`, using a model ID
-returned by `provider models`:
+If you did not use `poppet setup`, save the provider and model in
+`~/.config/poppet/config.json`, using a model ID returned by `provider models`:
 
 ```json
 {

@@ -1,4 +1,5 @@
-import { Context, type Effect, type Layer, type Redacted } from "effect";
+import { Context, type Effect, type Layer, type Redacted, type Terminal } from "effect";
+import type { Prompt } from "effect/cli";
 
 import type { ChannelError, MessagingChannel } from "#src/channel";
 
@@ -22,6 +23,12 @@ export interface ChannelRegistration {
   readonly setup: (
     args: ReadonlyArray<string>,
   ) => Effect.Effect<string, ChannelError, ChannelEnvironment | ChannelInput>;
+  /** Collects interactive choices, returning a save operation or null when skipped. */
+  readonly promptSetup?: Effect.Effect<
+    Effect.Effect<string, ChannelError> | null,
+    ChannelError | Terminal.QuitError,
+    ChannelEnvironment | Prompt.Environment
+  >;
   /** Inspects settings; building the returned layer starts the connection. Null means unconfigured. */
   readonly load: Effect.Effect<
     Layer.Layer<MessagingChannel, ChannelError> | null,
