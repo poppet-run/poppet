@@ -1069,7 +1069,7 @@ persisted claim precedes model resolution. The host prints or delivers the saved
 answer before asking the agent to name the session. Both paths use the existing
 model-access permit and owning process scope.
 
-The gateway's optional channel naming capability returns creation ownership,
+The gateway's channel naming capability returns creation ownership,
 reads current names, and conditionally renames managed conversations. Bindings
 retain source-message provenance, the last confirmed name, pending update, and
 last title considered. The gateway considers only successfully delivered answers

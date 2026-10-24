@@ -18,7 +18,7 @@ export const conversationNaming = (authorized: (message: IncomingMessage) => boo
         const naming = channel.naming;
         const destination = entry.conversationId;
 
-        if (!naming || destination === null || !authorized(entry.message)) return;
+        if (destination === null || !authorized(entry.message)) return;
 
         const binding = yield* gatewayStorage(repo.namedBinding(channel.id, account, destination));
 
@@ -122,7 +122,7 @@ export const conversationNaming = (authorized: (message: IncomingMessage) => boo
         const account = yield* channel.accountId;
         const entry = yield* gatewayStorage(repo.namingEntry(channel.id, account, destination));
 
-        if (!entry || !channel.naming) return;
+        if (!entry) return;
 
         const binding = yield* gatewayStorage(repo.namedBinding(channel.id, account, destination));
 

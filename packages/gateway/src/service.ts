@@ -120,13 +120,6 @@ const gateway = Effect.gen(function* () {
           }),
         );
 
-      if (!channel.destination)
-        return yield* Effect.fail(
-          new ChannelError({
-            reason: "configuration",
-            message: "This adapter does not support scheduled destinations.",
-          }),
-        );
       const parentId = yield* channel.destination(conversationId);
       const account = yield* channel.accountId;
 
@@ -361,9 +354,7 @@ const gateway = Effect.gen(function* () {
       const created =
         entry.conversationId !== null
           ? { id: entry.conversationId, managedName: null }
-          : channel.naming
-            ? yield* channel.naming.conversation(entry.message, sessionTitle(prompt))
-            : { id: yield* channel.conversation(entry.message), managedName: null };
+          : yield* channel.naming.conversation(entry.message, sessionTitle(prompt));
 
       const conversation = created.id;
       yield* channel.checkAccess(entry.message, conversation);
@@ -640,9 +631,7 @@ const gateway = Effect.gen(function* () {
         loop(processNext, inboxWake, "5 seconds"),
         loop(deliverNext, deliveryWake, "1 second"),
         loop(nameNext, namingWake, "5 seconds"),
-        channel.naming
-          ? Stream.runForEach(channel.naming.changes, externalNameChange)
-          : Effect.never,
+        Stream.runForEach(channel.naming.changes, externalNameChange),
       ],
       { concurrency: 5, discard: true },
     );
