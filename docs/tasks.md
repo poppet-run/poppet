@@ -144,7 +144,11 @@ Pause cancels pending work and leaves active work running. Resume does not repla
 missed recurring occurrences. Use `edit`, `skip_next`, `snooze`, and `run_now` for
 the corresponding controls above. They act on the task's current state, so no
 earlier `show` is needed. A snooze uses an absolute `until` timestamp with an
-offset; ask about an unclear timezone. Deleting tasks, retrying occurrences, cancelling active runs,
+offset; ask about an unclear timezone. Each action reads only the fields it uses
+and ignores the rest. Create needs a name, prompt, schedule, and delivery; every
+action except create and list needs an ID; snooze needs `until`; and edit needs
+at least one of name, prompt, or schedule. A missing field fails with a message
+naming it. Deleting tasks, retrying occurrences, cancelling active runs,
 and changing provider pauses remain CLI operations.
 
 Task changes and their durable tool receipts commit together. A saved change

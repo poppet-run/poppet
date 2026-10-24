@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { Effect } from "effect";
+import { Effect, type Schema } from "effect";
 
 import { decodeTaskCall } from "#src/task-tools";
 
@@ -16,90 +16,70 @@ const fields = {
   until: null,
 } as const;
 
-describe("decodeTaskCall", () => {
-  test("when task controls lack required fields or mix invalid fields, rejects the arguments", async () => {
-    const input = {
-      type: "tool-call" as const,
-      callId: "control",
-      name: "manage_tasks",
-      namespace: "poppet_tasks",
-    };
-
-    const empty = { ...fields, name: null, prompt: null, schedule: null, delivery: null };
-    const edit = { ...empty, action: "edit", id: "job", prompt: "Updated" };
-    expect(
-      await Effect.runPromise(decodeTaskCall({ ...input, arguments: JSON.stringify(edit) })),
-    ).toEqual({
-      action: "edit",
-      id: "job",
-      name: null,
-      prompt: "Updated",
-      schedule: null,
-    });
-
-    await Promise.all(
-      ["skip_next", "snooze", "run_now"].map(async (action) => {
-        const control = {
-          ...empty,
-          action,
-          id: "job",
-          until: action === "snooze" ? "2099-10-22T09:00:00Z" : null,
-        };
-
-        expect(
-          await Effect.runPromise(decodeTaskCall({ ...input, arguments: JSON.stringify(control) })),
-        ).toMatchObject({ action, id: "job" });
-      }),
-    );
-
-    await Promise.all(
-      [
-        { ...edit, prompt: null },
-        { ...edit, skill: "other" },
-        { ...edit, revision: 2 },
-        { ...edit, origin: "interactive" },
-        { ...empty, action: "snooze", id: "job", until: null },
-        { ...empty, action: "run_now", id: null },
-        { ...empty, action: "skip_next", id: "job", until: "2099-10-22T09:00:00Z" },
-      ].map((invalid) =>
-        expect(
-          Effect.runPromise(decodeTaskCall({ ...input, arguments: JSON.stringify(invalid) })),
-        ).rejects.toMatchObject({ reason: "tool-arguments" }),
-      ),
-    );
-  });
-
-  test("when a task includes an explicit schedule, decodes it without accepting model-supplied host authority", async () => {
-    const input = {
-      type: "tool-call" as const,
+const decode = (args: Schema.JsonObject) =>
+  Effect.runPromise(
+    decodeTaskCall({
+      type: "tool-call",
       callId: "task",
       name: "manage_tasks",
       namespace: "poppet_tasks",
-      arguments: JSON.stringify(fields),
-    };
+      arguments: JSON.stringify(args),
+    }),
+  );
 
-    expect(await Effect.runPromise(decodeTaskCall(input))).toEqual({
+describe("decodeTaskCall", () => {
+  test("when an action receives fields it does not use, ignores them", async () => {
+    const until = "2099-10-22T09:00:00Z";
+    const stray = { ...fields, id: "job", after: "cursor", until, skill: "review" };
+
+    expect(await decode({ ...stray, action: "list" })).toEqual({ action: "list", after: "cursor" });
+    expect(await decode({ ...stray, action: "pause" })).toEqual({ action: "pause", id: "job" });
+    expect(await decode({ ...stray, action: "run_now" })).toEqual({ action: "run_now", id: "job" });
+    expect(await decode({ ...stray, action: "snooze" })).toEqual({
+      action: "snooze",
+      id: "job",
+      until,
+    });
+    expect(await decode({ ...stray, action: "edit", name: null, schedule: null })).toEqual({
+      action: "edit",
+      id: "job",
+      name: null,
+      prompt: fields.prompt,
+      schedule: null,
+    });
+    expect(await decode(stray)).toEqual({
       action: "create",
       name: fields.name,
       prompt: fields.prompt,
       schedule: fields.schedule,
       delivery: "local",
-      skill: null,
+      skill: "review",
     });
+  });
+
+  test.each([
+    [{ ...fields, name: null, schedule: null }, "The create action needs name, schedule."],
+    [{ ...fields, delivery: null }, "The create action needs delivery."],
+    [{ ...fields, action: "show" }, "The show action needs id."],
+    [{ ...fields, action: "snooze", id: "job" }, "The snooze action needs until."],
+    [
+      { ...fields, action: "edit", id: "job", name: null, prompt: null, schedule: null },
+      "The edit action needs at least one of name, prompt, or schedule.",
+    ],
+  ])("when a required field is missing in case %#, names it", async (args, message) => {
+    await expect(decode(args)).rejects.toMatchObject({ reason: "tool-arguments", message });
+  });
+
+  test("when arguments add host authority or break the schema, rejects them", async () => {
     await Promise.all(
       [
         { ...fields, provider: "other-provider" },
         { ...fields, origin: "interactive" },
         { ...fields, conversationId: "other-thread" },
-        { ...fields, id: "unrelated" },
+        { ...fields, revision: 2 },
         { ...fields, prompt: "🙂".repeat(4097) },
         { ...fields, action: "clear" },
-        { ...fields, action: "list" },
-      ].map((args) =>
-        expect(
-          Effect.runPromise(decodeTaskCall({ ...input, arguments: JSON.stringify(args) })),
-        ).rejects.toMatchObject({ reason: "tool-arguments" }),
-      ),
+      ].map((args) => expect(decode(args)).rejects.toMatchObject({ reason: "tool-arguments" })),
     );
   });
 });
