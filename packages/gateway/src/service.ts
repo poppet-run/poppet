@@ -94,13 +94,6 @@ const gateway = Effect.gen(function* () {
   const config = yield* AppConfig;
   const clock = yield* Clock.Clock;
 
-  const overloadReply = channel.poll
-    ? chunks(
-        "Messaging queue is full. This request was not queued. Try again later.",
-        channel.textLimit,
-      )
-    : undefined;
-
   let active: { entry: Inbox; fiber: Fiber.Fiber<void, ChatFailure | ChannelError> } | null = null;
 
   // Loops wait for these signals instead of polling storage; timers still cover retries
@@ -297,7 +290,7 @@ const gateway = Effect.gen(function* () {
 
       if (session === null && !message.mentioned) return;
 
-      const entry = yield* gatewayStorage(repo.accept(channel.id, account, message, overloadReply));
+      const entry = yield* gatewayStorage(repo.accept(channel.id, account, message));
 
       if (entry === null) return;
       yield* wake(inboxWake);
@@ -627,41 +620,19 @@ const gateway = Effect.gen(function* () {
     Effect.map((connection) => ({ ...connection, rejected })),
   );
 
-  const pollOnce = Effect.gen(function* () {
-    const account = yield* channel.accountId;
-
-    if (!channel.poll) return;
-    const cursor = yield* gatewayStorage(repo.cursor(channel.id, account));
-    const updates = yield* channel.poll(cursor);
-
-    for (const update of updates) {
-      if (update.message !== null) yield* accept(update.message);
-      // A crash before this write safely redelivers an already deduplicated inbox entry.
-      yield* gatewayStorage(repo.checkpoint(channel.id, account, update.cursor));
-    }
-  });
-
   /** Recovers once, then receives input, runs inference, and delivers replies concurrently. */
   const run = Effect.gen(function* () {
     yield* recover;
 
-    const receive = channel.poll
-      ? pollOnce.pipe(
-          Effect.catchTag("ChannelError", (error) =>
-            Effect.sleep(Math.max(1000, error.retryAfterMs ?? 1000)),
-          ),
-          Effect.andThen(Effect.sleep("100 millis")),
-          Effect.forever,
-        )
-      : Stream.runForEach(channel.messages, (message) =>
-          accept(message).pipe(
-            Effect.catchTag("ChannelError", (error) =>
-              Effect.sync(() => {
-                rejected++;
-              }).pipe(Effect.andThen(Console.error(error.message))),
-            ),
-          ),
-        );
+    const receive = Stream.runForEach(channel.messages, (message) =>
+      accept(message).pipe(
+        Effect.catchTag("ChannelError", (error) =>
+          Effect.sync(() => {
+            rejected++;
+          }).pipe(Effect.andThen(Console.error(error.message))),
+        ),
+      ),
+    );
 
     yield* Effect.all(
       [
@@ -679,7 +650,6 @@ const gateway = Effect.gen(function* () {
 
   return {
     resolveDestination,
-    pollOnce,
     accept,
     processNext,
     deliverNext,

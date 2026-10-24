@@ -291,12 +291,6 @@ Shared `loadChannelSettings` and `saveChannelSettings` preserve
 bounded reads, ownership checks, atomic replacement, and protected file modes
 while adapters own their schemas.
 
-A channel can supply `poll(cursor)` instead of an event stream. Each returned item
-has the next opaque cursor and either a normalized message or `null` for an
-ignored update. The gateway accepts items in order and persists each cursor only
-after acceptance or deliberate rejection. Errors leave the current item
-unacknowledged. Keep platform offset arithmetic and filtering inside the adapter.
-
 See [messaging package boundaries](architecture.md#package-boundaries) for the channel contract.
 
 ## Validation

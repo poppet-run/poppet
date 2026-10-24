@@ -1,7 +1,7 @@
 import { migrationStatements } from "@poppet/store";
 import { Migrator } from "effect/sql";
 
-// Messaging channels: inbox, bindings, deliveries, and polling cursors. Each statement runs separately; append new migrations, never edit applied ones.
+// Messaging channels: inbox, bindings, and deliveries. Each statement runs separately; append new migrations, never edit applied ones.
 const baseline: ReadonlyArray<string> = [
   `CREATE TABLE gateway_bindings (
     adapter TEXT NOT NULL,
@@ -47,13 +47,6 @@ const baseline: ReadonlyArray<string> = [
     attempts INTEGER NOT NULL DEFAULT 0,
     retry_at INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (inbox_id, position)
-  ) STRICT`,
-
-  `CREATE TABLE gateway_cursors (
-    adapter TEXT NOT NULL,
-    account TEXT NOT NULL,
-    cursor TEXT NOT NULL,
-    PRIMARY KEY (adapter, account)
   ) STRICT`,
 ];
 

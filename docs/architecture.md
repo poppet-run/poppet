@@ -981,8 +981,7 @@ The store schema includes conversation bindings, accepted message IDs,
 and delivery records. The gateway owns their repository through the shared
 `SqlClient`; the store retains database ownership and migration history.
 Deduplicate by adapter, bot account, and external message ID. Persist accepted
-work before advancing a transport cursor or acknowledging receipt where the
-platform provides such a mechanism. Bound pending work and reject overload
+work before acknowledging receipt where the platform provides such a mechanism. Bound pending work and reject overload
 clearly. Preserve message order within each conversation through the existing
 serialized runner.
 
@@ -1025,18 +1024,11 @@ and uncertain delivery counts even when the worker is stopped. Thread-scoped
 `@Poppet /status` and `@Poppet /cancel` are text controls rather than registered
 slash commands. Live Discord checks remain manual.
 
-### External adapters and polling
+### External adapters
 
 The CLI loads default `ChannelRegistration` exports listed in `gatewayPackages`
 from `<POPPET_DATA_DIR>/gateways`. Discord remains bundled. See
 [adding a channel](development.md#adding-a-channel) for setup and compatibility.
-
-The optional `poll(cursor)` operation returns ordered updates and their next
-opaque cursors. An ignored update has a null message. The gateway accepts each
-message durably before checkpointing its cursor in `gateway_cursors`, keyed by
-adapter/account. A crash between acceptance and checkpointing can redeliver an
-update, which the existing inbox identity deduplicates. Platform offset arithmetic
-and filtering belong to the adapter.
 
 ## Dependencies
 

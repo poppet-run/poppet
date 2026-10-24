@@ -28,12 +28,6 @@ export interface ChannelPolicy {
   readonly scopeId: string;
 }
 
-/** One polled update; null messages are deliberately ignored before advancing the cursor. */
-export interface PolledMessage {
-  readonly cursor: string;
-  readonly message: IncomingMessage | null;
-}
-
 /** Remote messaging operations supplied by an adapter; the gateway owns queueing and inference. */
 export class MessagingChannel extends Context.Service<
   MessagingChannel,
@@ -45,10 +39,6 @@ export class MessagingChannel extends Context.Service<
     /** Default destination for proactive messages, if configured. */
     readonly homeConversationId?: string;
     readonly messages: Stream.Stream<IncomingMessage, ChannelError>;
-    /** Pull-based adapters advance only after the gateway durably accepts each update. */
-    readonly poll?: (
-      cursor: string | null,
-    ) => Effect.Effect<ReadonlyArray<PolledMessage>, ChannelError>;
     /** Finds or creates the remote conversation for a source message. */
     readonly conversation: (message: IncomingMessage) => Effect.Effect<string, ChannelError>;
     /** Rechecks current authorization and remote permissions before execution or delivery. */
