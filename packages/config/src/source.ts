@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { mkdir, open, rename, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { BrowserSettings, browserFileValue } from "@poppet/browser/config";
+import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
 
@@ -28,16 +30,7 @@ const FileSettings = Schema.Struct({
     Schema.Struct({
       logReasoning: Schema.optionalKey(Schema.Boolean),
       logTimings: Schema.optionalKey(Schema.Boolean),
-      contextBytes: Schema.optionalKey(Schema.Int),
-      historyTurns: Schema.optionalKey(Schema.Int),
       outputTokens: Schema.optionalKey(Schema.Int),
-      modelTurns: Schema.optionalKey(Schema.Int),
-      toolCalls: Schema.optionalKey(Schema.Int),
-      toolBytes: Schema.optionalKey(Schema.Int),
-      soulBytes: Schema.optionalKey(Schema.Int),
-      profileBytes: Schema.optionalKey(Schema.Int),
-      factsBytes: Schema.optionalKey(Schema.Int),
-      skillIndexBytes: Schema.optionalKey(Schema.Int),
       runDeadlineSeconds: Schema.optionalKey(Schema.Int),
     }),
   ),
@@ -58,93 +51,156 @@ const fileError = (path: string, message: string) =>
   new Config.ConfigError(new ConfigProvider.SourceError({ message: `${path}: ${message}` }));
 
 /** Reads one optional file without creating directories or loading credentials. */
+export const readConfigFile = (directory: string) =>
+  Effect.gen(function* () {
+    const path = join(directory, "config.json");
+
+    const contents = yield* Effect.tryPromise({
+      try: async () => {
+        const handle = await open(
+          path,
+          constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+        ).catch((cause: unknown) => {
+          if (Schema.is(MissingFile)(cause)) return null;
+          throw cause;
+        });
+
+        if (handle === null) return null;
+
+        try {
+          const info = await handle.stat();
+
+          if (
+            !info.isFile() ||
+            info.nlink !== 1 ||
+            info.uid !== process.getuid?.() ||
+            (info.mode & 0o022) !== 0 ||
+            info.size > 65536
+          )
+            throw new Error("Invalid configuration file");
+          const text = await handle.readFile("utf8");
+
+          if (Buffer.byteLength(text) > 65536) throw new Error("Configuration exceeds 64 KiB");
+
+          return text;
+        } finally {
+          await handle.close();
+        }
+      },
+      catch: () =>
+        fileError(
+          path,
+          "Cannot read configuration. Use a file owned by you, without links or group/other write access, of at most 64 KiB.",
+        ),
+    });
+
+    const json =
+      contents === null
+        ? {}
+        : yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(contents).pipe(
+            Effect.mapError(() => fileError(path, "Expected valid JSON.")),
+          );
+
+    const file = yield* Schema.decodeUnknownEffect(FileSettings, { onExcessProperty: "error" })(
+      json,
+    ).pipe(Effect.mapError((error) => fileError(path, error.message)));
+
+    return { file, path, exists: contents !== null };
+  });
+
 export const loadConfigSource = Effect.gen(function* () {
   const environment = yield* ConfigProvider.ConfigProvider;
   const directory = yield* dataDirectory;
-  const path = join(directory, "config.json");
-
-  const contents = yield* Effect.tryPromise({
-    try: async () => {
-      const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK).catch(
-        (cause: unknown) => {
-          if (Schema.is(MissingFile)(cause)) return null;
-          throw cause;
-        },
-      );
-
-      if (handle === null) return null;
-
-      try {
-        const info = await handle.stat();
-
-        if (!info.isFile() || info.size > 65536) throw new Error("Invalid configuration file");
-        const text = await handle.readFile("utf8");
-
-        if (Buffer.byteLength(text) > 65536) throw new Error("Configuration exceeds 64 KiB");
-
-        return text;
-      } finally {
-        await handle.close();
-      }
-    },
-    catch: () =>
-      fileError(path, "Cannot read configuration. Use a regular file of at most 64 KiB."),
-  });
-
-  const json =
-    contents === null
-      ? {}
-      : yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(contents).pipe(
-          Effect.mapError(() => fileError(path, "Expected valid JSON.")),
-        );
-
-  const file = yield* Schema.decodeUnknownEffect(FileSettings, { onExcessProperty: "error" })(
-    json,
-  ).pipe(Effect.mapError((error) => fileError(path, error.message)));
+  const { file, path, exists } = yield* readConfigFile(directory);
 
   const values = {
-    POPPET_APP_NAME: file.applicationName,
-    POPPET_PROVIDER: file.provider,
-    POPPET_MODEL: file.model,
-    POPPET_WEB_SEARCH: file.webSearch,
-    POPPET_WEB_SEARCH_PROVIDER: file.webSearchProvider,
-    POPPET_BROWSER: browserFileValue(file.browser, directory),
-    POPPET_MCP_SERVERS: mcpFileValue(file.mcpServers, directory),
-    POPPET_GATEWAY_PACKAGES:
+    POPPET_DATA_DIR: directory,
+    applicationName: file.applicationName,
+    provider: file.provider,
+    model: file.model,
+    webSearch: file.webSearch,
+    webSearchProvider: file.webSearchProvider,
+    browser: browserFileValue(file.browser, directory),
+    mcpServers: mcpFileValue(file.mcpServers, directory),
+    gatewayPackages:
       file.gatewayPackages === undefined ? undefined : JSON.stringify(file.gatewayPackages),
-    POPPET_TASK_CATCH_UP_MINUTES: file.tasks?.catchUpMinutes,
-    POPPET_LOG_REASONING: file.chat?.logReasoning,
-    POPPET_LOG_TIMINGS: file.chat?.logTimings,
-    POPPET_CONTEXT_BYTES: file.chat?.contextBytes,
-    POPPET_HISTORY_TURNS: file.chat?.historyTurns,
-    POPPET_OUTPUT_TOKENS: file.chat?.outputTokens,
-    POPPET_MODEL_TURNS: file.chat?.modelTurns,
-    POPPET_TOOL_CALLS: file.chat?.toolCalls,
-    POPPET_TOOL_BYTES: file.chat?.toolBytes,
-    POPPET_SOUL_BYTES: file.chat?.soulBytes,
-    POPPET_PROFILE_BYTES: file.chat?.profileBytes,
-    POPPET_FACTS_BYTES: file.chat?.factsBytes,
-    POPPET_SKILL_INDEX_BYTES: file.chat?.skillIndexBytes,
-    POPPET_RUN_DEADLINE_SECONDS: file.chat?.runDeadlineSeconds,
+    catchUpMinutes: file.tasks?.catchUpMinutes,
+    logReasoning: file.chat?.logReasoning,
+    logTimings: file.chat?.logTimings,
+    outputTokens: file.chat?.outputTokens,
+    runDeadlineSeconds: file.chat?.runDeadlineSeconds,
   };
 
-  const environmentOverrides = yield* Effect.filter(
-    ["POPPET_DATA_DIR", ...Object.keys(values)],
-    (key) => environment.load([key]).pipe(Effect.map((node) => node !== undefined)),
-  ).pipe(Effect.mapError((error) => new Config.ConfigError(error)));
+  const environmentOverrides =
+    (yield* environment
+      .load(["POPPET_DATA_DIR"])
+      .pipe(Effect.mapError((error) => new Config.ConfigError(error)))) === undefined
+      ? []
+      : ["POPPET_DATA_DIR"];
+
+  const saved = ConfigProvider.fromUnknown(values, { preserveEmptyStrings: true });
 
   return Context.make(ConfigSource, {
-    configFile: { path, exists: contents !== null },
+    configFile: { path, exists },
     environmentOverrides,
   }).pipe(
     Context.add(
       ConfigProvider.ConfigProvider,
-      ConfigProvider.orElse(
-        environment,
-        ConfigProvider.fromUnknown(values, { preserveEmptyStrings: true }),
+      ConfigProvider.make((key) =>
+        key.length === 1 && Object.hasOwn(values, String(key[0]))
+          ? saved.load(key)
+          : environment.load(key),
       ),
     ),
   );
 });
 
 export const ConfigSourceLive = Layer.effectContext(loadConfigSource);
+
+/** Merge under a lock and replace atomically; never put credentials in this file. */
+export const updateConfigFile = (
+  directory: string,
+  update: (file: typeof FileSettings.Type) => typeof FileSettings.Type,
+) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      yield* Effect.tryPromise({
+        try: () => mkdir(directory, { recursive: true, mode: 0o700 }),
+        catch: () => fileError(directory, "Cannot create configuration directory."),
+      });
+      yield* acquireOwnerLock(join(directory, "config.lock")).pipe(
+        Effect.mapError(() => fileError(directory, "Configuration is busy or cannot be locked.")),
+      );
+      const { file, path } = yield* readConfigFile(directory);
+
+      const changed = yield* Schema.decodeUnknownEffect(FileSettings, {
+        onExcessProperty: "error",
+      })(update(file)).pipe(
+        Effect.mapError(() => fileError(path, "Invalid configuration update.")),
+      );
+
+      const contents = JSON.stringify(changed, null, 2) + "\n";
+
+      if (Buffer.byteLength(contents) > 65536)
+        return yield* Effect.fail(fileError(path, "Configuration exceeds 64 KiB."));
+      yield* Effect.tryPromise({
+        try: async () => {
+          const temporary = `${path}.${randomUUID()}.tmp`;
+          const handle = await open(temporary, "wx", 0o600);
+
+          try {
+            await handle.writeFile(contents);
+            await handle.sync();
+            await handle.close();
+            await rename(temporary, path);
+          } finally {
+            await handle.close().catch(() => undefined);
+            await unlink(temporary).catch(() => undefined);
+          }
+        },
+        catch: () => fileError(path, "Cannot save configuration."),
+      });
+
+      return changed;
+    }),
+  ).pipe(Effect.uninterruptible);

@@ -6,11 +6,18 @@ import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
 import { serveWorker, workerSocketPath } from "@poppet/worker";
-import { ConfigProvider, Console, Effect } from "effect";
+import { ConfigProvider, Console, Effect, type Schema } from "effect";
 
 import { makeCLI } from "#src/cli";
 import { providers } from "#src/providers";
 import type { manageWorker } from "#src/worker";
+
+const configure = async (directory: string, settings: Schema.JsonObject) => {
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, "config.json"), JSON.stringify(settings));
+
+  return { POPPET_DATA_DIR: directory };
+};
 
 const invoke = async (
   args: ReadonlyArray<string>,
@@ -134,12 +141,11 @@ describe("makeCLI", () => {
 
     try {
       const results = await Promise.all(
-        selections.map(({ name, provider }) =>
-          invoke(["config"], {
-            POPPET_APP_NAME: name,
-            POPPET_PROVIDER: provider,
-            POPPET_DATA_DIR: join(directory, name),
-          }),
+        selections.map(async ({ name, provider }) =>
+          invoke(
+            ["config"],
+            await configure(join(directory, name), { applicationName: name, provider }),
+          ),
         ),
       );
 
@@ -201,7 +207,7 @@ describe("makeCLI", () => {
 
   test("when saved tasks are edited, skipped, snoozed, or queued offline, preserves snapshots and cadence", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-controls-cli-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "saved-model" };
+    const environment = await configure(directory, { model: "saved-model" });
     const offline = { POPPET_DATA_DIR: directory };
 
     try {
@@ -272,7 +278,7 @@ describe("makeCLI", () => {
 
   test("when Kagi credentials are configured, leaves Brave credentials intact", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-kagi-cli-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_WEB_SEARCH_PROVIDER: "kagi" };
+    const environment = { POPPET_DATA_DIR: directory };
 
     try {
       expect(
@@ -283,6 +289,7 @@ describe("makeCLI", () => {
           })
         ).exitCode,
       ).toBe(0);
+      await configure(directory, { webSearchProvider: "kagi" });
       expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
         provider: "kagi",
         enabled: false,
@@ -331,6 +338,7 @@ describe("makeCLI", () => {
       expect(JSON.parse((await invoke(["web", "status"], environment)).stdout).configured).toBe(
         false,
       );
+      await configure(directory, { webSearchProvider: "brave" });
       expect(
         JSON.parse((await invoke(["web", "status"], { POPPET_DATA_DIR: directory })).stdout),
       ).toMatchObject({
@@ -415,7 +423,7 @@ describe("makeCLI", () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-invalid-"));
 
     try {
-      const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+      const environment = await configure(directory, { model: "test-model" });
 
       const missing = await invoke(
         ["tasks", "add", "Missing prompt", "--at", "2099-10-14T09:00:00Z"],
@@ -428,7 +436,7 @@ describe("makeCLI", () => {
       const invalid = await invoke(["tasks", "show", "bad/id"], environment);
       expect(invalid.exitCode).toBe(1);
       expect(invalid.stderr).toContain("argument <task>");
-      expect(await readdir(directory)).toEqual([]);
+      expect(await readdir(directory)).toEqual(["config.json"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -447,14 +455,11 @@ describe("makeCLI", () => {
           "2099-10-14T09:00:00Z",
           "Summarize recent conversations",
         ],
-        {
-          POPPET_DATA_DIR: directory,
-          POPPET_PROVIDER: "openrouter",
-          POPPET_MODEL: "saved-model",
-        },
+        await configure(directory, { provider: "openrouter", model: "saved-model" }),
       );
 
       expect(added.exitCode).toBe(0);
+      await configure(directory, {});
       const result = await invoke(["worker", "status"], { POPPET_DATA_DIR: directory });
       expect(result.exitCode).toBe(0);
       expect(
@@ -486,10 +491,11 @@ describe("makeCLI", () => {
   test("when the worker crashes with its owner lock intact, recovers local task commands", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-crash-"));
 
+    await configure(directory, { model: "saved-model" });
+
     const environment = {
       PATH: process.env.PATH ?? "",
       POPPET_DATA_DIR: directory,
-      POPPET_MODEL: "saved-model",
     };
 
     const worker = Bun.spawn(
@@ -536,7 +542,7 @@ describe("makeCLI", () => {
 
   test("when managing saved tasks without credentials, validates schedules before creating a store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-tasks-cli-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+    const environment = await configure(directory, { model: "test-model" });
 
     try {
       const invalid = await invoke(
@@ -555,7 +561,7 @@ describe("makeCLI", () => {
 
       expect(invalid.exitCode).toBe(1);
       expect(invalid.stderr).toContain("Invalid cron");
-      expect(await readdir(directory)).toEqual([]);
+      expect(await readdir(directory)).toEqual(["config.json"]);
 
       const added = await invoke(
         [
@@ -642,7 +648,7 @@ describe("makeCLI", () => {
           "UTC",
           "Read release.md and report its release tag",
         ],
-        { ...environment, POPPET_MODEL: "saved-model" },
+        await configure(directory, { model: "saved-model" }),
       );
 
       expect(added.exitCode).toBe(0);
@@ -793,7 +799,7 @@ describe("makeCLI", () => {
 
   test("when a Discord task destination is supplied, requires messaging-worker validation", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-destination-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+    const environment = await configure(directory, { model: "test-model" });
 
     const command = [
       "tasks",
@@ -815,7 +821,7 @@ describe("makeCLI", () => {
 
         expect(incomplete.exitCode).toBe(1);
         expect(incomplete.stderr).toContain("Use --channel and --conversation together");
-        expect(await readdir(directory)).toEqual([]);
+        expect(await readdir(directory)).toEqual(["config.json"]);
       });
 
       const rejected = await invoke(
@@ -842,16 +848,17 @@ describe("makeCLI", () => {
   test("when no model or authentication is selected, opens and reopens the conversation store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-store-cli-"));
 
+    await configure(directory, { provider: "openrouter" });
+
     const environment = {
       POPPET_DATA_DIR: directory,
-      POPPET_PROVIDER: "openrouter",
       POPPET_OPENROUTER_API_KEY: "test-secret",
     };
 
     try {
       const before = await invoke(["config"], environment);
       expect(before.exitCode).toBe(0);
-      expect(await readdir(directory)).toEqual([]);
+      expect(await readdir(directory)).toEqual(["config.json"]);
       const first = await invoke(["store", "status"], environment);
       const reopened = await invoke(["store", "status"], environment);
       expect(first.exitCode).toBe(0);
@@ -865,7 +872,7 @@ describe("makeCLI", () => {
       });
       expect(JSON.parse(reopened.stdout)).toEqual(JSON.parse(first.stdout));
       expect(first.stdout + first.stderr).not.toContain("test-secret");
-      expect(await readdir(directory)).toEqual(["store"]);
+      expect((await readdir(directory)).toSorted()).toEqual(["config.json", "store"]);
       expect(await readdir(join(directory, "store"))).not.toContain("owner.lock");
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -924,7 +931,7 @@ describe("makeCLI", () => {
 
   test("when logging into API-key providers, honors explicit selection and keeps logout independent", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-login-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "opencode-go" };
+    const environment = await configure(directory, { provider: "opencode-go" });
 
     try {
       const router = await invoke(["provider", "login", "openrouter"], {
@@ -989,9 +996,10 @@ describe("makeCLI", () => {
   test("when environment credentials are supplied, uses them without saving until login and rejects invalid overrides", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-env-"));
 
+    await configure(directory, { provider: "openrouter" });
+
     const environment = {
       POPPET_DATA_DIR: directory,
-      POPPET_PROVIDER: "openrouter",
       POPPET_OPENROUTER_API_KEY: "env-test-secret",
     };
 
@@ -1002,7 +1010,7 @@ describe("makeCLI", () => {
         connected: true,
         source: "environment",
       });
-      expect(await readdir(directory)).toEqual([]);
+      expect(await readdir(directory)).toEqual(["config.json"]);
       const login = await invoke(["provider", "login"], environment);
       expect(login.exitCode).toBe(0);
       expect(login.stdout + login.stderr).not.toContain("env-test-secret");
@@ -1031,7 +1039,7 @@ describe("makeCLI", () => {
 
   test("when provider options are invalid, rejects them before creating credentials", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-invalid-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "openrouter" };
+    const environment = await configure(directory, { provider: "openrouter" });
 
     try {
       const cases = [
@@ -1058,7 +1066,7 @@ describe("makeCLI", () => {
         expect(result.stderr).toContain(message);
       });
 
-      expect(await readdir(directory)).toEqual([]);
+      expect(await readdir(directory)).toEqual(["config.json"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -1100,7 +1108,7 @@ describe("makeCLI", () => {
 
   test("when root or command help is requested, avoids configuration loading and file creation", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-help-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_PROVIDER: "invalid/provider" };
+    const environment = await configure(directory, { provider: "invalid/provider" });
 
     const paths = [
       "config",
@@ -1154,7 +1162,7 @@ describe("makeCLI", () => {
       expect(taskHelp.stdout).toContain("--cron");
       expect(taskHelp.stdout).toContain("--tz");
       expect(taskHelp.stdout).toContain("EXAMPLES");
-      expect(await readdir(directory)).toEqual([]);
+      expect(await readdir(directory)).toEqual(["config.json"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -1162,7 +1170,7 @@ describe("makeCLI", () => {
 
   test("when schedules conflict, flags repeat, or worker commands are malformed, rejects them before storage", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-flags-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+    const environment = await configure(directory, { model: "test-model" });
     const at = "2099-10-15T09:00:00Z";
 
     const commands = [
@@ -1198,7 +1206,7 @@ describe("makeCLI", () => {
         expect(result.stderr).not.toBe("");
       });
 
-      expect(await readdir(directory)).toEqual([]);
+      expect(await readdir(directory)).toEqual(["config.json"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -1206,7 +1214,7 @@ describe("makeCLI", () => {
 
   test("when memory values or task prompts contain flag-like text, preserves that text", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-text-"));
-    const environment = { POPPET_DATA_DIR: directory, POPPET_MODEL: "test-model" };
+    const environment = await configure(directory, { model: "test-model" });
 
     try {
       const remembered = await invoke(
@@ -1252,7 +1260,7 @@ describe("makeCLI", () => {
     }
   });
 
-  test("when configuration comes from the environment, prints it without creating application files", async () => {
+  test("when configuration is absent, ignores removed environment settings without creating files", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-env-cli-"));
 
     try {
@@ -1263,10 +1271,10 @@ describe("makeCLI", () => {
 
       expect(result.exitCode).toBe(0);
       expect(JSON.parse(result.stdout)).toMatchObject({
-        applicationName: "Test Poppet",
+        applicationName: "Poppet",
         dataDirectory: directory,
         configFile: { path: join(directory, "config.json"), exists: false },
-        environmentOverrides: ["POPPET_DATA_DIR", "POPPET_APP_NAME"],
+        environmentOverrides: ["POPPET_DATA_DIR"],
       });
       expect(await readdir(directory)).toEqual([]);
     } finally {
@@ -1274,78 +1282,41 @@ describe("makeCLI", () => {
     }
   });
 
-  test("when file settings have environment overrides, prints effective budgets and sources without opening storage", async () => {
+  test("when file settings coexist with obsolete environment overrides, uses only editable file settings and keeps secrets out", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-file-cli-"));
 
-    const chat = {
-      logReasoning: true,
-      logTimings: true,
-      contextBytes: 32768,
-      historyTurns: 10,
-      outputTokens: 4096,
-      modelTurns: 4,
-      toolCalls: 8,
-      toolBytes: 8192,
-      soulBytes: 4096,
-      profileBytes: 2048,
-      factsBytes: 1024,
-      skillIndexBytes: 512,
-    };
-
     try {
-      await writeFile(
-        join(directory, "config.json"),
-        JSON.stringify({
-          applicationName: "File app",
-          provider: "openrouter",
-          model: "file-model",
-          chat,
-        }),
-      );
+      await configure(directory, {
+        provider: "openrouter",
+        model: "file-model",
+        chat: { outputTokens: 4096, logReasoning: true },
+      });
 
       const result = await invoke(["config"], {
         POPPET_DATA_DIR: directory,
-        POPPET_MODEL: "override-model",
-        POPPET_OUTPUT_TOKENS: "512",
+        POPPET_MODEL: "ignored",
+        POPPET_OUTPUT_TOKENS: "",
         POPPET_OPENROUTER_API_KEY: "must-not-appear",
       });
 
       expect(result.exitCode).toBe(0);
-      expect(result.stderr).toBe("");
-      expect(JSON.parse(result.stdout)).toEqual({
-        applicationName: "File app",
-        dataDirectory: directory,
-        provider: "openrouter",
-        model: "override-model",
-        webSearch: false,
-        webSearchProvider: "brave",
-        browser: { enabled: false },
-        mcpServers: [],
-        gatewayPackages: [],
-        chat: { ...chat, outputTokens: 512, runDeadlineSeconds: 300 },
-        tasks: { catchUpMinutes: 60 },
-        configFile: { path: join(directory, "config.json"), exists: true },
-        environmentOverrides: ["POPPET_DATA_DIR", "POPPET_MODEL", "POPPET_OUTPUT_TOKENS"],
+      const saved = JSON.parse(result.stdout);
+      expect(saved).toMatchObject({
+        model: "file-model",
+        environmentOverrides: ["POPPET_DATA_DIR"],
+      });
+      expect(saved.chat).toEqual({
+        outputTokens: 4096,
+        logReasoning: true,
+        logTimings: false,
+        runDeadlineSeconds: 300,
       });
       expect(result.stdout).not.toContain("must-not-appear");
       expect(await readdir(directory)).toEqual(["config.json"]);
-
-      const emptyOverride = await invoke(["config"], {
-        POPPET_DATA_DIR: directory,
-        POPPET_OUTPUT_TOKENS: "",
-      });
-
-      expect(emptyOverride.exitCode).toBe(1);
-      expect(emptyOverride.stdout).toBe("");
-      expect(emptyOverride.stderr).toContain("POPPET_OUTPUT_TOKENS");
-      await writeFile(join(directory, "config.json"), JSON.stringify({ chat: { modelTurns: 0 } }));
-      const invalid = await invoke(["config"], { POPPET_DATA_DIR: directory });
-      expect(invalid.exitCode).toBe(1);
-      expect(invalid.stdout).toBe("");
-      expect(invalid.stderr).toContain("POPPET_MODEL_TURNS");
+      await configure(directory, { chat: { outputTokens: 0 } });
+      expect((await invoke(["config"], { POPPET_DATA_DIR: directory })).exitCode).toBe(1);
       const inspection = await invoke(["chat", "sessions"], { POPPET_DATA_DIR: directory });
       expect(inspection.exitCode).toBe(0);
-      expect(JSON.parse(inspection.stdout)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -1357,9 +1328,10 @@ describe("makeCLI", () => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-provider-cli-"));
 
       try {
+        await configure(directory, { provider: provider });
+
         const environment = {
           POPPET_DATA_DIR: directory,
-          POPPET_PROVIDER: provider,
           POPPET_OPENCODE_GO_API_KEY: "test-secret",
           POPPET_OPENROUTER_API_KEY: "test-secret",
         };
@@ -1371,8 +1343,8 @@ describe("makeCLI", () => {
         expect(JSON.parse(settings.stdout)).toMatchObject({ provider, model: null });
         expect(settings.stdout).not.toContain("test-secret");
         expect(missingModel.exitCode).toBe(1);
-        expect(missingModel.stderr).toContain("POPPET_MODEL");
-        expect(await readdir(directory)).toEqual([]);
+        expect(missingModel.stderr).toContain("config.json");
+        expect(await readdir(directory)).toEqual(["config.json"]);
       } finally {
         await rm(directory, { recursive: true, force: true });
       }

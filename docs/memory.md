@@ -52,7 +52,7 @@ manage their facts with the CLI commands above.
 
 The tool uses the same `Memory` service and local database as the CLI. Remembering
 and replacing set `sourceRunId` to the active run, which the model cannot supply or
-forge. The agent checks the next fact snapshot against `POPPET_FACTS_BYTES` before
+forge. The agent checks the next fact snapshot against the 8 KiB facts limit before
 writing and returns a small acknowledgement instead of repeating the value. The
 current run's prompt stays fixed; the tool result confirms the change and the next
 run loads it into its snapshot. Independently issued CLI changes retain their
@@ -128,10 +128,9 @@ from conversations.
 
 ## Limits and deletion
 
-Personality, profile, and fact budgets default to 8 KiB each, controlled by
-`POPPET_SOUL_BYTES`, `POPPET_PROFILE_BYTES`, and `POPPET_FACTS_BYTES`. Oversized
+Personality, profile, and fact budgets are fixed at 8 KiB each. Oversized
 content fails clearly instead of silently omitting preferences. All count toward
-`POPPET_CONTEXT_BYTES` alongside instructions, tool definitions, and history.
+the 256 KiB context limit alongside instructions, tool definitions, and history.
 A malformed or oversized personality file, profile, or facts block fails before
 resolving a provider; a context overflow fails before inference. Forgetting removes
 the saved fact from future snapshots; existing

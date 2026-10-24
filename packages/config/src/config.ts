@@ -7,12 +7,18 @@ import {
   dataDirectory as configuredDataDirectory,
 } from "#src/source";
 
-export { ConfigSource, ConfigSourceLive, dataDirectory } from "#src/source";
+export {
+  ConfigSource,
+  ConfigSourceLive,
+  dataDirectory,
+  readConfigFile,
+  updateConfigFile,
+} from "#src/source";
 
 /** Extra installed gateway registration entry points, alongside bundled Discord. */
 export const gatewayPackages = Config.schema(
   Schema.fromJsonString(Schema.Array(ConfigText)),
-  "POPPET_GATEWAY_PACKAGES",
+  "gatewayPackages",
 ).pipe(Config.withDefault([]));
 
 export { BrowserSettings, browserSettings } from "@poppet/browser/config";
@@ -20,15 +26,15 @@ export { BrowserSettings, browserSettings } from "@poppet/browser/config";
 /** Minutes after a missed recurring task time during which it still runs once. */
 export const taskCatchUpMinutes = Config.schema(
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1440 })),
-  "POPPET_TASK_CATCH_UP_MINUTES",
+  "catchUpMinutes",
 ).pipe(Config.withDefault(60));
 
 /** Search stays opt-in independently of the selected inference provider. */
-export const webSearchEnabled = Config.Boolean("POPPET_WEB_SEARCH").pipe(Config.withDefault(false));
+export const webSearchEnabled = Config.Boolean("webSearch").pipe(Config.withDefault(false));
 
 export const webSearchProvider = Config.schema(
   Schema.Literals(["brave", "kagi"]),
-  "POPPET_WEB_SEARCH_PROVIDER",
+  "webSearchProvider",
 ).pipe(Config.withDefault("brave"));
 
 /** Resolved host paths and default model selection for new sessions. */
@@ -45,7 +51,7 @@ export class AppConfig extends Context.Service<AppConfig, Settings>()("poppet/Ap
 /** Reads configuration, resolves directory paths, and validates configured provider selection. */
 export const loadConfig = (defaultProvider: ProviderId, providers: ReadonlyArray<ProviderId>) =>
   Effect.gen(function* () {
-    const applicationName = yield* Config.schema(ConfigText, "POPPET_APP_NAME").pipe(
+    const applicationName = yield* Config.schema(ConfigText, "applicationName").pipe(
       Config.withDefault("Poppet"),
     );
 
@@ -55,10 +61,10 @@ export const loadConfig = (defaultProvider: ProviderId, providers: ReadonlyArray
       ProviderId.check(
         Schema.makeFilter((id) => providers.includes(id) || "Choose a registered provider."),
       ),
-      "POPPET_PROVIDER",
+      "provider",
     ).pipe(Config.withDefault(defaultProvider));
 
-    const model = yield* Config.schema(ConfigText, "POPPET_MODEL").pipe(
+    const model = yield* Config.schema(ConfigText, "model").pipe(
       Config.option,
       Config.map(Option.getOrNull),
     );

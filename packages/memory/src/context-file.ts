@@ -9,13 +9,13 @@ import { MemoryError } from "#src/service";
 
 const missing = Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }));
 
-export const memoryLimit = (part: string, setting: string) =>
+export const memoryLimit = (part: string, maximum: number) =>
   new MemoryError({
     reason: "limit",
-    message: `The ${part} exceeds ${setting}. Shorten it or increase the budget.`,
+    message: `The ${part} exceeds the ${maximum}-byte limit. Shorten it.`,
   });
 
-export const readContextFile = async (path: string, maximum: number, setting: string) => {
+export const readContextFile = async (path: string, maximum: number) => {
   const file = await open(
     path,
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
@@ -31,7 +31,7 @@ export const readContextFile = async (path: string, maximum: number, setting: st
 
     if (!metadata.isFile()) throw new Error("Context must be a regular file.");
 
-    if (metadata.size > maximum) throw memoryLimit(basename(path), setting);
+    if (metadata.size > maximum) throw memoryLimit(basename(path), maximum);
     const bytes = Buffer.alloc(maximum + 1);
     let length = 0;
 
@@ -42,7 +42,7 @@ export const readContextFile = async (path: string, maximum: number, setting: st
       length += bytesRead;
     }
 
-    if (length > maximum) throw memoryLimit(basename(path), setting);
+    if (length > maximum) throw memoryLimit(basename(path), maximum);
     const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length));
 
     if (text.includes("\0")) throw new Error("Context must be UTF-8 text.");

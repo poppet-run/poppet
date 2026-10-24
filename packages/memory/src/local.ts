@@ -42,11 +42,11 @@ export const LocalMemoryLive = Layer.effect(
     const config = yield* AppConfig;
     yield* migrate(memorySchema);
 
-    const readContext = (name: string, maximum: number, setting: string) => {
+    const readContext = (name: string, maximum: number) => {
       const path = join(config.dataDirectory, name);
 
       return Effect.tryPromise({
-        try: () => readContextFile(path, maximum, setting),
+        try: () => readContextFile(path, maximum),
         catch: (cause) =>
           cause instanceof MemoryError
             ? cause
@@ -220,13 +220,9 @@ export const LocalMemoryLive = Layer.effect(
             onExcessProperty: "error",
           })(limits).pipe(Effect.mapError(invalid));
 
-          const soul = yield* readContext("soul.md", budget.soulBytes, "POPPET_SOUL_BYTES");
+          const soul = yield* readContext("soul.md", budget.soulBytes);
 
-          const profile = yield* readContext(
-            "profile.md",
-            budget.profileBytes,
-            "POPPET_PROFILE_BYTES",
-          );
+          const profile = yield* readContext("profile.md", budget.profileBytes);
 
           const facts = (yield* list).map(({ key, value }) => ({ key, value }));
 
@@ -234,7 +230,7 @@ export const LocalMemoryLive = Layer.effect(
             facts.length > 0 &&
             Buffer.byteLength(JSON.stringify(facts), "utf8") > budget.factsBytes
           )
-            return yield* Effect.fail(memoryLimit("saved facts", "POPPET_FACTS_BYTES"));
+            return yield* Effect.fail(memoryLimit("saved facts", budget.factsBytes));
 
           return { soul, profile, facts };
         }),

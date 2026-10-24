@@ -268,9 +268,7 @@ export const makeApiKeyConnection = (provider: ProviderOperations, environment: 
       verify: (modelId) =>
         Effect.gen(function* () {
           if (modelId === null)
-            return yield* Effect.fail(
-              invalidRequest(id, "Choose a model with config.json or POPPET_MODEL."),
-            );
+            return yield* Effect.fail(invalidRequest(id, "Choose a model in config.json."));
           const model = yield* provider.resolve(modelId);
 
           if (model.description.provider !== id || model.description.id !== modelId)

@@ -74,22 +74,17 @@ use ChatGPT or OpenRouter for general assistant chat and summaries.
 
 ## Choose a model and chat
 
-Replace the example value with a model ID returned by `provider models`:
+Save the provider and model in `~/.config/poppet/config.json`, using a model ID
+returned by `provider models`:
 
-Bash / POSIX sh:
-
-```sh
-export POPPET_PROVIDER=openai-chatgpt
-export POPPET_MODEL='replace-with-model-id'
-poppet chat new "Help me plan a small TypeScript project"
-poppet chat sessions
+```json
+{
+  "provider": "openai-chatgpt",
+  "model": "replace-with-model-id"
+}
 ```
 
-fish:
-
-```fish
-set -lx POPPET_PROVIDER openai-chatgpt
-set -lx POPPET_MODEL 'replace-with-model-id'
+```sh
 poppet chat new "Help me plan a small TypeScript project"
 poppet chat sessions
 ```
@@ -117,7 +112,7 @@ For a terminal prompt, run `poppet chat interactive`, or append a saved
 session ID to resume it. Enter one message per line and use `/exit` to leave.
 See the [interactive prompt guide](chat.md#interactive-prompt) for cancellation.
 
-These environment overrides apply within the current shell scope. New sessions use the
+New sessions use the
 configured provider and model; saved sessions retain their original selection.
 Chat consumes provider usage.
 See [command line](cli.md#providers-and-models) for provider commands and

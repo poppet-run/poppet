@@ -38,9 +38,7 @@ const fixture = async (
         write: () => Effect.die("Unexpected credential write"),
         remove: () => Effect.die("Unexpected credential deletion"),
       }),
-      ConfigProvider.layer(
-        ConfigProvider.fromUnknown({ POPPET_MCP_SERVERS: JSON.stringify([server]) }),
-      ),
+      ConfigProvider.layer(ConfigProvider.fromUnknown({ mcpServers: JSON.stringify([server]) })),
     ]),
   );
 
@@ -431,7 +429,7 @@ describe("MCP", () => {
         }),
         ConfigProvider.layer(
           ConfigProvider.fromUnknown({
-            POPPET_MCP_SERVERS: JSON.stringify([
+            mcpServers: JSON.stringify([
               {
                 ...state.server,
                 environment: {

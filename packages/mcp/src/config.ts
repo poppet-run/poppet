@@ -51,8 +51,8 @@ export const MCPServers = Schema.Array(MCPServer).check(
   }),
 );
 
-/** An environment override replaces the complete server list, including explicit disablement. */
-export const mcpServers = Config.String("POPPET_MCP_SERVERS").pipe(
+/** Server entries supplied by the host configuration file. */
+export const mcpServers = Config.String("mcpServers").pipe(
   Config.withDefault("[]"),
   Effect.flatMap((json) =>
     Schema.decodeUnknownEffect(Schema.fromJsonString(MCPServers), { onExcessProperty: "error" })(
@@ -64,13 +64,13 @@ export const mcpServers = Config.String("POPPET_MCP_SERVERS").pipe(
       new Config.ConfigError(
         new ConfigProvider.SourceError({
           message:
-            "Invalid POPPET_MCP_SERVERS. Use unique enabled server entries, named environment/credential references and scheduledTools contained in tools. See docs/mcp.md.",
+            "Invalid mcpServers in config.json. Use unique enabled server entries, named environment/credential references and scheduledTools contained in tools. See docs/mcp.md.",
         }),
       ),
   ),
 );
 
-/** File paths are relative to config.json; environment overrides retain process-relative paths. */
+/** Working-directory paths resolve beside config.json. */
 export const mcpFileValue = (servers: ReadonlyArray<MCPServer> | undefined, directory: string) =>
   servers === undefined
     ? undefined

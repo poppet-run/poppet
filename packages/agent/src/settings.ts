@@ -47,50 +47,19 @@ export const ChatSettingsLive = Layer.effect(
   Effect.suspend(() =>
     Effect.all(
       {
-        logReasoning: Config.Boolean("POPPET_LOG_REASONING").pipe(
+        logReasoning: Config.Boolean("logReasoning").pipe(
           Config.withDefault(defaultPolicy.logReasoning),
         ),
-        logTimings: Config.Boolean("POPPET_LOG_TIMINGS").pipe(
-          Config.withDefault(defaultPolicy.logTimings),
-        ),
-        contextBytes: Config.schema(bounded(1048576), "POPPET_CONTEXT_BYTES").pipe(
-          Config.withDefault(defaultPolicy.contextBytes),
-        ),
-        historyTurns: Config.schema(bounded(100), "POPPET_HISTORY_TURNS").pipe(
-          Config.withDefault(defaultPolicy.historyTurns),
-        ),
-        outputTokens: Config.schema(bounded(32768), "POPPET_OUTPUT_TOKENS").pipe(
+        logTimings: Config.Boolean("logTimings").pipe(Config.withDefault(defaultPolicy.logTimings)),
+        outputTokens: Config.schema(bounded(32768), "outputTokens").pipe(
           Config.withDefault(defaultPolicy.outputTokens),
         ),
-        modelTurns: Config.schema(bounded(32), "POPPET_MODEL_TURNS").pipe(
-          Config.withDefault(defaultPolicy.modelTurns),
-        ),
-        toolCalls: Config.schema(bounded(64), "POPPET_TOOL_CALLS").pipe(
-          Config.withDefault(defaultPolicy.toolCalls),
-        ),
-        toolBytes: Config.schema(
-          Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 })),
-          "POPPET_TOOL_BYTES",
-        ).pipe(Config.withDefault(defaultPolicy.toolBytes)),
-        soulBytes: Config.schema(bounded(65536), "POPPET_SOUL_BYTES").pipe(
-          Config.withDefault(defaultPolicy.soulBytes),
-        ),
-        profileBytes: Config.schema(bounded(65536), "POPPET_PROFILE_BYTES").pipe(
-          Config.withDefault(defaultPolicy.profileBytes),
-        ),
-        factsBytes: Config.schema(bounded(65536), "POPPET_FACTS_BYTES").pipe(
-          Config.withDefault(defaultPolicy.factsBytes),
-        ),
-        skillIndexBytes: Config.schema(
-          Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 65536 })),
-          "POPPET_SKILL_INDEX_BYTES",
-        ).pipe(Config.withDefault(defaultPolicy.skillIndexBytes)),
         runDeadlineSeconds: Config.schema(
           Schema.Int.check(Schema.isBetween({ minimum: 30, maximum: 3600 })),
-          "POPPET_RUN_DEADLINE_SECONDS",
+          "runDeadlineSeconds",
         ).pipe(Config.withDefault(defaultPolicy.runDeadlineSeconds)),
       },
       { concurrency: 1 },
-    ),
+    ).pipe(Effect.map((settings) => Object.assign({}, defaultPolicy, settings))),
   ),
 );

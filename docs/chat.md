@@ -8,22 +8,16 @@ requiring a human stop with instructions to request approval in Discord.
 
 ## Start and continue a session
 
-After signing in, choose a model ID returned by `provider models` and start a session:
+After signing in, choose a model ID returned by `provider models` and save it in `config.json`:
 
-Bash / POSIX sh:
-
-```sh
-export POPPET_PROVIDER=openai-chatgpt
-export POPPET_MODEL='replace-with-model-id'
-poppet chat new "Help me plan a small TypeScript project"
-poppet chat sessions
+```json
+{
+  "provider": "openai-chatgpt",
+  "model": "replace-with-model-id"
+}
 ```
 
-fish:
-
-```fish
-set -lx POPPET_PROVIDER openai-chatgpt
-set -lx POPPET_MODEL 'replace-with-model-id'
+```sh
 poppet chat new "Help me plan a small TypeScript project"
 poppet chat sessions
 ```
@@ -196,7 +190,7 @@ poppet chat show <session-id-from-search>
 Search returns JSON with `matches` and `truncated`. Each match includes session
 and message IDs, the saved session title, a timestamp in Unix milliseconds, role,
 and a bounded excerpt around matching text. Results are ranked by relevance, with
-a stable message-ID tie-breaker, and limited to ten matches within `POPPET_TOOL_BYTES`.
+a stable message-ID tie-breaker, and limited to ten matches within the 16 KiB tool-output limit.
 
 Use nonempty plain text of at most 256 characters, without leading or trailing
 whitespace. All whitespace-separated terms must match; case and punctuation
@@ -233,7 +227,7 @@ anchors outside the session or eligible history fail clearly.
 
 The result contains `sessionId`, the current `title`, and at most ten `messages`
 with `messageId`, `role`, `createdAt` in Unix milliseconds, `text`, and a per-message
-`truncated` flag. The whole JSON result fits `POPPET_TOOL_BYTES`. Text truncation
+`truncated` flag. The whole JSON result fits the 16 KiB tool-output limit. Text truncation
 preserves Unicode code points. `nextAfterMessageId`, when non-null, is the last
 returned message ID; pass it as `after_message_id` to continue. Even shortened
 messages advance the cursor. New completed exchanges append without duplicating
@@ -271,7 +265,7 @@ tool call and failure or bounded result.
 Destinations must resolve entirely to public addresses on standard HTTP(S) ports.
 Credentials in URLs are rejected. Each read has a 15-second overall deadline,
 at most three redirects, and 1 MiB limits for transferred and decoded bodies.
-Results fit `POPPET_TOOL_BYTES`; truncation keeps the source URL and flag.
+Results fit the 16 KiB tool-output limit; truncation keeps the source URL and flag.
 
 ## Search the web
 
@@ -285,7 +279,7 @@ poppet chat new "Search for recent Bun releases, read a source, and cite it"
 Search sends the model's query to the configured Brave or Kagi search provider and returns at most five sources
 with `title`, `url`, and `snippet`, plus a `truncated` flag. Queries must be trimmed,
 nonempty, and at most 512 UTF-8 bytes. Results keep backend order and fit
-`POPPET_TOOL_BYTES`; long text is shortened and URLs that cannot fit are omitted.
+the 16 KiB tool-output limit; long text is shortened and URLs that cannot fit are omitted.
 The tool is absent when disabled or missing a key. A configured key does not
 prove that the remote service accepts it.
 
@@ -305,24 +299,21 @@ providers. Search uses the existing model-turn, tool-call, and context budgets.
 ## Provider and model selection
 
 New sessions use the configured `provider` and required `model`, with
-`POPPET_PROVIDER` and `POPPET_MODEL` taking precedence over file values. Existing
+both read from `config.json`. Existing
 sessions keep their saved provider, model, and workload when configuration
 changes. Start a new session to change that selection. OpenCode Go requires a
 coding session:
 
-Bash / POSIX sh:
+Save the provider and model in `config.json`:
 
-```sh
-export POPPET_PROVIDER=opencode-go
-export POPPET_MODEL=glm-5.3
-poppet chat new --coding "Explain how to structure a TypeScript CLI"
+```json
+{
+  "provider": "opencode-go",
+  "model": "glm-5.3"
+}
 ```
 
-fish:
-
-```fish
-set -lx POPPET_PROVIDER opencode-go
-set -lx POPPET_MODEL glm-5.3
+```sh
 poppet chat new --coding "Explain how to structure a TypeScript CLI"
 ```
 
@@ -347,7 +338,7 @@ tool records. Ctrl-C closes the run's resources. Scheduled runs have no browser 
 ## Context and run limits
 
 Context retains recent complete exchanges, including tool pairs and continuation,
-up to the configured turn and byte budgets. When model capacity is known,
+up to 20 exchanges within a fixed 256 KiB context budget. When model capacity is known,
 Poppet also reserves room for output and request overhead. UTF-8 bytes are a
 conservative estimate rather than an exact tokenizer, counting three bytes per
 token of reported capacity; providers can still reject oversized context. A new
@@ -356,7 +347,8 @@ remaining budget is refused and reported to the model, which can ask for less. T
 only the request, not saved history. Answers are limited to 128 KiB of text and
 1 MiB including continuation. The runner has a five-minute absolute deadline by default
 (`chat.runDeadlineSeconds`);
-provider inference also retains its 60-second deadline.
+provider inference also retains its 60-second deadline. Each run permits at most
+eight model turns and sixteen tool calls, with 16 KiB per tool result.
 
 Tool-capable models receive conversation search,
 page reading, explicit memory, interactive task management, and web search when configured. Models without tool

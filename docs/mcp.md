@@ -51,10 +51,8 @@ Without `cwd`, the server uses Poppet's working directory. An executable name
 without a path uses the inherited `PATH`. Prefer an absolute executable path for
 a background worker.
 
-`POPPET_MCP_SERVERS` accepts a JSON array and replaces the entire file-configured
-list. Setting it to `[]` disables every server for that process. Environment paths
-resolve against that process's working directory. Worker settings change after
-restart, including allowlist changes.
+Set `mcpServers` to `[]` in `config.json` to disable every server. Worker settings
+change after restart, including allowlist changes.
 
 Children receive the SDK's small standard environment containing `HOME`, `PATH`,
 `USER`, `LOGNAME`, `SHELL`, and `TERM` on macOS, plus only your named references.
@@ -143,7 +141,7 @@ implementation. Resource links and media are marked omitted and never fetched.
 - Startup and discovery together have an 8-second deadline per server, with a
   5-second protocol-request deadline. Invocation has a 10-second deadline. Process
   cleanup can take another 5 seconds while stdin closure escalates to signals.
-- Serialized results fit `POPPET_TOOL_BYTES`. Text is shortened without splitting
+- Serialized results fit the 16 KiB tool-output limit. Text is shortened without splitting
   Unicode; oversized structured JSON is omitted as a whole. Results explicitly
   report `truncated`, `omittedContent`, `omittedStructuredContent`, and `redacted`.
 
