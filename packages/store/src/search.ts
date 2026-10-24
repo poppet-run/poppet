@@ -66,17 +66,19 @@ export const searchSessions = Effect.fn(function* (
 
   let truncated = rows.length > limit;
 
-  const matches = rows.slice(0, limit).map(({ textLength, ...row }) => {
-    const [before = "", hit = "", after = ""] = row.excerpt.split(marker);
-    // Keep the match and spend the remaining bytes evenly on either side of it.
-    const side = Math.max(0, Math.floor((excerptBytes - Buffer.byteLength(hit)) / 2));
-    const lead = [...clip([...before].toReversed().join(""), side)].toReversed().join("");
-    const excerpt = `${lead}${hit}${clip(after, side)}`;
+  const matches = rows
+    .slice(0, limit)
+    .map(({ sessionId, messageId, title, createdAt, role, excerpt: snippet, textLength }) => {
+      const [before = "", hit = "", after = ""] = snippet.split(marker);
+      // Keep the match and spend the remaining bytes evenly on either side of it.
+      const side = Math.max(0, Math.floor((excerptBytes - Buffer.byteLength(hit)) / 2));
+      const lead = [...clip([...before].toReversed().join(""), side)].toReversed().join("");
+      const excerpt = `${lead}${hit}${clip(after, side)}`;
 
-    truncated ||= excerpt.length < textLength;
+      truncated ||= excerpt.length < textLength;
 
-    return { ...row, excerpt };
-  });
+      return { sessionId, messageId, title, createdAt, role, excerpt };
+    });
 
   return { matches, truncated } satisfies SessionSearchResult;
 });
