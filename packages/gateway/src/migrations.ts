@@ -12,7 +12,7 @@ const baseline: ReadonlyArray<string> = [
     managed_name TEXT,
     pending_name TEXT,
     synced_title TEXT,
-    naming_disabled INTEGER NOT NULL DEFAULT 0 CHECK (naming_disabled IN (0, 1)),
+    naming_disabled INTEGER NOT NULL DEFAULT 0,
     creation_message_id TEXT,
     PRIMARY KEY (adapter, account, scope_id, conversation_id)
   ) STRICT`,
@@ -22,14 +22,13 @@ const baseline: ReadonlyArray<string> = [
     adapter TEXT NOT NULL,
     account TEXT NOT NULL,
     external_id TEXT NOT NULL,
-    payload TEXT NOT NULL CHECK (json_valid(payload)),
+    payload TEXT NOT NULL,
     conversation_id TEXT,
     session_id TEXT REFERENCES sessions (id),
     run_id TEXT NOT NULL UNIQUE,
     attempts INTEGER NOT NULL DEFAULT 0,
     retry_at INTEGER NOT NULL DEFAULT 0,
-    state TEXT NOT NULL
-      CHECK (state IN ('queued', 'executing', 'completed', 'failed', 'cancelled')),
+    state TEXT NOT NULL,
     occurrence_id TEXT,
     UNIQUE (adapter, account, external_id)
   ) STRICT`,
@@ -41,8 +40,8 @@ const baseline: ReadonlyArray<string> = [
 
   `CREATE TABLE gateway_attachments (
     inbox_id INTEGER PRIMARY KEY REFERENCES gateway_inbox (id) ON DELETE CASCADE,
-    state TEXT NOT NULL CHECK (state IN ('processing', 'accepted', 'failed')),
-    result TEXT CHECK (result IS NULL OR json_valid(result)),
+    state TEXT NOT NULL,
+    result TEXT,
     failure TEXT,
     CHECK (CASE state
       WHEN 'accepted' THEN result IS NOT NULL AND failure IS NULL
@@ -55,7 +54,7 @@ const baseline: ReadonlyArray<string> = [
     inbox_id INTEGER NOT NULL REFERENCES gateway_inbox (id),
     position INTEGER NOT NULL,
     text TEXT NOT NULL,
-    state TEXT NOT NULL CHECK (state IN ('pending', 'sending', 'sent', 'failed', 'uncertain')),
+    state TEXT NOT NULL,
     message_id TEXT,
     attempts INTEGER NOT NULL DEFAULT 0,
     retry_at INTEGER NOT NULL DEFAULT 0,
