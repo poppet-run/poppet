@@ -9,11 +9,10 @@ import {
   type CommandApproval,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
-import { DeliveryDestination, Store, StoreError, type Run } from "@poppet/store";
+import { DeliveryDestination, Store, StoreError } from "@poppet/store";
 import {
   Cause,
   Clock,
-  type Duration,
   Console,
   Context,
   Deferred,
@@ -29,61 +28,18 @@ import {
 } from "effect";
 
 import { ChannelError, IncomingMessage, MessagingChannel } from "#src/channel";
+import {
+  authorized as allowed,
+  finish as finishEntry,
+  loop,
+  mark as markMessage,
+  wake,
+  type GatewayContext,
+} from "#src/context";
 import { conversationNaming } from "#src/conversation-naming";
+import { answer, chunks } from "#src/replies";
 import { GatewayRepository, gatewayStorage, type Inbox } from "#src/repository";
 import { messagingRequest, isCommandApproval } from "#src/request";
-
-// Prefer paragraph, line, then word breaks in the second half of a chunk, so replies stay
-// readable without producing tiny fragments.
-const breakAt = (window: string) => {
-  for (const separator of ["\n\n", "\n", " "]) {
-    const index = window.lastIndexOf(separator);
-
-    if (index >= window.length / 2) return index + separator.length;
-  }
-
-  return window.length;
-};
-
-/** Splits text into chunks of at most limit UTF-16 units without splitting a code point. */
-export const chunks = (text: string, limit: number) => {
-  const result: string[] = [];
-  let rest = text;
-
-  while (rest.length > limit) {
-    let end = breakAt(rest.slice(0, limit));
-
-    // Keep a surrogate pair together when the chunk ends mid-character.
-    if (end === limit && /[\uD800-\uDBFF]/.test(rest[end - 1] ?? "")) end--;
-    result.push(rest.slice(0, end));
-    rest = rest.slice(end);
-  }
-
-  if (rest) result.push(rest);
-
-  return result;
-};
-
-const wake = (queue: Queue.Queue<void>) => Queue.offer(queue, undefined).pipe(Effect.asVoid);
-
-// Repeat immediately after useful work; otherwise wait for a signal or the fallback timer.
-const loop = <E>(
-  step: Effect.Effect<boolean | void, E>,
-  signal: Queue.Queue<void>,
-  fallback: Duration.Input,
-) =>
-  step.pipe(
-    Effect.flatMap((worked) =>
-      worked === true ? Effect.void : Effect.raceFirst(Queue.take(signal), Effect.sleep(fallback)),
-    ),
-    Effect.forever,
-  );
-
-const answer = (run: Run) =>
-  run.status === "completed" && run.result !== null
-    ? run.result.output.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") ||
-      "The request completed without a text answer."
-    : "The request failed or was interrupted. Inspect its saved run before sending a new request.";
 
 const gateway = Effect.gen(function* () {
   const channel = yield* MessagingChannel;
@@ -103,8 +59,15 @@ const gateway = Effect.gen(function* () {
   const namingWake = yield* Queue.make<void>({ capacity: 1, strategy: "dropping" });
   let rejected = 0;
 
-  const authorized = (message: IncomingMessage) =>
-    message.senderId === channel.policy.ownerId && message.scopeId === channel.policy.scopeId;
+  const context: GatewayContext = {
+    channel,
+    repo,
+    store,
+    clock,
+    wakes: { inbox: inboxWake, delivery: deliveryWake, naming: namingWake },
+  };
+
+  const authorized = (message: IncomingMessage) => allowed(channel.policy, message);
 
   const { nameNext, externalNameChange } = yield* conversationNaming(authorized);
 
@@ -238,13 +201,10 @@ const gateway = Effect.gen(function* () {
   });
 
   const finish = (id: number, text: string, state = "completed") =>
-    gatewayStorage(repo.complete(id, chunks(text, channel.textLimit), state)).pipe(
-      Effect.andThen(wake(deliveryWake)),
-    );
+    finishEntry(context, id, text, state);
 
-  // shortcut: Reactions are best effort; add durable reconciliation if stale markers after crashes matter.
   const mark = (message: IncomingMessage, state: "working" | "completed" | "stopped") =>
-    channel.mark(message, state).pipe(Effect.catchTag("ChannelError", () => Effect.void));
+    markMessage(context, message, state);
 
   /** Reconciles saved runs with the inbox and leaves interrupted sends uncertain. */
   const recover = Effect.gen(function* () {

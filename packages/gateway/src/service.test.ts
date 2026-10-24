@@ -34,8 +34,9 @@ import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
 import { ChannelError, MessagingChannel, type IncomingMessage } from "#src/channel";
+import { chunks } from "#src/replies";
 import { GatewayRepository, GatewayRepositoryLive, TaskDeliveriesLive } from "#src/repository";
-import { Gateway, GatewayLive, chunks } from "#src/service";
+import { Gateway, GatewayLive } from "#src/service";
 
 const quietConsole: Console.Console = { ...console, log: () => undefined, error: () => undefined };
 
