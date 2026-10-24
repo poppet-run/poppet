@@ -1,11 +1,12 @@
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
-import { decodeRow, decodeRows, reportAs } from "@poppet/store";
+import { decodeRow, decodeRows, migrate, reportAs } from "@poppet/store";
 import { Clock, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { memoryLimit, readContextFile } from "#src/context-file";
+import { memorySchema } from "#src/migrations";
 import { MemoryFact, MemoryRevision, SnapshotLimits, type MemoryOrigin } from "#src/schema";
 import { Memory, MemoryError } from "#src/service";
 
@@ -39,6 +40,7 @@ export const LocalMemoryLive = Layer.effect(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const config = yield* AppConfig;
+    yield* migrate(memorySchema);
 
     const readContext = (name: string, maximum: number, setting: string) => {
       const path = join(config.dataDirectory, name);

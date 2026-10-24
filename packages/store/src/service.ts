@@ -19,7 +19,7 @@ import {
   storageFailure,
   storeFailure,
 } from "#src/errors";
-import { schemaVersion } from "#src/migrations";
+import { storeSchema } from "#src/migrations";
 import { readSession } from "#src/recall";
 import {
   Id,
@@ -646,7 +646,7 @@ export const StoreLive = Layer.effect(
         ),
         Effect.map((counts) => ({
           path,
-          schemaVersion,
+          schemaVersion: storeSchema.version,
           sessions: counts?.sessions ?? 0,
           messages: counts?.messages ?? 0,
           runs: counts?.runs ?? 0,

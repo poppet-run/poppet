@@ -20,10 +20,10 @@
     "@poppet/credentials": "workspace:*",
     "@poppet/provider": "workspace:*",
     "@poppet/store": "workspace:*",
+    "@poppet/tasks": "workspace:*",
     "effect": "4.0.4"
   },
   "devDependencies": {
-    "@poppet/memory": "workspace:*",
-    "@poppet/tasks": "workspace:*"
+    "@poppet/memory": "workspace:*"
   }
 }

@@ -39,9 +39,11 @@ for synchronization, and whether external edits or failures disabled naming.
 
 `@poppet/store` provides a scoped Effect `Store` service backed by
 [Bun SQLite](https://bun.sh/docs/runtime/sqlite) through the Effect SQL client.
-One baseline migration creates the whole schema, and table checks define which
-record states are valid. Effect's migrator records applied migration IDs and runs
-all pending migrations in one transaction; a failure rolls back the batch.
+Each package migrates its own tables: the store creates conversations, and memory,
+tasks, and gateway create theirs when their layers start. Table checks define which
+record states are valid. Effect's migrator records each package's applied
+migration IDs in its own ledger table and runs that package's pending migrations
+in one transaction; a failure rolls back the batch.
 The store refuses databases from newer versions, from other applications, and
 from development builds before the baseline. Those need a fresh data directory;
 databases are never reset automatically.

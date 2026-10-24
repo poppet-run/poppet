@@ -23,6 +23,7 @@ import { DeliveryDestination, Store, StoreLive } from "@poppet/store";
 import {
   ChatTasksLive,
   TaskRepository,
+  TaskDeliveries,
   TaskRepositoryLive,
   TaskDestinations,
   executeTaskCommand,
@@ -34,7 +35,7 @@ import { TestClock } from "effect/testing";
 
 import { AttachmentProcessorLive } from "#src/attachments";
 import { ChannelError, MessagingChannel, type IncomingMessage } from "#src/channel";
-import { GatewayRepository, GatewayRepositoryLive } from "#src/repository";
+import { GatewayRepository, GatewayRepositoryLive, TaskDeliveriesLive } from "#src/repository";
 import { Gateway, GatewayLive, chunks } from "#src/service";
 
 const quietConsole: Console.Console = { ...console, log: () => undefined, error: () => undefined };
@@ -165,6 +166,7 @@ const fixture = async (
       Layer.mergeAll(
         channel,
         GatewayRepositoryLive.pipe(Layer.provideMerge(store)),
+        TaskDeliveriesLive.pipe(Layer.provide(store)),
         tasks,
         skills,
         agent,
@@ -182,7 +184,14 @@ const fixture = async (
       program: Effect.Effect<
         A,
         E,
-        Gateway | Store | SqlClient.SqlClient | GatewayRepository | TaskRepository | Agent | Skills
+        | Gateway
+        | Store
+        | SqlClient.SqlClient
+        | GatewayRepository
+        | TaskRepository
+        | TaskDeliveries
+        | Agent
+        | Skills
       >,
     ) =>
       Effect.runPromise(
@@ -438,9 +447,9 @@ describe.concurrent("Gateway", () => {
             const tasks = yield* TaskRepository;
             expect((yield* tasks.occurrence(id)).status).toBe("failed");
             expect((yield* tasks.occurrence(id)).reason).toContain("restart-service");
-            expect((yield* tasks.deliveries(id)).map((part) => part.state)).toEqual(
-              queuedNotice ? ["failed"] : [],
-            );
+            expect(
+              (yield* (yield* TaskDeliveries).forOccurrence(id)).map((part) => part.state),
+            ).toEqual(queuedNotice ? ["failed"] : []);
             expect(yield* tasks.list()).toHaveLength(1);
             allow = true;
             yield* tasks.retry(id, 0);
@@ -448,10 +457,10 @@ describe.concurrent("Gateway", () => {
             yield* executeOccurrence(tasks, claimed.occurrence, claimed.task);
             expect((yield* tasks.occurrence(id)).status).toBe("completed");
             yield* (yield* Gateway).deliverNext;
-            expect((yield* tasks.deliveries(id)).map((part) => part.state)).toEqual(
-              queuedNotice ? ["failed", "sent"] : ["sent"],
-            );
-            expect((yield* tasks.deliveries(id)).at(-1)!.runId).toBe(
+            expect(
+              (yield* (yield* TaskDeliveries).forOccurrence(id)).map((part) => part.state),
+            ).toEqual(queuedNotice ? ["failed", "sent"] : ["sent"]);
+            expect((yield* (yield* TaskDeliveries).forOccurrence(id)).at(-1)!.runId).toBe(
               (yield* tasks.occurrence(id)).runId!,
             );
           }),
@@ -1042,7 +1051,7 @@ describe.concurrent("Gateway", () => {
           yield* gateway.recover;
           expect(yield* gateway.deliverNext).toBe(true);
           expect(yield* gateway.deliverNext).toBe(false);
-          expect(yield* (yield* TaskRepository).deliveries(occurrence.id)).toMatchObject([
+          expect(yield* (yield* TaskDeliveries).forOccurrence(occurrence.id)).toMatchObject([
             { state: "sent", attempts: 0 },
           ]);
           expect((yield* (yield* TaskRepository).occurrence(occurrence.id)).status).toBe(
@@ -1096,7 +1105,7 @@ describe.concurrent("Gateway", () => {
             yield* gateway.recover;
             yield* TestClock.adjust("1 second");
             expect(yield* gateway.deliverNext).toBe(reason === "unavailable");
-            expect((yield* (yield* TaskRepository).deliveries(occurrence.id))[0]?.state).toBe(
+            expect((yield* (yield* TaskDeliveries).forOccurrence(occurrence.id))[0]?.state).toBe(
               ({ unavailable: "sent", permission: "failed", uncertain: "uncertain" } as const)[
                 reason
               ],
@@ -1140,7 +1149,7 @@ describe.concurrent("Gateway", () => {
           yield* Deferred.await(sending);
           yield* Fiber.interrupt(fiber);
           expect(
-            (yield* (yield* TaskRepository).deliveries(item.id)).map((part) => part.state),
+            (yield* (yield* TaskDeliveries).forOccurrence(item.id)).map((part) => part.state),
           ).toEqual(["sending", "pending"]);
 
           return item;
@@ -1153,7 +1162,7 @@ describe.concurrent("Gateway", () => {
           yield* gateway.recover;
           expect(yield* gateway.deliverNext).toBe(false);
           expect(
-            (yield* (yield* TaskRepository).deliveries(occurrence.id)).map((part) => part.state),
+            (yield* (yield* TaskDeliveries).forOccurrence(occurrence.id)).map((part) => part.state),
           ).toEqual(["uncertain", "pending"]);
           expect((yield* (yield* TaskRepository).occurrence(occurrence.id)).status).toBe(
             "completed",
@@ -1188,7 +1197,7 @@ describe.concurrent("Gateway", () => {
 
             const item = yield* scheduled(destination);
             expect(yield* gateway.deliverNext).toBe(false);
-            expect(yield* (yield* TaskRepository).deliveries(item.id)).toMatchObject([
+            expect(yield* (yield* TaskDeliveries).forOccurrence(item.id)).toMatchObject([
               { state: "failed" },
             ]);
           }),
@@ -1220,10 +1229,10 @@ describe.concurrent("Gateway", () => {
           const local = yield* scheduled(null);
           allowed = false;
           yield* gateway.deliverNext;
-          expect(yield* (yield* TaskRepository).deliveries(delivered.id)).toMatchObject([
+          expect(yield* (yield* TaskDeliveries).forOccurrence(delivered.id)).toMatchObject([
             { state: "failed" },
           ]);
-          expect(yield* (yield* TaskRepository).deliveries(local.id)).toEqual([]);
+          expect(yield* (yield* TaskDeliveries).forOccurrence(local.id)).toEqual([]);
           expect(yield* gateway.deliverNext).toBe(false);
         }),
       );

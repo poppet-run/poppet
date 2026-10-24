@@ -59,14 +59,17 @@ concurrent tests per worker.
 
 ## Store migrations
 
-The whole schema lives in `packages/store/src/migrations/0001_baseline.ts`, one
-SQL statement per array entry, grouped by the package that owns each table.
-`packages/store/src/migrations.ts` registers migrations for the
-[Effect SQL migrator](https://effect.website), keyed `<id>_<name>`.
+Each package owns its tables. The store defines conversations in
+`packages/store/src/migrations/0001_baseline.ts`; memory, tasks, and gateway
+define theirs in their own `src/migrations.ts`. Each exports a `PackageSchema`
+with its own ledger table, version, and migrations keyed `<id>_<name>`, one SQL
+statement per array entry. Each package's layer calls `migrate` from
+`@poppet/store` when it starts, after the store has migrated its own tables.
+The gateway migrates the task schema first because it reads task occurrences.
 
-To change the schema, add a new file with the next ID, register it, and raise
-`schemaVersion`. Never edit an applied migration: the migrator records only IDs,
-so it cannot detect a changed one. All pending migrations run in one transaction.
+To change a package's schema, append the next migration and raise its `version`.
+Never edit an applied migration: the migrator records only IDs, so it cannot
+detect a changed one. Each package's pending migrations run in one transaction.
 
 Development databases created before the baseline are refused and need a fresh
 data directory. See [storage](storage.md#schema-and-saved-records).

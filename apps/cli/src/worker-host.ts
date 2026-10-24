@@ -5,6 +5,7 @@ import {
   executeLocalTaskCommand,
   makeTaskWorker,
   TaskRepository,
+  TaskDeliveries,
   TaskDestinations,
   TaskError,
   taskResponse,
@@ -26,6 +27,7 @@ export const runWorker = (mode: WorkerMode) =>
       const tasks = mode === "gateway" ? null : yield* makeTaskWorker;
       const messaging = Option.getOrNull(yield* Effect.serviceOption(MessagingWorker));
       const services = yield* Effect.context<Store | TaskRepository | Skills>();
+      const deliveries = Option.getOrNull(yield* Effect.serviceOption(TaskDeliveries));
       const startedAt = yield* Clock.currentTimeMillis;
 
       const destinations: TaskDestinations["Service"] = {
@@ -61,7 +63,12 @@ export const runWorker = (mode: WorkerMode) =>
               startedAt,
               services: { tasks: tasks !== null, gateway: messaging !== null },
             };
-          }).pipe(Effect.provideService(TaskDestinations, destinations)),
+          }).pipe(
+            Effect.provideService(TaskDestinations, destinations),
+            deliveries === null
+              ? (effect) => effect
+              : Effect.provideService(TaskDeliveries, deliveries),
+          ),
         );
       });
       yield* Console.log(

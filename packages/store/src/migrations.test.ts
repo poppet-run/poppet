@@ -10,7 +10,7 @@ import { Effect, Exit, Layer } from "effect";
 import { Migrator, SqlClient } from "effect/sql";
 
 import { StoreDatabase, StoreDatabaseLive } from "#src/database";
-import { migrations } from "#src/migrations";
+import { migrate, storeSchema } from "#src/migrations";
 
 const fixture = async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-migrations-"));
@@ -99,7 +99,7 @@ describe("StoreDatabaseLive migrations", () => {
           ),
         );
 
-      await run(migrations);
+      await run(storeSchema.loader);
 
       const pending = Migrator.fromRecord({
         "1_baseline": Effect.void,
@@ -121,6 +121,48 @@ describe("StoreDatabaseLive migrations", () => {
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions_by_provider'").get(),
       ).toBeNull();
+    } finally {
+      await store.close();
+    }
+  });
+
+  test("when a package migrates, records its own ledger and refuses a newer one", async () => {
+    const store = await fixture();
+
+    try {
+      await mkdir(join(store.directory, "store"), { recursive: true });
+
+      const schema = {
+        table: "notes_migrations",
+        version: 1,
+        loader: Migrator.fromRecord({
+          "1_notes": Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            yield* sql`CREATE TABLE notes (id INTEGER PRIMARY KEY)`;
+          }),
+        }),
+      };
+
+      const run = () =>
+        Effect.runPromise(
+          migrate(schema).pipe(
+            Effect.provide(SqliteClient.layer({ filename: store.path })),
+            Effect.exit,
+          ),
+        );
+
+      expect(Exit.isSuccess(await run())).toBe(true);
+      expect(Exit.isSuccess(await run())).toBe(true);
+
+      using database = new Database(store.path);
+      expect(database.query("SELECT migration_id FROM notes_migrations").all()).toEqual([
+        { migration_id: 1 },
+      ]);
+      database.run("INSERT INTO notes_migrations (migration_id, name) VALUES (2, 'future')");
+      database.close();
+
+      const refused = await run();
+      expect(Exit.isFailure(refused) && JSON.stringify(refused.cause)).toContain("newer version");
     } finally {
       await store.close();
     }

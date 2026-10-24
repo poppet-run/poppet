@@ -17,6 +17,25 @@ export class TaskDestinations extends Context.Service<
 >()("poppet/TaskDestinations") {}
 
 /** Runs synchronous task parsing or validation, reporting unexpected failures generically. */
+/** One reply chunk sent for an occurrence; delivery is owned by the messaging gateway. */
+export interface TaskDelivery {
+  readonly runId: string;
+  readonly position: number;
+  readonly state: "pending" | "sending" | "sent" | "failed" | "uncertain";
+  readonly messageId: string | null;
+  readonly attempts: number;
+}
+
+/** Host-supplied delivery history, so tasks never read messaging tables directly. */
+export class TaskDeliveries extends Context.Service<
+  TaskDeliveries,
+  {
+    readonly forOccurrence: (
+      occurrenceId: string,
+    ) => Effect.Effect<ReadonlyArray<TaskDelivery>, TaskError>;
+  }
+>()("poppet/TaskDeliveries") {}
+
 export const taskOperation = <A>(operation: () => A): Effect.Effect<A, TaskError> =>
   Effect.try({
     try: operation,
@@ -43,13 +62,14 @@ export const executeTaskCommand = (
     }
 
     if (command.action === "show") {
+      const deliveries = Option.getOrNull(yield* Effect.serviceOption(TaskDeliveries));
       const job = yield* repo.task(command.id);
       const occurrences = yield* repo.occurrences(job.id);
 
       const results = yield* Effect.forEach(occurrences, (item) =>
         Effect.gen(function* () {
           const run = item.runId === null ? null : yield* store.run(item.runId);
-          const delivery = yield* repo.deliveries(item.id);
+          const delivery = deliveries === null ? [] : yield* deliveries.forOccurrence(item.id);
 
           return {
             ...item,
