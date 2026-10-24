@@ -100,8 +100,7 @@ export const ChatTasksLive = Layer.effect(
               }),
             );
 
-          if (saved.status === "completed")
-            return { name: "manage_tasks" as const, execute: Effect.succeed(saved.output!) };
+          if (saved.status === "completed") return { execute: Effect.succeed(saved.output!) };
 
           if (run.status !== "running")
             return yield* Effect.fail(
@@ -445,7 +444,7 @@ export const ChatTasksLive = Layer.effect(
             .commitToolCall(context.runId, context.callId, commit)
             .pipe(repo.commandLock.withPermit);
 
-          return { name: "manage_tasks" as const, execute };
+          return { execute };
         }),
     } satisfies ChatTasks["Service"];
   }),

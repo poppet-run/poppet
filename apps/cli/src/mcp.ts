@@ -43,10 +43,7 @@ export const ExternalAgentToolsLive = Layer.effect(
               Effect.gen(function* () {
                 const call = yield* tool.prepare(argumentsJSON);
 
-                return {
-                  name: "external" as const,
-                  execute: Effect.mapError(call.execute, agentFailure),
-                };
+                return { execute: Effect.mapError(call.execute, agentFailure) };
               }).pipe(Effect.mapError(agentFailure)),
           }));
 

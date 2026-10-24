@@ -1,6 +1,9 @@
-import { toolParameters, type Output, type Tool } from "@poppet/provider";
+import { toolParameters, type Tool } from "@poppet/provider";
+import { WebSearch } from "@poppet/web-search";
 import { Effect, Schema } from "effect";
 
+import { builtinFailures, type AgentTool, type ToolCall } from "#src/agent-tool";
+import { AgentError } from "#src/errors";
 import { BoundedText, toolArguments } from "#src/tool-schema";
 
 export { WebSearch } from "@poppet/web-search";
@@ -9,7 +12,7 @@ const SearchArguments = Schema.Struct({
   query: BoundedText(512),
 });
 
-export const webSearchTool: Tool = {
+export const webSearchDefinition: Tool = {
   name: "search_web",
   namespace: "poppet_web",
   description:
@@ -17,13 +20,44 @@ export const webSearchTool: Tool = {
   parameters: toolParameters(SearchArguments),
 };
 
-export interface WebSearchCall {
-  readonly name: "search_web";
-  readonly query: string;
-}
-
-export const decodeWebSearchCall = (call: Extract<Output, { type: "tool-call" }>) =>
+export const decodeWebSearchCall = (call: ToolCall) =>
   toolArguments(
-    webSearchTool,
+    webSearchDefinition,
     SearchArguments,
-  )(call.arguments).pipe(Effect.map(({ query }): WebSearchCall => ({ name: "search_web", query })));
+  )(call.arguments).pipe(Effect.map(({ query }) => query));
+
+/** Searches the configured provider; returned URLs become readable by fetch_page. */
+export const webSearchTool = Effect.gen(function* () {
+  const { search } = yield* WebSearch;
+
+  if (search === null) return null;
+
+  return {
+    definition: webSearchDefinition,
+    prepare: (call) =>
+      decodeWebSearchCall(call).pipe(
+        Effect.map((query) => {
+          let urls: ReadonlyArray<string> = [];
+
+          return {
+            execute: search(query).pipe(
+              Effect.mapError(
+                (error) => new AgentError({ reason: error.reason, message: error.message }),
+              ),
+              Effect.map((value) => {
+                urls = value.results.map((item) => item.url);
+
+                return JSON.stringify(value);
+              }),
+            ),
+            grantedURLs: () => urls,
+          };
+        }),
+      ),
+    untrustedResult: true,
+    withdrawnWhenUntrusted: false,
+    contextOnly: true,
+    mutating: false,
+    failures: builtinFailures,
+  } satisfies AgentTool;
+});

@@ -1,14 +1,15 @@
-import { toolParameters, type Output, type Tool } from "@poppet/provider";
+import { toolParameters, type Tool } from "@poppet/provider";
 import { SkillName } from "@poppet/store";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 
+import { builtinFailures, type AgentTool, type ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
-import { type Skills } from "#src/skills";
+import { Skills } from "#src/skills";
 import { toolArguments } from "#src/tool-schema";
 
 const ViewArguments = Schema.Struct({ name: SkillName });
 
-export const skillViewTool: Tool = {
+export const skillViewDefinition: Tool = {
   name: "view_skill",
   namespace: "poppet_skills",
   description:
@@ -16,29 +17,11 @@ export const skillViewTool: Tool = {
   parameters: toolParameters(ViewArguments),
 };
 
-export interface SkillViewCall {
-  readonly name: "view_skill";
-  readonly skill: string;
-}
-
-export const decodeSkillViewCall = (
-  call: Extract<Output, { type: "tool-call" }>,
-): Effect.Effect<SkillViewCall, AgentError> => {
-  if (call.name !== skillViewTool.name || call.namespace !== skillViewTool.namespace)
-    return Effect.fail(
-      new AgentError({
-        reason: "tool-permission",
-        message: "The requested tool is not allowed in this run.",
-      }),
-    );
-
-  return toolArguments(
-    skillViewTool,
+export const decodeSkillViewCall = (call: ToolCall): Effect.Effect<string, AgentError> =>
+  toolArguments(
+    skillViewDefinition,
     ViewArguments,
-  )(call.arguments).pipe(
-    Effect.map((args): SkillViewCall => ({ name: "view_skill", skill: args.name })),
-  );
-};
+  )(call.arguments).pipe(Effect.map((args) => args.name));
 
 const missingSkill = (name: string) =>
   new AgentError({
@@ -46,8 +29,28 @@ const missingSkill = (name: string) =>
     message: `The skill ${JSON.stringify(name)} is missing or invalid.`,
   });
 
-export const executeSkillView = (skills: Skills["Service"], call: SkillViewCall) =>
-  skills.load(call.skill).pipe(
+export const executeSkillView = (skills: Skills["Service"], name: string) =>
+  skills.load(name).pipe(
     Effect.map((skill) => JSON.stringify(skill)),
-    Effect.mapError(() => missingSkill(call.skill)),
+    Effect.mapError(() => missingSkill(name)),
   );
+
+/** Loads a skill named in the run's index; absent when the host has no skills. */
+export const skillViewTool = Effect.gen(function* () {
+  const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
+
+  if (skills === null) return null;
+
+  return {
+    definition: skillViewDefinition,
+    prepare: (call) =>
+      decodeSkillViewCall(call).pipe(
+        Effect.map((name) => ({ execute: executeSkillView(skills, name) })),
+      ),
+    untrustedResult: false,
+    withdrawnWhenUntrusted: false,
+    contextOnly: true,
+    mutating: false,
+    failures: builtinFailures,
+  } satisfies AgentTool;
+});

@@ -1,8 +1,10 @@
-import { toolParameters, type Output, type Tool } from "@poppet/provider";
-import { SessionReadQuery, SessionSearchQuery } from "@poppet/store";
+import { toolParameters, type Tool } from "@poppet/provider";
+import { SessionReadQuery, SessionSearchQuery, Store } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
+import { builtinFailures, type AgentTool, type ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
+import { ChatSettings } from "#src/settings";
 import { toolArguments } from "#src/tool-schema";
 
 const SearchArguments = Schema.Struct({ query: SessionSearchQuery });
@@ -13,7 +15,7 @@ const ReadArguments = Schema.Struct({
   after_message_id: SessionReadQuery.fields.afterMessageId,
 });
 
-export const sessionReadTool: Tool = {
+export const sessionReadDefinition: Tool = {
   name: "read_session",
   namespace: "poppet_history",
   description:
@@ -21,24 +23,11 @@ export const sessionReadTool: Tool = {
   parameters: toolParameters(ReadArguments),
 };
 
-export interface SessionReadCall {
-  readonly name: "read_session";
-  readonly query: SessionReadQuery;
-}
-
 export const decodeSessionReadCall = (
-  call: Extract<Output, { type: "tool-call" }>,
-): Effect.Effect<SessionReadCall, AgentError> => {
-  if (call.name !== sessionReadTool.name || call.namespace !== sessionReadTool.namespace)
-    return Effect.fail(
-      new AgentError({
-        reason: "tool-permission",
-        message: "The requested tool is not allowed in this run.",
-      }),
-    );
-
-  return toolArguments(
-    sessionReadTool,
+  call: ToolCall,
+): Effect.Effect<SessionReadQuery, AgentError> =>
+  toolArguments(
+    sessionReadDefinition,
     ReadArguments,
   )(call.arguments).pipe(
     Effect.flatMap((args) =>
@@ -56,11 +45,9 @@ export const decodeSessionReadCall = (
         ),
       ),
     ),
-    Effect.map((query): SessionReadCall => ({ name: "read_session", query })),
   );
-};
 
-export const sessionSearchTool: Tool = {
+export const sessionSearchDefinition: Tool = {
   name: "search_sessions",
   namespace: "poppet_history",
   description:
@@ -68,26 +55,54 @@ export const sessionSearchTool: Tool = {
   parameters: toolParameters(SearchArguments),
 };
 
-export interface SessionSearchCall {
-  readonly name: "search_sessions";
-  readonly query: string;
-}
-
-export const decodeSessionSearchCall = (
-  call: Extract<Output, { type: "tool-call" }>,
-): Effect.Effect<SessionSearchCall, AgentError> => {
-  if (call.name !== sessionSearchTool.name || call.namespace !== sessionSearchTool.namespace)
-    return Effect.fail(
-      new AgentError({
-        reason: "tool-permission",
-        message: "The requested tool is not allowed in this run.",
-      }),
-    );
-
-  return toolArguments(
-    sessionSearchTool,
+export const decodeSessionSearchCall = (call: ToolCall): Effect.Effect<string, AgentError> =>
+  toolArguments(
+    sessionSearchDefinition,
     SearchArguments,
-  )(call.arguments).pipe(
-    Effect.map(({ query }): SessionSearchCall => ({ name: "search_sessions", query })),
-  );
-};
+  )(call.arguments).pipe(Effect.map(({ query }) => query));
+
+/** Searches the owner's completed conversations. */
+export const sessionSearchTool = Effect.gen(function* () {
+  const store = yield* Store;
+  const { toolBytes } = yield* ChatSettings;
+
+  return {
+    definition: sessionSearchDefinition,
+    prepare: (call) =>
+      decodeSessionSearchCall(call).pipe(
+        Effect.map((query) => ({
+          execute: store
+            .searchSessions(query, toolBytes)
+            .pipe(Effect.map((value) => JSON.stringify(value))),
+        })),
+      ),
+    untrustedResult: false,
+    withdrawnWhenUntrusted: false,
+    contextOnly: true,
+    mutating: false,
+    failures: builtinFailures,
+  } satisfies AgentTool;
+});
+
+/** Reads one completed conversation around or after a message. */
+export const sessionReadTool = Effect.gen(function* () {
+  const store = yield* Store;
+  const { toolBytes } = yield* ChatSettings;
+
+  return {
+    definition: sessionReadDefinition,
+    prepare: (call) =>
+      decodeSessionReadCall(call).pipe(
+        Effect.map((query) => ({
+          execute: store
+            .readSession(query, toolBytes)
+            .pipe(Effect.map((value) => JSON.stringify(value))),
+        })),
+      ),
+    untrustedResult: false,
+    withdrawnWhenUntrusted: false,
+    contextOnly: true,
+    mutating: false,
+    failures: builtinFailures,
+  } satisfies AgentTool;
+});

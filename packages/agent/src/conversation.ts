@@ -4,9 +4,7 @@ import type {
   Message,
   ModelEvent,
   ModelOperations,
-  Output,
   ProviderError,
-  Tool,
 } from "@poppet/provider";
 import {
   Store,
@@ -15,9 +13,10 @@ import {
   type StoredMessage,
   type DeliveryDestination,
 } from "@poppet/store";
-import { Cause, Clock, Effect, Exit, Match, Option, Result, Stream } from "effect";
+import { Cause, Clock, Effect, Exit, Option, Result, Stream } from "effect";
 
-import { Bash, bashTool, prepareBash, type ApproveCommand } from "#src/bash";
+import { type AgentTool, type ToolCall, type ToolContext } from "#src/agent-tool";
+import { bashTool, type ApproveCommand } from "#src/bash";
 import {
   assembleContext,
   byteSize,
@@ -26,44 +25,43 @@ import {
   outputBudget,
 } from "#src/context";
 import { AgentError } from "#src/errors";
-import { ExternalTools } from "#src/external-tools";
-import { memoryTool, decodeMemoryCall } from "#src/memory-tools";
-import { decodeFetchPageCall, fetchPageTool, suppliedPageURLs } from "#src/pages";
+import { ExternalTools, externalAgentTool } from "#src/external-tools";
+import { memoryTool } from "#src/memory-tools";
+import { fetchPageTool, suppliedPageURLs } from "#src/pages";
 import { maxTextBytes, streamReply } from "#src/reply";
-import {
-  decodeSessionReadCall,
-  decodeSessionSearchCall,
-  sessionReadTool,
-  sessionSearchTool,
-} from "#src/search";
+import { sessionReadTool, sessionSearchTool } from "#src/search";
 import { ChatSettings } from "#src/settings";
 import { skillIndex, skillIndexGuidance } from "#src/skill-index";
-import { decodeSkillViewCall, skillViewTool } from "#src/skill-tools";
+import { skillViewTool } from "#src/skill-tools";
 import { Skills } from "#src/skills";
-import { ChatTasks, decodeTaskCall, taskTool } from "#src/task-tools";
+import { taskTool } from "#src/task-tools";
 import { toolExecution, preflightReported, failureReason, failureReply } from "#src/tool-execution";
-import { WebSearch, decodeWebSearchCall, webSearchTool } from "#src/web-search";
+import { webSearchTool } from "#src/web-search";
 
 type ConversationEvent = ModelEvent | { readonly type: "reasoning-end" };
-
-// Results from these tools carry content the owner did not write.
-const untrustedSources: ReadonlySet<string> = new Set([
-  "fetch_page",
-  "search_web",
-  "external",
-  "bash",
-]);
 
 /** Builds the bounded model/tool loop; the caller owns the run's final outcome. */
 export const conversation = Effect.gen(function* () {
   const store = yield* Store;
-  const webSearch = yield* WebSearch;
   const policy = yield* ChatSettings;
-  const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
   const external = Option.getOrNull(yield* Effect.serviceOption(ExternalTools));
-  const bash = Option.getOrNull(yield* Effect.serviceOption(Bash));
   const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
   const clock = yield* Clock.Clock;
+
+  const skillView = yield* skillViewTool;
+  const task = yield* taskTool;
+
+  // Built-in tools in the order the model sees them; a null tool is absent from this host.
+  const builtins: ReadonlyArray<AgentTool | null> = [
+    yield* bashTool,
+    yield* sessionSearchTool,
+    yield* sessionReadTool,
+    yield* fetchPageTool,
+    yield* memoryTool,
+    skillView,
+    yield* webSearchTool,
+    task,
+  ];
 
   const executeTool = yield* toolExecution;
 
@@ -98,24 +96,22 @@ export const conversation = Effect.gen(function* () {
           ? yield* measureTiming("skill-index", skillIndex(skills, policy.skillIndexBytes))
           : null;
 
-        const tools = model.description.capabilities.tools
+        const tools: ReadonlyArray<AgentTool> = model.description.capabilities.tools
           ? [
-              ...catalog.map((entry) => entry.definition),
-              ...(bash === null ? [] : [bashTool]),
-              sessionSearchTool,
-              sessionReadTool,
-              fetchPageTool,
-              memoryTool,
-              ...(skillsIndex === null ? [] : [skillViewTool]),
-              ...(webSearch.search === null ? [] : [webSearchTool]),
-              ...(tasks === null || readOnlyTools ? [] : [taskTool]),
-            ].filter((tool) => !readOnlyTools || tool.name !== "memory")
+              ...catalog.map(externalAgentTool),
+              ...builtins.filter(
+                (tool): tool is AgentTool =>
+                  tool !== null &&
+                  (tool !== skillView || skillsIndex !== null) &&
+                  !(readOnlyTools && tool.mutating),
+              ),
+            ]
           : [];
 
         const identities = new Set<string>();
 
         for (const tool of tools) {
-          const identity = JSON.stringify([tool.namespace, tool.name]);
+          const identity = JSON.stringify([tool.definition.namespace, tool.definition.name]);
 
           if (identities.has(identity))
             return yield* Effect.fail(
@@ -132,17 +128,10 @@ export const conversation = Effect.gen(function* () {
         // Untrusted content withdraws task and memory mutations; external tools need explicit opt-in to remain.
         let untrusted = false;
 
-        const withdrawn = (tool: Tool) =>
-          tool.name === taskTool.name ||
-          tool.name === memoryTool.name ||
-          catalog.some(
-            (entry) =>
-              entry.availableAfterUntrusted !== true &&
-              entry.definition.name === tool.name &&
-              entry.definition.namespace === tool.namespace,
+        const activeTools = () =>
+          (untrusted ? tools.filter((tool) => !tool.withdrawnWhenUntrusted) : tools).map(
+            (tool) => tool.definition,
           );
-
-        const activeTools = () => (untrusted ? tools.filter((tool) => !withdrawn(tool)) : tools);
 
         const skillPrompt =
           skillsIndex === null
@@ -158,17 +147,32 @@ export const conversation = Effect.gen(function* () {
             : `${indexedPrompt}\n\n${external.instructions}`;
 
         const instructions =
-          tasks !== null && !readOnlyTools
+          task !== null && !readOnlyTools
             ? `${baseInstructions}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
             : baseInstructions;
 
-        const prepareTool = (call: Extract<Output, { type: "tool-call" }>) =>
-          Effect.gen(function* () {
-            const requested = tools.find(
-              (tool) => tool.name === call.name && tool.namespace === call.namespace,
-            );
+        const context: ToolContext = {
+          run,
+          model,
+          text,
+          readOnlyTools,
+          approveCommand,
+          here,
+          home,
+          pageURLs: allowedURLs,
+        };
 
-            if (requested === undefined)
+        const findTool = (call: ToolCall) =>
+          tools.find(
+            (tool) =>
+              tool.definition.name === call.name && tool.definition.namespace === call.namespace,
+          );
+
+        const prepareTool = (call: ToolCall) =>
+          Effect.gen(function* () {
+            const tool = findTool(call);
+
+            if (tool === undefined)
               return yield* Effect.fail(
                 new AgentError({
                   reason: "tool-permission",
@@ -176,7 +180,7 @@ export const conversation = Effect.gen(function* () {
                 }),
               );
 
-            if (untrusted && withdrawn(requested))
+            if (untrusted && tool.withdrawnWhenUntrusted)
               return yield* Effect.fail(
                 new AgentError({
                   reason: "tool-permission",
@@ -185,60 +189,7 @@ export const conversation = Effect.gen(function* () {
                 }),
               );
 
-            const entry = catalog.find(
-              (candidate) =>
-                candidate.definition.name === call.name &&
-                candidate.definition.namespace === call.namespace,
-            );
-
-            if (entry !== undefined)
-              return { callId: call.callId, plan: yield* entry.prepare(call.arguments) };
-
-            const plan = yield* Match.value(call).pipe(
-              Match.when({ name: "bash" }, (command) =>
-                prepareBash(
-                  command,
-                  bash!,
-                  model,
-                  run,
-                  text,
-                  readOnlyTools,
-                  approveCommand,
-                  policy.toolBytes,
-                ),
-              ),
-              Match.when({ name: "search_sessions" }, decodeSessionSearchCall),
-              Match.when({ name: "read_session" }, decodeSessionReadCall),
-              Match.when({ name: "memory" }, decodeMemoryCall),
-              Match.when({ name: "view_skill" }, decodeSkillViewCall),
-              Match.when({ name: "search_web" }, decodeWebSearchCall),
-              Match.when({ name: "manage_tasks" }, (taskCall) =>
-                decodeTaskCall(taskCall).pipe(
-                  Effect.flatMap((action) =>
-                    tasks!.prepare(action, {
-                      origin: readOnlyTools ? "scheduled" : "interactive",
-                      runId: run.id,
-                      callId: taskCall.callId,
-                      here,
-                      home,
-                    }),
-                  ),
-                ),
-              ),
-              Match.when({ name: "fetch_page" }, (pageCall) =>
-                decodeFetchPageCall(pageCall, allowedURLs),
-              ),
-              Match.orElse(() =>
-                Effect.fail(
-                  new AgentError({
-                    reason: "tool-permission",
-                    message: "The requested tool is not allowed in this run.",
-                  }),
-                ),
-              ),
-            );
-
-            return { callId: call.callId, plan };
+            return { callId: call.callId, tool, prepared: yield* tool.prepare(call, context) };
           });
 
         const current: Message[] = [{ role: "user", text }];
@@ -376,21 +327,11 @@ export const conversation = Effect.gen(function* () {
                         run.id,
                         response,
                         calls.flatMap((call) => {
-                          const entry = catalog.find(
-                            (candidate) =>
-                              candidate.definition.name === call.name &&
-                              candidate.definition.namespace === call.namespace,
-                          );
+                          const identity = findTool(call)?.external;
 
-                          return entry === undefined
+                          return identity === undefined
                             ? []
-                            : [
-                                {
-                                  callId: call.callId,
-                                  serverId: entry.serverId,
-                                  toolName: entry.toolName,
-                                },
-                              ];
+                            : [{ callId: call.callId, ...identity }];
                         }),
                       );
 
@@ -461,7 +402,7 @@ export const conversation = Effect.gen(function* () {
 
                       for (const entry of planned) {
                         if (Result.isFailure(entry)) continue;
-                        const { callId, plan } = entry.success;
+                        const { callId, tool, prepared } = entry.success;
 
                         const guard = (output: string) => {
                           const needed = contextSize(
@@ -480,11 +421,17 @@ export const conversation = Effect.gen(function* () {
                               );
                         };
 
-                        const { output, urls } = yield* executeTool(run, callId, plan, guard);
+                        const { output, urls } = yield* executeTool(
+                          run,
+                          callId,
+                          tool,
+                          prepared,
+                          guard,
+                        );
 
                         for (const url of urls) allowedURLs.add(url);
 
-                        if (untrustedSources.has(plan.name)) untrusted = true;
+                        if (tool.untrustedResult) untrusted = true;
                         current.push({ role: "tool", callId, output });
                         callsUsed++;
                       }
