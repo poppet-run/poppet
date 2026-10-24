@@ -1,13 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 
-import {
-  Agent,
-  AgentError,
-  Skills,
-  sessionTitle,
-  type ChatFailure,
-  type CommandApproval,
-} from "@poppet/agent";
+import { Agent, AgentError, Skills, sessionTitle, type ChatFailure } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { DeliveryDestination, Store, StoreError } from "@poppet/store";
 import {
@@ -15,7 +8,6 @@ import {
   Clock,
   Console,
   Context,
-  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -27,6 +19,7 @@ import {
   Stream,
 } from "effect";
 
+import { commandApprovals } from "#src/approvals";
 import { ChannelError, IncomingMessage, MessagingChannel } from "#src/channel";
 import {
   authorized as allowed,
@@ -125,52 +118,7 @@ const gateway = Effect.gen(function* () {
       return destination;
     });
 
-  const approvals = new Map<
-    string,
-    { conversation: string; decision: Deferred.Deferred<boolean> }
-  >();
-
-  const approveCommand = (
-    message: IncomingMessage,
-    conversation: string,
-    request: CommandApproval,
-  ) =>
-    Effect.gen(function* () {
-      const id = randomUUID();
-      const decision = yield* Deferred.make<boolean>();
-      approvals.set(id, { conversation, decision });
-
-      return yield* Effect.gen(function* () {
-        if (!authorized(message)) return false;
-        yield* channel.checkAccess(message, conversation);
-        const text = `Bash approval required: ${request.reason}\nExact invocation: ${JSON.stringify({ command: request.command, cwd: request.cwd, timeoutSeconds: request.timeoutSeconds })}\nReply /approve ${id} or /deny ${id}. Expires in two minutes; permits one execution only.`;
-
-        for (const [index, part] of chunks(text, channel.textLimit).entries())
-          yield* channel.send(
-            conversation,
-            part,
-            createHash("sha256").update(`${id}-${index}`).digest("hex").slice(0, 24),
-          );
-        const approved = yield* Deferred.await(decision).pipe(Effect.timeout("2 minutes"));
-
-        if (approved) yield* channel.checkAccess(message, conversation);
-
-        return approved && authorized(message);
-      }).pipe(
-        Effect.mapError(
-          () =>
-            new AgentError({
-              reason: "command-approval-required",
-              message: "Command approval expired or could not be confirmed. Nothing was executed.",
-            }),
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
-            approvals.delete(id);
-          }),
-        ),
-      );
-    });
+  const approvals = commandApprovals(channel);
 
   // Reconcile saved results rather than rerun inference after a crash or failed send.
   const scheduleResults = Effect.gen(function* () {
@@ -263,22 +211,7 @@ const gateway = Effect.gen(function* () {
 
       if (isCommandApproval(message.text)) {
         yield* channel.checkAccess(message, conversation);
-        const reply = /^\/(approve|deny) ([a-f0-9-]{36})$/.exec(message.text.trim());
-        const pending = reply === null ? undefined : approvals.get(reply[2]!);
-
-        if (pending === undefined || pending.conversation !== conversation) {
-          yield* finish(
-            entry.id,
-            "No matching pending approval in this conversation. It may have expired; request the operation again.",
-          );
-        } else {
-          approvals.delete(reply![2]!);
-          yield* Deferred.succeed(pending.decision, reply![1] === "approve");
-          yield* finish(
-            entry.id,
-            reply![1] === "approve" ? "Approved this exact command once." : "Command denied.",
-          );
-        }
+        yield* finish(entry.id, yield* approvals.answer(conversation, message.text));
       } else if (message.text === "/cancel") {
         yield* gatewayStorage(repo.cancel(channel.id, account, conversation));
 
@@ -422,7 +355,7 @@ const gateway = Effect.gen(function* () {
           yield* Stream.runDrain(
             agent.send(session.id, prompt, {
               runId: entry.runId,
-              approveCommand: (request) => approveCommand(entry.message, conversation, request),
+              approveCommand: (request) => approvals.request(entry.message, conversation, request),
               home: resolveDestination().pipe(
                 Effect.mapError(
                   (error) => new AgentError({ reason: "tool-permission", message: error.message }),
