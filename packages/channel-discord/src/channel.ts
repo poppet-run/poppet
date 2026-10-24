@@ -56,7 +56,12 @@ export const discordChannelLayer = (
       ],
       allowedMentions: { parse: [], repliedUser: false },
       makeCache: Options.cacheWithLimits({ MessageManager: 0 }),
-      rest: { retries: 0, timeout: 10000, rejectOnRateLimit: () => true },
+      rest: {
+        retries: 0,
+        timeout: 10000,
+        // Let the SDK retry the limited reaction without replaying the entire state change.
+        rejectOnRateLimit: ({ route }) => !route.includes("/reactions/"),
+      },
     }),
 ) =>
   Layer.effect(
@@ -347,18 +352,7 @@ export const discordChannelLayer = (
               }
             },
             catch: discordFailure,
-          }).pipe(
-            Effect.retry({
-              times: 1,
-              while: (error) => {
-                const delay = error.retryAfterMs ?? 0;
-
-                return delay > 0 && delay <= 2000
-                  ? Effect.sleep(delay).pipe(Effect.as(true))
-                  : false;
-              },
-            }),
-          ),
+          }),
         typing: (conversationId) =>
           Effect.tryPromise({
             try: async () => {

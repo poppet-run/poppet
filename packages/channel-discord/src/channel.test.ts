@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 
 import { MessagingChannel } from "@poppet/gateway";
-import { ChannelType, Client, Events, MessageFlags, Options, RateLimitError } from "discord.js";
+import { ChannelType, Client, Events, MessageFlags, Options } from "discord.js";
 import { Effect, Option, Redacted, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
@@ -19,6 +19,103 @@ const settings = {
 };
 
 describe("discordChannelLayer", () => {
+  test.each(["completed", "stopped"] as const)(
+    "when marking %s is rate limited, retries removal without replaying completed reactions",
+    async (state) => {
+      const writes: string[] = [];
+      let removals = 0;
+      const ready = spyOn(Client.prototype, "isReady").mockReturnValue(true);
+
+      const login = spyOn(Client.prototype, "login").mockImplementation(async function (
+        this: Client,
+      ) {
+        Object.defineProperty(this, "user", { value: user });
+        this.rest.setToken("test-token");
+        spyOn(this.rest.options, "makeRequest").mockImplementation(async (url, options) => {
+          const path = new URL(url).pathname.replace("/api/v10", "");
+
+          if (options.method === "GET") {
+            if (path === "/guilds/500")
+              return Response.json({ id: "500", name: "Test", roles: [], members: [] });
+
+            if (path === "/channels/300")
+              return Response.json({
+                id: "300",
+                guild_id: "500",
+                type: ChannelType.GuildText,
+                permission_overwrites: [],
+              });
+
+            if (path === "/channels/300/messages/400")
+              return Response.json({
+                id: "400",
+                channel_id: "300",
+                guild_id: "500",
+                author: owner,
+                content: "Hello",
+                mentions: [],
+                mention_roles: [],
+                attachments: [],
+                embeds: [],
+                type: 0,
+              });
+          }
+
+          if (path.startsWith("/channels/300/messages/400/reactions/")) {
+            writes.push(`${options.method} ${decodeURIComponent(path.split("/").at(-2)!)}`);
+
+            if (options.method === "DELETE" && ++removals <= 2)
+              return Response.json(
+                { message: "Rate limited" },
+                { status: 429, headers: { "Retry-After": removals === 1 ? "2.1" : "0.001" } },
+              );
+
+            return new Response(null, { status: 204 });
+          }
+
+          throw new Error(`Unexpected request: ${options.method} ${path}`);
+        });
+        await this.guilds.fetch("500");
+
+        if (this.isReady()) this.emit(Events.ClientReady, this);
+
+        return "logged-in";
+      });
+
+      try {
+        await Effect.runPromise(
+          Effect.gen(function* () {
+            const channel = yield* MessagingChannel;
+            yield* channel.accountId;
+
+            const incoming = {
+              messageId: "400",
+              scopeId: "500",
+              parentId: "300",
+              conversationId: null,
+              senderId: "200",
+              text: "Hello",
+              mentioned: true,
+            };
+
+            yield* channel.mark(incoming, "working");
+            yield* channel.mark(incoming, state);
+            expect(writes).toEqual([
+              "PUT 👀",
+              ...(state === "completed" ? ["PUT ✅"] : []),
+              "DELETE 👀",
+              "DELETE 👀",
+              "DELETE 👀",
+            ]);
+          }).pipe(Effect.provide(discordChannelLayer(settings))),
+        );
+      } finally {
+        login.mockRestore();
+        ready.mockRestore();
+      }
+    },
+  );
+
   test("when Discord messages and threads are processed, recovers creation, filters events, and suppresses reply mentions", async () => {
     const client = new Client({
       intents: [],
@@ -63,7 +160,6 @@ describe("discordChannelLayer", () => {
     let loseSend = false;
     let botReacted = false;
     let reportReactions = true;
-    let limitRemoval = true;
     let sourceAuthor = owner;
 
     const source = () => ({
@@ -162,23 +258,6 @@ describe("discordChannelLayer", () => {
       if (!route.endsWith(`/${encodeURIComponent("👀")}/@me`))
         throw new Error(`Unexpected reaction removal: ${route}`);
 
-      if (limitRemoval) {
-        limitRemoval = false;
-        throw new RateLimitError({
-          timeToReset: 1,
-          retryAfter: 1,
-          limit: 1,
-          method: "DELETE",
-          hash: "reactions",
-          url: `https://discord.com/api/v10${route}`,
-          route,
-          majorParameter: "300",
-          global: false,
-          sublimitTimeout: 0,
-          scope: "shared",
-        });
-      }
-
       botReacted = false;
     });
 
@@ -274,7 +353,6 @@ describe("discordChannelLayer", () => {
           expect(put.mock.calls.map(([route]) => route)).toEqual([
             `/channels/300/messages/400/reactions/${encodeURIComponent("👀")}/@me`,
             `/channels/300/messages/400/reactions/${encodeURIComponent("✅")}/@me`,
-            `/channels/300/messages/400/reactions/${encodeURIComponent("✅")}/@me`,
           ]);
           expect(remove).toHaveBeenCalledWith(
             `/channels/300/messages/400/reactions/${encodeURIComponent("👀")}/@me`,
@@ -312,7 +390,7 @@ describe("discordChannelLayer", () => {
 
           yield* channel.mark(threadMessage, "working");
           yield* channel.mark(threadMessage, "stopped");
-          expect(put.mock.calls.map(([route]) => route).slice(3)).toEqual([
+          expect(put.mock.calls.map(([route]) => route).slice(2)).toEqual([
             `/channels/400/messages/401/reactions/${encodeURIComponent("👀")}/@me`,
           ]);
           expect(remove).toHaveBeenLastCalledWith(
@@ -320,7 +398,7 @@ describe("discordChannelLayer", () => {
           );
           // Another user's eyes reaction remains after the bot removes its own.
           yield* channel.mark(threadMessage, "stopped");
-          expect(remove).toHaveBeenCalledTimes(4);
+          expect(remove).toHaveBeenCalledTimes(3);
           sourceAuthor = { ...owner, id: "999" };
           expect(yield* channel.mark(incoming, "completed").pipe(Effect.result)).toHaveProperty(
             "failure.reason",
@@ -330,7 +408,7 @@ describe("discordChannelLayer", () => {
           expect(
             yield* channel.mark({ ...incoming, parentId: "999" }, "working").pipe(Effect.result),
           ).toHaveProperty("failure.reason", "permission");
-          expect(put).toHaveBeenCalledTimes(4);
+          expect(put).toHaveBeenCalledTimes(3);
           client.emit(Events.MessageCreate, followup);
           expect(Option.getOrNull(yield* Stream.runHead(channel.messages))).toEqual({
             ...incoming,
