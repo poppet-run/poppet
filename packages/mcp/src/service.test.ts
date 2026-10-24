@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ApiKeyStore } from "@poppet/credentials";
-import { Clock, ConfigProvider, Effect, Fiber, Layer, Redacted, Schema } from "effect";
+import { Clock, ConfigProvider, Console, Effect, Fiber, Layer, Redacted, Schema } from "effect";
 import { TestClock } from "effect/testing";
 
 import { type MCPServer } from "#src/config";
@@ -19,6 +19,7 @@ const fixture = async (
   environment: MCPServer["environment"] = {},
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-"));
+  const errors: string[] = [];
 
   const server: MCPServer = {
     id: "fixture",
@@ -44,6 +45,7 @@ const fixture = async (
 
   return {
     directory,
+    errors,
     server,
     layer,
     // The child appends while the test polls, so a read may end mid-line; keep complete lines only.
@@ -53,7 +55,15 @@ const fixture = async (
         .slice(0, -1)
         .map((line) => Schema.decodeUnknownSync(Schema.fromJsonString(Schema.JsonObject))(line)),
     run: <A, E>(program: Effect.Effect<A, E, MCP>) =>
-      Effect.runPromise(program.pipe(Effect.provide(layer))),
+      Effect.runPromise(
+        program.pipe(
+          Effect.provide(layer),
+          Effect.provideService(Console.Console, {
+            ...console,
+            error: (...values) => errors.push(values.join(" ")),
+          }),
+        ),
+      ),
     close: () => rm(directory, { recursive: true, force: true }),
   };
 };
@@ -177,11 +187,14 @@ describe("MCP", () => {
         await state.run(
           Effect.gen(function* () {
             expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
-            expect((yield* (yield* MCP).status)[0]).toMatchObject({
+            const status = (yield* (yield* MCP).status)[0]!;
+            expect(status).toMatchObject({
               state: "unavailable",
               pid: null,
               availableTools: [],
+              diagnostic: expect.stringContaining("MCP fixture:"),
             });
+            expect([status.diagnostic]).toEqual(state.errors);
 
             const pid = Number(
               yield* Effect.promise(() => readFile(join(state.directory, "pid"), "utf8")),
@@ -393,6 +406,7 @@ describe("MCP", () => {
             expect(status).toMatchObject({ state: "unavailable", pid: null });
             expect(status.diagnostic).toContain("selected credential");
             expect(JSON.stringify(status)).not.toContain("selected-mcp-secret");
+            expect([status.diagnostic]).toEqual(state.errors);
           }),
         );
       } finally {
