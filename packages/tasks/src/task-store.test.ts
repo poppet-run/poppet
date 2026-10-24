@@ -999,7 +999,7 @@ describe.concurrent("TaskRepository", () => {
   });
 
   test.each([true, false])(
-    "when recurring times exceed the catch-up window with startup=%s, skips them",
+    "when recurring times exceed the catch-up window with startup=%j, skips them",
     async (startup) => {
       const state = await fixture(60 * 60_000);
 

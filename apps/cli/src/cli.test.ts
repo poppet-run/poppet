@@ -77,7 +77,7 @@ const invoke = async (
 
 describe("makeCLI", () => {
   test.each([false, true])(
-    "when gateway settings are unreadable=%s, reports status without exposing secrets",
+    "when gateway settings are unreadable=%j, reports status without exposing secrets",
     async (unreadable) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-channel-status-"));
 

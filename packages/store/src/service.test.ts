@@ -316,7 +316,7 @@ describe("Store", () => {
   });
 
   test.each([1024, 65536])(
-    "when recall has a %s-byte budget, preserves Unicode and advances past oversized messages",
+    "when recall has a %i-byte budget, preserves Unicode and advances past oversized messages",
     async (maxBytes) => {
       const saved = await fixture();
 

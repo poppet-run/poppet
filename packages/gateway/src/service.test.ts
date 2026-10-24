@@ -394,7 +394,7 @@ describe.concurrent("Gateway", () => {
   );
 
   test.each([false, true])(
-    "when cron needs approval with an old queued notice=%s, logs the failure and delivers only a successful retry",
+    "when cron needs approval with an old queued notice=%j, logs the failure and delivers only a successful retry",
     async (queuedNotice) => {
       let executed = 0;
       let allow = false;

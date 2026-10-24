@@ -97,7 +97,7 @@ describe.concurrent("refresh.ts", () => {
     }
   });
   test.each([false, true])(
-    "when sign-out has revocation failure=%s, deletes local provider details and starts a fresh registration",
+    "when sign-out has revocation failure=%j, deletes local provider details and starts a fresh registration",
     async (revokeFailure) => {
       const harness = await createHarness();
 

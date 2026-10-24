@@ -162,7 +162,7 @@ describe("makeOpenCodeProvider", () => {
   });
 
   test.each([false, true])(
-    "when reasoning_content is enabled=%s, streams only permitted reasoning",
+    "when reasoning_content is enabled=%j, streams only permitted reasoning",
     async (enabled) => {
       const harness = fixture();
       const model = await Effect.runPromise(harness.provider.resolve("glm-5.3"));

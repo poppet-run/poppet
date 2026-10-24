@@ -176,7 +176,7 @@ describe.each([
     [500, "tool-network"],
     [302, "tool-network"],
   ] as const)(
-    `when ${provider} returns HTTP %s, reports it without exposing the body or retrying`,
+    `when ${provider} returns HTTP %i, reports it without exposing the body or retrying`,
     async (status, reason) => {
       let calls = 0;
 
@@ -239,7 +239,7 @@ describe.each([
   });
 
   test.each([false, true])(
-    `when ${provider} cancellation or deadline occurs with timeout=%s, aborts the request`,
+    `when ${provider} cancellation or deadline occurs with timeout=%j, aborts the request`,
     async (timeout) => {
       let aborted = false;
 

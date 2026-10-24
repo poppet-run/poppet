@@ -356,7 +356,7 @@ for (const adapter of cases) {
   describe(adapter.protocol === "responses" ? "responsesModel" : "chatCompletionsModel", () => {
     if (adapter.protocol === "responses") {
       test.each([false, true])(
-        "when reasoning summaries are enabled=%s, requests and streams only permitted summaries",
+        "when reasoning summaries are enabled=%j, requests and streams only permitted summaries",
         async (enabled) => {
           const harness = fixture(adapter);
 

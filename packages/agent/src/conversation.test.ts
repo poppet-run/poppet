@@ -195,7 +195,7 @@ const skilled = (
 
 describe.concurrent("conversation", () => {
   test.each([false, true])(
-    "when scheduled=%s, reviews every Bash invocation independently before executing",
+    "when scheduled=%j, reviews every Bash invocation independently before executing",
     async (scheduled) => {
       const executed: string[] = [];
       const args = { command: "printf hello", cwd: "/tmp", timeoutSeconds: 5 };
@@ -362,7 +362,7 @@ describe.concurrent("conversation", () => {
   );
 
   test.each([false, true])(
-    "when a run finishes with scheduled=%s, closes its external resources",
+    "when a run finishes with scheduled=%j, closes its external resources",
     async (scheduled) => {
       const opened: string[] = [];
       const closed: string[] = [];
@@ -747,7 +747,7 @@ describe.concurrent("conversation", () => {
   });
 
   test.each([false, true])(
-    "when search sources are omitted by budget=%s, grants no access to their pages",
+    "when search sources are omitted by budget=%j, grants no access to their pages",
     async (budget) => {
       const omitted = budget ? `https://example.com/${"x".repeat(2000)}` : "https://example.com/5";
 
@@ -799,7 +799,7 @@ describe.concurrent("conversation", () => {
   );
 
   test.each([false, true])(
-    "when search returns sources with read-only=%s, authorizes later page reads only in that run",
+    "when search returns sources with read-only=%j, authorizes later page reads only in that run",
     async (readOnlyTools) => {
       let turns = 0;
       const fetched: string[] = [];
@@ -988,7 +988,7 @@ describe.concurrent("conversation", () => {
   });
 
   test.each([false, true])(
-    "when a page URL is explicitly supplied with read-only tools=%s, reads it and records durable results",
+    "when a page URL is explicitly supplied with read-only tools=%j, reads it and records durable results",
     async (readOnlyTools) => {
       const fetched: string[] = [];
       let turns = 0;
@@ -1182,7 +1182,7 @@ describe.concurrent("conversation", () => {
   });
 
   test.each([false, true])(
-    "when saved context is searched and read with read-only tools=%s, records durable calls",
+    "when saved context is searched and read with read-only tools=%j, records durable calls",
     async (readOnlyTools) => {
       let turn = 0;
 

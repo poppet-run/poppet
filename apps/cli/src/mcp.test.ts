@@ -247,7 +247,7 @@ describe("ExternalAgentToolsLive", () => {
   });
 
   test.each([false, true])(
-    "when worker ownership is %s, scopes MCP discovery and records durable calls",
+    "when worker ownership is %j, scopes MCP discovery and records durable calls",
     async (worker) => {
       const state = await fixture();
       const fiber = worker ? await state.worker() : null;
@@ -301,7 +301,7 @@ describe("ExternalAgentToolsLive", () => {
   );
 
   test.each([false, true])(
-    "when scheduled MCP is enabled=%s, permits only owner-reviewed reads",
+    "when scheduled MCP is enabled=%j, permits only owner-reviewed reads",
     async (enabled) => {
       const scheduledTools = enabled ? ["read"] : [];
       const state = await fixture("read", scheduledTools);

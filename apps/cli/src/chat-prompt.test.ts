@@ -166,7 +166,7 @@ describe.concurrent("interactiveChat", () => {
     expect(state.reads()).toBe(1);
   });
 
-  test.each([null, "/exit"])("when input is %s, exits without a request", async (line) => {
+  test.each([null, "/exit"])("when input is %j, exits without a request", async (line) => {
     const state = fixture([line]);
     await state.run(
       interactiveChat({ coding: false }, () => Effect.die("Must not submit"), state.read),

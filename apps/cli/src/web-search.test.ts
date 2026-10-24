@@ -12,7 +12,7 @@ describe.each(["brave", "kagi"])("WebSearchLive", (provider) => {
     [true, false],
     [true, true],
   ])(
-    `when ${provider} search is enabled=%s and stored=%s, advertises it only with both permission and a key`,
+    `when ${provider} search is enabled=%j and stored=%j, advertises it only with both permission and a key`,
     async (enabled, stored) => {
       let reads = 0;
 

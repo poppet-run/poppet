@@ -26,7 +26,7 @@ import { WebSearch } from "#src/web-search";
 
 describe("logChatDiagnostic", () => {
   test.each([false, true])(
-    "when colour is forced with NO_COLOR=%s, honors the diagnostic colour preference",
+    "when colour is forced with NO_COLOR=%j, honors the diagnostic colour preference",
     async (disabled) => {
       const child = Bun.spawn(
         [
@@ -220,7 +220,7 @@ describe.concurrent("Agent", () => {
   );
 
   test.each([false, true])(
-    "when reasoning is enabled=%s, logs only permitted reasoning without changing the answer",
+    "when reasoning is enabled=%j, logs only permitted reasoning without changing the answer",
     async (enabled) => {
       const requests: ModelRequest[] = [];
       const logs: string[] = [];

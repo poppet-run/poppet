@@ -261,7 +261,7 @@ describe("makeOpenRouterProvider", () => {
   });
 
   test.each([false, true])(
-    "when reasoning is enabled=%s, streams readable reasoning once without encrypted details",
+    "when reasoning is enabled=%j, streams readable reasoning once without encrypted details",
     async (enabled) => {
       const harness = fixture(undefined, () =>
         sse([
@@ -538,7 +538,7 @@ describe("makeOpenRouterProvider", () => {
     [503, "temporary"],
     ["server_error", "temporary"],
   ] as const)(
-    "when an HTTP 200 stream contains error %s, classifies it safely without retrying",
+    "when an HTTP 200 stream contains error %j, classifies it safely without retrying",
     async (code, reason) => {
       const harness = fixture(undefined, () =>
         sse([
