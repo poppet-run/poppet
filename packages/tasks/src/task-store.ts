@@ -1,10 +1,18 @@
 import { randomUUID } from "node:crypto";
 
 import { taskCatchUpMinutes } from "@poppet/config";
-import { DeliveryDestination, SkillSnapshot, decodeRow, decodeRows, reportAs } from "@poppet/store";
+import {
+  DeliveryDestination,
+  SkillSnapshot,
+  decodeRow,
+  decodeRows,
+  migrate,
+  reportAs,
+} from "@poppet/store";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 import { SqlClient } from "effect/sql";
 
+import { taskSchema } from "#src/migrations";
 import { taskControls } from "#src/task-controls";
 import { latestTime, nextTime, taskFailure, taskRecords, recurringExpiry } from "#src/task-records";
 import {
@@ -486,21 +494,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       ),
     );
 
-  const deliveries = (id: string) =>
-    sql`SELECT i.run_id, d.position, d.state, d.message_id, d.attempts
-      FROM gateway_deliveries d JOIN gateway_inbox i ON i.id = d.inbox_id
-      WHERE i.occurrence_id = ${id} ORDER BY i.id, d.position`.pipe(
-      decodeRows(
-        Schema.Struct({
-          runId: Schema.String,
-          position: Schema.Natural,
-          state: Schema.Literals(["pending", "sending", "sent", "failed", "uncertain"]),
-          messageId: Schema.NullOr(Schema.String),
-          attempts: Schema.Natural,
-        }),
-      ),
-    );
-
   return {
     commandLock,
     list: operation(list),
@@ -512,7 +505,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
     nextTarget: operation(nextTarget),
     control: operation(control),
     changes: operation(changes),
-    deliveries: operation(deliveries),
     providers: operation(providers),
     skips: operation(skips),
     add: operation(add),
@@ -543,6 +535,7 @@ export const TaskRepositoryLive = Layer.effect(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const minutes = yield* taskCatchUpMinutes;
+    yield* migrate(taskSchema);
 
     return makeTaskStore(sql, minutes * 60_000);
   }),

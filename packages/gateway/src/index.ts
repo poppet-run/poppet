@@ -10,7 +10,9 @@ export {
 
 export { ChannelEnvironment, ChannelInput, type ChannelRegistration } from "#src/registration";
 
-export { GatewayRepository, GatewayRepositoryLive } from "#src/repository";
+export { GatewayRepository, GatewayRepositoryLive, TaskDeliveriesLive } from "#src/repository";
+
+export { gatewaySchema } from "#src/migrations";
 
 export { Gateway, GatewayLive } from "#src/service";
 

@@ -79,7 +79,7 @@ See the [source layout](development.md#source-layout) for module paths. Provider
 packages own authentication and inference adapters. The agent owns persisted
 conversation execution, context, and built-in tools. Tasks own scheduling and
 execution history; the gateway owns messaging acceptance and delivery. Their
-tables live in the store's baseline schema, and the CLI composes their layers
+packages define and migrate their own tables, and the CLI composes their layers
 around one store connection and agent.
 
 Each live service gets a layer at the application boundary. Tests replace model,
@@ -342,10 +342,11 @@ synchronous commits. Rows come back with camelCase names. Scope finalizers close
 SQLite before releasing ownership. Database files and WAL sidecars use owner-only
 permissions.
 
-`migrations.ts` registers migrations for Effect's SQL migrator. The baseline in
-`migrations/0001_baseline.ts` holds the whole schema; later changes append new
-migrations. The layer refuses databases it did not create and databases from a
-newer version, then runs all pending migrations in one transaction.
+`migrations.ts` provides `migrate`, which runs one package's migrations with
+Effect's SQL migrator and its own ledger table, refusing a ledger newer than the
+build. The store's baseline holds only conversation tables; memory, tasks, and
+gateway define and migrate their own when their layers start. The store layer
+also refuses databases it did not create.
 
 `schema.ts` defines session, message, run, and terminal-outcome records with
 Effect Schema. `service.ts` validates caller input, checks continuation identity

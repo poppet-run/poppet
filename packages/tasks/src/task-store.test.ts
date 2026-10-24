@@ -4,10 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
-import { Store, StoreLive } from "@poppet/store";
+import { memorySchema } from "@poppet/memory";
+import { Store, StoreLive, migrate } from "@poppet/store";
 import { Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql";
 
+import { taskSchema } from "#src/migrations";
 import { recurringExpiry } from "#src/task-records";
 import { nextOccurrence, parseTimestamp, type NewTask } from "#src/task-schema";
 import { makeTaskStore, type TaskStore } from "#src/task-store";
@@ -54,6 +56,8 @@ const fixture = async (catchUpMs = 0) => {
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const store = yield* Store;
+          yield* migrate(taskSchema);
+          yield* migrate(memorySchema);
 
           return yield* body(makeTaskStore(sql, catchUpMs), store, sql);
         }).pipe(Effect.provide(layer)),

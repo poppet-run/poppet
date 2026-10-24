@@ -9,7 +9,7 @@ import {
 } from "@poppet/agent";
 import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import { ApiKeyStoreLive } from "@poppet/credentials";
-import { GatewayRepositoryLive } from "@poppet/gateway";
+import { GatewayRepositoryLive, TaskDeliveriesLive } from "@poppet/gateway";
 import { makeMCPLive } from "@poppet/mcp";
 import { LocalMemoryLive } from "@poppet/memory";
 import {
@@ -110,7 +110,11 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
 
   const memory = LocalMemoryLive.pipe(Layer.provide([store, config]));
   const skills = SkillsLive.pipe(Layer.provide(config));
-  const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store), Layer.provideMerge(skills));
+
+  const tasks = Layer.mergeAll(TaskRepositoryLive, TaskDeliveriesLive).pipe(
+    Layer.provideMerge(store),
+    Layer.provideMerge(skills),
+  );
 
   const connectionStatus = createConnectionStatus();
 

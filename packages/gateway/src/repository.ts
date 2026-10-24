@@ -1,11 +1,20 @@
 import { randomUUID } from "node:crypto";
 
 import { TextSource } from "@poppet/provider";
-import { DeliveryDestination, StoreError, decodeRow, decodeRows, reportAs } from "@poppet/store";
+import {
+  DeliveryDestination,
+  StoreError,
+  decodeRow,
+  decodeRows,
+  migrate,
+  reportAs,
+} from "@poppet/store";
+import { TaskDeliveries, TaskError, taskSchema } from "@poppet/tasks";
 import { Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { IncomingMessage, ChannelError } from "#src/channel";
+import { gatewaySchema } from "#src/migrations";
 import { isCommandApproval } from "#src/request";
 
 const Inbox = Schema.Struct({
@@ -62,6 +71,10 @@ const conflictingSession = () => new Error("Conflicting messaging session");
 
 const repository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+
+  // Scheduled delivery reads task occurrences, so the task schema must exist first.
+  yield* migrate(taskSchema);
+  yield* migrate(gatewaySchema);
 
   const inbox = sql`SELECT id, adapter, account, payload AS message, conversation_id, session_id,
     run_id, state, attempts FROM gateway_inbox`;
@@ -432,3 +445,30 @@ export class GatewayRepository extends Context.Service<
 >()("poppet/GatewayRepository") {}
 
 export const GatewayRepositoryLive = Layer.effect(GatewayRepository, repository);
+
+const Delivered = Schema.Struct({
+  runId: Schema.String,
+  position: Schema.Natural,
+  state: Schema.Literals(["pending", "sending", "sent", "failed", "uncertain"]),
+  messageId: Schema.NullOr(Schema.String),
+  attempts: Schema.Natural,
+});
+
+/** Supplies task inspection with the replies sent for each scheduled occurrence. */
+export const TaskDeliveriesLive = Layer.effect(
+  TaskDeliveries,
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* migrate(gatewaySchema);
+
+    return {
+      forOccurrence: (occurrenceId: string) =>
+        sql`SELECT i.run_id, d.position, d.state, d.message_id, d.attempts
+          FROM gateway_deliveries d JOIN gateway_inbox i ON i.id = d.inbox_id
+          WHERE i.occurrence_id = ${occurrenceId} ORDER BY i.id, d.position`.pipe(
+          decodeRows(Delivered),
+          reportAs(() => new TaskError({ message: "Could not read or update scheduled tasks." })),
+        ),
+    };
+  }),
+);

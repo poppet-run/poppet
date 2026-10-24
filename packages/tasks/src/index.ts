@@ -18,7 +18,9 @@ export {
 export { TaskRepository, TaskRepositoryLive } from "#src/task-store";
 
 export {
+  TaskDeliveries,
   TaskDestinations,
+  type TaskDelivery,
   executeTaskCommand,
   executeLocalTaskCommand,
   readLocalTaskStatus,
@@ -30,3 +32,5 @@ export { executeOccurrence, makeTaskWorker, WorkerConnections } from "#src/sched
 export { remoteTaskCommand, taskResponse } from "#src/task-socket";
 
 export { ChatTasksLive } from "#src/chat-tools";
+
+export { taskSchema } from "#src/migrations";

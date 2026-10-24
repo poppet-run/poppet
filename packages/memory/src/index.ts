@@ -11,3 +11,5 @@ export {
 } from "#src/schema";
 
 export { LocalMemoryLive } from "#src/local";
+
+export { memorySchema } from "#src/migrations";
