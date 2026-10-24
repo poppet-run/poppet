@@ -12,11 +12,9 @@ const user = { id: "100", username: "Poppet", discriminator: "0", avatar: null, 
 const owner = { ...user, id: "200", username: "Owner", bot: false };
 
 const settings = {
-  version: 1 as const,
-  botId: user.id,
   ownerId: owner.id,
   guildId: "500",
-  channelIds: ["300"],
+  homeChannelId: "300",
   token: Redacted.make("secret-discord-token"),
 };
 
@@ -27,7 +25,12 @@ describe("discordChannelLayer", () => {
       makeCache: Options.cacheWithLimits({ MessageManager: 0 }),
     });
 
-    const login = spyOn(client, "login").mockResolvedValue("logged-in");
+    const login = spyOn(client, "login").mockImplementation(async () => {
+      if (client.isReady()) client.emit(Events.ClientReady, client);
+
+      return "logged-in";
+    });
+
     const destroyed = spyOn(client, "destroy").mockResolvedValue();
     const ready = spyOn(client, "isReady").mockReturnValue(true);
     // The adapter only reads identity here; actual guild members below use SDK objects.
@@ -94,6 +97,10 @@ describe("discordChannelLayer", () => {
 
       if (route === "/channels/900") return { ...parent, id: "900" };
 
+      if (route === "/channels/999") return { ...parent, id: "999", guild_id: "999" };
+
+      if (route === "/channels/900/messages/400") return { ...source(), channel_id: "900" };
+
       if (route === "/channels/400") return thread;
 
       if (route === "/channels/300/messages/400") return source();
@@ -117,6 +124,15 @@ describe("discordChannelLayer", () => {
         created = true;
         throw new Error("Lost creation acknowledgement");
       }
+
+      if (route === "/channels/300/messages")
+        return {
+          ...source(),
+          id: "601",
+          channel_id: "300",
+          author: user,
+          content: "Scheduled result",
+        };
 
       if (route === "/channels/400/messages") {
         if (loseSend) throw new Error("Lost send acknowledgement");
@@ -171,7 +187,8 @@ describe("discordChannelLayer", () => {
       await Effect.runPromise(
         Effect.gen(function* () {
           const channel = yield* MessagingChannel;
-          yield* Effect.yieldNow;
+          expect(yield* channel.accountId).toBe(user.id);
+          expect(yield* channel.status).toMatchObject({ account: user.id, connected: true });
 
           const incoming = {
             messageId: "400",
@@ -234,10 +251,18 @@ describe("discordChannelLayer", () => {
           }
 
           expect(yield* channel.destination!("400")).toBe("300");
-          expect(yield* channel.destination!("900").pipe(Effect.result)).toHaveProperty(
+          expect(yield* channel.destination!("999").pipe(Effect.result)).toHaveProperty(
             "failure.reason",
             "permission",
           );
+          expect(channel.homeConversationId).toBe("300");
+          expect(yield* channel.destination!("900")).toBe("900");
+          yield* channel.checkAccess({ ...incoming, parentId: "900" }, "900");
+          yield* channel.checkAccess(incoming, "300");
+          expect(yield* channel.send("300", "Scheduled result", "scheduled-1")).toBe("601");
+          expect(
+            yield* channel.send("999", "Forbidden", "foreign").pipe(Effect.result),
+          ).toHaveProperty("failure.reason", "permission");
           yield* channel.checkAccess(incoming, "400");
           yield* channel.typing("400");
           expect(post).toHaveBeenCalledWith("/channels/400/typing");
@@ -264,6 +289,15 @@ describe("discordChannelLayer", () => {
           client.emit(Events.MessageCreate, message);
           const received = yield* Stream.runHead(channel.messages);
           expect(Option.getOrNull(received)).toEqual(incoming);
+          const other = yield* Effect.promise(() => client.channels.fetch("900"));
+
+          if (other?.type !== ChannelType.GuildText) throw new Error("Missing other channel");
+          const otherMessage = yield* Effect.promise(() => other.messages.fetch("400"));
+          client.emit(Events.MessageCreate, otherMessage);
+          expect(Option.getOrNull(yield* Stream.runHead(channel.messages))).toEqual({
+            ...incoming,
+            parentId: "900",
+          });
           const threadChannel = yield* Effect.promise(() => client.channels.fetch("400"));
 
           if (!threadChannel?.isThread()) throw new Error("Missing thread");
@@ -294,7 +328,7 @@ describe("discordChannelLayer", () => {
           );
           sourceAuthor = owner;
           expect(
-            yield* channel.mark({ ...incoming, parentId: "900" }, "working").pipe(Effect.result),
+            yield* channel.mark({ ...incoming, parentId: "999" }, "working").pipe(Effect.result),
           ).toHaveProperty("failure.reason", "permission");
           expect(put).toHaveBeenCalledTimes(4);
           client.emit(Events.MessageCreate, followup);
@@ -310,6 +344,10 @@ describe("discordChannelLayer", () => {
             "failure.reason",
             "permission",
           );
+          expect(yield* channel.checkAccess(incoming, "300").pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "permission",
+          );
           guild.ownerId = "100";
           expect(yield* channel.send("400", "@everyone <@200>", "nonce-1")).toBe("600");
           ready.mockReturnValue(false);
@@ -321,7 +359,7 @@ describe("discordChannelLayer", () => {
           ready.mockReturnValue(true);
           yield* channel.send("400", "Again", "nonce-2");
           expect(post.mock.calls.filter(([route]) => route.endsWith("/threads"))).toHaveLength(1);
-          expect(post.mock.calls.filter(([route]) => route.endsWith("/messages"))).toHaveLength(2);
+          expect(post.mock.calls.filter(([route]) => route.endsWith("/messages"))).toHaveLength(3);
           expect(post).toHaveBeenCalledWith(
             "/channels/400/messages",
             expect.objectContaining({
@@ -353,9 +391,21 @@ describe("discordChannelLayer", () => {
     }
   });
 
-  test("when Discord login fails, retries after 30 seconds and redacts connection errors", async () => {
+  test("when Discord login fails, keeps status available and resolves identity after a successful retry", async () => {
     const client = new Client({ intents: [] });
-    const login = spyOn(client, "login").mockRejectedValue(new Error("secret-discord-token"));
+    const ready = spyOn(client, "isReady").mockReturnValue(false);
+
+    const login = spyOn(client, "login")
+      .mockRejectedValueOnce(new Error("secret-discord-token"))
+      .mockImplementation(async () => {
+        Object.defineProperty(client, "user", { value: user });
+        ready.mockReturnValue(true);
+
+        if (client.isReady()) client.emit(Events.ClientReady, client);
+
+        return "logged-in";
+      });
+
     const destroy = spyOn(client, "destroy").mockResolvedValue();
 
     try {
@@ -365,7 +415,7 @@ describe("discordChannelLayer", () => {
           // A rejected login stays inside the adapter; the worker can still inspect status.
           yield* Effect.yieldNow;
           const status = yield* channel.status;
-          expect(status).toMatchObject({ connected: false });
+          expect(status).toMatchObject({ connected: false, account: null });
           expect(JSON.stringify(status)).not.toContain("secret-discord-token");
           const result = yield* channel.send("400", "Reply", "nonce").pipe(Effect.result);
           expect(result).toHaveProperty("failure.reason", "unavailable");
@@ -373,6 +423,12 @@ describe("discordChannelLayer", () => {
           expect(login).toHaveBeenCalledTimes(1);
           yield* TestClock.adjust("1 second");
           expect(login).toHaveBeenCalledTimes(2);
+          expect(yield* channel.accountId).toBe(user.id);
+          expect(yield* channel.status).toMatchObject({
+            connected: true,
+            account: user.id,
+            error: null,
+          });
         }).pipe(
           Effect.provide(discordChannelLayer(settings, () => client)),
           Effect.provide(TestClock.layer()),
@@ -382,6 +438,7 @@ describe("discordChannelLayer", () => {
       expect(destroy).toHaveBeenCalledTimes(1);
     } finally {
       login.mockRestore();
+      ready.mockRestore();
       destroy.mockRestore();
     }
   });

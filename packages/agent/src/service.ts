@@ -81,6 +81,7 @@ export class Agent extends Context.Service<
         readonly timingLog?: (line: string) => Effect.Effect<void>;
         /** Host-only validation of this run's authorized messaging conversation. */
         readonly taskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
+        readonly homeTaskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
       },
     ) => Stream.Stream<ChatEvent, ChatFailure>;
   }
@@ -131,6 +132,7 @@ export const AgentLive = Layer.effect(
         readonly reasoningLog?: (line: string) => Effect.Effect<void>;
         readonly timingLog?: (line: string) => Effect.Effect<void>;
         readonly taskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
+        readonly homeTaskDestination?: Effect.Effect<DeliveryDestination, AgentError>;
       } = {},
     ): Stream.Stream<ChatEvent, ChatFailure> =>
       Stream.suspend(() => {
@@ -262,6 +264,7 @@ export const AgentLive = Layer.effect(
                   options.source,
                   session.skill?.name ?? null,
                   options.approveCommand ?? null,
+                  options.homeTaskDestination ?? null,
                 );
               }),
             ).pipe(

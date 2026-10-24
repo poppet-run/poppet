@@ -167,7 +167,7 @@ export const TaskCommand = Schema.Union([
     delivery: Schema.optionalKey(
       Schema.Struct({
         adapter: DeliveryDestination.fields.adapter,
-        conversationId: DeliveryDestination.fields.conversationId,
+        conversationId: Schema.NullOr(DeliveryDestination.fields.conversationId),
       }),
     ),
   }),

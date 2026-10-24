@@ -34,6 +34,7 @@ after editing settings: `poppet worker stop`, then `poppet worker start`.
 | `provider`                | `openai-chatgpt`       | Default provider for new chats and tasks                                          |
 | `model`                   | Unset                  | Required model ID for new chats and tasks                                         |
 | `applicationName`         | `Poppet`               | Name used during initial ChatGPT registration                                     |
+| `discord`                 | Unconfigured           | Owner ID, guild ID, and home channel ID                                           |
 | `webSearch`               | `false`                | Enable search when the selected search provider has credentials                   |
 | `webSearchProvider`       | `brave`                | `brave` or `kagi`                                                                 |
 | `browser`                 | `{ "enabled": false }` | [Browser access and allowed hosts](browser.md)                                    |
@@ -58,9 +59,27 @@ resolve beside `config.json`; bare executable names use `PATH`. Literal `~` is n
 
 ## Discord
 
-Discord continues to use `poppet gateway discord setup`. Its settings and token
-are stored in the protected `channels/discord.json` file. See
-[Discord setup](gateways/discord.md) for permissions and token input.
+The existing `poppet gateway discord setup` command saves the token separately
+and merges the ordinary settings into `config.json` without replacing other fields:
+
+```json
+{
+  "discord": {
+    "ownerId": "200",
+    "guildId": "300",
+    "homeChannelId": "400"
+  }
+}
+```
+
+Use your own IDs. Only the configured owner can invoke the agent, in any accessible text channel or thread in the configured server. The home
+channel is the default destination for proactive messages, including scheduled results. Removing the `discord` section disables Discord while retaining
+its saved token. The bot identity comes from Discord after token authentication. See
+[Discord setup](gateways/discord.md) for permissions and secure token input.
+
+Setup serializes writes. A malformed configuration prevents connection instead
+of broadening access. Credentials contain only the bot token; loading settings
+does not rewrite either file.
 
 ## Environment
 

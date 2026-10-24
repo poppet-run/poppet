@@ -156,23 +156,25 @@ export const ChatTasksLive = Layer.effect(
 
             if (action.skill !== null) skill = yield* skills.load(action.skill);
 
-            if (action.delivery === "here") {
-              if (context.here === null)
+            if (action.delivery !== "local") {
+              const target = action.delivery === "here" ? context.here : context.home;
+
+              if (target == null)
                 return yield* Effect.fail(
                   new AgentError({
                     reason: "tool-permission",
                     message:
-                      "Delivery here requires the current authorized messaging conversation. Use local in CLI chat.",
+                      "This destination requires an authorized messaging gateway. Use local in CLI chat.",
                   }),
                 );
-              destination = yield* context.here.pipe(
+              destination = yield* target.pipe(
                 Effect.timeoutOrElse({
                   duration: "8 seconds",
                   orElse: () =>
                     Effect.fail(
                       new AgentError({
                         reason: "tool-permission",
-                        message: "Current-conversation validation timed out.",
+                        message: "Messaging destination validation timed out.",
                       }),
                     ),
                 }),

@@ -139,7 +139,8 @@ or run a task now through
 New tasks keep this session's provider, model, and
 workload. Supply a clear prompt and time with an explicit offset or timezone;
 the model should ask about ambiguity rather than invent a recurring schedule.
-In messaging, request delivery here to use the current authorized conversation.
+In messaging, scheduled results default to the home channel. Request delivery
+here to use the current thread, or local delivery to keep results on the machine.
 CLI chat creates tasks with local results. See [tasks](tasks.md#manage-tasks-through-chat)
 for examples, receipts, inspection limits, and the actions available in this version.
 

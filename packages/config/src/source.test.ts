@@ -84,6 +84,7 @@ describe("loadConfigSource", () => {
       expect(loaded.source).toEqual({
         configFile: { path: join(directory, "config.json"), exists: true },
         environmentOverrides: ["POPPET_DATA_DIR"],
+        discord: null,
       });
 
       const resolved = await Effect.runPromise(
@@ -116,6 +117,10 @@ describe("loadConfigSource", () => {
   test.each([
     ["malformed JSON", '{"token":"must-not-appear",'],
     ["removed internal limit", '{"chat":{"contextBytes":4096}}'],
+    [
+      "Discord token in ordinary config",
+      '{"discord":{"ownerId":"2","guildId":"3","homeChannelId":"4","token":"must-not-appear"}}',
+    ],
     ["removed voice setting", '{"voice":{"enabled":false}}'],
     ["unknown setting", '{"token":"must-not-appear"}'],
     ["unknown chat setting", '{"chat":{"outputToken":1024}}'],

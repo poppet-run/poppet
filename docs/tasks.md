@@ -132,7 +132,8 @@ must be in the future and include a UTC offset; recurring schedules require an
 explicit timezone. A receipt reports the saved ID, schedule, state, next time,
 and destination.
 
-"Here" means the current authorized messaging conversation. The gateway rechecks
+Messaging tasks default to "home", the configured home channel. "Here" selects
+the current conversation instead; "local" keeps results on the machine. The gateway rechecks
 access before saving its normal destination snapshot; future delivery retains
 the existing authorization checks. CLI chat supports local results only. Use
 the existing CLI destination flags to select another authorized conversation.
@@ -157,14 +158,15 @@ skills, pages, and tool results cannot authorize task changes.
 
 ## Deliver results to Discord
 
-Configure [Discord](gateways/discord.md), start `poppet worker run`, and copy an
-existing authorized thread's ID. Pass it before the task prompt:
+Configure [Discord](gateways/discord.md) with a home channel and start
+`poppet worker run`. To deliver scheduled results there:
 
 ```sh
-poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --channel discord --conversation <thread-id> "Summarize recent conversations"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --channel discord "Summarize recent conversations"
 ```
 
-A running messaging worker validates the thread before creating the task.
+Add `--conversation <channel-or-thread-id>` before the prompt to select an
+explicit destination. A running messaging worker validates access before creating the task.
 Creation through the worker must finish within eight seconds, including queue
 waiting and destination validation. An expired lookup cannot save a task afterward.
 
@@ -173,12 +175,13 @@ waiting and destination validation. An expired lookup cannot save a task afterwa
 worker runs both. Tasks without a messaging destination keep their results local.
 
 Each occurrence saves its destination independently of later task or channel
-configuration. The worker rechecks the saved bot account, owner, server, allowed
-parent channel, and current thread permissions before sending. It never chooses
-the last active conversation or redirects a result to another thread.
+configuration. Changing the home channel affects newly created tasks only. The
+worker rechecks the saved bot account, owner, server, parent relationship, and current
+channel or thread permissions before sending. It never chooses the last active
+conversation or redirects a result when its destination becomes inaccessible.
 
 Only completed results enter the gateway delivery queue, using the task's saved
-destination. Pending failure notices from older versions are stopped. `tasks show`
+destination. `tasks show`
 includes the destination and a `delivery` array of run IDs, chunk states, message
 IDs, and attempt counts. Each delivered run has its own receipt. An empty array
 means no reply has been queued. Temporary delivery failures
@@ -191,7 +194,7 @@ Results are standalone posts. They do not change the destination's conversation
 history, session binding, or name. A stopped gateway resumes queued delivery when
 it starts again. Already queued replies remain queued if task history is cleared.
 
-Both `--channel` and `--conversation` are required when selecting a destination.
+`--channel` selects the gateway; omitting `--conversation` uses its home channel.
 The selected adapter validates its conversation ID and access before the task is saved.
 Existing Discord task destinations keep their stored format. Tasks for removed adapters
 retain their history and results but cannot deliver until that adapter is available again.

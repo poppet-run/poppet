@@ -95,7 +95,6 @@ const gateway = Effect.gen(function* () {
   const config = yield* AppConfig;
   const clock = yield* Clock.Clock;
   const processor = Option.getOrNull(yield* Effect.serviceOption(AttachmentProcessor));
-  const account = channel.accountId;
 
   const overloadReply = channel.poll
     ? chunks(
@@ -114,14 +113,22 @@ const gateway = Effect.gen(function* () {
   let rejected = 0;
 
   const authorized = (message: IncomingMessage) =>
-    message.senderId === channel.policy.ownerId &&
-    message.scopeId === channel.policy.scopeId &&
-    channel.policy.parentIds.includes(message.parentId);
+    message.senderId === channel.policy.ownerId && message.scopeId === channel.policy.scopeId;
 
   const { nameNext, externalNameChange } = yield* conversationNaming(authorized);
 
-  const resolveDestination = (conversationId: string) =>
+  const resolveDestination = (requested: string | null = null) =>
     Effect.gen(function* () {
+      const conversationId = requested ?? channel.homeConversationId;
+
+      if (conversationId === undefined)
+        return yield* Effect.fail(
+          new ChannelError({
+            reason: "configuration",
+            message: "Configure a home channel or select an explicit destination.",
+          }),
+        );
+
       if (!channel.destination)
         return yield* Effect.fail(
           new ChannelError({
@@ -130,6 +137,7 @@ const gateway = Effect.gen(function* () {
           }),
         );
       const parentId = yield* channel.destination(conversationId);
+      const account = yield* channel.accountId;
 
       const destination = yield* Schema.decodeUnknownEffect(DeliveryDestination)({
         adapter: channel.id,
@@ -162,7 +170,7 @@ const gateway = Effect.gen(function* () {
         return yield* Effect.fail(
           new ChannelError({
             reason: "permission",
-            message: "The destination is outside the authorized messaging channels.",
+            message: "The destination is outside the authorized messaging server.",
           }),
         );
       yield* channel.checkAccess(message, conversationId);
@@ -219,6 +227,7 @@ const gateway = Effect.gen(function* () {
 
   // Reconcile saved results rather than rerun inference after a crash or failed send.
   const scheduleResults = Effect.gen(function* () {
+    const account = yield* channel.accountId;
     yield* gatewayStorage(repo.rejectScheduledDeliveries(channel.id, account));
 
     for (const item of yield* gatewayStorage(repo.scheduled(channel.id))) {
@@ -230,8 +239,7 @@ const gateway = Effect.gen(function* () {
       const enabled =
         destination.account === account &&
         destination.ownerId === channel.policy.ownerId &&
-        destination.scopeId === channel.policy.scopeId &&
-        channel.policy.parentIds.includes(destination.parentId);
+        destination.scopeId === channel.policy.scopeId;
 
       yield* gatewayStorage(
         repo.scheduleResult(
@@ -267,6 +275,7 @@ const gateway = Effect.gen(function* () {
 
   /** Reconciles saved runs with the inbox and leaves interrupted sends uncertain. */
   const recover = Effect.gen(function* () {
+    const account = yield* channel.accountId;
     yield* gatewayStorage(repo.recoverDelivery(channel.id, account));
 
     for (const entry of yield* gatewayStorage(repo.executing(channel.id, account))) {
@@ -301,6 +310,8 @@ const gateway = Effect.gen(function* () {
   /** Validates and deduplicates authorized input; status and cancellation bypass inference. */
   const accept = (input: IncomingMessage) =>
     Effect.gen(function* () {
+      const account = yield* channel.accountId;
+
       const message = yield* Schema.decodeUnknownEffect(IncomingMessage)(input).pipe(
         Effect.mapError(
           () => new ChannelError({ reason: "configuration", message: "Invalid incoming message." }),
@@ -316,7 +327,7 @@ const gateway = Effect.gen(function* () {
           ? null
           : yield* gatewayStorage(repo.binding(channel.id, account, message.scopeId, conversation));
 
-      if (conversation === null && !message.mentioned) return;
+      if (session === null && !message.mentioned) return;
 
       const entry = yield* gatewayStorage(repo.accept(channel.id, account, message, overloadReply));
 
@@ -380,6 +391,8 @@ const gateway = Effect.gen(function* () {
   /** Resolves and binds a session before inference, reusing saved IDs and skill snapshots on recovery. */
   const prepareSession = (entry: Inbox) =>
     Effect.gen(function* () {
+      const account = yield* channel.accountId;
+
       const ownerText =
         entry.message.text ||
         (entry.message.attachment?.kind === "voice"
@@ -466,6 +479,8 @@ const gateway = Effect.gen(function* () {
 
   /** Executes the next eligible queued request, retrying setup only before a run exists. */
   const processNext = Effect.gen(function* () {
+    const account = yield* channel.accountId;
+
     const entry = yield* gatewayStorage(
       repo.next(channel.id, account, clock.currentTimeMillisUnsafe()),
     );
@@ -535,6 +550,11 @@ const gateway = Effect.gen(function* () {
               approveCommand: (request) => approveCommand(entry.message, conversation, request),
               source,
               readOnlyTools: source !== undefined && !entry.message.text,
+              homeTaskDestination: resolveDestination().pipe(
+                Effect.mapError(
+                  (error) => new AgentError({ reason: "tool-permission", message: error.message }),
+                ),
+              ),
               taskDestination: Effect.gen(function* () {
                 if (!authorized(entry.message))
                   return yield* Effect.fail(
@@ -661,6 +681,7 @@ const gateway = Effect.gen(function* () {
 
   /** Sends the next saved reply chunk without automatically retrying an uncertain delivery. */
   const deliverNext = Effect.gen(function* () {
+    const account = yield* channel.accountId;
     yield* scheduleResults;
 
     const delivery = yield* gatewayStorage(
@@ -715,6 +736,8 @@ const gateway = Effect.gen(function* () {
   );
 
   const pollOnce = Effect.gen(function* () {
+    const account = yield* channel.accountId;
+
     if (!channel.poll) return;
     const cursor = yield* gatewayStorage(repo.cursor(channel.id, account));
     const updates = yield* channel.poll(cursor);

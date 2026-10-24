@@ -11,10 +11,9 @@ export const conversationNaming = (authorized: (message: IncomingMessage) => boo
     const repo = yield* GatewayRepository;
     const store = yield* Store;
     const agent = yield* Agent;
-    const account = channel.accountId;
 
     // A failed or uncertain rename is inspected once, never blindly replayed.
-    const syncName = (entry: Inbox) =>
+    const syncName = (account: string, entry: Inbox) =>
       Effect.gen(function* () {
         const naming = channel.naming;
         const destination = entry.conversationId;
@@ -108,17 +107,19 @@ export const conversationNaming = (authorized: (message: IncomingMessage) => boo
       );
 
     const nameNext = Effect.gen(function* () {
+      const account = yield* channel.accountId;
       const entries = yield* gatewayStorage(repo.namingEntries(channel.id, account));
 
       for (const entry of entries) {
         if (entry.sessionId === null) continue;
         yield* agent.nameSession(entry.sessionId);
-        yield* syncName(entry);
+        yield* syncName(account, entry);
       }
     });
 
     const externalNameChange = (destination: string) =>
       Effect.gen(function* () {
+        const account = yield* channel.accountId;
         const entry = yield* gatewayStorage(repo.namingEntry(channel.id, account, destination));
 
         if (!entry || !channel.naming) return;

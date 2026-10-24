@@ -265,8 +265,8 @@ reasoning and protocol-specific response items. Only the matching adapter
 interprets this payload. Validate its version and provider/model identity; keep
 credentials out of transcripts and continuation data.
 
-The optional `<data directory>/config.json` supplies ordinary settings and
-the four editable chat controls. `POPPET_DATA_DIR`
+The optional `<data directory>/config.json` supplies ordinary settings, including
+Discord authorization and the four editable chat controls. `POPPET_DATA_DIR`
 selects the data directory and file. Other environment settings are limited to
 credentials. Internal context/tool/memory limits use fixed defaults. Provider
 selection uses the file's `provider` and `model` fields.
@@ -915,28 +915,30 @@ without treating a Discord bot token as a model-provider connection. Tokens stay
 out of logs, command output, launch arguments, and LaunchAgent environment data.
 Persist non-secret channel settings so the installed worker can load them.
 
-Discord settings and a redacted token share the protected
-`channels/discord.json` file, separate from inference credentials. Setup reads
-the token through stdin and writes atomically under the shared ownership-lock
-helper. The worker loads this file at startup. discord.js 14.27.0 owns Gateway
+Discord authorization lives in `config.json`; the protected `channels/discord.json`
+contains only the token. Discord supplies the bot identity after authentication.
+Setup reads the token through stdin and
+merges ordinary settings atomically under ownership locks. Loading settings does
+not rewrite either file.
+The worker reads both files at startup. discord.js 14.27.0 owns Gateway
 heartbeats, reconnect/resume, and Discord API encoding. Ambiguous REST failures
 are not automatically retried by the SDK. Adapter failures stay in connection
 status, leaving the local CLI and scheduler available.
 
 ### Discord threads as sessions
 
-The first adapter supports text conversations in explicitly configured guilds
-and parent text channels, restricted to one configured Discord user ID. The flow
-is:
+The Discord adapter supports text conversations across one configured server,
+restricted to one configured user ID. Its home channel is the default destination
+for proactive messages. The flow is:
 
-1. An actual mention of the bot ID in an allowed channel starts a thread from
+1. An actual mention of the bot ID in an accessible text channel starts a thread from
    that message. Its text becomes the first input in a new Poppet session.
-2. A message from the allowed user inside any allowed thread attaches a session
-   if needed, without requiring a mention. It never creates a nested thread or
+2. A mention from the configured user inside an accessible thread attaches a session
+   if needed. It never creates a nested thread or
    imports unrelated history.
 3. Subsequent messages in that thread continue the same session unless the owner
-   explicitly starts a fresh session with `/new`. Only messages
-   in parent channels require an explicit mention to start a session.
+   explicitly starts a fresh session with `/new`. Follow-ups in an attached thread
+   do not require a mention.
 4. Replies remain in the thread. A different thread starts a separate session;
    an existing binding retains its saved provider, model, and workload.
 

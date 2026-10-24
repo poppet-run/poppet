@@ -51,7 +51,7 @@ const message = (
   conversationId,
   senderId: "owner",
   text,
-  mentioned: conversationId === null,
+  mentioned: true,
 });
 
 const response = (text = "Answer") =>
@@ -85,8 +85,8 @@ const fixture = async (
 
   const channel = Layer.succeed(MessagingChannel, {
     id: "discord",
-    accountId: "bot",
-    policy: { ownerId: "owner", scopeId: "guild", parentIds: ["parent"] },
+    accountId: Effect.succeed("bot"),
+    policy: { ownerId: "owner", scopeId: "guild" },
     messages: Stream.never,
     conversation: (input) => Effect.succeed(input.conversationId ?? `thread-${input.messageId}`),
     checkAccess: () => Effect.void,
@@ -204,6 +204,47 @@ const fixture = async (
     close: () => rm(directory, { recursive: true, force: true }),
   };
 };
+
+test("gateway status stays available while saved operations wait for authenticated identity", async () => {
+  const identity = Deferred.makeUnsafe<string>();
+
+  const f = await fixture({
+    accountId: Deferred.await(identity),
+    status: Effect.succeed({ connected: false }),
+  });
+
+  try {
+    await f.run(
+      Effect.gen(function* () {
+        const gateway = yield* Gateway;
+        const repo = yield* GatewayRepository;
+        let accepted = false;
+
+        const pending = yield* gateway.accept(message("1")).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              accepted = true;
+            }),
+          ),
+          Effect.forkChild,
+        );
+
+        yield* Effect.yieldNow;
+        expect(accepted).toBe(false);
+        expect(yield* gateway.connectionStatus).toMatchObject({ connected: false });
+        yield* Deferred.succeed(identity, "authenticated-bot");
+        yield* Fiber.join(pending);
+        expect(accepted).toBe(true);
+        expect(yield* repo.next("discord", "authenticated-bot", Date.now())).not.toBeNull();
+        expect(yield* gateway.resolveDestination("thread")).toMatchObject({
+          account: "authenticated-bot",
+        });
+      }),
+    );
+  } finally {
+    await f.close();
+  }
+});
 
 const scheduled = (destination: DeliveryDestination | null) =>
   Effect.gen(function* () {
@@ -524,102 +565,105 @@ describe.concurrent("Gateway", () => {
       await state.close();
     }
   });
-  test.each([false, true])(
-    "when conversation access is revoked=%s, validates current authorization before saving chat task delivery",
-    async (revoked) => {
-      let denied = false;
-      let calls = 0;
+  test.each([
+    { delivery: "here", revoked: false },
+    { delivery: "here", revoked: true },
+    { delivery: "home", revoked: false },
+    { delivery: "home", revoked: true },
+  ])("validates $delivery task delivery with revoked=$revoked", async ({ delivery, revoked }) => {
+    let denied = false;
+    let calls = 0;
 
-      const state = await fixture(
-        {
-          checkAccess: () =>
-            denied
-              ? Effect.fail(new ChannelError({ reason: "permission", message: "Access revoked" }))
-              : Effect.void,
-        },
-        () => {
-          if (++calls > 1) return response("Task saved");
-          denied = revoked;
+    const state = await fixture(
+      {
+        homeConversationId: "home",
+        checkAccess: () =>
+          denied
+            ? Effect.fail(new ChannelError({ reason: "permission", message: "Access revoked" }))
+            : Effect.void,
+      },
+      () => {
+        if (++calls > 1) return response("Task saved");
+        denied = revoked;
 
-          return Stream.make({
-            type: "completed" as const,
-            response: {
-              output: [
-                {
-                  type: "tool-call" as const,
-                  callId: "create",
-                  name: "manage_tasks",
-                  namespace: "poppet_tasks",
-                  arguments: JSON.stringify({
-                    action: "create",
-                    id: null,
-                    name: "Weekly review",
-                    prompt: "Summarize recent conversations",
-                    schedule: { type: "cron", expression: "0 9 * * 5", timezone: "Europe/London" },
-                    delivery: "here",
-                    skill: null,
-                    after: null,
-                    revision: null,
-                    target: null,
-                    until: null,
-                  }),
-                },
-              ],
-              finishReason: "tool-calls" as const,
-              usage: null,
-              continuation: {
-                version: 1 as const,
-                provider: "test-provider",
-                model: "test-model",
-                data: {},
+        return Stream.make({
+          type: "completed" as const,
+          response: {
+            output: [
+              {
+                type: "tool-call" as const,
+                callId: "create",
+                name: "manage_tasks",
+                namespace: "poppet_tasks",
+                arguments: JSON.stringify({
+                  action: "create",
+                  id: null,
+                  name: "Weekly review",
+                  prompt: "Summarize recent conversations",
+                  schedule: { type: "cron", expression: "0 9 * * 5", timezone: "Europe/London" },
+                  delivery,
+                  skill: null,
+                  after: null,
+                  revision: null,
+                  target: null,
+                  until: null,
+                }),
               },
+            ],
+            finishReason: "tool-calls" as const,
+            usage: null,
+            continuation: {
+              version: 1 as const,
+              provider: "test-provider",
+              model: "test-model",
+              data: {},
             },
-          });
-        },
-        true,
+          },
+        });
+      },
+      true,
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.accept(
+            message("schedule", null, "Create a weekly review and deliver it here"),
+          );
+          yield* gateway.processNext;
+          const tasks = yield* (yield* TaskRepository).list();
+
+          if (revoked) {
+            expect(tasks).toEqual([]);
+            const store = yield* Store;
+            const run = (yield* store.runs((yield* store.sessions)[0]!.id))[0]!;
+            expect(run.status).toBe("completed");
+            expect(yield* store.toolCalls(run.id)).toMatchObject([
+              { status: "failed", failureReason: "agent:tool-permission" },
+            ]);
+          } else
+            expect(tasks[0]).toMatchObject({
+              name: "Weekly review",
+              provider: "test-provider",
+              model: "test-model",
+              destination: {
+                adapter: "discord",
+                account: "bot",
+                ownerId: "owner",
+                scopeId: "guild",
+                parentId: "parent",
+                conversationId: delivery === "home" ? "home" : "thread-schedule",
+              },
+            });
+        }),
       );
-
-      try {
-        await state.run(
-          Effect.gen(function* () {
-            const gateway = yield* Gateway;
-            yield* gateway.accept(
-              message("schedule", null, "Create a weekly review and deliver it here"),
-            );
-            yield* gateway.processNext;
-            const tasks = yield* (yield* TaskRepository).list();
-
-            if (revoked) {
-              expect(tasks).toEqual([]);
-              const store = yield* Store;
-              const run = (yield* store.runs((yield* store.sessions)[0]!.id))[0]!;
-              expect(run.status).toBe("completed");
-              expect(yield* store.toolCalls(run.id)).toMatchObject([
-                { status: "failed", failureReason: "agent:tool-permission" },
-              ]);
-            } else
-              expect(tasks[0]).toMatchObject({
-                name: "Weekly review",
-                provider: "test-provider",
-                model: "test-model",
-                destination: {
-                  adapter: "discord",
-                  account: "bot",
-                  ownerId: "owner",
-                  scopeId: "guild",
-                  parentId: "parent",
-                  conversationId: "thread-schedule",
-                },
-              });
-          }),
-        );
-        expect(calls).toBe(revoked ? 1 : 2);
-        expect(state.requests).toHaveLength(2);
-      } finally {
-        await state.close();
-      }
-    },
-  );
+      expect(calls).toBe(revoked ? 1 : 2);
+      expect(state.requests).toHaveLength(2);
+    } finally {
+      await state.close();
+    }
+  });
 
   test("when a selected skill changes after restart, retains its snapshot until a new unskilled session replaces it", async () => {
     const adapter = "test-channel";
@@ -1025,51 +1069,59 @@ describe.concurrent("Gateway", () => {
     }
   });
 
-  test("when a saved occurrence is delivered after restart, uses its destination snapshot without changing chat", async () => {
-    const adapter = "test-channel";
-    const state = await fixture({ id: adapter });
+  test.each(["explicit", "home"])(
+    "when a saved %s occurrence is delivered after restart, uses its destination snapshot without changing chat",
+    async (selection) => {
+      const adapter = "test-channel";
+      const conversationId = selection === "home" ? "home-channel" : "scheduled-thread";
+      const state = await fixture({ id: adapter, homeConversationId: "home-channel" });
 
-    try {
-      const occurrence = await state.run(
-        Effect.gen(function* () {
-          const gateway = yield* Gateway;
-          const destination = yield* gateway.resolveDestination("scheduled-thread");
-          const item = yield* scheduled(destination);
-          const sql = yield* SqlClient.SqlClient;
-          // Later configuration and task edits cannot redirect this occurrence.
-          yield* sql.unsafe("UPDATE jobs SET destination = ?", [
-            JSON.stringify({ ...destination, conversationId: "different-thread" }),
-          ]);
+      try {
+        const occurrence = await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
 
-          return item;
-        }),
-      );
+            const destination = yield* gateway.resolveDestination(
+              selection === "home" ? null : conversationId,
+            );
 
-      await state.run(
-        Effect.gen(function* () {
-          const gateway = yield* Gateway;
-          yield* gateway.recover;
-          expect(yield* gateway.deliverNext).toBe(true);
-          expect(yield* gateway.deliverNext).toBe(false);
-          expect(yield* (yield* TaskDeliveries).forOccurrence(occurrence.id)).toMatchObject([
-            { state: "sent", attempts: 0 },
-          ]);
-          expect((yield* (yield* TaskRepository).occurrence(occurrence.id)).status).toBe(
-            "completed",
-          );
-          expect(
-            yield* (yield* GatewayRepository).binding(adapter, "bot", "guild", "scheduled-thread"),
-          ).toBeNull();
-        }),
-      );
-      expect(state.sent).toEqual([
-        { destination: "scheduled-thread", text: "Answer", nonce: expect.any(String) },
-      ]);
-      expect(state.requests).toHaveLength(1);
-    } finally {
-      await state.close();
-    }
-  });
+            const item = yield* scheduled(destination);
+            const sql = yield* SqlClient.SqlClient;
+            // Later configuration and task edits cannot redirect this occurrence.
+            yield* sql.unsafe("UPDATE jobs SET destination = ?", [
+              JSON.stringify({ ...destination, conversationId: "different-thread" }),
+            ]);
+
+            return item;
+          }),
+        );
+
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            yield* gateway.recover;
+            expect(yield* gateway.deliverNext).toBe(true);
+            expect(yield* gateway.deliverNext).toBe(false);
+            expect(yield* (yield* TaskDeliveries).forOccurrence(occurrence.id)).toMatchObject([
+              { state: "sent", attempts: 0 },
+            ]);
+            expect((yield* (yield* TaskRepository).occurrence(occurrence.id)).status).toBe(
+              "completed",
+            );
+            expect(
+              yield* (yield* GatewayRepository).binding(adapter, "bot", "guild", conversationId),
+            ).toBeNull();
+          }),
+        );
+        expect(state.sent).toEqual([
+          { destination: conversationId, text: "Answer", nonce: expect.any(String) },
+        ]);
+        expect(state.requests).toHaveLength(1);
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
   test.each(["unavailable", "permission", "uncertain"] as const)(
     "when scheduled delivery is %s, keeps its state separate from execution across restart",
@@ -1176,7 +1228,7 @@ describe.concurrent("Gateway", () => {
     }
   });
 
-  test.each(["owner", "guild", "parent", "account"])(
+  test.each(["owner", "guild", "account"])(
     "when scheduled delivery has changed %s authorization, rejects it",
     async (field) => {
       const state = await fixture();
@@ -1191,7 +1243,6 @@ describe.concurrent("Gateway", () => {
               ...original,
               ownerId: field === "owner" ? "other" : original.ownerId,
               scopeId: field === "guild" ? "other" : original.scopeId,
-              parentId: field === "parent" ? "other" : original.parentId,
               account: field === "account" ? "other" : original.account,
             };
 
@@ -1242,9 +1293,16 @@ describe.concurrent("Gateway", () => {
     }
   });
 
-  test("when explicit task destinations are supplied, validates them before saving and rejects unauthorized parents", async () => {
+  test("when explicit task destinations are supplied, validates them before saving and rejects inaccessible destinations", async () => {
     let parent = "parent";
-    const state = await fixture({ destination: () => Effect.succeed(parent) });
+
+    const state = await fixture({
+      destination: () => Effect.succeed(parent),
+      checkAccess: () =>
+        parent === "unauthorized"
+          ? Effect.fail(new ChannelError({ reason: "permission", message: "Access revoked" }))
+          : Effect.void,
+    });
 
     try {
       await state.run(
@@ -1270,6 +1328,10 @@ describe.concurrent("Gateway", () => {
             yield* executeTaskCommand(repo, store, command, 0).pipe(Effect.result),
           ).toHaveProperty("failure.message", expect.stringContaining("Start worker"));
           expect(yield* repo.list()).toEqual([]);
+          expect(yield* gateway.resolveDestination().pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "configuration",
+          );
           const resolved = yield* gateway.resolveDestination("saved-thread");
 
           const added = yield* executeTaskCommand(repo, store, command, 0).pipe(
@@ -1453,10 +1515,9 @@ describe.concurrent("Gateway", () => {
           for (const input of [
             { ...message("stranger"), senderId: "stranger" },
             { ...message("wrong-guild"), scopeId: "other" },
-            { ...message("wrong-parent"), parentId: "other" },
             { ...message("unmentioned"), mentioned: false },
             { ...message("stranger-thread", "existing-thread"), senderId: "stranger" },
-            { ...message("wrong-parent-thread", "existing-thread"), parentId: "other" },
+            { ...message("unmentioned-thread", "existing-thread"), mentioned: false },
           ])
             yield* gateway.accept(input);
           expect(yield* (yield* Store).sessions).toHaveLength(0);
@@ -1465,9 +1526,12 @@ describe.concurrent("Gateway", () => {
           yield* gateway.accept(message("first"));
           yield* gateway.accept(message("first"));
           expect(yield* gateway.processNext).toBe(true);
-          yield* gateway.accept(message("second", "thread-first", "Continue"));
+          yield* gateway.accept({
+            ...message("second", "thread-first", "Continue"),
+            mentioned: false,
+          });
           yield* gateway.processNext;
-          yield* gateway.accept(message("third", "existing-thread"));
+          yield* gateway.accept({ ...message("third", "existing-thread"), parentId: "other" });
           yield* gateway.processNext;
           expect(yield* (yield* Store).sessions).toHaveLength(2);
 

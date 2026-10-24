@@ -69,6 +69,8 @@
       "name": "@poppet/channel-discord",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/config": "workspace:*",
+        "@poppet/credentials": "workspace:*",
         "@poppet/gateway": "workspace:*",
         "discord.js": "14.27.0",
         "effect": "4.0.4",

@@ -49,11 +49,10 @@ export const IncomingMessage = Schema.Struct({
 
 export type IncomingMessage = typeof IncomingMessage.Type;
 
-/** The owner, remote scope, and parent channels allowed to submit requests. */
+/** The owner and remote scope allowed to submit requests. */
 export interface ChannelPolicy {
   readonly ownerId: string;
   readonly scopeId: string;
-  readonly parentIds: ReadonlyArray<string>;
 }
 
 /** One polled update; null messages are deliberately ignored before advancing the cursor. */
@@ -67,8 +66,11 @@ export class MessagingChannel extends Context.Service<
   MessagingChannel,
   {
     readonly id: string;
-    readonly accountId: string;
+    /** Resolves the authenticated account without blocking connection status during login. */
+    readonly accountId: Effect.Effect<string, ChannelError>;
     readonly policy: ChannelPolicy;
+    /** Default destination for proactive messages, if configured. */
+    readonly homeConversationId?: string;
     readonly messages: Stream.Stream<IncomingMessage, ChannelError>;
     /** Pull-based adapters advance only after the gateway durably accepts each update. */
     readonly poll?: (
