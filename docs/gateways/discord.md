@@ -15,8 +15,11 @@ Choose a private home channel that only trusted people can read. The
 configured user is the only person who can invoke Poppet, but everyone with
 channel access can read replies containing personal memory and conversation content.
 
-Save the bot token through stdin as shown below. The token is never accepted as
-an argument.
+Run `poppet setup` to choose an assistant-capable provider and model, then configure
+Discord with token input masked by asterisks. Reruns can reuse the saved token while editing IDs.
+
+For separate gateway setup, save the bot token through stdin as shown below. The
+token is never accepted as an argument.
 
 Bash / POSIX sh:
 
