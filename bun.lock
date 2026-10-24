@@ -82,6 +82,7 @@
       "dependencies": {
         "@poppet/browser": "workspace:*",
         "@poppet/credentials": "workspace:*",
+        "@poppet/io": "workspace:*",
         "@poppet/mcp": "workspace:*",
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
@@ -91,6 +92,7 @@
       "name": "@poppet/credentials",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/io": "workspace:*",
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
       },
@@ -102,6 +104,7 @@
         "@poppet/agent": "workspace:*",
         "@poppet/config": "workspace:*",
         "@poppet/credentials": "workspace:*",
+        "@poppet/io": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/store": "workspace:*",
         "@poppet/tasks": "workspace:*",
@@ -172,6 +175,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@poppet/credentials": "workspace:*",
+        "@poppet/io": "workspace:*",
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
         "jose": "6.2.12",

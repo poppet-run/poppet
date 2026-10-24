@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@poppet/credentials": "workspace:*",
+    "@poppet/io": "workspace:*",
     "@poppet/provider": "workspace:*",
     "effect": "4.0.4",
     "jose": "6.2.12",

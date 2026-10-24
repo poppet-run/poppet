@@ -1,15 +1,12 @@
-import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { acquireOwnerLock } from "@poppet/credentials/lock";
+import { isMissingFile, readProtectedFile, writeFileAtomic } from "@poppet/io";
 import { Effect, Layer, Schema } from "effect";
 
 import { ChannelError, type MessagingChannel } from "#src/channel";
 import { ChannelEnvironment } from "#src/registration";
-
-const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 
 const settingsError = () =>
   new ChannelError({
@@ -26,7 +23,7 @@ const directoryFor = (dataDirectory: string, adapter: string, create: boolean) =
       if (create) await mkdir(directory, { recursive: true, mode: 0o700 });
 
       const info = await lstat(directory).catch((cause: unknown) => {
-        if (Schema.is(MissingFile)(cause)) return null;
+        if (isMissingFile(cause)) return null;
         throw cause;
       });
 
@@ -49,34 +46,11 @@ export const loadChannelSettings = (dataDirectory: string, adapter: string) =>
     if (directory === null) return null;
 
     return yield* Effect.tryPromise({
-      try: async () => {
-        const handle = await open(
-          join(directory, `${adapter}.json`),
-          constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-        ).catch((cause: unknown) => {
-          if (Schema.is(MissingFile)(cause)) return null;
-          throw cause;
-        });
-
-        if (handle === null) return null;
-
-        try {
-          const info = await handle.stat();
-
-          if (
-            !info.isFile() ||
-            info.nlink !== 1 ||
-            info.uid !== process.getuid?.() ||
-            info.size > 16384
-          )
-            throw new Error("Invalid channel file");
-          await handle.chmod(0o600);
-
-          return await handle.readFile("utf8");
-        } finally {
-          await handle.close();
-        }
-      },
+      try: () =>
+        readProtectedFile(join(directory, `${adapter}.json`), {
+          maxBytes: 16384,
+          makePrivate: true,
+        }),
       catch: settingsError,
     });
   });
@@ -93,20 +67,7 @@ export const saveChannelSettings = (dataDirectory: string, adapter: string, cont
         Effect.mapError(settingsError),
       );
       yield* Effect.tryPromise({
-        try: async () => {
-          const temporary = join(directory, `.${adapter}-${randomUUID()}.tmp`);
-          const handle = await open(temporary, "wx", 0o600);
-
-          try {
-            await handle.writeFile(contents, "utf8");
-            await handle.sync();
-            await handle.close();
-            await rename(temporary, join(directory, `${adapter}.json`));
-          } finally {
-            await handle.close().catch(() => undefined);
-            await unlink(temporary).catch(() => undefined);
-          }
-        },
+        try: () => writeFileAtomic(join(directory, `${adapter}.json`), contents),
         catch: settingsError,
       });
     }),
