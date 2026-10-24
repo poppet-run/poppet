@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
-import { decodeRow, decodeRows } from "@poppet/store";
+import { decodeRow, decodeRows, reportAs } from "@poppet/store";
 import { Clock, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
@@ -57,7 +57,7 @@ export const LocalMemoryLive = Layer.effect(
 
     const list = sql`SELECT * FROM memories ORDER BY key`.pipe(
       decodeRows(MemoryFact),
-      Effect.mapError(memoryFailure),
+      reportAs(memoryFailure),
     );
 
     const current = (key: string) =>
@@ -125,7 +125,7 @@ export const LocalMemoryLive = Layer.effect(
     const transaction = <A, E, R>(change: (at: number) => Effect.Effect<A, E, R>) =>
       Clock.currentTimeMillis.pipe(
         Effect.flatMap((at) => sql.withTransaction(change(at))),
-        Effect.mapError(memoryFailure),
+        reportAs(memoryFailure),
       );
 
     const saveMemory = (
@@ -196,7 +196,7 @@ export const LocalMemoryLive = Layer.effect(
               decodeRows(MemoryRevision),
             ),
           ),
-          Effect.mapError(memoryFailure),
+          reportAs(memoryFailure),
         ),
       revert: (key, revision) =>
         transaction((at) =>

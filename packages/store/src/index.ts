@@ -1,6 +1,6 @@
 export { Store, StoreLive } from "#src/service";
 
-export { StoreError } from "#src/errors";
+export { StoreError, reportAs } from "#src/errors";
 
 export { StoreDatabase, StoreDatabaseLive } from "#src/database";
 

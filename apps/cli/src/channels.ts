@@ -12,7 +12,7 @@ import {
   GatewayRepository,
   GatewayRepositoryLive,
 } from "@poppet/gateway";
-import { DeliveryDestination, StoreError } from "@poppet/store";
+import { DeliveryDestination, StoreError, reportAs } from "@poppet/store";
 import {
   Cause,
   Clock,
@@ -66,7 +66,7 @@ const counts = (repo: GatewayRepository["Service"]) =>
   repo
     .status()
     .pipe(
-      Effect.mapError(
+      reportAs(
         () => new StoreError({ reason: "storage", message: "Cannot read messaging status." }),
       ),
     );

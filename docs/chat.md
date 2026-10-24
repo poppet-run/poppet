@@ -225,8 +225,10 @@ statements by session and message IDs. Saved statements may no longer be current
 search match or `after_message_id` for forward paging. Set unused anchors to
 `null`; both anchors cannot be set together. With neither anchor it starts at the
 earliest eligible message. Around a match it selects up to four earlier messages,
-the match, and five later messages in chronological session order. A smaller byte
-budget can reduce this window while retaining the match. Missing sessions and
+the match, and five later messages in chronological session order. The byte budget
+sets the page size and each message's text length, so a smaller budget returns
+fewer, shorter messages while keeping the match and at least one earlier message.
+Results stay close to the budget but are not fitted to it exactly. Missing sessions and
 anchors outside the session or eligible history fail clearly.
 
 The result contains `sessionId`, the current `title`, and at most ten `messages`

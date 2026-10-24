@@ -1,4 +1,5 @@
 import { Data, Effect, Schema } from "effect";
+import { SqlError } from "effect/sql";
 
 /** Distinguishes storage failures from invalid requests, missing records, and state conflicts. */
 export class StoreError extends Data.TaggedError("StoreError")<{
@@ -51,3 +52,23 @@ export const decodeInput = <S extends Schema.Top>(
         }),
     ),
   );
+
+/**
+ * Logs why storage failed, to stderr, so generic errors stay debuggable.
+ * Only the SQLite message or a schema mismatch is logged, never saved content.
+ */
+export const logStorageCause = (cause: unknown) =>
+  cause instanceof SqlError.SqlError
+    ? Effect.logError(
+        "Storage query failed",
+        cause.reason.cause instanceof Error ? cause.reason.cause.message : cause.message,
+      )
+    : cause instanceof Schema.SchemaError
+      ? Effect.logError("A saved record does not match its schema")
+      : Effect.void;
+
+/** Logs an unexpected storage cause, then reports it with the caller's error type. */
+export const reportAs =
+  <B>(convert: (cause: unknown) => B) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(Effect.tapError(logStorageCause), Effect.mapError(convert));
