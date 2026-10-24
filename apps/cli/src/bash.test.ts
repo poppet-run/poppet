@@ -12,6 +12,21 @@ import { bashFixtures } from "../../../tools/testing/bash-fixtures";
 
 const signal = () => new AbortController().signal;
 
+// A killed orphan stays signalable until init reaps it, so wait briefly for it to disappear.
+const exited = async (pid: number) => {
+  for (const deadline = Date.now() + 2000; Date.now() < deadline;) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+
+    await Bun.sleep(10);
+  }
+
+  return false;
+};
+
 describe("Bash execution", () => {
   test("runs shell operations in the exact directory and returns bounded stdout, stderr, and exit status", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "poppet-bash-"));
@@ -48,7 +63,8 @@ describe("Bash execution", () => {
 
     try {
       await expect(
-        executeBash({ command: bashFixtures.timeout, cwd, timeoutSeconds: 1 }, 1024, signal()),
+        // A fractional timeout keeps the test fast; tool input is still validated as whole seconds.
+        executeBash({ command: bashFixtures.timeout, cwd, timeoutSeconds: 0.1 }, 1024, signal()),
       ).rejects.toMatchObject({ reason: "tool-uncertain" });
       const started = Date.now();
 
@@ -59,7 +75,7 @@ describe("Bash execution", () => {
       );
 
       expect(result.exitCode).toBe(0);
-      expect(() => process.kill(Number(result.stdout.trim()), 0)).toThrow();
+      expect(await exited(Number(result.stdout.trim()))).toBe(true);
       expect(Date.now() - started).toBeLessThan(3000);
     } finally {
       await rm(cwd, { recursive: true, force: true });
