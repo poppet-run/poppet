@@ -16,7 +16,6 @@ export class TaskDestinations extends Context.Service<
   }
 >()("poppet/TaskDestinations") {}
 
-/** Runs synchronous task parsing or validation, reporting unexpected failures generically. */
 /** One reply chunk sent for an occurrence; delivery is owned by the messaging gateway. */
 export interface TaskDelivery {
   readonly runId: string;
