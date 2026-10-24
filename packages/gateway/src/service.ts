@@ -28,7 +28,6 @@ import {
   Stream,
 } from "effect";
 
-import { AttachmentProcessor } from "#src/attachments";
 import { ChannelError, IncomingMessage, MessagingChannel } from "#src/channel";
 import { conversationNaming } from "#src/conversation-naming";
 import { GatewayRepository, gatewayStorage, type Inbox } from "#src/repository";
@@ -94,7 +93,6 @@ const gateway = Effect.gen(function* () {
   const skills = yield* Skills;
   const config = yield* AppConfig;
   const clock = yield* Clock.Clock;
-  const processor = Option.getOrNull(yield* Effect.serviceOption(AttachmentProcessor));
 
   const overloadReply = channel.poll
     ? chunks(
@@ -254,20 +252,9 @@ const gateway = Effect.gen(function* () {
   });
 
   const finish = (id: number, text: string, state = "completed") =>
-    gatewayStorage(
-      Effect.gen(function* () {
-        const source = (yield* repo.attachment(id))?.result;
-
-        const receipt =
-          source === null || source === undefined
-            ? ""
-            : source.kind === "voice"
-              ? `Transcript (local speech recognition):\n${source.text}\n\nAny action needs your confirmation in a subsequent text message.\n\n`
-              : `Document ${JSON.stringify(source.name)}: ${source.completeness}\n\n`;
-
-        yield* repo.complete(id, chunks(`${receipt}${text}`, channel.textLimit), state);
-      }),
-    ).pipe(Effect.andThen(wake(deliveryWake)));
+    gatewayStorage(repo.complete(id, chunks(text, channel.textLimit), state)).pipe(
+      Effect.andThen(wake(deliveryWake)),
+    );
 
   // shortcut: Reactions are best effort; add durable reconciliation if stale markers after crashes matter.
   const mark = (message: IncomingMessage, state: "working" | "completed" | "stopped") =>
@@ -281,26 +268,8 @@ const gateway = Effect.gen(function* () {
     for (const entry of yield* gatewayStorage(repo.executing(channel.id, account))) {
       const run = yield* store.run(entry.runId);
 
-      if (run === null) {
-        const processing = yield* gatewayStorage(
-          repo.attachment(entry.id).pipe(Effect.map((saved) => saved?.state === "processing")),
-        );
-
-        if (processing && entry.attempts >= 3) {
-          yield* gatewayStorage(
-            repo.extractionFailed(
-              entry.id,
-              "Attachment processing was repeatedly interrupted. Send the file again.",
-            ),
-          );
-          yield* finish(
-            entry.id,
-            "Attachment processing was repeatedly interrupted. Send the file again.",
-            "failed",
-          );
-        } else if (processing) yield* gatewayStorage(repo.retry(entry, 0));
-        else yield* gatewayStorage(repo.state(entry.id, "queued"));
-      } else {
+      if (run === null) yield* gatewayStorage(repo.state(entry.id, "queued"));
+      else {
         yield* finish(entry.id, answer(run));
         yield* mark(entry.message, run.status === "completed" ? "completed" : "stopped");
       }
@@ -318,8 +287,7 @@ const gateway = Effect.gen(function* () {
         ),
       );
 
-      if (!authorized(message) || (!message.text.trim() && message.attachment === undefined))
-        return;
+      if (!authorized(message) || !message.text.trim()) return;
       const conversation = message.conversationId;
 
       const session =
@@ -393,12 +361,7 @@ const gateway = Effect.gen(function* () {
     Effect.gen(function* () {
       const account = yield* channel.accountId;
 
-      const ownerText =
-        entry.message.text ||
-        (entry.message.attachment?.kind === "voice"
-          ? "Respond to this voice transcript. For a requested action, propose it with the resolved time/timezone and ask for confirmation in a subsequent text message. Do not perform it."
-          : `Give a short summary of ${JSON.stringify(entry.message.attachment?.name ?? "this attachment")}.`);
-
+      const ownerText = entry.message.text;
       const parsed = yield* messagingRequest(ownerText).pipe(Effect.result);
       const prompt = Result.isSuccess(parsed) ? parsed.success.prompt : ownerText;
 
@@ -512,44 +475,10 @@ const gateway = Effect.gen(function* () {
             Effect.forever,
             Effect.forkScoped,
           );
-          let source;
-
-          if (entry.message.attachment !== undefined) {
-            const saved = yield* gatewayStorage(repo.attachment(entry.id));
-
-            if (saved?.state === "failed")
-              return yield* Effect.fail(
-                new ChannelError({
-                  reason: "attachment",
-                  message: saved.failure ?? "Attachment processing failed. Send the file again.",
-                }),
-              );
-            source = saved?.result ?? undefined;
-
-            if (source === undefined) {
-              yield* gatewayStorage(repo.processing(entry.id));
-
-              if (processor === null || channel.download === undefined)
-                return yield* Effect.fail(
-                  new ChannelError({
-                    reason: "attachment",
-                    message: "Attachment processing is unavailable for this adapter.",
-                  }),
-                );
-              const maxBytes = yield* processor.limit(entry.message.attachment);
-              const bytes = yield* channel.download(entry.message, maxBytes);
-              const extracted = yield* processor.extract(entry.message.attachment, bytes);
-              yield* gatewayStorage(repo.extracted(entry.id, extracted));
-              source = extracted;
-            }
-          }
-
           yield* Stream.runDrain(
             agent.send(session.id, prompt, {
               runId: entry.runId,
               approveCommand: (request) => approveCommand(entry.message, conversation, request),
-              source,
-              readOnlyTools: source !== undefined && !entry.message.text,
               homeTaskDestination: resolveDestination().pipe(
                 Effect.mapError(
                   (error) => new AgentError({ reason: "tool-permission", message: error.message }),
@@ -587,32 +516,9 @@ const gateway = Effect.gen(function* () {
           if (Exit.isSuccess(exit)) return;
           yield* mark(entry.message, "stopped");
 
-          if (Cause.hasInterrupts(exit.cause)) {
-            yield* gatewayStorage(
-              Effect.gen(function* () {
-                if (
-                  (yield* repo.item(entry.id)).state === "cancelled" &&
-                  (yield* repo.attachment(entry.id))?.state === "processing"
-                )
-                  yield* repo.extractionFailed(entry.id, "Attachment processing was cancelled.");
-              }),
-            );
-
-            return;
-          }
+          if (Cause.hasInterrupts(exit.cause)) return;
 
           const error = Option.getOrNull(Cause.findErrorOption(exit.cause));
-
-          if (
-            entry.message.attachment !== undefined &&
-            error instanceof ChannelError &&
-            error.reason === "attachment"
-          )
-            yield* gatewayStorage(
-              repo
-                .processing(entry.id)
-                .pipe(Effect.andThen(repo.extractionFailed(entry.id, error.message))),
-            );
 
           if (
             error instanceof ChannelError &&
@@ -628,26 +534,12 @@ const gateway = Effect.gen(function* () {
           } else {
             const saved = yield* gatewayStorage(repo.item(entry.id));
 
-            if (entry.message.attachment !== undefined && error instanceof ChannelError)
-              yield* gatewayStorage(
-                Effect.gen(function* () {
-                  if ((yield* repo.attachment(entry.id))?.state === "processing")
-                    yield* repo.extractionFailed(entry.id, error.message);
-                }),
-              );
-
             if (saved.conversationId !== null && error !== null && !(error instanceof StoreError)) {
               yield* finish(
                 entry.id,
                 error instanceof AgentError && error.reason.startsWith("command-")
                   ? error.message
-                  : error instanceof ChannelError && error.reason === "attachment"
-                    ? error.message
-                    : error instanceof AgentError &&
-                        error.reason === "context-limit" &&
-                        entry.message.attachment !== undefined
-                      ? "This attachment and request exceed the configured conversation context budget. Send a shorter file or caption. No inference was started."
-                      : "The request failed. Use /status in this conversation to inspect its session before sending a new request.",
+                  : "The request failed. Use /status in this conversation to inspect its session before sending a new request.",
                 "failed",
               );
             } else yield* gatewayStorage(repo.state(entry.id, "failed"));

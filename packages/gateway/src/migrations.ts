@@ -1,7 +1,7 @@
 import { migrationStatements } from "@poppet/store";
 import { Migrator } from "effect/sql";
 
-// Messaging channels: inbox, bindings, attachments, deliveries, and polling cursors. Each statement runs separately; append new migrations, never edit applied ones.
+// Messaging channels: inbox, bindings, deliveries, and polling cursors. Each statement runs separately; append new migrations, never edit applied ones.
 const baseline: ReadonlyArray<string> = [
   `CREATE TABLE gateway_bindings (
     adapter TEXT NOT NULL,
@@ -37,18 +37,6 @@ const baseline: ReadonlyArray<string> = [
 
   `CREATE UNIQUE INDEX scheduled_gateway_result ON gateway_inbox (occurrence_id, run_id)
     WHERE occurrence_id IS NOT NULL`,
-
-  `CREATE TABLE gateway_attachments (
-    inbox_id INTEGER PRIMARY KEY REFERENCES gateway_inbox (id) ON DELETE CASCADE,
-    state TEXT NOT NULL,
-    result TEXT,
-    failure TEXT,
-    CHECK (CASE state
-      WHEN 'accepted' THEN result IS NOT NULL AND failure IS NULL
-      WHEN 'failed' THEN result IS NULL AND failure IS NOT NULL
-      ELSE result IS NULL AND failure IS NULL
-    END)
-  ) STRICT`,
 
   `CREATE TABLE gateway_deliveries (
     inbox_id INTEGER NOT NULL REFERENCES gateway_inbox (id),

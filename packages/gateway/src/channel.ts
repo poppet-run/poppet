@@ -2,38 +2,12 @@ import { Context, Data, Effect, Schema, Stream } from "effect";
 
 /** An adapter failure; uncertain means a remote action may already have taken effect. */
 export class ChannelError extends Data.TaggedError("ChannelError")<{
-  readonly reason:
-    | "unavailable"
-    | "permission"
-    | "uncertain"
-    | "configuration"
-    | "overloaded"
-    | "attachment";
+  readonly reason: "unavailable" | "permission" | "uncertain" | "configuration" | "overloaded";
   readonly message: string;
   readonly retryAfterMs?: number;
 }> {}
 
 const ExternalId = Schema.NonEmptyString.check(Schema.isMaxLength(128));
-
-// Voice metadata remains decodable for saved inbox entries; new recordings are unsupported.
-export const Attachment = Schema.Struct({
-  kind: Schema.Literals(["document", "voice", "unsupported"]),
-  fileId: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
-  name: Schema.String.check(Schema.isMaxLength(120)),
-  mime: Schema.String.check(Schema.isMaxLength(128)),
-  size: Schema.optionalKey(Schema.Natural),
-  duration: Schema.optionalKey(Schema.Natural),
-});
-
-export type Attachment = typeof Attachment.Type;
-
-export const safeAttachmentName = (name: string) =>
-  name
-    .replaceAll("\\", "/")
-    .split("/")
-    .at(-1)!
-    .replace(/[\p{Cc}\p{Cf}]/gu, "")
-    .slice(0, 120) || "Document";
 
 /** Adapter-normalized input with source IDs retained for authorization and deduplication. */
 export const IncomingMessage = Schema.Struct({
@@ -44,7 +18,6 @@ export const IncomingMessage = Schema.Struct({
   senderId: ExternalId,
   text: Schema.String.check(Schema.isMaxLength(8192)),
   mentioned: Schema.Boolean,
-  attachment: Schema.optionalKey(Attachment),
 });
 
 export type IncomingMessage = typeof IncomingMessage.Type;
@@ -85,11 +58,6 @@ export class MessagingChannel extends Context.Service<
     ) => Effect.Effect<void, ChannelError>;
     /** Resolves an existing destination's parent; the gateway rechecks its policy and access. */
     readonly destination?: (conversationId: string) => Effect.Effect<string, ChannelError>;
-    /** Resolves only the attachment reference from this authorized, saved message. */
-    readonly download?: (
-      message: IncomingMessage,
-      maxBytes: number,
-    ) => Effect.Effect<Uint8Array, ChannelError>;
     readonly typing: (conversationId: string) => Effect.Effect<void, ChannelError>;
     /** Updates a source message's progress indicator; the gateway treats failures as best effort. */
     readonly mark: (
