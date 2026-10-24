@@ -137,9 +137,9 @@ here to use the current thread, or local delivery to keep results on the machine
 CLI chat creates tasks with local results. See [tasks](tasks.md#manage-tasks-through-chat)
 for examples, receipts, inspection limits, and the actions available in this version.
 
-Edits require an inspected definition revision; skip-next, snooze and run-now also
-bind the inspected next execution. The model must call `show` in the current run
-before those changes. Snooze delays execution rather than postponing a delivered
+Edits apply to the task's current definition; skip-next, snooze and run-now act
+on its current next execution, the pending occurrence if one exists or otherwise
+the next scheduled time. No prior `show` is required. Snooze delays execution rather than postponing a delivered
 message. Run-now queues normal scheduled work and cannot undo a future hold.
 See [task controls](tasks.md#edit-and-control-the-next-execution) for running-task
 restrictions and retained snapshots.
@@ -349,7 +349,7 @@ page reading, explicit memory, interactive task management, and web search when 
 support continue to answer text requests. The runner checks complete tool
 requests before execution and keeps one provider/model throughout the exchange.
 
-A tool failure that left nothing unconfirmed, such as invalid arguments, a refused URL, an unreachable page, or a stale task revision, becomes that
+A tool failure that left nothing unconfirmed, such as invalid arguments, a refused URL, an unreachable page, or a task change its state does not allow, becomes that
 call's result so the model can explain it or correct the request. When any call in
 a batch is invalid, none of the batch runs and each call reports why. A failure
 whose effects are unknown, such as a memory write without a saved receipt or an MCP call lost

@@ -5,7 +5,7 @@ import { Argument, Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
 import { codingFlag, skillFlag, textArgument } from "#src/commands/flags";
-import { parseTaskSchedule, prepareTask, prepareTaskControl, runTaskCommand } from "#src/tasks";
+import { parseTaskSchedule, prepareTask, runTaskCommand } from "#src/tasks";
 
 export const tasksCommand = (context: CLIContext) => {
   const { runtime } = context;
@@ -50,23 +50,18 @@ export const tasksCommand = (context: CLIContext) => {
               return Schema.decodeUnknownSync(TaskPatch)(fields);
             });
 
-            yield* runTaskCommand(runtime, { action: "inspect", id }, (value) =>
-              prepareTaskControl(value, "edit", patch),
-            );
+            yield* runTaskCommand(runtime, { action: "edit", id, patch });
           }),
       ).pipe(Command.withDescription("Edit a task's name, prompt or complete schedule")),
       ...(["skip-next", "run-now"] as const).map((action) =>
         Command.make(
           action === "run-now" ? "run" : action,
           { id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)) },
-          ({ id }) =>
-            runTaskCommand(runtime, { action: "inspect", id }, (value) =>
-              prepareTaskControl(value, action),
-            ),
+          ({ id }) => runTaskCommand(runtime, { action, id }),
         ).pipe(
           Command.withDescription(
             action === "skip-next"
-              ? "Skip exactly the next execution"
+              ? "Skip the next execution"
               : "Queue one execution through the worker",
           ),
         ),
@@ -88,9 +83,7 @@ export const tasksCommand = (context: CLIContext) => {
               return parseTimestamp(until[0]);
             });
 
-            yield* runTaskCommand(runtime, { action: "inspect", id }, (value) =>
-              prepareTaskControl(value, "snooze", undefined, at),
-            );
+            yield* runTaskCommand(runtime, { action: "snooze", id, until: at });
           }),
       ).pipe(Command.withDescription("Delay the next execution until a later absolute time")),
       Command.make(

@@ -10,8 +10,6 @@ import { TaskControl, TaskError, type Occurrence } from "#src/task-schema";
 export interface ControlReceipt {
   readonly action: TaskControl["action"];
   readonly taskId: string;
-  readonly previousRevision: number;
-  readonly revision: number;
   readonly changedFields: ReadonlyArray<string>;
   readonly nextAt: number | null;
   readonly paused: 0 | 1;
@@ -27,7 +25,7 @@ const reject = (message: string) => Effect.fail(new TaskError({ message }));
 export const taskControls = (sql: SqlClient.SqlClient) => {
   const { task, occurrence, insertOccurrence, activeOccurrence, nextTarget } = taskRecords(sql);
 
-  /** Revision/target checks and state changes share one transaction. */
+  /** Acts on the task's current state and next execution, checked and changed in one transaction. */
   return (input: TaskControl, now: number) =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -36,9 +34,6 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
         })(input);
 
         const job = yield* task(command.id);
-
-        if (job.revision !== command.revision)
-          return yield* reject("The task definition changed. Inspect it again before changing it.");
 
         if ((yield* activeOccurrence(job.id, "running")) !== null)
           return yield* reject("Cancel the running occurrence before changing this task.");
@@ -96,12 +91,12 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
           if (job.paused)
             return yield* reject("Resume the task before changing its next execution.");
 
-          if (!isDeepStrictEqual(command.target, yield* nextTarget(job.id)))
-            return yield* reject(
-              "The next execution changed. Inspect the task again before changing it.",
-            );
+          const target = yield* nextTarget(job.id);
 
-          const target = command.target;
+          if (target === null)
+            return yield* reject(
+              "This task has no upcoming execution. Edit its schedule to rearm it.",
+            );
 
           const advance = (after: number) =>
             Effect.flatMap(
@@ -170,7 +165,7 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
 
             if (collision.length > 0)
               return yield* reject(
-                "An occurrence already exists at this time. Inspect its history before retrying.",
+                "An occurrence already exists at this time. Review it with tasks show before retrying.",
               );
 
             selected = yield* occurrence(
@@ -198,8 +193,6 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
         return {
           action: command.action,
           taskId: job.id,
-          previousRevision: job.revision,
-          revision: updated.revision,
           changedFields,
           nextAt: updated.nextAt,
           paused: updated.paused,

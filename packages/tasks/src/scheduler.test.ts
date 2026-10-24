@@ -191,17 +191,14 @@ describe.concurrent("makeTaskWorker", () => {
             const edited = yield* remoteTaskCommand(path, {
               action: "edit",
               id: job.id,
-              revision: 0,
               patch: { prompt: "Read the new decisions" },
             });
 
-            expect(edited?.value).toMatchObject({ revision: 1 });
+            expect(edited?.value).toMatchObject({ changedFields: ["prompt"] });
 
             const held = yield* remoteTaskCommand(path, {
               action: "snooze",
               id: job.id,
-              revision: 1,
-              target: (yield* repo.nextTarget(job.id))!,
               until: at + 60_000,
             });
 
@@ -210,29 +207,22 @@ describe.concurrent("makeTaskWorker", () => {
             const early = yield* remoteTaskCommand(path, {
               action: "run-now",
               id: job.id,
-              revision: 1,
-              target: (yield* repo.nextTarget(job.id))!,
             }).pipe(Effect.result);
 
             expect(early).toHaveProperty("failure.message", expect.stringContaining("held"));
             yield* remoteTaskCommand(path, {
               action: "skip-next",
               id: job.id,
-              revision: 1,
-              target: (yield* repo.nextTarget(job.id))!,
             });
             yield* remoteTaskCommand(path, {
               action: "edit",
               id: job.id,
-              revision: 1,
               patch: { schedule: { type: "once", at: at + 120_000 } },
             });
 
             const request = {
               action: "run-now" as const,
               id: job.id,
-              revision: 2,
-              target: (yield* repo.nextTarget(job.id))!,
             };
 
             yield* remoteTaskCommand(path, request);
@@ -312,8 +302,6 @@ describe.concurrent("makeTaskWorker", () => {
               delivery: null,
               skill: null,
               after: null,
-              revision: null,
-              target: null,
               until: null,
             }),
           })),
@@ -417,8 +405,6 @@ describe.concurrent("makeTaskWorker", () => {
                 delivery: null,
                 skill: null,
                 after: null,
-                revision: null,
-                target: null,
                 until: null,
               }),
             },
@@ -480,8 +466,6 @@ describe.concurrent("makeTaskWorker", () => {
             delivery: null,
             skill: null,
             after: null,
-            revision: null,
-            target: null,
             until: null,
           }),
         },

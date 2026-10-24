@@ -82,7 +82,6 @@ describe.concurrent("TaskRepository", () => {
             {
               action: "edit",
               id: job.id,
-              revision: 0,
               patch: { prompt: "New one-off", schedule: { type: "once", at: start + 1000 } },
             },
             start,
@@ -125,13 +124,12 @@ describe.concurrent("TaskRepository", () => {
           const command = {
             action: "edit" as const,
             id: job.id,
-            revision: 0,
             patch: { name: "Renamed", prompt: "Read the current decisions" },
           };
 
           const receipt = yield* repo.control(command, start + 1);
           expect(receipt).toMatchObject({
-            revision: 1,
+            changedFields: ["name", "prompt"],
             replacedOccurrenceIds: [original.id],
           });
           expect(yield* repo.occurrence(original.id)).toMatchObject({
@@ -154,9 +152,9 @@ describe.concurrent("TaskRepository", () => {
             skill,
           });
 
-          const noop = yield* repo.control({ ...command, revision: 1 }, start + 3);
+          const noop = yield* repo.control(command, start + 3);
 
-          expect(noop).toMatchObject({ revision: 1, changedFields: [], replacedOccurrenceIds: [] });
+          expect(noop).toMatchObject({ changedFields: [], replacedOccurrenceIds: [] });
           const claimed = (yield* repo.claim(start + 4))!;
           expect(claimed.task).toMatchObject({
             name: "Renamed",
@@ -183,7 +181,6 @@ describe.concurrent("TaskRepository", () => {
             {
               action: "edit",
               id: job.id,
-              revision: 0,
               patch: { prompt: "New prompt" },
             },
             start,
@@ -197,7 +194,6 @@ describe.concurrent("TaskRepository", () => {
             {
               action: "edit",
               id: job.id,
-              revision: 1,
               patch: { name: "Finished" },
             },
             start + 1,
@@ -210,7 +206,6 @@ describe.concurrent("TaskRepository", () => {
                 {
                   action: "edit",
                   id: job.id,
-                  revision: 2,
                   patch: { schedule: { type: "once", at: start - 1 } },
                 },
                 start + 1,
@@ -221,7 +216,6 @@ describe.concurrent("TaskRepository", () => {
             {
               action: "edit",
               id: job.id,
-              revision: 2,
               patch: { schedule: { type: "once", at: start + 1000 } },
             },
             start + 1,
@@ -239,7 +233,7 @@ describe.concurrent("TaskRepository", () => {
     }
   });
 
-  test("when definitions are stale or tasks are running, rejects edits", async () => {
+  test("when a task was edited since it was last read, applies further edits until an occurrence is running", async () => {
     const state = await fixture();
 
     try {
@@ -251,18 +245,16 @@ describe.concurrent("TaskRepository", () => {
           const command = {
             action: "edit" as const,
             id: job.id,
-            revision: 0,
             patch: { name: "Changed" },
           };
 
           yield* repo.control(command, start);
-          expect((yield* Effect.flip(repo.control(command, start))).message).toContain(
-            "definition changed",
-          );
+          yield* repo.control({ ...command, patch: { name: "Changed again" } }, start);
+          expect(yield* repo.task(job.id)).toMatchObject({ name: "Changed again", revision: 2 });
           yield* repo.claim(start);
-          expect(
-            (yield* Effect.flip(repo.control({ ...command, revision: 1 }, start))).message,
-          ).toContain("running occurrence");
+          expect((yield* Effect.flip(repo.control(command, start))).message).toContain(
+            "running occurrence",
+          );
         }),
       );
     } finally {
@@ -270,22 +262,14 @@ describe.concurrent("TaskRepository", () => {
     }
   });
 
-  test("when skip-next is repeated, consumes only the inspected queued or future slot", async () => {
+  test("when skip-next is repeated, consumes the current pending occurrence or next slot each time", async () => {
     const state = await fixture();
 
     try {
       await state.run((repo) =>
         Effect.gen(function* () {
           const job = yield* repo.add(recurring, start);
-          const target = (yield* repo.nextTarget(job.id))!;
-
-          const command = {
-            action: "skip-next" as const,
-            id: job.id,
-            revision: 0,
-            target,
-          };
-
+          const command = { action: "skip-next" as const, id: job.id };
           const receipt = yield* repo.control(command, start);
           expect(yield* repo.occurrence(receipt.occurrenceId!)).toMatchObject({
             status: "cancelled",
@@ -293,24 +277,26 @@ describe.concurrent("TaskRepository", () => {
             reason: "skipped-by-owner",
           });
           expect((yield* repo.task(job.id)).nextAt).toBe(start + 120_000);
-          expect((yield* Effect.flip(repo.control(command, start + 1))).message).toContain(
-            "next execution changed",
-          );
-          yield* repo.reconcile(start + 120_000);
-          const pending = (yield* repo.nextTarget(job.id))!;
-          yield* repo.control({ ...command, target: pending }, start + 120_000);
+          const repeated = yield* repo.control(command, start + 1);
+          expect(yield* repo.occurrence(repeated.occurrenceId!)).toMatchObject({
+            status: "cancelled",
+            scheduledAt: start + 120_000,
+          });
           expect((yield* repo.task(job.id)).nextAt).toBe(start + 180_000);
-          const single = yield* repo.add(once, start);
-          yield* repo.control(
-            {
-              ...command,
-              id: single.id,
-              target: (yield* repo.nextTarget(single.id))!,
-            },
-            start,
+          yield* repo.reconcile(start + 180_000);
+          const pending = (yield* repo.nextTarget(job.id))!;
+          expect((yield* repo.control(command, start + 180_000)).occurrenceId).toBe(
+            pending.occurrenceId,
           );
+          expect((yield* repo.occurrence(pending.occurrenceId!)).status).toBe("cancelled");
+          expect((yield* repo.task(job.id)).nextAt).toBe(start + 240_000);
+          const single = yield* repo.add(once, start);
+          yield* repo.control({ ...command, id: single.id }, start);
           expect((yield* repo.task(single.id)).nextAt).toBeNull();
-          expect(yield* repo.claim(start + 120_000)).toBeNull();
+          expect(
+            (yield* Effect.flip(repo.control({ ...command, id: single.id }, start))).message,
+          ).toContain("no upcoming execution");
+          expect(yield* repo.claim(start + 180_000)).toBeNull();
         }),
       );
     } finally {
@@ -330,23 +316,19 @@ describe.concurrent("TaskRepository", () => {
           const command = {
             action: "snooze" as const,
             id: job.id,
-            revision: 0,
-            target: (yield* repo.nextTarget(job.id))!,
             until,
           };
 
           const receipt = yield* repo.control(command, start);
-          const target = (yield* repo.nextTarget(job.id))!;
-          expect(yield* repo.control({ ...command, target }, start)).toMatchObject({
+          expect(yield* repo.control(command, start)).toMatchObject({
             changedFields: [],
           });
           expect(
-            (yield* Effect.flip(repo.control({ ...command, target, until: until - 1 }, start)))
-              .message,
+            (yield* Effect.flip(repo.control({ ...command, until: until - 1 }, start))).message,
           ).toContain("later");
           expect(
-            (yield* Effect.flip(repo.control({ ...command, until: until + 1 }, start))).message,
-          ).toContain("next execution changed");
+            (yield* Effect.flip(repo.control({ ...command, until: start }, start))).message,
+          ).toContain("future");
           expect(yield* repo.claim(until - 1)).toBeNull();
           expect((yield* repo.status()).nextScheduledAt).toBe(until);
 
@@ -401,8 +383,6 @@ describe.concurrent("TaskRepository", () => {
             {
               action: "snooze",
               id: job.id,
-              revision: 0,
-              target: (yield* repo.nextTarget(job.id))!,
               until: start + 500_000,
             },
             start,
@@ -412,7 +392,6 @@ describe.concurrent("TaskRepository", () => {
             {
               action: "edit",
               id: job.id,
-              revision: 0,
               patch: { prompt: "Updated" },
             },
             start,
@@ -429,7 +408,6 @@ describe.concurrent("TaskRepository", () => {
             {
               action: "edit",
               id: job.id,
-              revision: 1,
               patch: { schedule: { type: "cron", expression: "*/2 * * * *", timezone: "UTC" } },
             },
             start,
@@ -441,8 +419,6 @@ describe.concurrent("TaskRepository", () => {
             {
               action: "snooze",
               id: job.id,
-              revision: 2,
-              target: (yield* repo.nextTarget(job.id))!,
               until: start + 600_000,
             },
             start,
@@ -454,8 +430,6 @@ describe.concurrent("TaskRepository", () => {
                 {
                   action: "skip-next",
                   id: job.id,
-                  revision: 2,
-                  target: (yield* repo.nextTarget(job.id))!,
                 },
                 start,
               ),
@@ -481,8 +455,6 @@ describe.concurrent("TaskRepository", () => {
           const command = {
             action: "run-now" as const,
             id: job.id,
-            revision: 0,
-            target: (yield* repo.nextTarget(job.id))!,
           };
 
           const receipt = yield* repo.control(command, start);
@@ -493,10 +465,7 @@ describe.concurrent("TaskRepository", () => {
             availableAt: start,
           });
 
-          const reused = yield* repo.control(
-            { ...command, target: (yield* repo.nextTarget(job.id))! },
-            start + 1,
-          );
+          const reused = yield* repo.control(command, start + 1);
 
           expect(reused.occurrenceId).toBe(receipt.occurrenceId);
           yield* repo.cancel(receipt.occurrenceId!, start);
@@ -507,17 +476,11 @@ describe.concurrent("TaskRepository", () => {
             {
               action: "snooze",
               id: job.id,
-              revision: 0,
-              target: (yield* repo.nextTarget(job.id))!,
               until: start + 120_000,
             },
             start,
           );
-          expect(
-            (yield* Effect.flip(
-              repo.control({ ...command, target: (yield* repo.nextTarget(job.id))! }, start),
-            )).message,
-          ).toContain("held");
+          expect((yield* Effect.flip(repo.control(command, start))).message).toContain("held");
 
           const single = yield* repo.add(
             { ...once, schedule: { type: "once", at: start + 500_000 } },
@@ -528,7 +491,6 @@ describe.concurrent("TaskRepository", () => {
             {
               ...command,
               id: single.id,
-              target: (yield* repo.nextTarget(single.id))!,
             },
             start,
           );
@@ -561,7 +523,6 @@ describe.concurrent("TaskRepository", () => {
             {
               action: "edit",
               id: job.id,
-              revision: 0,
               patch: { prompt: "Current", schedule: recurring.schedule },
             },
             start,
