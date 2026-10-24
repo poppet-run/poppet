@@ -201,7 +201,6 @@ describe("ChatTasks", () => {
           );
           expect(yield* repo.task(id)).toMatchObject({ revision: 1, name: "Edited" });
           expect((yield* repo.nextTarget(id))?.availableAt).toBe(Date.parse(snooze.until));
-          expect(yield* repo.changes(id)).toHaveLength(2);
         }),
       );
     } finally {
@@ -239,7 +238,6 @@ describe("ChatTasks", () => {
             "invalid-request",
           );
           expect((yield* repo.task(id)).revision).toBe(0);
-          expect(yield* repo.changes(id)).toEqual([]);
         }),
       );
     } finally {

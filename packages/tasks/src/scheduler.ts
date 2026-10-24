@@ -244,10 +244,7 @@ export const makeTaskWorker = Effect.gen(function* () {
         command.action === "snooze" ||
         command.action === "run-now"
       )
-        yield* workerLog(
-          now,
-          `Task ${command.id} action=${command.action} operation=${command.operationId}`,
-        );
+        yield* workerLog(now, `Task ${command.id} action=${command.action}`);
 
       if (command.action === "cancel" && active?.id === command.id)
         yield* Fiber.interrupt(active.fiber);

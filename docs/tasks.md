@@ -97,11 +97,10 @@ a different future schedule to rearm it.
 
 The CLI inspects the revision and exact target before sending a mutation. The
 worker rechecks both when committing and rejects stale requests instead of
-selecting another slot. Receipts include the operation ID, revisions, changed
-fields, affected occurrence IDs, next time, and snooze changes. Repeating
-an operation ID returns its original receipt. Lost responses never trigger local
-fallback or replay. Inspect `tasks show` and its latest 20 `changes` before
-issuing another command after an unclear result.
+selecting another slot. Receipts include revisions, changed fields, affected
+occurrence IDs, next time, and snooze changes. Lost responses never trigger local
+fallback or replay. Inspect `tasks show` before issuing another command after an
+unclear result.
 
 Pausing cancels a snoozed occurrence. Resume uses the ordinary future cron cadence
 and does not restore the snooze. Recurring expiration and retry freshness use

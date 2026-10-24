@@ -588,19 +588,18 @@ Each occurrence saves its definition and revision. Claiming/retrying uses that
 snapshot; a pending edit cancels and replaces the original without rewriting
 history. Snooze changes persisted `available_at`, not the cron schedule or
 logical slot, and run-now queues through normal permissions/provider holds.
-Task-specific operation records retain atomic replay receipts and bounded change
-history. See [task controls](tasks.md#edit-and-control-the-next-execution).
+See [task controls](tasks.md#edit-and-control-the-next-execution).
 
 `Store.commitToolCall` runs the synchronous task operation and completion of its
-tool journal/message in one SQLite transaction. A receipt failure rolls back the
-mutation. Jobs record a unique creating run/call pair; completed
-calls return their saved receipt without executing again. Committed changes
-survive later inference failure, and uncertain storage outcomes remain inspectable
+tool journal/message in one SQLite transaction. A tool result failure rolls back
+the mutation. Completed calls, keyed by run and call ID, return their saved result
+without executing again; this is the only replay protection for task changes.
+Committed changes survive later inference failure, and uncertain storage outcomes remain inspectable
 without automatic replay. List uses bounded ID-cursor queries; show limits recent
 occurrences and shortens prompts within the serialized tool budget. No model
 answers or unbounded occurrence history are returned by inspection.
 
-Automated checks cover source-call recovery, atomic rollback, local/worker parity,
+Automated checks cover tool-call recovery, atomic rollback, local/worker parity,
 destination revocation, scheduled rejection of every action, result limits, and
 an interactive pause while a scheduled occurrence waits for the agent. Live
 chat creation, pause/resume, and delivered occurrence checks remain separate.

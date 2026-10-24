@@ -16,13 +16,8 @@ const baseline: ReadonlyArray<string> = [
     paused INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     skill TEXT,
-    destination TEXT,
-    source_run_id TEXT REFERENCES runs (id),
-    source_call_id TEXT CHECK ((source_run_id IS NULL) = (source_call_id IS NULL))
+    destination TEXT
   ) STRICT`,
-
-  `CREATE UNIQUE INDEX task_source_call ON jobs (source_run_id, source_call_id)
-    WHERE source_run_id IS NOT NULL`,
 
   `CREATE TABLE job_occurrences (
     id TEXT PRIMARY KEY,
@@ -60,18 +55,6 @@ const baseline: ReadonlyArray<string> = [
     resume_at INTEGER,
     failures INTEGER NOT NULL
   ) STRICT`,
-
-  // Owner edits to a task, kept so a repeated operation ID replays its receipt.
-  `CREATE TABLE job_operations (
-    operation_id TEXT PRIMARY KEY,
-    job_id TEXT NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
-    command TEXT NOT NULL,
-    receipt TEXT NOT NULL,
-    changes TEXT,
-    created_at INTEGER NOT NULL
-  ) STRICT`,
-
-  `CREATE INDEX task_change_history ON job_operations (job_id, created_at DESC)`,
 ];
 
 /** Migrations for this package's tables, recorded in their own ledger. */

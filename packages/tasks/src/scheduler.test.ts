@@ -192,7 +192,6 @@ describe.concurrent("makeTaskWorker", () => {
               action: "edit",
               id: job.id,
               revision: 0,
-              operationId: "worker-edit",
               patch: { prompt: "Read the new decisions" },
             });
 
@@ -202,7 +201,6 @@ describe.concurrent("makeTaskWorker", () => {
               action: "snooze",
               id: job.id,
               revision: 1,
-              operationId: "worker-snooze",
               target: (yield* repo.nextTarget(job.id))!,
               until: at + 60_000,
             });
@@ -213,7 +211,6 @@ describe.concurrent("makeTaskWorker", () => {
               action: "run-now",
               id: job.id,
               revision: 1,
-              operationId: "held-run",
               target: (yield* repo.nextTarget(job.id))!,
             }).pipe(Effect.result);
 
@@ -222,14 +219,12 @@ describe.concurrent("makeTaskWorker", () => {
               action: "skip-next",
               id: job.id,
               revision: 1,
-              operationId: "worker-skip",
               target: (yield* repo.nextTarget(job.id))!,
             });
             yield* remoteTaskCommand(path, {
               action: "edit",
               id: job.id,
               revision: 1,
-              operationId: "worker-rearm",
               patch: { schedule: { type: "once", at: at + 120_000 } },
             });
 
@@ -237,12 +232,10 @@ describe.concurrent("makeTaskWorker", () => {
               action: "run-now" as const,
               id: job.id,
               revision: 2,
-              operationId: "worker-run",
               target: (yield* repo.nextTarget(job.id))!,
             };
 
-            const queued = yield* remoteTaskCommand(path, request);
-            expect((yield* remoteTaskCommand(path, request))?.value).toEqual(queued?.value);
+            yield* remoteTaskCommand(path, request);
             const claimed = (yield* repo.claim(Date.now()))!;
             expect(claimed.occurrence).toMatchObject({
               origin: "manual",

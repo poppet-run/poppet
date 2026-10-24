@@ -82,7 +82,6 @@ export const executeTaskCommand = (
       return {
         task: job,
         target: yield* repo.nextTarget(job.id),
-        changes: yield* repo.changes(job.id),
         occurrences: results,
         skipped: yield* repo.skips(job.id),
       };
