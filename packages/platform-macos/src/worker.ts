@@ -3,10 +3,9 @@ import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
+import { isMissingFile, openNoFollow } from "@poppet/io";
 import { WorkerError, type WorkerAction, type WorkerLaunch } from "@poppet/platform";
-import { Effect, Schema } from "effect";
-
-const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
+import { Effect } from "effect";
 
 export const workerPaths = (launch: WorkerLaunch, home: string) => {
   const id = createHash("sha256").update(launch.dataDirectory).digest("hex").slice(0, 12);
@@ -73,7 +72,7 @@ export const runLaunchctl = async (args: ReadonlyArray<string>) => {
 
 const fileInfo = async (path: string) => {
   const info = await lstat(path).catch((cause: unknown) => {
-    if (Schema.is(MissingFile)(cause)) return null;
+    if (isMissingFile(cause)) return null;
     throw cause;
   });
 
@@ -104,13 +103,7 @@ export const manageWorker = (
         for (const path of [paths.log, `${paths.log}.1`, `${paths.log}.2`, `${paths.log}.3`]) {
           if (remaining === 0) break;
 
-          const handle = await open(
-            path,
-            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-          ).catch((cause: unknown) => {
-            if (Schema.is(MissingFile)(cause)) return null;
-            throw cause;
-          });
+          const handle = await openNoFollow(path);
 
           if (handle === null) continue;
 

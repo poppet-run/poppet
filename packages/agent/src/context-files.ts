@@ -1,15 +1,13 @@
 /* eslint-disable no-await-in-loop -- Reads stay bounded and check cancellation between filesystem operations. */
-import { constants } from "node:fs";
-import { lstat, open, opendir, realpath } from "node:fs/promises";
+import { lstat, opendir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
+import { isMissingFile, openNoFollow } from "@poppet/io";
 import { SkillName, SkillSnapshot } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
 import { AgentError } from "#src/errors";
-
-const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 
 const maxBytes = 8192;
 
@@ -47,10 +45,9 @@ export const contextFiles = Effect.gen(function* () {
         const original = await directoryInfo(parent);
         const path = join(parent, "SKILL.md");
 
-        const handle = await open(
-          path,
-          constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-        );
+        const handle = await openNoFollow(path);
+
+        if (handle === null) throw invalid();
 
         try {
           const info = await handle.stat();
@@ -96,14 +93,14 @@ export const contextFiles = Effect.gen(function* () {
   const list = Effect.tryPromise({
     try: async (signal) => {
       const root = await rootPath().catch((cause: unknown) => {
-        if (Schema.is(MissingFile)(cause)) return null;
+        if (isMissingFile(cause)) return null;
         throw cause;
       });
 
       if (root === null) return [];
 
       const info = await lstat(root).catch((cause: unknown) => {
-        if (Schema.is(MissingFile)(cause)) return null;
+        if (isMissingFile(cause)) return null;
         throw cause;
       });
 
