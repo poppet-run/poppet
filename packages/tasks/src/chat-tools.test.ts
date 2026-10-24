@@ -107,6 +107,7 @@ const recorded = (action: ChatTaskAction, callId = "task", run?: Run) =>
       runId: active.id,
       callId,
       here: null,
+      home: null,
     };
 
     return { store, run: active, context };

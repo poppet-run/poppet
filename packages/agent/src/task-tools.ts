@@ -92,7 +92,7 @@ export interface ChatTaskContext {
   readonly runId: string;
   readonly callId: string;
   readonly here: Effect.Effect<DeliveryDestination, AgentError> | null;
-  readonly home?: Effect.Effect<DeliveryDestination, AgentError> | null;
+  readonly home: Effect.Effect<DeliveryDestination, AgentError> | null;
 }
 
 export type PreparedTaskCall = PreparedCall;
