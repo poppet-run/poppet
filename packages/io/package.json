@@ -13,5 +13,8 @@
   "scripts": {
     "typecheck": "bun --check",
     "test": "bun --no-env-file ../../tools/testing/run.ts"
+  },
+  "dependencies": {
+    "effect": "4.0.4"
   }
 }
