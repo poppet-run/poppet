@@ -114,6 +114,9 @@
     "packages/io": {
       "name": "@poppet/io",
       "version": "0.0.0",
+      "dependencies": {
+        "effect": "4.0.4",
+      },
     },
     "packages/mcp": {
       "name": "@poppet/mcp",
