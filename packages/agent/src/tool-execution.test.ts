@@ -2,8 +2,23 @@ import { describe, expect, test } from "bun:test";
 
 import { StoreError } from "@poppet/store";
 
+import { builtinFailures } from "#src/agent-tool";
+import { bashFailures } from "#src/bash";
 import { AgentError } from "#src/errors";
+import { externalFailures } from "#src/external-tools";
+import { memoryFailures } from "#src/memory-tools";
+import { taskFailures } from "#src/task-tools";
 import { toolFailureKind } from "#src/tool-execution";
+
+const policies = {
+  read_session: builtinFailures,
+  fetch_page: builtinFailures,
+  search_web: builtinFailures,
+  memory: memoryFailures,
+  manage_tasks: taskFailures,
+  bash: bashFailures,
+  external: externalFailures,
+};
 
 const agentFailure = (reason: AgentError["reason"]) => new AgentError({ reason, message: reason });
 
@@ -26,7 +41,10 @@ describe("toolFailureKind", () => {
     ["external", agentFailure("tool-reported"), "reported"],
     ["external", agentFailure("tool-network"), "uncertain"],
     ["external", agentFailure("tool-uncertain"), "uncertain"],
+    ["bash", agentFailure("tool-uncertain"), "uncertain"],
+    ["bash", agentFailure("command-denied"), "fatal"],
+    ["bash", storeFailure("storage"), "fatal"],
   ] as const)("when %s fails with %o, classifies it as %s", (name, error, kind) => {
-    expect(toolFailureKind(name, error)).toBe(kind);
+    expect(toolFailureKind(policies[name], error)).toBe(kind);
   });
 });

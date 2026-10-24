@@ -4,10 +4,10 @@ import { Effect } from "effect";
 
 import { decodeMemoryCall } from "#src/memory-tools";
 
-const call = (args: string, namespace = "poppet_memory") => ({
+const call = (args: string) => ({
   type: "tool-call" as const,
   name: "memory",
-  namespace,
+  namespace: "poppet_memory",
   callId: "change",
   arguments: args,
 });
@@ -24,15 +24,5 @@ describe.concurrent("decodeMemoryCall", () => {
   ])("when memory arguments are invalid or forged in case %#, rejects them", async (args) => {
     const result = await Effect.runPromise(decodeMemoryCall(call(args)).pipe(Effect.result));
     expect(result).toHaveProperty("failure.reason", "tool-arguments");
-  });
-
-  test("when the tool name matches in another namespace, rejects the call", async () => {
-    const result = await Effect.runPromise(
-      decodeMemoryCall(call('{"action":"forget","key":"answer.style","value":null}', "other")).pipe(
-        Effect.result,
-      ),
-    );
-
-    expect(result).toHaveProperty("failure.reason", "tool-permission");
   });
 });

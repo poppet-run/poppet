@@ -66,7 +66,7 @@ describe.concurrent("pages.ts", () => {
     ]);
     expect(
       await Effect.runPromise(decodeFetchPageCall(call("https://example.com/a#other"), urls)),
-    ).toEqual({ name: "fetch_page", url: "https://example.com/a" });
+    ).toBe("https://example.com/a");
     expect(
       await Effect.runPromise(
         failure(decodeFetchPageCall(call("https://example.com/other"), urls)),
@@ -95,10 +95,7 @@ describe.concurrent("pages.ts", () => {
       const urls = suppliedPageURLs(text);
 
       expect([...urls]).toEqual([url]);
-      expect(await Effect.runPromise(decodeFetchPageCall(call(url), urls))).toEqual({
-        name: "fetch_page",
-        url,
-      });
+      expect(await Effect.runPromise(decodeFetchPageCall(call(url), urls))).toBe(url);
     },
   );
 

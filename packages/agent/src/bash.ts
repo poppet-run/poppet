@@ -1,11 +1,19 @@
 import { isAbsolute } from "node:path";
 
-import { toolParameters, type ModelOperations, type Output } from "@poppet/provider";
+import { toolParameters, type ModelOperations } from "@poppet/provider";
 import type { Run } from "@poppet/store";
 import { Context, Effect, Option, Schema, Stream } from "effect";
 
+import type {
+  AgentTool,
+  FailurePolicy,
+  PreparedCall,
+  ToolCall,
+  ToolContext,
+} from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import { streamReply } from "#src/reply";
+import { ChatSettings } from "#src/settings";
 import { BoundedText, toolArguments } from "#src/tool-schema";
 
 const Arguments = Schema.Struct({
@@ -42,7 +50,7 @@ export class Bash extends Context.Service<
   }
 >()("poppet/Bash") {}
 
-export const bashTool = {
+export const bashDefinition = {
   name: "bash",
   namespace: "poppet_system",
   description:
@@ -148,26 +156,22 @@ export const reviewCommand = (
     );
   });
 
-export interface BashCall {
-  readonly name: "bash";
-  readonly execute: Effect.Effect<string, AgentError>;
-}
-
-export const prepareBash = (
-  call: Extract<Output, { type: "tool-call" }>,
+const prepareBash = (
+  call: ToolCall,
   runner: Bash["Service"],
-  model: ModelOperations,
-  run: Run,
-  ownerRequest: string,
-  scheduled: boolean,
-  approve: ApproveCommand | null,
+  {
+    model,
+    run,
+    text: ownerRequest,
+    readOnlyTools: scheduled,
+    approveCommand: approve,
+  }: ToolContext,
   maxBytes: number,
 ) =>
   Effect.gen(function* () {
-    const request = yield* toolArguments(bashTool, Arguments)(call.arguments);
+    const request = yield* toolArguments(bashDefinition, Arguments)(call.arguments);
 
     return {
-      name: "bash" as const,
       execute: Effect.gen(function* () {
         const review = yield* reviewCommand(model, run, ownerRequest, request);
 
@@ -214,5 +218,31 @@ export const prepareBash = (
             : error,
         ),
       ),
-    } satisfies BashCall;
+    } satisfies PreparedCall;
   });
+
+/** A command may have run before failing, so only an uncertain outcome is not fatal. */
+export const bashFailures: FailurePolicy = {
+  reported: new Set(),
+  uncertain: new Set(["agent:tool-uncertain"]),
+  otherwise: "fatal",
+  journalFatalReply: true,
+};
+
+/** Runs reviewed host commands; absent when the host supplies no Bash. */
+export const bashTool = Effect.gen(function* () {
+  const runner = Option.getOrNull(yield* Effect.serviceOption(Bash));
+  const { toolBytes } = yield* ChatSettings;
+
+  if (runner === null) return null;
+
+  return {
+    definition: bashDefinition,
+    prepare: (call, context) => prepareBash(call, runner, context, toolBytes),
+    untrustedResult: true,
+    withdrawnWhenUntrusted: false,
+    contextOnly: false,
+    mutating: false,
+    failures: bashFailures,
+  } satisfies AgentTool;
+});

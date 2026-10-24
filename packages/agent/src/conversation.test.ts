@@ -21,7 +21,7 @@ import OpenAI from "openai";
 import { Bash, commandReviewInstructions } from "#src/bash";
 import { AgentError } from "#src/errors";
 import { ExternalTools, type ExternalTool } from "#src/external-tools";
-import { Pages, fetchPageTool } from "#src/pages";
+import { Pages, fetchPageDefinition } from "#src/pages";
 import { Agent, AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
 import { Skills } from "#src/skills";
@@ -157,7 +157,7 @@ const externalTool = (name: string, availableAfterUntrusted: boolean): ExternalT
   toolName: name,
   availableAfterUntrusted,
   definition: { name, namespace: "poppet_mcp", description: name, parameters: {} },
-  prepare: () => Effect.succeed({ name: "external", execute: Effect.succeed("done") }),
+  prepare: () => Effect.succeed({ execute: Effect.succeed("done") }),
 });
 
 const toolNames = (request: ModelRequest) => request.tools.map((entry) => entry.name);
@@ -421,7 +421,6 @@ describe.concurrent("conversation", () => {
       prepare: (json) =>
         json === "{}"
           ? Effect.succeed({
-              name: "external",
               execute: Effect.sync(() => {
                 executed++;
 
@@ -658,7 +657,7 @@ describe.concurrent("conversation", () => {
       const entry: ExternalTool = {
         serverId: "fixture",
         toolName: "original-tool",
-        definition: fetchPageTool,
+        definition: fetchPageDefinition,
         prepare: () => Effect.die("Must not prepare denied tools"),
       };
 

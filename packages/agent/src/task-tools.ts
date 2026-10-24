@@ -1,8 +1,16 @@
-import { toolParameters, type Output, type Tool } from "@poppet/provider";
+import { toolParameters, type Tool } from "@poppet/provider";
 import type { DeliveryDestination, StoreError } from "@poppet/store";
 import { Session, SkillName } from "@poppet/store";
-import { Context, Effect, Schema } from "effect";
+import { Context, Effect, Option, Schema } from "effect";
 
+import {
+  builtinFailures,
+  reportedStoreReasons,
+  type AgentTool,
+  type FailurePolicy,
+  type PreparedCall,
+  type ToolCall,
+} from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import { BoundedText, toolArguments } from "#src/tool-schema";
 
@@ -87,10 +95,7 @@ export interface ChatTaskContext {
   readonly home?: Effect.Effect<DeliveryDestination, AgentError> | null;
 }
 
-export interface PreparedTaskCall {
-  readonly name: "manage_tasks";
-  readonly execute: Effect.Effect<string, AgentError | StoreError>;
-}
+export type PreparedTaskCall = PreparedCall;
 
 /** Validates before batch execution, then commits task operations and their receipts together. */
 export class ChatTasks extends Context.Service<
@@ -103,7 +108,7 @@ export class ChatTasks extends Context.Service<
   }
 >()("poppet/ChatTasks") {}
 
-export const taskTool: Tool = {
+export const taskDefinition: Tool = {
   name: "manage_tasks",
   namespace: "poppet_tasks",
   description:
@@ -111,11 +116,9 @@ export const taskTool: Tool = {
   parameters: toolParameters(Arguments),
 };
 
-export const decodeTaskCall = (
-  call: Extract<Output, { type: "tool-call" }>,
-): Effect.Effect<ChatTaskAction, AgentError> =>
+export const decodeTaskCall = (call: ToolCall): Effect.Effect<ChatTaskAction, AgentError> =>
   Effect.gen(function* () {
-    const args = yield* toolArguments(taskTool, Arguments)(call.arguments);
+    const args = yield* toolArguments(taskDefinition, Arguments)(call.arguments);
 
     const empty =
       args.name === null &&
@@ -208,3 +211,42 @@ export const decodeTaskCall = (
       }),
     );
   });
+
+/** Store failures from task operations are outcomes the model can act on, unless storage failed. */
+export const taskFailures: FailurePolicy = {
+  reported: new Set([
+    ...builtinFailures.reported,
+    ...[...reportedStoreReasons].map((reason) => `store:${reason}`),
+  ]),
+  uncertain: new Set(["store:storage"]),
+  otherwise: "fatal",
+};
+
+/** Manages scheduled tasks through the host; scheduled runs cannot call it. */
+export const taskTool = Effect.gen(function* () {
+  const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
+
+  if (tasks === null) return null;
+
+  return {
+    definition: taskDefinition,
+    prepare: (call, { run, readOnlyTools, here, home }) =>
+      decodeTaskCall(call).pipe(
+        Effect.flatMap((action) =>
+          tasks.prepare(action, {
+            origin: readOnlyTools ? "scheduled" : "interactive",
+            runId: run.id,
+            callId: call.callId,
+            here,
+            home,
+          }),
+        ),
+      ),
+    untrustedResult: false,
+    withdrawnWhenUntrusted: true,
+    contextOnly: false,
+    mutating: true,
+    failures: taskFailures,
+    recordsOwnResult: true,
+  } satisfies AgentTool;
+});

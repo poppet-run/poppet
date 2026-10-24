@@ -1,9 +1,16 @@
-import { MemoryKey, MemoryValue, type Memory } from "@poppet/memory";
-import { toolParameters, type Output, type Tool } from "@poppet/provider";
+import { Memory, MemoryKey, MemoryValue } from "@poppet/memory";
+import { toolParameters, type Tool } from "@poppet/provider";
 import { Effect, Schema } from "effect";
 
+import {
+  builtinFailures,
+  type AgentTool,
+  type FailurePolicy,
+  type ToolCall,
+} from "#src/agent-tool";
 import { byteSize } from "#src/context";
 import { AgentError } from "#src/errors";
+import { ChatSettings } from "#src/settings";
 import { toolArguments } from "#src/tool-schema";
 
 const Arguments = Schema.Struct({
@@ -12,7 +19,7 @@ const Arguments = Schema.Struct({
   value: Schema.NullOr(MemoryValue),
 });
 
-export const memoryTool: Tool = {
+export const memoryDefinition: Tool = {
   name: "memory",
   namespace: "poppet_memory",
   description:
@@ -22,13 +29,8 @@ export const memoryTool: Tool = {
 
 /** A validated memory change; the host supplies provenance rather than trusting model arguments. */
 export type MemoryCall =
-  | {
-      readonly name: "memory";
-      readonly action: "remember" | "replace";
-      readonly key: string;
-      readonly value: string;
-    }
-  | { readonly name: "memory"; readonly action: "forget"; readonly key: string };
+  | { readonly action: "remember" | "replace"; readonly key: string; readonly value: string }
+  | { readonly action: "forget"; readonly key: string };
 
 const invalid = () =>
   new AgentError({
@@ -36,29 +38,17 @@ const invalid = () =>
     message: "Invalid arguments for poppet_memory.memory.",
   });
 
-export const decodeMemoryCall = (
-  call: Extract<Output, { type: "tool-call" }>,
-): Effect.Effect<MemoryCall, AgentError> => {
-  if (call.name !== memoryTool.name || call.namespace !== memoryTool.namespace)
-    return Effect.fail(
-      new AgentError({
-        reason: "tool-permission",
-        message: "The requested tool is not allowed in this run.",
-      }),
-    );
+export const decodeMemoryCall = (call: ToolCall): Effect.Effect<MemoryCall, AgentError> =>
+  Effect.gen(function* () {
+    const args = yield* toolArguments(memoryDefinition, Arguments)(call.arguments);
 
-  return Effect.gen(function* () {
-    const args = yield* toolArguments(memoryTool, Arguments)(call.arguments);
-
-    if (args.action === "forget" && args.value === null)
-      return { name: "memory", action: "forget", key: args.key };
+    if (args.action === "forget" && args.value === null) return { action: "forget", key: args.key };
 
     if (args.action !== "forget" && args.value !== null)
-      return { name: "memory", action: args.action, key: args.key, value: args.value };
+      return { action: args.action, key: args.key, value: args.value };
 
     return yield* Effect.fail(invalid());
   });
-};
 
 /** Preflight the next snapshot before mutation; acknowledgements omit the value to stay bounded. */
 export const executeMemoryCall = (
@@ -100,3 +90,31 @@ export const executeMemoryCall = (
           }),
     ),
   );
+
+/** A failed memory write may still have reached storage. */
+export const memoryFailures: FailurePolicy = {
+  ...builtinFailures,
+  uncertain: new Set(["agent:memory-storage"]),
+};
+
+/** Changes saved facts on the owner's explicit request; scheduled runs cannot call it. */
+export const memoryTool = Effect.gen(function* () {
+  const memory = yield* Memory;
+  const { factsBytes } = yield* ChatSettings;
+
+  return {
+    definition: memoryDefinition,
+    prepare: (call, { run }) =>
+      decodeMemoryCall(call).pipe(
+        Effect.map((change) => ({
+          execute: executeMemoryCall(memory, change, run.id, factsBytes),
+        })),
+      ),
+    untrustedResult: false,
+    withdrawnWhenUntrusted: true,
+    contextOnly: false,
+    mutating: true,
+    failures: memoryFailures,
+    uninterruptible: true,
+  } satisfies AgentTool;
+});
