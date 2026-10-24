@@ -9,7 +9,6 @@ export {
   TaskPatch,
   TaskTarget,
   TaskInspection,
-  ControlReceipt,
   ProviderPause,
   nextOccurrence,
   parseTimestamp,

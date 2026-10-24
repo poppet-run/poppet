@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { AppConfig } from "@poppet/config";
 import {
   remoteTaskCommand,
@@ -71,7 +69,7 @@ export const prepareTaskControl = (
   until?: number,
 ): TaskControl => {
   const { task, target } = inspection;
-  const base = { id: task.id, revision: task.revision, operationId: randomUUID() };
+  const base = { id: task.id, revision: task.revision };
 
   if (action === "edit") return Schema.decodeUnknownSync(TaskControl)({ ...base, action, patch });
 

@@ -195,7 +195,6 @@ export const ChatTasksLive = Layer.effect(
                   const base = {
                     id: action.id,
                     revision: action.revision,
-                    operationId: `${context.runId}:${context.callId}`,
                   };
 
                   if (action.action === "edit") {
@@ -314,10 +313,7 @@ export const ChatTasksLive = Layer.effect(
                   message: "The requested one-off time has passed. Choose a future time.",
                 });
 
-              const task = yield* repo.add(valid, now, skill, destination, {
-                runId: context.runId,
-                callId: context.callId,
-              });
+              const task = yield* repo.add(valid, now, skill, destination);
 
               return yield* bounded(
                 JSON.stringify({ action: action.action, task: summary(task), truncated: false }),

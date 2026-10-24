@@ -66,23 +66,19 @@ eligibility and recurring expiration, while `scheduled_at` identifies the logica
 slot. `origin` distinguishes scheduled and manual work. Legacy rows are backfilled
 from the previously immutable job definition and their own destination snapshot.
 
-`job_operations` saves request identity, command, immutable receipt, time, and
-changed before/after fields or execution target. Exact request replay returns
-the original receipt; reusing an ID for different arguments is rejected. No-op
-receipts retain replay protection without appearing as changes. Definition edits,
-occurrence replacement, timing changes, history, and receipts commit together.
-Chat also completes its tool journal/message in that transaction. Clearing tasks
-cascades to operations, preserving existing chat and queued-delivery behavior.
+Definition edits, occurrence replacement, and timing changes commit together.
+Task changes keep no separate history: occurrences and skipped intervals record
+what ran and what did not. Clearing tasks cascades to their occurrences, preserving
+existing chat and queued-delivery behavior.
 
 ## Scheduled delivery destinations
 
-Jobs have nullable `source_run_id` and `source_call_id` columns,
-with a unique source-call index. Tasks created outside chat have no tool origin.
-Chat task mutations and their completed tool result/message commit in one shared-database
-transaction. Failure to save the receipt rolls back the task change. Repeating a
-completed call returns its original saved receipt, and a later model failure does
-not undo a committed task. This reuses the tool journal without introducing
-automatic execution replay.
+Chat task mutations and their completed tool result/message commit in one
+shared-database transaction, keyed by run and call ID. Failure to save the tool
+result rolls back the task change. Repeating a completed call returns its saved
+result, and a later model failure does not undo a committed task. This tool
+journal is the only replay protection; CLI and worker commands are not
+deduplicated, and there is no automatic execution replay.
 
 Jobs and occurrences have nullable JSON `destination` columns.
 Each occurrence copies the task's adapter, bot account, owner, server, parent

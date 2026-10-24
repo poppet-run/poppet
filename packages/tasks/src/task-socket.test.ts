@@ -22,7 +22,6 @@ describe("task-socket.ts", () => {
       action: "edit",
       id: "task",
       revision: 0,
-      operationId: "request",
       patch: { name: "Renamed" },
     };
 
@@ -32,7 +31,7 @@ describe("task-socket.ts", () => {
         { ...edit, patch: { provider: "other" } },
         { ...edit, revision: null },
         { ...edit, destination: "other" },
-        { action: "snooze", id: "task", operationId: "request", revision: 0, until: 1000 },
+        { action: "snooze", id: "task", revision: 0, until: 1000 },
       ].map(async (body) => {
         const response = await Effect.runPromise(taskResponse(body, handle));
         expect(response.status).toBe(400);

@@ -118,21 +118,18 @@ export const TaskControl = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("edit"),
     id: Session.fields.id,
-    operationId: boundedText(512),
     revision: Schema.Natural,
     patch: TaskPatch,
   }),
   Schema.Struct({
     action: Schema.Literals(["skip-next", "run-now"]),
     id: Session.fields.id,
-    operationId: boundedText(512),
     revision: Schema.Natural,
     target: TaskTarget,
   }),
   Schema.Struct({
     action: Schema.Literal("snooze"),
     id: Session.fields.id,
-    operationId: boundedText(512),
     revision: Schema.Natural,
     target: TaskTarget,
     until: Schema.Natural,
@@ -140,22 +137,6 @@ export const TaskControl = Schema.Union([
 ]);
 
 export type TaskControl = typeof TaskControl.Type;
-
-export const ControlReceipt = Schema.Struct({
-  operationId: Schema.String,
-  action: Schema.Literals(["edit", "skip-next", "snooze", "run-now"]),
-  taskId: Session.fields.id,
-  previousRevision: Schema.Natural,
-  revision: Schema.Natural,
-  changedFields: Schema.Array(Schema.String),
-  nextAt: Schema.NullOr(Schema.Natural),
-  paused: Schema.Literals([0, 1]),
-  occurrenceId: Schema.NullOr(Session.fields.id),
-  replacedOccurrenceIds: Schema.Array(Session.fields.id),
-  snoozeCleared: Schema.Boolean,
-  scheduledAt: Schema.NullOr(Schema.Natural),
-  availableAt: Schema.NullOr(Schema.Natural),
-});
 
 /** Commands accepted by both the local task store and the worker endpoint. */
 export const TaskCommand = Schema.Union([

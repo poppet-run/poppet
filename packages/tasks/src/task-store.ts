@@ -15,15 +15,7 @@ import { SqlClient } from "effect/sql";
 import { taskSchema } from "#src/migrations";
 import { taskControls } from "#src/task-controls";
 import { latestTime, nextTime, taskFailure, taskRecords, recurringExpiry } from "#src/task-records";
-import {
-  NewTask,
-  Occurrence,
-  ProviderPause,
-  Skipped,
-  Task,
-  TaskError,
-  ControlReceipt,
-} from "#src/task-schema";
+import { NewTask, Occurrence, ProviderPause, Skipped, Task, TaskError } from "#src/task-schema";
 
 interface TaskSkip {
   readonly jobId: string;
@@ -188,20 +180,9 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
     now: number,
     skill: SkillSnapshot | null = null,
     destination: DeliveryDestination | null = null,
-    source?: { readonly runId: string; readonly callId: string },
   ) =>
     sql.withTransaction(
       Effect.gen(function* () {
-        // A replayed chat tool call returns the task it already created.
-        if (source) {
-          const existing = yield* sql`SELECT id FROM jobs
-          WHERE source_run_id = ${source.runId} AND source_call_id = ${source.callId}`.pipe(
-            decodeRow(Schema.Struct({ id: Task.fields.id })),
-          );
-
-          if (existing !== null) return yield* task(existing.id);
-        }
-
         if (destination !== null)
           yield* Schema.decodeUnknownEffect(DeliveryDestination)(destination);
         const valid = yield* Schema.decodeUnknownEffect(NewTask)(input);
@@ -222,8 +203,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
           createdAt: now,
           skill: skill === null ? null : JSON.stringify(skill),
           destination: destination === null ? null : JSON.stringify(destination),
-          sourceRunId: source?.runId ?? null,
-          sourceCallId: source?.callId ?? null,
         })}`;
 
         return yield* task(id);
@@ -476,20 +455,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       );
     });
 
-  const changes = (id: string, limit = 20) =>
-    sql`SELECT operation_id, receipt, changes, created_at FROM job_operations
-      WHERE job_id = ${id} AND changes IS NOT NULL
-      ORDER BY created_at DESC, rowid DESC LIMIT ${limit}`.pipe(
-      decodeRows(
-        Schema.Struct({
-          operationId: Schema.String,
-          receipt: Schema.fromJsonString(ControlReceipt),
-          changes: Schema.fromJsonString(Schema.Json),
-          createdAt: Schema.Natural,
-        }),
-      ),
-    );
-
   return {
     commandLock,
     list: operation(list),
@@ -500,7 +465,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
     occurrences: operation(occurrencesFor),
     nextTarget: operation(nextTarget),
     control: operation(control),
-    changes: operation(changes),
     providers: operation(providers),
     skips: operation(skips),
     add: operation(add),

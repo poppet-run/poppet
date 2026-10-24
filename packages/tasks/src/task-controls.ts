@@ -1,42 +1,39 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { decodeRow } from "@poppet/store";
 import { Effect, Schema } from "effect";
 import type { SqlClient } from "effect/sql";
 
 import { nextTime, taskRecords, recurringExpiry } from "#src/task-records";
-import { TaskControl, ControlReceipt, TaskError, type Occurrence } from "#src/task-schema";
+import { TaskControl, TaskError, type Occurrence } from "#src/task-schema";
+
+/** What a control changed, and the execution it selected; times are Unix milliseconds. */
+export interface ControlReceipt {
+  readonly action: TaskControl["action"];
+  readonly taskId: string;
+  readonly previousRevision: number;
+  readonly revision: number;
+  readonly changedFields: ReadonlyArray<string>;
+  readonly nextAt: number | null;
+  readonly paused: 0 | 1;
+  readonly occurrenceId: string | null;
+  readonly replacedOccurrenceIds: ReadonlyArray<string>;
+  readonly snoozeCleared: boolean;
+  readonly scheduledAt: number | null;
+  readonly availableAt: number | null;
+}
 
 const reject = (message: string) => Effect.fail(new TaskError({ message }));
 
 export const taskControls = (sql: SqlClient.SqlClient) => {
   const { task, occurrence, insertOccurrence, activeOccurrence, nextTarget } = taskRecords(sql);
 
-  /** Revision/target checks, state changes, history and replay receipts share one transaction. */
+  /** Revision/target checks and state changes share one transaction. */
   return (input: TaskControl, now: number) =>
     sql.withTransaction(
       Effect.gen(function* () {
         const command = yield* Schema.decodeUnknownEffect(TaskControl, {
           onExcessProperty: "error",
         })(input);
-
-        // A repeated operation ID replays its receipt instead of changing the task again.
-        const saved = yield* sql`SELECT command, receipt FROM job_operations
-          WHERE operation_id = ${command.operationId}`.pipe(
-          decodeRow(
-            Schema.Struct({
-              command: Schema.fromJsonString(Schema.Json),
-              receipt: Schema.fromJsonString(ControlReceipt),
-            }),
-          ),
-        );
-
-        if (saved !== null) {
-          if (!isDeepStrictEqual(saved.command, command))
-            return yield* reject("The operation ID belongs to a different task request.");
-
-          return saved.receipt;
-        }
 
         const job = yield* task(command.id);
 
@@ -51,7 +48,6 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
         let replacedOccurrenceIds: string[] = [];
         let changedFields: string[] = [];
         let snoozeCleared = false;
-        let details: Schema.Json = null;
 
         if (command.action === "edit") {
           const patch = command.patch;
@@ -95,12 +91,6 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
                 selected = yield* occurrence(id);
               }
             }
-
-            const updated = yield* task(job.id);
-            details = {
-              before: Object.fromEntries(fields.map((field) => [field, job[field]])),
-              after: Object.fromEntries(fields.map((field) => [field, updated[field]])),
-            };
           }
         } else {
           if (job.paused)
@@ -201,20 +191,11 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
 
             changedFields = ["run-now"];
           }
-
-          if (changedFields.length > 0)
-            details = {
-              target,
-              occurrenceId: selected?.id ?? null,
-              availableAt: selected?.availableAt ?? null,
-              nextAt: (yield* task(job.id)).nextAt,
-            };
         }
 
         const updated = yield* task(job.id);
 
-        const receipt = yield* Schema.decodeUnknownEffect(ControlReceipt)({
-          operationId: command.operationId,
+        return {
           action: command.action,
           taskId: job.id,
           previousRevision: job.revision,
@@ -227,18 +208,7 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
           occurrenceId: selected?.id ?? null,
           scheduledAt: selected?.scheduledAt ?? null,
           availableAt: selected?.availableAt ?? null,
-        });
-
-        yield* sql`INSERT INTO job_operations ${sql.insert({
-          operationId: command.operationId,
-          jobId: job.id,
-          command: JSON.stringify(command),
-          receipt: JSON.stringify(receipt),
-          changes: details === null ? null : JSON.stringify(details),
-          createdAt: now,
-        })}`;
-
-        return receipt;
+        } satisfies ControlReceipt;
       }),
     );
 };
