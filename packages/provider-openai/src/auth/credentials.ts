@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import { acquireOwnerLock } from "@poppet/credentials/lock";
+import { isMissingFile, readProtectedFile, writeFileAtomic } from "@poppet/io";
 import { ProviderEnvironment } from "@poppet/provider";
 import { Context, Effect, Layer, Schema } from "effect";
 
@@ -26,8 +26,6 @@ export class CredentialStore extends Context.Service<CredentialStore, StoreOpera
 ) {}
 
 const ConnectionJson = Schema.fromJsonString(Connection);
-
-const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
 
 const storageError = () =>
   new ConnectionError({
@@ -73,50 +71,13 @@ export const CredentialStoreLive = Layer.effect(
     // its cleanup to finish because the whole operation is uninterruptible.
     const write = (connection: Connection) =>
       Effect.tryPromise({
-        try: async () => {
-          const temporaryPath = join(directory, `.connection-${randomUUID()}.tmp`);
-          const contents = Schema.encodeSync(ConnectionJson)(connection);
-          const handle = await open(temporaryPath, "wx", 0o600);
-
-          try {
-            await handle.writeFile(contents, "utf8");
-            await handle.sync();
-            await handle.close();
-            await rename(temporaryPath, path);
-          } catch (cause) {
-            await handle.close().catch(() => undefined);
-            await unlink(temporaryPath).catch(() => undefined);
-            throw cause;
-          }
-        },
+        try: () => writeFileAtomic(path, Schema.encodeSync(ConnectionJson)(connection)),
         catch: storageError,
       }).pipe(Effect.uninterruptible);
 
     const read = Effect.gen(function* () {
       const contents = yield* Effect.tryPromise({
-        try: async () => {
-          const handle = await open(
-            path,
-            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-          ).catch((cause: unknown) => {
-            if (Schema.is(MissingFile)(cause)) return null;
-            throw cause;
-          });
-
-          if (handle === null) return null;
-
-          try {
-            const info = await handle.stat();
-
-            if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.())
-              throw new Error("Credentials must be owned regular files without links.");
-            await handle.chmod(0o600);
-
-            return await handle.readFile("utf8");
-          } finally {
-            await handle.close();
-          }
-        },
+        try: () => readProtectedFile(path, { makePrivate: true }),
         catch: storageError,
       });
 
@@ -151,7 +112,7 @@ export const CredentialStoreLive = Layer.effect(
     const remove = Effect.tryPromise({
       try: () =>
         unlink(path).catch((cause: unknown) => {
-          if (!Schema.is(MissingFile)(cause)) throw cause;
+          if (!isMissingFile(cause)) throw cause;
         }),
       catch: storageError,
     }).pipe(Effect.uninterruptible);

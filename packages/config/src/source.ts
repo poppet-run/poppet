@@ -1,11 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { mkdir, open, rename, unlink } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { BrowserSettings, browserFileValue } from "@poppet/browser/config";
 import { acquireOwnerLock } from "@poppet/credentials/lock";
+import { readProtectedFile, writeFileAtomic } from "@poppet/io";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
 
@@ -53,8 +52,6 @@ export class ConfigSource extends Context.Service<
   }
 >()("poppet/ConfigSource") {}
 
-const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
-
 const fileError = (path: string, message: string) =>
   new Config.ConfigError(new ConfigProvider.SourceError({ message: `${path}: ${message}` }));
 
@@ -64,37 +61,7 @@ export const readConfigFile = (directory: string) =>
     const path = join(directory, "config.json");
 
     const contents = yield* Effect.tryPromise({
-      try: async () => {
-        const handle = await open(
-          path,
-          constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-        ).catch((cause: unknown) => {
-          if (Schema.is(MissingFile)(cause)) return null;
-          throw cause;
-        });
-
-        if (handle === null) return null;
-
-        try {
-          const info = await handle.stat();
-
-          if (
-            !info.isFile() ||
-            info.nlink !== 1 ||
-            info.uid !== process.getuid?.() ||
-            (info.mode & 0o022) !== 0 ||
-            info.size > 65536
-          )
-            throw new Error("Invalid configuration file");
-          const text = await handle.readFile("utf8");
-
-          if (Buffer.byteLength(text) > 65536) throw new Error("Configuration exceeds 64 KiB");
-
-          return text;
-        } finally {
-          await handle.close();
-        }
-      },
+      try: () => readProtectedFile(path, { maxBytes: 65536, ownerWriteOnly: true }),
       catch: () =>
         fileError(
           path,
@@ -193,20 +160,7 @@ export const updateConfigFile = (
       if (Buffer.byteLength(contents) > 65536)
         return yield* Effect.fail(fileError(path, "Configuration exceeds 64 KiB."));
       yield* Effect.tryPromise({
-        try: async () => {
-          const temporary = `${path}.${randomUUID()}.tmp`;
-          const handle = await open(temporary, "wx", 0o600);
-
-          try {
-            await handle.writeFile(contents);
-            await handle.sync();
-            await handle.close();
-            await rename(temporary, path);
-          } finally {
-            await handle.close().catch(() => undefined);
-            await unlink(temporary).catch(() => undefined);
-          }
-        },
+        try: () => writeFileAtomic(path, contents),
         catch: () => fileError(path, "Cannot save configuration."),
       });
 

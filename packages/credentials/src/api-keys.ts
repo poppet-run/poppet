@@ -1,8 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
+import { isMissingFile, readProtectedFile, writeFileAtomic } from "@poppet/io";
 import {
   CredentialInput,
   Provider,
@@ -44,8 +43,6 @@ export class ApiKeyStore extends Context.Service<ApiKeyStore, StoreOperations>()
   "poppet/ApiKeyStore",
 ) {}
 
-const MissingFile = Schema.Struct({ code: Schema.Literal("ENOENT") });
-
 const SavedKey = Schema.fromJsonString(
   Schema.Struct({ version: Schema.Literal(1), provider: ProviderId, key: ApiKey }),
 );
@@ -83,7 +80,7 @@ export const ApiKeyStoreLive = Layer.effect(
           if (create) await mkdir(directory, { recursive: true, mode: 0o700 });
 
           const info = await lstat(directory).catch((cause: unknown) => {
-            if (Schema.is(MissingFile)(cause)) return null;
+            if (isMissingFile(cause)) return null;
             throw cause;
           });
 
@@ -117,29 +114,7 @@ export const ApiKeyStoreLive = Layer.effect(
         if (!(yield* prepare(provider, false))) return null;
 
         const contents = yield* Effect.tryPromise({
-          try: async () => {
-            const handle = await open(
-              path(provider),
-              constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-            ).catch((cause: unknown) => {
-              if (Schema.is(MissingFile)(cause)) return null;
-              throw cause;
-            });
-
-            if (handle === null) return null;
-
-            try {
-              const info = await handle.stat();
-
-              if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.())
-                throw new Error("Invalid credential file");
-              await handle.chmod(0o600);
-
-              return await handle.readFile("utf8");
-            } finally {
-              await handle.close();
-            }
-          },
+          try: () => readProtectedFile(path(provider), { makePrivate: true }),
           catch: () => storageError(provider),
         });
 
@@ -162,22 +137,11 @@ export const ApiKeyStoreLive = Layer.effect(
         yield* locked(
           provider,
           Effect.tryPromise({
-            try: async () => {
-              const contents = Schema.encodeSync(SavedKey)({ version: 1, provider, key });
-              const temporary = join(directory, `.${provider}-${randomUUID()}.tmp`);
-              const handle = await open(temporary, "wx", 0o600);
-
-              try {
-                await handle.writeFile(contents, "utf8");
-                await handle.sync();
-                await handle.close();
-                await rename(temporary, path(provider));
-              } catch (cause) {
-                await handle.close().catch(() => undefined);
-                await unlink(temporary).catch(() => undefined);
-                throw cause;
-              }
-            },
+            try: () =>
+              writeFileAtomic(
+                path(provider),
+                Schema.encodeSync(SavedKey)({ version: 1, provider, key }),
+              ),
             catch: () => storageError(provider),
           }),
         );
@@ -193,7 +157,7 @@ export const ApiKeyStoreLive = Layer.effect(
           Effect.tryPromise({
             try: () =>
               unlink(path(provider)).catch((cause: unknown) => {
-                if (!Schema.is(MissingFile)(cause)) throw cause;
+                if (!isMissingFile(cause)) throw cause;
               }),
             catch: () => storageError(provider),
           }),
