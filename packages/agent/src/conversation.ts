@@ -6,7 +6,6 @@ import type {
   ModelOperations,
   Output,
   ProviderError,
-  TextSource,
   Tool,
 } from "@poppet/provider";
 import {
@@ -77,23 +76,14 @@ export const conversation = Effect.gen(function* () {
     prompt: string,
     readOnlyTools: boolean,
     here: Effect.Effect<DeliveryDestination, AgentError> | null = null,
-    source?: TextSource,
     selectedSkill: string | null = null,
     approveCommand: ApproveCommand | null = null,
     home: Effect.Effect<DeliveryDestination, AgentError> | null = null,
   ) =>
     Stream.unwrap(
       Effect.gen(function* () {
-        const attachmentHistory =
-          source !== undefined ||
-          history.some(
-            (entry) => entry.message.role === "user" && entry.message.source !== undefined,
-          );
-
         const catalog =
-          model.description.capabilities.tools &&
-          external !== null &&
-          !(source !== undefined && readOnlyTools)
+          model.description.capabilities.tools && external !== null
             ? yield* measureTiming(
                 "external-tools",
                 external.snapshot(readOnlyTools, { sessionId: run.sessionId, runId: run.id }),
@@ -111,11 +101,7 @@ export const conversation = Effect.gen(function* () {
         const tools = model.description.capabilities.tools
           ? [
               ...catalog.map((entry) => entry.definition),
-              ...(bash === null ||
-              source?.kind === "voice" ||
-              (source !== undefined && readOnlyTools)
-                ? []
-                : [bashTool]),
+              ...(bash === null ? [] : [bashTool]),
               sessionSearchTool,
               sessionReadTool,
               fetchPageTool,
@@ -141,10 +127,10 @@ export const conversation = Effect.gen(function* () {
           identities.add(identity);
         }
 
-        const allowedURLs = source?.kind === "voice" ? new Set<string>() : suppliedPageURLs(text);
+        const allowedURLs = suppliedPageURLs(text);
 
         // Untrusted content withdraws task and memory mutations; external tools need explicit opt-in to remain.
-        let untrusted = source !== undefined;
+        let untrusted = false;
 
         const withdrawn = (tool: Tool) =>
           tool.name === taskTool.name ||
@@ -172,7 +158,7 @@ export const conversation = Effect.gen(function* () {
             : `${indexedPrompt}\n\n${external.instructions}`;
 
         const instructions =
-          (tasks !== null && !readOnlyTools) || source?.kind === "voice"
+          tasks !== null && !readOnlyTools
             ? `${baseInstructions}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
             : baseInstructions;
 
@@ -255,9 +241,7 @@ export const conversation = Effect.gen(function* () {
             return { callId: call.callId, plan };
           });
 
-        const current: Message[] = [
-          source === undefined ? { role: "user", text } : { role: "user", text, source },
-        ];
+        const current: Message[] = [{ role: "user", text }];
 
         const available = contextAvailable(model.description, policy);
         let turns = 0;
@@ -317,10 +301,9 @@ export const conversation = Effect.gen(function* () {
                   instructions,
                   messages,
                   tools: activeTools(),
-                  settings:
-                    policy.logReasoning && !attachmentHistory
-                      ? { ...settings, reasoningSummary: true }
-                      : settings,
+                  settings: policy.logReasoning
+                    ? { ...settings, reasoningSummary: true }
+                    : settings,
                 },
                 run,
               ).pipe(

@@ -219,63 +219,6 @@ describe.concurrent("Agent", () => {
     },
   );
 
-  test("when attachments appear in current or saved history, excludes reasoning from diagnostics", async () => {
-    const logs: string[] = [];
-    const requests: ModelRequest[] = [];
-
-    const state = await fixture(
-      () =>
-        Effect.succeed({
-          description,
-          stream: (request) => {
-            requests.push(request);
-
-            return Stream.make<ModelEvent[]>(
-              { type: "reasoning-delta", text: "Private transcript and extracted content\n" },
-              { type: "completed", response: response() },
-            );
-          },
-        }),
-      true,
-    );
-
-    const reasoningLog = (line: string) =>
-      Effect.sync(() => {
-        logs.push(line);
-      });
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const agent = yield* Agent;
-          const session = yield* (yield* Store).createSession("test-provider", "test-model");
-
-          yield* Stream.runDrain(
-            agent.send(session.id, "Summarize", {
-              reasoningLog,
-              source: {
-                kind: "document",
-                name: "private.txt",
-                mime: "text/plain",
-                sha256: "c".repeat(64),
-                version: 1,
-                text: "Private extracted content",
-                completeness: "Complete",
-              },
-            }),
-          );
-          yield* Stream.runDrain(agent.send(session.id, "Explain further", { reasoningLog }));
-        }),
-      );
-      expect(logs).toEqual([]);
-      expect(requests).toHaveLength(2);
-      expect(requests.every((request) => request.settings.reasoningSummary === undefined)).toBe(
-        true,
-      );
-    } finally {
-      await state.close();
-    }
-  });
   test.each([false, true])(
     "when reasoning is enabled=%s, logs only permitted reasoning without changing the answer",
     async (enabled) => {

@@ -49,13 +49,6 @@ and omitted from this display. Inspection needs no selected model or login.
 With `chat.logReasoning` enabled, `chat new` streams thinking to stderr using the
 [interactive prompt's formatting](#interactive-prompt). Stdout contains only the answer.
 
-Discord currently accepts text messages. Saved attachment text remains readable.
-The saved user message keeps its caption/request separate from structured source
-metadata and text. Model context and recall label that source as untrusted JSON;
-only text reaches inference providers. Attachment data counts against the existing
-context budget. Titles use the caption or a safe attachment label. Previously saved
-PDF text and voice transcripts remain readable.
-
 ## Interactive prompt
 
 Start a new session or resume one in a terminal:
@@ -363,12 +356,11 @@ whose effects are unknown, such as a memory write without a saved receipt or an 
 after dispatch, is saved as uncertain and ends the run without replay. Budgets
 still bound repeated attempts.
 
-Once a fetched page, web search result, attachment, or MCP result enters a run,
+Once a fetched page, web search result, or MCP result enters a run,
 task management, memory changes, and MCP tools are withdrawn for the rest of that
 run. Reading tools and browser tools remain.
 The model proposes withdrawn actions instead, and a new message from you can
-confirm them. Attachments start their run with these tools
-withdrawn.
+confirm them.
 Recorded usage sums all model turns when every turn reports usage, otherwise it
 is null. Live account chat remains a manual check and consumes provider usage.
 

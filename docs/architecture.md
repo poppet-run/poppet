@@ -431,9 +431,9 @@ inspection. An uncertain mutation requires inspecting the affected state before 
 
 Reported tool failures, including refused arguments and failed page reads, return to
 the model within the existing budgets. An invalid batch executes none of its
-calls. Uncertain effects end the run without replay. Once page, search, MCP, or
-attachment content enters a run, task management, memory changes, and MCP tools
-are withdrawn until a new owner message. Voice runs also remove all external tools.
+calls. Uncertain effects end the run without replay. Once page, search, or MCP
+content enters a run, task management, memory changes, and MCP tools are
+withdrawn until a new owner message.
 See [chat limits](chat.md#context-and-run-limits).
 
 ### Reviewed host commands
