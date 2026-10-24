@@ -165,28 +165,3 @@ Tests cover persistent tool exchanges for all providers, migration ordering and
 rollback, transaction rollback, invalid records, run transitions, competing
 owners, and scoped cleanup. Live ChatGPT token renewal
 remains a separate phase 3 follow-up.
-
-## Attachment retention
-
-`gateway_attachments` is keyed to the accepted inbox entry and records processing,
-accepted, or failed state. Accepted results contain a SHA-256 content hash,
-extraction version, safe filename/MIME, completeness label and bounded text;
-failures retain a bounded reason. The inbox keeps the original opaque adapter
-file reference and caption. No token-bearing download URL is saved.
-
-Accepted text commits before the reserved run ID is started. Restart reuses it;
-interruptions before acceptance can retry local processing at most three times.
-Completed runs and deliveries retain the existing deduplication and uncertain-send
-rules. Existing text-only inbox/message records need no attachment fields.
-
-User message payloads keep the owner's request in `text` and extracted provenance
-in optional `source`. Context assembly converts the source to labelled untrusted
-JSON text; recall and the existing FTS projection preserve that label and include
-accepted source text for completed runs. No separate document index is created.
-
-Text attachments are processed in memory without raw files on disk. Saved text,
-source metadata, answers and provider records follow existing history retention.
-Previously saved PDF text and voice transcripts remain readable. Old
-`<data directory>/attachment-tmp` directories from interrupted PDF/audio processing
-are no longer used or cleaned by Poppet; after stopping the old worker, they can
-be removed without deleting saved history.

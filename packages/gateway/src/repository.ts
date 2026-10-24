@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { TextSource } from "@poppet/provider";
 import {
   DeliveryDestination,
   StoreError,
@@ -49,12 +48,6 @@ const Binding = Schema.Struct({
   pendingName: Schema.NullOr(Schema.String),
   namingDisabled: Schema.BooleanFromBit,
   creationMessageId: Schema.NullOr(Schema.String),
-});
-
-const AttachmentResult = Schema.Struct({
-  state: Schema.Literals(["processing", "accepted", "failed"]),
-  result: Schema.NullOr(Schema.fromJsonString(TextSource)),
-  failure: Schema.NullOr(Schema.String),
 });
 
 // Overload rejections pass through; anything else is reported as a storage failure.
@@ -114,24 +107,6 @@ const repository = Effect.gen(function* () {
         )} ${sql.literal(ignoreExisting ? "ON CONFLICT DO NOTHING" : "")}`.pipe(Effect.asVoid);
 
   return {
-    attachment: (id: number) =>
-      sql`SELECT state, result, failure FROM gateway_attachments WHERE inbox_id = ${id}`.pipe(
-        decodeRow(AttachmentResult),
-      ),
-    processing: (id: number) =>
-      sql`INSERT INTO gateway_attachments (inbox_id, state) VALUES (${id}, 'processing')
-        ON CONFLICT DO NOTHING`.pipe(Effect.asVoid),
-    extracted: (id: number, result: TextSource) =>
-      Schema.decodeUnknownEffect(TextSource)(result).pipe(
-        Effect.flatMap(
-          (valid) => sql`UPDATE gateway_attachments SET state = 'accepted',
-            result = ${JSON.stringify(valid)}, failure = NULL WHERE inbox_id = ${id}`,
-        ),
-        Effect.asVoid,
-      ),
-    extractionFailed: (id: number, failure: string) =>
-      sql`UPDATE gateway_attachments SET state = 'failed', result = NULL,
-        failure = ${failure.slice(0, 256)} WHERE inbox_id = ${id}`.pipe(Effect.asVoid),
     cursor: (adapter: string, account: string) =>
       sql`SELECT cursor FROM gateway_cursors WHERE adapter = ${adapter} AND account = ${account}`.pipe(
         decodeRow(Schema.Struct({ cursor: Schema.String })),

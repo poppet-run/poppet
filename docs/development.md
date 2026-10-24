@@ -341,13 +341,3 @@ assistant-capable provider and model for messaging and scheduled tasks.
 - [ ] Schedule a one-off task, sleep across its due time, then wake. Expect one
       execution. Restart the worker and confirm it does not repeat; check that logs
       append without exposing secrets.
-
-### Attachment checks
-
-Attachment fixtures cover strict UTF-8, actual streamed limits, redirect/path
-rejection, cancellation, owner checks, restart reuse, context overflow,
-source-aware recall and URL permissions. PDFs and recordings are rejected before
-download or inference. Saved document text and old transcripts remain readable.
-
-Tests inject downloads and use temporary databases. No bundled adapter currently
-accepts attachments; live attachment intake is not verified.

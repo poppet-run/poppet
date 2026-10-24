@@ -2,8 +2,6 @@ import type { ChatFailure } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import {
   ChannelEnvironment,
-  AttachmentProcessor,
-  AttachmentProcessorLive,
   ChannelError,
   ChannelInput,
   type ChannelRegistration,
@@ -141,7 +139,6 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
     Effect.gen(function* () {
       const configured = yield* loadChannels(registered);
       const repo = yield* GatewayRepository;
-      const attachments = yield* AttachmentProcessor;
 
       const workers = yield* Effect.forEach(configured, ({ entry, loaded }) =>
         Effect.gen(function* () {
@@ -151,11 +148,7 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
 
           // Each adapter needs its own gateway; the agent and store remain shared.
           const context = yield* Layer.build(
-            GatewayLive.pipe(
-              Layer.provide(loaded.success),
-              Layer.provide(Layer.succeed(AttachmentProcessor, attachments)),
-              Layer.fresh,
-            ),
+            GatewayLive.pipe(Layer.provide(loaded.success), Layer.fresh),
           ).pipe(Effect.result);
 
           if (Result.isFailure(context)) return disabledWorker(entry, context.failure.message);
@@ -213,7 +206,7 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
         }),
       };
     }),
-  ).pipe(Layer.provide(GatewayRepositoryLive), Layer.provide(AttachmentProcessorLive));
+  ).pipe(Layer.provide(GatewayRepositoryLive));
 
 export const stoppedMessagingStatus = (registered: ReadonlyArray<ChannelRegistration>) =>
   Effect.gen(function* () {

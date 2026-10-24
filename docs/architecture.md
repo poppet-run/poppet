@@ -1144,26 +1144,3 @@ The CLI adapts browser tools and `BrowserError` to the generic agent contract.
 Browser calls use the existing external-tool identity and durable
 uncertain outcomes. Scheduled catalogs omit every browser operation. See
 [browser automation](browser.md) for setup, bounds, permissions, and live checks.
-
-### Attachment processing
-
-`IncomingMessage` optionally carries one bounded attachment descriptor. The shared
-processing contract and saved attachment records remain available, though the
-bundled Discord adapter accepts text messages only. An external adapter must
-check sender identity and access before resolving a descriptor or downloading bytes.
-
-The host composes a shared `AttachmentProcessor` with the gateways. It validates
-text-file metadata and performs strict UTF-8 decoding in memory outside SQLite
-transactions and the agent's model permit. Advertised file sizes and downloaded
-bytes are limited to 64 KiB; accepted text is limited to 32 KiB. Unsupported types fail
-before download. There are no PDF/audio subprocesses or temporary attachment files.
-
-`gateway_attachments` records a result before `Agent.send` starts the inbox's
-reserved run. Recovery reuses accepted text and completed replies. Agent/store
-user messages retain a structured `TextSource` separately from the caption;
-context assembly renders it to labelled untrusted JSON text for any provider.
-The same label survives recall/search. Current URL grants come only from the
-caption. Saved PDF text and voice transcripts remain decodable, including
-pending requests already extracted before the feature was removed. Legacy voice
-runs retain their existing tool restrictions and transcript receipts. See
-[retention](storage.md#attachment-retention).
