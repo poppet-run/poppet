@@ -1,8 +1,7 @@
 import { DeliveryDestination } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
-import { ChannelError, type IncomingMessage, type MessagingChannel } from "#src/channel";
-import { authorized } from "#src/context";
+import { ChannelError, type MessagingChannel } from "#src/channel";
 
 /** Resolves a proactive destination, defaulting to home, and rechecks its policy and access. */
 export const resolveDestination = (
@@ -40,24 +39,30 @@ export const resolveDestination = (
       ),
     );
 
-    const message: IncomingMessage = {
-      messageId: "scheduled-destination",
-      senderId: destination.ownerId,
-      scopeId: destination.scopeId,
-      parentId,
-      conversationId,
-      text: "",
-      mentioned: false,
-    };
-
-    if (!authorized(channel.policy, message))
+    if (
+      destination.ownerId !== channel.policy.ownerId ||
+      destination.scopeId !== channel.policy.scopeId
+    )
       return yield* Effect.fail(
         new ChannelError({
           reason: "permission",
           message: "The destination is outside the authorized messaging server.",
         }),
       );
-    yield* channel.checkAccess(message, conversationId);
+
+    // checkAccess takes a source message; the owner posting in this destination stands in for one.
+    yield* channel.checkAccess(
+      {
+        messageId: "scheduled-destination",
+        senderId: destination.ownerId,
+        scopeId: destination.scopeId,
+        parentId,
+        conversationId,
+        text: "",
+        mentioned: false,
+      },
+      conversationId,
+    );
 
     return destination;
   });
