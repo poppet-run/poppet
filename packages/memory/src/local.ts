@@ -86,7 +86,7 @@ export const LocalMemoryLive = Layer.effect(
         );
     });
 
-    // Runs inside the caller's transaction so the fact and its revision change together.
+    // Facts are their latest revision, so each change appends exactly one row.
     const commit = (
       key: string,
       action: MemoryRevision["action"],
@@ -97,31 +97,17 @@ export const LocalMemoryLive = Layer.effect(
     ) =>
       Effect.gen(function* () {
         const existing = yield* current(key);
+        // Keep update times moving forward even if the clock steps back.
+        const updatedAt = Math.max(at, existing?.updatedAt ?? 0);
 
         yield* sql`INSERT INTO memory_revisions (key, revision, action, value, origin, source_run_id, created_at)
           SELECT ${key}, COALESCE(MAX(revision), 0) + 1, ${action}, ${value}, ${origin},
-            ${sourceRunId}, ${at}
+            ${sourceRunId}, ${updatedAt}
           FROM memory_revisions WHERE key = ${key}`;
 
-        if (value === null) {
-          yield* sql`DELETE FROM memories WHERE key = ${key}`;
-
-          return null;
-        }
-
-        const fact: MemoryFact = {
-          key,
-          value,
-          origin,
-          sourceRunId,
-          updatedAt: Math.max(at, existing?.updatedAt ?? 0),
-        };
-
-        yield* sql`INSERT INTO memories ${sql.insert(fact)}
-          ON CONFLICT (key) DO UPDATE SET value = excluded.value, origin = excluded.origin,
-            source_run_id = excluded.source_run_id, updated_at = excluded.updated_at`;
-
-        return fact;
+        return value === null
+          ? null
+          : ({ key, value, origin, sourceRunId, updatedAt } satisfies MemoryFact);
       });
 
     const transaction = <A, E, R>(change: (at: number) => Effect.Effect<A, E, R>) =>

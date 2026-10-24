@@ -170,8 +170,11 @@ export const StoreLive = Layer.effect(
           : Effect.succeed(session),
       );
 
-    const findRun = (id: string) =>
-      sql`SELECT * FROM runs WHERE id = ${id}`.pipe(decodeRow(RunRow));
+    // A run's provider, model, and workload are its session's.
+    const runs = sql`SELECT runs.*, sessions.provider, sessions.model, sessions.workload
+      FROM runs JOIN sessions ON sessions.id = runs.session_id`;
+
+    const findRun = (id: string) => sql`${runs} WHERE runs.id = ${id}`.pipe(decodeRow(RunRow));
 
     const requireRun = (id: string) =>
       Effect.flatMap(findRun(id), (run) =>
@@ -328,9 +331,6 @@ export const StoreLive = Layer.effect(
           yield* sql`INSERT INTO runs ${sql.insert({
             id: yield* decodeInput(Id, runId),
             sessionId,
-            provider: session.provider,
-            model: session.model,
-            workload: session.workload,
             status: "pending",
             createdAt,
           })}`;
@@ -632,8 +632,8 @@ export const StoreLive = Layer.effect(
         Effect.gen(function* () {
           yield* requireSession(yield* decodeInput(Id, sessionId));
 
-          return yield* sql`SELECT * FROM runs WHERE session_id = ${sessionId}
-            ORDER BY created_at, id`.pipe(decodeRows(RunRow));
+          return yield* sql`${runs} WHERE runs.session_id = ${sessionId}
+            ORDER BY runs.created_at, runs.id`.pipe(decodeRows(RunRow));
         }).pipe(reportAs(storeFailure)),
       status: sql`SELECT (SELECT COUNT(*) FROM sessions) AS sessions,
           (SELECT COUNT(*) FROM messages) AS messages, (SELECT COUNT(*) FROM runs) AS runs`.pipe(

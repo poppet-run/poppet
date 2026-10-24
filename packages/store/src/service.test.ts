@@ -974,29 +974,6 @@ describe("Store", () => {
     }
   });
 
-  test("when a run's model identity differs from its session, the schema rejects it", async () => {
-    const saved = await fixture();
-
-    try {
-      const run = await saved.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-          const session = yield* store.createSession("new-provider", "selected-model");
-
-          return yield* store.queueRun(session.id, [user]);
-        }),
-      );
-
-      using tampered = new Database(saved.path);
-      tampered.run("PRAGMA foreign_keys = ON");
-      expect(() =>
-        tampered.query("UPDATE runs SET workload = 'coding' WHERE id = ?").run(run.id),
-      ).toThrow("FOREIGN KEY constraint failed");
-    } finally {
-      await saved.close();
-    }
-  });
-
   test.each(["malformed-json"])(
     "when stored rows contain %s, rejects them without exposing payloads",
     async () => {
