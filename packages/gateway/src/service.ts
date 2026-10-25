@@ -1,16 +1,16 @@
-import { Agent, Skills } from "@poppet/agent";
+import { Agent, ChatSettings, Skills, type ChatFailure } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { Store } from "@poppet/store";
-import { Clock, Console, Context, Effect, Layer, Queue, Stream } from "effect";
+import { Clock, Console, Context, Effect, FiberSet, Layer, Queue, Stream } from "effect";
 
 import { accept } from "#src/accept";
 import { commandApprovals } from "#src/approvals";
-import { MessagingChannel, type IncomingMessage } from "#src/channel";
-import { loop, type GatewayContext, type RunningRequest } from "#src/context";
+import { MessagingChannel, type ChannelError, type IncomingMessage } from "#src/channel";
+import { loop, runningRequests, type GatewayContext } from "#src/context";
 import { conversationNaming } from "#src/conversation-naming";
 import { deliverNext } from "#src/delivery";
 import { resolveDestination } from "#src/destination";
-import { processNext, recover, type Execution } from "#src/execution";
+import { dispatchNext, processNext, recover, type Execution } from "#src/execution";
 import { GatewayRepository } from "#src/repository";
 
 const gateway = Effect.gen(function* () {
@@ -31,7 +31,9 @@ const gateway = Effect.gen(function* () {
     },
   };
 
-  const running: RunningRequest = { current: null };
+  const running = runningRequests();
+  // The agent's limit, so the gateway never claims more requests than the agent can start.
+  const { maxConcurrentRequests } = yield* ChatSettings;
   const approvals = commandApprovals(channel);
 
   const execution: Execution = {
@@ -60,6 +62,8 @@ const gateway = Effect.gen(function* () {
   /** Recovers once, then receives input, runs inference, and delivers replies concurrently. */
   const run = Effect.gen(function* () {
     yield* service.recover;
+    // Closing the run's scope interrupts every active request and leaves it for recovery.
+    const active = yield* FiberSet.make<void, ChatFailure | ChannelError>();
 
     const receive = Stream.runForEach(channel.messages, (message) =>
       service.accept(message).pipe(
@@ -74,14 +78,19 @@ const gateway = Effect.gen(function* () {
     yield* Effect.all(
       [
         receive,
-        loop(service.processNext, context.wakes.inbox, "5 seconds"),
+        loop(
+          dispatchNext(context, execution, active, maxConcurrentRequests),
+          context.wakes.inbox,
+          "5 seconds",
+        ),
+        FiberSet.join(active),
         loop(service.deliverNext, context.wakes.delivery, "1 second"),
         loop(nameNext, context.wakes.naming, "5 seconds"),
         Stream.runForEach(channel.naming.changes, externalNameChange),
       ],
-      { concurrency: 5, discard: true },
+      { concurrency: "unbounded", discard: true },
     );
-  });
+  }).pipe(Effect.scoped);
 
   return { ...service, run };
 });

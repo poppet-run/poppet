@@ -85,6 +85,10 @@ permissions do not stop chat, and a crash or network error can leave a stale mar
 
 In an attached thread, `@Poppet /status` reports its session, selected skill and project, and latest run;
 `@Poppet /cancel` interrupts its active request and cancels its queued requests.
+With `chat.maxConcurrentRequests` above 1, threads and channel mentions run at the
+same time, and messages within one thread are answered in order. Cancelling one
+thread does not affect requests in another, and an approval reply settles only a
+request in its own thread.
 These are text messages, not registered Discord slash commands. The bot ignores
 other users, bots, and webhooks. DMs, forums, attachments, voice, and streaming
 message edits are not supported in this phase.

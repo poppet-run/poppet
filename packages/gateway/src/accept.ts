@@ -37,13 +37,19 @@ const controlReply = (
     }
 
     if (message.text === "/cancel") {
-      yield* gatewayStorage(repo.cancel(channel.id, entry.account, conversation));
-      const current = controls.running.current;
+      const { requests, claims } = controls.running;
 
-      if (current?.entry.conversationId === conversation) {
-        yield* gatewayStorage(repo.state(current.entry.id, "cancelled"));
-        yield* Fiber.interrupt(current.fiber);
-      }
+      yield* claims.withPermit(
+        Effect.gen(function* () {
+          yield* gatewayStorage(repo.cancel(channel.id, entry.account, conversation));
+
+          for (const request of requests.values())
+            if (request.entry.conversationId === conversation) {
+              yield* gatewayStorage(repo.state(request.entry.id, "cancelled"));
+              yield* Fiber.interrupt(request.fiber);
+            }
+        }),
+      );
 
       return "Cancelled this thread's queued and active request.";
     }

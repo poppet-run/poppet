@@ -1,6 +1,6 @@
 import type { ChatFailure } from "@poppet/agent";
 import type { Store } from "@poppet/store";
-import { type Clock, type Duration, Effect, type Fiber, Queue } from "effect";
+import { type Clock, type Duration, Effect, type Fiber, Queue, Semaphore } from "effect";
 
 import type { ChannelError, ChannelPolicy, IncomingMessage, MessagingChannel } from "#src/channel";
 import { chunks } from "#src/replies";
@@ -22,10 +22,20 @@ export interface GatewayContext {
   readonly wakes: GatewayWakes;
 }
 
-/** The request processNext is executing, which /cancel interrupts in its conversation. */
+/** Executing requests by inbox ID, which /cancel interrupts in their conversation. */
 export interface RunningRequest {
-  current: { entry: Inbox; readonly fiber: Fiber.Fiber<void, ChatFailure | ChannelError> } | null;
+  readonly requests: Map<
+    number,
+    { entry: Inbox; readonly fiber: Fiber.Fiber<void, ChatFailure | ChannelError> }
+  >;
+  /** Held while claiming or cancelling, so /cancel never misses a request being claimed. */
+  readonly claims: Semaphore.Semaphore;
 }
+
+export const runningRequests = (): RunningRequest => ({
+  requests: new Map(),
+  claims: Semaphore.makeUnsafe(1),
+});
 
 export const authorized = (policy: ChannelPolicy, message: IncomingMessage) =>
   message.senderId === policy.ownerId && message.scopeId === policy.scopeId;
