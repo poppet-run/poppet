@@ -97,6 +97,23 @@ describe("compileSchema", () => {
       expect(() => compileSchema({ type: "string", pattern })).toThrow("Unsupported MCP schema");
   });
 
+  test("when schemas carry vendor x- annotations, ignores them as keywords but keeps x- property names", () => {
+    const validate = compileSchema({
+      type: "object",
+      "x-fastmcp-wrap-result": true,
+      properties: {
+        "x-request-id": { type: "string", "x-vendor": { pattern: "(a+)+$" } },
+      },
+      required: ["x-request-id"],
+      additionalProperties: false,
+    });
+
+    expect(validate({ "x-request-id": "abc" })).toBe(true);
+    expect(validate({ "x-request-id": 7 })).toBe(false);
+    expect(validate({})).toBe(false);
+    expect(validate({ "x-request-id": "abc", "x-fastmcp-wrap-result": true })).toBe(false);
+  });
+
   test("when output branches contain only required fields, still enforces every original assertion", () => {
     const validate = compileSchema({
       type: "object",

@@ -49,37 +49,52 @@ const schemaValues = new Set([
   "contentSchema",
 ]);
 
-/** Reject costly or recursive schemas before compilation, without discarding validation keywords. */
+/**
+ * Reject costly or recursive schemas before compilation, without discarding validation keywords.
+ * Vendor `x-` annotations, such as FastMCP's `x-fastmcp-wrap-result`, carry no validation and are
+ * dropped where they are keywords; property names and literal data keep them.
+ */
 export const compileSchema = (input: Schema.JsonObject) => {
   if (Buffer.byteLength(JSON.stringify(input)) > 16384) throw invalid();
   let nodes = 0;
 
-  const visit = (value: Schema.Json, depth: number, position: "schema" | "map" | "data"): void => {
+  const visit = (
+    value: Schema.Json,
+    depth: number,
+    position: "schema" | "map" | "data",
+  ): Schema.Json => {
     if (++nodes > 512 || depth > 16) throw invalid();
 
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item, depth + 1, position);
-    } else if (Schema.is(Schema.ObjectKeyword)(value)) {
-      for (const [key, item] of Object.entries(value)) {
-        if (
-          position === "schema" &&
-          ["$ref", "$dynamicRef", "$recursiveRef", "pattern", "patternProperties"].includes(key)
-        )
-          throw invalid();
-        let child: "schema" | "map" | "data" = "data";
+    if (Array.isArray(value)) return value.map((item) => visit(item, depth + 1, position));
 
-        if (position === "map") child = "schema";
-        else if (position === "schema") {
-          if (schemaMaps.has(key)) child = "map";
-          else if (schemaValues.has(key)) child = "schema";
-        }
+    if (!Schema.is(Schema.ObjectKeyword)(value)) return value;
+    const entries: Array<[string, Schema.Json]> = [];
 
-        visit(item, depth + 1, child);
+    for (const [key, item] of Object.entries(value)) {
+      if (position === "schema" && key.startsWith("x-")) continue;
+
+      if (
+        position === "schema" &&
+        ["$ref", "$dynamicRef", "$recursiveRef", "pattern", "patternProperties"].includes(key)
+      )
+        throw invalid();
+      let child: "schema" | "map" | "data" = "data";
+
+      if (position === "map") child = "schema";
+      else if (position === "schema") {
+        if (schemaMaps.has(key)) child = "map";
+        else if (schemaValues.has(key)) child = "schema";
       }
+
+      entries.push([key, visit(item, depth + 1, child)]);
     }
+
+    // fromEntries defines own properties, so a "__proto__" key stays data.
+    return Object.fromEntries(entries);
   };
 
-  visit(input, 0, "schema");
+  // SAFETY: visit maps an object to an object, and input is an object.
+  const schema = visit(input, 0, "schema") as Schema.JsonObject;
 
   // Required-only branches are valid JSON Schema; disabling this lint keeps required assertions intact.
   const options = {
@@ -95,7 +110,7 @@ export const compileSchema = (input: Schema.JsonObject) => {
       ? new Ajv2020(options)
       : new Ajv(options);
 
-  return ajv.compile(input);
+  return ajv.compile(schema);
 };
 
 /** A strict wrapper preserves optional/defaulted server fields without changing their original schema. */

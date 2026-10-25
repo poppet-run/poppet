@@ -170,7 +170,9 @@ reached through a stdio bridge that owns the sign-in. Resource links and media a
   most 16 KiB, depth 16, and 512 nodes. Draft-07 and 2020-12 schemas are validated
   with AJV. Valid required-only union branches retain their runtime assertions.
   Regular expressions, references, and unsupported formats or keywords
-  fail discovery with a diagnostic. Required MCP task execution is unsupported.
+  fail discovery with a diagnostic. Vendor `x-` keywords, such as FastMCP's
+  `x-fastmcp-wrap-result`, are ignored; `x-` property names are still validated.
+  Required MCP task execution is unsupported.
 - Models receive a strict object containing one required `input` string. That
   string contains the original JSON arguments. Poppet validates the decoded object
   against the original server schema, without adding defaults, coercing values,
