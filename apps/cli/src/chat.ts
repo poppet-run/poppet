@@ -20,20 +20,6 @@ import {
 } from "@poppet/store";
 import { Effect, Schema, Stream } from "effect";
 
-/** Parsed chat actions before defaults are resolved into an executable request. */
-export type ChatCommand =
-  | {
-      readonly action: "new";
-      readonly text: string;
-      readonly coding: boolean;
-      readonly skill?: string;
-    }
-  | { readonly action: "send"; readonly id: string; readonly text: string }
-  | { readonly action: "rename"; readonly id: string; readonly text: string }
-  | { readonly action: "sessions" }
-  | { readonly action: "search"; readonly query: string }
-  | { readonly action: "show"; readonly id: string };
-
 /** Nonblank user input whose original spacing is preserved. */
 export const MessageText = Schema.NonEmptyString.check(
   Schema.makeFilter((text) => text.trim().length > 0 || "Enter a nonempty message."),
@@ -57,6 +43,16 @@ export const ChatRequest = Schema.Union([
 ]);
 
 export type ChatRequest = typeof ChatRequest.Type;
+
+/** Parsed chat actions; only a new session still needs its provider and model resolved. */
+export type ChatCommand =
+  | Exclude<ChatRequest, { readonly action: "new" }>
+  | {
+      readonly action: "new";
+      readonly text: string;
+      readonly coding: boolean;
+      readonly skill?: string;
+    };
 
 type ChatSubmission = Extract<ChatRequest, { action: "new" | "send" }>;
 
@@ -192,9 +188,7 @@ export const prepareChat = (
       workload: command.coding ? "coding" : "assistant",
     };
 
-    const selected = command.skill === undefined ? request : { ...request, skill: command.skill };
-
-    return selected;
+    return command.skill === undefined ? request : { ...request, skill: command.skill };
   });
 
 const resolveChatSession = (command: ChatSubmission) =>
