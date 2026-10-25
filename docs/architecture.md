@@ -701,7 +701,10 @@ without changing the agent or command handlers. No memory-provider registry is n
 
 ## Current authentication flow
 
-`CredentialStoreLive` owns the shared storage lock for an auth command's scope.
+`CredentialStoreLive` owns the shared storage lock while any of its builds in the
+process is open. Builds share one lock and one permit per data directory, so
+simultaneous model requests serialize credential reads and refreshes, and another
+process stays out until the last build closes.
 `BrowserSignIn` owns an ephemeral listener at `127.0.0.1` and releases it on
 success, failure, timeout, or interruption. Shutdown drains the current response
 so the browser receives the callback page. The callback consumes one attempt

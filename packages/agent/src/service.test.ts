@@ -1072,7 +1072,7 @@ describe.concurrent("Agent request permits", () => {
 
   test("when a request is interrupted while waiting for either permit, creates no run", async () => {
     const model = gatedModel();
-    const state = await fixture(model.resolve);
+    const state = await fixture(model.resolve, false, { maxConcurrentRequests: 1 });
 
     try {
       await state.run(

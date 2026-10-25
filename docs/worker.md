@@ -26,7 +26,7 @@ executed. Task-only mode does not initialize messaging adapters. `worker status`
 reports the host's selected services; `gateway status` reports whether messaging
 is running. Only one mode can own a data directory at a time.
 Interactive, scheduled, and messaging model requests share
-[`chat.maxConcurrentRequests`](configuration.md) slots, 1 by default. Requests to one
+[`chat.maxConcurrentRequests`](configuration.md) slots, 3 by default. Requests to one
 session always run one at a time, so a CLI chat sent to a session that a Discord
 thread is using waits for the thread's request. Chat streams to the
 invoking terminal; Ctrl-C cancels that request and leaves the worker running.

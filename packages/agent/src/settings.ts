@@ -40,7 +40,7 @@ export const defaultPolicy: ChatPolicy = {
   factsBytes: 8192,
   skillIndexBytes: 8192,
   runDeadlineSeconds: 300,
-  maxConcurrentRequests: 1,
+  maxConcurrentRequests: 3,
 };
 
 const bounded = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }));
