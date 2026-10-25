@@ -14,7 +14,7 @@ poppet gateway work  # Messaging only
 
 All three modes own enabled [MCP connections](mcp.md), started lazily on discovery
 or an eligible agent run and closed on shutdown. CLI discovery uses these same
-connections. `mcp status` inspects them without starting a process. Restart the
+connections. `mcp servers` inspects them without starting a process. Restart the
 worker after changing server configuration or to reconnect a failed server.
 
 All three modes own one SQLite connection and serve task, chat, memory, and store-status commands
