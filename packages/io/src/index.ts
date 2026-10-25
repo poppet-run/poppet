@@ -1,4 +1,11 @@
-export { isMissingFile, openNoFollow, readProtectedFile, writeFileAtomic } from "#src/files";
+export {
+  ensurePrivateDirectory,
+  isMissingFile,
+  openNoFollow,
+  readProtectedFile,
+  unlinkIfPresent,
+  writeFileAtomic,
+} from "#src/files";
 
 export { readBounded, readBoundedText, runBounded, type BoundedRun } from "#src/io";
 

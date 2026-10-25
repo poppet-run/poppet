@@ -1,11 +1,41 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { open, rename, unlink, type FileHandle } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, rename, unlink, type FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import { Schema } from "effect";
 
 export const isMissingFile = Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }));
+
+/**
+ * Makes a directory private to this user: creates it unless `create` is false, rejects anything
+ * but a real directory this user owns, and narrows it to 0o700. False when missing and not created.
+ */
+export const ensurePrivateDirectory = async (
+  path: string,
+  options: { readonly create?: boolean } = {},
+): Promise<boolean> => {
+  if (options.create ?? true) await mkdir(path, { recursive: true, mode: 0o700 });
+
+  const info = await lstat(path).catch((cause: unknown) => {
+    if (isMissingFile(cause)) return null;
+    throw cause;
+  });
+
+  if (info === null) return false;
+
+  if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.())
+    throw new Error("Invalid private directory");
+  await chmod(path, 0o700);
+
+  return true;
+};
+
+/** Removes a file; a missing file is already removed. */
+export const unlinkIfPresent = (path: string): Promise<void> =>
+  unlink(path).catch((cause: unknown) => {
+    if (!isMissingFile(cause)) throw cause;
+  });
 
 /** Opens for reading without following a final symlink or blocking on a FIFO; null when missing. */
 export const openNoFollow = (path: string): Promise<FileHandle | null> =>

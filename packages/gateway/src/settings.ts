@@ -1,8 +1,7 @@
-import { chmod, lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { acquireOwnerLock } from "@poppet/credentials/lock";
-import { isMissingFile, readProtectedFile, writeFileAtomic } from "@poppet/io";
+import { ensurePrivateDirectory, readProtectedFile, writeFileAtomic } from "@poppet/io";
 import { Effect, Layer, Schema } from "effect";
 
 import { ChannelError, type MessagingChannel } from "#src/channel";
@@ -20,20 +19,7 @@ const directoryFor = (dataDirectory: string, adapter: string, create: boolean) =
       if (!/^[a-z][a-z0-9-]{0,63}$/.test(adapter)) throw new Error("Invalid channel ID");
       const directory = join(dataDirectory, "channels");
 
-      if (create) await mkdir(directory, { recursive: true, mode: 0o700 });
-
-      const info = await lstat(directory).catch((cause: unknown) => {
-        if (isMissingFile(cause)) return null;
-        throw cause;
-      });
-
-      if (info === null) return null;
-
-      if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.())
-        throw new Error("Invalid channel directory");
-      await chmod(directory, 0o700);
-
-      return directory;
+      return (await ensurePrivateDirectory(directory, { create })) ? directory : null;
     },
     catch: settingsError,
   });

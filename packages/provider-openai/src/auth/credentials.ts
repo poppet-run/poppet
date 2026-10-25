@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import { acquireOwnerLock } from "@poppet/credentials/lock";
-import { isMissingFile, readProtectedFile, writeFileAtomic } from "@poppet/io";
+import {
+  ensurePrivateDirectory,
+  readProtectedFile,
+  unlinkIfPresent,
+  writeFileAtomic,
+} from "@poppet/io";
 import { ProviderEnvironment } from "@poppet/provider";
 import { Context, Effect, Layer, Schema } from "effect";
 
@@ -42,14 +46,7 @@ export const CredentialStoreLive = Layer.effect(
     const lockPath = join(directory, "owner.lock");
 
     yield* Effect.tryPromise({
-      try: async () => {
-        await mkdir(directory, { recursive: true, mode: 0o700 });
-        const info = await lstat(directory);
-
-        if (!info.isDirectory() || info.isSymbolicLink())
-          throw new Error("Authentication directory must be a real directory.");
-        await chmod(directory, 0o700);
-      },
+      try: () => ensurePrivateDirectory(directory),
       catch: storageError,
     });
 
@@ -110,10 +107,7 @@ export const CredentialStoreLive = Layer.effect(
     });
 
     const remove = Effect.tryPromise({
-      try: () =>
-        unlink(path).catch((cause: unknown) => {
-          if (!isMissingFile(cause)) throw cause;
-        }),
+      try: () => unlinkIfPresent(path),
       catch: storageError,
     }).pipe(Effect.uninterruptible);
 

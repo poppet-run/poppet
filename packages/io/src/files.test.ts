@@ -13,7 +13,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { isMissingFile, readProtectedFile, writeFileAtomic } from "#src/files";
+import {
+  ensurePrivateDirectory,
+  isMissingFile,
+  readProtectedFile,
+  writeFileAtomic,
+} from "#src/files";
 
 let directory = "";
 
@@ -26,6 +31,27 @@ afterEach(async () => {
 });
 
 describe("files.ts", () => {
+  test("when a private directory is missing, creates it only if asked", async () => {
+    const path = join(directory, "auth");
+
+    expect(await ensurePrivateDirectory(path, { create: false })).toBe(false);
+    expect(await ensurePrivateDirectory(path)).toBe(true);
+    expect((await stat(path)).mode & 0o777).toBe(0o700);
+  });
+
+  test("when a private directory is widened or replaced by a symlink, narrows or rejects it", async () => {
+    const path = join(directory, "auth");
+    await mkdir(path, { mode: 0o755 });
+    await chmod(path, 0o755);
+
+    expect(await ensurePrivateDirectory(path, { create: false })).toBe(true);
+    expect((await stat(path)).mode & 0o777).toBe(0o700);
+
+    const linked = join(directory, "linked");
+    await symlink(path, linked);
+    await expect(ensurePrivateDirectory(linked)).rejects.toThrow();
+  });
+
   test("when the file is missing, returns null", async () => {
     expect(await readProtectedFile(join(directory, "missing.json"))).toBeNull();
     expect(isMissingFile(Object.assign(new Error("Missing"), { code: "ENOENT" }))).toBe(true);

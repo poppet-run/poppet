@@ -1,7 +1,11 @@
-import { chmod, lstat, mkdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
-import { isMissingFile, readProtectedFile, writeFileAtomic } from "@poppet/io";
+import {
+  ensurePrivateDirectory,
+  readProtectedFile,
+  unlinkIfPresent,
+  writeFileAtomic,
+} from "@poppet/io";
 import {
   CredentialInput,
   Provider,
@@ -76,22 +80,7 @@ export const ApiKeyStoreLive = Layer.effect(
 
     const prepare = (provider: ProviderId, create: boolean) =>
       Effect.tryPromise({
-        try: async () => {
-          if (create) await mkdir(directory, { recursive: true, mode: 0o700 });
-
-          const info = await lstat(directory).catch((cause: unknown) => {
-            if (isMissingFile(cause)) return null;
-            throw cause;
-          });
-
-          if (info === null) return false;
-
-          if (!info.isDirectory() || info.isSymbolicLink())
-            throw new Error("Invalid authentication directory");
-          await chmod(directory, 0o700);
-
-          return true;
-        },
+        try: () => ensurePrivateDirectory(directory, { create }),
         catch: () => storageError(provider),
       });
 
@@ -155,10 +144,7 @@ export const ApiKeyStoreLive = Layer.effect(
         yield* locked(
           provider,
           Effect.tryPromise({
-            try: () =>
-              unlink(path(provider)).catch((cause: unknown) => {
-                if (!isMissingFile(cause)) throw cause;
-              }),
+            try: () => unlinkIfPresent(path(provider)),
             catch: () => storageError(provider),
           }),
         );

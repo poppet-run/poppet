@@ -1,11 +1,11 @@
 import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open } from "node:fs/promises";
+import { chmod, lstat, open } from "node:fs/promises";
 import { join } from "node:path";
 
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { AppConfig } from "@poppet/config";
 import { acquireOwnerLock } from "@poppet/credentials/lock";
-import { isMissingFile } from "@poppet/io";
+import { ensurePrivateDirectory, isMissingFile } from "@poppet/io";
 import { Context, Effect, Layer, String as Str } from "effect";
 import { Reactivity } from "effect/reactivity";
 import { SqlClient } from "effect/sql";
@@ -41,14 +41,7 @@ export const StoreDatabaseLive = Layer.effectContext(
     const path = join(directory, "poppet.sqlite");
 
     yield* Effect.tryPromise({
-      try: async () => {
-        await mkdir(directory, { recursive: true, mode: 0o700 });
-        const info = await lstat(directory);
-
-        if (!info.isDirectory() || info.isSymbolicLink())
-          throw new Error("Invalid store directory");
-        await chmod(directory, 0o700);
-      },
+      try: () => ensurePrivateDirectory(directory),
       catch: storageFailure,
     });
 

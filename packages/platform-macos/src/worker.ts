@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
-import { isMissingFile, openNoFollow } from "@poppet/io";
+import { ensurePrivateDirectory, isMissingFile, openNoFollow } from "@poppet/io";
 import { WorkerError, type WorkerAction, type WorkerLaunch } from "@poppet/platform";
 import { Effect } from "effect";
 
@@ -177,12 +177,9 @@ export const manageWorker = (
           });
         const directory = join(home, "Library", "LaunchAgents");
         await mkdir(directory, { recursive: true });
-        await mkdir(paths.logs, { recursive: true, mode: 0o700 });
-        const info = await lstat(paths.logs);
-
-        if (!info.isDirectory() || info.isSymbolicLink())
+        await ensurePrivateDirectory(paths.logs).catch(() => {
           throw new WorkerError({ message: "The log directory must be a real directory." });
-        await chmod(paths.logs, 0o700);
+        });
 
         await fileInfo(paths.log);
 

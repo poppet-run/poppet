@@ -1,9 +1,8 @@
 import { Database } from "bun:sqlite";
-import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { open, rename, unlink } from "node:fs/promises";
+import { open, unlink } from "node:fs/promises";
 
-import { isMissingFile } from "@poppet/io";
+import { openNoFollow, writeFileAtomic } from "@poppet/io";
 import { Data, Effect, Schema } from "effect";
 
 /** Reports an existing storage owner or a failure to protect the ownership files. */
@@ -42,13 +41,7 @@ export const acquireOwnerLock = (path: string) =>
 
           // The exclusive SQLite lock proves no current owner is running. A marker left by a
           // crashed owner is replaced even if its PID now belongs to an unrelated process.
-          const previous = await open(
-            path,
-            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-          ).catch((cause: unknown) => {
-            if (isMissingFile(cause)) return null;
-            throw cause;
-          });
+          const previous = await openNoFollow(path);
 
           if (previous !== null) {
             try {
@@ -61,19 +54,7 @@ export const acquireOwnerLock = (path: string) =>
           }
 
           // Replace the marker atomically, so a crash cannot leave an empty PID file.
-          const temporary = `${path}.${randomUUID()}.tmp`;
-          const marker = await open(temporary, "wx", 0o600);
-
-          try {
-            await marker.writeFile(JSON.stringify({ pid: process.pid }));
-            await marker.sync();
-            await marker.close();
-            await rename(temporary, path);
-          } catch (cause) {
-            await marker.close().catch(() => undefined);
-            await unlink(temporary).catch(() => undefined);
-            throw cause;
-          }
+          await writeFileAtomic(path, JSON.stringify({ pid: process.pid }));
 
           return database;
         } catch (cause) {
