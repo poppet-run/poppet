@@ -21,7 +21,7 @@ import {
   type Output,
 } from "#src/index";
 import { inferenceFailure, remoteFailure, type InferenceOptions } from "#src/protocol/errors";
-import { modelStream } from "#src/protocol/scoped-stream";
+import { inIndexOrder, modelStream } from "#src/protocol/scoped-stream";
 
 const Content = Schema.Union([
   Schema.Struct({
@@ -351,14 +351,9 @@ export const responsesModel = (
                   if (!completedItems.has(index)) completedItems.set(index, item);
                 }
 
-                const items = [...completedItems.entries()]
-                  .toSorted(([left], [right]) => left - right)
-                  .map(([index, item], position) => {
-                    if (index !== position)
-                      throw interrupted(description.provider, "The stream omitted an output item.");
-
-                    return item;
-                  });
+                const items = inIndexOrder(completedItems, () =>
+                  interrupted(description.provider, "The stream omitted an output item."),
+                );
 
                 const output = normalizedOutput(description, items);
 

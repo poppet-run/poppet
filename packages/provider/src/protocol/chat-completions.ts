@@ -19,7 +19,7 @@ import {
   type Tool,
 } from "#src/index";
 import { inferenceFailure, type InferenceOptions } from "#src/protocol/errors";
-import { modelStream } from "#src/protocol/scoped-stream";
+import { inIndexOrder, modelStream } from "#src/protocol/scoped-stream";
 
 const Chunk = Schema.Struct({
   choices: Schema.Array(
@@ -318,12 +318,11 @@ export const chatCompletionsModel = (
                 const output: Output[] = text.length === 0 ? [] : [{ type: "text", text }];
                 const ids = new Set<string>();
 
-                for (const [position, [index, call]] of [...calls.entries()]
-                  .toSorted(([left], [right]) => left - right)
-                  .entries()) {
-                  if (index !== position)
-                    throw interrupted(description.provider, "The stream omitted a tool call.");
+                const ordered = inIndexOrder(calls, () =>
+                  interrupted(description.provider, "The stream omitted a tool call."),
+                );
 
+                for (const call of ordered) {
                   const tool = names.get(call.name);
 
                   if (!tool || !call.id || ids.has(call.id))

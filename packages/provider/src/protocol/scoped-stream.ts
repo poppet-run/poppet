@@ -68,3 +68,13 @@ export const modelStream = (
       );
     }),
   );
+
+/** Values ordered by their stream index; a missing index means the stream omitted one. */
+export const inIndexOrder = <A>(entries: ReadonlyMap<number, A>, omitted: () => ProviderError) =>
+  [...entries.entries()]
+    .toSorted(([left], [right]) => left - right)
+    .map(([index, value], position) => {
+      if (index !== position) throw omitted();
+
+      return value;
+    });
