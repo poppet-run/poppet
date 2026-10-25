@@ -2,6 +2,7 @@ import type { ModelOperations } from "@poppet/provider";
 import type { Session } from "@poppet/store";
 import { Effect, Option, Stream } from "effect";
 
+import { byteSize } from "#src/context";
 import { AgentError } from "#src/errors";
 import { streamReply } from "#src/reply";
 
@@ -55,7 +56,7 @@ export const generateTitle = (model: ModelOperations, session: Session, prompt: 
       Stream.tap((event) =>
         Effect.gen(function* () {
           if (event.type === "text-delta") {
-            bytes += new TextEncoder().encode(event.text).byteLength;
+            bytes += byteSize(event.text);
 
             if (bytes > 1024)
               return yield* Effect.fail(
