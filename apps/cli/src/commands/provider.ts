@@ -12,8 +12,17 @@ import { Argument, Command, Flag } from "effect/cli";
 import { terminalKeyInput } from "#src/api-key-input";
 import type { CLIContext } from "#src/commands/context";
 import { UsageError } from "#src/commands/errors";
-import type { ProviderCommand } from "#src/provider-command";
+import { booleanFlag } from "#src/commands/flags";
 import { findProvider } from "#src/runtime";
+
+const actions = ["login", "status", "models", "logout"] as const;
+
+/** Parsed provider options, with a null provider left for configuration to resolve. */
+interface ProviderCommand {
+  readonly action: (typeof actions)[number];
+  readonly provider: ProviderId | null;
+  readonly keyStdin: boolean;
+}
 
 export const providerCommand = (context: CLIContext) => {
   const { runtime, registered } = context;
@@ -52,7 +61,7 @@ export const providerCommand = (context: CLIContext) => {
 
   const providerHelp = describeProviders(registered);
 
-  const providerCommands = (["login", "status", "models", "logout"] as const).map((action) => {
+  const providerCommands = actions.map((action) => {
     const targetArgument = Argument.String("provider").pipe(
       Argument.withDescription("Provider ID; defaults to the configured provider"),
       Argument.optional,
@@ -70,11 +79,7 @@ export const providerCommand = (context: CLIContext) => {
         ? {
             target: targetArgument,
             provider: providerFlag,
-            keyStdin: Flag.Boolean("key-stdin").pipe(
-              Flag.withDescription("Read an API key from stdin"),
-              Flag.atMost(1),
-              Flag.map(([value = false]) => value),
-            ),
+            keyStdin: booleanFlag("key-stdin", "Read an API key from stdin"),
           }
         : { target: targetArgument, provider: providerFlag };
 

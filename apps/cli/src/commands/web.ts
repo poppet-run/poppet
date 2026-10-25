@@ -1,7 +1,8 @@
 import { Effect } from "effect";
-import { Command, Flag } from "effect/cli";
+import { Command } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
+import { booleanFlag } from "#src/commands/flags";
 import { manageWebSearch } from "#src/web-search";
 
 export const webCommand = (context: CLIContext) => {
@@ -13,11 +14,7 @@ export const webCommand = (context: CLIContext) => {
       Command.make(
         "login",
         {
-          keyStdin: Flag.Boolean("key-stdin").pipe(
-            Flag.withDescription("Read the search API key from stdin"),
-            Flag.atMost(1),
-            Flag.map(([value = false]) => value),
-          ),
+          keyStdin: booleanFlag("key-stdin", "Read the search API key from stdin"),
         },
         ({ keyStdin }) =>
           manageWebSearch("login", keyStdin).pipe(

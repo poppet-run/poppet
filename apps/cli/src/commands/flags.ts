@@ -7,11 +7,15 @@ export const textArgument = (name: string) =>
     Argument.map((words) => words.join(" ")),
   );
 
-export const codingFlag = Flag.Boolean("coding").pipe(
-  Flag.withDescription("Use the coding workload"),
-  Flag.atMost(1),
-  Flag.map(([value = false]) => value),
-);
+/** An optional boolean flag that is false when omitted. */
+export const booleanFlag = (name: string, description: string) =>
+  Flag.Boolean(name).pipe(
+    Flag.withDescription(description),
+    Flag.atMost(1),
+    Flag.map(([value = false]) => value),
+  );
+
+export const codingFlag = booleanFlag("coding", "Use the coding workload");
 
 export const skillFlag = Flag.String("skill").pipe(
   Flag.withSchema(SkillName),

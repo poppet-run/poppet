@@ -32,18 +32,18 @@ export const manageMemory = (command: MemoryCommand) =>
 
     if (command.action === "list") return JSON.stringify(yield* memory.list, null, 2);
 
-    if (command.action === "history" || command.action === "revert") {
-      if (command.action === "history") {
-        const history = yield* memory.history(command.key);
+    if (command.action === "history") {
+      const history = yield* memory.history(command.key);
 
-        if (history.length === 0)
-          return yield* Effect.fail(
-            new MemoryError({ reason: "not-found", message: "The fact has no saved history." }),
-          );
+      if (history.length === 0)
+        return yield* Effect.fail(
+          new MemoryError({ reason: "not-found", message: "The fact has no saved history." }),
+        );
 
-        return JSON.stringify(history, null, 2);
-      }
+      return JSON.stringify(history, null, 2);
+    }
 
+    if (command.action === "revert") {
       const fact = yield* memory.revert(command.key, command.revision);
 
       return fact === null ? `Forgot ${command.key}.` : JSON.stringify(fact, null, 2);

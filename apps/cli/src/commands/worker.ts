@@ -4,9 +4,10 @@ import { ProviderId } from "@poppet/provider";
 import { WorkerConnections, remoteTaskCommand, readLocalTaskStatus } from "@poppet/tasks";
 import { workerSocketPath } from "@poppet/worker";
 import { Console, Effect } from "effect";
-import { Argument, Command, Flag } from "effect/cli";
+import { Argument, Command } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
+import { booleanFlag } from "#src/commands/flags";
 import { runTaskCommand } from "#src/tasks";
 
 export const workerCommand = (context: CLIContext) => {
@@ -78,11 +79,7 @@ export const workerCommand = (context: CLIContext) => {
       Command.make(
         "run",
         {
-          tasksOnly: Flag.Boolean("tasks-only").pipe(
-            Flag.withDescription("Run scheduling without messaging"),
-            Flag.atMost(1),
-            Flag.map(([value = false]) => value),
-          ),
+          tasksOnly: booleanFlag("tasks-only", "Run scheduling without messaging"),
         },
         ({ tasksOnly }) => startWorker(tasksOnly ? "tasks" : "all"),
       ).pipe(Command.withDescription("Run scheduling and messaging in one foreground worker")),
