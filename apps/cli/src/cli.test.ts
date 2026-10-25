@@ -107,10 +107,10 @@ describe("makeCLI", () => {
             );
           }),
         );
-        const result = await invoke(["gateway", "status"], { POPPET_DATA_DIR: directory });
+        const result = await invoke(["worker", "status"], { POPPET_DATA_DIR: directory });
 
         expect(result.exitCode).toBe(0);
-        expect(JSON.parse(result.stdout)).toMatchObject({
+        expect(JSON.parse(result.stdout).worker.messaging).toMatchObject({
           running: false,
           enabled: !unreadable,
           channels: channels.map(({ id }) =>

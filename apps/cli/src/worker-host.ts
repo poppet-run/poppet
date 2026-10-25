@@ -56,12 +56,23 @@ export const runWorker = (mode: WorkerMode) =>
 
             if (command.action !== "status") return value;
 
+            const messagingStatus =
+              messaging === null
+                ? { running: false, enabled: false, channels: [] }
+                : {
+                    running: true,
+                    ...(yield* messaging.status.pipe(
+                      Effect.mapError((error) => new TaskError({ message: error.message })),
+                    )),
+                  };
+
             return {
               ...value,
               running: true,
               pid: process.pid,
               startedAt,
               services: { tasks: tasks !== null, gateway: messaging !== null },
+              messaging: messagingStatus,
             };
           }).pipe(
             Effect.provideService(TaskDestinations, destinations),

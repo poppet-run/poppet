@@ -5,11 +5,12 @@ import { workerSocketPath } from "@poppet/worker";
 import { Console, Effect } from "effect";
 import { Command } from "effect/cli";
 
+import { stoppedMessagingStatus } from "#src/channels";
 import type { CLIContext } from "#src/commands/context";
 import { booleanFlag } from "#src/commands/flags";
 
 export const workerCommand = (context: CLIContext) => {
-  const { runtime, worker, startWorker } = context;
+  const { runtime, worker, startWorker, channels } = context;
 
   const runWorkerCommand = (action: WorkerAction) => {
     if (action === "stop" || action === "uninstall" || action === "logs")
@@ -35,6 +36,10 @@ export const workerCommand = (context: CLIContext) => {
 
       const overview = yield* readLocalTaskStatus.pipe(Effect.provide(runtime.tasks));
 
+      const messaging = yield* stoppedMessagingStatus(channels).pipe(
+        Effect.provide(runtime.messagingStatus),
+      );
+
       const ids = [...new Set([config.provider, ...overview.providers])];
 
       const connections = yield* WorkerConnections.use((service) =>
@@ -52,6 +57,7 @@ export const workerCommand = (context: CLIContext) => {
               startedAt: null,
               activeOccurrence: null,
               connections,
+              messaging,
             },
           },
           null,
@@ -78,7 +84,7 @@ export const workerCommand = (context: CLIContext) => {
               install: "Install and start the macOS login worker",
               start: "Start an installed worker",
               stop: "Stop it until the next login or explicit start",
-              status: "Show launch agent, scheduling, and connection status",
+              status: "Show launch agent, scheduling, provider, and messaging status",
               logs: "Print the last 64 KiB of worker logs",
               uninstall: "Stop and remove login startup; retain saved data",
             }[action],

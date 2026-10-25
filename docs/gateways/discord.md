@@ -95,9 +95,9 @@ message edits are not supported in this phase.
 
 ## Status and delivery
 
-Use `poppet gateway status` for connection state, rejected/dropped event
-counts while running, and persisted queue/delivery counts. Each registration has
-an entry in `channels`, including its ID, display name, enabled state, connection
+Use `poppet worker status` for connection state, rejected/dropped event
+counts while running, and persisted queue/delivery counts, under `worker.messaging`.
+Each registration has an entry in `channels`, including its ID, display name, enabled state, connection
 metadata, or configuration error. Persisted queue/delivery totals remain at the
 top level and are counted once across channels. When stopped, status inspects
 settings without opening messaging connections. Completed answers

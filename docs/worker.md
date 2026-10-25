@@ -23,8 +23,8 @@ socket. Commands use the worker when it is running and execute locally when it
 is stopped. Inspecting saved data needs no model or provider credentials.
 Task commands remain available in gateway-only mode, but no scheduled work is
 executed. Task-only mode does not initialize messaging adapters. `worker status`
-reports the host's selected services; `gateway status` reports whether messaging
-is running. Only one mode can own a data directory at a time.
+reports the host's selected services, and its `worker.messaging` field reports
+whether messaging is running. Only one mode can own a data directory at a time.
 Interactive, scheduled, and messaging model requests share
 [`chat.maxConcurrentRequests`](configuration.md) slots, 3 by default. Requests to one
 session always run one at a time, so a CLI chat sent to a session that a Discord
@@ -34,7 +34,7 @@ Stopping the worker interrupts active requests and releases the socket and owner
 a new owner automatically reclaims storage from a dead process, even if its PID has
 been reused; unfinished work needs an explicit retry. A messaging adapter that
 fails restarts on its own after a delay, from one second doubling to five minutes,
-without stopping other adapters or scheduling; `gateway status` reports each
+without stopping other adapters or scheduling; `worker status` reports each
 adapter's `restarts` and `lastError`. Storage failures still stop the worker. Already queued work survives restart, and a committed
 answer is recovered without repeating its request. Task commands can open the
 store even if a dead worker left its socket behind. A lost response to a delivered command does

@@ -172,24 +172,24 @@ is running. Use `--channel` to deliver to that gateway's home channel. Add `--co
 | --------------------------------------------------------------------------- | -------------------------------------------------------- |
 | `gateway discord setup <owner-id> <guild-id> <home-channel-id> --key-stdin` | Save Discord settings and read the bot token from stdin. |
 | `gateway work`                                                              | Run messaging only in the foreground.                    |
-| `gateway status`                                                            | Show connection, queue, and delivery status.             |
 
 See [Discord](gateways/discord.md) for setup, conversation behavior,
 controls, and uncertain deliveries. The bot token is never accepted as a command-line argument.
 
 ## Worker
 
-| Command                     | Action                                                |
-| --------------------------- | ----------------------------------------------------- |
-| `worker run [--tasks-only]` | Run scheduling and messaging, or scheduling only.     |
-| `worker install`            | Install and start the macOS login worker.             |
-| `worker start`              | Start an installed worker.                            |
-| `worker stop`               | Stop it until the next login or explicit start.       |
-| `worker status`             | Show launch agent, scheduling, and connection status. |
-| `worker logs`               | Print the last 64 KiB of worker logs.                 |
-| `worker uninstall`          | Stop and remove login startup, retaining saved data.  |
+| Command                     | Action                                                         |
+| --------------------------- | -------------------------------------------------------------- |
+| `worker run [--tasks-only]` | Run scheduling and messaging, or scheduling only.              |
+| `worker install`            | Install and start the macOS login worker.                      |
+| `worker start`              | Start an installed worker.                                     |
+| `worker stop`               | Stop it until the next login or explicit start.                |
+| `worker status`             | Show launch agent, scheduling, provider, and messaging status. |
+| `worker logs`               | Print the last 64 KiB of worker logs.                          |
+| `worker uninstall`          | Stop and remove login startup, retaining saved data.           |
 
 See [worker](worker.md) for foreground modes, macOS lifecycle commands, logs,
-interactive requests, and recovery. Only one worker mode can own a data directory
+interactive requests, and recovery. `worker status` includes messaging connection,
+queue, and delivery status under `worker.messaging`. Only one worker mode can own a data directory
 at a time. Commands use the worker while it is running and run locally when it
 is stopped; a lost response does not cause command replay.
