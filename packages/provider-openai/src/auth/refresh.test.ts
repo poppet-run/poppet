@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { Effect, Redacted } from "effect";
 
 import { ChatGPTAuth } from "#src/auth/service";
@@ -35,6 +36,29 @@ describe.concurrent("refresh.ts", () => {
           (await harness.saved()).credentials?.refreshToken ?? Redacted.make("missing"),
         ),
       ).toBe("test-refresh-2");
+    } finally {
+      await harness.close();
+    }
+  });
+  test("when separately built model requests run at once, both succeed with one renewal and release ownership afterwards", async () => {
+    const harness = await createHarness();
+
+    try {
+      harness.controls.expireAccess = true;
+      await harness.run(login);
+
+      // Each run builds its own provider services, as each worker request does.
+      expect(await Promise.all([harness.run(verify), harness.run(verify)])).toEqual([
+        "test-model",
+        "test-model",
+      ]);
+      expect(
+        harness.grants.filter((grant) => grant.get("grant_type") === "refresh_token"),
+      ).toHaveLength(1);
+      expect(new Set(harness.bearerHeaders)).toEqual(new Set(["Bearer test-access-2"]));
+      await Effect.runPromise(
+        Effect.scoped(acquireOwnerLock(join(harness.directory, "auth/owner.lock"))),
+      );
     } finally {
       await harness.close();
     }

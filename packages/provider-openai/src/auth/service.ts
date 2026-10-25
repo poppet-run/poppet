@@ -1,4 +1,4 @@
-import { Context, DateTime, Effect, Layer, Redacted, Semaphore } from "effect";
+import { Context, DateTime, Effect, Layer, Redacted } from "effect";
 
 import { CredentialStore } from "#src/auth/credentials";
 import { loginWorkflow } from "#src/auth/login";
@@ -29,11 +29,10 @@ export const ChatGPTAuthLive = Layer.effect(
     const oauth = yield* OAuthClient;
     const login = yield* loginWorkflow;
     const accessToken = yield* accessTokenWorkflow;
-    // One permit serializes credential updates and status reads. In particular,
-    // two callers cannot renew the same refresh token at the same time.
-    const semaphore = yield* Semaphore.make(1);
 
-    const signOut = semaphore.withPermit(
+    // The store's process-wide permit serializes credential updates and status
+    // reads. In particular, two requests cannot renew the same refresh token.
+    const signOut = store.withPermit(
       Effect.gen(function* () {
         let revoked = true;
 
@@ -62,7 +61,7 @@ export const ChatGPTAuthLive = Layer.effect(
     );
 
     const recordVerification = (model: string) =>
-      semaphore.withPermit(
+      store.withPermit(
         Effect.gen(function* () {
           const connection = yield* store.read;
 
@@ -75,11 +74,11 @@ export const ChatGPTAuthLive = Layer.effect(
       );
 
     return {
-      login: semaphore.withPermit(login),
-      accessToken: semaphore.withPermit(accessToken),
+      login: store.withPermit(login),
+      accessToken: store.withPermit(accessToken),
       signOut,
       recordVerification,
-      status: semaphore.withPermit(store.read.pipe(Effect.map(statusFor))),
+      status: store.withPermit(store.read.pipe(Effect.map(statusFor))),
     } satisfies AuthOperations;
   }),
 );
