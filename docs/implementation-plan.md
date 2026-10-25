@@ -5,7 +5,10 @@
 Phases 1–21 and 24 are implemented with automated checks. Live validation
 remains outstanding where listed in each phase. Phase 25's text attachments were
 removed because no messaging adapter supplied attachments.
-Phases 28–35 are planned only. Plans do not authorize implementation.
+Phases 28–34 are planned only. Plans do not authorize implementation. Phase 35's
+parallel messaging is implemented with automated checks, but stays off by default
+(`chat.maxConcurrentRequests` is 1) until the ChatGPT credential lock allows
+simultaneous requests; its live Discord check is outstanding.
 
 Completed phases retain short status summaries, evidence, and outstanding checks.
 Use the linked guides for current behavior and setup. Git history retains the
@@ -23,7 +26,9 @@ Updated: 2026-10-25
 
 Storage history: the unreleased base schema was consolidated into version 1.
 Phases 23–26 add migrations 2–5 for monitoring, task controls, attachments, and
-projects while retaining earlier data. Migrations 6–8 retain archived learning data and active fact history. Historical validation records describe
+projects while retaining earlier data. Migrations 6–8 retain archived learning data and active fact history. Phase 35
+adds store migration 2, which allows one active run per session instead of one
+across the store. Historical validation records describe
 checks performed at delivery time, not checks rerun for this documentation update.
 See [storage](storage.md#schema-and-saved-records),
 [development](development.md#store-migrations), and
@@ -60,7 +65,7 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 32: Host commands in an isolated container](phases/32.md)
 - [Phase 33: Trusted time for scheduled runs](phases/33.md)
 - [Phase 34: Model and reasoning selection for new sessions](phases/34.md)
-- [Phase 35: Parallel messaging conversations](phases/35.md)
+- [Phase 35: Parallel messaging conversations](phases/35.md) (implemented; default limit 1)
 
 ## Validation
 
