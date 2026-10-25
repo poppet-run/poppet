@@ -85,8 +85,7 @@ for provider-specific setup and logout behavior.
 
 | Command              | Action                                                                           |
 | -------------------- | -------------------------------------------------------------------------------- |
-| `mcp servers`        | Show configured permissions and connection state without launching servers.      |
-| `mcp status`         | Show connection diagnostics and available tools without launching servers.       |
+| `mcp servers`        | Show permissions, connection diagnostics, and tools without launching servers.   |
 | `mcp tools <server>` | Explicitly discover the server's allowed tools using the owner or a local scope. |
 
 These commands need no model. They route through the worker when it is running.
@@ -135,8 +134,7 @@ procedure with that session or task. See [skills](skills.md) for examples and li
 | Command                          | Action                                              |
 | -------------------------------- | --------------------------------------------------- |
 | `memory list`                    | List explicitly saved facts.                        |
-| `memory remember <key> <value>`  | Create a new fact.                                  |
-| `memory replace <key> <value>`   | Change an existing fact.                            |
+| `memory set <key> <value>`       | Create a fact or replace its value.                 |
 | `memory forget <key>`            | Delete a saved fact.                                |
 | `memory history <key>`           | Show a fact's revisions with origin and source run. |
 | `memory revert <key> <revision>` | Restore an earlier revision as a new revision.      |
@@ -160,6 +158,8 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 | `tasks resume <task>`                                                                                                              | Resume future occurrences.                                         |
 | `tasks cancel <occurrence>`                                                                                                        | Cancel pending or active work.                                     |
 | `tasks retry <occurrence>`                                                                                                         | Explicitly retry an unsuccessful occurrence.                       |
+| `tasks providers`                                                                                                                  | Show provider quota pauses and temporary backoff.                  |
+| `tasks resume-provider <provider>`                                                                                                 | Allow scheduled requests for a provider again.                     |
 | `tasks clear`                                                                                                                      | Interrupt active work and remove all tasks and task history.       |
 
 See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what
@@ -171,27 +171,24 @@ is running. Use `--channel` to deliver to that gateway's home channel. Add `--co
 | Command                                                                     | Action                                                   |
 | --------------------------------------------------------------------------- | -------------------------------------------------------- |
 | `gateway discord setup <owner-id> <guild-id> <home-channel-id> --key-stdin` | Save Discord settings and read the bot token from stdin. |
-| `gateway work`                                                              | Run messaging only in the foreground.                    |
-| `gateway status`                                                            | Show connection, queue, and delivery status.             |
 
 See [Discord](gateways/discord.md) for setup, conversation behavior,
 controls, and uncertain deliveries. The bot token is never accepted as a command-line argument.
 
 ## Worker
 
-| Command                             | Action                                                 |
-| ----------------------------------- | ------------------------------------------------------ |
-| `worker run [--tasks-only]`         | Run scheduling and messaging, or scheduling only.      |
-| `worker install`                    | Install and start the login worker.                    |
-| `worker start`                      | Start an installed worker.                             |
-| `worker stop`                       | Stop it until the next login or explicit start.        |
-| `worker status`                     | Show login service, scheduling, and connection status. |
-| `worker logs`                       | Print the last 64 KiB of worker logs.                  |
-| `worker resume-provider <provider>` | Allow scheduled requests for a provider again.         |
-| `worker providers`                  | Show provider quota pauses and temporary backoff.      |
-| `worker uninstall`                  | Stop and remove login startup, retaining saved data.   |
+| Command                     | Action                                                          |
+| --------------------------- | --------------------------------------------------------------- |
+| `worker run [--tasks-only]` | Run scheduling and messaging, or scheduling only.               |
+| `worker install`            | Install and start the login worker.                             |
+| `worker start`              | Start an installed worker.                                      |
+| `worker stop`               | Stop it until the next login or explicit start.                 |
+| `worker status`             | Show login service, scheduling, provider, and messaging status. |
+| `worker logs`               | Print the last 64 KiB of worker logs.                           |
+| `worker uninstall`          | Stop and remove login startup, retaining saved data.            |
 
-See [worker](worker.md) for foreground modes, macOS lifecycle commands, logs,
-interactive requests, and recovery. Only one worker mode can own a data directory
+See [worker](worker.md) for foreground modes, login lifecycle commands, logs,
+interactive requests, and recovery. `worker status` includes messaging connection,
+queue, and delivery status under `worker.messaging`. Only one worker mode can own a data directory
 at a time. Commands use the worker while it is running and run locally when it
 is stopped; a lost response does not cause command replay.

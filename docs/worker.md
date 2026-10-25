@@ -7,24 +7,22 @@
 Choose one foreground mode for a data directory:
 
 ```sh
-poppet worker run    # Scheduling and messaging
-poppet worker run --tasks-only    # Scheduling only
-poppet gateway work  # Messaging only
+poppet worker run               # Scheduling and messaging
+poppet worker run --tasks-only  # Scheduling only
 ```
 
-All three modes own enabled [MCP connections](mcp.md), started lazily on discovery
+Both modes own enabled [MCP connections](mcp.md), started lazily on discovery
 or an eligible agent run and closed on shutdown. CLI discovery uses these same
-connections. `mcp status` inspects them without starting a process. Restart the
+connections. `mcp servers` inspects them without starting a process. Restart the
 worker after changing server configuration or to reconnect a failed server.
 
-All three modes own one SQLite connection and serve task, chat, memory, and store-status commands
+Both modes own one SQLite connection and serve task, chat, memory, and store-status commands
 through `store/tasks.sock`, protected by the `0700` store directory and `0600`
 socket. Commands use the worker when it is running and execute locally when it
 is stopped. Inspecting saved data needs no model or provider credentials.
-Task commands remain available in gateway-only mode, but no scheduled work is
-executed. Task-only mode does not initialize messaging adapters. `worker status`
-reports the host's selected services; `gateway status` reports whether messaging
-is running. Only one mode can own a data directory at a time.
+Task-only mode does not initialize messaging adapters. `worker status`
+reports the host's selected services, and its `worker.messaging` field reports
+whether messaging is running. Only one mode can own a data directory at a time.
 Interactive, scheduled, and messaging model requests share
 [`chat.maxConcurrentRequests`](configuration.md) slots, 3 by default. Requests to one
 session always run one at a time, so a CLI chat sent to a session that a Discord
@@ -34,7 +32,7 @@ Stopping the worker interrupts active requests and releases the socket and owner
 a new owner automatically reclaims storage from a dead process, even if its PID has
 been reused; unfinished work needs an explicit retry. A messaging adapter that
 fails restarts on its own after a delay, from one second doubling to five minutes,
-without stopping other adapters or scheduling; `gateway status` reports each
+without stopping other adapters or scheduling; `worker status` reports each
 adapter's `restarts` and `lastError`. Storage failures still stop the worker. Already queued work survives restart, and a committed
 answer is recovered without repeating its request. Task commands can open the
 store even if a dead worker left its socket behind. A lost response to a delivered command does
@@ -192,7 +190,7 @@ Task changes are durable even when their final chat reply fails.
 Chat, memory, session inspection, and `store status` work while it is running:
 
 ```sh
-poppet memory remember project.name Acorn
+poppet memory set project.name Acorn
 poppet chat new "What is the project called?"
 poppet chat interactive
 poppet chat sessions

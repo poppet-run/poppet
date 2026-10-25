@@ -10,7 +10,7 @@ import { readChatLine } from "#src/chat-prompt";
 import { runtimeLayers } from "#src/runtime";
 import { manageWorker } from "#src/worker";
 import { remoteWorkerCommand, WorkerRequestsLive, type WorkerCommand } from "#src/worker-commands";
-import { runWorker, type WorkerMode } from "#src/worker-host";
+import { runWorker } from "#src/worker-host";
 
 export const createCLIContext = (
   registered: ReadonlyArray<ProviderRegistration>,
@@ -23,14 +23,14 @@ export const createCLIContext = (
   const runtime = runtimeLayers(registered);
   validateChannels(registeredChannels);
 
-  const startWorker = (mode: WorkerMode) => {
+  const startWorker = (mode: "all" | "tasks") => {
     const requests = WorkerRequestsLive.pipe(
       Layer.provideMerge(mode === "tasks" ? Layer.empty : MessagingWorkerLive(registeredChannels)),
       Layer.provideMerge(runtime.tasks),
       Layer.provideMerge(runtime.chat),
     );
 
-    return runWorker(mode).pipe(Effect.provide(requests));
+    return runWorker.pipe(Effect.provide(requests));
   };
 
   const throughWorker = <E>(

@@ -108,15 +108,14 @@ and avoids logging raw protocol failures, which may contain credentials.
 
 ```sh
 poppet mcp servers
-poppet mcp status
 poppet mcp tools reference
 poppet chat new "Use reference to look up record 123"
 ```
 
-`servers` and `status` show configured permissions, transport, connection state,
+`servers` shows configured permissions, transport, connection state,
 PID (stdio only), the HTTP endpoint's origin, available tools, and diagnostics. They never launch servers or require a model.
 `tools <server>` explicitly starts discovery when needed and prints only allowed
-tools, their model definitions, and scheduled permissions. All three commands use
+tools, their model definitions, and scheduled permissions. Both commands use
 the owning worker when available. Without a worker, discovery uses a local scope
 and closes the server before returning. There is no arbitrary tool-execution
 socket command.

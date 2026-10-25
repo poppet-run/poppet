@@ -35,7 +35,7 @@ Bash / POSIX sh:
     printf '\n'
     printf '%s\n' "$discord_token" | poppet gateway discord setup <your-user-id> <server-id> <home-channel-id> --key-stdin
 )
-poppet gateway work
+poppet worker run
 ```
 
 fish:
@@ -44,7 +44,7 @@ fish:
 read --silent --prompt-str 'Discord bot token: ' discord_token
 printf '%s\n' $discord_token | poppet gateway discord setup <your-user-id> <server-id> <home-channel-id> --key-stdin
 set -e discord_token
-poppet gateway work
+poppet worker run
 ```
 
 Replace the angle-bracket placeholders with Discord IDs before running the
@@ -95,9 +95,9 @@ message edits are not supported in this phase.
 
 ## Status and delivery
 
-Use `poppet gateway status` for connection state, rejected/dropped event
-counts while running, and persisted queue/delivery counts. Each registration has
-an entry in `channels`, including its ID, display name, enabled state, connection
+Use `poppet worker status` for connection state, rejected/dropped event
+counts while running, and persisted queue/delivery counts, under `worker.messaging`.
+Each registration has an entry in `channels`, including its ID, display name, enabled state, connection
 metadata, or configuration error. Persisted queue/delivery totals remain at the
 top level and are counted once across channels. When stopped, status inspects
 settings without opening messaging connections. Completed answers

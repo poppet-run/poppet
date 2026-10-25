@@ -107,10 +107,10 @@ describe("makeCLI", () => {
             );
           }),
         );
-        const result = await invoke(["gateway", "status"], { POPPET_DATA_DIR: directory });
+        const result = await invoke(["worker", "status"], { POPPET_DATA_DIR: directory });
 
         expect(result.exitCode).toBe(0);
-        expect(JSON.parse(result.stdout)).toMatchObject({
+        expect(JSON.parse(result.stdout).worker.messaging).toMatchObject({
           running: false,
           enabled: !unreadable,
           channels: channels.map(({ id }) =>
@@ -462,14 +462,14 @@ describe("makeCLI", () => {
       expect(
         JSON.parse(
           (
-            await invoke(["worker", "resume-provider", "openrouter"], {
+            await invoke(["tasks", "resume-provider", "openrouter"], {
               POPPET_DATA_DIR: directory,
             })
           ).stdout,
         ),
       ).toEqual({ provider: "openrouter", resumed: true });
       expect(
-        JSON.parse((await invoke(["worker", "providers"], { POPPET_DATA_DIR: directory })).stdout),
+        JSON.parse((await invoke(["tasks", "providers"], { POPPET_DATA_DIR: directory })).stdout),
       ).toEqual([]);
       expect(JSON.parse(result.stdout).worker).toMatchObject({
         running: false,
@@ -651,7 +651,7 @@ describe("makeCLI", () => {
       expect(added.exitCode).toBe(0);
       const task = JSON.parse(added.stdout);
       expect(task.model).toBe("saved-model");
-      const remembered = await invoke(["memory", "remember", "project", "Acorn"], environment);
+      const remembered = await invoke(["memory", "set", "project", "Acorn"], environment);
       expect(remembered.exitCode).toBe(0);
       expect(JSON.parse(remembered.stdout)).toMatchObject({ key: "project", value: "Acorn" });
       expect(JSON.parse((await invoke(["memory", "list"], environment)).stdout)).toMatchObject([
@@ -684,10 +684,10 @@ describe("makeCLI", () => {
       ]);
       expect(
         JSON.parse(
-          (await invoke(["worker", "resume-provider", "openai-chatgpt"], environment)).stdout,
+          (await invoke(["tasks", "resume-provider", "openai-chatgpt"], environment)).stdout,
         ),
       ).toEqual({ provider: "openai-chatgpt", resumed: true });
-      expect(JSON.parse((await invoke(["worker", "providers"], environment)).stdout)).toEqual([]);
+      expect(JSON.parse((await invoke(["tasks", "providers"], environment)).stdout)).toEqual([]);
       expect((await invoke(["tasks", "pause", task.id], environment)).exitCode).toBe(0);
       expect((await invoke(["tasks", "show", "missing"], environment)).stderr).toContain(
         "does not exist",
@@ -714,7 +714,7 @@ describe("makeCLI", () => {
       expect((await invoke(["memory", "list"], environment)).stdout.trim()).toBe("[]");
 
       const remembered = await invoke(
-        ["memory", "remember", "answer.style", "Keep answers concise"],
+        ["memory", "set", "answer.style", "Keep answers concise"],
         environment,
       );
 
@@ -725,16 +725,8 @@ describe("makeCLI", () => {
         sourceRunId: null,
       });
 
-      const duplicate = await invoke(
-        ["memory", "remember", "answer.style", "Overwrite"],
-        environment,
-      );
-
-      expect(duplicate.exitCode).toBe(1);
-      expect(duplicate.stderr).toContain("memory replace");
-
       const replaced = await invoke(
-        ["memory", "replace", "answer.style", "Explain", "the reasoning"],
+        ["memory", "set", "answer.style", "Explain", "the reasoning"],
         environment,
       );
 
@@ -759,9 +751,6 @@ describe("makeCLI", () => {
         (await invoke(["memory", "revert", "answer.style", "3"], environment)).stdout,
       ).toContain("Forgot answer.style.");
       expect((await invoke(["memory", "history", "missing"], environment)).exitCode).toBe(1);
-      expect((await invoke(["memory", "replace", "missing", "Value"], environment)).exitCode).toBe(
-        1,
-      );
       expect(await readdir(directory)).toEqual(["store"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -774,10 +763,10 @@ describe("makeCLI", () => {
     try {
       const cases = [
         { args: ["list", "extra"], message: "Unexpected positional argument" },
-        { args: ["remember", "bad key", "Value"], message: "argument <key>" },
-        { args: ["remember", "key"], message: "value" },
-        { args: ["replace", "key", " "], message: "no leading or trailing whitespace" },
-        { args: ["remember", "key", "😀".repeat(1025)], message: "4096 UTF-8 bytes" },
+        { args: ["set", "bad key", "Value"], message: "argument <key>" },
+        { args: ["set", "key"], message: "value" },
+        { args: ["set", "key", " "], message: "no leading or trailing whitespace" },
+        { args: ["set", "key", "😀".repeat(1025)], message: "4096 UTF-8 bytes" },
         { args: ["forget", "key", "extra"], message: "Unexpected positional argument" },
         { args: ["unknown"], message: "Unknown subcommand" },
       ];
@@ -827,7 +816,7 @@ describe("makeCLI", () => {
       );
 
       expect(rejected.exitCode).toBe(1);
-      expect(rejected.stderr).toContain("Start worker run or gateway work");
+      expect(rejected.stderr).toContain("Start worker run without --tasks-only");
       expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
 
       const local = await invoke(
@@ -1121,8 +1110,8 @@ describe("makeCLI", () => {
       "tasks add",
       "tasks run",
       "worker run",
-      "worker providers",
-      "worker resume-provider",
+      "tasks providers",
+      "tasks resume-provider",
       "worker stop",
     ];
 
@@ -1173,7 +1162,7 @@ describe("makeCLI", () => {
 
     const commands = [
       ["config", "unexpected-argument"],
-      ["worker", "resume-provider", "bad/id"],
+      ["tasks", "resume-provider", "bad/id"],
       ["tasks", "add", "Later", "--at", at, "--cron", "0 9 * * *", "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--cron", "0 9 * * *", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],
@@ -1216,7 +1205,7 @@ describe("makeCLI", () => {
 
     try {
       const remembered = await invoke(
-        ["memory", "remember", "flags", "--verbose", "--help", "--", "-h"],
+        ["memory", "set", "flags", "--verbose", "--help", "--", "-h"],
         environment,
       );
 
@@ -1224,7 +1213,7 @@ describe("makeCLI", () => {
       expect(JSON.parse(remembered.stdout).value).toBe("--verbose --help -- -h");
 
       const replaced = await invoke(
-        ["memory", "replace", "flags", "Use", "--coding", "literally"],
+        ["memory", "set", "flags", "Use", "--coding", "literally"],
         environment,
       );
 

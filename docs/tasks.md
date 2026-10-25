@@ -177,9 +177,8 @@ explicit destination. A running messaging worker validates access before creatin
 Creation through the worker must finish within eight seconds, including queue
 waiting and destination validation. An expired lookup cannot save a task afterward.
 
-`gateway work` can validate new destinations but does not execute scheduled work;
-`worker run --tasks-only` executes tasks but does not deliver their results. The combined
-worker runs both. Tasks without a messaging destination keep their results local.
+`worker run --tasks-only` executes tasks but does not deliver their results or
+validate new destinations. The combined worker does both. Tasks without a messaging destination keep their results local.
 
 Each occurrence saves its destination independently of later task or channel
 configuration. Changing the home channel affects newly created tasks only. The
@@ -288,8 +287,8 @@ explicit cancellation:
 ```sh
 poppet tasks cancel <occurrence-id>
 poppet tasks retry <occurrence-id>
-poppet worker providers
-poppet worker resume-provider openai-chatgpt
+poppet tasks providers
+poppet tasks resume-provider openai-chatgpt
 ```
 
 Quota failures pause scheduled requests for that provider until `resume-provider`.

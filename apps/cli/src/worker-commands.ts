@@ -4,9 +4,8 @@ import { MCP, MCPCommand, inspectMCP } from "@poppet/mcp";
 import { Memory } from "@poppet/memory";
 import { Session, Store } from "@poppet/store";
 import { WorkerRequests, WorkerRequestError, requestWorker } from "@poppet/worker";
-import { Cause, Context, Effect, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
+import { Cause, Effect, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
 
-import { MessagingWorker } from "#src/channels";
 import {
   ChatRequest,
   inspectChat,
@@ -26,7 +25,6 @@ const WorkerCommand = Schema.Union([
   }),
   Schema.Struct({ kind: Schema.Literal("memory"), command: MemoryCommand }),
   Schema.Struct({ kind: Schema.Literal("store") }),
-  Schema.Struct({ kind: Schema.Literal("gateway") }),
   Schema.Struct({ kind: Schema.Literal("mcp"), command: MCPCommand }),
 ]);
 
@@ -57,18 +55,6 @@ const execute = (
   Effect.gen(function* () {
     if (request.kind === "mcp")
       return yield* inspectMCP(request.command).pipe(Effect.flatMap((text) => write(`${text}\n`)));
-
-    if (request.kind === "gateway") {
-      const messaging = yield* Effect.serviceOption(MessagingWorker);
-
-      const status = Option.isSome(messaging)
-        ? yield* messaging.value.status
-        : { enabled: false, channels: [] };
-
-      return yield* write(
-        `${JSON.stringify({ running: Option.isSome(messaging), ...status }, null, 2)}\n`,
-      );
-    }
 
     if (request.kind === "memory")
       return yield* manageMemory(request.command).pipe(
@@ -102,12 +88,6 @@ export const WorkerRequestsLive = Layer.effect(
     const services = yield* Effect.context<
       Agent | AppConfig | Store | Memory | ChatSettings | Skills | MCP
     >();
-
-    const messaging = yield* Effect.serviceOption(MessagingWorker);
-
-    const provided = Option.isSome(messaging)
-      ? Context.add(services, MessagingWorker, messaging.value)
-      : services;
 
     return {
       handle: (request, payload): Effect.Effect<Response, never, Scope.Scope> =>
@@ -152,7 +132,7 @@ export const WorkerRequestsLive = Layer.effect(
             reasoning,
             logDiagnostic,
           ).pipe(
-            Effect.provide(provided),
+            Effect.provide(services),
             Effect.matchEffect({
               onFailure: (error) => emitFrame({ type: "failed", message: error.message }),
               onSuccess: () => emitFrame({ type: "done" }),

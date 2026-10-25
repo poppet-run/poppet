@@ -41,7 +41,7 @@ export const validateChannels = (registered: ReadonlyArray<ChannelRegistration>)
   const ids = new Set<string>();
 
   for (const entry of registered) {
-    if (!/^[a-z][a-z0-9-]{0,63}$/.test(entry.id) || ["work", "status"].includes(entry.id))
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(entry.id))
       throw new Error(`Invalid channel ID: ${entry.id}`);
 
     if (ids.has(entry.id)) throw new Error(`Duplicate channel registration: ${entry.id}`);

@@ -7,19 +7,18 @@
 Save preferences and facts with stable keys:
 
 ```sh
-poppet memory remember answer.style "Keep answers concise"
+poppet memory set answer.style "Keep answers concise"
 poppet memory list
 poppet chat new "How should you answer my questions?"
-poppet memory replace answer.style "Explain the reasoning"
+poppet memory set answer.style "Explain the reasoning"
 poppet chat new "How should you answer my questions?"
 poppet memory forget answer.style
 poppet memory list
 ```
 
 Memory management requires no login or model. Chat still requires a configured
-provider/model and its connection. `remember` creates a new key; it rejects an
-existing key so facts cannot be overwritten accidentally. `replace` and `forget`
-require an existing key. Keys start with a letter or digit and contain only letters,
+provider/model and its connection. `set` creates a key or replaces its current
+value; history records which it did. `forget` requires an existing key. Keys start with a letter or digit and contain only letters,
 digits, dots, underscores, and hyphens, up to 128 characters. Values must be nonempty,
 have no surrounding whitespace, and fit in 4096 UTF-8 bytes. The store holds up to
 128 facts per scope. Listing includes keys, values, update times, and source run IDs when

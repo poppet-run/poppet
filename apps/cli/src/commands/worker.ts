@@ -1,17 +1,16 @@
 import { AppConfig, dataDirectory as configuredDataDirectory } from "@poppet/config";
 import type { WorkerAction } from "@poppet/platform";
-import { ProviderId } from "@poppet/provider";
 import { WorkerConnections, remoteTaskCommand, readLocalTaskStatus } from "@poppet/tasks";
 import { workerSocketPath } from "@poppet/worker";
 import { Console, Effect } from "effect";
-import { Argument, Command } from "effect/cli";
+import { Command } from "effect/cli";
 
+import { stoppedMessagingStatus } from "#src/channels";
 import type { CLIContext } from "#src/commands/context";
 import { booleanFlag } from "#src/commands/flags";
-import { runTaskCommand } from "#src/tasks";
 
 export const workerCommand = (context: CLIContext) => {
-  const { runtime, worker, startWorker } = context;
+  const { runtime, worker, startWorker, channels } = context;
 
   const runWorkerCommand = (action: WorkerAction) => {
     if (action === "stop" || action === "uninstall" || action === "logs")
@@ -37,6 +36,10 @@ export const workerCommand = (context: CLIContext) => {
 
       const overview = yield* readLocalTaskStatus.pipe(Effect.provide(runtime.tasks));
 
+      const messaging = yield* stoppedMessagingStatus(channels).pipe(
+        Effect.provide(runtime.messagingStatus),
+      );
+
       const ids = [...new Set([config.provider, ...overview.providers])];
 
       const connections = yield* WorkerConnections.use((service) =>
@@ -54,6 +57,7 @@ export const workerCommand = (context: CLIContext) => {
               startedAt: null,
               activeOccurrence: null,
               connections,
+              messaging,
             },
           },
           null,
@@ -66,16 +70,6 @@ export const workerCommand = (context: CLIContext) => {
   return Command.make("worker").pipe(
     Command.withDescription("Run and manage the background worker"),
     Command.withSubcommands([
-      Command.make(
-        "resume-provider",
-        {
-          provider: Argument.String("provider").pipe(Argument.withSchema(ProviderId)),
-        },
-        ({ provider }) => runTaskCommand(runtime, { action: "resume-provider", provider }),
-      ).pipe(Command.withDescription("Allow scheduled requests again")),
-      Command.make("providers", {}, () => runTaskCommand(runtime, { action: "providers" })).pipe(
-        Command.withDescription("Show provider quota pauses and temporary backoff"),
-      ),
       Command.make(
         "run",
         {
@@ -90,7 +84,7 @@ export const workerCommand = (context: CLIContext) => {
               install: "Install and start the login worker",
               start: "Start an installed worker",
               stop: "Stop it until the next login or explicit start",
-              status: "Show login service, scheduling, and connection status",
+              status: "Show login service, scheduling, provider, and messaging status",
               logs: "Print the last 64 KiB of worker logs",
               uninstall: "Stop and remove login startup; retain saved data",
             }[action],

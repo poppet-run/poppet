@@ -819,17 +819,15 @@ validation in addition to injected lifecycle and clock tests.
 ## Worker host
 
 `apps/cli/src/worker-host.ts` owns one scoped runtime and protected listener.
-`worker run` starts scheduling and messaging together, `worker run --tasks-only` starts only
-scheduling, and `gateway work` starts only messaging. Each uses the same store,
+`worker run` starts scheduling and messaging together, and `worker run --tasks-only` starts only
+scheduling. Both use the same store,
 agent, memory, provider resolver, and command functions. The store lock prevents
 starting another mode against that data directory. No separate processes or
 cross-process model coordination are introduced.
 
 `makeTaskWorker` exposes scheduling and task commands without opening a socket.
-The host routes task commands to that service while scheduling is active and to
-local task operations otherwise. Gateway-only mode can inspect or configure tasks
-without reconciling due occurrences or running scheduled inference. Task-only
-mode never builds the messaging layer. Status includes the selected services.
+The host routes task commands to that service. Task-only mode never builds the
+messaging layer. Status includes the selected services and messaging status.
 Fatal service failures stop the host and its siblings before storage is released.
 
 `@poppet/worker` owns request protection, body limits, deadlines, disconnect and
@@ -923,7 +921,7 @@ configured layer or a layer that connects only when built. Discord exposes a
 lightweight `@poppet/channel-discord/registration` entry and loads its SDK lazily.
 Existing setup commands and settings files are unchanged.
 
-`gateway status` reports connection state and configuration errors in a `channels`
+`worker status` reports messaging connection state and configuration errors in a `channels`
 array, with enabled state and persisted queue/delivery totals at the top level.
 Totals are read once from the shared repository. Configuration failures remain
 isolated to their registration, and stopped status does not build connections.
@@ -1044,7 +1042,7 @@ Discord's Gateway has no application-level acknowledgement tied to SQLite.
 Incoming events use a bounded in-memory queue before acceptance, with dropped
 and rejected counts in local status. Session history and accepted inputs survive
 restart; delivery of events lost before acceptance or after an unrecoverable
-disconnect is not guaranteed. `gateway status` reports persisted pending, failed,
+disconnect is not guaranteed. `worker status` reports persisted pending, failed,
 and uncertain delivery counts even when the worker is stopped. Thread-scoped
 `@Poppet /status` and `@Poppet /cancel` are text controls rather than registered
 slash commands. Live Discord checks remain manual.

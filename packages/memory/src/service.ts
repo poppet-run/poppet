@@ -24,6 +24,8 @@ interface MemoryOperations {
     value: string,
     sourceRunId?: string | null,
   ) => Effect.Effect<MemoryFact, MemoryError>;
+  /** Owner command: creates the fact or replaces its current value. */
+  readonly set: (key: string, value: string) => Effect.Effect<MemoryFact, MemoryError>;
   /** Removes a saved fact; a missing key is an error. History keeps a tombstone. */
   readonly forget: (key: string, sourceRunId?: string | null) => Effect.Effect<void, MemoryError>;
   /** Every change to one key , oldest first. */
