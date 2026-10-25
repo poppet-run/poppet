@@ -5,12 +5,12 @@ import { setupChannel } from "#src/channels";
 import type { CLIContext } from "#src/commands/context";
 
 export const gatewayCommand = (context: CLIContext) => {
-  const { runtime, channels: registeredChannels, startWorker } = context;
+  const { runtime, channels: registeredChannels } = context;
 
   return Command.make("gateway").pipe(
-    Command.withDescription("Set up and run messaging channels"),
-    Command.withSubcommands([
-      ...registeredChannels.map((entry) =>
+    Command.withDescription("Set up messaging channels"),
+    Command.withSubcommands(
+      registeredChannels.map((entry) =>
         Command.make(
           entry.id,
           {
@@ -22,9 +22,6 @@ export const gatewayCommand = (context: CLIContext) => {
             ),
         ).pipe(Command.withDescription(`${entry.name}: gateway ${entry.id} ${entry.setupHelp}`)),
       ),
-      Command.make("work", {}, () => startWorker("gateway")).pipe(
-        Command.withDescription("Run messaging only in the foreground"),
-      ),
-    ]),
+    ),
   );
 };

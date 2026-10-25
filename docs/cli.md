@@ -171,7 +171,6 @@ is running. Use `--channel` to deliver to that gateway's home channel. Add `--co
 | Command                                                                     | Action                                                   |
 | --------------------------------------------------------------------------- | -------------------------------------------------------- |
 | `gateway discord setup <owner-id> <guild-id> <home-channel-id> --key-stdin` | Save Discord settings and read the bot token from stdin. |
-| `gateway work`                                                              | Run messaging only in the foreground.                    |
 
 See [Discord](gateways/discord.md) for setup, conversation behavior,
 controls, and uncertain deliveries. The bot token is never accepted as a command-line argument.

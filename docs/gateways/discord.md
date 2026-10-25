@@ -35,7 +35,7 @@ Bash / POSIX sh:
     printf '\n'
     printf '%s\n' "$discord_token" | poppet gateway discord setup <your-user-id> <server-id> <home-channel-id> --key-stdin
 )
-poppet gateway work
+poppet worker run
 ```
 
 fish:
@@ -44,7 +44,7 @@ fish:
 read --silent --prompt-str 'Discord bot token: ' discord_token
 printf '%s\n' $discord_token | poppet gateway discord setup <your-user-id> <server-id> <home-channel-id> --key-stdin
 set -e discord_token
-poppet gateway work
+poppet worker run
 ```
 
 Replace the angle-bracket placeholders with Discord IDs before running the

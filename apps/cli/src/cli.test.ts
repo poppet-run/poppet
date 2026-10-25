@@ -816,7 +816,7 @@ describe("makeCLI", () => {
       );
 
       expect(rejected.exitCode).toBe(1);
-      expect(rejected.stderr).toContain("Start worker run or gateway work");
+      expect(rejected.stderr).toContain("Start worker run without --tasks-only");
       expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
 
       const local = await invoke(

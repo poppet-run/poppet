@@ -7,22 +7,20 @@
 Choose one foreground mode for a data directory:
 
 ```sh
-poppet worker run    # Scheduling and messaging
-poppet worker run --tasks-only    # Scheduling only
-poppet gateway work  # Messaging only
+poppet worker run               # Scheduling and messaging
+poppet worker run --tasks-only  # Scheduling only
 ```
 
-All three modes own enabled [MCP connections](mcp.md), started lazily on discovery
+Both modes own enabled [MCP connections](mcp.md), started lazily on discovery
 or an eligible agent run and closed on shutdown. CLI discovery uses these same
 connections. `mcp servers` inspects them without starting a process. Restart the
 worker after changing server configuration or to reconnect a failed server.
 
-All three modes own one SQLite connection and serve task, chat, memory, and store-status commands
+Both modes own one SQLite connection and serve task, chat, memory, and store-status commands
 through `store/tasks.sock`, protected by the `0700` store directory and `0600`
 socket. Commands use the worker when it is running and execute locally when it
 is stopped. Inspecting saved data needs no model or provider credentials.
-Task commands remain available in gateway-only mode, but no scheduled work is
-executed. Task-only mode does not initialize messaging adapters. `worker status`
+Task-only mode does not initialize messaging adapters. `worker status`
 reports the host's selected services, and its `worker.messaging` field reports
 whether messaging is running. Only one mode can own a data directory at a time.
 Interactive, scheduled, and messaging model requests share

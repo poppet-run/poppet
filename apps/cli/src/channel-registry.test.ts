@@ -107,7 +107,7 @@ describe("external gateway registrations", () => {
     try {
       await install(directory, "bad", '{ id: "bad", setup: 1, load: null }');
       await install(directory, "duplicate", registration("discord"));
-      await install(directory, "reserved", registration("work"));
+      await install(directory, "invalid", registration("Bad_ID"));
       await install(directory, "valid", registration("extra"));
 
       await Array.fromAsync(
@@ -117,7 +117,7 @@ describe("external gateway registrations", () => {
           [["../valid"], "Cannot load gateway package"],
           [["file:///tmp/adapter.ts"], "Cannot load gateway package"],
           [["duplicate/registration"], "Duplicate channel registration: discord"],
-          [["reserved/registration"], "Invalid channel ID: work"],
+          [["invalid/registration"], "Invalid channel ID: Bad_ID"],
           [["valid/registration", "valid/registration"], "Duplicate channel registration: extra"],
         ] as const,
         async ([entries, message]) => {
