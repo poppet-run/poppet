@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { Agent, Bash, type ChatPolicy, Pages, Skills, SkillsLive } from "@poppet/agent";
-import { agentHarness, optionalService, testModel } from "@poppet/agent/test";
+import { agentHarness, gatedStream, optionalService, testModel } from "@poppet/agent/test";
 import { ProviderError, type ModelOperations, type ModelRequest } from "@poppet/provider";
 import { DeliveryDestination, Store } from "@poppet/store";
 import {
@@ -1865,4 +1865,349 @@ describe("conversationNaming", () => {
       await state.close();
     }
   });
+});
+
+// Real time, since the gateway fixture runs on the test clock.
+const pause = (millis: number) =>
+  Effect.promise(() => new Promise((resolve) => setTimeout(resolve, millis)));
+
+const until = <E, R>(check: Effect.Effect<boolean, E, R>) =>
+  Effect.gen(function* () {
+    for (let attempt = 0; attempt < 600; attempt++) {
+      if (yield* check) return;
+      yield* pause(5);
+    }
+
+    return yield* Effect.die("Timed out waiting for the gateway");
+  });
+
+const inboxStates = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+
+  const rows = yield* sql<{ externalId: string; state: string }>`
+    SELECT external_id, state FROM gateway_inbox ORDER BY id`;
+
+  return Object.fromEntries(rows.map((row) => [row.externalId, row.state]));
+});
+
+const settledInbox = (...ids: ReadonlyArray<string>) =>
+  until(
+    inboxStates.pipe(
+      Effect.map((states) =>
+        ids.every((id) => ["completed", "cancelled", "failed"].includes(states[id] ?? "")),
+      ),
+    ),
+  );
+
+describe.concurrent("Gateway concurrent requests", () => {
+  test("when conversations outnumber slots, runs them at once up to the limit and keeps each in order", async () => {
+    const model = gatedStream((prompt) => response(`Answer to ${prompt}`));
+    const state = await fixture({}, model.stream, false, { maxConcurrentRequests: 2 });
+    const entered = (prompt: string) => Deferred.isDone(model.gate(prompt).entered);
+    const release = (prompt: string) => Deferred.succeed(model.gate(prompt).release, undefined);
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const worker = yield* gateway.run.pipe(Effect.forkChild);
+          yield* TestClock.adjust("0 millis");
+          yield* gateway.accept(message("a1", "thread-a", "A1"));
+          yield* gateway.accept(message("b1", "thread-b", "B1"));
+          yield* gateway.accept(message("c1", "thread-c", "C1"));
+          yield* gateway.accept(message("a2", "thread-a", "A2"));
+
+          yield* Deferred.await(model.gate("A1").entered);
+          yield* Deferred.await(model.gate("B1").entered);
+          yield* pause(50);
+          expect([yield* entered("C1"), yield* entered("A2")]).toEqual([false, false]);
+
+          // A freed slot goes to another conversation, not to the follow-up behind A1.
+          yield* release("B1");
+          yield* Deferred.await(model.gate("C1").entered);
+          yield* pause(50);
+          expect(yield* entered("A2")).toBe(false);
+
+          yield* release("A1");
+          yield* Deferred.await(model.gate("A2").entered);
+          yield* release("C1");
+          yield* release("A2");
+          yield* settledInbox("a1", "b1", "c1", "a2");
+          expect(yield* inboxStates).toEqual({
+            a1: "completed",
+            b1: "completed",
+            c1: "completed",
+            a2: "completed",
+          });
+
+          const session = yield* (yield* GatewayRepository).binding(
+            "discord",
+            "bot",
+            "guild",
+            "thread-a",
+          );
+
+          expect(
+            (yield* (yield* Store).messages(session!)).map(({ message: saved }) =>
+              saved.role === "user" ? saved.text : "answer",
+            ),
+          ).toEqual(["A1", "answer", "A2", "answer"]);
+          yield* Fiber.interrupt(worker);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when /cancel arrives in one thread, interrupts only that thread's request", async () => {
+    const model = gatedStream((prompt) => response(`Answer to ${prompt}`));
+    const state = await fixture({}, model.stream, false, { maxConcurrentRequests: 2 });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const worker = yield* gateway.run.pipe(Effect.forkChild);
+          yield* TestClock.adjust("0 millis");
+          yield* gateway.accept(message("a1", "thread-a", "A1"));
+          yield* gateway.accept(message("b1", "thread-b", "B1"));
+          yield* Deferred.await(model.gate("A1").entered);
+          yield* Deferred.await(model.gate("B1").entered);
+
+          yield* gateway.accept(message("cancel", "thread-a", "/cancel"));
+          yield* settledInbox("a1");
+          expect(yield* inboxStates).toMatchObject({ a1: "cancelled", b1: "executing" });
+
+          yield* Deferred.succeed(model.gate("B1").release, undefined);
+          yield* settledInbox("b1");
+          expect(yield* inboxStates).toMatchObject({ a1: "cancelled", b1: "completed" });
+
+          const store = yield* Store;
+          const repo = yield* GatewayRepository;
+
+          const runs = (thread: string) =>
+            repo
+              .binding("discord", "bot", "guild", thread)
+              .pipe(Effect.flatMap((session) => store.runs(session!)));
+
+          expect((yield* runs("thread-a")).map((run) => run.status)).toEqual(["interrupted"]);
+          expect((yield* runs("thread-b")).map((run) => run.status)).toEqual(["completed"]);
+          yield* Fiber.interrupt(worker);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a CLI send targets a busy gateway session, waits for the gateway request", async () => {
+    const model = gatedStream((prompt) => response(`Answer to ${prompt}`));
+    const state = await fixture({}, model.stream, false, { maxConcurrentRequests: 2 });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const worker = yield* gateway.run.pipe(Effect.forkChild);
+          yield* TestClock.adjust("0 millis");
+          yield* gateway.accept(message("a1", "thread-a", "A1"));
+          yield* Deferred.await(model.gate("A1").entered);
+
+          const session = yield* (yield* GatewayRepository).binding(
+            "discord",
+            "bot",
+            "guild",
+            "thread-a",
+          );
+
+          const cli = yield* Stream.runDrain((yield* Agent).send(session!, "CLI")).pipe(
+            Effect.forkChild,
+          );
+
+          yield* pause(50);
+          expect(yield* Deferred.isDone(model.gate("CLI").entered)).toBe(false);
+
+          yield* Deferred.succeed(model.gate("A1").release, undefined);
+          yield* Deferred.await(model.gate("CLI").entered);
+          yield* Deferred.succeed(model.gate("CLI").release, undefined);
+          yield* Fiber.join(cli);
+          expect(
+            (yield* (yield* Store).messages(session!)).map(({ message: saved }) =>
+              saved.role === "user" ? saved.text : "answer",
+            ),
+          ).toEqual(["A1", "answer", "CLI", "answer"]);
+          yield* Fiber.interrupt(worker);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when the worker stops with several active requests, leaves them for recovery on restart", async () => {
+    const model = gatedStream((prompt) => response(`Answer to ${prompt}`));
+    const state = await fixture({}, model.stream, false, { maxConcurrentRequests: 2 });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const worker = yield* gateway.run.pipe(Effect.forkChild);
+          yield* TestClock.adjust("0 millis");
+          yield* gateway.accept(message("a1", "thread-a", "A1"));
+          yield* gateway.accept(message("b1", "thread-b", "B1"));
+          yield* Deferred.await(model.gate("A1").entered);
+          yield* Deferred.await(model.gate("B1").entered);
+          yield* Fiber.interrupt(worker);
+          expect(yield* inboxStates).toEqual({ a1: "executing", b1: "executing" });
+        }),
+      );
+      await state.run(
+        Effect.gen(function* () {
+          yield* (yield* Gateway).recover;
+          expect(yield* inboxStates).toEqual({ a1: "completed", b1: "completed" });
+          const store = yield* Store;
+
+          for (const session of yield* store.sessions)
+            expect((yield* store.runs(session.id)).map((run) => run.status)).toEqual([
+              "interrupted",
+            ]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when two threads wait for approval, settles each only from its own thread", async () => {
+    const prompts = new Map<string, string>();
+    const executed: string[] = [];
+
+    const state = await fixture(
+      {
+        send: (conversation, text) =>
+          Effect.sync(() => {
+            const id = /Reply \/approve ([a-f0-9-]{36})/.exec(text)?.[1];
+
+            if (id) prompts.set(conversation, id);
+
+            return "sent";
+          }),
+      },
+      (request) => {
+        if (request.settings.toolChoice === "none")
+          return response(JSON.stringify({ decision: "needs_approval", reason: "Restart" }));
+
+        const last = request.messages.at(-1);
+
+        if (last?.role === "tool") return response("Done");
+
+        return Stream.make({
+          type: "completed",
+          response: {
+            output: [
+              {
+                type: "tool-call",
+                namespace: "poppet_system",
+                name: "bash",
+                callId: "bash-1",
+                arguments: JSON.stringify({
+                  command: `restart-${last?.role === "user" ? last.text : ""}`,
+                  cwd: "/tmp",
+                  timeoutSeconds: 5,
+                }),
+              },
+            ],
+            continuation: { version: 1, provider: "test-provider", model: "test-model", data: {} },
+            finishReason: "tool-calls",
+            usage: null,
+          },
+        });
+      },
+      true,
+      { maxConcurrentRequests: 2 },
+      undefined,
+      {
+        run: (request) =>
+          Effect.sync(() => {
+            executed.push(request.command);
+
+            return { stdout: "done", stderr: "", exitCode: 0, truncated: false };
+          }),
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const worker = yield* gateway.run.pipe(Effect.forkChild);
+          yield* TestClock.adjust("0 millis");
+          yield* gateway.accept(message("a1", "thread-a", "a"));
+          yield* gateway.accept(message("b1", "thread-b", "b"));
+          yield* until(Effect.sync(() => prompts.size === 2));
+
+          // Thread A's reply cannot settle thread B's approval, and /cancel stops only A.
+          yield* gateway.accept(
+            message("wrong", "thread-a", `/approve ${prompts.get("thread-b")}`),
+          );
+          yield* gateway.accept(message("cancel", "thread-a", "/cancel"));
+          yield* settledInbox("a1");
+          expect(executed).toEqual([]);
+          expect(yield* inboxStates).toMatchObject({ a1: "cancelled", b1: "executing" });
+
+          yield* gateway.accept(
+            message("right", "thread-b", `/approve ${prompts.get("thread-b")}`),
+          );
+          yield* settledInbox("b1");
+          expect(executed).toEqual(["restart-b"]);
+          expect(yield* inboxStates).toMatchObject({ b1: "completed" });
+          yield* Fiber.interrupt(worker);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+});
+
+test("gateway claims a queued request only once and binds concurrent requests separately", async () => {
+  const state = await fixture();
+
+  try {
+    await state.run(
+      Effect.gen(function* () {
+        const gateway = yield* Gateway;
+        const repo = yield* GatewayRepository;
+        const store = yield* Store;
+        yield* gateway.accept(message("first", "thread-a"));
+        yield* gateway.accept(message("second", "thread-b"));
+        const first = (yield* repo.next("discord", "bot", 0))!;
+
+        expect(yield* repo.claim(first.id)).toBe(true);
+        expect(yield* repo.claim(first.id)).toBe(false);
+        const second = (yield* repo.next("discord", "bot", 0))!;
+        expect(second.message.messageId).toBe("second");
+
+        const sessions = yield* Effect.forEach([1, 2], () =>
+          store.createSession("test-provider", "test-model"),
+        );
+
+        yield* Effect.all(
+          [
+            repo.attach(first.id, "thread-a", sessions[0]!.id),
+            repo.attach(second.id, "thread-b", sessions[1]!.id),
+          ],
+          { concurrency: "unbounded" },
+        );
+        expect([
+          yield* repo.binding("discord", "bot", "guild", "thread-a"),
+          yield* repo.binding("discord", "bot", "guild", "thread-b"),
+        ]).toEqual([sessions[0]!.id, sessions[1]!.id]);
+      }),
+    );
+  } finally {
+    await state.close();
+  }
 });

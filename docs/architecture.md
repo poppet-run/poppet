@@ -987,8 +987,9 @@ and delivery records. The gateway owns their repository through the shared
 `SqlClient`; the store retains database ownership and migration history.
 Deduplicate by adapter, bot account, and external message ID. Persist accepted
 work before acknowledging receipt where the platform provides such a mechanism. Bound pending work and reject overload
-clearly. Preserve message order within each conversation through the existing
-serialized runner.
+clearly. Preserve message order within each conversation: the inbox query
+offers an entry only when no earlier entry in its conversation is queued or
+executing.
 
 Link accepted inputs to their session and run durably before execution can
 produce side effects. Reconnects must not create duplicate threads, sessions, or
@@ -997,7 +998,7 @@ uncertain external operations require reconciliation, not blind replay. Queued
 inputs that have not started may resume after restart. Runs that started and
 were interrupted retain the store's existing no-replay rule and require an
 explicit new request. Cancellation interrupts only the owned queued or active
-request and releases its runner permit.
+requests and releases their agent permits; requests in other conversations continue.
 
 Save completed answers before delivery. Record destination, run, chunk order,
 delivery state, and returned platform message IDs so reply failures never rerun
@@ -1015,10 +1016,13 @@ The schema includes bindings, inbox records, and ordered reply chunks. The
 gateway reserves a run ID before execution and supplies it to `Agent.send` and
 the store. Stable session IDs recover a crash between session creation and
 thread binding. Recovery inspects the saved run before deciding whether an
-accepted input never started or already completed/interrupted. The worker has
-one sequential messaging processor and an independent reply-delivery loop; the
-agent's existing permit still serializes all model work across messaging, CLI,
-and scheduled requests. Pending inputs are capped at 64 per bot account.
+accepted input never started or already completed/interrupted. The worker's messaging
+dispatcher claims each eligible entry atomically (`queued` to `executing`) and
+runs it in a fiber set owned by the gateway run, up to `chat.maxConcurrentRequests`
+at once; an independent loop delivers replies. Each finished request wakes the
+dispatcher so the next entry in its conversation starts. Scheduled runs and CLI
+chat compete for the same agent slots; the gateway reserves none. Worker shutdown
+interrupts every active request and leaves it `executing` for recovery. Pending inputs are capped at 64 per bot account.
 
 Discord's Gateway has no application-level acknowledgement tied to SQLite.
 Incoming events use a bounded in-memory queue before acceptance, with dropped

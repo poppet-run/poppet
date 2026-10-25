@@ -1,10 +1,17 @@
 import { AgentError, type Agent, type ChatFailure } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
-import { Cause, Console, Effect, Exit, Fiber, Option, Stream } from "effect";
+import { Cause, Console, Deferred, Effect, Exit, Fiber, FiberSet, Option, Stream } from "effect";
 
 import type { CommandApprovals } from "#src/approvals";
 import type { ChannelError } from "#src/channel";
-import { authorized, finish, mark, type GatewayContext, type RunningRequest } from "#src/context";
+import {
+  authorized,
+  finish,
+  mark,
+  wake,
+  type GatewayContext,
+  type RunningRequest,
+} from "#src/context";
 import { resolveDestination } from "#src/destination";
 import { failureDecision } from "#src/failure";
 import { answer } from "#src/replies";
@@ -70,7 +77,7 @@ const settleFailure = (
 /** Prepares the session, runs the agent with typing shown, and saves the run's answer. */
 const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
   Effect.gen(function* () {
-    const { channel, repo, store } = context;
+    const { channel, store } = context;
     const { agent, approvals, running } = execution;
     yield* mark(context, entry.message, "working");
     const prepared = yield* prepareSession(context, execution.setup, entry);
@@ -95,9 +102,10 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
         );
       });
 
-    if (running.current !== null)
-      running.current.entry = { ...entry, conversationId: conversation, sessionId: session.id };
-    yield* gatewayStorage(repo.state(entry.id, "executing"));
+    const own = running.requests.get(entry.id);
+
+    if (own !== undefined)
+      own.entry = { ...entry, conversationId: conversation, sessionId: session.id };
     yield* Effect.scoped(
       Effect.gen(function* () {
         // Discord typing expires after ten seconds; progress must never block inference.
@@ -130,44 +138,102 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
     ),
   );
 
-/** Executes the next eligible queued request, retrying setup only before a run exists. */
+// Storage failures and defects stop the gateway; other failures were settled with their request.
+const outcome = (exit: Exit.Exit<void, ChatFailure | ChannelError>) =>
+  Effect.gen(function* () {
+    if (Exit.isSuccess(exit)) return;
+    const failure = Option.getOrNull(Cause.findErrorOption(exit.cause));
+
+    if (Cause.hasDies(exit.cause) || failure instanceof StoreError) return yield* exit;
+    yield* Console.error(
+      "Messaging request failed or was cancelled. Inspect gateway status and saved runs.",
+    );
+  });
+
+/**
+ * Claims the next eligible request and starts it with `start`, registered as running before
+ * it begins. Returns null when nothing is eligible, or "skipped" for an entry it did not run.
+ */
+const claimNext = (
+  context: GatewayContext,
+  execution: Execution,
+  start: (
+    request: Effect.Effect<void, ChatFailure | ChannelError>,
+  ) => Effect.Effect<Fiber.Fiber<void, ChatFailure | ChannelError>>,
+) =>
+  execution.running.claims.withPermit(
+    Effect.gen(function* () {
+      const { channel, repo, clock } = context;
+      const { requests } = execution.running;
+      const account = yield* channel.accountId;
+
+      const entry = yield* gatewayStorage(
+        repo.next(channel.id, account, clock.currentTimeMillisUnsafe()),
+      );
+
+      if (entry === null) return null;
+
+      if (!authorized(channel.policy, entry.message)) {
+        yield* gatewayStorage(repo.state(entry.id, "cancelled"));
+
+        return "skipped" as const;
+      }
+
+      if (!(yield* gatewayStorage(repo.claim(entry.id)))) return "skipped" as const;
+      const registered = yield* Deferred.make<void>();
+
+      const request = Deferred.await(registered).pipe(
+        Effect.andThen(execute(context, execution, entry)),
+        Effect.ensuring(
+          Effect.sync(() => {
+            requests.delete(entry.id);
+          }),
+        ),
+      );
+
+      const fiber = yield* start(request);
+      requests.set(entry.id, { entry, fiber });
+      yield* Deferred.succeed(registered, undefined);
+
+      return fiber;
+    }),
+  );
+
+/** Executes the next eligible queued request and waits for it to finish. */
 export const processNext = (context: GatewayContext, execution: Execution) =>
   Effect.gen(function* () {
-    const { channel, repo, clock } = context;
-    const { running } = execution;
-    const account = yield* channel.accountId;
+    const fiber = yield* claimNext(context, execution, Effect.forkChild);
 
-    const entry = yield* gatewayStorage(
-      repo.next(channel.id, account, clock.currentTimeMillisUnsafe()),
-    );
+    if (fiber === null) return false;
 
-    if (entry === null) return false;
+    if (fiber !== "skipped") yield* Fiber.await(fiber).pipe(Effect.flatMap(outcome));
 
-    if (!authorized(channel.policy, entry.message)) {
-      yield* gatewayStorage(repo.state(entry.id, "cancelled"));
+    return true;
+  });
 
-      return true;
-    }
+/**
+ * Starts the next eligible request in `active` while fewer than `limit` are running. Each
+ * request wakes the inbox when it ends, so a later request in its conversation can start.
+ */
+export const dispatchNext = (
+  context: GatewayContext,
+  execution: Execution,
+  active: FiberSet.FiberSet<void, ChatFailure | ChannelError>,
+  limit: number,
+) =>
+  Effect.gen(function* () {
+    if (execution.running.requests.size >= limit) return false;
 
-    const fiber = yield* execute(context, execution, entry).pipe(Effect.forkChild);
-    running.current = { entry, fiber };
-
-    const result = yield* Fiber.await(fiber).pipe(
-      Effect.ensuring(
-        Effect.sync(() => {
-          running.current = null;
-        }),
+    const claimed = yield* claimNext(context, execution, (request) =>
+      FiberSet.run(
+        active,
+        request.pipe(
+          Effect.exit,
+          Effect.flatMap(outcome),
+          Effect.ensuring(wake(context.wakes.inbox)),
+        ),
       ),
     );
 
-    if (Exit.isFailure(result)) {
-      const failure = Option.getOrNull(Cause.findErrorOption(result.cause));
-
-      if (Cause.hasDies(result.cause) || failure instanceof StoreError) return yield* result;
-      yield* Console.error(
-        "Messaging request failed or was cancelled. Inspect gateway status and saved runs.",
-      );
-    }
-
-    return true;
+    return claimed !== null;
   });

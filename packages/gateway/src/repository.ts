@@ -277,6 +277,10 @@ const repository = Effect.gen(function* () {
               COALESCE(gateway_inbox.conversation_id, gateway_inbox.external_id)
             AND earlier.state IN ('queued', 'executing') AND earlier.id < gateway_inbox.id)
         ORDER BY id LIMIT 1`.pipe(decodeRow(Inbox)),
+    // Only one caller can move a queued entry to executing.
+    claim: (id: number) =>
+      sql`UPDATE gateway_inbox SET state = 'executing' WHERE id = ${id} AND state = 'queued'
+        RETURNING id`.pipe(Effect.map((rows) => rows.length > 0)),
     retry: (entry: Inbox, retryAt: number) =>
       sql`UPDATE gateway_inbox SET state = 'queued', attempts = attempts + 1, retry_at = ${retryAt}
         WHERE id = ${entry.id}`.pipe(Effect.asVoid),
