@@ -1,8 +1,8 @@
 import { toolParameters, type Tool } from "@poppet/provider";
-import { SessionReadQuery, SessionSearchQuery, Store } from "@poppet/store";
+import { SessionReadQuery, SessionSearchQuery, Store, type StoreError } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
-import { builtinFailures, type AgentTool, type ToolCall } from "#src/agent-tool";
+import { contextTool, type ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import { ChatSettings } from "#src/settings";
 import { toolArguments } from "#src/tool-schema";
@@ -61,48 +61,44 @@ export const decodeSessionSearchCall = (call: ToolCall): Effect.Effect<string, A
     SearchArguments,
   )(call.arguments).pipe(Effect.map(({ query }) => query));
 
-/** Searches the owner's completed conversations. */
-export const sessionSearchTool = Effect.gen(function* () {
-  const store = yield* Store;
-  const { toolBytes } = yield* ChatSettings;
+// History tools read through the store with this run's result budget.
+const historyTool = <Q>(
+  definition: Tool,
+  decode: (call: ToolCall) => Effect.Effect<Q, AgentError>,
+  read: (
+    store: Store["Service"],
+    query: Q,
+    toolBytes: number,
+  ) => Effect.Effect<unknown, StoreError>,
+) =>
+  Effect.gen(function* () {
+    const store = yield* Store;
+    const { toolBytes } = yield* ChatSettings;
 
-  return {
-    definition: sessionSearchDefinition,
-    prepare: (call) =>
-      decodeSessionSearchCall(call).pipe(
-        Effect.map((query) => ({
-          execute: store
-            .searchSessions(query, toolBytes)
-            .pipe(Effect.map((value) => JSON.stringify(value))),
-        })),
-      ),
-    untrustedResult: false,
-    withdrawnWhenUntrusted: false,
-    contextOnly: true,
-    mutating: false,
-    failures: builtinFailures,
-  } satisfies AgentTool;
-});
+    return contextTool({
+      definition,
+      prepare: (call) =>
+        decode(call).pipe(
+          Effect.map((query) => ({
+            execute: read(store, query, toolBytes).pipe(
+              Effect.map((value) => JSON.stringify(value)),
+            ),
+          })),
+        ),
+      untrustedResult: false,
+    });
+  });
+
+/** Searches the owner's completed conversations. */
+export const sessionSearchTool = historyTool(
+  sessionSearchDefinition,
+  decodeSessionSearchCall,
+  (store, query, toolBytes) => store.searchSessions(query, toolBytes),
+);
 
 /** Reads one completed conversation around or after a message. */
-export const sessionReadTool = Effect.gen(function* () {
-  const store = yield* Store;
-  const { toolBytes } = yield* ChatSettings;
-
-  return {
-    definition: sessionReadDefinition,
-    prepare: (call) =>
-      decodeSessionReadCall(call).pipe(
-        Effect.map((query) => ({
-          execute: store
-            .readSession(query, toolBytes)
-            .pipe(Effect.map((value) => JSON.stringify(value))),
-        })),
-      ),
-    untrustedResult: false,
-    withdrawnWhenUntrusted: false,
-    contextOnly: true,
-    mutating: false,
-    failures: builtinFailures,
-  } satisfies AgentTool;
-});
+export const sessionReadTool = historyTool(
+  sessionReadDefinition,
+  decodeSessionReadCall,
+  (store, query, toolBytes) => store.readSession(query, toolBytes),
+);

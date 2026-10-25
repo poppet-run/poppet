@@ -2,7 +2,7 @@ import { toolParameters, type Tool } from "@poppet/provider";
 import { WebSearch } from "@poppet/web-search";
 import { Effect, Schema } from "effect";
 
-import { builtinFailures, type AgentTool, type ToolCall } from "#src/agent-tool";
+import { contextTool, type ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import { BoundedText, toolArguments } from "#src/tool-schema";
 
@@ -32,7 +32,7 @@ export const webSearchTool = Effect.gen(function* () {
 
   if (search === null) return null;
 
-  return {
+  return contextTool({
     definition: webSearchDefinition,
     prepare: (call) =>
       decodeWebSearchCall(call).pipe(
@@ -55,9 +55,5 @@ export const webSearchTool = Effect.gen(function* () {
         }),
       ),
     untrustedResult: true,
-    withdrawnWhenUntrusted: false,
-    contextOnly: true,
-    mutating: false,
-    failures: builtinFailures,
-  } satisfies AgentTool;
+  });
 });

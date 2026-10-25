@@ -107,3 +107,14 @@ export const builtinFailures: FailurePolicy = {
   uncertain: new Set(),
   otherwise: "fatal",
 };
+
+/** A built-in tool that only reads context, so scheduled runs and untrusted content keep it. */
+export const contextTool = (
+  tool: Pick<AgentTool, "definition" | "prepare" | "untrustedResult">,
+): AgentTool => ({
+  ...tool,
+  withdrawnWhenUntrusted: false,
+  contextOnly: true,
+  mutating: false,
+  failures: builtinFailures,
+});

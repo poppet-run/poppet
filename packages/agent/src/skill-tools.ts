@@ -2,7 +2,7 @@ import { toolParameters, type Tool } from "@poppet/provider";
 import { SkillName } from "@poppet/store";
 import { Effect, Option, Schema } from "effect";
 
-import { builtinFailures, type AgentTool, type ToolCall } from "#src/agent-tool";
+import { contextTool, type ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import { Skills } from "#src/skills";
 import { toolArguments } from "#src/tool-schema";
@@ -41,16 +41,12 @@ export const skillViewTool = Effect.gen(function* () {
 
   if (skills === null) return null;
 
-  return {
+  return contextTool({
     definition: skillViewDefinition,
     prepare: (call) =>
       decodeSkillViewCall(call).pipe(
         Effect.map((name) => ({ execute: executeSkillView(skills, name) })),
       ),
     untrustedResult: false,
-    withdrawnWhenUntrusted: false,
-    contextOnly: true,
-    mutating: false,
-    failures: builtinFailures,
-  } satisfies AgentTool;
+  });
 });

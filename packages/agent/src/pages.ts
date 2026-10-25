@@ -1,7 +1,7 @@
 import { toolParameters, type Tool } from "@poppet/provider";
 import { Context, Effect, Layer, Schema } from "effect";
 
-import { builtinFailures, type AgentTool, type ToolCall } from "#src/agent-tool";
+import { contextTool, type ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import {
   PageTransport,
@@ -161,16 +161,12 @@ export const PagesLive = Layer.effect(
 export const fetchPageTool = Effect.gen(function* () {
   const pages = yield* Pages;
 
-  return {
+  return contextTool({
     definition: fetchPageDefinition,
     prepare: (call, { pageURLs }) =>
       decodeFetchPageCall(call, pageURLs).pipe(
         Effect.map((url) => ({ execute: pages.fetch(url) })),
       ),
     untrustedResult: true,
-    withdrawnWhenUntrusted: false,
-    contextOnly: true,
-    mutating: false,
-    failures: builtinFailures,
-  } satisfies AgentTool;
+  });
 });
