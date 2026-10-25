@@ -43,7 +43,7 @@ const setupWorker = (context: CLIContext, directory: string) =>
       ? "Restart the worker to apply these settings? This can interrupt active runs."
       : status.installed
         ? "Start the installed worker for scheduling and messaging?"
-        : "Install and start the macOS login worker for scheduling and messaging?";
+        : "Install and start the login worker for scheduling and messaging?";
 
     if (yield* Prompt.Confirm({ message, initial: false })) {
       if (status.active) yield* context.worker("stop", directory);

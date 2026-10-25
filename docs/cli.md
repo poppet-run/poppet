@@ -179,17 +179,17 @@ controls, and uncertain deliveries. The bot token is never accepted as a command
 
 ## Worker
 
-| Command                             | Action                                                |
-| ----------------------------------- | ----------------------------------------------------- |
-| `worker run [--tasks-only]`         | Run scheduling and messaging, or scheduling only.     |
-| `worker install`                    | Install and start the macOS login worker.             |
-| `worker start`                      | Start an installed worker.                            |
-| `worker stop`                       | Stop it until the next login or explicit start.       |
-| `worker status`                     | Show launch agent, scheduling, and connection status. |
-| `worker logs`                       | Print the last 64 KiB of worker logs.                 |
-| `worker resume-provider <provider>` | Allow scheduled requests for a provider again.        |
-| `worker providers`                  | Show provider quota pauses and temporary backoff.     |
-| `worker uninstall`                  | Stop and remove login startup, retaining saved data.  |
+| Command                             | Action                                                 |
+| ----------------------------------- | ------------------------------------------------------ |
+| `worker run [--tasks-only]`         | Run scheduling and messaging, or scheduling only.      |
+| `worker install`                    | Install and start the login worker.                    |
+| `worker start`                      | Start an installed worker.                             |
+| `worker stop`                       | Stop it until the next login or explicit start.        |
+| `worker status`                     | Show login service, scheduling, and connection status. |
+| `worker logs`                       | Print the last 64 KiB of worker logs.                  |
+| `worker resume-provider <provider>` | Allow scheduled requests for a provider again.         |
+| `worker providers`                  | Show provider quota pauses and temporary backoff.      |
+| `worker uninstall`                  | Stop and remove login startup, retaining saved data.   |
 
 See [worker](worker.md) for foreground modes, macOS lifecycle commands, logs,
 interactive requests, and recovery. Only one worker mode can own a data directory

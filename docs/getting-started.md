@@ -10,7 +10,7 @@ Replace angle-bracket placeholders such as `<task-id>` before running a command.
 - Bun 1.4.4, pinned in `mise.toml` and `package.json`.
 - Access to ChatGPT subscription inference, OpenCode Go, or OpenRouter.
 - A system browser for ChatGPT sign-in, or an API key for the other providers.
-- macOS for background worker installation. Other platforms can run the worker in the foreground.
+- macOS, or Linux with systemd, for background worker installation. Other platforms can run the worker in the foreground.
 
 ## Install the command
 
@@ -60,7 +60,7 @@ poppet setup
 ```
 
 Choose a provider, sign in if needed, and search its model list by typing. You can
-also configure Discord and, on macOS, install and start the combined scheduling
+also configure Discord and, on macOS or Linux with systemd, install and start the combined scheduling
 and messaging worker. Have your Discord bot token, user ID, server ID, and
 home channel ID ready if you want messaging. See the [Discord guide](gateways/discord.md)
 for bot permissions and intents.
@@ -158,5 +158,5 @@ poppet worker run
 ```
 
 Keep that terminal open and use a second terminal for chat and task commands.
-On macOS, the [worker guide](worker.md#macos-login-startup) explains how to install
+On macOS and Linux with systemd, the [worker guide](worker.md#login-startup) explains how to install
 login startup instead.

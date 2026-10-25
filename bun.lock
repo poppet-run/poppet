@@ -27,6 +27,7 @@
         "@poppet/mcp": "workspace:*",
         "@poppet/memory": "workspace:*",
         "@poppet/platform": "workspace:*",
+        "@poppet/platform-linux": "workspace:*",
         "@poppet/platform-macos": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/provider-openai": "workspace:*",

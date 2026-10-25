@@ -19,7 +19,7 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider-openrouter`, `@poppet/credentials`,
 `@poppet/store`, `@poppet/agent`, `@poppet/browser`, `@poppet/io`, `@poppet/mcp`,
 `@poppet/memory`, `@poppet/skills`, `@poppet/tasks`, `@poppet/web-search`,
-`@poppet/platform`, `@poppet/platform-macos`, `@poppet/worker`, `@poppet/gateway`,
+`@poppet/platform`, `@poppet/platform-macos`, `@poppet/platform-linux`, `@poppet/worker`, `@poppet/gateway`,
 `@poppet/channel-discord`.
 `bun run format` formats files with Oxfmt.
 `bun run lint:fix` applies safe Oxlint fixes. `bun run check` checks formatting,
@@ -174,9 +174,12 @@ packages/
   worker/                 @poppet/worker
     src/socket.ts         Protected command transport and request ownership
   platform/               @poppet/platform
-    src/index.ts          Worker actions, errors, and launch description
+    src/contract.ts       Worker actions, errors, status, and launch description
+    src/logs.ts           Protected log creation and bounded log reading
   platform-macos/         @poppet/platform-macos
-    src/worker.ts         LaunchAgent control, plist generation, and bounded log reading
+    src/worker.ts         LaunchAgent control and plist generation
+  platform-linux/         @poppet/platform-linux
+    src/worker.ts         systemd user unit control and unit file generation
   provider/               @poppet/provider
     src/schema.ts         Normalized messages, tools, events, and continuation
     src/service.ts        Provider service, model operations, and typed errors
@@ -306,7 +309,7 @@ live account access. The earlier phase 1 live ChatGPT check remains separate
 evidence; Go and OpenRouter inference have not been verified against live accounts.
 
 The [storage guide](storage.md#permissions-and-recovery) describes local recovery checks.
-Live chat, ChatGPT token renewal, Discord setup and reconnection, and macOS login
+Live chat, ChatGPT token renewal, Discord setup and reconnection, macOS and Linux login
 startup and physical sleep/wake remain separate manual checks. Follow the
 [Discord guide](gateways/discord.md) and [worker manual validation](worker.md#manual-validation)
 for those paths. The [implementation plan](implementation-plan.md) records
