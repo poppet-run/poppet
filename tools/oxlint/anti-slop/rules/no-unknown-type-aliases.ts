@@ -4,7 +4,7 @@ import type { ESTree } from "@oxlint/plugins";
 
 import {
 	createTypeAliasEnvironment,
-	resolvesToUnknown,
+	resolvedTypeMatches,
 	type TypeAliasEnvironment,
 } from "../shared/type-alias-resolution.ts";
 
@@ -24,8 +24,15 @@ export const noUnknownTypeAliasesRule = defineRule({
 	createOnce(context) {
 		let environment: TypeAliasEnvironment | null = null;
 
-		const aliasesUnknown = (type: ESTree.TSType): boolean =>
-			environment !== null && resolvesToUnknown(type, environment);
+		const resolvesToUnknown = (type: ESTree.TSType): boolean =>
+			environment !== null &&
+			resolvedTypeMatches(type, environment, (resolved, matches) => {
+				if (resolved.type === "TSUnknownKeyword") return true;
+				if (resolved.type === "TSParenthesizedType") {
+					return matches(resolved.typeAnnotation);
+				}
+				return resolved.type === "TSUnionType" && resolved.types.some(matches);
+			});
 
 		return {
 			Program(node) {
@@ -35,7 +42,7 @@ export const noUnknownTypeAliasesRule = defineRule({
 				);
 			},
 			TSTypeAliasDeclaration(node) {
-				if (!aliasesUnknown(node.typeAnnotation)) return;
+				if (!resolvesToUnknown(node.typeAnnotation)) return;
 				context.report({
 					node: node.id,
 					messageId: "unknownAlias",

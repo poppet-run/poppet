@@ -2,32 +2,6 @@ import type { ESTree, SourceCode } from "@oxlint/plugins";
 
 export type FunctionParameter = ESTree.ParamPattern;
 
-/** Every node that declares parameters and an optional return type. */
-export type FunctionLike =
-	| ESTree.ArrowFunctionExpression
-	| ESTree.Function
-	| ESTree.TSCallSignatureDeclaration
-	| ESTree.TSConstructSignatureDeclaration
-	| ESTree.TSConstructorType
-	| ESTree.TSFunctionType
-	| ESTree.TSMethodSignature;
-
-/** Visitors that send every function-like node, including type signatures, to one check. */
-export function functionVisitors(check: (node: FunctionLike) => void) {
-	return {
-		ArrowFunctionExpression: check,
-		FunctionDeclaration: check,
-		FunctionExpression: check,
-		TSCallSignatureDeclaration: check,
-		TSConstructSignatureDeclaration: check,
-		TSConstructorType: check,
-		TSDeclareFunction: check,
-		TSEmptyBodyFunctionExpression: check,
-		TSFunctionType: check,
-		TSMethodSignature: check,
-	};
-}
-
 /** Return whether a type is or contains TypeScript's absorbing unknown top type. */
 export function containsUnknownType(type: ESTree.TSType): boolean {
 	if (type.type === "TSUnknownKeyword") return true;

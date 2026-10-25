@@ -248,25 +248,3 @@ export function resolvedTypeMatches(
 
 	return evaluate(type, new Map(), new Set());
 }
-
-/** Whether a type resolves to unknown, alone or in a union, and optionally inside Promise or PromiseLike. */
-export function resolvesToUnknown(
-	type: ESTree.TSType,
-	environment: TypeAliasEnvironment,
-	throughPromises = false,
-): boolean {
-	return resolvedTypeMatches(type, environment, (resolved, matches) => {
-		if (resolved.type === "TSUnknownKeyword") return true;
-		if (resolved.type === "TSParenthesizedType") return matches(resolved.typeAnnotation);
-		if (resolved.type === "TSUnionType") return resolved.types.some(matches);
-		if (
-			!throughPromises ||
-			resolved.type !== "TSTypeReference" ||
-			resolved.typeName.type !== "Identifier" ||
-			(resolved.typeName.name !== "Promise" && resolved.typeName.name !== "PromiseLike")
-		)
-			return false;
-		const value = resolved.typeArguments?.params[0];
-		return value !== undefined && matches(value);
-	});
-}
