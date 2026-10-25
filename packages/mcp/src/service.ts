@@ -19,6 +19,7 @@ export interface MCPTool {
   readonly definition: Tool;
   readonly serverId: string;
   readonly toolName: string;
+  readonly availableAfterUntrusted: boolean;
   readonly prepare: (argumentsJSON: string) => Effect.Effect<
     {
       readonly execute: Effect.Effect<string, MCPError>;
@@ -295,6 +296,7 @@ const makeTool = (
   return {
     serverId: config.id,
     toolName: tool.name,
+    availableAfterUntrusted: config.availableAfterUntrusted === true,
     definition: definition(config.id, tool.name, tool.description ?? "", schema),
     prepare: (argumentsJSON) =>
       Effect.try({

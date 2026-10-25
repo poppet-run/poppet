@@ -41,8 +41,8 @@ Add `mcpServers` to your existing `<data directory>/config.json`:
 ```
 
 Replace the executable, arguments, and tool names with your server's values.
-`args` and `tools` are required arrays; `cwd`, `environment`, and `scheduledTools`
-are optional. IDs must be unique lowercase names beginning with a letter, with
+`args` and `tools` are required arrays; `cwd`, `environment`, `scheduledTools`,
+and `availableAfterUntrusted` are optional. IDs must be unique lowercase names beginning with a letter, with
 letters, digits, and hyphens thereafter, at most 64 characters. Commands run with
 an argument array and no shell. Install servers yourself. Never put secret values
 in commands, arguments, or general configuration.
@@ -143,7 +143,16 @@ honestly.
 Each run takes a catalog snapshot. List-change notifications cannot expand it;
 restart the owner to refresh discovery. Server instructions are ignored.
 Descriptions, schemas, and results remain untrusted data. They cannot authorize
-memory or task mutations, expand permissions, or grant URL access. URLs
+memory or task mutations, expand permissions, or grant URL access.
+
+Once a fetched page, search result, or MCP result enters a run, MCP tools are
+withdrawn for the rest of it, so each run makes at most one round of MCP calls.
+Set `"availableAfterUntrusted": true` on a server whose workflow needs several
+calls, such as reading its own docs before running code. Its allowed tools then
+stay available after untrusted content; task and memory tools are still
+withdrawn. Only opt in a server you trust with that content: text from an email,
+page, or earlier result can then steer that server's later calls in the same
+run, limited to its `tools` (or `scheduledTools` in scheduled runs). URLs
 returned by MCP do not receive web-search grants. Scheduled runs retain the
 built-in mutation restrictions. Poppet sends the validated arguments and selected
 child credentials, without automatically attaching history or global memory.

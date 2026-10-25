@@ -66,6 +66,8 @@ const shared = {
   enabled: Schema.Boolean,
   tools: Names,
   scheduledTools: Schema.optionalKey(Names),
+  /** Owner opt-in: keep this server's tools after untrusted content enters a run. */
+  availableAfterUntrusted: Schema.optionalKey(Schema.Boolean),
 };
 
 /** References contain names only. Credential values stay in protected auth storage. */

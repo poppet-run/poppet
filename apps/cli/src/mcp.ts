@@ -30,9 +30,13 @@ export const ExternalAgentToolsLive = Layer.effect(
                   ),
                 );
 
-          // Browsing reads untrusted pages by design; MCP servers are withdrawn after untrusted input.
+          // Browsing reads untrusted pages by design; MCP servers are withdrawn after untrusted
+          // input unless the owner opted that server in.
           const adapted = [
-            ...external.map((tool) => ({ tool, availableAfterUntrusted: false })),
+            ...external.map((tool) => ({
+              tool,
+              availableAfterUntrusted: tool.availableAfterUntrusted,
+            })),
             ...browserCatalog.map((tool) => ({ tool, availableAfterUntrusted: true })),
           ].map(({ tool, availableAfterUntrusted }) => ({
             definition: tool.definition,

@@ -45,7 +45,7 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
   );
   const requests: ModelRequest[] = [];
   let built = 0;
-  let followup: "done" | "fetch" | "memory" | "task" = "done";
+  let followup: "done" | "fetch" | "memory" | "task" | "mcp" = "done";
 
   const registration: ProviderRegistration = {
     id: "fixture",
@@ -104,6 +104,13 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
 
                     if (after && !answered && followup !== "done") {
                       const mutations = {
+                        // The first request's identity, since withdrawal removes it from later ones.
+                        mcp: {
+                          name: requests[0]!.tools.find((tool) => tool.namespace === "poppet_mcp")!
+                            .name,
+                          namespace: "poppet_mcp",
+                          arguments: JSON.stringify({ input: "{}" }),
+                        },
                         fetch: {
                           name: "fetch_page",
                           namespace: "poppet_web",
@@ -372,6 +379,42 @@ describe("ExternalAgentToolsLive", () => {
               ["failed", "agent:tool-permission"],
             ]);
           }).pipe(Effect.provide(state.chat)),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test.each([false, true])(
+    "when availableAfterUntrusted is %j, a second MCP call follows an MCP result only on opt-in",
+    async (availableAfterUntrusted) => {
+      const state = await fixture();
+      state.followup("mcp");
+
+      try {
+        await writeFile(
+          join(state.directory, "config.json"),
+          JSON.stringify({
+            provider: "fixture",
+            model: "fixture",
+            mcpServers: [{ ...state.server, availableAfterUntrusted }],
+          }),
+        );
+        expect(await state.invoke(["chat", "new", "Read the fixture twice"])).toContain("Done");
+        const sessions = JSON.parse(await state.invoke(["chat", "sessions"]));
+        const saved = JSON.parse(await state.invoke(["chat", "show", sessions[0].id]));
+        expect(
+          saved.toolCalls.map((call: { status: string; failureReason: string | null }) => [
+            call.status,
+            call.failureReason,
+          ]),
+        ).toEqual([
+          ["completed", null],
+          availableAfterUntrusted ? ["completed", null] : ["failed", "agent:tool-permission"],
+        ]);
+        expect(state.requests[1]!.tools.some((tool) => tool.namespace === "poppet_mcp")).toBe(
+          availableAfterUntrusted,
         );
       } finally {
         await state.close();

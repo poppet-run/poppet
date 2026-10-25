@@ -438,7 +438,8 @@ Reported tool failures, including refused arguments and failed page reads, retur
 the model within the existing budgets. An invalid batch executes none of its
 calls. Uncertain effects end the run without replay. Once page, search, or MCP
 content enters a run, task management, memory changes, and MCP tools are
-withdrawn until a new owner message.
+withdrawn until a new owner message. A server configured with
+`availableAfterUntrusted` keeps its allowed MCP tools.
 See [chat limits](chat.md#context-and-run-limits).
 
 ### Reviewed host commands
