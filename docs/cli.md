@@ -134,8 +134,7 @@ procedure with that session or task. See [skills](skills.md) for examples and li
 | Command                          | Action                                              |
 | -------------------------------- | --------------------------------------------------- |
 | `memory list`                    | List explicitly saved facts.                        |
-| `memory remember <key> <value>`  | Create a new fact.                                  |
-| `memory replace <key> <value>`   | Change an existing fact.                            |
+| `memory set <key> <value>`       | Create a fact or replace its value.                 |
 | `memory forget <key>`            | Delete a saved fact.                                |
 | `memory history <key>`           | Show a fact's revisions with origin and source run. |
 | `memory revert <key> <revision>` | Restore an earlier revision as a new revision.      |

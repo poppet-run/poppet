@@ -272,6 +272,7 @@ describe.concurrent("memory.ts", () => {
         list: Effect.die("Chat must use the snapshot operation."),
         remember: () => Effect.die("Chat must not create facts."),
         replace: () => Effect.die("Chat must not replace facts."),
+        set: () => Effect.die("Chat must not set facts."),
         forget: () => Effect.die("Chat must not forget facts."),
       };
 
@@ -607,6 +608,7 @@ describe.concurrent("memory.ts", () => {
           return fact;
         }),
       replace: () => Effect.die("Unexpected replace"),
+      set: () => Effect.die("Unexpected set"),
       forget: () => Effect.die("Unexpected forget"),
     };
 
