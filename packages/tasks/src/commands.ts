@@ -2,7 +2,7 @@ import { Skills } from "@poppet/agent";
 import { DeliveryDestination, Store } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
-import { TaskCommand, TaskError } from "#src/task-schema";
+import { TaskCommand, TaskError, isTaskControl } from "#src/task-schema";
 import { TaskRepository, type TaskStore } from "#src/task-store";
 
 /** Host resolves an explicit remote conversation without coupling tasks to an adapter. */
@@ -113,6 +113,8 @@ export const executeTaskCommand = (
       return yield* repo.add(command.task, now, skill, destination);
     }
 
+    if (isTaskControl(command)) return yield* repo.control(command, now);
+
     switch (command.action) {
       case "list":
         return yield* repo.list();
@@ -130,11 +132,6 @@ export const executeTaskCommand = (
         return yield* repo.cancel(command.id, now);
       case "retry":
         return yield* repo.retry(command.id, now);
-      case "edit":
-      case "skip-next":
-      case "snooze":
-      case "run-now":
-        return yield* repo.control(command, now);
       case "resume-provider":
         yield* repo.resumeProvider(command.provider, now);
 

@@ -18,6 +18,7 @@ import {
 
 import { executeTaskCommand } from "#src/commands";
 import {
+  isTaskControl,
   type Occurrence,
   type ProviderPause,
   type Task,
@@ -238,12 +239,7 @@ export const makeTaskWorker = Effect.gen(function* () {
 
       const result = yield* executeTaskCommand(repo, store, command, now);
 
-      if (
-        command.action === "edit" ||
-        command.action === "skip-next" ||
-        command.action === "snooze" ||
-        command.action === "run-now"
-      )
+      if (isTaskControl(command))
         yield* workerLog(now, `Task ${command.id} action=${command.action}`);
 
       if (command.action === "cancel" && active?.id === command.id)

@@ -120,6 +120,9 @@ export const TaskControl = Schema.Union([
 
 export type TaskControl = typeof TaskControl.Type;
 
+/** Controls act on a task's next execution and share one transaction. */
+export const isTaskControl = Schema.is(TaskControl);
+
 /** Commands accepted by both the local task store and the worker endpoint. */
 export const TaskCommand = Schema.Union([
   TaskControl,

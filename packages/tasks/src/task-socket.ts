@@ -1,7 +1,7 @@
 import { requestWorker, WorkerRequestError } from "@poppet/worker";
 import { Cause, Effect, Exit, Option, Schema } from "effect";
 
-import { TaskCommand, TaskError } from "#src/task-schema";
+import { TaskCommand, TaskError, isTaskControl } from "#src/task-schema";
 
 const Reply = Schema.Union([
   Schema.Struct({ ok: Schema.Literal(true), value: Schema.Json }),
@@ -57,7 +57,7 @@ export const taskResponse = <E extends { readonly message: string }>(
 
     // Leave time to report failure before the ten-second transport deadline.
     const exit = yield* Effect.exit(
-      ["add", "edit", "skip-next", "snooze", "run-now"].includes(command.action)
+      command.action === "add" || isTaskControl(command)
         ? operation.pipe(Effect.timeout("8 seconds"))
         : operation,
     );
