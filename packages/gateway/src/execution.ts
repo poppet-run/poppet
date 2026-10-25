@@ -146,7 +146,7 @@ const outcome = (exit: Exit.Exit<void, ChatFailure | ChannelError>) =>
 
     if (Cause.hasDies(exit.cause) || failure instanceof StoreError) return yield* exit;
     yield* Console.error(
-      "Messaging request failed or was cancelled. Inspect gateway status and saved runs.",
+      "Messaging request failed or was cancelled. Inspect worker status and saved runs.",
     );
   });
 

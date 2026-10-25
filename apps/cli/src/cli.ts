@@ -75,16 +75,16 @@ export const makeCLI = (
     );
 };
 
-export const run = (args: ReadonlyArray<string>) =>
+export const run = (args: ReadonlyArray<string>, worker: typeof manageWorker = manageWorker) =>
   Effect.gen(function* () {
-    // Only gateway commands and messaging workers need external adapter code.
+    // Only gateway setup, messaging workers, and worker status need external adapter code.
     const registeredChannels =
       args[0] === "gateway" ||
       (args[0] === "worker" &&
-        args[1] === "run" &&
+        (args[1] === "run" || args[1] === "status") &&
         !args.some((arg) => ["--tasks-only", "--help", "-h"].includes(arg)))
         ? yield* loadRegisteredChannels
         : channels;
 
-    return yield* makeCLI(providers, undefined, undefined, registeredChannels)(args);
+    return yield* makeCLI(providers, undefined, worker, registeredChannels)(args);
   });

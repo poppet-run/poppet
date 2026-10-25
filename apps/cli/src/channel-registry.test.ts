@@ -3,12 +3,10 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { workerSocketPath } from "@poppet/worker";
 import { ConfigProvider, Console, Deferred, Effect, Fiber } from "effect";
 
 import { loadRegisteredChannels } from "#src/channel-registry";
 import { run } from "#src/cli";
-import { remoteWorkerCommand } from "#src/worker-commands";
 
 const install = async (directory: string, name: string, registration: string) => {
   const target = join(directory, "gateways", "node_modules", name);
@@ -70,7 +68,9 @@ describe("external gateway registrations", () => {
           };
 
           const invoke = (args: ReadonlyArray<string>) =>
-            run(args).pipe(Effect.provideService(Console.Console, output));
+            run(args, () => Effect.succeed(null)).pipe(
+              Effect.provideService(Console.Console, output),
+            );
 
           yield* invoke(["gateway", "--help"]);
           expect(lines.join("\n")).toContain("Fixture chat");
@@ -80,20 +80,16 @@ describe("external gateway registrations", () => {
             dataDirectory: directory,
             args: ["setup", "--literal"],
           });
-          yield* invoke(["gateway", "status"]);
-          expect(JSON.parse(lines.at(-1)!).channels).toMatchObject([
+          yield* invoke(["worker", "status"]);
+          expect(JSON.parse(lines.at(-1)!).worker.messaging.channels).toMatchObject([
             { id: "discord", enabled: false },
             { id: "fixture", enabled: false },
           ]);
 
           const worker = yield* invoke(["worker", "run"]).pipe(Effect.forkChild);
           yield* Deferred.await(ready).pipe(Effect.timeout("3 seconds"));
-          yield* remoteWorkerCommand(workerSocketPath(directory), { kind: "gateway" }, (text) =>
-            Effect.sync(() => {
-              lines.push(text);
-            }),
-          );
-          expect(JSON.parse(lines.at(-1)!)).toMatchObject({
+          yield* invoke(["worker", "status"]);
+          expect(JSON.parse(lines.at(-1)!).worker.messaging).toMatchObject({
             running: true,
             channels: [{ id: "discord" }, { id: "fixture" }],
           });

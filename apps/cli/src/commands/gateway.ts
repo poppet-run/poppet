@@ -1,11 +1,11 @@
-import { Console, Effect } from "effect";
+import { Effect } from "effect";
 import { Argument, Command } from "effect/cli";
 
-import { setupChannel, stoppedMessagingStatus } from "#src/channels";
+import { setupChannel } from "#src/channels";
 import type { CLIContext } from "#src/commands/context";
 
 export const gatewayCommand = (context: CLIContext) => {
-  const { runtime, channels: registeredChannels, startWorker, throughWorker } = context;
+  const { runtime, channels: registeredChannels, startWorker } = context;
 
   return Command.make("gateway").pipe(
     Command.withDescription("Set up and run messaging channels"),
@@ -25,15 +25,6 @@ export const gatewayCommand = (context: CLIContext) => {
       Command.make("work", {}, () => startWorker("gateway")).pipe(
         Command.withDescription("Run messaging only in the foreground"),
       ),
-      Command.make("status", {}, () =>
-        throughWorker(
-          { kind: "gateway" },
-          stoppedMessagingStatus(registeredChannels).pipe(
-            Effect.flatMap((status) => Console.log(JSON.stringify(status, null, 2))),
-            Effect.provide(runtime.messagingStatus),
-          ),
-        ),
-      ).pipe(Command.withDescription("Show messaging connection, queue, and delivery status")),
     ]),
   );
 };

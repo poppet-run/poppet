@@ -1214,19 +1214,25 @@ describe.concurrent("chat.ts", () => {
       await expect(chat.invoke(["gateway", "missing-channel", "setup"])).rejects.toMatchObject({
         message: expect.stringContaining('Unknown subcommand "missing-channel"'),
       });
-      await chat.invoke(["gateway", "status"]);
-      expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ running: false, enabled: true });
+      await chat.invoke(["worker", "status"]);
+      expect(JSON.parse(chat.lines.at(-1)!).worker.messaging).toMatchObject({
+        running: false,
+        enabled: true,
+      });
 
       await Promise.all(
         [first, second].map((channel) =>
           chat.invoke(["gateway", channel.registration.id, "setup"]),
         ),
       );
-      await chat.invoke(["gateway", "status"]);
-      expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ running: false, enabled: true });
+      await chat.invoke(["worker", "status"]);
+      expect(JSON.parse(chat.lines.at(-1)!).worker.messaging).toMatchObject({
+        running: false,
+        enabled: true,
+      });
       expect([first.state.built, second.state.built]).toEqual([0, 0]);
       stage = "worker startup";
-      worker = await chat.startWorker("gateway");
+      worker = await chat.startWorker();
       expect([first.state.built, second.state.built]).toEqual([1, 1]);
 
       await Promise.all(
@@ -1260,9 +1266,8 @@ describe.concurrent("chat.ts", () => {
       );
       expect(new Set(chat.requests.map((request) => request.sessionId)).size).toBe(2);
       expect(chat.state.peak).toBe(1);
-      chat.chunks.length = 0;
-      await chat.invoke(["gateway", "status"]);
-      expect(JSON.parse(chat.chunks.join(""))).toMatchObject({
+      await chat.invoke(["worker", "status"]);
+      expect(JSON.parse(chat.lines.at(-1)!).worker.messaging).toMatchObject({
         running: true,
         enabled: true,
         queued: 0,
@@ -1316,13 +1321,12 @@ describe.concurrent("chat.ts", () => {
         const task = JSON.parse(chat.lines.at(-1)!);
         worker = await chat.startWorker(mode);
         await chat.invoke(["worker", "status"]);
-        expect(JSON.parse(chat.lines.at(-1)!).worker).toMatchObject({
+        const status = JSON.parse(chat.lines.at(-1)!).worker;
+        expect(status).toMatchObject({
           running: true,
           services: { tasks: mode !== "gateway", gateway: mode !== "tasks" },
         });
-        chat.chunks.length = 0;
-        await chat.invoke(["gateway", "status"]);
-        const gateway = JSON.parse(chat.chunks.join(""));
+        const gateway = status.messaging;
         expect(gateway).toMatchObject({
           running: mode !== "tasks",
           enabled: false,
@@ -1490,11 +1494,6 @@ describe.concurrent("chat.ts", () => {
     };
 
     try {
-      expect(JSON.parse(await readOutput(["gateway", "status"]))).toMatchObject({
-        running: true,
-        enabled: false,
-      });
-
       const unknown = await fetch("http://localhost/v1/unknown", {
         unix: workerSocketPath(chat.directory),
         method: "POST",

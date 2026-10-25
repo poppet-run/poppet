@@ -817,7 +817,7 @@ cross-process model coordination are introduced.
 The host routes task commands to that service while scheduling is active and to
 local task operations otherwise. Gateway-only mode can inspect or configure tasks
 without reconciling due occurrences or running scheduled inference. Task-only
-mode never builds the messaging layer. Status includes the selected services.
+mode never builds the messaging layer. Status includes the selected services and messaging status.
 Fatal service failures stop the host and its siblings before storage is released.
 
 `@poppet/worker` owns request protection, body limits, deadlines, disconnect and
@@ -911,7 +911,7 @@ configured layer or a layer that connects only when built. Discord exposes a
 lightweight `@poppet/channel-discord/registration` entry and loads its SDK lazily.
 Existing setup commands and settings files are unchanged.
 
-`gateway status` reports connection state and configuration errors in a `channels`
+`worker status` reports messaging connection state and configuration errors in a `channels`
 array, with enabled state and persisted queue/delivery totals at the top level.
 Totals are read once from the shared repository. Configuration failures remain
 isolated to their registration, and stopped status does not build connections.
@@ -1032,7 +1032,7 @@ Discord's Gateway has no application-level acknowledgement tied to SQLite.
 Incoming events use a bounded in-memory queue before acceptance, with dropped
 and rejected counts in local status. Session history and accepted inputs survive
 restart; delivery of events lost before acceptance or after an unrecoverable
-disconnect is not guaranteed. `gateway status` reports persisted pending, failed,
+disconnect is not guaranteed. `worker status` reports persisted pending, failed,
 and uncertain delivery counts even when the worker is stopped. Thread-scoped
 `@Poppet /status` and `@Poppet /cancel` are text controls rather than registered
 slash commands. Live Discord checks remain manual.
