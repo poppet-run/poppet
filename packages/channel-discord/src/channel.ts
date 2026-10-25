@@ -171,11 +171,21 @@ export const discordChannelLayer = (
 
       yield* login.pipe(Effect.forkScoped);
 
+      // A text channel or thread in the configured server; null for anything else.
+      const guildChannel = async (id: string, force = false) => {
+        const channel = await client.channels.fetch(id, { force });
+
+        if (channel === null || (channel.type !== ChannelType.GuildText && !channel.isThread()))
+          return null;
+
+        return channel.guildId === settings.guildId ? channel : null;
+      };
+
       const checkAccess = (message: IncomingMessage, conversationId: string) =>
         Effect.tryPromise({
           try: async () => {
             const botId = requireReady();
-            const target = await client.channels.fetch(conversationId, { force: true });
+            const target = await guildChannel(conversationId, true);
 
             const parent =
               conversationId === message.parentId
@@ -183,10 +193,9 @@ export const discordChannelLayer = (
                 : await client.channels.fetch(message.parentId, { force: true });
 
             if (
-              (target?.type !== ChannelType.GuildText && !target?.isThread()) ||
+              target === null ||
               parent?.type !== ChannelType.GuildText ||
               parent.guildId !== settings.guildId ||
-              target.guildId !== settings.guildId ||
               message.scopeId !== settings.guildId ||
               message.senderId !== settings.ownerId ||
               (target.isThread()
@@ -295,13 +304,9 @@ export const discordChannelLayer = (
                 });
 
               requireReady();
-              const target = await client.channels.fetch(conversationId, { force: true });
+              const target = await guildChannel(conversationId, true);
 
-              if (
-                (target?.type !== ChannelType.GuildText && !target?.isThread()) ||
-                target.guildId !== settings.guildId ||
-                (target.isThread() && !target.parentId)
-              )
+              if (target === null || (target.isThread() && !target.parentId))
                 throw new ChannelError({
                   reason: "permission",
                   message:
@@ -317,14 +322,9 @@ export const discordChannelLayer = (
             try: async () => {
               requireReady();
 
-              const channel = await client.channels.fetch(
-                message.conversationId ?? message.parentId,
-              );
+              const channel = await guildChannel(message.conversationId ?? message.parentId);
 
-              if (
-                (channel?.type !== ChannelType.GuildText && !channel?.isThread()) ||
-                channel.guildId !== settings.guildId
-              )
+              if (channel === null)
                 throw new ChannelError({
                   reason: "permission",
                   message: "Cannot mark this message.",
@@ -415,12 +415,9 @@ export const discordChannelLayer = (
           Effect.tryPromise({
             try: async () => {
               requireReady();
-              const target = await client.channels.fetch(conversationId);
+              const target = await guildChannel(conversationId);
 
-              if (
-                (target?.type !== ChannelType.GuildText && !target?.isThread()) ||
-                target.guildId !== settings.guildId
-              )
+              if (target === null)
                 throw new ChannelError({
                   reason: "permission",
                   message: "Discord text channel or thread is unavailable.",
