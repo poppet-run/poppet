@@ -285,7 +285,8 @@ export const makeMCPLive = (toolBytes: number) =>
     Effect.gen(function* () {
       const servers = yield* mcpServers;
       const credentials = yield* ApiKeyStore;
-      const lock = yield* Semaphore.make(1);
+      // Each server starts under its own lock, so one slow server never delays the others.
+      const locks = new Map(servers.map((config) => [config.id, Semaphore.makeUnsafe(1)]));
       const clock = yield* Clock.Clock;
       const connections = new Map<string, Connection>();
 
@@ -405,7 +406,7 @@ export const makeMCPLive = (toolBytes: number) =>
           );
 
           return connection;
-        }).pipe(lock.withPermit);
+        }).pipe(locks.get(config.id)!.withPermit);
 
       const status = Effect.sync(() =>
         servers.map((config) => {
@@ -454,24 +455,23 @@ export const makeMCPLive = (toolBytes: number) =>
         status,
         tools,
         snapshot: (scheduled) =>
-          Effect.gen(function* () {
-            const allowed: MCPTool[] = [];
-
-            for (const config of servers) {
-              if (!config.enabled || (scheduled && (config.scheduledTools?.length ?? 0) === 0))
-                continue;
-              const connection = yield* connect(config);
-
-              if (connection.state !== "connected") continue;
-              allowed.push(
-                ...connection.tools.filter(
-                  (tool) => !scheduled || config.scheduledTools?.includes(tool.toolName),
+          Effect.forEach(
+            servers.filter(
+              (config) =>
+                config.enabled && (!scheduled || (config.scheduledTools?.length ?? 0) > 0),
+            ),
+            (config) =>
+              connect(config).pipe(
+                Effect.map((connection) =>
+                  connection.state === "connected"
+                    ? connection.tools.filter(
+                        (tool) => !scheduled || config.scheduledTools?.includes(tool.toolName),
+                      )
+                    : [],
                 ),
-              );
-            }
-
-            return allowed;
-          }),
+              ),
+            { concurrency: "unbounded" },
+          ).pipe(Effect.map((perServer) => perServer.flat())),
       };
     }),
   );

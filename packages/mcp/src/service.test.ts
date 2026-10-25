@@ -1,5 +1,5 @@
 import { describe, expect, jest, test } from "bun:test";
-import { mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,20 +16,31 @@ const fixture = async (
   tools = ["read", "write"],
   scheduledTools: string[] = [],
   environment: MCPServer["environment"] = {},
+  copies = 1,
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-"));
   const errors: string[] = [];
 
-  const server: MCPServer = {
-    id: "fixture",
+  // Further copies run the same fixture in their own subdirectory.
+  const serverDirectories = [
+    directory,
+    ...Array.from({ length: copies - 1 }, (_, index) => join(directory, `copy-${index + 1}`)),
+  ];
+
+  await Promise.all(serverDirectories.slice(1).map((path) => mkdir(path)));
+
+  const servers: MCPServer[] = serverDirectories.map((path, index) => ({
+    id: index === 0 ? "fixture" : `fixture-${index}`,
     enabled: true,
     command: process.execPath,
-    args: [fileURLToPath(new URL("./test/fixture.ts", import.meta.url)), directory, mode],
-    cwd: directory,
+    args: [fileURLToPath(new URL("./test/fixture.ts", import.meta.url)), path, mode],
+    cwd: path,
     tools,
     scheduledTools,
     environment,
-  };
+  }));
+
+  const server = servers[0]!;
 
   const layer = makeMCPLive(1024).pipe(
     Layer.provide([
@@ -38,12 +49,13 @@ const fixture = async (
         write: () => Effect.die("Unexpected credential write"),
         remove: () => Effect.die("Unexpected credential deletion"),
       }),
-      ConfigProvider.layer(ConfigProvider.fromUnknown({ mcpServers: JSON.stringify([server]) })),
+      ConfigProvider.layer(ConfigProvider.fromUnknown({ mcpServers: JSON.stringify(servers) })),
     ]),
   );
 
   return {
     directory,
+    serverDirectories,
     errors,
     server,
     layer,
@@ -66,6 +78,8 @@ const fixture = async (
     close: () => rm(directory, { recursive: true, force: true }),
   };
 };
+
+const started = (path: string) => readdir(path).then((names) => names.includes("pid"));
 
 const dead = (pid: number) => {
   try {
@@ -576,6 +590,40 @@ describe("MCP", () => {
         ),
       );
       expect(dead(Number(await readFile(join(state.directory, "pid"), "utf8")))).toBe(true);
+    } finally {
+      await state.close();
+    }
+  }, 10000);
+
+  test("when several servers are slow to start, starts them all at once", async () => {
+    const state = await fixture("startup-hang", ["read", "write"], [], {}, 2);
+
+    try {
+      await state.run(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const mcp = yield* MCP;
+            const snapshot = yield* mcp.snapshot(false).pipe(Effect.forkScoped);
+
+            // Startup waits up to eight seconds per server, so seeing both well before then shows they overlap.
+            const deadline = Date.now() + 4000;
+
+            while (Date.now() < deadline) {
+              const ready = yield* Effect.promise(() =>
+                Promise.all(state.serverDirectories.map(started)),
+              );
+
+              if (ready.every(Boolean)) break;
+              yield* Effect.sleep("20 millis");
+            }
+
+            expect(
+              yield* Effect.promise(() => Promise.all(state.serverDirectories.map(started))),
+            ).toEqual([true, true]);
+            yield* Fiber.interrupt(snapshot);
+          }),
+        ),
+      );
     } finally {
       await state.close();
     }
