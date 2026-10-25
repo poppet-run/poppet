@@ -23,11 +23,24 @@ export const migrationStatements = (statements: ReadonlyArray<string>) =>
     for (const statement of statements) yield* sql.unsafe(statement);
   });
 
-export const storeSchema: PackageSchema = {
-  table: "effect_sql_migrations",
-  version: 1,
-  loader: Migrator.fromRecord({ "1_baseline": migrationStatements(baseline) }),
-};
+/**
+ * A package's ledger and migrations, each keyed `<id>_<name>` and listed as SQL statements;
+ * the build's version is the highest ID. Append new entries and never edit an applied one.
+ */
+export const packageSchema = (
+  table: string,
+  migrations: Record<string, ReadonlyArray<string>>,
+): PackageSchema => ({
+  table,
+  version: Math.max(...Object.keys(migrations).map((key) => Number.parseInt(key, 10))),
+  loader: Migrator.fromRecord(
+    Object.fromEntries(
+      Object.entries(migrations).map(([key, statements]) => [key, migrationStatements(statements)]),
+    ),
+  ),
+});
+
+export const storeSchema = packageSchema("effect_sql_migrations", { "1_baseline": baseline });
 
 const migrationFailure = (message: string) => new StoreError({ reason: "migration", message });
 

@@ -1,5 +1,4 @@
-import { migrationStatements } from "@poppet/store";
-import { Migrator } from "effect/sql";
+import { packageSchema } from "@poppet/store";
 
 // Scheduled tasks. Deleting a task deletes its history. An occurrence snapshots its task definition. Each statement runs separately; append new migrations, never edit applied ones.
 const baseline: ReadonlyArray<string> = [
@@ -58,8 +57,4 @@ const baseline: ReadonlyArray<string> = [
 ];
 
 /** Migrations for this package's tables, recorded in their own ledger. */
-export const taskSchema = {
-  table: "task_migrations",
-  version: 1,
-  loader: Migrator.fromRecord({ "1_baseline": migrationStatements(baseline) }),
-};
+export const taskSchema = packageSchema("task_migrations", { "1_baseline": baseline });

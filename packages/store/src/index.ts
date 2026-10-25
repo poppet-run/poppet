@@ -6,7 +6,7 @@ export { StoreDatabase, StoreDatabaseLive } from "#src/database";
 
 export { decodeRow, decodeRows } from "#src/sql";
 
-export { migrate, migrationStatements, type PackageSchema } from "#src/migrations";
+export { migrate, packageSchema, type PackageSchema } from "#src/migrations";
 
 export {
   DeliveryDestination,
