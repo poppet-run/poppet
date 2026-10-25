@@ -1,8 +1,9 @@
-import { ProviderConnection, type ProviderRegistration } from "@poppet/provider";
+import { CredentialInput, ProviderConnection, type ProviderRegistration } from "@poppet/provider";
 import { Effect, Layer } from "effect";
 
 import { CredentialStoreLive } from "#src/auth/credentials";
 import { ChatGPTAuth, ChatGPTAuthLive } from "#src/auth/service";
+import { ConnectionError } from "#src/connection";
 import { providerFailure } from "#src/model/errors";
 import { ChatGPTModel, ChatGPTModelLive, ChatGPTProviderLive } from "#src/model/service";
 import { OAuthClientLive } from "#src/oauth/client";
@@ -21,8 +22,22 @@ const connection = Layer.effect(
     const model = yield* ChatGPTModel;
 
     return {
-      login: () =>
-        auth.login.pipe(
+      login: (options) =>
+        Effect.gen(function* () {
+          const input = yield* CredentialInput;
+
+          return yield* auth.login({
+            noBrowser: !options.openBrowser,
+            callbackPort: options.callbackPort,
+            paste: input
+              .readLine("openai-chatgpt", "Callback URL: ")
+              .pipe(
+                Effect.mapError(
+                  (error) => new ConnectionError({ reason: "callback", message: error.message }),
+                ),
+              ),
+          });
+        }).pipe(
           Effect.mapError(providerFailure),
           Effect.map((status) =>
             status.planUsage
@@ -52,7 +67,7 @@ export const chatGPT: ProviderRegistration = {
   name: "ChatGPT",
   authentication: {
     apiKey: false,
-    help: "Browser sign-in with ChatGPT plan-usage consent.",
+    help: "Browser sign-in with ChatGPT plan-usage consent. Over SSH or with --no-browser, finish in any browser and paste the callback address.",
   },
   layer: Layer.effectContext(
     Layer.build(

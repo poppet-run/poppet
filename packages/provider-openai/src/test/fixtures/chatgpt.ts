@@ -111,7 +111,7 @@ export const createHarness = async () => {
 export const login = Effect.gen(function* () {
   const auth = yield* ChatGPTAuth;
 
-  return yield* auth.login;
+  return yield* auth.login({ noBrowser: false, callbackPort: null, paste: Effect.never });
 });
 
 export const status = Effect.gen(function* () {

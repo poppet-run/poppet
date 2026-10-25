@@ -12,7 +12,7 @@ export class ProviderEnvironment extends Context.Service<
   }
 >()("poppet/ProviderEnvironment") {}
 
-/** Host-owned terminal input that providers request when a key is needed. */
+/** Host-owned terminal input that providers request when a key or pasted text is needed. */
 export class CredentialInput extends Context.Service<
   CredentialInput,
   {
@@ -20,12 +20,21 @@ export class CredentialInput extends Context.Service<
       provider: ProviderId,
       stdin: boolean,
     ) => Effect.Effect<Redacted.Redacted<string>, ProviderError>;
+    /** Reads one visible line; without an interactive terminal it never completes. */
+    readonly readLine: (
+      provider: ProviderId,
+      prompt: string,
+    ) => Effect.Effect<string, ProviderError>;
   }
 >()("poppet/CredentialInput") {}
 
-/** Key-input choices supplied by the host's login command. */
+/** Sign-in choices supplied by the host's login command. */
 export interface LoginOptions {
   readonly keyStdin: boolean;
+  /** False prints the sign-in link instead of opening the system browser. */
+  readonly openBrowser: boolean;
+  /** A fixed browser-callback port, such as one forwarded over SSH; null picks any free port. */
+  readonly callbackPort: number | null;
 }
 
 /** Provider-owned authentication, connection status, and live model verification. */

@@ -12,6 +12,42 @@ poppet provider models openai-chatgpt
 poppet provider status openai-chatgpt
 ```
 
+## Headless and remote machines
+
+The browser's callback goes to `127.0.0.1` on the machine running that browser.
+On a server or VM, finish sign-in in a browser elsewhere and bring the callback
+back in one of two ways.
+
+**Paste the callback address.** Over SSH (`SSH_CONNECTION` or `SSH_TTY` is set),
+on Linux without `DISPLAY` or `WAYLAND_DISPLAY`, or with `--no-browser`, login
+prints the sign-in link instead of opening a browser:
+
+```sh
+poppet provider login openai-chatgpt --no-browser
+```
+
+Open the link in a browser on any device and sign in. That browser then shows a
+connection error for `http://127.0.0.1:<port>/auth/callback?...`. Copy the full
+address from its address bar and paste it at the `Callback URL:` prompt. Poppet
+checks a pasted address exactly as it checks a browser callback: it must carry
+this attempt's state and use the printed callback port, and an address that
+does not match is ignored so you can paste again. Sign-in still times out after
+five minutes. Esc, Ctrl+C, or Ctrl+D cancels it.
+
+**Forward the callback port.** Pin the listener port and forward it from the
+machine with the browser:
+
+```sh
+ssh -L 1455:127.0.0.1:1455 <host>
+poppet provider login openai-chatgpt --no-browser --callback-port 1455
+```
+
+The browser's callback then reaches Poppet through the tunnel and no paste is
+needed. If the port is already in use, login fails before printing a link.
+
+Both ways sign in on the remote machine itself, so it keeps its own host
+identifier and registration, and no tokens leave it.
+
 ## Registration and consent
 
 Initial sign-in registers Poppet with its own host identifier and issued client

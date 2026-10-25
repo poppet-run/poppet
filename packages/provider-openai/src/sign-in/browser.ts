@@ -28,3 +28,11 @@ export const openBrowser = (url: string) =>
       if (status !== 0) return yield* Effect.fail(browserError());
     }),
   );
+
+/**
+ * Reports a session whose system browser is missing or belongs to another
+ * machine, so sign-in prints its link and accepts a pasted callback instead.
+ */
+export const remoteSession = (environment: Record<string, string | undefined>, platform: string) =>
+  Boolean(environment.SSH_CONNECTION || environment.SSH_TTY) ||
+  (platform === "linux" && !environment.DISPLAY && !environment.WAYLAND_DISPLAY);
