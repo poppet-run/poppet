@@ -1,28 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import {
-  Agent,
-  AgentLive,
-  Pages,
-  WebSearch,
-  ChatSettings,
-  defaultPolicy,
-  ModelResolver,
-  Skills,
-  SkillsLive,
-} from "@poppet/agent";
+import { Agent, Pages, WebSearch, Skills, SkillsLive } from "@poppet/agent";
+import { agentHarness, testModel } from "@poppet/agent/test";
 import { AppConfig } from "@poppet/config";
-import { LocalMemoryLive, Memory } from "@poppet/memory";
+import { Memory } from "@poppet/memory";
 import {
   ProviderError,
   type ModelOperations,
   type ModelRequest,
   type Output,
 } from "@poppet/provider";
-import { SessionReadResult, Store, StoreLive } from "@poppet/store";
+import { SessionReadResult, Store } from "@poppet/store";
 import { WebSearchError } from "@poppet/web-search";
 import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { Clock, Console, Deferred, Effect, Fiber, Layer, Match, Schema, Stream } from "effect";
@@ -73,7 +63,8 @@ const fixture = async (
   pages: Pages["Service"] = { fetch: () => Effect.die("Unexpected page fetch") },
   webSearch: WebSearch["Service"] = { search: null },
 ) => {
-  const directory = await mkdtemp(join(tmpdir(), "p7-"));
+  const harness = await agentHarness();
+  const { directory, config, store, settings } = harness;
   const requests: ModelRequest[] = [];
   const lines: string[] = [];
   const errors: string[] = [];
@@ -88,54 +79,15 @@ const fixture = async (
     },
   };
 
-  const config = Layer.succeed(AppConfig, {
-    applicationName: "Test",
-    dataDirectory: directory,
-    provider: "test-provider",
-    model: "test-model",
-  });
-
-  const model: ModelOperations = {
-    description: {
-      provider: "test-provider",
-      id: "test-model",
-      name: "Test",
-      capabilities: {
-        tools: true,
-        generationSettings: [],
-        contextWindow: null,
-        maxOutputTokens: null,
-      },
-    },
-    stream: (request) => {
-      requests.push(request);
-      const last = request.messages.at(-1);
-
-      // Like a model answering with the failure, end the loop after a reported tool error.
-      return last?.role === "tool" && last.output.startsWith('{"error":')
-        ? final()
-        : stream(request);
-    },
-  };
-
-  const store = StoreLive.pipe(Layer.provideMerge(config));
-  const memory = LocalMemoryLive.pipe(Layer.provideMerge(store));
+  const model = testModel({ stream, answer: final, requests });
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
-  const settings = Layer.succeed(ChatSettings, defaultPolicy);
   const skills = SkillsLive.pipe(Layer.provide(config));
 
-  const agent = AgentLive.pipe(
-    Layer.provideMerge(
-      Layer.mergeAll(
-        store,
-        memory,
-        settings,
-        ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
-        Layer.succeed(WebSearch, webSearch),
-        Layer.succeed(Pages, pages),
-        Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),
-      ),
-    ),
+  const agent = harness.agent(
+    () => Effect.succeed(model),
+    ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
+    Layer.succeed(WebSearch, webSearch),
+    Layer.succeed(Pages, pages),
   );
 
   const layer = Layer.mergeAll(agent, tasks, skills);
@@ -165,7 +117,7 @@ const fixture = async (
       Effect.runPromise(
         program.pipe(Effect.provide(layer), Effect.provideService(Console.Console, output)),
       ),
-    close: () => rm(directory, { recursive: true, force: true }),
+    close: harness.close,
   };
 };
 

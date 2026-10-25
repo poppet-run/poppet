@@ -1,25 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import {
-  Agent,
-  AgentLive,
-  Bash,
-  ChatSettings,
-  defaultPolicy,
-  type ChatPolicy,
-  ModelResolver,
-  Pages,
-  WebSearch,
-  Skills,
-  SkillsLive,
-} from "@poppet/agent";
-import { AppConfig } from "@poppet/config";
-import { LocalMemoryLive } from "@poppet/memory";
+import { Agent, Bash, type ChatPolicy, Pages, Skills, SkillsLive } from "@poppet/agent";
+import { agentHarness, optionalService, testModel } from "@poppet/agent/test";
 import { ProviderError, type ModelOperations, type ModelRequest } from "@poppet/provider";
-import { DeliveryDestination, Store, StoreLive } from "@poppet/store";
+import { DeliveryDestination, Store } from "@poppet/store";
 import {
   ChatTasksLive,
   TaskRepository,
@@ -78,7 +64,8 @@ const fixture = async (
   pages: Pages["Service"] = { fetch: () => Effect.die("Unexpected page fetch") },
   bash?: Bash["Service"],
 ) => {
-  const directory = await mkdtemp(join(tmpdir(), "poppet-gateway-"));
+  const harness = await agentHarness(policy);
+  const { directory } = harness;
   const requests: ModelRequest[] = [];
   const sent: { destination: string; text: string; nonce: string }[] = [];
   const marks: { messageId: string; state: string }[] = [];
@@ -118,58 +105,20 @@ const fixture = async (
     ...overrides,
   });
 
-  const config = Layer.succeed(AppConfig, {
-    applicationName: "Test",
-    dataDirectory: directory,
-    provider: "test-provider",
-    model: "test-model",
-  });
-
-  const store = StoreLive.pipe(Layer.provideMerge(config));
-  const settings = Layer.succeed(ChatSettings, { ...defaultPolicy, ...policy });
+  const { config, store, settings } = harness;
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
   const skills = SkillsLive.pipe(Layer.provide(config));
+  const model = testModel({ stream, answer: () => response(), requests, capabilities: { tools } });
 
-  const agent = AgentLive.pipe(
-    Layer.provideMerge(
-      Layer.mergeAll(
-        store,
-        LocalMemoryLive.pipe(Layer.provide(store)),
-        settings,
-        ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
-        Layer.succeed(WebSearch, { search: null }),
-        Layer.succeed(Pages, pages),
-        bash === undefined ? Layer.empty : Layer.succeed(Bash, bash),
-        Layer.succeed(ModelResolver, {
-          resolve: (provider, model) => {
-            expect([provider, model]).toEqual(["test-provider", "test-model"]);
+  const agent = harness.agent(
+    (provider, id) => {
+      expect([provider, id]).toEqual(["test-provider", "test-model"]);
 
-            return Effect.succeed({
-              description: {
-                provider,
-                id: model,
-                name: "Test",
-                capabilities: {
-                  tools,
-                  generationSettings: [],
-                  contextWindow: null,
-                  maxOutputTokens: null,
-                },
-              },
-              stream: (request) => {
-                requests.push(request);
-                const last = request.messages.at(-1);
-
-                // Like a model answering with the failure, end the loop after a reported tool error.
-                return last?.role === "tool" && last.output.startsWith('{"error":')
-                  ? response()
-                  : stream(request);
-              },
-            });
-          },
-        }),
-      ),
-    ),
+      return Effect.succeed(model);
+    },
+    ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
+    Layer.succeed(Pages, pages),
+    optionalService(Bash, bash),
   );
 
   const layer = GatewayLive.pipe(
@@ -211,7 +160,7 @@ const fixture = async (
           Effect.provideService(Console.Console, quietConsole),
         ),
       ),
-    close: () => rm(directory, { recursive: true, force: true }),
+    close: harness.close,
   };
 };
 

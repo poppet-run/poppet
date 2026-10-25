@@ -1,25 +1,22 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { AppConfig } from "@poppet/config";
-import { Memory, MemoryError, LocalMemoryLive, type MemoryFact } from "@poppet/memory";
+import { Memory, MemoryError, type MemoryFact } from "@poppet/memory";
 import {
   type Completion,
   type ModelOperations,
   type ModelRequest,
   type Output,
 } from "@poppet/provider";
-import { Store, StoreLive } from "@poppet/store";
+import { Store } from "@poppet/store";
 import { Effect, Fiber, Layer, Stream } from "effect";
 
 import { instructions } from "#src/context";
-import { Pages } from "#src/pages";
-import { Agent, AgentLive, ModelResolver } from "#src/service";
-import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
-import { WebSearch } from "#src/web-search";
+import { Agent } from "#src/service";
+import type { ChatPolicy } from "#src/settings";
+import { agentHarness, testModel } from "#src/test/harness";
 
 const completion = (calls = false): Completion => ({
   output: calls
@@ -38,76 +35,30 @@ const completion = (calls = false): Completion => ({
   usage: null,
 });
 
+const done = () => Stream.make({ type: "completed" as const, response: completion() });
+
 interface MemoryFixtureState {
   resolved: number;
   stream: ModelOperations["stream"];
 }
 
 const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Memory["Service"]) => {
-  const directory = await mkdtemp(join(tmpdir(), "poppet-memory-agent-"));
+  const harness = await agentHarness(overrides);
+  const { directory } = harness;
   const profile = join(directory, "profile.md");
   const soul = join(directory, "soul.md");
   const requests: ModelRequest[] = [];
+  const state: MemoryFixtureState = { resolved: 0, stream: done };
+  const model = testModel({ stream: (request) => state.stream(request), answer: done, requests });
 
-  const state: MemoryFixtureState = {
-    resolved: 0,
-    stream: () => Stream.make({ type: "completed" as const, response: completion() }),
-  };
+  const layer = harness.agent(
+    () =>
+      Effect.sync(() => {
+        state.resolved++;
 
-  const config = Layer.succeed(AppConfig, {
-    applicationName: "Test",
-    dataDirectory: directory,
-    provider: "test-provider",
-    model: "test-model",
-  });
-
-  const model: ModelOperations = {
-    description: {
-      provider: "test-provider",
-      id: "test-model",
-      name: "Test",
-      capabilities: {
-        tools: true,
-        generationSettings: [],
-        contextWindow: null,
-        maxOutputTokens: null,
-      },
-    },
-    stream: (request) => {
-      requests.push(request);
-      const last = request.messages.at(-1);
-
-      // Like a model answering with the failure, end the loop after a reported tool error.
-      return last?.role === "tool" && last.output.startsWith('{"error":')
-        ? Stream.make({ type: "completed" as const, response: completion() })
-        : state.stream(request);
-    },
-  };
-
-  const store = StoreLive.pipe(Layer.provideMerge(config));
-
-  const memory = injectedMemory
-    ? Layer.succeed(Memory, injectedMemory)
-    : LocalMemoryLive.pipe(Layer.provide(store));
-
-  const layer = AgentLive.pipe(
-    Layer.provideMerge(
-      Layer.mergeAll(
-        store,
-        memory,
-        Layer.succeed(ChatSettings, { ...defaultPolicy, ...overrides }),
-        Layer.succeed(WebSearch, { search: null }),
-        Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
-        Layer.succeed(ModelResolver, {
-          resolve: () =>
-            Effect.sync(() => {
-              state.resolved++;
-
-              return model;
-            }),
-        }),
-      ),
-    ),
+        return model;
+      }),
+    injectedMemory ? Layer.succeed(Memory, injectedMemory) : Layer.empty,
   );
 
   return {
@@ -118,7 +69,7 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Mem
     state,
     run: <A, E>(program: Effect.Effect<A, E, Agent | Store | Memory>) =>
       Effect.runPromise(program.pipe(Effect.provide(layer))),
-    close: () => rm(directory, { recursive: true, force: true }),
+    close: harness.close,
   };
 };
 

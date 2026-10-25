@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
-import { AppConfig } from "@poppet/config";
-import { LocalMemoryLive } from "@poppet/memory";
 import {
   ProviderError,
   type Completion,
@@ -14,15 +9,14 @@ import {
   type ModelOperations,
   type ModelRequest,
 } from "@poppet/provider";
-import { Store, StoreLive } from "@poppet/store";
-import { Console, Deferred, Effect, Fiber, Layer, Match, Stream } from "effect";
+import { Store } from "@poppet/store";
+import { Console, Deferred, Effect, Fiber, Match, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { AgentError } from "#src/errors";
-import { Pages } from "#src/pages";
-import { Agent, AgentLive, ModelResolver, type ChatEvent } from "#src/service";
-import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
-import { WebSearch } from "#src/web-search";
+import { Agent, type ChatEvent, type ModelResolver } from "#src/service";
+import { defaultPolicy, type ChatPolicy } from "#src/settings";
+import { agentHarness } from "#src/test/harness";
 
 describe("logChatDiagnostic", () => {
   test.each([false, true])(
@@ -94,36 +88,13 @@ const fixture = async (
   logReasoning = false,
   policy: Partial<ChatPolicy> = {},
 ) => {
-  const directory = await mkdtemp(join(tmpdir(), "poppet-agent-"));
-
-  const store = StoreLive.pipe(
-    Layer.provideMerge(
-      Layer.succeed(AppConfig, {
-        applicationName: "Test",
-        dataDirectory: directory,
-        provider: "test-provider",
-        model: "test-model",
-      }),
-    ),
-  );
-
-  const layer = AgentLive.pipe(
-    Layer.provideMerge(
-      Layer.mergeAll(
-        store,
-        LocalMemoryLive.pipe(Layer.provide(store)),
-        Layer.succeed(WebSearch, { search: null }),
-        Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
-        Layer.succeed(ModelResolver, { resolve }),
-        Layer.succeed(ChatSettings, { ...defaultPolicy, logReasoning, ...policy }),
-      ),
-    ),
-  );
+  const harness = await agentHarness({ logReasoning, ...policy });
+  const layer = harness.agent(resolve);
 
   return {
     run: <A, E>(program: Effect.Effect<A, E, Agent | Store>) =>
       Effect.runPromise(program.pipe(Effect.provide(layer))),
-    close: () => rm(directory, { recursive: true, force: true }),
+    close: harness.close,
   };
 };
 
