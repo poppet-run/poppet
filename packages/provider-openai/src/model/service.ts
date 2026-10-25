@@ -16,8 +16,12 @@ import { Clock, Context, Effect, Layer, Redacted, Schema, Semaphore } from "effe
 import { ChatGPTAuth } from "#src/auth/service";
 import { ConnectionError } from "#src/connection";
 import { clientFor, modelFailure } from "#src/model/client";
-import { connectionFailure, providerFailure } from "#src/model/errors";
-import { inferenceFailure, remoteFailure } from "#src/model/errors";
+import {
+  chatGPTReason,
+  connectionFailure,
+  inferenceFailure,
+  providerFailure,
+} from "#src/model/errors";
 import type { HttpFetch } from "#src/oauth/http";
 
 const ModelCatalog = Schema.Struct({
@@ -135,8 +139,7 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
         ),
         {
           failure: (cause) => inferenceFailure("openai-chatgpt", cause),
-          remoteFailure: (status, code, requestId) =>
-            remoteFailure("openai-chatgpt", status, code, requestId),
+          classify: chatGPTReason,
         },
       );
 

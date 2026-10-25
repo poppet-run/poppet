@@ -218,11 +218,14 @@ export const responsesModel = (
   options: InferenceOptions = {},
 ): ModelOperations => {
   const failure =
-    options.failure ?? ((cause: unknown) => inferenceFailure(description.provider, cause));
+    options.failure ??
+    ((cause: unknown) => inferenceFailure(description.provider, cause, options.classify));
 
-  const remote =
-    options.remoteFailure ??
-    ((status, code, requestId) => remoteFailure(description.provider, status, code, requestId));
+  const remote = (
+    status: number | undefined,
+    code: string | null | undefined,
+    requestId: string | null | undefined,
+  ) => remoteFailure(description.provider, status, code, requestId, options.classify);
 
   return {
     description,

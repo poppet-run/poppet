@@ -168,7 +168,8 @@ export const chatCompletionsModel = (
   options: ChatOptions = {},
 ): ModelOperations => {
   const failure =
-    options.failure ?? ((cause: unknown) => inferenceFailure(description.provider, cause));
+    options.failure ??
+    ((cause: unknown) => inferenceFailure(description.provider, cause, options.classify));
 
   return {
     description,

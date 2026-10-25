@@ -1,7 +1,12 @@
-import { ProviderError } from "@poppet/provider";
-import { inferenceFailure, remoteFailure, type ChatOptions } from "@poppet/provider/protocol";
+import type { ProviderError } from "@poppet/provider";
+import {
+  inferenceFailure,
+  remoteFailure,
+  type ChatOptions,
+  type RemoteReason,
+} from "@poppet/provider/protocol";
 import { Option, Schema } from "effect";
-import { APIError } from "openai";
+import { APIConnectionError, APIError, APIUserAbortError } from "openai";
 import type {
   ChatCompletionAssistantMessageParam,
   ChatCompletionCreateParamsStreaming,
@@ -34,8 +39,21 @@ const Delta = Schema.Struct({
   reasoning_details: Schema.optionalKey(Schema.NullOr(Schema.Array(ReasoningDetail))),
 });
 
+const routerReason: RemoteReason = (status, code) =>
+  status === 402
+    ? "quota"
+    : ["server_error", "provider_error"].includes(code ?? "")
+      ? "temporary"
+      : undefined;
+
 export const routerFailure = (cause: unknown): ProviderError => {
-  if (!(cause instanceof APIError)) return inferenceFailure("openrouter", cause);
+  // Connection failures and aborts have no response to classify.
+  if (
+    !(cause instanceof APIError) ||
+    cause instanceof APIConnectionError ||
+    cause instanceof APIUserAbortError
+  )
+    return inferenceFailure("openrouter", cause);
 
   // Stream errors may encode an HTTP status in their numeric code.
   const numeric = Option.getOrUndefined(
@@ -45,21 +63,8 @@ export const routerFailure = (cause: unknown): ProviderError => {
   );
 
   const code = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(cause.code));
-  const status = cause.status ?? numeric;
-  const error = remoteFailure("openrouter", status, code, cause.requestID);
 
-  const reason =
-    status === 402
-      ? "quota"
-      : ["server_error", "provider_error"].includes(code ?? "")
-        ? "temporary"
-        : error.reason;
-
-  return new ProviderError({
-    ...error,
-    reason,
-    message: `The openrouter request failed (${reason}). No automatic retry was attempted.`,
-  });
+  return remoteFailure("openrouter", cause.status ?? numeric, code, cause.requestID, routerReason);
 };
 
 export const routerOptions: ChatOptions = {

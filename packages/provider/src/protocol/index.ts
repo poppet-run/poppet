@@ -12,6 +12,7 @@ export {
   remoteFailure,
   safeIdentifier,
   type InferenceOptions,
+  type RemoteReason,
 } from "#src/protocol/errors";
 
 export { openAIClient, fetchModelCatalog } from "#src/protocol/openai-compatible";

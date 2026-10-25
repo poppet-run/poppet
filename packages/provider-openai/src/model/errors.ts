@@ -1,9 +1,8 @@
 import { ProviderError, type ProviderId } from "@poppet/provider";
 import {
   inferenceFailure as sharedInferenceFailure,
-  safeIdentifier,
+  type RemoteReason,
 } from "@poppet/provider/protocol";
-import { APIError } from "openai";
 
 import { ConnectionError } from "#src/connection";
 
@@ -56,61 +55,34 @@ export const connectionFailure = (error: ProviderError) => {
   });
 };
 
-export const remoteFailure = (
-  provider: ProviderId,
-  status: number | undefined,
-  rawCode: string | null | undefined,
-  rawRequestId: string | null | undefined,
-) => {
-  const code = safeIdentifier(rawCode);
-  let reason: ProviderError["reason"] = "invalid-request";
+const authenticationCodes = new Set([
+  "subscription_sharing_invalid_user",
+  "invalid_grant",
+  "token_expired",
+  "refresh_token_expired",
+  "refresh_token_invalidated",
+]);
 
-  if (
-    status === 401 ||
-    [
-      "subscription_sharing_invalid_user",
-      "invalid_grant",
-      "token_expired",
-      "refresh_token_expired",
-      "refresh_token_invalidated",
-    ].includes(code ?? "")
-  )
-    reason = "authentication";
-  else if (status === 403 || code === "subscription_sharing_user_not_eligible")
-    reason = "permission";
-  else if (
-    [
-      "subscription_sharing_usage_limit_exceeded",
-      "insufficient_quota",
-      "usage_limit_exceeded",
-    ].includes(code ?? "")
-  )
-    reason = "quota";
-  else if (status === 429) reason = "rate-limit";
-  else if (code === "context_length_exceeded") reason = "context-limit";
-  else if (
-    (status ?? 0) >= 500 ||
-    ["subscription_sharing_usage_unavailable", "subscription_sharing_user_unavailable"].includes(
-      code ?? "",
-    )
-  )
-    reason = "temporary";
+const temporaryCodes = new Set([
+  "subscription_sharing_usage_unavailable",
+  "subscription_sharing_user_unavailable",
+]);
 
-  return new ProviderError({
-    provider,
-    reason,
-    message: `The ${provider} request failed (${reason}). No automatic retry was attempted.`,
-    status,
-    code,
-    requestId: safeIdentifier(rawRequestId),
-  });
+/** ChatGPT subscription codes, checked at the same precedence as the shared status rules. */
+export const chatGPTReason: RemoteReason = (status, code = "") => {
+  if (status === 401 || authenticationCodes.has(code)) return "authentication";
+
+  if (status === 403 || code === "subscription_sharing_user_not_eligible") return "permission";
+
+  if (code === "subscription_sharing_usage_limit_exceeded") return "quota";
+
+  // A rate limit outranks an unavailable subscription, as it does in the shared rules.
+  if (temporaryCodes.has(code) && status !== 429) return "temporary";
+
+  return undefined;
 };
 
-export const inferenceFailure = (provider: ProviderId, cause: unknown): ProviderError => {
-  if (cause instanceof ConnectionError) return providerFailure(cause);
-
-  if (cause instanceof APIError)
-    return remoteFailure(provider, cause.status, cause.code, cause.requestID);
-
-  return sharedInferenceFailure(provider, cause);
-};
+export const inferenceFailure = (provider: ProviderId, cause: unknown): ProviderError =>
+  cause instanceof ConnectionError
+    ? providerFailure(cause)
+    : sharedInferenceFailure(provider, cause, chatGPTReason);
