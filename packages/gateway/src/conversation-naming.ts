@@ -25,32 +25,32 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
         binding.creationMessageId === null
       )
         return;
+
+      const key = {
+        adapter: channel.id,
+        account,
+        conversation: destination,
+        session: binding.sessionId,
+      };
+
       const current = yield* naming.current(entry.message, destination);
 
       if (binding.pendingName !== null && current === binding.pendingName) {
-        yield* gatewayStorage(
-          repo.nameConfirmed(channel.id, account, destination, current, binding.sessionId),
-        );
+        yield* gatewayStorage(repo.nameConfirmed(key, current));
       } else if (current !== binding.managedName || binding.pendingName !== null) {
-        yield* gatewayStorage(
-          repo.disableNaming(channel.id, account, destination, binding.sessionId),
-        );
+        yield* gatewayStorage(repo.disableNaming(key));
 
         return;
       }
 
       const session = yield* store.session(binding.sessionId);
       const title = session?.title;
-      yield* gatewayStorage(
-        repo.nameAttempted(channel.id, account, destination, title ?? null, binding.sessionId),
-      );
+      yield* gatewayStorage(repo.nameAttempted(key, title ?? null));
 
       if (!title || naming.sanitize(title) === current) return;
       const desired = naming.sanitize(title);
 
-      const pending = yield* gatewayStorage(
-        repo.namePending(channel.id, account, destination, desired, binding.sessionId),
-      );
+      const pending = yield* gatewayStorage(repo.namePending(key, desired));
 
       if (!pending) return;
 
@@ -61,14 +61,8 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       if (Result.isSuccess(result)) {
         const confirmed = result.success;
 
-        if (confirmed === null)
-          yield* gatewayStorage(
-            repo.disableNaming(channel.id, account, destination, binding.sessionId),
-          );
-        else
-          yield* gatewayStorage(
-            repo.nameConfirmed(channel.id, account, destination, confirmed, binding.sessionId),
-          );
+        if (confirmed === null) yield* gatewayStorage(repo.disableNaming(key));
+        else yield* gatewayStorage(repo.nameConfirmed(key, confirmed));
 
         return;
       }
@@ -77,20 +71,20 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       const observed = yield* naming.current(entry.message, destination).pipe(Effect.result);
 
       if (Result.isSuccess(observed) && observed.success === desired)
-        yield* gatewayStorage(
-          repo.nameConfirmed(channel.id, account, destination, observed.success, binding.sessionId),
-        );
-      else
-        yield* gatewayStorage(
-          repo.disableNaming(channel.id, account, destination, binding.sessionId),
-        );
+        yield* gatewayStorage(repo.nameConfirmed(key, observed.success));
+      else yield* gatewayStorage(repo.disableNaming(key));
     }).pipe(
       Effect.timeout("10 seconds"),
       Effect.catch(() =>
         entry.conversationId === null || entry.sessionId === null
           ? Effect.void
           : gatewayStorage(
-              repo.disableNaming(channel.id, account, entry.conversationId!, entry.sessionId!),
+              repo.disableNaming({
+                adapter: channel.id,
+                account,
+                conversation: entry.conversationId,
+                session: entry.sessionId,
+              }),
             ).pipe(Effect.asVoid),
       ),
     );
@@ -120,7 +114,12 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
 
       if (current !== binding.managedName && current !== binding.pendingName)
         yield* gatewayStorage(
-          repo.disableNaming(channel.id, account, destination, binding.sessionId),
+          repo.disableNaming({
+            adapter: channel.id,
+            account,
+            conversation: destination,
+            session: binding.sessionId,
+          }),
         );
     }).pipe(Effect.catch(() => Effect.void));
 

@@ -1,6 +1,6 @@
 import { Skills } from "@poppet/agent";
 import { DeliveryDestination, Store } from "@poppet/store";
-import { Context, Effect, Option } from "effect";
+import { Context, Effect, Option, Schema } from "effect";
 
 import { TaskCommand, TaskError } from "#src/task-schema";
 import { TaskRepository, type TaskStore } from "#src/task-store";
@@ -16,11 +16,16 @@ export class TaskDestinations extends Context.Service<
   }
 >()("poppet/TaskDestinations") {}
 
+/** Where one reply chunk is in delivery; "uncertain" means a send began but was not confirmed. */
+export const DeliveryState = Schema.Literals(["pending", "sending", "sent", "failed", "uncertain"]);
+
+export type DeliveryState = typeof DeliveryState.Type;
+
 /** One reply chunk sent for an occurrence; delivery is owned by the messaging gateway. */
 export interface TaskDelivery {
   readonly runId: string;
   readonly position: number;
-  readonly state: "pending" | "sending" | "sent" | "failed" | "uncertain";
+  readonly state: DeliveryState;
   readonly messageId: string | null;
   readonly attempts: number;
 }

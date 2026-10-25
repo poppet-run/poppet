@@ -1841,11 +1841,8 @@ describe("conversationNaming", () => {
           if (!session) throw new Error("Missing session");
           yield* (yield* Store).renameSession(session.id, "Pending title");
           yield* (yield* GatewayRepository).namePending(
-            "discord",
-            "bot",
-            "managed",
+            { adapter: "discord", account: "bot", conversation: "managed", session: session.id },
             "Pending title",
-            session.id,
           );
           current = "Pending title";
         }),

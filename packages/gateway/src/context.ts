@@ -46,7 +46,12 @@ export const loop = <E>(
   );
 
 /** Saves an inbox entry's reply chunks and wakes delivery. */
-export const finish = (context: GatewayContext, id: number, text: string, state = "completed") =>
+export const finish = (
+  context: GatewayContext,
+  id: number,
+  text: string,
+  state: "completed" | "failed" = "completed",
+) =>
   gatewayStorage(context.repo.complete(id, chunks(text, context.channel.textLimit), state)).pipe(
     Effect.andThen(wake(context.wakes.delivery)),
   );

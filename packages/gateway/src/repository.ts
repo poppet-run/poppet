@@ -8,13 +8,26 @@ import {
   migrate,
   reportAs,
 } from "@poppet/store";
-import { TaskDeliveries, TaskError, taskSchema } from "@poppet/tasks";
+import { DeliveryState, TaskDeliveries, TaskError, taskSchema } from "@poppet/tasks";
 import { Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { IncomingMessage, ChannelError } from "#src/channel";
 import { gatewaySchema } from "#src/migrations";
 import { isCommandApproval } from "#src/request";
+
+const InboxState = Schema.Literals(["queued", "executing", "completed", "cancelled", "failed"]);
+
+/** Where an incoming request is in its lifecycle. */
+export type InboxState = typeof InboxState.Type;
+
+/** One conversation's binding; the session is required so a replaced session is never renamed. */
+export interface BindingKey {
+  readonly adapter: string;
+  readonly account: string;
+  readonly conversation: string;
+  readonly session: string;
+}
 
 const Inbox = Schema.Struct({
   id: Schema.Natural,
@@ -24,7 +37,7 @@ const Inbox = Schema.Struct({
   conversationId: Schema.NullOr(Schema.String),
   sessionId: Schema.NullOr(Schema.String),
   runId: Schema.String,
-  state: Schema.String,
+  state: InboxState,
   attempts: Schema.Natural,
 });
 
@@ -175,38 +188,23 @@ const repository = Effect.gen(function* () {
       ),
     // synced_title records the attempted session title, even if no remote rename is confirmed.
     nameAttempted: (
-      adapter: string,
-      account: string,
-      conversation: string,
+      { adapter, account, conversation, session }: BindingKey,
       title: string | null,
-      session: string,
     ) =>
       sql`UPDATE gateway_bindings SET synced_title = ${title} WHERE adapter = ${adapter}
         AND account = ${account} AND conversation_id = ${conversation}
         AND session_id = ${session}`.pipe(Effect.asVoid),
     // Save the desired remote name before sending; recovery inspects it without replaying a rename.
-    namePending: (
-      adapter: string,
-      account: string,
-      conversation: string,
-      name: string,
-      session: string,
-    ) =>
+    namePending: ({ adapter, account, conversation, session }: BindingKey, name: string) =>
       sql`UPDATE gateway_bindings SET pending_name = ${name} WHERE adapter = ${adapter}
         AND account = ${account} AND conversation_id = ${conversation} AND naming_disabled = 0
         AND session_id = ${session} RETURNING 1`.pipe(Effect.map((rows) => rows.length === 1)),
     // managed_name is the last confirmed remote name; a different observed name belongs to the user.
-    nameConfirmed: (
-      adapter: string,
-      account: string,
-      conversation: string,
-      name: string,
-      session: string,
-    ) =>
+    nameConfirmed: ({ adapter, account, conversation, session }: BindingKey, name: string) =>
       sql`UPDATE gateway_bindings SET managed_name = ${name}, pending_name = NULL
         WHERE adapter = ${adapter} AND account = ${account} AND conversation_id = ${conversation}
           AND naming_disabled = 0 AND session_id = ${session}`.pipe(Effect.asVoid),
-    disableNaming: (adapter: string, account: string, conversation: string, session: string) =>
+    disableNaming: ({ adapter, account, conversation, session }: BindingKey) =>
       sql`UPDATE gateway_bindings SET naming_disabled = 1, pending_name = NULL
         WHERE adapter = ${adapter} AND account = ${account} AND conversation_id = ${conversation}
           AND session_id = ${session}`.pipe(Effect.asVoid),
@@ -330,13 +328,17 @@ const repository = Effect.gen(function* () {
       sql`UPDATE gateway_inbox SET conversation_id = ${conversation} WHERE id = ${id}`.pipe(
         Effect.asVoid,
       ),
-    state: (id: number, state: string) =>
+    state: (id: number, state: InboxState) =>
       sql`UPDATE gateway_inbox SET state = ${state} WHERE id = ${id}`.pipe(Effect.asVoid),
     cancel: (adapter: string, account: string, conversation: string) =>
       sql`UPDATE gateway_inbox SET state = 'cancelled' WHERE adapter = ${adapter}
         AND account = ${account} AND conversation_id = ${conversation}
         AND state = 'queued'`.pipe(Effect.asVoid),
-    complete: (id: number, chunks: ReadonlyArray<string>, state = "completed") =>
+    complete: (
+      id: number,
+      chunks: ReadonlyArray<string>,
+      state: Extract<InboxState, "completed" | "failed"> = "completed",
+    ) =>
       sql.withTransaction(
         Effect.gen(function* () {
           // Reconciliation can observe a committed run before its delivery was recorded.
@@ -359,7 +361,11 @@ const repository = Effect.gen(function* () {
     delivered: (entry: Delivery, messageId: string) =>
       sql`UPDATE gateway_deliveries SET state = 'sent', message_id = ${messageId}
         WHERE inbox_id = ${entry.inboxId} AND position = ${entry.position}`.pipe(Effect.asVoid),
-    deliveryFailed: (entry: Delivery, state: string, retryAt: number) =>
+    deliveryFailed: (
+      entry: Delivery,
+      state: Extract<DeliveryState, "pending" | "failed" | "uncertain">,
+      retryAt: number,
+    ) =>
       sql`UPDATE gateway_deliveries SET state = ${state}, attempts = attempts + 1,
         retry_at = ${retryAt} WHERE inbox_id = ${entry.inboxId}
           AND position = ${entry.position}`.pipe(Effect.asVoid),
@@ -403,7 +409,7 @@ export const GatewayRepositoryLive = Layer.effect(GatewayRepository, repository)
 const Delivered = Schema.Struct({
   runId: Schema.String,
   position: Schema.Natural,
-  state: Schema.Literals(["pending", "sending", "sent", "failed", "uncertain"]),
+  state: DeliveryState,
   messageId: Schema.NullOr(Schema.String),
   attempts: Schema.Natural,
 });

@@ -18,6 +18,7 @@ export {
   TaskDeliveries,
   TaskDestinations,
   type TaskDelivery,
+  DeliveryState,
   executeTaskCommand,
   executeLocalTaskCommand,
   readLocalTaskStatus,
