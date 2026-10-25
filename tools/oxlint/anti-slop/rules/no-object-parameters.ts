@@ -5,20 +5,14 @@ import type { ESTree } from "@oxlint/plugins";
 import {
 	functionParameterBindingName,
 	functionParameterTypeAnnotation,
+	functionVisitors,
+	type FunctionLike,
 } from "../shared/function-parameters.ts";
 import {
 	createTypeAliasEnvironment,
 	resolvedTypeMatches,
 	type TypeAliasEnvironment,
 } from "../shared/type-alias-resolution.ts";
-type ParameterOwner =
-	| ESTree.ArrowFunctionExpression
-	| ESTree.Function
-	| ESTree.TSCallSignatureDeclaration
-	| ESTree.TSConstructSignatureDeclaration
-	| ESTree.TSConstructorType
-	| ESTree.TSFunctionType
-	| ESTree.TSMethodSignature;
 
 /** Ban the broad object type on function inputs, including local aliases to object. */
 export const noObjectParametersRule = defineRule({
@@ -48,7 +42,7 @@ export const noObjectParametersRule = defineRule({
 				);
 			});
 
-		const checkParameters = (node: ParameterOwner) => {
+		const checkParameters = (node: FunctionLike) => {
 			for (const parameter of node.params) {
 				const annotation = functionParameterTypeAnnotation(parameter);
 				if (annotation === null || annotation === undefined) continue;
@@ -68,16 +62,7 @@ export const noObjectParametersRule = defineRule({
 					context.sourceCode.visitorKeys,
 				);
 			},
-			ArrowFunctionExpression: checkParameters,
-			FunctionDeclaration: checkParameters,
-			FunctionExpression: checkParameters,
-			TSCallSignatureDeclaration: checkParameters,
-			TSConstructSignatureDeclaration: checkParameters,
-			TSConstructorType: checkParameters,
-			TSDeclareFunction: checkParameters,
-			TSEmptyBodyFunctionExpression: checkParameters,
-			TSFunctionType: checkParameters,
-			TSMethodSignature: checkParameters,
+			...functionVisitors(checkParameters),
 		};
 	},
 });
