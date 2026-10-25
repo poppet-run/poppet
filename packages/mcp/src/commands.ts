@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect";
 import { MCP } from "#src/service";
 
 export const MCPCommand = Schema.Union([
-  Schema.Struct({ action: Schema.Literals(["servers", "status"]) }),
+  Schema.Struct({ action: Schema.Literal("servers") }),
   Schema.Struct({ action: Schema.Literal("tools"), server: Schema.NonEmptyString }),
 ]);
 

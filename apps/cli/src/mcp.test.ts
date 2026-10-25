@@ -261,7 +261,7 @@ describe("ExternalAgentToolsLive", () => {
       let pid = 0;
 
       try {
-        const status = JSON.parse(await state.invoke(["mcp", "status"]));
+        const status = JSON.parse(await state.invoke(["mcp", "servers"]));
         expect(status[0]).toMatchObject({ state: "idle", pid: null });
         expect(state.built()).toBe(0);
         expect(await readdir(state.directory)).not.toContain("pid");
@@ -269,7 +269,7 @@ describe("ExternalAgentToolsLive", () => {
         expect(tools).toHaveLength(1);
         expect(tools[0]).toMatchObject({ serverId: "fixture", toolName: "read", scheduled: false });
 
-        if (worker) pid = JSON.parse(await state.invoke(["mcp", "status"]))[0].pid;
+        if (worker) pid = JSON.parse(await state.invoke(["mcp", "servers"]))[0].pid;
         expect(await state.invoke(["chat", "new", "Read the fixture"])).toContain("Done");
         const sessions = JSON.parse(await state.invoke(["chat", "sessions"]));
         const saved = JSON.parse(await state.invoke(["chat", "show", sessions[0].id]));
@@ -297,7 +297,7 @@ describe("ExternalAgentToolsLive", () => {
           ),
         ).toBe(true);
 
-        if (worker) expect(JSON.parse(await state.invoke(["mcp", "status"]))[0].pid).toBe(pid);
+        if (worker) expect(JSON.parse(await state.invoke(["mcp", "servers"]))[0].pid).toBe(pid);
       } finally {
         if (fiber !== null) await Effect.runPromise(Fiber.interrupt(fiber));
 

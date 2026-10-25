@@ -85,8 +85,7 @@ for provider-specific setup and logout behavior.
 
 | Command              | Action                                                                           |
 | -------------------- | -------------------------------------------------------------------------------- |
-| `mcp servers`        | Show configured permissions and connection state without launching servers.      |
-| `mcp status`         | Show connection diagnostics and available tools without launching servers.       |
+| `mcp servers`        | Show permissions, connection diagnostics, and tools without launching servers.   |
 | `mcp tools <server>` | Explicitly discover the server's allowed tools using the owner or a local scope. |
 
 These commands need no model. They route through the worker when it is running.

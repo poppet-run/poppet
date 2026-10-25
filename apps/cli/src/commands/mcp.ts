@@ -16,10 +16,8 @@ export const mcpCommand = (context: CLIContext) => {
   return Command.make("mcp").pipe(
     Command.withDescription("Inspect configured local MCP servers"),
     Command.withSubcommands([
-      ...(["servers", "status"] as const).map((action) =>
-        Command.make(action, {}, () => runMCP({ action })).pipe(
-          Command.withDescription("Show permissions and connection state without starting servers"),
-        ),
+      Command.make("servers", {}, () => runMCP({ action: "servers" })).pipe(
+        Command.withDescription("Show permissions and connection state without starting servers"),
       ),
       Command.make("tools", { server: Argument.String("server") }, ({ server }) =>
         runMCP({ action: "tools", server }),
