@@ -34,6 +34,8 @@ export const saveDiscordSettings = (directory: string, settings: DiscordSettings
         try: () => mkdir(directory, { recursive: true, mode: 0o700 }),
         catch: failure,
       });
+      // The token and the policy live in separate files, each with its own lock. This lock keeps
+      // two saves from interleaving them; a crash between the writes can still leave them apart.
       yield* acquireOwnerLock(join(directory, "discord-config.lock"));
 
       const policy = yield* Schema.decodeUnknownEffect(DiscordConfiguration)(settings);
