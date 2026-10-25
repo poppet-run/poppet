@@ -1595,6 +1595,7 @@ describe.concurrent("chat.ts", () => {
 
   test("when the worker stops, interrupts active and queued chats and allows local inspection", async () => {
     const chat = await fixture();
+    await chat.configure({ chat: { maxConcurrentRequests: 1 } });
     const worker = await chat.startWorker();
     chat.state.hold = true;
     const client = Effect.runFork(chat.program(["chat", "new", "Stop this run"]));
@@ -1637,6 +1638,7 @@ describe.concurrent("chat.ts", () => {
 
   test("when a chat disconnects, releases the runner for queued chat and scheduled work", async () => {
     const chat = await fixture();
+    await chat.configure({ chat: { maxConcurrentRequests: 1 } });
     const worker = await chat.startWorker();
     chat.state.hold = true;
     const first = Effect.runFork(chat.program(["chat", "new", "Interrupted"]));

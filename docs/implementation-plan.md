@@ -6,9 +6,8 @@ Phases 1–21 and 24 are implemented with automated checks. Live validation
 remains outstanding where listed in each phase. Phase 25's text attachments were
 removed because no messaging adapter supplied attachments.
 Phases 28–34 are planned only. Plans do not authorize implementation. Phase 35's
-parallel messaging is implemented with automated checks, but stays off by default
-(`chat.maxConcurrentRequests` is 1) until the ChatGPT credential lock allows
-simultaneous requests; its live Discord check is outstanding.
+parallel messaging is implemented with automated checks and on by default
+(`chat.maxConcurrentRequests` is 3); its live Discord check is outstanding.
 
 Completed phases retain short status summaries, evidence, and outstanding checks.
 Use the linked guides for current behavior and setup. Git history retains the

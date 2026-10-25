@@ -49,13 +49,15 @@ after editing settings: `poppet worker stop`, then `poppet worker start`.
 | `chat.runDeadlineSeconds`    | `300`                  | Overall run deadline, from 30 to 3600 seconds                                         |
 | `chat.logReasoning`          | `false`                | Show readable reasoning in CLI diagnostics and worker logs                            |
 | `chat.logTimings`            | `false`                | Log request-stage durations                                                           |
-| `chat.maxConcurrentRequests` | `1`                    | Chat requests that run at once across messaging, CLI, and scheduled runs, from 1 to 8 |
+| `chat.maxConcurrentRequests` | `3`                    | Chat requests that run at once across messaging, CLI, and scheduled runs, from 1 to 8 |
 
 `chat.maxConcurrentRequests` above 1 lets different Discord conversations and
 sessions run at the same time; requests to one session or one conversation stay
-in order. Keep it at 1 with the `openai-chatgpt` provider: each ChatGPT request
-holds that provider's credential lock, so a second simultaneous request fails as
-busy. A request waiting for command approval keeps its slot for up to two minutes.
+in order. Set it to 1 to answer one request at a time. Simultaneous
+`openai-chatgpt` requests in the worker share one credential lock and refresh an
+expiring token once; `provider login` and `logout` in another terminal report the
+store as busy until no request is running. A provider rate limit fails the request
+with the standard failure reply rather than retrying. A request waiting for command approval keeps its slot for up to two minutes.
 
 Context size, history length, model turns, tool calls, tool output, and memory/skill
 sizes use fixed limits in code. They are not configuration fields. See
