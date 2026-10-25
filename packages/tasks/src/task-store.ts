@@ -427,7 +427,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
           Object.assign(held, {
             action:
               held.resumeAt === null
-                ? `Run worker resume-provider ${held.provider} when quota is available.`
+                ? `Run tasks resume-provider ${held.provider} when quota is available.`
                 : `Future work can resume at ${new Date(held.resumeAt).toISOString()}.`,
           }),
         ),

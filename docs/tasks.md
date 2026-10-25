@@ -288,8 +288,8 @@ explicit cancellation:
 ```sh
 poppet tasks cancel <occurrence-id>
 poppet tasks retry <occurrence-id>
-poppet worker providers
-poppet worker resume-provider openai-chatgpt
+poppet tasks providers
+poppet tasks resume-provider openai-chatgpt
 ```
 
 Quota failures pause scheduled requests for that provider until `resume-provider`.

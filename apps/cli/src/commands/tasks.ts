@@ -1,3 +1,4 @@
+import { ProviderId } from "@poppet/provider";
 import { Session } from "@poppet/store";
 import { TaskPatch, NewTask, parseTimestamp, TaskError, taskOperation } from "@poppet/tasks";
 import { Effect, Option, Schema } from "effect";
@@ -154,6 +155,16 @@ export const tasksCommand = (context: CLIContext) => {
           },
         ]),
       ),
+      Command.make("providers", {}, () => runTaskCommand(runtime, { action: "providers" })).pipe(
+        Command.withDescription("Show provider quota pauses and temporary backoff"),
+      ),
+      Command.make(
+        "resume-provider",
+        {
+          provider: Argument.String("provider").pipe(Argument.withSchema(ProviderId)),
+        },
+        ({ provider }) => runTaskCommand(runtime, { action: "resume-provider", provider }),
+      ).pipe(Command.withDescription("Allow scheduled requests for a provider again")),
       ...(["list", "clear"] as const).map((action) =>
         Command.make(action, {}, () => runTaskCommand(runtime, { action })).pipe(
           Command.withDescription(
