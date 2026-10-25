@@ -54,3 +54,11 @@ export const makeBraveSearch = (
     toolBytes,
   ),
 });
+
+/** Brave's credential and environment key, alongside its constructor. */
+export const braveSearch = {
+  name: "Brave Search",
+  credentialId: "brave-search",
+  keyEnvironment: "POPPET_BRAVE_SEARCH_API_KEY",
+  make: makeBraveSearch,
+} as const;

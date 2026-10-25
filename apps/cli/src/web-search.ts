@@ -1,40 +1,13 @@
 import { AgentError, ChatSettings } from "@poppet/agent";
 import { webSearchEnabled, webSearchProvider } from "@poppet/config";
-import { ApiKeyStore, environmentApiKey } from "@poppet/credentials";
-import { WebSearch, makeBraveSearch, makeKagiSearch } from "@poppet/web-search";
-import { Console, Effect, Layer, Option } from "effect";
+import { ApiKeyStore, findApiKey, saveApiKey } from "@poppet/credentials";
+import { CredentialInput } from "@poppet/provider";
+import { WebSearch, searchProviders } from "@poppet/web-search";
+import { Console, Effect, Layer } from "effect";
 
-import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
+import { terminalKeyInput } from "#src/api-key-input";
 
-const searchProvider = Effect.gen(function* () {
-  const provider = yield* webSearchProvider;
-
-  return provider === "kagi"
-    ? {
-        id: provider,
-        name: "Kagi Search",
-        credentialId: "kagi-search",
-        keyEnvironment: "POPPET_KAGI_SEARCH_API_KEY",
-        make: makeKagiSearch,
-      }
-    : {
-        id: provider,
-        name: "Brave Search",
-        credentialId: "brave-search",
-        keyEnvironment: "POPPET_BRAVE_SEARCH_API_KEY",
-        make: makeBraveSearch,
-      };
-});
-
-const searchKey = (provider: { credentialId: string; keyEnvironment: string }) =>
-  Effect.gen(function* () {
-    const environment = yield* environmentApiKey(provider.credentialId, provider.keyEnvironment);
-
-    if (Option.isSome(environment)) return { key: environment.value, source: "environment" };
-    const key = yield* ApiKeyStore.use((store) => store.read(provider.credentialId));
-
-    return { key, source: key === null ? null : "stored" };
-  });
+const searchProvider = Effect.map(webSearchProvider, (id) => ({ id, ...searchProviders[id] }));
 
 export const WebSearchLive = Layer.effect(
   WebSearch,
@@ -43,7 +16,7 @@ export const WebSearchLive = Layer.effect(
 
     if (!(yield* webSearchEnabled)) return { search: null };
 
-    const { key } = yield* searchKey(provider).pipe(
+    const { key } = yield* findApiKey(provider.credentialId, provider.keyEnvironment).pipe(
       Effect.mapError(
         () =>
           new AgentError({
@@ -66,13 +39,9 @@ export const manageWebSearch = (action: "login" | "status" | "logout", keyStdin 
     const { credentialId, keyEnvironment } = provider;
 
     if (action === "login") {
-      let key = keyStdin
-        ? yield* readKeyStdin(credentialId)
-        : Option.getOrNull(yield* environmentApiKey(credentialId, keyEnvironment));
-
-      if (key === null) key = yield* readHiddenKey(credentialId);
-
-      yield* store.write(credentialId, key);
+      yield* saveApiKey(credentialId, keyEnvironment, keyStdin).pipe(
+        Effect.provideService(CredentialInput, terminalKeyInput),
+      );
       yield* Console.log(
         `${provider.name} key saved. Enable webSearch in config.json and restart the worker.`,
       );
@@ -82,7 +51,7 @@ export const manageWebSearch = (action: "login" | "status" | "logout", keyStdin 
         `Saved ${provider.name} key removed. An environment key still overrides storage. Restart the worker; remote keys are not revoked.`,
       );
     } else {
-      const { key, source } = yield* searchKey(provider);
+      const { key, source } = yield* findApiKey(credentialId, keyEnvironment);
       yield* Console.log(
         JSON.stringify({
           provider: provider.id,

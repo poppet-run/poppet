@@ -46,3 +46,11 @@ export const makeKagiSearch = (
     toolBytes,
   ),
 });
+
+/** Kagi's credential and environment key, alongside its constructor. */
+export const kagiSearch = {
+  name: "Kagi Search",
+  credentialId: "kagi-search",
+  keyEnvironment: "POPPET_KAGI_SEARCH_API_KEY",
+  make: makeKagiSearch,
+} as const;

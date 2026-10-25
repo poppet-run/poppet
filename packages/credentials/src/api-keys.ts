@@ -154,19 +154,41 @@ export const ApiKeyStoreLive = Layer.effect(
   }),
 );
 
-/** Prefers the environment key, then protected storage; a present but invalid key is an error. */
-export const loadApiKey = (provider: ProviderId, environment: string) =>
+/** Prefers the environment key, then protected storage; a null key means neither is set. */
+export const findApiKey = (provider: ProviderId, environment: string) =>
   Effect.gen(function* () {
     const configured = Option.getOrNull(yield* environmentApiKey(provider, environment));
 
-    if (configured !== null) return configured;
+    if (configured !== null) return { key: configured, source: "environment" as const };
 
-    const saved = yield* ApiKeyStore.use((store) => store.read(provider)).pipe(
+    const saved = yield* ApiKeyStore.use((store) => store.read(provider));
+
+    return { key: saved, source: saved === null ? null : ("stored" as const) };
+  });
+
+/** Saves a key from stdin when asked, otherwise from the environment or hidden input. */
+export const saveApiKey = (provider: ProviderId, environment: string, keyStdin: boolean) =>
+  Effect.gen(function* () {
+    const input = yield* CredentialInput;
+
+    const supplied = keyStdin
+      ? yield* input.readKey(provider, true)
+      : Option.getOrNull(yield* environmentApiKey(provider, environment));
+
+    const key = supplied ?? (yield* input.readKey(provider, false));
+
+    yield* ApiKeyStore.use((store) => store.write(provider, key));
+  });
+
+/** Prefers the environment key, then protected storage; a present but invalid key is an error. */
+export const loadApiKey = (provider: ProviderId, environment: string) =>
+  Effect.gen(function* () {
+    const { key } = yield* findApiKey(provider, environment).pipe(
       Effect.provide(ApiKeyStoreLive),
       Effect.mapError((error) => (error instanceof ProviderError ? error : storageError(provider))),
     );
 
-    if (saved !== null) return saved;
+    if (key !== null) return key;
 
     return yield* Effect.fail(
       new ProviderError({
@@ -185,29 +207,14 @@ export const makeApiKeyConnection = (provider: ProviderOperations, environment: 
 
     return {
       login: (options) =>
-        Effect.gen(function* () {
-          const input = yield* CredentialInput;
-
-          let key = options.keyStdin
-            ? yield* input.readKey(id, true)
-            : Option.getOrNull(yield* environmentApiKey(id, environment));
-
-          if (key === null) key = yield* input.readKey(id, false);
-
-          yield* store.write(id, key);
-
-          return `API key saved for ${id}.`;
-        }),
-      status: Effect.gen(function* () {
-        const key = Option.getOrNull(yield* environmentApiKey(id, environment));
-        const saved = key !== null ? null : yield* store.read(id);
-
-        return {
-          provider: id,
-          connected: key !== null || saved !== null,
-          source: key !== null ? "environment" : saved !== null ? "stored" : null,
-        };
-      }),
+        saveApiKey(id, environment, options.keyStdin).pipe(
+          Effect.provideService(ApiKeyStore, store),
+          Effect.as(`API key saved for ${id}.`),
+        ),
+      status: findApiKey(id, environment).pipe(
+        Effect.provideService(ApiKeyStore, store),
+        Effect.map(({ key, source }) => ({ provider: id, connected: key !== null, source })),
+      ),
       logout: store
         .remove(id)
         .pipe(

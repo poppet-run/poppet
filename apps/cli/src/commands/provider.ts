@@ -9,7 +9,7 @@ import {
 import { Console, Effect, Option, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 
-import { readHiddenKey, readKeyStdin } from "#src/api-key-input";
+import { terminalKeyInput } from "#src/api-key-input";
 import type { CLIContext } from "#src/commands/context";
 import { UsageError } from "#src/commands/errors";
 import type { ProviderCommand } from "#src/provider-command";
@@ -46,9 +46,7 @@ export const providerCommand = (context: CLIContext) => {
         else if (command.action === "logout") yield* Console.log(yield* connection.logout);
       }).pipe(
         Effect.provide(runtime.selectedProvider(selected)),
-        Effect.provideService(CredentialInput, {
-          readKey: (provider, stdin) => (stdin ? readKeyStdin(provider) : readHiddenKey(provider)),
-        }),
+        Effect.provideService(CredentialInput, terminalKeyInput),
       );
     });
 

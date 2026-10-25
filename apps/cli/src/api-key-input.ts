@@ -1,6 +1,6 @@
 import { BunTerminal } from "@effect/platform-bun";
 import { ApiKey } from "@poppet/credentials";
-import { ProviderError, type ProviderId } from "@poppet/provider";
+import { CredentialInput, ProviderError, type ProviderId } from "@poppet/provider";
 import { Console, Effect, Option, Queue, Schema, Terminal } from "effect";
 
 const inputError = (provider: ProviderId, message: string) =>
@@ -54,4 +54,9 @@ export const readHiddenKey = (provider: ProviderId) => {
       }
     }).pipe(Effect.provide(BunTerminal.layer)),
   );
+};
+
+/** Reads keys from stdin when asked, otherwise from hidden terminal input. */
+export const terminalKeyInput: CredentialInput["Service"] = {
+  readKey: (provider, stdin) => (stdin ? readKeyStdin(provider) : readHiddenKey(provider)),
 };
