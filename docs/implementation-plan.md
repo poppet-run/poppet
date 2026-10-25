@@ -4,7 +4,7 @@
 
 Phases 1–21 and 24–25 are implemented with automated checks. Live validation
 remains outstanding where listed in each phase.
-Phases 28–33 are planned only. Plans do not authorize implementation.
+Phases 28–34 are planned only. Plans do not authorize implementation.
 
 Completed phases retain short status summaries, evidence, and outstanding checks.
 Use the linked guides for current behavior and setup. Git history retains the
@@ -58,6 +58,7 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 31: Summaries of trimmed conversation history](phases/31.md)
 - [Phase 32: Host commands in an isolated container](phases/32.md)
 - [Phase 33: Trusted time for scheduled runs](phases/33.md)
+- [Phase 34: Model and reasoning selection for new sessions](phases/34.md)
 
 ## Validation
 
