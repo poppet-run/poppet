@@ -2,8 +2,9 @@
 
 [Documentation index](README.md)
 
-Phases 1–21 and 24–25 are implemented with automated checks. Live validation
-remains outstanding where listed in each phase.
+Phases 1–21 and 24 are implemented with automated checks. Live validation
+remains outstanding where listed in each phase. Phase 25's text attachments were
+removed because no messaging adapter supplied attachments.
 Phases 28–35 are planned only. Plans do not authorize implementation.
 
 Completed phases retain short status summaries, evidence, and outstanding checks.
@@ -18,7 +19,7 @@ Reusable workflows start with [drafting a skill in chat](skills.md#draft-a-skill
 owner review, and manual saving into the local skill library. The agent can read
 matching skills from an index; it cannot write skills or curate facts automatically.
 
-Updated: 2026-10-23
+Updated: 2026-10-25
 
 Storage history: the unreleased base schema was consolidated into version 1.
 Phases 23–26 add migrations 2–5 for monitoring, task controls, attachments, and
@@ -51,7 +52,7 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 20: MCP server support](phases/20.md)
 - [Phase 21: Browser automation with agent-browser](phases/21.md)
 - [Phase 24: Editable tasks and snoozing](phases/24.md)
-- [Phase 25: Text attachments](phases/25.md)
+- [Phase 25: Text attachments (removed)](phases/25.md)
 - [Phase 28: Browser login state across requests](phases/28.md)
 - [Phase 29: A useful `poppet doctor`](phases/29.md)
 - [Phase 30: Calendar briefings and weekly reviews](phases/30.md)
