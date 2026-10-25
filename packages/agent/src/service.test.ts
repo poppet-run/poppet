@@ -16,7 +16,7 @@ import { TestClock } from "effect/testing";
 import { AgentError } from "#src/errors";
 import { Agent, type ChatEvent, type ModelResolver } from "#src/service";
 import { defaultPolicy, type ChatPolicy } from "#src/settings";
-import { agentHarness } from "#src/test/harness";
+import { agentHarness, gatedStream } from "#src/test/harness";
 
 describe("logChatDiagnostic", () => {
   test.each([false, true])(
@@ -959,6 +959,154 @@ describe("Agent.nameSession", () => {
           expect(requests.at(-1)?.messages).toEqual([
             { role: "user", text: JSON.stringify("Original prompt") },
           ]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+});
+
+/** A model whose answer to each prompt waits until the test releases that prompt. */
+const gatedModel = () => {
+  const { gate, stream } = gatedStream((prompt) =>
+    Stream.make({ type: "completed" as const, response: response(`Answer to ${prompt}`) }),
+  );
+
+  return { gate, resolve: () => Effect.succeed({ description, stream }) };
+};
+
+// Lets unrelated fibers reach the model if nothing holds them back.
+const settle = Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 50)));
+
+describe.concurrent("Agent request permits", () => {
+  test("when sessions differ, runs up to the limit at once and starts a waiter when a slot frees", async () => {
+    const model = gatedModel();
+    const state = await fixture(model.resolve, false, { maxConcurrentRequests: 2 });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const agent = yield* Agent;
+
+          const sessions = yield* Effect.forEach(["A", "B", "C"], () =>
+            store.createSession("test-provider", "test-model"),
+          );
+
+          const fibers = yield* Effect.forEach(sessions, (session, index) =>
+            Stream.runDrain(agent.send(session.id, ["A", "B", "C"][index]!)).pipe(Effect.forkChild),
+          );
+
+          yield* Deferred.await(model.gate("A").entered);
+          yield* Deferred.await(model.gate("B").entered);
+          yield* settle;
+          expect(yield* Deferred.isDone(model.gate("C").entered)).toBe(false);
+          expect(yield* store.runs(sessions[2]!.id)).toEqual([]);
+
+          yield* Deferred.succeed(model.gate("B").release, undefined);
+          yield* Deferred.await(model.gate("C").entered);
+          yield* Deferred.succeed(model.gate("A").release, undefined);
+          yield* Deferred.succeed(model.gate("C").release, undefined);
+          yield* Fiber.joinAll(fibers);
+
+          for (const session of sessions)
+            expect((yield* store.runs(session.id)).map((run) => run.status)).toEqual(["completed"]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when one session receives two sends, the second waits without holding a shared slot", async () => {
+    const model = gatedModel();
+    const state = await fixture(model.resolve, false, { maxConcurrentRequests: 2 });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const agent = yield* Agent;
+          const busy = yield* store.createSession("test-provider", "test-model");
+          const other = yield* store.createSession("test-provider", "test-model");
+          const first = yield* Stream.runDrain(agent.send(busy.id, "First")).pipe(Effect.forkChild);
+          yield* Deferred.await(model.gate("First").entered);
+
+          const second = yield* Stream.runDrain(agent.send(busy.id, "Second")).pipe(
+            Effect.forkChild,
+          );
+
+          yield* settle;
+
+          // With the session waiter holding no slot, the other session still starts.
+          const unrelated = yield* Stream.runDrain(agent.send(other.id, "Other")).pipe(
+            Effect.forkChild,
+          );
+
+          yield* Deferred.await(model.gate("Other").entered);
+          expect(yield* Deferred.isDone(model.gate("Second").entered)).toBe(false);
+          expect((yield* store.runs(busy.id)).map((run) => run.status)).toEqual(["running"]);
+
+          yield* Deferred.succeed(model.gate("First").release, undefined);
+          yield* Deferred.await(model.gate("Second").entered);
+          expect((yield* store.runs(busy.id)).map((run) => run.status)).toEqual([
+            "completed",
+            "running",
+          ]);
+          yield* Deferred.succeed(model.gate("Second").release, undefined);
+          yield* Deferred.succeed(model.gate("Other").release, undefined);
+          yield* Fiber.joinAll([first, second, unrelated]);
+
+          expect(
+            (yield* store.messages(busy.id)).map(({ message }) =>
+              message.role === "user" ? message.text : "answer",
+            ),
+          ).toEqual(["First", "answer", "Second", "answer"]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a request is interrupted while waiting for either permit, creates no run", async () => {
+    const model = gatedModel();
+    const state = await fixture(model.resolve);
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const agent = yield* Agent;
+          const busy = yield* store.createSession("test-provider", "test-model");
+          const other = yield* store.createSession("test-provider", "test-model");
+          const first = yield* Stream.runDrain(agent.send(busy.id, "First")).pipe(Effect.forkChild);
+          yield* Deferred.await(model.gate("First").entered);
+
+          // One waits for its busy session, the other for the only shared slot.
+          const sameSession = yield* Stream.runDrain(agent.send(busy.id, "Same")).pipe(
+            Effect.forkChild,
+          );
+
+          const otherSession = yield* Stream.runDrain(agent.send(other.id, "Other")).pipe(
+            Effect.forkChild,
+          );
+
+          yield* settle;
+          yield* Fiber.interrupt(sameSession);
+          yield* Fiber.interrupt(otherSession);
+          yield* Deferred.succeed(model.gate("First").release, undefined);
+          yield* Fiber.join(first);
+
+          expect((yield* store.runs(busy.id)).map((run) => run.status)).toEqual(["completed"]);
+          expect(yield* store.runs(other.id)).toEqual([]);
+
+          // Released permits serve later requests to both sessions.
+          yield* Deferred.succeed(model.gate("Later").release, undefined);
+          yield* Stream.runDrain(agent.send(busy.id, "Later"));
+          yield* Stream.runDrain(agent.send(other.id, "Later"));
+          expect(yield* store.runs(other.id)).toHaveLength(1);
         }),
       );
     } finally {

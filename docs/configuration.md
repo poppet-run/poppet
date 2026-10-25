@@ -33,22 +33,29 @@ after editing settings: `poppet worker stop`, then `poppet worker start`.
 
 ## Settings
 
-| Field                     | Default                | Purpose                                                                           |
-| ------------------------- | ---------------------- | --------------------------------------------------------------------------------- |
-| `provider`                | `openai-chatgpt`       | Default provider for new chats and tasks                                          |
-| `model`                   | Unset                  | Required model ID for new chats and tasks                                         |
-| `applicationName`         | `Poppet`               | Name used during initial ChatGPT registration                                     |
-| `discord`                 | Unconfigured           | Owner ID, guild ID, and home channel ID                                           |
-| `webSearch`               | `false`                | Enable search when the selected search provider has credentials                   |
-| `webSearchProvider`       | `brave`                | `brave` or `kagi`                                                                 |
-| `browser`                 | `{ "enabled": false }` | [Browser access and allowed hosts](browser.md)                                    |
-| `mcpServers`              | `[]`                   | [Local servers and tool permissions](mcp.md)                                      |
-| `gatewayPackages`         | `[]`                   | Explicitly installed [external gateway packages](development.md#adding-a-channel) |
-| `tasks.catchUpMinutes`    | `60`                   | Missed recurring-job window, from 0 to 1440 minutes                               |
-| `chat.outputTokens`       | `2048`                 | Requested output limit, from 1 to 32768, capped by model metadata                 |
-| `chat.runDeadlineSeconds` | `300`                  | Overall run deadline, from 30 to 3600 seconds                                     |
-| `chat.logReasoning`       | `false`                | Show readable reasoning in CLI diagnostics and worker logs                        |
-| `chat.logTimings`         | `false`                | Log request-stage durations                                                       |
+| Field                        | Default                | Purpose                                                                               |
+| ---------------------------- | ---------------------- | ------------------------------------------------------------------------------------- |
+| `provider`                   | `openai-chatgpt`       | Default provider for new chats and tasks                                              |
+| `model`                      | Unset                  | Required model ID for new chats and tasks                                             |
+| `applicationName`            | `Poppet`               | Name used during initial ChatGPT registration                                         |
+| `discord`                    | Unconfigured           | Owner ID, guild ID, and home channel ID                                               |
+| `webSearch`                  | `false`                | Enable search when the selected search provider has credentials                       |
+| `webSearchProvider`          | `brave`                | `brave` or `kagi`                                                                     |
+| `browser`                    | `{ "enabled": false }` | [Browser access and allowed hosts](browser.md)                                        |
+| `mcpServers`                 | `[]`                   | [Local servers and tool permissions](mcp.md)                                          |
+| `gatewayPackages`            | `[]`                   | Explicitly installed [external gateway packages](development.md#adding-a-channel)     |
+| `tasks.catchUpMinutes`       | `60`                   | Missed recurring-job window, from 0 to 1440 minutes                                   |
+| `chat.outputTokens`          | `2048`                 | Requested output limit, from 1 to 32768, capped by model metadata                     |
+| `chat.runDeadlineSeconds`    | `300`                  | Overall run deadline, from 30 to 3600 seconds                                         |
+| `chat.logReasoning`          | `false`                | Show readable reasoning in CLI diagnostics and worker logs                            |
+| `chat.logTimings`            | `false`                | Log request-stage durations                                                           |
+| `chat.maxConcurrentRequests` | `1`                    | Chat requests that run at once across messaging, CLI, and scheduled runs, from 1 to 8 |
+
+`chat.maxConcurrentRequests` above 1 lets different Discord conversations and
+sessions run at the same time; requests to one session or one conversation stay
+in order. Keep it at 1 with the `openai-chatgpt` provider: each ChatGPT request
+holds that provider's credential lock, so a second simultaneous request fails as
+busy. A request waiting for command approval keeps its slot for up to two minutes.
 
 Context size, history length, model turns, tool calls, tool output, and memory/skill
 sizes use fixed limits in code. They are not configuration fields. See

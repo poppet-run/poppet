@@ -38,6 +38,7 @@ const FileSettings = Schema.Struct({
       logTimings: Schema.optionalKey(Schema.Boolean),
       outputTokens: Schema.optionalKey(Schema.Int),
       runDeadlineSeconds: Schema.optionalKey(Schema.Int),
+      maxConcurrentRequests: Schema.optionalKey(Schema.Int),
     }),
   ),
 });
@@ -104,6 +105,7 @@ export const loadConfigSource = Effect.gen(function* () {
     logTimings: file.chat?.logTimings,
     outputTokens: file.chat?.outputTokens,
     runDeadlineSeconds: file.chat?.runDeadlineSeconds,
+    maxConcurrentRequests: file.chat?.maxConcurrentRequests,
   };
 
   const environmentOverrides =

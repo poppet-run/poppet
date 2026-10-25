@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive } from "@poppet/memory";
-import type { ModelOperations, ModelRequest } from "@poppet/provider";
+import type { ModelEvent, ModelOperations, ModelRequest } from "@poppet/provider";
 import { StoreLive } from "@poppet/store";
-import { Effect, Layer, type Context } from "effect";
+import { Deferred, Effect, Layer, Stream, type Context } from "effect";
 
 import { Pages } from "#src/pages";
 import { AgentLive, ModelResolver } from "#src/service";
@@ -49,6 +49,39 @@ export const testModel = (options: {
     return reportedError(request) ? options.answer(request) : options.stream(request);
   },
 });
+
+/**
+ * A model stream whose answer to each prompt waits until the test releases that prompt's gate.
+ * `entered` completes when the model receives the prompt.
+ */
+export const gatedStream = (answer: (prompt: string) => Stream.Stream<ModelEvent>) => {
+  const gates = new Map<
+    string,
+    { readonly entered: Deferred.Deferred<void>; readonly release: Deferred.Deferred<void> }
+  >();
+
+  const gate = (prompt: string) => {
+    const existing = gates.get(prompt);
+
+    if (existing !== undefined) return existing;
+    const created = { entered: Deferred.makeUnsafe<void>(), release: Deferred.makeUnsafe<void>() };
+    gates.set(prompt, created);
+
+    return created;
+  };
+
+  const stream: ModelOperations["stream"] = (request) => {
+    const last = request.messages.at(-1);
+    const prompt = last?.role === "user" ? last.text : "";
+    const { entered, release } = gate(prompt);
+
+    return Stream.fromEffect(
+      Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))),
+    ).pipe(Stream.flatMap(() => answer(prompt)));
+  };
+
+  return { gate, stream };
+};
 
 /** A temporary data directory configured for the test model, with a store over it. */
 export const agentHarness = async (policy: Partial<ChatPolicy> = {}) => {

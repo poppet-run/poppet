@@ -370,9 +370,14 @@ assembly, and model execution are outside this store's record APIs.
 ## Persisted chat
 
 `AgentLive` captures `Store`, `ModelResolver`, and validated `ChatSettings`.
-One scoped semaphore serializes interactive and scheduled request streams,
-including persistence and provider cleanup. Waiting consumers can be cancelled
-before creating a run.
+Each `send` stream holds two permits for its full lifetime, including persistence
+and provider cleanup: one for its session, so two sends to one session never read
+the same history or save out of order, and one of `chat.maxConcurrentRequests`
+slots shared by interactive, messaging, and scheduled requests. The session permit
+is taken first, so a request waiting for a busy session holds no shared slot.
+Session permits are removed once no request holds or waits for them. Waiting
+consumers can be cancelled before creating a run. Each run reads memory once when
+it starts, so a fact saved by a concurrent run appears in the next run.
 Its `send` stream first saves the input and starts a run, then resolves the
 session's provider/model. The CLI supplies a resolver that builds only that
 registration inside the stream scope. Provider resources, including credential
