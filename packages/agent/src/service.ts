@@ -113,7 +113,31 @@ export const AgentLive = Layer.effect(
     const converse = yield* conversation;
     const readMemoryPrompt = yield* memoryPrompt;
     const policy = yield* ChatSettings;
-    const requests = yield* Semaphore.make(1);
+    const requests = yield* Semaphore.make(policy.maxConcurrentRequests);
+    // One permit per session keeps history reads and saves in order; unused entries are removed.
+    const sessions = new Map<string, { readonly permit: Semaphore.Semaphore; users: number }>();
+
+    const sessionPermit = (sessionId: string) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          const entry = sessions.get(sessionId) ?? { permit: Semaphore.makeUnsafe(1), users: 0 };
+          entry.users++;
+          sessions.set(sessionId, entry);
+
+          return entry;
+        }),
+        (entry) =>
+          Effect.sync(() => {
+            if (--entry.users === 0) sessions.delete(sessionId);
+          }),
+      ).pipe(
+        Effect.flatMap((entry) =>
+          Effect.acquireRelease(entry.permit.take(1).pipe(Effect.interruptible), () =>
+            entry.permit.release(1),
+          ),
+        ),
+      );
+
     // Naming is optional and short, so it does not wait behind a running request.
     const naming = yield* Semaphore.make(1);
 
@@ -313,11 +337,17 @@ export const AgentLive = Layer.effect(
           ),
         );
 
-        // Interactive and scheduled requests share one permit for the full stream lifetime.
+        // Both permits last for the full stream. The session permit comes first, so a request
+        // waiting for its session does not hold one of the slots shared by every request.
         return Stream.unwrap(
-          Effect.acquireRelease(requests.take(1).pipe(Effect.interruptible), () =>
-            requests.release(1),
-          ).pipe(Effect.as(settledStream)),
+          sessionPermit(sessionId).pipe(
+            Effect.andThen(
+              Effect.acquireRelease(requests.take(1).pipe(Effect.interruptible), () =>
+                requests.release(1),
+              ),
+            ),
+            Effect.as(settledStream),
+          ),
         ).pipe(Stream.provideService(RequestTiming, timing));
       });
 

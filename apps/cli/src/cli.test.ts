@@ -1287,7 +1287,7 @@ describe("makeCLI", () => {
       await configure(directory, {
         provider: "openrouter",
         model: "file-model",
-        chat: { outputTokens: 4096, logReasoning: true },
+        chat: { outputTokens: 4096, logReasoning: true, maxConcurrentRequests: 2 },
       });
 
       const result = await invoke(["config"], {
@@ -1308,6 +1308,7 @@ describe("makeCLI", () => {
         logReasoning: true,
         logTimings: false,
         runDeadlineSeconds: 300,
+        maxConcurrentRequests: 2,
       });
       expect(result.stdout).not.toContain("must-not-appear");
       expect(await readdir(directory)).toEqual(["config.json"]);

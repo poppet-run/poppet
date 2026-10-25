@@ -17,6 +17,8 @@ export interface ChatPolicy {
   readonly skillIndexBytes: number;
   /** Absolute deadline for one chat request, including every model turn and tool call. */
   readonly runDeadlineSeconds: number;
+  /** Chat requests that may run at once across messaging, interactive chat, and scheduled runs. */
+  readonly maxConcurrentRequests: number;
 }
 
 /** Supplies validated chat limits shared by context assembly and the tool loop. */
@@ -38,6 +40,7 @@ export const defaultPolicy: ChatPolicy = {
   factsBytes: 8192,
   skillIndexBytes: 8192,
   runDeadlineSeconds: 300,
+  maxConcurrentRequests: 1,
 };
 
 const bounded = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }));
@@ -58,6 +61,9 @@ export const ChatSettingsLive = Layer.effect(
           Schema.Int.check(Schema.isBetween({ minimum: 30, maximum: 3600 })),
           "runDeadlineSeconds",
         ).pipe(Config.withDefault(defaultPolicy.runDeadlineSeconds)),
+        maxConcurrentRequests: Config.schema(bounded(8), "maxConcurrentRequests").pipe(
+          Config.withDefault(defaultPolicy.maxConcurrentRequests),
+        ),
       },
       { concurrency: 1 },
     ).pipe(Effect.map((settings) => Object.assign({}, defaultPolicy, settings))),

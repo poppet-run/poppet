@@ -18,7 +18,9 @@ export const configCommand = (context: CLIContext) => {
   const { runtime } = context;
 
   const showConfig = Effect.gen(function* () {
-    const { logReasoning, logTimings, outputTokens, runDeadlineSeconds } = yield* ChatSettings;
+    const { logReasoning, logTimings, outputTokens, runDeadlineSeconds, maxConcurrentRequests } =
+      yield* ChatSettings;
+
     yield* Console.log(
       JSON.stringify(
         {
@@ -28,7 +30,13 @@ export const configCommand = (context: CLIContext) => {
           browser: yield* browserSettings,
           mcpServers: yield* mcpServers,
           gatewayPackages: yield* gatewayPackages,
-          chat: { logReasoning, logTimings, outputTokens, runDeadlineSeconds },
+          chat: {
+            logReasoning,
+            logTimings,
+            outputTokens,
+            runDeadlineSeconds,
+            maxConcurrentRequests,
+          },
           tasks: { catchUpMinutes: yield* taskCatchUpMinutes },
           ...(yield* ConfigSource),
         },
