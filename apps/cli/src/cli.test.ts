@@ -1166,6 +1166,27 @@ describe("makeCLI", () => {
     }
   });
 
+  test.each(["bash", "zsh", "fish"])(
+    "when %s completions are requested, prints nested commands and flags without loading configuration",
+    async (shell) => {
+      const directory = await mkdtemp(join(tmpdir(), "poppet-cli-completions-"));
+      const environment = await configure(directory, { provider: "invalid/provider" });
+
+      try {
+        const result = await invoke(["--completions", shell], environment);
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr).toBe("");
+
+        for (const word of ["tasks", "add", "--cron", "provider", "login"])
+          expect(result.stdout).toContain(word);
+
+        expect(await readdir(directory)).toEqual(["config.json"]);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
   test("when schedules conflict, flags repeat, or worker commands are malformed, rejects them before storage", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-flags-"));
     const environment = await configure(directory, { model: "test-model" });

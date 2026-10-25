@@ -70,7 +70,10 @@ export const makeCLI = (
         ),
       ),
       // Parsing and help need platform services, but no application resources.
-      Effect.provideService(CliConfig.CliConfig, CliConfig.make({ builtIns: [GlobalFlag.Help] })),
+      Effect.provideService(
+        CliConfig.CliConfig,
+        CliConfig.make({ builtIns: [GlobalFlag.Help, GlobalFlag.Completions] }),
+      ),
       Effect.provide(BunServices.layer),
     );
 };
