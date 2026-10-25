@@ -62,7 +62,7 @@ const fixture = async () => {
     failLogin: false,
     failModels: false,
     installed: false,
-    loaded: false,
+    active: false,
     managed: true,
   };
 
@@ -118,8 +118,8 @@ const fixture = async () => {
           action === "status"
             ? {
                 installed: state.installed,
-                loaded: state.loaded,
-                plist: "test.plist",
+                active: state.active,
+                file: "test.plist",
                 log: "test.log",
               }
             : "Worker started.",
@@ -227,7 +227,7 @@ describe("setup", () => {
   test("reruns default to the saved provider and model and preserve skipped Discord and unrelated settings", async () => {
     const f = await fixture();
     f.state.connected = true;
-    f.state.loaded = true;
+    f.state.active = true;
     f.state.installed = true;
 
     const saved = {
@@ -370,7 +370,7 @@ describe("setup", () => {
       const f = await fixture();
       f.state.connected = true;
       f.state.installed = true;
-      f.state.loaded = mode === "restart";
+      f.state.active = mode === "restart";
       f.state.managed = mode !== "foreground";
       expect(
         await f.run([

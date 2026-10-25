@@ -31,7 +31,7 @@ export const workerCommand = (context: CLIContext) => {
 
       if (reply !== null)
         return yield* Console.log(
-          JSON.stringify({ launchAgent: managed, worker: reply.value }, null, 2),
+          JSON.stringify({ service: managed, worker: reply.value }, null, 2),
         );
 
       const overview = yield* readLocalTaskStatus.pipe(Effect.provide(runtime.tasks));
@@ -49,7 +49,7 @@ export const workerCommand = (context: CLIContext) => {
       yield* Console.log(
         JSON.stringify(
           {
-            launchAgent: managed,
+            service: managed,
             worker: {
               ...overview,
               running: false,
@@ -81,10 +81,10 @@ export const workerCommand = (context: CLIContext) => {
         Command.make(action, {}, () => runWorkerCommand(action)).pipe(
           Command.withDescription(
             {
-              install: "Install and start the macOS login worker",
+              install: "Install and start the login worker",
               start: "Start an installed worker",
               stop: "Stop it until the next login or explicit start",
-              status: "Show launch agent, scheduling, provider, and messaging status",
+              status: "Show login service, scheduling, provider, and messaging status",
               logs: "Print the last 64 KiB of worker logs",
               uninstall: "Stop and remove login startup; retain saved data",
             }[action],

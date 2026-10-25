@@ -179,17 +179,17 @@ controls, and uncertain deliveries. The bot token is never accepted as a command
 
 ## Worker
 
-| Command                     | Action                                                         |
-| --------------------------- | -------------------------------------------------------------- |
-| `worker run [--tasks-only]` | Run scheduling and messaging, or scheduling only.              |
-| `worker install`            | Install and start the macOS login worker.                      |
-| `worker start`              | Start an installed worker.                                     |
-| `worker stop`               | Stop it until the next login or explicit start.                |
-| `worker status`             | Show launch agent, scheduling, provider, and messaging status. |
-| `worker logs`               | Print the last 64 KiB of worker logs.                          |
-| `worker uninstall`          | Stop and remove login startup, retaining saved data.           |
+| Command                     | Action                                                          |
+| --------------------------- | --------------------------------------------------------------- |
+| `worker run [--tasks-only]` | Run scheduling and messaging, or scheduling only.               |
+| `worker install`            | Install and start the login worker.                             |
+| `worker start`              | Start an installed worker.                                      |
+| `worker stop`               | Stop it until the next login or explicit start.                 |
+| `worker status`             | Show login service, scheduling, provider, and messaging status. |
+| `worker logs`               | Print the last 64 KiB of worker logs.                           |
+| `worker uninstall`          | Stop and remove login startup, retaining saved data.            |
 
-See [worker](worker.md) for foreground modes, macOS lifecycle commands, logs,
+See [worker](worker.md) for foreground modes, login lifecycle commands, logs,
 interactive requests, and recovery. `worker status` includes messaging connection,
 queue, and delivery status under `worker.messaging`. Only one worker mode can own a data directory
 at a time. Commands use the worker while it is running and run locally when it

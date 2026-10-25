@@ -28,8 +28,8 @@ const invoke = async (
 
       return {
         installed: false,
-        loaded: false,
-        plist: join(dataDirectory, "home/Library/LaunchAgents/test.plist"),
+        active: false,
+        file: join(dataDirectory, "home/Library/LaunchAgents/test.plist"),
         log: join(dataDirectory, "logs/worker.log"),
       };
     }),

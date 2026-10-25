@@ -27,6 +27,7 @@
         "@poppet/mcp": "workspace:*",
         "@poppet/memory": "workspace:*",
         "@poppet/platform": "workspace:*",
+        "@poppet/platform-linux": "workspace:*",
         "@poppet/platform-macos": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/provider-openai": "workspace:*",
@@ -153,6 +154,16 @@
       "name": "@poppet/platform",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/io": "workspace:*",
+        "effect": "4.0.4",
+      },
+    },
+    "packages/platform-linux": {
+      "name": "@poppet/platform-linux",
+      "version": "0.0.0",
+      "dependencies": {
+        "@poppet/io": "workspace:*",
+        "@poppet/platform": "workspace:*",
         "effect": "4.0.4",
       },
     },
@@ -160,7 +171,6 @@
       "name": "@poppet/platform-macos",
       "version": "0.0.0",
       "dependencies": {
-        "@poppet/io": "workspace:*",
         "@poppet/platform": "workspace:*",
         "effect": "4.0.4",
       },
@@ -373,6 +383,8 @@
     "@poppet/memory": ["@poppet/memory@workspace:packages/memory"],
 
     "@poppet/platform": ["@poppet/platform@workspace:packages/platform"],
+
+    "@poppet/platform-linux": ["@poppet/platform-linux@workspace:packages/platform-linux"],
 
     "@poppet/platform-macos": ["@poppet/platform-macos@workspace:packages/platform-macos"],
 

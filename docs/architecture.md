@@ -45,8 +45,9 @@ The Bun monorepo uses private workspaces:
 | `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                        | Provider contract                                                                    |
 | `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle              | Config, credentials, provider contract                                               |
 | `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                   | Config and store for the local implementation                                        |
-| `@poppet/platform`            | Worker actions, errors, and a host-supplied launch description                     | None                                                                                 |
-| `@poppet/platform-macos`      | macOS LaunchAgent control, plist generation, and worker logs                       | Platform contract                                                                    |
+| `@poppet/platform`            | Worker actions, errors, status, launch description, and bounded log reading        | I/O helpers                                                                          |
+| `@poppet/platform-macos`      | macOS LaunchAgent control and plist generation                                     | Platform contract                                                                    |
+| `@poppet/platform-linux`      | systemd user unit control and unit file generation                                 | Platform contract, I/O helpers                                                       |
 | `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                          | Config, agent, store, worker transport, provider contract                            |
 | `@poppet/worker`              | Protected local command transport and request lifecycle                            | Effect                                                                               |
 | `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery           | Agent, config, credentials, store, provider contract                                 |
@@ -754,11 +755,12 @@ its state and require an explicit retry. Database updates use transactions. Exac
 
 The CLI's `worker.ts` parses actions, selects the platform, and supplies absolute
 Bun and entry-point paths, a working directory, and an explicit settings
-allowlist. `@poppet/platform` defines the shared action, error, and launch data.
+allowlist. `@poppet/platform` defines the shared action, error, status, and
+launch data, plus protected log creation and bounded log reading.
 `@poppet/platform-macos` owns LaunchAgent installation and control, plist
-encoding, bounded subprocesses, and log reading. It depends on the platform
-contract and Effect, and does not import task scheduling or CLI configuration.
-Only the macOS implementation is currently provided.
+encoding, and bounded launchctl subprocesses. `@poppet/platform-linux` owns the
+same lifecycle for a systemd user unit through `systemctl --user`. Neither
+imports task scheduling or CLI configuration. Other platforms report no service.
 
 The installed CLI entry point is `worker-background.ts`. This process boundary
 holds a separate log ownership lock and launches `main.ts worker run` with piped
@@ -778,6 +780,16 @@ if they do not finish. Only exit 113 confirms that a service is absent; other
 inspection errors preserve its registration and plist. API keys remain in
 protected provider storage and are excluded from the host's launch environment.
 See [Apple's launchd guide](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html).
+
+On Linux the unit uses `Restart=always` with `RestartSec=30`, `TimeoutStopSec=30`,
+and `UMask=0077`. `KillMode=mixed` sends SIGTERM only to the launcher, which
+forwards it like launchd's single signal; the rest of the group receives only
+the final SIGKILL. Unit values are quoted and escaped for specifiers and
+variable expansion, and control characters are rejected. `systemctl show`
+reports an absent unit as `LoadState=not-found`; any failed inspection preserves
+the unit file. A unit file that is present but not loaded is reloaded before it
+is started or disabled. See [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html)
+and [systemd.unit](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html).
 
 `@poppet/credentials/lock` shares storage ownership between conversation storage,
 ChatGPT credentials, and API-key mutations. A small lock database uses

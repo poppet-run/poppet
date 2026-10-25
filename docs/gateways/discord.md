@@ -55,7 +55,7 @@ file and `0700` directory permissions. Removing the `discord` section disables
 Discord. Model-provider credentials remain separate. Restart an existing worker
 after changing channel settings;
 on macOS, use `worker stop` followed by `worker start`. The installed worker reads
-the saved settings without placing the bot token in its LaunchAgent environment.
+the saved settings without placing the bot token in its service environment.
 
 ## Thread sessions
 
@@ -131,7 +131,7 @@ Successful cron results go to each task's configured destination.
 Automated tests use injected Discord events and API responses. Live bot setup,
 permissions, reconnection, and model inference still need manual validation.
 
-See [worker modes](../worker.md#foreground-modes) to run messaging with scheduling or install the combined macOS worker.
+See [worker modes](../worker.md#foreground-modes) to run messaging with scheduling or install the combined login worker.
 
 ## Thread names
 

@@ -46,10 +46,13 @@ Worker-backed CLI and messaging chats get separate run-owned browser resources.
 Configuration changes require a restart. Cancelling a chat or stopping the worker
 closes those resources. Browser tools are omitted from scheduled tasks.
 
-## macOS login startup
+## Login startup
 
-On macOS, stop any foreground worker, then install a user LaunchAgent to start
-the combined `worker run` host at login and keep it running while you are logged in:
+On macOS and on Linux with systemd, stop any foreground worker, then install a
+user service to start the combined `worker run` host at login and keep it running
+while you are logged in. macOS uses a LaunchAgent in `~/Library/LaunchAgents`.
+Linux uses a systemd user unit in `$XDG_CONFIG_HOME/systemd/user`, or
+`~/.config/systemd/user` when `XDG_CONFIG_HOME` is unset or relative:
 
 ```sh
 poppet worker install
@@ -67,7 +70,7 @@ entry point, current working directory, and `POPPET_DATA_DIR`. The worker reads
 `config.json` on startup. After editing settings, use `worker stop` followed by
 `worker start`. Keep the checkout and Bun executable in place; moving either
 requires uninstalling and installing again. Each data directory has its own
-launch agent. Manage it with the same `POPPET_DATA_DIR`.
+service. Manage it with the same `POPPET_DATA_DIR`.
 
 `worker stop`, `worker uninstall`, and `worker logs` use only the data directory.
 They remain available when `config.json` is invalid, so a configuration error does
@@ -85,7 +88,7 @@ by `worker install` once to update it to `worker run`. Saved data and credential
 are retained. Restarting that old installation alone keeps its saved command and
 now runs scheduling only.
 
-API keys are excluded from the launch agent's environment. Save them first with
+API keys are excluded from the service's environment. Save them first with
 `provider login openrouter` or `provider login opencode-go`; ChatGPT uses its existing
 protected sign-in storage. The worker refreshes credentials through the same
 provider code as chat. Installation does not verify live inference.
@@ -95,9 +98,32 @@ stdout and stderr. Existing installations need `worker uninstall` followed by
 `worker install` once to select this launcher. Saved data, credentials, and logs
 are retained. Foreground commands continue writing to the terminal.
 
+### Linux and systemd
+
+`worker install` writes the unit, reloads the user manager, and runs
+`systemctl --user enable --now`. `worker stop` stops the unit and leaves it
+enabled; `worker uninstall` disables it and removes the unit file. The user
+manager starts at your first login and stops after your last session ends, so
+the worker stops at logout too. To keep it running without a login session,
+enable lingering once:
+
+```sh
+loginctl enable-linger
+```
+
+Worker commands need the user manager's bus. From a login session this is set
+up for you; over `su` or in some containers `XDG_RUNTIME_DIR` is missing and
+`systemctl --user` fails, which `worker status` reports. The launcher's own
+startup errors go to the journal, while worker output still goes to
+`worker.log`:
+
+```sh
+journalctl --user -u 'run.poppet.worker.*'
+```
+
 ## Status and logs
 
-`worker status` reports whether the launch agent is installed and loaded, whether
+`worker status` reports whether the login service is installed and active, whether
 the worker is responding, its PID and active occurrence, task and pending counts,
 the next scheduled timestamp, provider pauses, and five recent outcomes. It also
 shows local connection metadata and the account and plan-usage permission where
@@ -107,7 +133,8 @@ the current CLI default provider differs.
 Connection metadata is not a live provider verification. During an active
 credential-owning request, the last observed metadata is labelled `cached` with
 its observation time. `worker status` works for the foreground worker too.
-On other platforms, `launchAgent` is `null`; worker status remains available.
+The `service` field holds that state and the service file path. It is `null` on
+platforms without login startup; worker status remains available.
 
 Inspect full task results using the existing commands:
 
@@ -129,7 +156,7 @@ symlinks, hard links, and non-regular log files are rejected.
 joining bytes across rotation boundaries. Reading logs does not rotate them.
 The launcher forwards shutdown signals, waits for the worker to exit, and drains
 its output before closing the log. A worker that does not exit within 25 seconds
-is killed to stay within launchd's exit deadline. A logging failure stops the
+is killed to stay within the service manager's 30-second stop deadline. A logging failure stops the
 worker rather than allowing it to run without captured diagnostics.
 
 ## Stop, start, and uninstall
@@ -140,12 +167,14 @@ poppet worker start
 poppet worker uninstall
 ```
 
-Stopping removes the running launchd registration and sends SIGTERM. Scoped
+Stopping removes the running launchd registration, or stops the systemd unit, and
+sends SIGTERM to the launcher. Scoped
 cleanup interrupts active work, records its outcome, closes the socket, and
 releases storage. `stop` keeps login startup configured; `uninstall` disables it
 and retains tasks, results, credentials, and logs. Inspection errors fail
 the command and preserve the installed configuration. Lifecycle mutations finish
-before an interruption returns; each launchctl subprocess has a 35-second timeout.
+before an interruption returns; each launchctl or systemctl subprocess has a
+35-second timeout.
 Starting an already
 loaded worker does not interrupt an active request.
 
@@ -185,7 +214,7 @@ The current protocol uses `/v1/commands` and `/v1/tasks`; other routes are rejec
 
 ## Sleep and missed schedules
 
-The worker does not keep the Mac awake. After sleep, it runs an overdue one-off
+The worker does not keep the computer awake. After sleep, it runs an overdue one-off
 once. After sleep or a restart, a recurring task runs its most recent missed time
 once if that time is within the catch-up window (`tasks.catchUpMinutes`, default
 60), and records earlier missed times as skipped. Missed times older than the
@@ -223,17 +252,20 @@ poppet tasks show <task-id>
 poppet worker logs
 ```
 
-Use `worker start` instead of `install` if it is already installed. Repeat with a
+With GNU `date` on Linux, replace `-v+1M` with `-d '+1 min'`. Use `worker start`
+instead of `install` if it is already installed. Repeat with a
 sleep/wake cycle, then stop/start the worker and confirm a completed occurrence
 does not run again. Automated tests simulate clock jumps, crash recovery, and
 SIGTERM cleanup. Actual login startup, physical sleep/wake, and live provider
 execution remain manual checks. Other platforms can use `worker run` in the
-foreground; background installation currently supports macOS only.
+foreground; background installation supports macOS and Linux with systemd.
 
 Rotation tests exercise retention, restart, stdout/stderr capture, log inspection,
 and shutdown with isolated files and subprocesses. After reinstalling a real
-LaunchAgent, check `worker status` and `worker logs`, then stop/start it and confirm
-new log entries append. Native launchd behavior remains a manual check.
+LaunchAgent or systemd unit, check `worker status` and `worker logs`, then
+stop/start it and confirm new log entries append. On Linux, also log out and back
+in, with and without lingering, and confirm a killed launcher restarts after 30
+seconds. Native launchd and systemd behavior remain manual checks.
 
 ## Optional naming work
 

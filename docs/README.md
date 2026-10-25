@@ -20,7 +20,7 @@ for persistent settings.
 - [Memory](memory.md): an editable profile and explicitly saved facts shared across sessions.
 - [Storage](storage.md): the local database, permissions, ownership, and recovery.
 - [Scheduled tasks](tasks.md): one-off and recurring work, results, pauses, and retries.
-- [Worker](worker.md): foreground modes, macOS login startup, lifecycle, and logs.
+- [Worker](worker.md): foreground modes, macOS and Linux login startup, lifecycle, and logs.
 
 ## Gateways
 
