@@ -36,91 +36,88 @@ describe("workerLaunch", () => {
 });
 
 describe("runWorker", () => {
-  test.each(["all", "gateway"] as const)(
-    "when a %s worker receives a task destination, validates and saves it through the socket",
-    async (mode) => {
-      const directory = await mkdtemp(join(tmpdir(), "p11-worker-"));
-      const ready = Deferred.makeUnsafe<void>();
+  test("when the worker receives a task destination, validates and saves it through the socket", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "p11-worker-"));
+    const ready = Deferred.makeUnsafe<void>();
 
-      const destination = {
-        adapter: "discord",
-        account: "bot",
-        ownerId: "owner",
-        scopeId: "guild",
-        parentId: "parent",
-        conversationId: "thread",
-      };
+    const destination = {
+      adapter: "discord",
+      account: "bot",
+      ownerId: "owner",
+      scopeId: "guild",
+      parentId: "parent",
+      conversationId: "thread",
+    };
 
-      const config = Layer.succeed(AppConfig, {
-        applicationName: "Test",
-        dataDirectory: directory,
-        provider: "test-provider",
-        model: "test-model",
-      });
+    const config = Layer.succeed(AppConfig, {
+      applicationName: "Test",
+      dataDirectory: directory,
+      provider: "test-provider",
+      model: "test-model",
+    });
 
-      const store = StoreLive.pipe(Layer.provideMerge(config));
+    const store = StoreLive.pipe(Layer.provideMerge(config));
 
-      const services = Layer.mergeAll(
-        store,
-        SkillsLive.pipe(Layer.provide(config)),
-        TaskRepositoryLive.pipe(Layer.provide(store)),
-        Layer.succeed(Agent, {
-          send: () => Stream.die("Unexpected inference"),
-          nameSession: () => Effect.void,
-        }),
-        Layer.succeed(WorkerRequests, {
-          handle: () => Effect.succeed(new Response("Not found", { status: 404 })),
-        }),
-        Layer.succeed(MessagingWorker, {
-          run: Effect.never,
-          status: Effect.succeed({}),
-          resolveDestination: (adapter, conversationId) => {
-            expect([adapter, conversationId]).toEqual(["discord", "thread"]);
+    const services = Layer.mergeAll(
+      store,
+      SkillsLive.pipe(Layer.provide(config)),
+      TaskRepositoryLive.pipe(Layer.provide(store)),
+      Layer.succeed(Agent, {
+        send: () => Stream.die("Unexpected inference"),
+        nameSession: () => Effect.void,
+      }),
+      Layer.succeed(WorkerRequests, {
+        handle: () => Effect.succeed(new Response("Not found", { status: 404 })),
+      }),
+      Layer.succeed(MessagingWorker, {
+        run: Effect.never,
+        status: Effect.succeed({}),
+        resolveDestination: (adapter, conversationId) => {
+          expect([adapter, conversationId]).toEqual(["discord", "thread"]);
 
-            return Effect.succeed(destination);
-          },
-        }),
-      );
-
-      const output: Console.Console = {
-        ...console,
-        log: (...values) => {
-          if (values.join(" ").startsWith("Worker running."))
-            Effect.runSync(Deferred.succeed(ready, undefined));
+          return Effect.succeed(destination);
         },
-      };
+      }),
+    );
 
-      try {
-        await Effect.runPromise(
-          Effect.scoped(
-            Effect.gen(function* () {
-              const fiber = yield* runWorker(mode).pipe(Effect.forkScoped);
-              yield* Deferred.await(ready);
+    const output: Console.Console = {
+      ...console,
+      log: (...values) => {
+        if (values.join(" ").startsWith("Worker running."))
+          Effect.runSync(Deferred.succeed(ready, undefined));
+      },
+    };
 
-              const reply = yield* remoteTaskCommand(workerSocketPath(directory), {
-                action: "add",
-                task: {
-                  name: "Summary",
-                  prompt: "Summarize recent conversations",
-                  provider: "test-provider",
-                  model: "test-model",
-                  workload: "assistant",
-                  schedule: { type: "once", at: Date.parse("2099-10-15T09:00:00Z") },
-                },
-                delivery: { adapter: "discord", conversationId: "thread" },
-              });
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const fiber = yield* runWorker.pipe(Effect.forkScoped);
+            yield* Deferred.await(ready);
 
-              expect(reply?.value).toHaveProperty("destination", destination);
-              expect(
-                (yield* remoteTaskCommand(workerSocketPath(directory), { action: "list" }))?.value,
-              ).toMatchObject([{ destination }]);
-              yield* Fiber.interrupt(fiber);
-            }),
-          ).pipe(Effect.provide(services), Effect.provideService(Console.Console, output)),
-        );
-      } finally {
-        await rm(directory, { recursive: true, force: true });
-      }
-    },
-  );
+            const reply = yield* remoteTaskCommand(workerSocketPath(directory), {
+              action: "add",
+              task: {
+                name: "Summary",
+                prompt: "Summarize recent conversations",
+                provider: "test-provider",
+                model: "test-model",
+                workload: "assistant",
+                schedule: { type: "once", at: Date.parse("2099-10-15T09:00:00Z") },
+              },
+              delivery: { adapter: "discord", conversationId: "thread" },
+            });
+
+            expect(reply?.value).toHaveProperty("destination", destination);
+            expect(
+              (yield* remoteTaskCommand(workerSocketPath(directory), { action: "list" }))?.value,
+            ).toMatchObject([{ destination }]);
+            yield* Fiber.interrupt(fiber);
+          }),
+        ).pipe(Effect.provide(services), Effect.provideService(Console.Console, output)),
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

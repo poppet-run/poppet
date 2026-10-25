@@ -325,11 +325,8 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     clock,
     program,
     invoke: (args: ReadonlyArray<string>) => Effect.runPromise(program(args)),
-    startWorker: async (mode: "all" | "tasks" | "gateway" = "all", consoleOutput = output) => {
-      const args =
-        mode === "gateway"
-          ? ["gateway", "work"]
-          : ["worker", "run", ...(mode === "tasks" ? ["--tasks-only"] : [])];
+    startWorker: async (mode: "all" | "tasks" = "all", consoleOutput = output) => {
+      const args = ["worker", "run", ...(mode === "tasks" ? ["--tasks-only"] : [])];
 
       const worker = clock.runFork(program(args, readChatLine, consoleOutput));
 
@@ -1299,7 +1296,7 @@ describe.concurrent("chat.ts", () => {
     }
   });
 
-  test.each(["all", "tasks", "gateway"] as const)(
+  test.each(["all", "tasks"] as const)(
     "when worker mode is %s, starts only selected services and keeps shared commands available",
     async (mode) => {
       const chat = await fixture();
@@ -1318,13 +1315,12 @@ describe.concurrent("chat.ts", () => {
           new Date(Date.now() + 60_000).toISOString(),
           "Summarize",
         ]);
-        const task = JSON.parse(chat.lines.at(-1)!);
         worker = await chat.startWorker(mode);
         await chat.invoke(["worker", "status"]);
         const status = JSON.parse(chat.lines.at(-1)!).worker;
         expect(status).toMatchObject({
           running: true,
-          services: { tasks: mode !== "gateway", gateway: mode !== "tasks" },
+          services: { tasks: true, gateway: mode !== "tasks" },
         });
         const gateway = status.messaging;
         expect(gateway).toMatchObject({
@@ -1344,25 +1340,19 @@ describe.concurrent("chat.ts", () => {
           ]);
         await chat.clock.runPromise(TestClock.adjust("61 seconds"));
 
-        if (mode === "gateway") {
-          expect(chat.requests).toHaveLength(0);
-          await chat.invoke(["tasks", "show", task.id]);
-          expect(JSON.parse(chat.lines.at(-1)!).occurrences).toEqual([]);
-        } else {
-          await Effect.runPromise(
-            Effect.gen(function* () {
-              while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
-            }).pipe(Effect.timeout("2 seconds")),
-          );
-          expect(chat.requests).toHaveLength(1);
-        }
+        await Effect.runPromise(
+          Effect.gen(function* () {
+            while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
+          }).pipe(Effect.timeout("2 seconds")),
+        );
+        expect(chat.requests).toHaveLength(1);
 
         const count = chat.requests.length;
         await chat.invoke(["chat", "new", "Hello from CLI"]);
         expect(chat.requests).toHaveLength(count + 1);
         expect(chat.state.peak).toBe(1);
         await expect(
-          chat.invoke(mode === "gateway" ? ["worker", "run", "--tasks-only"] : ["gateway", "work"]),
+          chat.invoke(mode === "tasks" ? ["worker", "run"] : ["worker", "run", "--tasks-only"]),
         ).rejects.toHaveProperty("reason", "busy");
         await Effect.runPromise(Fiber.interrupt(worker));
         worker = undefined;
