@@ -120,7 +120,10 @@ export const WorkerRequestsLive = Layer.effect(
           );
 
           if (Option.isNone(command))
-            return Response.json({ message: "Invalid worker command." }, { status: 400 });
+            return Response.json(
+              { ok: false, message: "Invalid worker command." },
+              { status: 400 },
+            );
 
           const owned = yield* Scope.fork(yield* Effect.scope);
           const frames = yield* Queue.make<Frame, Cause.Done>({ capacity: 16 });
