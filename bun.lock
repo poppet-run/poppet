@@ -153,6 +153,7 @@
       "name": "@poppet/platform",
       "version": "0.0.0",
       "dependencies": {
+        "@poppet/io": "workspace:*",
         "effect": "4.0.4",
       },
     },
@@ -160,7 +161,6 @@
       "name": "@poppet/platform-macos",
       "version": "0.0.0",
       "dependencies": {
-        "@poppet/io": "workspace:*",
         "@poppet/platform": "workspace:*",
         "effect": "4.0.4",
       },

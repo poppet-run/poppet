@@ -22,14 +22,14 @@ const setupWorker = (context: CLIContext, directory: string) =>
     }
 
     const status = yield* Schema.decodeUnknownEffect(
-      Schema.Struct({ installed: Schema.Boolean, loaded: Schema.Boolean }),
+      Schema.Struct({ installed: Schema.Boolean, active: Schema.Boolean }),
     )(managed).pipe(
       Effect.mapError(() => new UsageError({ message: "Unexpected worker status." })),
     );
 
     const running = yield* remoteTaskCommand(workerSocketPath(directory), { action: "status" });
 
-    if (running !== null && !status.loaded) {
+    if (running !== null && !status.active) {
       yield* Console.log(
         "A foreground worker is running. Stop it and run poppet worker run again to apply these settings.",
       );
@@ -39,19 +39,19 @@ const setupWorker = (context: CLIContext, directory: string) =>
 
     const action = status.installed ? "start" : "install";
 
-    const message = status.loaded
+    const message = status.active
       ? "Restart the worker to apply these settings? This can interrupt active runs."
       : status.installed
         ? "Start the installed worker for scheduling and messaging?"
         : "Install and start the macOS login worker for scheduling and messaging?";
 
     if (yield* Prompt.Confirm({ message, initial: false })) {
-      if (status.loaded) yield* context.worker("stop", directory);
+      if (status.active) yield* context.worker("stop", directory);
       yield* Console.log(yield* context.worker(action, directory));
       yield* Console.log("Run poppet worker status to check readiness.");
     } else {
       yield* Console.log(
-        status.loaded
+        status.active
           ? "Restart the worker when ready to apply these settings: poppet worker stop; poppet worker start"
           : "Start scheduling and messaging when ready: poppet worker run",
       );
