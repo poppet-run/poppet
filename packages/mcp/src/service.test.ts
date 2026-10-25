@@ -8,14 +8,14 @@ import { ApiKeyStore } from "@poppet/credentials";
 import { Clock, ConfigProvider, Console, Effect, Fiber, Layer, Redacted, Schema } from "effect";
 import { TestClock } from "effect/testing";
 
-import { type MCPServer } from "#src/config";
+import { type MCPStdioServer } from "#src/config";
 import { MCP, makeMCPLive } from "#src/service";
 
 const fixture = async (
   mode = "normal",
   tools = ["read", "write"],
   scheduledTools: string[] = [],
-  environment: MCPServer["environment"] = {},
+  environment: MCPStdioServer["environment"] = {},
   copies = 1,
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-"));
@@ -29,7 +29,7 @@ const fixture = async (
 
   await Promise.all(serverDirectories.slice(1).map((path) => mkdir(path)));
 
-  const servers: MCPServer[] = serverDirectories.map((path, index) => ({
+  const servers: MCPStdioServer[] = serverDirectories.map((path, index) => ({
     id: index === 0 ? "fixture" : `fixture-${index}`,
     enabled: true,
     command: process.execPath,

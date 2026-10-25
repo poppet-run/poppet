@@ -37,7 +37,7 @@ The Bun monorepo uses private workspaces:
 | ----------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                 | Config, agent, browser, MCP, memory, skills, tasks, store, platform, provider layers |
 | `@poppet/browser`             | Isolated browser tools, settings, pinned daemon lifecycle, bounded native requests | I/O helpers, provider contract, Effect                                               |
-| `@poppet/mcp`                 | Scoped stdio clients, bounded discovery, original-schema validation, result limits | Credentials, provider contract                                                       |
+| `@poppet/mcp`                 | Scoped stdio/HTTP clients, bounded discovery, schema validation, result limits     | Credentials, provider contract                                                       |
 | `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                    | Config, I/O helpers, memory, skills, store, web search, provider contract            |
 | `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation   | None                                                                                 |
 | `@poppet/web-search`          | Brave/Kagi search adapters, validation, and bounded source results                 | I/O helpers, Effect                                                                  |
@@ -1093,8 +1093,9 @@ other adapters can omit the capability. Inference-provider packages are unchange
 ## MCP clients
 
 `@poppet/mcp` owns configuration schemas, prompt policy, inspection commands,
-errors, allowed tool contracts, and the official SDK's local stdio connections
-and discovery. It depends on credentials and the provider contract, with no agent
+errors, allowed tool contracts, and the official SDK's local stdio and
+Streamable HTTP connections and discovery. Both transports share one connection
+lifecycle; HTTP adds a byte-bounded `fetch` and ends its session on close. It depends on credentials and the provider contract, with no agent
 or application-config dependency. The lightweight `@poppet/mcp/config` export lets
 `@poppet/config` validate the file section and resolve its paths without importing
 the SDK or starting a client.

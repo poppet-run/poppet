@@ -8,6 +8,8 @@ removed because no messaging adapter supplied attachments.
 Phases 28–34 are planned only. Plans do not authorize implementation. Phase 35's
 parallel messaging is implemented with automated checks and on by default
 (`chat.maxConcurrentRequests` is 3); its live Discord check is outstanding.
+Phase 36's HTTP MCP servers are implemented with automated checks; its live
+remote-server check is outstanding.
 
 Completed phases retain short status summaries, evidence, and outstanding checks.
 Use the linked guides for current behavior and setup. Git history retains the
@@ -65,6 +67,7 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 33: Trusted time for scheduled runs](phases/33.md)
 - [Phase 34: Model and reasoning selection for new sessions](phases/34.md)
 - [Phase 35: Parallel messaging conversations](phases/35.md) (implemented; default limit 1)
+- [Phase 36: HTTP MCP servers](phases/36.md) (implemented)
 
 ## Validation
 

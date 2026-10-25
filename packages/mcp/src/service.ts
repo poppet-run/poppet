@@ -10,9 +10,9 @@ import {
   definition,
   toolResult,
 } from "#src/catalog";
-import { mcpServers, type MCPServer } from "#src/config";
+import { isHTTPServer, mcpServers, type MCPReference, type MCPServer } from "#src/config";
 import { MCPError } from "#src/errors";
-import { ScopedStdioTransport } from "#src/transport";
+import { boundedFetch, ScopedHTTPTransport, ScopedStdioTransport } from "#src/transport";
 
 /** An allowed discovered tool with validation and invocation owned by this package. */
 export interface MCPTool {
@@ -31,7 +31,7 @@ class MCPDiagnostic extends Data.TaggedError("MCPDiagnostic")<{ readonly message
 
 interface Connection {
   readonly client: Client;
-  readonly transport: ScopedStdioTransport;
+  readonly transport: ScopedStdioTransport | ScopedHTTPTransport;
   /** Reconnection attempts since this server last connected successfully. */
   retries: number;
   readonly now: () => number;
@@ -58,6 +58,9 @@ export class MCP extends Context.Service<
         readonly id: string;
         readonly enabled: boolean;
         readonly state: Connection["state"];
+        readonly transport: "stdio" | "http";
+        /** The HTTP endpoint's origin; paths and queries are omitted. */
+        readonly origin: string | null;
         readonly pid: number | null;
         readonly diagnostic: string | null;
         /** When a failed server will reconnect on its next request, in epoch milliseconds. */
@@ -84,7 +87,7 @@ const failed = (message: string) => new MCPError({ reason: "tool-network", messa
 
 const startupFailure = (config: MCPServer, cause: unknown) =>
   failed(
-    `MCP ${config.id}: ${cause instanceof MCPDiagnostic ? cause.message : "Startup or protocol failed. Check the executable and server compatibility."}`,
+    `MCP ${config.id}: ${cause instanceof MCPDiagnostic ? cause.message : isHTTPServer(config) ? "Startup or protocol failed. Check the URL, headers and server compatibility." : "Startup or protocol failed. Check the executable and server compatibility."}`,
   );
 
 const close = (connection: Connection): Promise<void> => {
@@ -104,29 +107,62 @@ const invalidate = (connection: Connection, message: string) => {
   return close(connection);
 };
 
-const resolveEnvironment = (config: MCPServer, credentials: ApiKeyStore["Service"]) =>
+const resolveReference = (
+  config: MCPServer,
+  reference: MCPReference,
+  credentials: ApiKeyStore["Service"],
+  invalid: (value: string) => boolean,
+) =>
   Effect.gen(function* () {
-    const env: Record<string, string> = {};
+    const value =
+      "env" in reference
+        ? process.env[reference.env]
+        : yield* credentials.read(reference.credential).pipe(
+            Effect.map((key) => (key === null ? undefined : Redacted.value(key))),
+            Effect.mapError(() => failed(`MCP ${config.id}: cannot read selected credential.`)),
+          );
 
-    for (const [name, reference] of Object.entries(config.environment ?? {})) {
-      const value =
-        "env" in reference
-          ? process.env[reference.env]
-          : yield* credentials.read(reference.credential).pipe(
-              Effect.map((key) => (key === null ? undefined : Redacted.value(key))),
-              Effect.mapError(() => failed(`MCP ${config.id}: cannot read selected credential.`)),
-            );
+    if (value === undefined || value.length > 8192 || invalid(value))
+      return yield* Effect.fail(
+        failed(
+          `MCP ${config.id}: a selected environment, credential or header reference is missing or invalid.`,
+        ),
+      );
 
-      if (value === undefined || value.includes("\0") || value.length > 8192)
-        return yield* Effect.fail(
-          failed(
-            `MCP ${config.id}: a selected environment or credential reference is missing or invalid.`,
-          ),
+    return value;
+  });
+
+/** Child environment values for stdio servers, or request headers for HTTP servers, with their secrets. */
+const resolveReferences = (config: MCPServer, credentials: ApiKeyStore["Service"]) =>
+  Effect.gen(function* () {
+    const values: Record<string, string> = {};
+    const secrets: string[] = [];
+
+    if (isHTTPServer(config)) {
+      for (const [name, reference] of Object.entries(config.headers ?? {})) {
+        // Header values are visible ASCII and spaces; an empty secret would make the prefix the value.
+        const value = yield* resolveReference(
+          config,
+          reference,
+          credentials,
+          (text) => text.length === 0 || !/^[\u0020-\u007E]*$/.test(text),
         );
-      env[name] = value;
+
+        values[name] = `${reference.prefix ?? ""}${value}`;
+        secrets.push(value);
+      }
+    } else {
+      for (const [name, reference] of Object.entries(config.environment ?? {})) {
+        const value = yield* resolveReference(config, reference, credentials, (text) =>
+          text.includes("\0"),
+        );
+
+        values[name] = value;
+        secrets.push(value);
+      }
     }
 
-    return env;
+    return { values, secrets: secrets.filter((value) => value.length > 0) };
   });
 
 const discoverTools = async (config: MCPServer, client: Client, signal: AbortSignal) => {
@@ -309,21 +345,35 @@ export const makeMCPLive = (toolBytes: number) =>
             retries = prior.retries + 1;
           }
 
-          const env: Record<string, string> = {};
+          // Transports read these at start or per request, after startup resolves references.
+          const references: Record<string, string> = {};
 
           const client = new Client(
             { name: "poppet", version: "0.0.0" },
             { capabilities: {}, listMaxPages: 8 },
           );
 
-          const transport = new ScopedStdioTransport({
-            command: config.command,
-            args: [...config.args],
-            cwd: config.cwd ?? process.cwd(),
-            env,
-            stderr: "ignore",
-            maxBufferSize: 262144,
-          });
+          const transport = isHTTPServer(config)
+            ? new ScopedHTTPTransport(new URL(config.url), {
+                requestInit: { headers: references },
+                fetch: boundedFetch(262144),
+                redirectPolicy: "same-origin",
+                // Poppet's own backoff owns reconnection; a dropped stream fails the connection.
+                reconnectionOptions: {
+                  initialReconnectionDelay: 1000,
+                  maxReconnectionDelay: 30000,
+                  reconnectionDelayGrowFactor: 1.5,
+                  maxRetries: 0,
+                },
+              })
+            : new ScopedStdioTransport({
+                command: config.command,
+                args: [...config.args],
+                cwd: config.cwd ?? process.cwd(),
+                env: references,
+                stderr: "ignore",
+                maxBufferSize: 262144,
+              });
 
           const connection: Connection = {
             client,
@@ -341,7 +391,10 @@ export const makeMCPLive = (toolBytes: number) =>
             // The owner finalizer awaits this same teardown and reports any cleanup failure.
             void invalidate(
               connection,
-              `MCP ${config.id}: disconnected or invalid protocol. Dispatched calls may have unknown effects; Poppet reconnects on a later request.`,
+              // Startup failures keep their configuration hint; no call has been dispatched yet.
+              connection.state === "idle"
+                ? `${startupFailure(config, null).message} Poppet retries on a later request.`
+                : `MCP ${config.id}: disconnected or invalid protocol. Dispatched calls may have unknown effects; Poppet reconnects on a later request.`,
             ).catch(() => {});
           };
 
@@ -355,8 +408,8 @@ export const makeMCPLive = (toolBytes: number) =>
           if (!config.enabled) return connection;
 
           const startup = Effect.gen(function* () {
-            Object.assign(env, yield* resolveEnvironment(config, credentials));
-            const secrets = Object.values(env).filter((value) => value.length > 0);
+            const { values, secrets } = yield* resolveReferences(config, credentials);
+            Object.assign(references, values);
 
             const discovered = yield* Effect.tryPromise({
               try: async (signal) => {
@@ -417,7 +470,12 @@ export const makeMCPLive = (toolBytes: number) =>
             enabled: config.enabled,
             state:
               connection?.state ?? (config.enabled ? ("idle" as const) : ("disabled" as const)),
-            pid: connection?.transport.pid ?? null,
+            transport: isHTTPServer(config) ? ("http" as const) : ("stdio" as const),
+            origin: isHTTPServer(config) ? new URL(config.url).origin : null,
+            pid:
+              connection?.transport instanceof ScopedStdioTransport
+                ? connection.transport.pid
+                : null,
             diagnostic: connection?.diagnostic ?? null,
             retryAt: connection === undefined ? null : retryAt(connection),
             tools: config.tools,

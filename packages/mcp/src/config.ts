@@ -10,24 +10,88 @@ const Variable = Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]{0,
 
 const Names = Schema.Array(Text).check(Schema.isMaxLength(128));
 
-/** References contain names only. Credential values stay in protected auth storage. */
-export const MCPServer = Schema.Struct({
+const Reference = Schema.Union([
+  Schema.Struct({ env: Variable }),
+  Schema.Struct({ credential: Id }),
+]);
+
+export type MCPReference = typeof Reference.Type;
+
+// The transport sets these itself; a configured value would break or spoof the protocol.
+const managedHeaders = new Set([
+  "accept",
+  "content-length",
+  "content-type",
+  "host",
+  "last-event-id",
+  "mcp-protocol-version",
+  "mcp-session-id",
+]);
+
+const HeaderName = Schema.String.check(
+  Schema.isPattern(/^[A-Za-z0-9-]{1,128}$/),
+  Schema.makeFilter((name) =>
+    managedHeaders.has(name.toLowerCase()) ? "MCP transport headers cannot be configured." : true,
+  ),
+);
+
+const HeaderPrefix = Schema.String.check(Schema.isMaxLength(64), Schema.isPattern(/^[ -~]*$/));
+
+const HeaderReference = Schema.Union([
+  Schema.Struct({ env: Variable, prefix: Schema.optionalKey(HeaderPrefix) }),
+  Schema.Struct({ credential: Id, prefix: Schema.optionalKey(HeaderPrefix) }),
+]);
+
+const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** HTTPS endpoints, or plain HTTP to this machine. Secrets belong in headers, not the URL. */
+const Endpoint = Schema.String.check(
+  Schema.isMaxLength(2048),
+  Schema.makeFilter((value) => {
+    if (!URL.canParse(value)) return "MCP server URLs must be absolute.";
+    const url = new URL(value);
+
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback.has(url.hostname)))
+      return "MCP server URLs must use https, or http to a loopback address.";
+
+    if (url.username !== "" || url.password !== "" || url.hash !== "")
+      return "MCP server URLs cannot contain credentials or fragments.";
+
+    return true;
+  }),
+);
+
+const shared = {
   id: Id,
   enabled: Schema.Boolean,
+  tools: Names,
+  scheduledTools: Schema.optionalKey(Names),
+};
+
+/** References contain names only. Credential values stay in protected auth storage. */
+export const MCPStdioServer = Schema.Struct({
+  ...shared,
   command: Text,
   args: Schema.Array(Schema.String.check(Schema.isMaxLength(4096))).check(Schema.isMaxLength(64)),
   cwd: Schema.optionalKey(Text),
-  environment: Schema.optionalKey(
-    Schema.Record(
-      Variable,
-      Schema.Union([Schema.Struct({ env: Variable }), Schema.Struct({ credential: Id })]),
-    ),
-  ),
-  tools: Names,
-  scheduledTools: Schema.optionalKey(Names),
+  environment: Schema.optionalKey(Schema.Record(Variable, Reference)),
 });
 
+export const MCPHTTPServer = Schema.Struct({
+  ...shared,
+  url: Endpoint,
+  headers: Schema.optionalKey(Schema.Record(HeaderName, HeaderReference)),
+});
+
+export const MCPServer = Schema.Union([MCPStdioServer, MCPHTTPServer]);
+
 export type MCPServer = typeof MCPServer.Type;
+
+export type MCPHTTPServer = typeof MCPHTTPServer.Type;
+
+export type MCPStdioServer = typeof MCPStdioServer.Type;
+
+export const isHTTPServer = (server: MCPServer): server is MCPHTTPServer => "url" in server;
 
 export const MCPServers = Schema.Array(MCPServer).check(
   Schema.isMaxLength(8),
@@ -43,7 +107,11 @@ export const MCPServers = Schema.Array(MCPServer).check(
       )
         return "Scheduled MCP tools must be a unique, owner-reviewed read-only subset of tools.";
 
-      if (server.args.some((arg) => arg.includes("\0")) || server.command.includes("\0"))
+      if (isHTTPServer(server)) {
+        const names = Object.keys(server.headers ?? {}).map((name) => name.toLowerCase());
+
+        if (new Set(names).size !== names.length) return "MCP header names must be unique.";
+      } else if (server.args.some((arg) => arg.includes("\0")) || server.command.includes("\0"))
         return "MCP commands and arguments cannot contain NUL.";
     }
 
@@ -64,7 +132,7 @@ export const mcpServers = Config.String("mcpServers").pipe(
       new Config.ConfigError(
         new ConfigProvider.SourceError({
           message:
-            "Invalid mcpServers in config.json. Use unique enabled server entries, named environment/credential references and scheduledTools contained in tools. See docs/mcp.md.",
+            "Invalid mcpServers in config.json. Use unique enabled server entries with either a command or an https url, named environment/credential/header references and scheduledTools contained in tools. See docs/mcp.md.",
         }),
       ),
   ),
@@ -76,6 +144,8 @@ export const mcpFileValue = (servers: ReadonlyArray<MCPServer> | undefined, dire
     ? undefined
     : JSON.stringify(
         servers.map((server) =>
-          server.cwd === undefined ? server : { ...server, cwd: resolve(directory, server.cwd) },
+          isHTTPServer(server) || server.cwd === undefined
+            ? server
+            : { ...server, cwd: resolve(directory, server.cwd) },
         ),
       );

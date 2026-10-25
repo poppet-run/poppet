@@ -7,7 +7,7 @@ ChatGPT, OpenCode Go, and OpenRouter. Sessions are saved locally so you can pick
 past conversations.
 
 Poppet can remember facts and use local Markdown skills. It can also read web pages, search the web, use explicitly
-allowed local MCP tools, and run scheduled tasks through a shared background worker.
+allowed local and HTTP MCP tools, and run scheduled tasks through a shared background worker.
 
 ## Documentation
 
