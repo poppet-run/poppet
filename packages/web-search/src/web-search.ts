@@ -1,6 +1,6 @@
 import { isIP } from "node:net";
 
-import { readBoundedText, publicHttpURL, urlHostname, publicAddress } from "@poppet/io";
+import { fitPrefix, readBoundedText, publicHttpURL, urlHostname, publicAddress } from "@poppet/io";
 import { Context, Effect } from "effect";
 
 import { WebSearchError } from "#src/errors";
@@ -43,23 +43,26 @@ export const webSearchResult = (
       continue;
     }
 
-    let title = [...candidate.title];
-    let snippet = [...candidate.snippet];
-    const result = () => ({ title: title.join(""), url: url.href, snippet: snippet.join("") });
+    const result = (title: string, snippet: string) => ({ title, url: url.href, snippet });
 
-    const fits = () =>
-      Buffer.byteLength(JSON.stringify({ results: [...results, result()], truncated: true })) <=
-      limit;
+    const fits = (title: string, snippet: string) =>
+      Buffer.byteLength(
+        JSON.stringify({ results: [...results, result(title, snippet)], truncated: true }),
+      ) <= limit;
 
-    while (!fits() && (snippet.length > 0 || title.length > 1)) {
+    // Shorten the snippet first; a title is shortened only once the snippet is gone.
+    const snippet = fitPrefix(candidate.snippet, (prefix) => fits(candidate.title, prefix));
+
+    const title =
+      snippet === null ? fitPrefix(candidate.title, (prefix) => fits(prefix, "")) : candidate.title;
+
+    if (title === null || (snippet === null && title === "")) {
       truncated = true;
-
-      if (snippet.length > 0) snippet = snippet.slice(0, Math.floor(snippet.length / 2));
-      else title = title.slice(0, Math.max(1, Math.floor(title.length / 2)));
+      continue;
     }
 
-    if (fits()) results.push(result());
-    else truncated = true;
+    if (title !== candidate.title || snippet !== candidate.snippet) truncated = true;
+    results.push(result(title, snippet ?? ""));
   }
 
   return { results, truncated };

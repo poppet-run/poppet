@@ -17,6 +17,7 @@
   "dependencies": {
     "@poppet/agent": "workspace:*",
     "@poppet/config": "workspace:*",
+    "@poppet/io": "workspace:*",
     "@poppet/provider": "workspace:*",
     "@poppet/store": "workspace:*",
     "@poppet/worker": "workspace:*",

@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 
 import { AgentError, ChatSettings, ChatTasks, Skills } from "@poppet/agent";
+import { fitPrefix, longestFit } from "@poppet/io";
 import { Store, StoreError, type DeliveryDestination, type SkillSnapshot } from "@poppet/store";
 import { Clock, Effect, Layer, Match, Schema } from "effect";
 
@@ -349,7 +350,7 @@ export const ChatTasksLive = Layer.effect(
             const rows = yield* repo.occurrences(task.id, 6);
             const target = yield* repo.nextTarget(task.id);
 
-            let occurrences = rows.slice(0, 5).map((item) => ({
+            const occurrences = rows.slice(0, 5).map((item) => ({
               id: item.id,
               status: item.status,
               scheduledAt: item.scheduledAt,
@@ -359,35 +360,41 @@ export const ChatTasksLive = Layer.effect(
               reason: item.reason,
             }));
 
-            let prompt = [...task.prompt];
-            let truncated = rows.length > 5;
-
-            const output = () =>
+            const output = (prompt: string, shown: typeof occurrences, truncated: boolean) =>
               JSON.stringify({
                 task: {
                   ...summary(task),
-                  prompt: prompt.join(""),
+                  prompt,
                   provider: task.provider,
                   model: task.model,
                   workload: task.workload,
                   skill: task.skill?.name ?? null,
                 },
-                occurrences,
+                occurrences: shown,
                 target,
                 truncated,
               });
 
-            while (
-              Buffer.byteLength(output()) > toolBytes &&
-              (prompt.length > 0 || occurrences.length > 0)
-            ) {
-              truncated = true;
+            const fits = (text: string) => Buffer.byteLength(text) <= toolBytes;
+            const whole = output(task.prompt, occurrences, rows.length > 5);
 
-              if (prompt.length > 0) prompt = prompt.slice(0, Math.floor(prompt.length / 2));
-              else if (occurrences.length > 0) occurrences = occurrences.slice(0, -1);
-            }
+            if (fits(whole)) return whole;
 
-            return yield* bounded(output(), toolBytes);
+            // Shorten the prompt first, then drop occurrences from the end of the list.
+            const prompt = fitPrefix(task.prompt, (prefix) =>
+              fits(output(prefix, occurrences, true)),
+            );
+
+            if (prompt !== null) return output(prompt, occurrences, true);
+
+            const shown = longestFit(occurrences.length, (count) =>
+              fits(output("", occurrences.slice(0, count), true)),
+            );
+
+            return yield* bounded(
+              output("", occurrences.slice(0, Math.max(shown, 0)), true),
+              toolBytes,
+            );
           }).pipe(Effect.mapError(committedFailure));
 
           const execute = store

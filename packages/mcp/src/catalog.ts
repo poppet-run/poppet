@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { CallToolResult } from "@modelcontextprotocol/client";
+import { fitPrefix, longestFit } from "@poppet/io";
 import type { Tool } from "@poppet/provider";
 import Ajv from "ajv";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -223,35 +224,16 @@ export const toolResult = (
     if (Buffer.byteLength(output) <= limit) return output;
   }
 
-  if (Buffer.byteLength(serialize([])) > limit) throw new Error("MCP result budget is too small.");
-  let low = 0;
-  let high = content.length;
+  const fits = (texts: ReadonlyArray<string>) => Buffer.byteLength(serialize(texts)) <= limit;
+  const kept = longestFit(content.length, (count) => fits(content.slice(0, count)));
 
-  // Search prefixes instead of repeatedly shrinking and serializing every block.
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
+  if (kept < 0) throw new Error("MCP result budget is too small.");
+  const retained = content.slice(0, kept);
 
-    if (Buffer.byteLength(serialize(content.slice(0, middle))) <= limit) low = middle;
-    else high = middle - 1;
-  }
+  // Spend the remaining bytes on the next block.
+  const next = fitPrefix(content[kept] ?? "", (text) =>
+    fits(text.length === 0 ? retained : [...retained, text]),
+  );
 
-  const retained = content.slice(0, low);
-  const next = content[low] ?? "";
-  output = serialize(retained);
-  low = 0;
-  high = next.length;
-
-  // Spend the remaining bytes on the next block without splitting a surrogate pair.
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    const text = next.slice(0, middle).replace(/[\uD800-\uDBFF]$/, "");
-    const candidate = serialize(text.length === 0 ? retained : [...retained, text]);
-
-    if (Buffer.byteLength(candidate) <= limit) {
-      low = middle;
-      output = candidate;
-    } else high = middle - 1;
-  }
-
-  return output;
+  return serialize(next ? [...retained, next] : retained);
 };

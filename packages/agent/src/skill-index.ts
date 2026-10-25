@@ -1,3 +1,4 @@
+import { clip } from "@poppet/io";
 import { Effect } from "effect";
 
 import { byteSize } from "#src/context";
@@ -8,14 +9,8 @@ const maxIndexSkills = 64;
 
 const maxDescriptionBytes = 240;
 
-const truncate = (text: string, bytes: number) => {
-  if (byteSize(text) <= bytes) return text;
-  let result = text;
-
-  while (byteSize(`${result}…`) > bytes) result = result.slice(0, -1);
-
-  return `${result.trimEnd()}…`;
-};
+const truncate = (text: string, bytes: number) =>
+  byteSize(text) <= bytes ? text : `${clip(text, bytes - byteSize("…")).trimEnd()}…`;
 
 /** The first heading and the start of the first paragraph; skills need no metadata format. */
 export const skillDescription = (content: string) => {

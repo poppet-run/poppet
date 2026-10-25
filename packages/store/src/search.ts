@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { clip } from "@poppet/io";
 import { Effect, Schema } from "effect";
 import type { SqlClient } from "effect/sql";
 
@@ -12,21 +13,6 @@ export const MaxBytes = Schema.Int.check(Schema.isBetween({ minimum: 1024, maxim
 
 // Approximate JSON bytes a result spends on IDs, title, and field names.
 const overhead = 250;
-
-/** Cuts text to at most `bytes` UTF-8 bytes without splitting a character. */
-export const clip = (text: string, bytes: number) => {
-  let used = 0;
-  let end = 0;
-
-  for (const character of text) {
-    used += Buffer.byteLength(character);
-
-    if (used > bytes) break;
-    end += character.length;
-  }
-
-  return text.slice(0, end);
-};
 
 /**
  * Searches completed exchanges. The budget sets how many matches return and how long

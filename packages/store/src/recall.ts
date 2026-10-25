@@ -1,9 +1,10 @@
+import { clip } from "@poppet/io";
 import { Effect, Schema } from "effect";
 import type { SqlClient } from "effect/sql";
 
 import { StoreError, decodeInput } from "#src/errors";
 import { Session, SessionReadMessage, SessionReadQuery, type SessionReadResult } from "#src/schema";
-import { MaxBytes, clip } from "#src/search";
+import { MaxBytes } from "#src/search";
 import { decodeRow, decodeRows } from "#src/sql";
 
 const RecallRow = Schema.Struct({

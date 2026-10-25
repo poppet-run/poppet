@@ -127,6 +127,7 @@
       "dependencies": {
         "@modelcontextprotocol/client": "2.3.1",
         "@poppet/credentials": "workspace:*",
+        "@poppet/io": "workspace:*",
         "@poppet/provider": "workspace:*",
         "ajv": "8.20.0",
         "effect": "4.0.4",
@@ -222,6 +223,7 @@
       "dependencies": {
         "@poppet/agent": "workspace:*",
         "@poppet/config": "workspace:*",
+        "@poppet/io": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/store": "workspace:*",
         "@poppet/worker": "workspace:*",

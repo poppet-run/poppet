@@ -1,6 +1,6 @@
+import { fitText } from "@poppet/io";
 import { decodeHTML } from "entities/decode";
 
-import { byteSize } from "#src/context";
 import { AgentError } from "#src/errors";
 import { maxPageBytes, pageFailure } from "#src/page-network";
 
@@ -129,22 +129,16 @@ export const pageResult = (
       reason: "tool-network",
       message: "The page contains no usable static text. JavaScript rendering is unsupported.",
     });
-  let text = page.text;
-  let truncated = false;
-  let output = JSON.stringify({ url: url.href, title: page.title, text, truncated });
 
-  while (byteSize(output) > limit) {
-    if (text.length === 0)
-      throw new AgentError({
-        reason: "tool-limit",
-        message: "The page metadata exceeds the tool-result budget.",
-      });
-    text = text.slice(0, Math.floor(text.length / 2));
+  const output = fitText(page.text, limit, (text, truncated) =>
+    JSON.stringify({ url: url.href, title: page.title, text, truncated }),
+  );
 
-    if (/[\uD800-\uDBFF]$/.test(text)) text = text.slice(0, -1);
-    truncated = true;
-    output = JSON.stringify({ url: url.href, title: page.title, text, truncated });
-  }
+  if (output === null)
+    throw new AgentError({
+      reason: "tool-limit",
+      message: "The page metadata exceeds the tool-result budget.",
+    });
 
   return output;
 };

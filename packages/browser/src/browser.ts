@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { access, chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { fitText } from "@poppet/io";
 import { toolParameters, type Tool } from "@poppet/provider";
 import { Effect, Schema, Scope } from "effect";
 
@@ -73,16 +74,12 @@ export const browserInstructions = [
 ].join(" ");
 
 export const browserResult = (url: string | null, text: string, limit: number) => {
-  let truncated = false;
-  let output = JSON.stringify({ url, text, truncated });
+  const output = fitText(text, limit, (shown, truncated) =>
+    JSON.stringify({ url, text: shown, truncated }),
+  );
 
-  while (Buffer.byteLength(output) > limit) {
-    if (text.length === 0)
-      throw browserFailure("tool-limit", "Browser metadata exceeds the tool-result budget.");
-    text = text.slice(0, Math.floor(text.length / 2)).replace(/[\uD800-\uDBFF]$/, "");
-    truncated = true;
-    output = JSON.stringify({ url, text, truncated });
-  }
+  if (output === null)
+    throw browserFailure("tool-limit", "Browser metadata exceeds the tool-result budget.");
 
   return output;
 };
