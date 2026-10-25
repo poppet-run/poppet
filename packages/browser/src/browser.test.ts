@@ -363,6 +363,50 @@ describe.concurrent("browser.ts", () => {
     }
   });
 
+  test("when the first navigation fails, launches the browser only once", async () => {
+    const state = await fixture("navigation");
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const tools = yield* state.tools();
+
+          for (let attempt = 0; attempt < 2; attempt++)
+            yield* call(tools, "open", { url: "https://example.com/" }).pipe(Effect.flip);
+        }),
+      );
+      await state.cleaned();
+      const trace = await readFile(state.trace, "utf8");
+      expect(trace.match(/"action":"launch"/g)).toHaveLength(1);
+      expect(trace.match(/"action":"navigate"/g)).toHaveLength(2);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when an interaction fails, rejects references from the snapshot before it", async () => {
+    const state = await fixture("stale");
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const tools = yield* state.tools();
+          yield* call(tools, "open", { url: "https://example.com/" });
+          yield* call(tools, "snapshot");
+          yield* call(tools, "click", { reference: "@e2" }).pipe(Effect.flip);
+
+          const error = yield* call(tools, "click", { reference: "@e2" }).pipe(Effect.flip);
+
+          expect(error).toMatchObject({ reason: "tool-arguments" });
+        }),
+      );
+      await state.cleaned();
+      expect((await readFile(state.trace, "utf8")).match(/"action":"click"/g)).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each(["invalid", "overflow", "stale", "uncertain"])(
     "when a browser action has a %s failure, reports it without retrying",
     async (mode) => {

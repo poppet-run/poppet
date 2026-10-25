@@ -121,6 +121,8 @@ export const browserTools = (
       return url.href;
     };
 
+    // Launching and the first successful navigation are separate: a failed open keeps the launched browser.
+    let launched = false;
     let opened = false;
     const references = new Set<string>();
     // Lazy resources belong to the run, even when the first tool call has a shorter scope.
@@ -340,7 +342,7 @@ export const browserTools = (
         const { start, command, chromium, webRTCPath } = yield* initialize;
         yield* start;
 
-        if (!opened && name === "open")
+        if (!launched && name === "open") {
           yield* command({
             action: "launch",
             headless: true,
@@ -354,7 +356,11 @@ export const browserTools = (
             engine: "chrome",
             webmcp: false,
           });
+          launched = true;
+        }
 
+        // Any dispatched action may change the page, so earlier references never outlive it.
+        references.clear();
         const data = yield* command(args);
 
         opened = true;
@@ -372,7 +378,6 @@ export const browserTools = (
             ),
         });
 
-        references.clear();
         let text = JSON.stringify(data);
 
         if (name === "snapshot") {
