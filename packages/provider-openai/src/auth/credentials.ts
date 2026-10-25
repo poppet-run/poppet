@@ -9,7 +9,7 @@ import {
   writeFileAtomic,
 } from "@poppet/io";
 import { ProviderEnvironment } from "@poppet/provider";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, RcMap, Schema, Scope, Semaphore } from "effect";
 
 import { Connection, ConnectionError } from "#src/connection";
 
@@ -22,9 +22,11 @@ interface StoreOperations {
   readonly remove: Effect.Effect<void, ConnectionError>;
   /** Atomically replaces the protected connection file, deferring cancellation until cleanup. */
   readonly write: (connection: Connection) => Effect.Effect<void, ConnectionError>;
+  /** Runs an effect while no other user of this store in the process holds the permit. */
+  readonly withPermit: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 }
 
-/** Protected ChatGPT connection storage held by one owner for the service's scope. */
+/** Protected ChatGPT connection storage owned by this process while any service scope is open. */
 export class CredentialStore extends Context.Service<CredentialStore, StoreOperations>()(
   "poppet/CredentialStore",
 ) {}
@@ -36,6 +38,16 @@ const storageError = () =>
     reason: "storage",
     message: "Cannot read or write Poppet's protected authentication storage.",
   });
+
+// Concurrent model requests each build this layer. Builds in one process share
+// the owner lock and one permit per lock path, so a token refresh runs once
+// while other processes stay out until the last build here closes.
+const owners = Effect.runSync(
+  RcMap.make({
+    lookup: (lockPath: string) =>
+      acquireOwnerLock(lockPath).pipe(Effect.andThen(Semaphore.make(1))),
+  }).pipe(Effect.provideService(Scope.Scope, Scope.makeUnsafe())),
+);
 
 export const CredentialStoreLive = Layer.effect(
   CredentialStore,
@@ -50,7 +62,7 @@ export const CredentialStoreLive = Layer.effect(
       catch: storageError,
     });
 
-    yield* acquireOwnerLock(lockPath).pipe(
+    const permit = yield* RcMap.get(owners, lockPath).pipe(
       Effect.mapError((error) =>
         error.reason === "busy"
           ? new ConnectionError({
@@ -111,6 +123,12 @@ export const CredentialStoreLive = Layer.effect(
       catch: storageError,
     }).pipe(Effect.uninterruptible);
 
-    return { read, initialize, write, remove } satisfies StoreOperations;
+    return {
+      read,
+      initialize,
+      write,
+      remove,
+      withPermit: permit.withPermit,
+    } satisfies StoreOperations;
   }),
 );
