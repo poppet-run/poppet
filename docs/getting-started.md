@@ -7,7 +7,7 @@ Replace angle-bracket placeholders such as `<task-id>` before running a command.
 
 ## Requirements
 
-- Bun 1.4.3, pinned in `mise.toml` and `package.json`.
+- Bun 1.4.4, pinned in `mise.toml` and `package.json`.
 - Access to ChatGPT subscription inference, OpenCode Go, or OpenRouter.
 - A system browser for ChatGPT sign-in, or an API key for the other providers.
 - macOS for background worker installation. Other platforms can run the worker in the foreground.
@@ -46,7 +46,7 @@ Source changes take effect without rebuilding or linking again. Run `bun unlink`
 from the repository root to remove the command.
 
 Bun must also be available outside the checkout. If you use mise without a global
-Bun version, run `mise use -g bun@1.4.3` once. Check the installation by running
+Bun version, run `mise use -g bun@1.4.4` once. Check the installation by running
 `poppet --help` from another directory.
 
 All examples use `poppet`, which can run from any directory. Relative

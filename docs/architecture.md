@@ -1033,7 +1033,7 @@ from `<POPPET_DATA_DIR>/gateways`. Discord remains bundled. See
 ## Dependencies
 
 The foundation uses Effect 4.0.4, its Bun platform adapter, TypeScript 7.0.2,
-Oxfmt 0.73.0, Oxlint 1.88.0, and Bun 1.4.3 with matching Bun types. Bun checks types;
+Oxfmt 0.73.0, Oxlint 1.88.0, and Bun 1.4.4 with Bun 1.4.3 types. Bun checks types;
 TypeScript provides editor support. Versions are pinned and the lockfile is
 checked in. Effect provides Config and Schema, so a separate schema
 library is unnecessary.

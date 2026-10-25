@@ -432,7 +432,7 @@ const exampleChannel = (id: string) => {
   return { registration, state, incoming, replies };
 };
 
-describe("chat.ts", () => {
+describe.concurrent("chat.ts", () => {
   test("when generic task destinations select an adapter, validates access before saving", async () => {
     const channel = exampleChannel("example-channel");
     const chat = await fixture([channel.registration]);

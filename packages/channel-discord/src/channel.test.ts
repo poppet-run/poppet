@@ -1,4 +1,5 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, jest, spyOn, test } from "bun:test";
+import { setImmediate } from "node:timers";
 
 import { MessagingChannel } from "@poppet/gateway";
 import { ChannelType, Client, Events, MessageFlags, Options } from "discord.js";
@@ -64,11 +65,15 @@ describe("discordChannelLayer", () => {
           if (path.startsWith("/channels/300/messages/400/reactions/")) {
             writes.push(`${options.method} ${decodeURIComponent(path.split("/").at(-2)!)}`);
 
-            if (options.method === "DELETE" && ++removals <= 2)
+            if (options.method === "DELETE" && ++removals <= 2) {
+              // Let the SDK install its retry timer before advancing the clock.
+              setImmediate(() => jest.advanceTimersToNextTimer());
+
               return Response.json(
                 { message: "Rate limited" },
                 { status: 429, headers: { "Retry-After": removals === 1 ? "2.1" : "0.001" } },
               );
+            }
 
             return new Response(null, { status: 204 });
           }
@@ -83,6 +88,7 @@ describe("discordChannelLayer", () => {
       });
 
       try {
+        jest.useFakeTimers();
         await Effect.runPromise(
           Effect.gen(function* () {
             const channel = yield* MessagingChannel;
@@ -110,6 +116,7 @@ describe("discordChannelLayer", () => {
           }).pipe(Effect.provide(discordChannelLayer(settings))),
         );
       } finally {
+        jest.useRealTimers();
         login.mockRestore();
         ready.mockRestore();
       }

@@ -116,7 +116,7 @@ child credentials, without automatically attaching history or global memory.
 
 ## Bounds and schema compatibility
 
-The official TypeScript client SDK is pinned at 2.3.1 and exercised under Bun 1.4.3.
+The official TypeScript client SDK is pinned at 2.3.1 and exercised under Bun 1.4.4.
 Connections use the SDK's legacy initialization handshake for the 2025 protocol.
 Poppet supports tool discovery and invocation only. Remote HTTP/OAuth, resources,
 prompts, sampling, elicitation, MCP tasks, and media forwarding are outside this

@@ -1,5 +1,4 @@
 import { describe, expect, jest, test } from "bun:test";
-import { watch } from "node:fs";
 import { mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -83,8 +82,13 @@ const expireRequest = async <A>(
   method: string,
   request: () => Promise<A>,
 ) => {
-  const activity = Promise.withResolvers<void>();
-  const watcher = watch(state.directory, () => activity.resolve());
+  let expired = false;
+
+  // Install the real deadline before Bun replaces timers and monotonic clocks.
+  const deadline = setTimeout(() => {
+    expired = true;
+  }, 2000);
+
   jest.useFakeTimers();
 
   try {
@@ -92,16 +96,13 @@ const expireRequest = async <A>(
 
     const result = request().finally(() => {
       settled = true;
-      activity.resolve();
     });
-
-    await activity.promise;
 
     // File IO lets the real subprocess progress while only its timers advance.
     await Effect.runPromise(
       Effect.gen(function* () {
-        for (let attempt = 0; attempt < 1000; attempt++) {
-          if (settled) break;
+        for (;;) {
+          if (settled || expired) break;
 
           if (!(yield* Effect.promise(() => readdir(state.directory))).includes("events")) continue;
           const events = yield* Effect.promise(() => state.events());
@@ -115,8 +116,8 @@ const expireRequest = async <A>(
 
     return await result;
   } finally {
-    watcher.close();
     jest.useRealTimers();
+    clearTimeout(deadline);
   }
 };
 
@@ -273,7 +274,9 @@ describe("MCP", () => {
               yield* Effect.sleep("5 millis");
           }).pipe(Effect.timeout("2 seconds"));
           yield* Effect.promise(() =>
-            expireRequest(state, "tools/call", () => Effect.runPromise(Fiber.interrupt(fiber))),
+            expireRequest(state, "notifications/cancelled", () =>
+              Effect.runPromise(Fiber.interrupt(fiber)),
+            ),
           );
           expect(dead(pid)).toBe(true);
           expect((yield* (yield* MCP).status)[0]).toMatchObject({
