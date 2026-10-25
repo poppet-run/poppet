@@ -16,6 +16,31 @@ spaces; flags inside that text stay literal. Use `--` before the text when it
 starts with `--help` or `-h`. For task prompts, use `--` before any initial
 flag-like text; unknown task options are rejected.
 
+## Shell completions
+
+`poppet --completions <shell>` prints a completion script for `bash`, `zsh`, or
+`fish`. Scripts cover commands, subcommands, and flags, but not saved values such
+as session IDs or skill names. Like help, generating a script needs no
+configuration or credentials. Regenerate the script after updating Poppet.
+
+Bash:
+
+```sh
+poppet --completions bash > ~/.local/share/bash-completion/completions/poppet
+```
+
+zsh, with `~/.zsh/completions` on `fpath` before `compinit` runs:
+
+```sh
+poppet --completions zsh > ~/.zsh/completions/_poppet
+```
+
+fish:
+
+```fish
+poppet --completions fish > ~/.config/fish/completions/poppet.fish
+```
+
 ## Configuration and storage
 
 | Command        | Action                                                                                  |
