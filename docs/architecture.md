@@ -352,7 +352,7 @@ Effect Schema. `service.ts` validates caller input, checks continuation identity
 before saving messages, and decodes rows on read. Table checks enforce valid run
 and tool-call states, runs take their provider, model, and workload from their
 session when read, and a partial unique index permits only one pending or
-running run. Services rely on these rules instead of repeating them.
+running run per session. Services rely on these rules instead of repeating them.
 
 `queueRun` persists its pending run and input messages in one transaction.
 `startRun` accepts only pending work. Pending work can fail or be interrupted;

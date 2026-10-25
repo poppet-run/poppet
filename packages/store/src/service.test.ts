@@ -715,7 +715,7 @@ describe("Store", () => {
             { role: "assistant", output: response.output, continuation: response.continuation },
           ]);
           expect(yield* store.status).toMatchObject({
-            schemaVersion: 1,
+            schemaVersion: 2,
             sessions: 1,
             messages: 4,
             runs: 1,
@@ -846,7 +846,48 @@ describe("Store", () => {
     }
   });
 
-  test("when run ownership, identity, or transitions are invalid, rejects them and enforces one active run", async () => {
+  test("when sessions run at the same time, keeps each run's transactions whole", async () => {
+    const fixtureStore = await fixture();
+
+    try {
+      await fixtureStore.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+
+          const sessions = yield* Effect.forEach(Array.from({ length: 4 }), () =>
+            store.createSession("new-provider", "selected-model"),
+          );
+
+          const finished = yield* Effect.forEach(
+            sessions,
+            (session) =>
+              Effect.gen(function* () {
+                const pending = yield* store.queueRun(session.id, [user]);
+                yield* store.startRun(pending.id);
+
+                return yield* store.finishRun(pending.id, {
+                  status: "completed",
+                  response: responseFor("new-provider"),
+                });
+              }),
+            { concurrency: "unbounded" },
+          );
+
+          expect(finished.map((run) => run.status)).toEqual(Array(4).fill("completed"));
+
+          for (const session of sessions)
+            expect((yield* store.messages(session.id)).map(({ message }) => message.role)).toEqual([
+              "user",
+              "assistant",
+            ]);
+        }),
+      );
+    } finally {
+      await fixtureStore.close();
+    }
+  });
+
+  test("when run ownership, identity, or transitions are invalid, rejects them and enforces one active run per session", async () => {
     const fixtureStore = await fixture();
 
     try {
@@ -865,7 +906,7 @@ describe("Store", () => {
           yield* reject(store.queueRun(first.id, [foreign]), "invalid-request");
           expect(yield* store.status).toMatchObject({ runs: 0, messages: 0 });
           const pending = yield* store.queueRun(first.id, [user]);
-          yield* reject(store.queueRun(other.id, [user]), "conflict");
+          yield* reject(store.queueRun(first.id, [user]), "conflict");
           yield* reject(
             store.finishRun(pending.id, {
               status: "completed",
@@ -966,7 +1007,7 @@ describe("Store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 1,
+        schemaVersion: 2,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));

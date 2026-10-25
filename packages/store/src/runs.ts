@@ -40,9 +40,11 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
 
         const session = yield* requireSession(yield* decodeInput(Id, sessionId));
 
-        const active = yield* sql`SELECT id FROM runs WHERE status IN ('pending', 'running')`;
+        const active = yield* sql`SELECT id FROM runs WHERE session_id = ${sessionId}
+          AND status IN ('pending', 'running')`;
 
-        if (active.length > 0) return yield* conflict("Another run is pending or running.");
+        if (active.length > 0)
+          return yield* conflict("This session already has a pending or running run.");
 
         const createdAt = Math.max(at, session.createdAt);
 

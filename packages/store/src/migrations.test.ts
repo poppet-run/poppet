@@ -40,7 +40,7 @@ const fixture = async () => {
 };
 
 describe("StoreDatabaseLive migrations", () => {
-  test("when the store is new, applies the baseline once and records it", async () => {
+  test("when the store is new, applies its migrations once and records them", async () => {
     const store = await fixture();
 
     try {
@@ -49,6 +49,7 @@ describe("StoreDatabaseLive migrations", () => {
       using database = new Database(store.path, { readonly: true });
       expect(database.query("SELECT migration_id, name FROM effect_sql_migrations").all()).toEqual([
         { migration_id: 1, name: "baseline" },
+        { migration_id: 2, name: "session_active_run" },
       ]);
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions'").get(),
@@ -103,11 +104,12 @@ describe("StoreDatabaseLive migrations", () => {
 
       const pending = Migrator.fromRecord({
         "1_baseline": Effect.void,
-        "2_index": Effect.gen(function* () {
+        "2_session_active_run": Effect.void,
+        "3_index": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`CREATE INDEX sessions_by_provider ON sessions (provider)`;
         }),
-        "3_broken": Effect.gen(function* () {
+        "4_broken": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`invalid SQL`;
         }),
@@ -117,6 +119,7 @@ describe("StoreDatabaseLive migrations", () => {
       using database = new Database(store.path, { readonly: true });
       expect(database.query("SELECT migration_id FROM effect_sql_migrations").all()).toEqual([
         { migration_id: 1 },
+        { migration_id: 2 },
       ]);
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions_by_provider'").get(),
