@@ -268,9 +268,10 @@ describe("apiKeyProvider", () => {
 
       expect(await Effect.runPromise(connection.status)).toMatchObject({ connected: false });
       await Effect.runPromise(
-        connection.login({ keyStdin: true }).pipe(
+        connection.login({ keyStdin: true, openBrowser: true, callbackPort: null }).pipe(
           Effect.provideService(CredentialInput, {
             readKey: () => Effect.succeed(Redacted.make("saved-key")),
+            readLine: () => Effect.never,
           }),
         ),
       );

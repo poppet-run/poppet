@@ -163,6 +163,7 @@ const fixture = async () => {
         Effect.provideService(Terminal.Terminal, terminal),
         Effect.provideService(CredentialInput, {
           readKey: () => Effect.succeed(Redacted.make("provider-secret")),
+          readLine: () => Effect.never,
         }),
         Effect.provideService(Console.Console, {
           ...console,

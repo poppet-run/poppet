@@ -1055,6 +1055,14 @@ describe("makeCLI", () => {
           message: "ChatGPT does not support --key-stdin",
         },
         { args: ["provider", "status", "--key-stdin"], message: "Unrecognized flag: --key-stdin" },
+        {
+          args: ["provider", "login", "openrouter", "--no-browser"],
+          message: "OpenRouter does not use browser sign-in",
+        },
+        {
+          args: ["provider", "login", "openai-chatgpt", "--callback-port", "70000"],
+          message: "Choose a callback port from 1 to 65535",
+        },
       ];
 
       await Array.fromAsync(cases, async ({ args, message }) => {

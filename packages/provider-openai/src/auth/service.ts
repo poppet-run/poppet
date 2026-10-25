@@ -6,9 +6,10 @@ import { accessTokenWorkflow } from "#src/auth/refresh";
 import { type ConnectionStatus, statusFor, reconnect } from "#src/auth/state";
 import type { ConnectionError } from "#src/connection";
 import { OAuthClient } from "#src/oauth/client";
+import type { SignInOptions } from "#src/sign-in/service";
 
 interface AuthOperations {
-  readonly login: Effect.Effect<ConnectionStatus, ConnectionError>;
+  readonly login: (options: SignInOptions) => Effect.Effect<ConnectionStatus, ConnectionError>;
   readonly status: Effect.Effect<ConnectionStatus, ConnectionError>;
   /** Reads current credentials and refreshes near expiry while holding the auth permit. */
   readonly accessToken: Effect.Effect<Redacted.Redacted<string>, ConnectionError>;
@@ -74,7 +75,7 @@ export const ChatGPTAuthLive = Layer.effect(
       );
 
     return {
-      login: store.withPermit(login),
+      login: (options: SignInOptions) => store.withPermit(login(options)),
       accessToken: store.withPermit(accessToken),
       signOut,
       recordVerification,

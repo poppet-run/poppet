@@ -69,14 +69,16 @@ The runtime builds only the selected provider's dependencies and never falls
 back to another model. ChatGPT's browser login handles plan-usage consent
 through `provider login openai-chatgpt`.
 
-| Command                                   | Action                                  |
-| ----------------------------------------- | --------------------------------------- |
-| `provider login [provider] [--key-stdin]` | Sign in or save an API key.             |
-| `provider status [provider]`              | Show connection status without secrets. |
-| `provider models [provider]`              | List available models.                  |
-| `provider logout [provider]`              | Clear that provider's saved connection. |
+| Command                               | Action                                  |
+| ------------------------------------- | --------------------------------------- |
+| `provider login [provider] [options]` | Sign in or save an API key.             |
+| `provider status [provider]`          | Show connection status without secrets. |
+| `provider models [provider]`          | List available models.                  |
+| `provider logout [provider]`          | Clear that provider's saved connection. |
 
-`--key-stdin` applies to API-key providers.
+`--key-stdin` applies to API-key providers. `--no-browser` and
+`--callback-port <port>` apply to browser sign-in; see
+[headless and remote machines](providers/openai-chatgpt.md#headless-and-remote-machines).
 See [ChatGPT](providers/openai-chatgpt.md), [OpenCode Go](providers/opencode-go.md),
 [OpenRouter](providers/openrouter.md), and [API-key handling](configuration.md#api-keys)
 for provider-specific setup and logout behavior.

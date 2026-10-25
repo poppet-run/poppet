@@ -22,6 +22,8 @@ interface ProviderCommand {
   readonly action: (typeof actions)[number];
   readonly provider: ProviderId | null;
   readonly keyStdin: boolean;
+  readonly openBrowser: boolean;
+  readonly callbackPort: number | null;
 }
 
 export const providerCommand = (context: CLIContext) => {
@@ -37,6 +39,13 @@ export const providerCommand = (context: CLIContext) => {
         return yield* Effect.fail(
           new UsageError({
             message: `${entry.name} does not support --key-stdin. ${entry.authentication.help}`,
+          }),
+        );
+
+      if ((!command.openBrowser || command.callbackPort !== null) && entry.authentication.apiKey)
+        return yield* Effect.fail(
+          new UsageError({
+            message: `${entry.name} does not use browser sign-in. ${entry.authentication.help}`,
           }),
         );
 
@@ -80,6 +89,20 @@ export const providerCommand = (context: CLIContext) => {
             target: targetArgument,
             provider: providerFlag,
             keyStdin: booleanFlag("key-stdin", "Read an API key from stdin"),
+            browser: Flag.Boolean("browser").pipe(
+              Flag.withDescription(
+                "Open the system browser; --no-browser prints the link and accepts a pasted callback address",
+              ),
+              Flag.atMost(1),
+              Flag.map(([value = true]) => value),
+            ),
+            callbackPort: Flag.Int("callback-port").pipe(
+              Flag.withDescription(
+                "Listen for the browser callback on this port, for SSH forwarding",
+              ),
+              Flag.atMost(1),
+              Flag.map(([value]) => value ?? null),
+            ),
           }
         : { target: targetArgument, provider: providerFlag };
 
@@ -98,10 +121,18 @@ export const providerCommand = (context: CLIContext) => {
 
         if (selected !== null && !Schema.is(ProviderId)(selected))
           return yield* Effect.fail(new UsageError({ message: "Invalid provider ID." }));
+        const callbackPort = input.callbackPort ?? null;
+
+        if (callbackPort !== null && (callbackPort < 1 || callbackPort > 65535))
+          return yield* Effect.fail(
+            new UsageError({ message: "Choose a callback port from 1 to 65535." }),
+          );
         yield* runProvider({
           action,
           provider: selected,
           keyStdin: input.keyStdin ?? false,
+          openBrowser: input.browser ?? true,
+          callbackPort,
         });
       }).pipe(Effect.provide(runtime.config)),
     ).pipe(

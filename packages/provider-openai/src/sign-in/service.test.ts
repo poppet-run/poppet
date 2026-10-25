@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { Console, Effect, Fiber } from "effect";
+import { Console, Effect, Fiber, Queue } from "effect";
 
 import { ConnectionError } from "#src/connection";
+import { remoteSession } from "#src/sign-in/browser";
 import { makeBrowserSignIn, type SignInRequest } from "#src/sign-in/service";
 
 const request: SignInRequest = {
@@ -11,6 +12,9 @@ const request: SignInRequest = {
   hostId: "urn:uuid:555df4e7-6763-4d11-bb27-2c56e759e319",
   clientId: null,
   consent: false,
+  noBrowser: false,
+  callbackPort: null,
+  paste: Effect.never,
 };
 
 const quietConsole: Console.Console = { ...console, log: () => undefined, error: () => undefined };
@@ -23,6 +27,50 @@ const callbackFor = (authorizationUrl: string) => {
   callback.searchParams.set("client_id", "oaiapp_test");
 
   return callback;
+};
+
+// Starts a sign-in that prints its link instead of opening a browser, with a
+// queue standing in for lines pasted into the terminal.
+const startPasteSignIn = async (selected: Partial<SignInRequest> = {}) => {
+  const printed = Promise.withResolvers<string>();
+  const errors: string[] = [];
+  const lines = Effect.runSync(Queue.unbounded<string>());
+
+  const recording: Console.Console = {
+    ...quietConsole,
+    log: (text: string) => {
+      const link = text.split("\n").find((line) => line.startsWith("https://"));
+
+      if (link) printed.resolve(link);
+    },
+    error: (text: string) => {
+      errors.push(text);
+    },
+  };
+
+  const opened: string[] = [];
+
+  const browser = makeBrowserSignIn((url) => Effect.sync(() => opened.push(url)));
+
+  const result = Effect.runPromise(
+    browser.authorize({ ...request, noBrowser: true, paste: Queue.take(lines), ...selected }).pipe(
+      Effect.provideService(Console.Console, recording),
+      Effect.match({
+        onSuccess: (authorization) => authorization.clientId,
+        onFailure: (error) => error.reason,
+      }),
+    ),
+  );
+
+  const callback = callbackFor(await printed.promise);
+
+  return {
+    callback,
+    errors,
+    opened,
+    result,
+    paste: (line: string) => Effect.runSync(Queue.offer(lines, line)),
+  };
 };
 
 const browserError = () =>
@@ -192,5 +240,72 @@ describe("makeBrowserSignIn", () => {
     const callback = await opened.promise;
     await Effect.runPromise(Fiber.interrupt(fiber));
     await expect(fetch(callback)).rejects.toThrow();
+  });
+
+  test("without a browser, ignores mismatched pasted addresses until the callback address completes sign-in", async () => {
+    const signIn = await startPasteSignIn();
+    const forged = new URL(signIn.callback);
+    forged.searchParams.set("state", "forged");
+    const foreign = new URL(signIn.callback);
+    foreign.port = "1";
+
+    for (const line of ["", "not a url", forged.toString(), foreign.toString()]) signIn.paste(line);
+    signIn.paste(`  ${signIn.callback.toString()}  `);
+
+    expect(await signIn.result).toBe("oaiapp_test");
+    expect(signIn.opened).toEqual([]);
+    expect(signIn.errors).toHaveLength(3);
+    await expect(fetch(signIn.callback)).rejects.toThrow();
+  });
+
+  test("without a browser, a pasted declined address ends sign-in", async () => {
+    const signIn = await startPasteSignIn();
+    signIn.callback.searchParams.set("error", "access_denied");
+    signIn.paste(signIn.callback.toString());
+
+    expect(await signIn.result).toBe("denied");
+  });
+
+  test("with a fixed callback port, a forwarded browser callback completes sign-in without a paste", async () => {
+    // Reserve a free port, then release it for the sign-in listener.
+    const reserved = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+    const port = Number(reserved.url.port);
+    await reserved.stop(true);
+
+    const signIn = await startPasteSignIn({ callbackPort: port });
+    expect(signIn.callback.origin).toBe(`http://127.0.0.1:${port}`);
+
+    expect((await fetch(signIn.callback)).status).toBe(200);
+    expect(await signIn.result).toBe("oaiapp_test");
+  });
+
+  test("when the fixed callback port is taken, fails before printing a link", async () => {
+    const taken = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+
+    try {
+      const browser = makeBrowserSignIn(() => Effect.void);
+
+      await expect(
+        Effect.runPromise(
+          browser
+            .authorize({ ...request, callbackPort: Number(taken.url.port) })
+            .pipe(Effect.provideService(Console.Console, quietConsole)),
+        ),
+      ).rejects.toMatchObject({ reason: "callback" });
+    } finally {
+      await taken.stop(true);
+    }
+  });
+});
+
+describe("remoteSession", () => {
+  test.each([
+    [{ SSH_CONNECTION: "10.0.0.2 50000 10.0.0.1 22" }, "darwin", true],
+    [{}, "darwin", false],
+    [{}, "linux", true],
+    [{ DISPLAY: ":0" }, "linux", false],
+    [{ WAYLAND_DISPLAY: "wayland-0" }, "linux", false],
+  ])("for %o on %s, reports %p", (environment, platform, expected) => {
+    expect(remoteSession(environment, platform)).toBe(expected);
   });
 });

@@ -6,7 +6,7 @@ import { workerSocketPath } from "@poppet/worker";
 import { Console, Effect, Schema } from "effect";
 import { Command, Prompt } from "effect/cli";
 
-import { readHiddenKey } from "#src/api-key-input";
+import { readHiddenKey, readVisibleLine } from "#src/api-key-input";
 import type { CLIContext } from "#src/commands/context";
 import { UsageError } from "#src/commands/errors";
 import { findProvider } from "#src/runtime";
@@ -88,7 +88,9 @@ export const runSetup = (context: CLIContext) =>
         status.planUsage === false ||
         (yield* Prompt.Confirm({ message: `Reconnect ${entry.name}?`, initial: false }))
       ) {
-        yield* Console.log(yield* connection.login({ keyStdin: false }));
+        yield* Console.log(
+          yield* connection.login({ keyStdin: false, openBrowser: true, callbackPort: null }),
+        );
         yield* Console.log(`${entry.name} authentication saved.`);
       }
 
@@ -140,7 +142,12 @@ export const setupCommand = (context: CLIContext) =>
   Command.make("setup", {}, () =>
     Effect.suspend(() =>
       process.stdin.isTTY && process.stdout.isTTY
-        ? runSetup(context).pipe(Effect.provideService(CredentialInput, { readKey: readHiddenKey }))
+        ? runSetup(context).pipe(
+            Effect.provideService(CredentialInput, {
+              readKey: readHiddenKey,
+              readLine: readVisibleLine,
+            }),
+          )
         : Effect.fail(
             new UsageError({
               message:
