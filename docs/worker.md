@@ -163,7 +163,7 @@ Task changes are durable even when their final chat reply fails.
 Chat, memory, session inspection, and `store status` work while it is running:
 
 ```sh
-poppet memory remember project.name Acorn
+poppet memory set project.name Acorn
 poppet chat new "What is the project called?"
 poppet chat interactive
 poppet chat sessions

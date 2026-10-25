@@ -5,7 +5,7 @@ import { Effect, Schema } from "effect";
 export const MemoryCommand = Schema.Union([
   Schema.Struct({ action: Schema.Literal("list") }),
   Schema.Struct({
-    action: Schema.Literals(["remember", "replace"]),
+    action: Schema.Literal("set"),
     key: MemoryKey,
     value: MemoryValue,
   }),
@@ -55,7 +55,7 @@ export const manageMemory = (command: MemoryCommand) =>
       return `Forgot ${command.key}.`;
     }
 
-    const fact = yield* memory[command.action](command.key, command.value);
+    const fact = yield* memory.set(command.key, command.value);
 
     return JSON.stringify(fact, null, 2);
   });

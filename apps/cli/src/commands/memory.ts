@@ -21,20 +21,14 @@ export const memoryCommand = (context: CLIContext) => {
       Command.make("list", {}, () => runMemory({ action: "list" })).pipe(
         Command.withDescription("List saved facts"),
       ),
-      ...(["remember", "replace"] as const).map((action) =>
-        Command.make(
-          action,
-          {
-            key: Argument.String("key").pipe(Argument.withSchema(MemoryKey)),
-            value: textArgument("value").pipe(Argument.withSchema(MemoryValue)),
-          },
-          ({ key, value }) => runMemory({ action, key, value }),
-        ).pipe(
-          Command.withDescription(
-            action === "remember" ? "Save a new fact" : "Change an existing fact",
-          ),
-        ),
-      ),
+      Command.make(
+        "set",
+        {
+          key: Argument.String("key").pipe(Argument.withSchema(MemoryKey)),
+          value: textArgument("value").pipe(Argument.withSchema(MemoryValue)),
+        },
+        ({ key, value }) => runMemory({ action: "set", key, value }),
+      ).pipe(Command.withDescription("Save a fact, replacing any current value")),
       Command.make(
         "forget",
         {

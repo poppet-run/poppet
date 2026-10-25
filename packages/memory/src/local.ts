@@ -120,7 +120,7 @@ export const LocalMemoryLive = Layer.effect(
       key: string,
       value: string,
       sourceRunId: string | null,
-      mode: "remember" | "replace",
+      mode: "remember" | "replace" | "set",
     ) =>
       transaction((at) =>
         Effect.gen(function* () {
@@ -132,20 +132,22 @@ export const LocalMemoryLive = Layer.effect(
           if (mode === "replace" && existing === null)
             return yield* fail(
               "not-found",
-              "The fact does not exist. Use memory remember to create it.",
+              "The fact does not exist. Remember it as a new fact instead.",
             );
 
           if (mode === "remember" && existing !== null)
             return yield* fail(
               "conflict",
-              "The fact already exists. Use memory replace to change it.",
+              "The fact already exists. Replace it to change its value.",
             );
 
-          if (mode === "remember") yield* requireRoom;
+          const action = mode === "set" ? (existing === null ? "remember" : "replace") : mode;
+
+          if (action === "remember") yield* requireRoom;
 
           return (yield* commit(
             key,
-            mode,
+            action,
             value,
             sourceRunId,
             sourceRunId === null ? "cli" : "turn",
@@ -158,6 +160,7 @@ export const LocalMemoryLive = Layer.effect(
       list,
       remember: (key, value, sourceRunId = null) => saveMemory(key, value, sourceRunId, "remember"),
       replace: (key, value, sourceRunId = null) => saveMemory(key, value, sourceRunId, "replace"),
+      set: (key, value) => saveMemory(key, value, null, "set"),
       forget: (key, sourceRunId = null) =>
         transaction((at) =>
           Effect.gen(function* () {

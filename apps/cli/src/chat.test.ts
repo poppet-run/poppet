@@ -1420,7 +1420,7 @@ describe.concurrent("chat.ts", () => {
 
       expect(stopped).toBe(true);
       expect(chat.requests).toHaveLength(0);
-      await chat.invoke(["memory", "remember", "project", "Acorn"]);
+      await chat.invoke(["memory", "set", "project", "Acorn"]);
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ key: "project", value: "Acorn" });
     } finally {
       socket.destroy();
@@ -1459,9 +1459,10 @@ describe.concurrent("chat.ts", () => {
         async (response) => {
           reply = response;
           // Each response is selected before issuing the next request.
-          await expect(
-            chat.invoke(["memory", "remember", "project", "Acorn"]),
-          ).rejects.toHaveProperty("_tag", "WorkerRequestError");
+          await expect(chat.invoke(["memory", "set", "project", "Acorn"])).rejects.toHaveProperty(
+            "_tag",
+            "WorkerRequestError",
+          );
         },
       );
 
@@ -1499,7 +1500,7 @@ describe.concurrent("chat.ts", () => {
         method: "POST",
         body: JSON.stringify({
           kind: "memory",
-          command: { action: "remember", key: "unexpected", value: "bad" },
+          command: { action: "set", key: "unexpected", value: "bad" },
         }),
       });
 
@@ -1507,7 +1508,7 @@ describe.concurrent("chat.ts", () => {
 
       const invalid = await Promise.all(
         [
-          { kind: "memory", command: { action: "remember", key: "../bad", value: "Acorn" } },
+          { kind: "memory", command: { action: "set", key: "../bad", value: "Acorn" } },
           {
             kind: "chat",
             command: {
@@ -1522,7 +1523,7 @@ describe.concurrent("chat.ts", () => {
           { kind: "unknown" },
           {
             kind: "memory",
-            command: { action: "remember", key: "extra", value: "bad", ignored: true },
+            command: { action: "set", key: "extra", value: "bad", ignored: true },
           },
           { kind: "store", ignored: true },
         ].map((command) =>
@@ -1536,9 +1537,10 @@ describe.concurrent("chat.ts", () => {
 
       expect(invalid.map((response) => response.status)).toEqual([400, 400, 400, 400, 400, 400]);
       expect(JSON.parse(await readOutput(["memory", "list"]))).toEqual([]);
-      expect(
-        JSON.parse(await readOutput(["memory", "remember", "project", "Acorn"])),
-      ).toMatchObject({ key: "project", value: "Acorn" });
+      expect(JSON.parse(await readOutput(["memory", "set", "project", "Acorn"]))).toMatchObject({
+        key: "project",
+        value: "Acorn",
+      });
       expect(chat.state.built).toBe(built);
       chat.state.useTools = true;
       expect(await readOutput(["chat", "new", "--coding", "Save a summary"])).toBe("Answer\n");
@@ -1566,7 +1568,7 @@ describe.concurrent("chat.ts", () => {
       });
       expect(JSON.parse(await readOutput(["store", "status"]))).toMatchObject({ sessions: 1 });
 
-      await readOutput(["memory", "replace", "project", "Birch"]);
+      await readOutput(["memory", "set", "project", "Birch"]);
       chat.state.useTools = false;
       await chat.configure({ provider: "unused-provider" });
       await chat.configure({ model: undefined });
@@ -1706,13 +1708,13 @@ describe.concurrent("chat.ts", () => {
 
     try {
       await writeFile(join(saved.directory, "profile.md"), "My name is Tom.");
-      await saved.invoke(["memory", "remember", "answer.style", "Keep answers concise"]);
+      await saved.invoke(["memory", "set", "answer.style", "Keep answers concise"]);
       expect(saved.state.built).toBe(0);
       await saved.invoke(["chat", "new", "How should you answer?"]);
       expect(saved.requests[0]?.instructions).toContain("Keep answers concise");
       expect(saved.requests[0]?.instructions).toContain("My name is Tom.");
       const session = saved.errors.find((line) => line.startsWith("Session: "))?.slice(9) ?? "";
-      await saved.invoke(["memory", "replace", "answer.style", "Explain the reasoning"]);
+      await saved.invoke(["memory", "set", "answer.style", "Explain the reasoning"]);
       await saved.invoke(["chat", "send", session, "What about now?"]);
       expect(saved.requests[1]?.instructions).toContain("Explain the reasoning");
       expect(saved.requests[1]?.instructions).not.toContain("Keep answers concise");

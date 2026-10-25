@@ -651,7 +651,7 @@ describe("makeCLI", () => {
       expect(added.exitCode).toBe(0);
       const task = JSON.parse(added.stdout);
       expect(task.model).toBe("saved-model");
-      const remembered = await invoke(["memory", "remember", "project", "Acorn"], environment);
+      const remembered = await invoke(["memory", "set", "project", "Acorn"], environment);
       expect(remembered.exitCode).toBe(0);
       expect(JSON.parse(remembered.stdout)).toMatchObject({ key: "project", value: "Acorn" });
       expect(JSON.parse((await invoke(["memory", "list"], environment)).stdout)).toMatchObject([
@@ -714,7 +714,7 @@ describe("makeCLI", () => {
       expect((await invoke(["memory", "list"], environment)).stdout.trim()).toBe("[]");
 
       const remembered = await invoke(
-        ["memory", "remember", "answer.style", "Keep answers concise"],
+        ["memory", "set", "answer.style", "Keep answers concise"],
         environment,
       );
 
@@ -725,16 +725,8 @@ describe("makeCLI", () => {
         sourceRunId: null,
       });
 
-      const duplicate = await invoke(
-        ["memory", "remember", "answer.style", "Overwrite"],
-        environment,
-      );
-
-      expect(duplicate.exitCode).toBe(1);
-      expect(duplicate.stderr).toContain("memory replace");
-
       const replaced = await invoke(
-        ["memory", "replace", "answer.style", "Explain", "the reasoning"],
+        ["memory", "set", "answer.style", "Explain", "the reasoning"],
         environment,
       );
 
@@ -759,9 +751,6 @@ describe("makeCLI", () => {
         (await invoke(["memory", "revert", "answer.style", "3"], environment)).stdout,
       ).toContain("Forgot answer.style.");
       expect((await invoke(["memory", "history", "missing"], environment)).exitCode).toBe(1);
-      expect((await invoke(["memory", "replace", "missing", "Value"], environment)).exitCode).toBe(
-        1,
-      );
       expect(await readdir(directory)).toEqual(["store"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -774,10 +763,10 @@ describe("makeCLI", () => {
     try {
       const cases = [
         { args: ["list", "extra"], message: "Unexpected positional argument" },
-        { args: ["remember", "bad key", "Value"], message: "argument <key>" },
-        { args: ["remember", "key"], message: "value" },
-        { args: ["replace", "key", " "], message: "no leading or trailing whitespace" },
-        { args: ["remember", "key", "😀".repeat(1025)], message: "4096 UTF-8 bytes" },
+        { args: ["set", "bad key", "Value"], message: "argument <key>" },
+        { args: ["set", "key"], message: "value" },
+        { args: ["set", "key", " "], message: "no leading or trailing whitespace" },
+        { args: ["set", "key", "😀".repeat(1025)], message: "4096 UTF-8 bytes" },
         { args: ["forget", "key", "extra"], message: "Unexpected positional argument" },
         { args: ["unknown"], message: "Unknown subcommand" },
       ];
@@ -1216,7 +1205,7 @@ describe("makeCLI", () => {
 
     try {
       const remembered = await invoke(
-        ["memory", "remember", "flags", "--verbose", "--help", "--", "-h"],
+        ["memory", "set", "flags", "--verbose", "--help", "--", "-h"],
         environment,
       );
 
@@ -1224,7 +1213,7 @@ describe("makeCLI", () => {
       expect(JSON.parse(remembered.stdout).value).toBe("--verbose --help -- -h");
 
       const replaced = await invoke(
-        ["memory", "replace", "flags", "Use", "--coding", "literally"],
+        ["memory", "set", "flags", "Use", "--coding", "literally"],
         environment,
       );
 
