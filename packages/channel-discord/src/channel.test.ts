@@ -1,10 +1,10 @@
-import { describe, expect, jest, spyOn, test } from "bun:test";
 import { setImmediate } from "node:timers";
 
 import { MessagingChannel } from "@poppet/gateway";
 import { ChannelType, Client, Events, MessageFlags, Options } from "discord.js";
 import { Effect, Option, Redacted, Stream } from "effect";
 import { TestClock } from "effect/testing";
+import { describe, expect, test, vi } from "vitest";
 
 import { discordChannelLayer } from "#src/channel";
 
@@ -25,14 +25,14 @@ describe("discordChannelLayer", () => {
     async (state) => {
       const writes: string[] = [];
       let removals = 0;
-      const ready = spyOn(Client.prototype, "isReady").mockReturnValue(true);
+      const ready = vi.spyOn(Client.prototype, "isReady").mockReturnValue(true);
 
-      const login = spyOn(Client.prototype, "login").mockImplementation(async function (
+      const login = vi.spyOn(Client.prototype, "login").mockImplementation(async function (
         this: Client,
       ) {
         Object.defineProperty(this, "user", { value: user });
         this.rest.setToken("test-token");
-        spyOn(this.rest.options, "makeRequest").mockImplementation(async (url, options) => {
+        vi.spyOn(this.rest.options, "makeRequest").mockImplementation(async (url, options) => {
           const path = new URL(url).pathname.replace("/api/v10", "");
 
           if (options.method === "GET") {
@@ -67,7 +67,7 @@ describe("discordChannelLayer", () => {
 
             if (options.method === "DELETE" && ++removals <= 2) {
               // Let the SDK install its retry timer before advancing the clock.
-              setImmediate(() => jest.advanceTimersToNextTimer());
+              setImmediate(() => vi.advanceTimersToNextTimer());
 
               return Response.json(
                 { message: "Rate limited" },
@@ -88,7 +88,10 @@ describe("discordChannelLayer", () => {
       });
 
       try {
-        jest.useFakeTimers();
+        // Keep setImmediate real so the request handler can advance the faked retry timer.
+        vi.useFakeTimers({
+          toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+        });
         await Effect.runPromise(
           Effect.gen(function* () {
             const channel = yield* MessagingChannel;
@@ -116,7 +119,7 @@ describe("discordChannelLayer", () => {
           }).pipe(Effect.provide(discordChannelLayer(settings))),
         );
       } finally {
-        jest.useRealTimers();
+        vi.useRealTimers();
         login.mockRestore();
         ready.mockRestore();
       }
@@ -129,14 +132,14 @@ describe("discordChannelLayer", () => {
       makeCache: Options.cacheWithLimits({ MessageManager: 0 }),
     });
 
-    const login = spyOn(client, "login").mockImplementation(async () => {
+    const login = vi.spyOn(client, "login").mockImplementation(async () => {
       if (client.isReady()) client.emit(Events.ClientReady, client);
 
       return "logged-in";
     });
 
-    const destroyed = spyOn(client, "destroy").mockResolvedValue();
-    const ready = spyOn(client, "isReady").mockReturnValue(true);
+    const destroyed = vi.spyOn(client, "destroy").mockResolvedValue();
+    const ready = vi.spyOn(client, "isReady").mockReturnValue(true);
     // The adapter only reads identity here; actual guild members below use SDK objects.
     Object.defineProperty(client, "user", { value: user, writable: true });
 
@@ -186,7 +189,7 @@ describe("discordChannelLayer", () => {
         : [],
     });
 
-    const get = spyOn(client.rest, "get").mockImplementation(async (route) => {
+    const get = vi.spyOn(client.rest, "get").mockImplementation(async (route) => {
       if (route === "/guilds/500")
         return {
           id: "500",
@@ -220,7 +223,7 @@ describe("discordChannelLayer", () => {
       throw new Error(`Unexpected read: ${route}`);
     });
 
-    const post = spyOn(client.rest, "post").mockImplementation(async (route) => {
+    const post = vi.spyOn(client.rest, "post").mockImplementation(async (route) => {
       if (route === "/channels/400/typing") return;
 
       if (route === "/channels/300/messages/400/threads") {
@@ -248,7 +251,7 @@ describe("discordChannelLayer", () => {
 
     let loseRename = false;
 
-    const patch = spyOn(client.rest, "patch").mockImplementation(async (route) => {
+    const patch = vi.spyOn(client.rest, "patch").mockImplementation(async (route) => {
       if (route !== "/channels/400") throw new Error(`Unexpected rename: ${route}`);
       thread.name = "😀".repeat(50);
 
@@ -257,11 +260,11 @@ describe("discordChannelLayer", () => {
       return thread;
     });
 
-    const put = spyOn(client.rest, "put").mockImplementation(async (route) => {
+    const put = vi.spyOn(client.rest, "put").mockImplementation(async (route) => {
       if (route.endsWith(`/${encodeURIComponent("👀")}/@me`)) botReacted = true;
     });
 
-    const remove = spyOn(client.rest, "delete").mockImplementation(async (route) => {
+    const remove = vi.spyOn(client.rest, "delete").mockImplementation(async (route) => {
       if (!route.endsWith(`/${encodeURIComponent("👀")}/@me`))
         throw new Error(`Unexpected reaction removal: ${route}`);
 
@@ -478,9 +481,10 @@ describe("discordChannelLayer", () => {
 
   test("when Discord login fails, keeps status available and resolves identity after a successful retry", async () => {
     const client = new Client({ intents: [] });
-    const ready = spyOn(client, "isReady").mockReturnValue(false);
+    const ready = vi.spyOn(client, "isReady").mockReturnValue(false);
 
-    const login = spyOn(client, "login")
+    const login = vi
+      .spyOn(client, "login")
       .mockRejectedValueOnce(new Error("secret-discord-token"))
       .mockImplementation(async () => {
         Object.defineProperty(client, "user", { value: user });
@@ -491,7 +495,7 @@ describe("discordChannelLayer", () => {
         return "logged-in";
       });
 
-    const destroy = spyOn(client, "destroy").mockResolvedValue();
+    const destroy = vi.spyOn(client, "destroy").mockResolvedValue();
 
     try {
       await Effect.runPromise(

@@ -1,9 +1,8 @@
-import { describe, expect, test } from "bun:test";
-
 import type { ModelDescription } from "@poppet/provider";
 import { chatCompletionsModel, responsesModel } from "@poppet/provider/protocol";
 import { Effect, Schema, Stream } from "effect";
 import OpenAI from "openai";
+import { describe, expect, test } from "vitest";
 
 import { compileSchema, definition, toolIdentity, toolResult } from "#src/catalog";
 

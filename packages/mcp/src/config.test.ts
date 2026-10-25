@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
-
 import { ConfigProvider, Effect, Schema } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { MCPServers, mcpServers } from "#src/config";
 

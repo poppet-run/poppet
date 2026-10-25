@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
-
 import { Effect, Fiber, Stream } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { commandApprovals, type CommandApprovals } from "#src/approvals";
 import type { IncomingMessage, MessagingChannel } from "#src/channel";
@@ -69,8 +68,8 @@ describe("commandApprovals", () => {
 
         expect(yield* approvals.answer("thread", `/${action} ${id}`)).toBe(reply);
         expect(yield* Fiber.join(fiber)).toBe(approved);
-        expect(yield* approvals.answer("thread", `/${action} ${id}`)).toStartWith(
-          "No matching pending approval",
+        expect(yield* approvals.answer("thread", `/${action} ${id}`)).toMatch(
+          /^No matching pending approval/,
         );
       }),
     );
@@ -89,8 +88,8 @@ describe("commandApprovals", () => {
           ["thread", "/approve"],
           ["thread", `/approve ${id} now`],
         ])
-          expect(yield* approvals.answer(conversation!, text!)).toStartWith(
-            "No matching pending approval",
+          expect(yield* approvals.answer(conversation!, text!)).toMatch(
+            /^No matching pending approval/,
           );
 
         expect(yield* approvals.answer("thread", `/approve ${id}`)).toBe(

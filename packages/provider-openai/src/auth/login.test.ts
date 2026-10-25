@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
-
 import { Effect, Redacted } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { createHarness, login, verify } from "#src/test/fixtures/chatgpt";
 

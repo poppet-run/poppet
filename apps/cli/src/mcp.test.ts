@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +14,7 @@ import {
 } from "@poppet/provider";
 import { Store } from "@poppet/store";
 import { ConfigProvider, Console, Effect, Fiber, Layer, Stream } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { makeCLI } from "#src/cli";
 import { runtimeLayers } from "#src/runtime";

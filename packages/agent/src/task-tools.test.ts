@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
-
 import { Effect, type Schema } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { decodeTaskCall } from "#src/task-tools";
 

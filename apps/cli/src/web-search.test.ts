@@ -1,8 +1,7 @@
-import { describe, expect, test } from "bun:test";
-
 import { ChatSettings, WebSearch, defaultPolicy } from "@poppet/agent";
 import { ApiKeyStore } from "@poppet/credentials";
 import { ConfigProvider, Effect, Layer, Redacted } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { WebSearchLive } from "#src/web-search";
 

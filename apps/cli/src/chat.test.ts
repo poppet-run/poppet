@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
@@ -34,6 +33,7 @@ import {
   type Schema,
 } from "effect";
 import { TestClock } from "effect/testing";
+import { describe, expect, test } from "vitest";
 
 import { readChatLine } from "#src/chat-prompt";
 import { makeCLI } from "#src/cli";
@@ -1805,8 +1805,8 @@ describe.concurrent("chat.ts", () => {
       await chat.invoke(["chat", "new", "--coding", "First", "question", "--help", "--coding"]);
       expect(chat.state.open).toBe(false);
       expect(chat.chunks.join("")).toBe("Answer\n");
-      expect(chat.errors[0]).toStartWith("Session: ");
-      expect(chat.errors[1]).toStartWith("Run: ");
+      expect(chat.errors[0]).toMatch(/^Session: /);
+      expect(chat.errors[1]).toMatch(/^Run: /);
       await chat.invoke(["chat", "sessions"]);
       const session = JSON.parse(chat.lines.at(-1) ?? "")[0];
       expect(session).toMatchObject({

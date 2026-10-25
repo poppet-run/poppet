@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -18,6 +17,7 @@ import {
 import { Console, Deferred, Effect, Fiber, Layer, Match, Queue, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
+import { describe, expect, test } from "vitest";
 
 import { ChannelError, MessagingChannel, type IncomingMessage } from "#src/channel";
 import { chunks } from "#src/replies";

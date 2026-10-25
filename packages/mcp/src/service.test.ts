@@ -1,4 +1,3 @@
-import { describe, expect, jest, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { ApiKeyStore } from "@poppet/credentials";
 import { Clock, ConfigProvider, Console, Effect, Fiber, Layer, Redacted, Schema } from "effect";
 import { TestClock } from "effect/testing";
+import { describe, expect, test, vi } from "vitest";
 
 import { type MCPServer } from "#src/config";
 import { MCP, makeMCPLive } from "#src/service";
@@ -98,12 +98,12 @@ const expireRequest = async <A>(
 ) => {
   let expired = false;
 
-  // Install the real deadline before Bun replaces timers and monotonic clocks.
+  // Install the real deadline before timers are faked.
   const deadline = setTimeout(() => {
     expired = true;
   }, 2000);
 
-  jest.useFakeTimers();
+  vi.useFakeTimers();
 
   try {
     let settled = false;
@@ -121,7 +121,7 @@ const expireRequest = async <A>(
           if (!(yield* Effect.promise(() => readdir(state.directory))).includes("events")) continue;
           const events = yield* Effect.promise(() => state.events());
 
-          if (events.some((event) => event.method === method)) jest.advanceTimersToNextTimer();
+          if (events.some((event) => event.method === method)) vi.advanceTimersToNextTimer();
         }
       }),
     );
@@ -130,7 +130,7 @@ const expireRequest = async <A>(
 
     return await result;
   } finally {
-    jest.useRealTimers();
+    vi.useRealTimers();
     clearTimeout(deadline);
   }
 };

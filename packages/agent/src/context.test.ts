@@ -1,7 +1,6 @@
-import { describe, expect, test } from "bun:test";
-
 import type { Message, ModelDescription } from "@poppet/provider";
 import type { StoredMessage } from "@poppet/store";
+import { describe, expect, test } from "vitest";
 
 import { assembleContext, byteSize, contextAvailable, instructions } from "#src/context";
 import { defaultPolicy } from "#src/settings";

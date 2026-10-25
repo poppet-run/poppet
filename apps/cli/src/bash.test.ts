@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Bash } from "@poppet/agent";
 import { Effect, Fiber } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { BashLive, executeBash } from "#src/bash";
 

@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
-
 import { APIConnectionError, APIError, APIUserAbortError } from "openai";
+import { describe, expect, test } from "vitest";
 
 import { routerFailure } from "#src/protocol";
 

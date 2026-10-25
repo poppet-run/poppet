@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { describe, expect, test } from "vitest";
 
 const invokeProcess = async (
   args: ReadonlyArray<string>,
@@ -52,7 +53,7 @@ describe("main.ts", () => {
     const command = join(directory, "poppet.ts");
 
     try {
-      expect(await Bun.file(entry).text()).toStartWith("#!/usr/bin/env bun\n");
+      expect(await Bun.file(entry).text()).toMatch(/^#!\/usr\/bin\/env bun\n/);
       expect((await stat(entry)).mode & 0o111).not.toBe(0);
       await symlink(entry, command);
 

@@ -1,9 +1,9 @@
-import { describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
 import { Effect } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { remoteTaskCommand, taskResponse } from "#src/task-socket";
 

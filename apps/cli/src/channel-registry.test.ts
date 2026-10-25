@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { workerSocketPath } from "@poppet/worker";
 import { ConfigProvider, Console, Deferred, Effect, Fiber } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { loadRegisteredChannels } from "#src/channel-registry";
 import { run } from "#src/cli";

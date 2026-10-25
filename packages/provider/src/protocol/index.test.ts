@@ -1,8 +1,7 @@
-import { describe, expect, test } from "bun:test";
-
 import { Effect, Fiber, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import OpenAI from "openai";
+import { describe, expect, test } from "vitest";
 
 import {
   completeModel,

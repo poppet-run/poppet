@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
 import { link, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
 import { Effect, Layer } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { Skills, SkillsLive } from "#src/skills";
 

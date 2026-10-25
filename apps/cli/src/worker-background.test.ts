@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Effect } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { runLoggedWorker } from "#src/worker-background";
 import { workerLogBytes } from "#src/worker-log";

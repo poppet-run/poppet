@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
 import { access, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Effect, Fiber, Match, type Schema, type Scope } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { browserResult, browserTools, type BrowserTool } from "#src/browser";
 import { runBrowserCommand, runBrowserRequest, type BrowserLauncher } from "#src/browser-process";

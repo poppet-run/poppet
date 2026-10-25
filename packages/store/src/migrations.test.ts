@@ -1,5 +1,4 @@
 import { Database } from "bun:sqlite";
-import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +7,7 @@ import { SqliteClient, SqliteMigrator } from "@effect/sql-sqlite-bun";
 import { AppConfig } from "@poppet/config";
 import { Effect, Exit, Layer } from "effect";
 import { Migrator, SqlClient } from "effect/sql";
+import { describe, expect, test } from "vitest";
 
 import { StoreDatabase, StoreDatabaseLive } from "#src/database";
 import { migrate, storeSchema } from "#src/migrations";

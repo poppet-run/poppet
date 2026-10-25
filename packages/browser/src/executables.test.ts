@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+
+import { describe, expect, test } from "vitest";
 
 import { chromiumVersion } from "#src/browser-process";
 import { browserExecutables } from "#src/executables";

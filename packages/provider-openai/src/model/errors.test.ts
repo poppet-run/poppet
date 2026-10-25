@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
-
 import { APIConnectionError, APIError } from "openai";
+import { describe, expect, test } from "vitest";
 
 import { inferenceFailure } from "#src/model/errors";
 

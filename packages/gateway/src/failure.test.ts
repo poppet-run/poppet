@@ -1,7 +1,6 @@
-import { describe, expect, test } from "bun:test";
-
 import { AgentError } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
+import { describe, expect, test } from "vitest";
 
 import { ChannelError } from "#src/channel";
 import { failureDecision } from "#src/failure";

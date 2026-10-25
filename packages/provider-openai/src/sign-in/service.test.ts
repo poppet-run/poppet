@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
-
 import { Console, Effect, Fiber } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { ConnectionError } from "#src/connection";
 import { makeBrowserSignIn, type SignInRequest } from "#src/sign-in/service";

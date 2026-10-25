@@ -1,9 +1,9 @@
-import { describe, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 
 import { AgentError } from "@poppet/agent";
 import { WorkerRequestError } from "@poppet/worker";
 import { Console, Effect } from "effect";
+import { describe, expect, test } from "vitest";
 
 import type { ChatCommand } from "#src/chat";
 import { interactiveChat } from "#src/chat-prompt";

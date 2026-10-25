@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +7,7 @@ import { memorySchema } from "@poppet/memory";
 import { Store, StoreLive, migrate } from "@poppet/store";
 import { Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql";
+import { describe, expect, test } from "vitest";
 
 import { taskSchema } from "#src/migrations";
 import { recurringExpiry } from "#src/task-records";

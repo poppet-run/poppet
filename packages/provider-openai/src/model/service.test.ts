@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import { completeModel, RequestTiming } from "@poppet/provider";
 import { Effect, Redacted } from "effect";
 import { TestClock } from "effect/testing";
+import { describe, expect, test } from "vitest";
 
 import { ChatGPTAuth } from "#src/auth/service";
 import { ConnectionError } from "#src/connection";

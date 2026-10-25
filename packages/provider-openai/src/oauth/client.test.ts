@@ -1,7 +1,6 @@
-import { describe, expect, test } from "bun:test";
-
 import { Effect, Fiber, Match, Redacted } from "effect";
 import { TestClock } from "effect/testing";
+import { describe, expect, test } from "vitest";
 
 import { makeOAuthClient } from "#src/oauth/client";
 import { request as httpRequest, type HttpFetch } from "#src/oauth/http";

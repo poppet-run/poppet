@@ -1,9 +1,8 @@
-import { describe, expect, test } from "bun:test";
-
 import { ChannelError } from "@poppet/gateway";
 import { StoreError } from "@poppet/store";
 import { Clock, Console, Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
+import { describe, expect, test } from "vitest";
 
 import { superviseAdapter, type AdapterHealth } from "#src/channels";
 

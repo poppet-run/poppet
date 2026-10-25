@@ -1,4 +1,3 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +23,7 @@ import {
   Redacted,
   Terminal,
 } from "effect";
+import { afterEach, describe, expect, test } from "vitest";
 
 import { channels } from "#src/channel-registry";
 import { readChatLine } from "#src/chat-prompt";
@@ -282,7 +282,7 @@ describe("setup", () => {
     expect(f.output.join("\n")).not.toContain("saved-secret");
   });
 
-  test.each(["cancel", "discord-cancel", "login", "catalog"])(
+  test.each(["cancel", "discord-cancel", "login", "catalog"] as const)(
     "%s stops setup without changing existing configuration",
     async (failure) => {
       const f = await fixture();
@@ -363,7 +363,7 @@ describe("setup", () => {
     expect(f.output.join("\n")).toContain("A foreground worker is running");
   });
 
-  test.each(["restart", "start", "foreground"])(
+  test.each(["restart", "start", "foreground"] as const)(
     "worker %s uses the existing lifecycle actions",
     async (mode) => {
       const f = await fixture();

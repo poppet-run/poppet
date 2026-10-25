@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import {
   chmod,
   link,
@@ -20,6 +19,7 @@ import {
   ProviderEnvironment,
 } from "@poppet/provider";
 import { ConfigProvider, Effect, Layer, Redacted } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { ApiKeyStore, ApiKeyStoreLive, apiKeyProvider, loadApiKey } from "#src/api-keys";
 import { acquireOwnerLock } from "#src/lock";

@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
@@ -12,6 +11,7 @@ import {
 import { Store } from "@poppet/store";
 import { Console, Deferred, Effect, Fiber, Match, Stream } from "effect";
 import { TestClock } from "effect/testing";
+import { describe, expect, test } from "vitest";
 
 import { AgentError } from "#src/errors";
 import { Agent, type ChatEvent, type ModelResolver } from "#src/service";

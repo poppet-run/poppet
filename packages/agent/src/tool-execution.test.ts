@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
-
 import { StoreError } from "@poppet/store";
+import { describe, expect, test } from "vitest";
 
 import { builtinFailures } from "#src/agent-tool";
 import { bashFailures } from "#src/bash";

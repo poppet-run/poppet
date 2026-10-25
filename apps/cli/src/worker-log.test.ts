@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import {
   chmod,
   link,
@@ -13,6 +12,8 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { describe, expect, test } from "vitest";
 
 import { openWorkerLog, workerLogBytes } from "#src/worker-log";
 

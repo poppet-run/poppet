@@ -1,8 +1,8 @@
-import { describe, expect, test } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { Effect, Redacted } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { ChatGPTAuth } from "#src/auth/service";
 import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt";

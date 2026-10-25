@@ -1,0 +1,34 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+/** Runs a test command with an isolated home and a minimal environment. */
+export const runIsolated = async (command: string[]) => {
+  const home = await mkdtemp(join(tmpdir(), "poppet-test-home-"));
+
+  try {
+    const tests = Bun.spawn(command, {
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: home,
+        USERPROFILE: home,
+        XDG_CONFIG_HOME: join(home, ".config"),
+        TMPDIR: home,
+        TEMP: home,
+        TMP: home,
+        POPPET_TEST_HOME: home,
+        DO_NOT_TRACK: "1",
+      },
+      stdin: "ignore",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+
+    process.once("SIGINT", () => tests.kill("SIGINT"));
+    process.once("SIGTERM", () => tests.kill("SIGTERM"));
+
+    process.exitCode = await tests.exited;
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+};

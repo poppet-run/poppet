@@ -1,5 +1,4 @@
 import { Database } from "bun:sqlite";
-import { describe, expect, test } from "bun:test";
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -12,6 +11,7 @@ import {
 } from "@poppet/provider";
 import { Store } from "@poppet/store";
 import { Effect, Fiber, Layer, Stream } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { instructions } from "#src/context";
 import { Agent } from "#src/service";

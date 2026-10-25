@@ -1,5 +1,3 @@
-import { describe, expect, test } from "bun:test";
-
 import { Memory } from "@poppet/memory";
 import {
   ProviderError,
@@ -13,6 +11,7 @@ import { SessionReadResult, SessionSearchMatch, Store } from "@poppet/store";
 import { WebSearch, WebSearchError, makeBraveSearch } from "@poppet/web-search";
 import { Effect, Fiber, Redacted, Schema, Stream } from "effect";
 import OpenAI from "openai";
+import { describe, expect, test } from "vitest";
 
 import { Bash, commandReviewInstructions } from "#src/bash";
 import { AgentError } from "#src/errors";

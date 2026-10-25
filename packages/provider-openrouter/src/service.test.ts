@@ -1,8 +1,7 @@
-import { describe, expect, test } from "bun:test";
-
 import { completeModel, verifyModel, type ModelRequest } from "@poppet/provider";
 import { Effect, Fiber, Redacted, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
+import { describe, expect, test } from "vitest";
 
 import { makeOpenRouterProvider, type HttpFetch } from "#src/service";
 

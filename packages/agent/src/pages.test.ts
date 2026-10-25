@@ -1,7 +1,6 @@
-import { describe, expect, test } from "bun:test";
-
 import { Effect, Exit, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
+import { describe, expect, test } from "vitest";
 
 import { AgentError } from "#src/errors";
 import { PageTransport, maxPageBytes, type PageResponse } from "#src/page-network";

@@ -1,7 +1,6 @@
-import { describe, expect, test } from "bun:test";
-
 import { Effect, Fiber, Redacted } from "effect";
 import { TestClock } from "effect/testing";
+import { describe, expect, test } from "vitest";
 
 import { makeBraveSearch } from "#src/brave";
 import { makeKagiSearch } from "#src/kagi";

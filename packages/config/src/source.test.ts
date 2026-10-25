@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
+import { describe, expect, test } from "vitest";
 
 import {
   browserSettings,

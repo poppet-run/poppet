@@ -1,5 +1,4 @@
 import { Database } from "bun:sqlite";
-import { describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +7,7 @@ import { AppConfig } from "@poppet/config";
 import { type Completion, type Message, type ProviderId } from "@poppet/provider";
 import { Effect, Fiber, Layer } from "effect";
 import { SqlClient } from "effect/sql";
+import { describe, expect, test } from "vitest";
 
 import { StoreDatabase } from "#src/database";
 import { StoreError } from "#src/errors";

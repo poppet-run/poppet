@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +8,7 @@ import { StoreLive } from "@poppet/store";
 import { TaskRepositoryLive, remoteTaskCommand } from "@poppet/tasks";
 import { WorkerRequests, workerSocketPath } from "@poppet/worker";
 import { Console, Deferred, Effect, Fiber, Layer, Stream } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { MessagingWorker } from "#src/channels";
 import { workerLaunch } from "#src/worker";

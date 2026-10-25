@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
-
 import { Effect, Stream } from "effect";
+import { describe, expect, test } from "vitest";
 
 import type { ModelRequest, Completion, ModelEvent } from "#src/schema";
 import { completeModel, validateRequest, type ModelOperations } from "#src/service";

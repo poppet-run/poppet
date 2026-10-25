@@ -1,9 +1,9 @@
-import { describe, expect, test } from "bun:test";
 import { link, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { Effect } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { createHarness, login, status } from "#src/test/fixtures/chatgpt";
 

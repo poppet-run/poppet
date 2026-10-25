@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
 import { createServer } from "node:http";
 import { createServer as createTLSServer } from "node:https";
 import { fileURLToPath } from "node:url";
 import { brotliCompressSync, deflateSync, gzipSync } from "node:zlib";
 
 import { Schema } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { maxPageBytes, pageURL, publicAddress, requestPage, resolvePage } from "#src/page-network";
 

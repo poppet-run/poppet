@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 
 import { ConfigProvider, Effect, Exit } from "effect";
+import { describe, expect, test } from "vitest";
 
 import { loadConfig } from "#src/config";
 

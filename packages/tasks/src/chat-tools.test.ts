@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +16,7 @@ import { Store, StoreLive, type Run } from "@poppet/store";
 import { Deferred, Effect, Fiber, Layer } from "effect";
 import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
+import { describe, expect, test } from "vitest";
 
 import { ChatTasksLive } from "#src/chat-tools";
 import { TaskRepository, TaskRepositoryLive } from "#src/task-store";

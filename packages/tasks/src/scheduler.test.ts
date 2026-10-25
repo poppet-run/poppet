@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -18,6 +17,7 @@ import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { Clock, Console, Deferred, Effect, Fiber, Layer, Match, Schema, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
+import { describe, expect, test } from "vitest";
 
 import { ChatTasksLive } from "#src/chat-tools";
 import { TaskDestinations, executeTaskCommand } from "#src/commands";

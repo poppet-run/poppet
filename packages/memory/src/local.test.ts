@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +7,7 @@ import type { Completion } from "@poppet/provider";
 import { Store, StoreLive } from "@poppet/store";
 import { Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql";
+import { describe, expect, test } from "vitest";
 
 import { LocalMemoryLive } from "#src/local";
 import { Memory, MemoryError } from "#src/service";
