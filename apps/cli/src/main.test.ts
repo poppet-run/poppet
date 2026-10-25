@@ -155,6 +155,7 @@ describe("main.ts", () => {
     }
   });
 
+  // Two sequential CLI startups need headroom when CI runs process tests concurrently.
   test.concurrent("when channel setup reads stdin, bounds and saves the token without printing it", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-channel-input-"));
     const args = ["gateway", "discord", "setup", "200", "300", "400", "--key-stdin"];
@@ -176,7 +177,7 @@ describe("main.ts", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   test.concurrent("when interactive chat input is redirected, rejects it without creating a session", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-interactive-input-"));
