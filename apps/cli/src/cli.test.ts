@@ -462,14 +462,14 @@ describe("makeCLI", () => {
       expect(
         JSON.parse(
           (
-            await invoke(["worker", "resume-provider", "openrouter"], {
+            await invoke(["tasks", "resume-provider", "openrouter"], {
               POPPET_DATA_DIR: directory,
             })
           ).stdout,
         ),
       ).toEqual({ provider: "openrouter", resumed: true });
       expect(
-        JSON.parse((await invoke(["worker", "providers"], { POPPET_DATA_DIR: directory })).stdout),
+        JSON.parse((await invoke(["tasks", "providers"], { POPPET_DATA_DIR: directory })).stdout),
       ).toEqual([]);
       expect(JSON.parse(result.stdout).worker).toMatchObject({
         running: false,
@@ -684,10 +684,10 @@ describe("makeCLI", () => {
       ]);
       expect(
         JSON.parse(
-          (await invoke(["worker", "resume-provider", "openai-chatgpt"], environment)).stdout,
+          (await invoke(["tasks", "resume-provider", "openai-chatgpt"], environment)).stdout,
         ),
       ).toEqual({ provider: "openai-chatgpt", resumed: true });
-      expect(JSON.parse((await invoke(["worker", "providers"], environment)).stdout)).toEqual([]);
+      expect(JSON.parse((await invoke(["tasks", "providers"], environment)).stdout)).toEqual([]);
       expect((await invoke(["tasks", "pause", task.id], environment)).exitCode).toBe(0);
       expect((await invoke(["tasks", "show", "missing"], environment)).stderr).toContain(
         "does not exist",
@@ -1110,8 +1110,8 @@ describe("makeCLI", () => {
       "tasks add",
       "tasks run",
       "worker run",
-      "worker providers",
-      "worker resume-provider",
+      "tasks providers",
+      "tasks resume-provider",
       "worker stop",
     ];
 
@@ -1162,7 +1162,7 @@ describe("makeCLI", () => {
 
     const commands = [
       ["config", "unexpected-argument"],
-      ["worker", "resume-provider", "bad/id"],
+      ["tasks", "resume-provider", "bad/id"],
       ["tasks", "add", "Later", "--at", at, "--cron", "0 9 * * *", "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--cron", "0 9 * * *", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],

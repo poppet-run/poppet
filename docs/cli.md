@@ -158,6 +158,8 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 | `tasks resume <task>`                                                                                                              | Resume future occurrences.                                         |
 | `tasks cancel <occurrence>`                                                                                                        | Cancel pending or active work.                                     |
 | `tasks retry <occurrence>`                                                                                                         | Explicitly retry an unsuccessful occurrence.                       |
+| `tasks providers`                                                                                                                  | Show provider quota pauses and temporary backoff.                  |
+| `tasks resume-provider <provider>`                                                                                                 | Allow scheduled requests for a provider again.                     |
 | `tasks clear`                                                                                                                      | Interrupt active work and remove all tasks and task history.       |
 
 See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what
@@ -177,17 +179,15 @@ controls, and uncertain deliveries. The bot token is never accepted as a command
 
 ## Worker
 
-| Command                             | Action                                                |
-| ----------------------------------- | ----------------------------------------------------- |
-| `worker run [--tasks-only]`         | Run scheduling and messaging, or scheduling only.     |
-| `worker install`                    | Install and start the macOS login worker.             |
-| `worker start`                      | Start an installed worker.                            |
-| `worker stop`                       | Stop it until the next login or explicit start.       |
-| `worker status`                     | Show launch agent, scheduling, and connection status. |
-| `worker logs`                       | Print the last 64 KiB of worker logs.                 |
-| `worker resume-provider <provider>` | Allow scheduled requests for a provider again.        |
-| `worker providers`                  | Show provider quota pauses and temporary backoff.     |
-| `worker uninstall`                  | Stop and remove login startup, retaining saved data.  |
+| Command                     | Action                                                |
+| --------------------------- | ----------------------------------------------------- |
+| `worker run [--tasks-only]` | Run scheduling and messaging, or scheduling only.     |
+| `worker install`            | Install and start the macOS login worker.             |
+| `worker start`              | Start an installed worker.                            |
+| `worker stop`               | Stop it until the next login or explicit start.       |
+| `worker status`             | Show launch agent, scheduling, and connection status. |
+| `worker logs`               | Print the last 64 KiB of worker logs.                 |
+| `worker uninstall`          | Stop and remove login startup, retaining saved data.  |
 
 See [worker](worker.md) for foreground modes, macOS lifecycle commands, logs,
 interactive requests, and recovery. Only one worker mode can own a data directory

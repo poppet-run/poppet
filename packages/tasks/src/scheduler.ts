@@ -49,7 +49,7 @@ const logProviderPause = (at: number, pause: ProviderPause) =>
     at,
     `Provider ${pause.provider} paused reason=${pause.reason}; ${
       pause.resumeAt === null
-        ? `use worker resume-provider ${pause.provider}`
+        ? `use tasks resume-provider ${pause.provider}`
         : `resumes at ${new Date(pause.resumeAt).toISOString()}`
     }`,
   );
