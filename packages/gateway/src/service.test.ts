@@ -113,7 +113,13 @@ const fixture = async (
   const { config, store, settings } = harness;
   const tasks = TaskRepositoryLive.pipe(Layer.provideMerge(store));
   const skills = SkillsLive.pipe(Layer.provide(config));
-  const model = testModel({ stream, answer: () => response(), requests, capabilities: { tools } });
+
+  const model = testModel({
+    stream,
+    answer: () => response(),
+    requests,
+    capabilities: { tools, images: true },
+  });
 
   const agent = harness.agent(
     (provider, id) => {
@@ -1289,6 +1295,95 @@ describe.concurrent("Gateway", () => {
       await state.close();
     }
   });
+
+  test("when a message carries an image and no text, downloads it and sends it to the model", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const downloads: { url: string; maxBytes: number }[] = [];
+
+    const state = await fixture({
+      download: (attachment, maxBytes) =>
+        Effect.sync(() => {
+          downloads.push({ url: attachment.url, maxBytes });
+
+          return png;
+        }),
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+
+          yield* gateway.accept({
+            ...message("image", null, ""),
+            attachments: [{ id: "a1", name: "screen.png", size: 8, url: "https://cdn/a1" }],
+          });
+          yield* gateway.processNext;
+          yield* gateway.deliverNext;
+        }),
+      );
+
+      expect(downloads).toEqual([{ url: "https://cdn/a1", maxBytes: 5 * 1024 * 1024 }]);
+      expect(state.requests[0]?.messages.at(-1)).toMatchObject({
+        role: "user",
+        text: "",
+        attachments: [{ name: "screen.png", mediaType: "image/png", size: 8 }],
+      });
+      expect(state.requests[0]?.attachments).toEqual([
+        { id: expect.any(String), base64: Buffer.from(png).toString("base64") },
+      ]);
+      expect(state.sent.map((entry) => entry.text)).toEqual(["Answer"]);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each([
+    [
+      "the download is refused",
+      {
+        download: () =>
+          Effect.fail(
+            new ChannelError({
+              reason: "permission",
+              message: "the file is not hosted by Discord.",
+            }),
+          ),
+      },
+      'Cannot attach "report.pdf": the file is not hosted by Discord.',
+    ],
+    ["the channel cannot download", {}, "This messaging channel cannot receive attachments."],
+    [
+      "the file is not a supported type",
+      { download: () => Effect.succeed(new TextEncoder().encode("%PDF-1.7")) },
+      'Cannot attach "report.pdf": only PNG, JPEG, WebP, and GIF images and plain-text files are supported.',
+    ],
+  ] as const)(
+    "when %s, replies naming the problem without running the model",
+    async (_, overrides, reply) => {
+      const state = await fixture(overrides);
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+
+            yield* gateway.accept({
+              ...message("file", null, "Summarize this"),
+              attachments: [{ id: "a1", name: "report.pdf", size: 8, url: "https://cdn/a1" }],
+            });
+            yield* gateway.processNext;
+            yield* gateway.deliverNext;
+          }),
+        );
+
+        expect(state.requests).toHaveLength(0);
+        expect(state.sent.map((entry) => entry.text)).toEqual([reply]);
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
   test("when a message is accepted, answers and delivers it without waiting for a fallback timer", async () => {
     const incoming = Effect.runSync(Queue.make<IncomingMessage>());

@@ -83,7 +83,7 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
     const prepared = yield* prepareSession(context, execution.setup, entry);
 
     if (prepared === null) return;
-    const { conversation, session, prompt } = prepared;
+    const { conversation, session, prompt, attachments } = prepared;
 
     const taskDestination = (requested: string | null = null) =>
       Effect.gen(function* () {
@@ -118,6 +118,7 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
         yield* Stream.runDrain(
           agent.send(session.id, prompt, {
             runId: entry.runId,
+            attachments,
             approveCommand: (request) => approvals.request(entry.message, conversation, request),
             home: taskDestination(),
             here: taskDestination(conversation),

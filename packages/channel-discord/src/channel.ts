@@ -15,6 +15,7 @@ import {
 import { Deferred, Effect, Layer, Queue, Redacted, Stream } from "effect";
 
 import { approvalActions, approvalComponents } from "#src/approvals";
+import { downloadAttachment, incomingAttachments } from "#src/attachments";
 import type { DiscordSettings } from "#src/settings";
 
 const discordFailure = (cause: unknown, sending = false) =>
@@ -124,7 +125,9 @@ export const discordChannelLayer = (
           .replaceAll(`<@!${botId}>`, "")
           .trim();
 
-        if (!text || text.length > 8192) return;
+        const attachments = incomingAttachments(message.attachments.values());
+
+        if ((!text && attachments.length === 0) || text.length > 8192) return;
 
         if (
           !Queue.offerUnsafe(messages, {
@@ -135,6 +138,7 @@ export const discordChannelLayer = (
             senderId: message.author.id,
             text,
             mentioned,
+            ...(attachments.length > 0 && { attachments }),
           })
         )
           dropped++;
@@ -317,6 +321,7 @@ export const discordChannelLayer = (
         },
         homeConversationId: settings.homeChannelId,
         messages: Stream.fromQueue(messages),
+        download: downloadAttachment(fetch),
         textLimit: 2000,
         status: Effect.sync(() => ({
           adapter: "discord",

@@ -1,6 +1,7 @@
 export {
   ChannelError,
   IncomingMessage,
+  IncomingAttachment,
   MessagingChannel,
   type ApprovalAction,
   type ApprovalState,
