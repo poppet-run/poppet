@@ -1385,6 +1385,61 @@ describe.concurrent("Gateway", () => {
     },
   );
 
+  test.each(["unavailable", "uncertain"] as const)(
+    "when attachment downloads remain %s, replies in the new thread after exhausting retries",
+    async (reason) => {
+      let attempts = 0;
+
+      const state = await fixture({
+        download: () => {
+          attempts++;
+
+          return Effect.fail(new ChannelError({ reason, message: "Download failed." }));
+        },
+      });
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            yield* gateway.accept({
+              ...message("file", null, "Read this"),
+              attachments: [{ id: "a1", name: "notes.txt", ref: "file-a1" }],
+            });
+
+            for (const delay of ["1 second", "2 seconds", "4 seconds"] as const) {
+              expect(yield* gateway.processNext).toBe(true);
+              expect(yield* gateway.deliverNext).toBe(false);
+              expect(yield* gateway.processNext).toBe(false);
+              yield* TestClock.adjust(delay);
+            }
+
+            expect(yield* gateway.processNext).toBe(true);
+            yield* gateway.deliverNext;
+            expect(yield* gateway.deliverNext).toBe(false);
+            expect(yield* (yield* GatewayRepository).status()).toMatchObject({
+              failedRequests: 1,
+              queued: 0,
+              executing: 0,
+            });
+          }),
+        );
+
+        expect(attempts).toBe(4);
+        expect(state.requests).toHaveLength(0);
+        expect(state.sent).toEqual([
+          {
+            destination: "thread-file",
+            text: 'Cannot attach "notes.txt": Download failed.',
+            nonce: expect.any(String),
+          },
+        ]);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test("when a message is accepted, answers and delivers it without waiting for a fallback timer", async () => {
     const incoming = Effect.runSync(Queue.make<IncomingMessage>());
     const delivered = Deferred.makeUnsafe<void>();
