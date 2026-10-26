@@ -133,18 +133,18 @@ Enable `webSearch` separately and restart any running worker. See
 
 ## Chat
 
-| Command                                                  | Action                                                      |
-| -------------------------------------------------------- | ----------------------------------------------------------- |
-| `chat interactive [session] [--coding] [--skill <name>]` | Open a terminal prompt for a new or saved session.          |
-| `chat new [--coding] [--skill <name>] <message>`         | Start a session with the configured provider and model.     |
-| `chat send <session> <message>`                          | Continue a saved session.                                   |
-| `chat rename <session> <title>`                          | Rename a saved session without inference.                   |
-| `chat search <query>`                                    | Search completed conversation text without inference.       |
-| `chat sessions`                                          | List saved sessions.                                        |
-| `chat show <session>`                                    | Print saved messages, tool calls, and run outcomes as JSON. |
+| Command                                                               | Action                                                      |
+| --------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `chat interactive [session] [--coding] [--skill <name>]`              | Open a terminal prompt for a new or saved session.          |
+| `chat new [--coding] [--skill <name>] [--attach <path>]... <message>` | Start a session with the configured provider and model.     |
+| `chat send <session> [--attach <path>]... <message>`                  | Continue a saved session.                                   |
+| `chat rename <session> <title>`                                       | Rename a saved session without inference.                   |
+| `chat search <query>`                                                 | Search completed conversation text without inference.       |
+| `chat sessions`                                                       | List saved sessions.                                        |
+| `chat show <session>`                                                 | Print saved messages, tool calls, and run outcomes as JSON. |
 
 See [chat](chat.md) for session selection, streaming, cancellation, limits,
-and the tools available during a run.
+attachments, and the tools available during a run.
 
 ## Skills
 

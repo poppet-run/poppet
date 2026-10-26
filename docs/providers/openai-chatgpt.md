@@ -48,6 +48,14 @@ needed. If the port is already in use, login fails before printing a link.
 Both ways sign in on the remote machine itself, so it keeps its own host
 identifier and registration, and no tokens leave it.
 
+## Image attachments
+
+A ChatGPT model accepts image attachments only when the account's model catalog
+lists `image` among its `input_modalities`. A model without that field is treated
+as text-only. This field has not been confirmed against a live catalog, so image
+attachments may be unavailable for every ChatGPT model; text-file attachments
+work.
+
 ## Registration and consent
 
 Initial sign-in registers Poppet with its own host identifier and issued client

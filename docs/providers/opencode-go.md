@@ -24,7 +24,8 @@ poppet provider models opencode-go
 The initial Go adapter supports `gpt-6-luna` through Responses and `glm-5.3`
 through Chat Completions. Discovery lists those models when they appear in the
 remote catalog. Other Go models, including the Messages protocol, are not yet
-supported. Both protocols send `poppet/0.0.0` and a stable `x-opencode-session`
+supported. Neither model accepts image attachments until image input is tested;
+text-file attachments work. Both protocols send `poppet/0.0.0` and a stable `x-opencode-session`
 header for the exchange.
 
 Go documents coding-agent traffic. Poppet's Go adapter requires a `coding`

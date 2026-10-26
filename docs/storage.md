@@ -58,6 +58,12 @@ It permits one pending or running run per session; different sessions can run at
 the same time. Store migration 2 replaced the earlier rule of one active run across
 all sessions.
 
+Store migration 3 adds the `attachments` table. A run's attachment bytes are saved
+in the same transaction as the user message that references them, keyed by
+attachment ID and session. Messages hold only each attachment's ID, name, type,
+and size. Attachments stay in the database with their session, so backups and
+the permissions below cover them.
+
 ## Task revisions and timing
 
 Jobs carry a monotonically increasing definition revision. Occurrences save that

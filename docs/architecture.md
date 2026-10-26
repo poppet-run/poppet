@@ -438,8 +438,8 @@ inspection. An uncertain mutation requires inspecting the affected state before 
 Reported tool failures, including refused arguments and failed page reads, return to
 the model within the existing budgets. An invalid batch executes none of its
 calls. Uncertain effects end the run without replay. Once page, search, or MCP
-content enters a run, task management, memory changes, and MCP tools are
-withdrawn until a new owner message. A server configured with
+content enters a run, or the owner's message carries attachments, task management,
+memory changes, and MCP tools are withdrawn until a new owner message. A server configured with
 `availableAfterUntrusted` keeps its allowed MCP tools.
 See [chat limits](chat.md#context-and-run-limits).
 
@@ -849,8 +849,8 @@ budgets come from the worker's existing layers.
 The listener owns the full request, including JSON body decoding, in a scoped
 fiber. Body reads have a 10-second deadline. The Unix-socket listener disables
 Bun idle timeouts so quiet requests can wait for the shared runner; per-request
-timeout changes are ineffective on this transport. The transport accepts up to 2 MiB, leaving room
-for a supported 1 MiB serialized chat context and command metadata. Oversized
+timeout changes are ineffective on this transport. The transport accepts up to 32 MiB, leaving room
+for four 5 MiB attachments as base64, the chat context, and command metadata. Oversized
 requests return a clear size error without local fallback.
 
 Each streaming response owns a worker-scoped fiber and a bounded output queue. Responses

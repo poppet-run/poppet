@@ -5,7 +5,9 @@
 Phases 1–21 and 24 are implemented with automated checks. Live validation
 remains outstanding where listed in each phase. Phase 25's text attachments were
 removed because no messaging adapter supplied attachments.
-Phases 28–34 and 37 are planned only. Plans do not authorize implementation. Phase 35's
+Phases 28–34 are planned only. Phase 37's image and text-file attachments are
+implemented with automated checks; its live Discord and provider checks are
+outstanding. Plans do not authorize implementation. Phase 35's
 parallel messaging is implemented with automated checks and on by default
 (`chat.maxConcurrentRequests` is 3); its live Discord check is outstanding.
 Phase 36's HTTP MCP servers are implemented with automated checks; its live
@@ -23,7 +25,7 @@ Reusable workflows start with [drafting a skill in chat](skills.md#draft-a-skill
 owner review, and manual saving into the local skill library. The agent can read
 matching skills from an index; it cannot write skills or curate facts automatically.
 
-Updated: 2026-10-25
+Updated: 2026-10-26
 
 Storage history: the unreleased base schema was consolidated into version 1.
 Phases 23–26 add migrations 2–5 for monitoring, task controls, attachments, and
@@ -68,7 +70,7 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 34: Model and reasoning selection for new sessions](phases/34.md)
 - [Phase 35: Parallel messaging conversations](phases/35.md) (implemented; default limit 1)
 - [Phase 36: HTTP MCP servers](phases/36.md) (implemented)
-- [Phase 37: Image and text-file attachments](phases/37.md)
+- [Phase 37: Image and text-file attachments](phases/37.md) (implemented)
 
 ## Validation
 
