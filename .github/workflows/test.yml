@@ -11,23 +11,6 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
-        id: bun
-        with:
-          bun-version-file: package.json
-      - run: bun install --frozen-lockfile
-      - uses: actions/cache@v5
-        with:
-          path: .bun-test-timings.json
-          key: test-timings-${{ runner.os }}-${{ steps.bun.outputs.bun-version }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            test-timings-${{ runner.os }}-${{ steps.bun.outputs.bun-version }}-
-      - run: bun run test
-        env:
-          # Keep disposable SQLite fixtures off the shared runner disk.
-          TMPDIR: /dev/shm
+    uses: poppet-run/workflows/.github/workflows/test.yml@main
+    with:
+      timings-file: .bun-test-timings.json
