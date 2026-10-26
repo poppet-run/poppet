@@ -229,9 +229,9 @@ const scheduled = (destination: DeliveryDestination | null) =>
     );
     yield* repo.reconcile(0);
     const claimed = (yield* repo.claim(0))!;
-    yield* executeOccurrence(repo, claimed.occurrence, claimed.task);
+    yield* executeOccurrence(repo, claimed);
 
-    return yield* repo.occurrence(claimed.occurrence.id);
+    return yield* repo.occurrence(claimed.id);
   });
 
 describe.concurrent("Gateway", () => {
@@ -571,7 +571,7 @@ describe.concurrent("Gateway", () => {
             allow = true;
             yield* tasks.retry(id, 0);
             const claimed = (yield* tasks.claim(0))!;
-            yield* executeOccurrence(tasks, claimed.occurrence, claimed.task);
+            yield* executeOccurrence(tasks, claimed);
             expect((yield* tasks.occurrence(id)).status).toBe("completed");
             yield* (yield* Gateway).deliverNext;
             expect(
