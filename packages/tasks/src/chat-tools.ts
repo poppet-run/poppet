@@ -1,44 +1,27 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { AgentError, ChatSettings, ChatTasks, Skills } from "@poppet/agent";
-import { fitPrefix, longestFit } from "@poppet/io";
-import { Store, StoreError, type DeliveryDestination, type SkillSnapshot } from "@poppet/store";
+import {
+  AgentError,
+  ChatSettings,
+  ChatTasks,
+  Skills,
+  type ChatTaskAction,
+  type ChatTaskContext,
+} from "@poppet/agent";
+import { Store, StoreError, type Run } from "@poppet/store";
 import { Clock, Effect, Layer, Match, Schema } from "effect";
 
+import { bounded, detailsOutput, listOutput, summary } from "#src/task-output";
 import {
   NewTask,
   nextOccurrence,
   parseTimestamp,
   TaskError,
-  TaskControl,
+  TaskPatch,
   type Task,
+  type TaskControl,
 } from "#src/task-schema";
 import { TaskRepository } from "#src/task-store";
-
-const summary = (task: Task) => ({
-  id: task.id,
-  name: task.name,
-  schedule:
-    task.schedule.type === "once"
-      ? { type: "once", at: new Date(task.schedule.at).toISOString() }
-      : task.schedule,
-  paused: task.paused,
-  nextAt: task.nextAt === null ? null : new Date(task.nextAt).toISOString(),
-  destination:
-    task.destination === null
-      ? null
-      : { adapter: task.destination.adapter, conversationId: task.destination.conversationId },
-});
-
-const bounded = (output: string, limit: number) =>
-  Buffer.byteLength(output) > limit
-    ? Effect.fail(
-        new StoreError({
-          reason: "invalid-request",
-          message: "Task details exceed the tool-result budget. Increase POPPET_TOOL_BYTES.",
-        }),
-      )
-    : Effect.succeed(output);
 
 // Task failures inside a committed operation surface as storage failures, as before.
 const committedFailure = (cause: StoreError | TaskError) =>
@@ -54,6 +37,41 @@ const invalid = (cause: unknown) =>
     reason: "tool-arguments",
     message: cause instanceof TaskError ? cause.message : "Invalid task request.",
   });
+
+const resolveDelivery = (
+  delivery: Extract<ChatTaskAction, { action: "create" }>["delivery"],
+  context: ChatTaskContext,
+) => {
+  if (delivery === "local") return Effect.succeed(null);
+
+  const target = Match.value(delivery).pipe(
+    Match.when("here", () => context.here),
+    Match.when("home", () => context.home),
+    Match.orElse(({ conversationId }) => context.destination?.(conversationId)),
+  );
+
+  if (target == null)
+    return Effect.fail(
+      new AgentError({
+        reason: "tool-permission",
+        message:
+          "This destination requires an authorized messaging gateway. Use local in CLI chat.",
+      }),
+    );
+
+  return target.pipe(
+    Effect.timeoutOrElse({
+      duration: "8 seconds",
+      orElse: () =>
+        Effect.fail(
+          new AgentError({
+            reason: "tool-permission",
+            message: "Messaging destination validation timed out.",
+          }),
+        ),
+    }),
+  );
+};
 
 /** The shared repository lock serializes chat mutations with worker commands, without entering the agent again. */
 export const ChatTasksLive = Layer.effect(
@@ -75,6 +93,179 @@ export const ChatTasksLive = Layer.effect(
           }),
       ),
     );
+
+    const taskOutput = (action: string, task: Task) =>
+      bounded(JSON.stringify({ action, task: summary(task), truncated: false }), toolBytes);
+
+    const control = (change: TaskControl) =>
+      Effect.gen(function* () {
+        const receipt = yield* repo
+          .control(change, clock.currentTimeMillisUnsafe())
+          .pipe(
+            Effect.mapError(
+              (cause) => new StoreError({ reason: "invalid-request", message: cause.message }),
+            ),
+          );
+
+        return yield* bounded(
+          JSON.stringify({
+            ...receipt,
+            task: summary(yield* repo.task(change.id)),
+            truncated: false,
+          }),
+          toolBytes,
+        );
+      });
+
+    const prepareCreate = (
+      action: Extract<ChatTaskAction, { action: "create" }>,
+      run: Run,
+      context: ChatTaskContext,
+    ) =>
+      Effect.gen(function* () {
+        const input = yield* Effect.try({
+          try: () => {
+            const schedule =
+              action.schedule.type === "once"
+                ? { type: "once" as const, at: parseTimestamp(action.schedule.at) }
+                : action.schedule;
+
+            const now = clock.currentTimeMillisUnsafe();
+
+            if (schedule.type === "once" && schedule.at <= now)
+              throw new TaskError({
+                message: "Choose a future one-off time with an explicit UTC offset.",
+              });
+            nextOccurrence(schedule, now);
+
+            return Schema.decodeUnknownSync(NewTask)({
+              name: action.name,
+              prompt: action.prompt,
+              schedule,
+              provider: run.provider,
+              model: run.model,
+              workload: run.workload,
+            });
+          },
+          catch: invalid,
+        });
+
+        const skill = action.skill === null ? null : yield* skills.load(action.skill);
+        const destination = yield* resolveDelivery(action.delivery, context);
+
+        return Effect.gen(function* () {
+          const now = clock.currentTimeMillisUnsafe();
+
+          if (input.schedule.type === "once" && input.schedule.at <= now)
+            return yield* new StoreError({
+              reason: "invalid-request",
+              message: "The requested one-off time has passed. Choose a future time.",
+            });
+
+          return yield* taskOutput(action.action, yield* repo.add(input, now, skill, destination));
+        });
+      });
+
+    const prepareEdit = (action: Extract<ChatTaskAction, { action: "edit" }>) =>
+      Effect.gen(function* () {
+        const current = yield* repo.task(action.id).pipe(Effect.mapError(invalid));
+
+        const patch = yield* Effect.try({
+          try: () => {
+            const fields: Record<string, Schema.Json> = {};
+
+            if (action.name !== null) fields.name = action.name;
+
+            if (action.prompt !== null) fields.prompt = action.prompt;
+
+            if (action.schedule !== null)
+              fields.schedule =
+                action.schedule.type === "once"
+                  ? { type: "once", at: parseTimestamp(action.schedule.at) }
+                  : action.schedule;
+
+            const decoded = Schema.decodeUnknownSync(TaskPatch, { onExcessProperty: "error" })(
+              fields,
+            );
+
+            const schedule = decoded.schedule;
+            const now = clock.currentTimeMillisUnsafe();
+
+            if (schedule !== undefined) {
+              nextOccurrence(schedule, now);
+
+              // An unchanged past one-off is allowed; choosing a new past time is not.
+              if (
+                schedule.type === "once" &&
+                schedule.at <= now &&
+                !isDeepStrictEqual(schedule, current.schedule)
+              )
+                throw new TaskError({
+                  message: "Choose a future one-off time with an explicit UTC offset.",
+                });
+            }
+
+            return decoded;
+          },
+          catch: invalid,
+        });
+
+        return control({ action: "edit", id: action.id, patch });
+      });
+
+    // Each branch validates now and returns the operation to execute under the commit lock.
+    const prepareAction = (
+      action: ChatTaskAction,
+      run: Run,
+      context: ChatTaskContext,
+    ): Effect.Effect<Effect.Effect<string, StoreError | TaskError>, AgentError> =>
+      Effect.gen(function* () {
+        if ("id" in action && action.action !== "edit")
+          yield* repo.task(action.id).pipe(Effect.mapError(invalid));
+
+        switch (action.action) {
+          case "create":
+            return yield* prepareCreate(action, run, context);
+          case "edit":
+            return yield* prepareEdit(action);
+          case "list":
+            yield* repo.listPage(action.after).pipe(Effect.mapError(invalid));
+
+            return repo
+              .listPage(action.after)
+              .pipe(Effect.flatMap((rows) => listOutput(rows, toolBytes)));
+          case "show":
+            return Effect.gen(function* () {
+              const task = yield* repo.task(action.id);
+              const rows = yield* repo.occurrences(task.id, 6);
+              const target = yield* repo.nextTarget(task.id);
+
+              return yield* detailsOutput(task, rows, target, toolBytes);
+            });
+          case "pause":
+          case "resume": {
+            const update = action.action === "pause" ? repo.pause : repo.resume;
+
+            return Effect.suspend(() => update(action.id, clock.currentTimeMillisUnsafe())).pipe(
+              Effect.flatMap((task) => taskOutput(action.action, task)),
+            );
+          }
+
+          case "snooze": {
+            const until = yield* Effect.try({
+              try: () => parseTimestamp(action.until),
+              catch: invalid,
+            });
+
+            return control({ action: "snooze", id: action.id, until });
+          }
+
+          case "skip_next":
+            return control({ action: "skip-next", id: action.id });
+          case "run_now":
+            return control({ action: "run-now", id: action.id });
+        }
+      });
 
     return {
       prepare: (action, context) =>
@@ -120,285 +311,14 @@ export const ChatTasksLive = Layer.effect(
               }),
             );
 
-          let input: NewTask | null = null;
-          let skill: SkillSnapshot | null = null;
-          let destination: DeliveryDestination | null = null;
-          let change: TaskControl | null = null;
-
-          if ("delivery" in action) {
-            input = yield* Effect.try({
-              try: () => {
-                const schedule =
-                  action.schedule.type === "once"
-                    ? { type: "once" as const, at: parseTimestamp(action.schedule.at) }
-                    : action.schedule;
-
-                if (schedule.type === "once" && schedule.at <= clock.currentTimeMillisUnsafe())
-                  throw new TaskError({
-                    message: "Choose a future one-off time with an explicit UTC offset.",
-                  });
-
-                if (schedule.type === "cron")
-                  nextOccurrence(schedule, clock.currentTimeMillisUnsafe());
-
-                return Schema.decodeUnknownSync(NewTask)({
-                  name: action.name,
-                  prompt: action.prompt,
-                  schedule,
-                  provider: run.provider,
-                  model: run.model,
-                  workload: run.workload,
-                });
-              },
-              catch: invalid,
-            });
-
-            if (action.skill !== null) skill = yield* skills.load(action.skill);
-
-            if (action.delivery !== "local") {
-              const target = Match.value(action.delivery).pipe(
-                Match.when("here", () => context.here),
-                Match.when("home", () => context.home),
-                Match.orElse(({ conversationId }) => context.destination?.(conversationId)),
-              );
-
-              if (target == null)
-                return yield* Effect.fail(
-                  new AgentError({
-                    reason: "tool-permission",
-                    message:
-                      "This destination requires an authorized messaging gateway. Use local in CLI chat.",
-                  }),
-                );
-              destination = yield* target.pipe(
-                Effect.timeoutOrElse({
-                  duration: "8 seconds",
-                  orElse: () =>
-                    Effect.fail(
-                      new AgentError({
-                        reason: "tool-permission",
-                        message: "Messaging destination validation timed out.",
-                      }),
-                    ),
-                }),
-              );
-            }
-          } else {
-            if (action.action === "list")
-              yield* repo.listPage(action.after).pipe(Effect.mapError(invalid));
-            else yield* repo.task(action.id).pipe(Effect.mapError(invalid));
-
-            if (
-              action.action === "edit" ||
-              action.action === "skip_next" ||
-              action.action === "snooze" ||
-              action.action === "run_now"
-            ) {
-              change = yield* Effect.try({
-                try: () => {
-                  if (action.action === "edit") {
-                    const patch: Record<string, Schema.Json> = {};
-
-                    if (action.name !== null) patch.name = action.name;
-
-                    if (action.prompt !== null) patch.prompt = action.prompt;
-
-                    if (action.schedule !== null)
-                      patch.schedule =
-                        action.schedule.type === "once"
-                          ? { type: "once", at: parseTimestamp(action.schedule.at) }
-                          : action.schedule;
-
-                    return Schema.decodeUnknownSync(TaskControl, { onExcessProperty: "error" })({
-                      id: action.id,
-                      action: "edit",
-                      patch,
-                    });
-                  }
-
-                  if (action.action === "snooze")
-                    return {
-                      id: action.id,
-                      action: "snooze" as const,
-                      until: parseTimestamp(action.until),
-                    };
-
-                  return {
-                    id: action.id,
-                    action:
-                      action.action === "skip_next" ? ("skip-next" as const) : ("run-now" as const),
-                  };
-                },
-                catch: invalid,
-              });
-
-              if (change.action === "edit" && change.patch.schedule !== undefined) {
-                const schedule = change.patch.schedule;
-
-                yield* Effect.try({
-                  try: () => nextOccurrence(schedule, clock.currentTimeMillisUnsafe()),
-                  catch: invalid,
-                });
-
-                // An unchanged past one-off is allowed; choosing a new past time is not.
-                if (schedule.type === "once" && schedule.at <= clock.currentTimeMillisUnsafe()) {
-                  const current = yield* repo.task(change.id).pipe(Effect.mapError(invalid));
-
-                  if (!isDeepStrictEqual(schedule, current.schedule))
-                    return yield* Effect.fail(
-                      invalid(
-                        new TaskError({
-                          message: "Choose a future one-off time with an explicit UTC offset.",
-                        }),
-                      ),
-                    );
-                }
-              }
-            }
-          }
-
-          const commit = Effect.gen(function* () {
-            const now = clock.currentTimeMillisUnsafe();
-
-            if ("delivery" in action) {
-              const valid = input!;
-
-              if (valid.schedule.type === "once" && valid.schedule.at <= now)
-                return yield* new StoreError({
-                  reason: "invalid-request",
-                  message: "The requested one-off time has passed. Choose a future time.",
-                });
-
-              const task = yield* repo.add(valid, now, skill, destination);
-
-              return yield* bounded(
-                JSON.stringify({ action: action.action, task: summary(task), truncated: false }),
-                toolBytes,
-              );
-            }
-
-            if (change !== null) {
-              const receipt = yield* repo
-                .control(change, now)
-                .pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new StoreError({ reason: "invalid-request", message: cause.message }),
-                  ),
-                );
-
-              return yield* bounded(
-                JSON.stringify({
-                  ...receipt,
-                  task: summary(yield* repo.task(change.id)),
-                  truncated: false,
-                }),
-                toolBytes,
-              );
-            }
-
-            if (action.action === "list") {
-              const rows = yield* repo.listPage(action.after);
-              const tasks: ReturnType<typeof summary>[] = [];
-
-              for (const task of rows.slice(0, 10)) {
-                const result = summary(task);
-
-                if (
-                  Buffer.byteLength(
-                    JSON.stringify({
-                      tasks: [...tasks, result],
-                      nextCursor: task.id,
-                      truncated: true,
-                    }),
-                  ) > toolBytes
-                )
-                  break;
-                tasks.push(result);
-              }
-
-              if (tasks.length === 0 && rows.length > 0)
-                return yield* bounded(
-                  JSON.stringify({
-                    tasks: [summary(rows[0]!)],
-                    nextCursor: rows[0]!.id,
-                    truncated: true,
-                  }),
-                  toolBytes,
-                );
-              const truncated = rows.length > tasks.length;
-
-              return JSON.stringify({
-                tasks,
-                nextCursor: truncated ? tasks.at(-1)!.id : null,
-                truncated,
-              });
-            }
-
-            const task = yield* Match.value(action).pipe(
-              Match.when({ action: "pause" }, ({ id }) => repo.pause(id, now)),
-              Match.when({ action: "resume" }, ({ id }) => repo.resume(id, now)),
-              Match.orElse(({ id }) => repo.task(id)),
-            );
-
-            if (action.action !== "show")
-              return yield* bounded(
-                JSON.stringify({ action: action.action, task: summary(task), truncated: false }),
-                toolBytes,
-              );
-
-            const rows = yield* repo.occurrences(task.id, 6);
-            const target = yield* repo.nextTarget(task.id);
-
-            const occurrences = rows.slice(0, 5).map((item) => ({
-              id: item.id,
-              status: item.status,
-              scheduledAt: item.scheduledAt,
-              availableAt: item.availableAt,
-              origin: item.origin,
-              finishedAt: item.finishedAt,
-              reason: item.reason,
-            }));
-
-            const output = (prompt: string, shown: typeof occurrences, truncated: boolean) =>
-              JSON.stringify({
-                task: {
-                  ...summary(task),
-                  prompt,
-                  provider: task.provider,
-                  model: task.model,
-                  workload: task.workload,
-                  skill: task.skill?.name ?? null,
-                },
-                occurrences: shown,
-                target,
-                truncated,
-              });
-
-            const fits = (text: string) => Buffer.byteLength(text) <= toolBytes;
-            const whole = output(task.prompt, occurrences, rows.length > 5);
-
-            if (fits(whole)) return whole;
-
-            // Shorten the prompt first, then drop occurrences from the end of the list.
-            const prompt = fitPrefix(task.prompt, (prefix) =>
-              fits(output(prefix, occurrences, true)),
-            );
-
-            if (prompt !== null) return output(prompt, occurrences, true);
-
-            const shown = longestFit(occurrences.length, (count) =>
-              fits(output("", occurrences.slice(0, count), true)),
-            );
-
-            return yield* bounded(
-              output("", occurrences.slice(0, Math.max(shown, 0)), true),
-              toolBytes,
-            );
-          }).pipe(Effect.mapError(committedFailure));
+          const operation = yield* prepareAction(action, run, context);
 
           const execute = store
-            .commitToolCall(context.runId, context.callId, commit)
+            .commitToolCall(
+              context.runId,
+              context.callId,
+              operation.pipe(Effect.mapError(committedFailure)),
+            )
             .pipe(repo.commandLock.withPermit);
 
           return { execute };
