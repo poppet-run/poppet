@@ -14,7 +14,7 @@ import { SqlClient } from "effect/sql";
 
 import { IncomingMessage, ChannelError } from "#src/channel";
 import { gatewaySchema } from "#src/migrations";
-import { isCommandApproval } from "#src/request";
+import { isControl } from "#src/request";
 
 const InboxState = Schema.Literals(["queued", "executing", "completed", "cancelled", "failed"]);
 
@@ -254,10 +254,7 @@ const repository = Effect.gen(function* () {
             decodeRow(Schema.Struct({ count: Schema.Natural })),
           );
 
-          const control =
-            message.text === "/status" ||
-            message.text === "/cancel" ||
-            isCommandApproval(message.text);
+          const control = isControl(message.text);
 
           if ((queued?.count ?? 0) >= 64 && !control)
             return yield* new ChannelError({
