@@ -49,14 +49,27 @@ export const commandApprovals = (channel: MessagingChannel["Service"]) => {
       return yield* Effect.gen(function* () {
         if (!authorized(channel.policy, message)) return false;
         yield* channel.checkAccess(message, conversation);
-        const details = `Bash approval required: ${approval.reason}\nExact invocation: ${JSON.stringify({ command: approval.command, cwd: approval.cwd, timeoutSeconds: approval.timeoutSeconds })}`;
+
+        // JSON escapes preserve literal backticks without letting them close the code span.
+        const invocation = JSON.stringify({
+          command: approval.command,
+          cwd: approval.cwd,
+          timeoutSeconds: approval.timeoutSeconds,
+        }).replaceAll("`", "\\u0060");
+
+        const heading = `Bash approval required: ${approval.reason}\nExact invocation:`;
+        const details = `${heading} \`${invocation}\``;
         const controls = `Reply \`/approve ${id}\` or \`/deny ${id}\`. Expires in two minutes; permits one execution only.`;
 
         // Keep the fallback commands intact, with buttons only after all invocation details.
         const parts =
           `${details}\n${controls}`.length <= channel.textLimit
             ? [`${details}\n${controls}`]
-            : [...chunks(details, channel.textLimit), controls];
+            : [
+                ...chunks(heading, channel.textLimit),
+                ...chunks(invocation, channel.textLimit - 2).map((part) => `\`${part}\``),
+                controls,
+              ];
 
         for (const [index, part] of parts.entries()) {
           const nonce = createHash("sha256").update(`${id}-${index}`).digest("hex").slice(0, 24);

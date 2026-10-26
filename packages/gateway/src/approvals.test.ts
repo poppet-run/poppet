@@ -311,7 +311,7 @@ describe("commandApprovals", () => {
 
       await Effect.runPromise(
         Effect.gen(function* () {
-          const command = "echo 😀 ".repeat(700);
+          const command = "echo `printf 😀` ".repeat(400);
 
           const fiber = yield* approvals
             .request(message, "thread", { ...approval, command })
@@ -326,13 +326,23 @@ describe("commandApprovals", () => {
           } else {
             yield* Deferred.await(ready);
             expect(sent.every((part) => part.length <= adapter.textLimit)).toBe(true);
-            expect(sent.join("")).toContain(
-              JSON.stringify({
-                command,
-                cwd: approval.cwd,
-                timeoutSeconds: approval.timeoutSeconds,
-              }),
-            );
+
+            const invocation = sent
+              .slice(1)
+              .map((part) => {
+                expect(part).toStartWith("`");
+                expect(part).toEndWith("`");
+                expect(part.slice(1, -1)).not.toContain("`");
+
+                return part.slice(1, -1);
+              })
+              .join("");
+
+            expect(JSON.parse(invocation)).toEqual({
+              command,
+              cwd: approval.cwd,
+              timeoutSeconds: approval.timeoutSeconds,
+            });
             expect(buttons).toHaveLength(1);
             expect(buttons[0]!.text).toContain(
               `\`/approve ${buttons[0]!.id}\` or \`/deny ${buttons[0]!.id}\``,
@@ -356,6 +366,9 @@ describe("commandApprovals", () => {
       Effect.gen(function* () {
         const { fiber, id } = yield* prompted(sent, approvals);
 
+        expect(sent[0]).toContain(
+          'Exact invocation: `{"command":"ls","cwd":"/tmp","timeoutSeconds":10}`',
+        );
         expect(yield* approvals.answer("thread", `/${action} ${id}`)).toBe(reply);
         expect(yield* Fiber.join(fiber)).toBe(approved);
         expect(yield* approvals.answer("thread", `/${action} ${id}`)).toStartWith(
