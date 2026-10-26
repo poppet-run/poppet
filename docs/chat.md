@@ -237,6 +237,43 @@ continuation or text into global memory. Recalled URLs do not authorize page
 fetches or become web-search grants. `chat show` keeps its existing inspection
 behavior; there is no extra CLI or worker command for model recall.
 
+## Attach files
+
+```sh
+poppet chat new --attach ./screenshot.png "What does this error mean?"
+poppet chat send <session> --attach ./build.log --attach ./config.json "Why did this fail?"
+```
+
+`--attach <path>` goes before the message and can repeat. In the interactive
+prompt, `/attach <path>` adds a file to the next message. In Discord, attach files
+to the message itself; a message with files needs no text. See
+[Discord](gateways/discord.md#attachments).
+
+Images are PNG, JPEG, WebP, or GIF, identified by their bytes rather than their
+name, and need a model that accepts images. Text files are UTF-8 without NUL
+bytes and need an allowed extension such as `.txt`, `.md`, `.log`, `.csv`,
+`.json`, `.yaml`, or a common source-code extension. PDFs and other files are
+refused. One message holds at most 4 files, each image at most 5 MiB and each
+text file at most 64 KiB. These limits are fixed.
+
+A rejected file stops the whole message, with a reply naming the file and why;
+the model never answers without a file you sent. Sending an image to a session
+whose model does not accept images fails before inference. Start a new session
+with a model that does.
+
+Files are saved in the database with the message, and later turns in the session
+resend them while their exchange stays in the retained history. Each image counts
+as 6 KiB of the context budget, and each text file at its size. Only the 8 newest
+images are resent; older ones are replaced by a note naming the attachment ID, so
+the model knows an image was there. `chat show` lists each message's attachments
+by ID, name, type, and size, not their contents. Conversation search does not
+index attachment contents.
+
+The model receives text files labelled as untrusted file content, and is told
+never to follow instructions found in attachments. A message with attachments
+withdraws task, memory, and MCP mutations for its run, as a fetched page does; ask
+for those changes in a follow-up message.
+
 ## Read a supplied URL
 
 ```sh
@@ -356,9 +393,9 @@ whose effects are unknown, such as a memory write without a saved receipt or an 
 after dispatch, is saved as uncertain and ends the run without replay. Budgets
 still bound repeated attempts.
 
-Once a fetched page, web search result, or MCP result enters a run,
-task management, memory changes, and MCP tools are withdrawn for the rest of that
-run. Reading tools and browser tools remain.
+Once a fetched page, web search result, or MCP result enters a run, or your
+message includes attachments, task management, memory changes, and MCP tools are
+withdrawn for the rest of that run. Reading tools and browser tools remain.
 The model proposes withdrawn actions instead, and a new message from you can
 confirm them.
 Recorded usage sums all model turns when every turn reports usage, otherwise it

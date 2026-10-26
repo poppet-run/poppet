@@ -204,9 +204,9 @@ chats use their saved selection. The worker's startup budgets
 apply to remote requests, including conversation-search result limits. Search
 runs on the owning store connection and needs no provider request. Memory changes are loaded on the next run. Chat output
 and session IDs go to the client terminal and are excluded from worker logs.
-Request bodies have a 10-second read deadline and a 2 MiB transport limit,
-which leaves room for the supported 1 MiB serialized chat context and command
-metadata. Oversized requests report a size error without being retried.
+Request bodies have a 10-second read deadline and a 32 MiB transport limit,
+which leaves room for four 5 MiB attachments sent as base64, the chat context, and
+command metadata. Oversized requests report a size error without being retried.
 Only an absent socket or refused connection permits local fallback. A lost,
 incomplete, or incompatible response fails without replaying the command. Restart
 the worker with `worker stop` followed by `worker start` after updating code.

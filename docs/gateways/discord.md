@@ -90,8 +90,22 @@ same time, and messages within one thread are answered in order. Cancelling one
 thread does not affect requests in another, and an approval reply settles only a
 request in its own thread.
 These are text messages, not registered Discord slash commands. The bot ignores
-other users, bots, and webhooks. DMs, forums, attachments, voice, and streaming
-message edits are not supported in this phase.
+other users, bots, and webhooks. DMs, forums, voice, and streaming message edits
+are not supported.
+
+## Attachments
+
+Attach images or text files to a mention or a thread message; a message with
+files needs no text, and `/new` with files needs no prompt. The supported types
+and limits are in [chat](../chat.md#attach-files).
+
+Files download when the request runs, not when the message arrives. Downloads
+come only from Discord's CDN over HTTPS, follow no redirects, stop at 5 MiB
+whatever size Discord reports, and have a 30-second deadline. A temporary
+download failure retries with the request's usual backoff. A refused or rejected
+file gets one reply naming it and the reason, and the model is not run. A request
+that waits more than a day in the queue can find Discord's file link expired;
+send the files again.
 
 ## Status and delivery
 
