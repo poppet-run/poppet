@@ -95,7 +95,7 @@ const plainContinuation = (): ChatContinuation => ({
   save: () => ({ protocol: "chat-completions" }),
 });
 
-const wireName = (tool: Tool) =>
+const wireName = (tool: Pick<Tool, "name" | "namespace">) =>
   tool.namespace === null ? tool.name : `${tool.namespace}__${tool.name}`;
 
 const toolNames = (description: ModelDescription, request: ModelRequest) => {
@@ -135,7 +135,7 @@ const chatMessages = (
                 id: part.callId,
                 type: "function" as const,
                 function: {
-                  name: wireName({ ...part, description: "", parameters: {} }),
+                  name: wireName(part),
                   arguments: part.arguments,
                 },
               },
