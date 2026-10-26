@@ -81,7 +81,6 @@ const fixture = async (
     accountId: Effect.succeed("bot"),
     policy: { ownerId: "owner", scopeId: "guild" },
     messages: Stream.never,
-    conversation: (input) => Effect.succeed(input.conversationId ?? `thread-${input.messageId}`),
     checkAccess: () => Effect.void,
     destination: () => Effect.succeed("parent"),
     typing: () => Effect.void,
