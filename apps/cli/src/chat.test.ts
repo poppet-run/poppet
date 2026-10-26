@@ -1365,6 +1365,55 @@ describe.concurrent("chat.ts", () => {
     },
   );
 
+  test("when files are attached, sends their contents locally and through the worker and rejects unreadable paths", async () => {
+    const chat = await fixture();
+    const notes = join(chat.directory, "notes.md");
+    await writeFile(notes, "# Shopping\n- milk");
+
+    const contents = () =>
+      chat.requests.map((request) =>
+        request.attachments?.map((entry) => "text" in entry && entry.text),
+      );
+
+    try {
+      await chat.invoke(["chat", "new", "--attach", notes, "Summarize this"]);
+      const worker = await chat.startWorker();
+
+      try {
+        await chat.invoke([
+          "chat",
+          "send",
+          chat.requests[0]!.sessionId,
+          "--attach",
+          notes,
+          "Summarize this",
+        ]);
+        // The earlier exchange's file is resent from history beside the new one.
+        expect(contents()).toEqual([
+          ["# Shopping\n- milk"],
+          ["# Shopping\n- milk", "# Shopping\n- milk"],
+        ]);
+        expect(chat.requests[1]?.sessionId).toBe(chat.requests[0]?.sessionId);
+        expect(chat.requests[1]?.messages.at(-1)).toMatchObject({
+          text: "Summarize this",
+          attachments: [{ name: "notes.md", mediaType: "text/plain", size: 17 }],
+        });
+
+        await expect(
+          chat.invoke(["chat", "new", "--attach", join(chat.directory, "missing.md"), "Read"]),
+        ).rejects.toThrow("Check the path and its permissions.");
+        await expect(
+          chat.invoke(["chat", "new", "--attach", chat.directory, "Read"]),
+        ).rejects.toThrow("it is not a regular file");
+        expect(chat.requests).toHaveLength(2);
+      } finally {
+        await Effect.runPromise(Fiber.interrupt(worker));
+      }
+    } finally {
+      await chat.close();
+    }
+  });
+
   test("when prompts fit the fixed context limit, accepts them locally and through the worker and rejects oversized transport bodies", async () => {
     const chat = await fixture();
 
@@ -1379,9 +1428,9 @@ describe.concurrent("chat.ts", () => {
         await chat.invoke(["chat", "new", prompt]);
         expect(chat.requests).toHaveLength(2);
         expect(chat.chunks.join("")).toBe("Answer\nAnswer\n");
-        await expect(chat.invoke(["chat", "new", "x".repeat(2 * 1024 * 1024 + 1)])).rejects.toThrow(
-          "2 MiB",
-        );
+        await expect(
+          chat.invoke(["chat", "new", "x".repeat(32 * 1024 * 1024 + 1)]),
+        ).rejects.toThrow("32 MiB");
         expect(chat.requests).toHaveLength(2);
       } finally {
         await Effect.runPromise(Fiber.interrupt(worker));

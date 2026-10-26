@@ -23,3 +23,8 @@ export const skillFlag = Flag.String("skill").pipe(
   Flag.atMost(1),
   Flag.map(([value]) => value),
 );
+
+export const attachFlag = Flag.String("attach").pipe(
+  Flag.withDescription("Attach an image or text file; repeat for each file"),
+  Flag.atMost(10),
+);
