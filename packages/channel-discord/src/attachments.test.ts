@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import type { IncomingAttachment } from "@poppet/gateway";
 import { Effect } from "effect";
 
 import { downloadAttachment, incomingAttachments } from "#src/attachments";
@@ -8,12 +9,12 @@ const file = {
   id: "800",
   name: "screen.png",
   size: 4,
-  url: "https://cdn.discordapp.com/attachments/1/2/screen.png?ex=1",
+  ref: "https://cdn.discordapp.com/attachments/1/2/screen.png?ex=1",
 };
 
 const download = (
   response: () => Response,
-  attachment: typeof file = file,
+  attachment: IncomingAttachment = file,
   maxBytes = 1024 * 1024,
 ) => {
   const requests: { url: string; redirect: RequestInit["redirect"] }[] = [];
@@ -31,7 +32,7 @@ const download = (
 
 describe("incomingAttachments", () => {
   test("when a message has files, keeps each file's ID, name, size, and CDN URL", () => {
-    const attachment = { id: "800", name: "screen.png", size: 4, url: file.url };
+    const attachment = { id: "800", name: "screen.png", size: 4, url: file.ref };
 
     expect(incomingAttachments([attachment])).toEqual([file]);
   });
@@ -42,18 +43,18 @@ describe("downloadAttachment", () => {
     const { requests, result } = download(() => new Response(new Uint8Array([1, 2, 3, 4])));
 
     expect(await result).toEqual(expect.objectContaining({ success: Buffer.from([1, 2, 3, 4]) }));
-    expect(requests).toEqual([{ url: file.url, redirect: "manual" }]);
+    expect(requests).toEqual([{ url: file.ref, redirect: "manual" }]);
   });
 
   test.each([
     [
       "is hosted elsewhere",
-      { ...file, url: "https://example.com/screen.png" },
+      { ...file, ref: "https://example.com/screen.png" },
       "not hosted by Discord",
     ],
     [
       "uses plain HTTP",
-      { ...file, url: "http://cdn.discordapp.com/a.png" },
+      { ...file, ref: "http://cdn.discordapp.com/a.png" },
       "not hosted by Discord",
     ],
     ["declares more than the limit", { ...file, size: 2 * 1024 * 1024 }, "larger than 1 MiB"],

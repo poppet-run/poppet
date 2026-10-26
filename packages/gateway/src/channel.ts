@@ -13,8 +13,10 @@ const ExternalId = Schema.NonEmptyString.check(Schema.isMaxLength(128));
 export const IncomingAttachment = Schema.Struct({
   id: ExternalId,
   name: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
-  size: Schema.Natural,
-  url: Schema.NonEmptyString.check(Schema.isMaxLength(4096)),
+  /** The size the channel reports before download, when it reports one. */
+  size: Schema.optionalKey(Schema.Natural),
+  /** The adapter's own locator, such as a URL or file ID; opaque to the gateway. */
+  ref: Schema.NonEmptyString.check(Schema.isMaxLength(4096)),
 });
 
 export type IncomingAttachment = typeof IncomingAttachment.Type;

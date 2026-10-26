@@ -15,7 +15,7 @@ export const incomingAttachments = (
     id: attachment.id,
     name: [...(attachment.name || "attachment")].slice(0, 1024).join(""),
     size: attachment.size,
-    url: attachment.url,
+    ref: attachment.url,
   }));
 
 const refused = (message: string) => new ChannelError({ reason: "permission", message });
@@ -41,12 +41,12 @@ export const downloadAttachment =
   (fetch: Fetch) => (attachment: IncomingAttachment, maxBytes: number) =>
     Effect.tryPromise({
       try: async (signal) => {
-        const url = URL.parse(attachment.url);
+        const url = URL.parse(attachment.ref);
 
         if (url === null || url.protocol !== "https:" || !hosts.has(url.hostname))
           throw refused("the file is not hosted by Discord.");
 
-        if (attachment.size > maxBytes) throw tooLarge(maxBytes);
+        if ((attachment.size ?? 0) > maxBytes) throw tooLarge(maxBytes);
 
         const response = await fetch(url, {
           redirect: "manual",
