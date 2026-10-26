@@ -70,6 +70,35 @@ const toolExchange = [
 ] as const satisfies ReadonlyArray<Message>;
 
 describe("context.ts", () => {
+  test("when older images become notes, retains the surrounding exchanges within budget", () => {
+    const history: Message[] = [];
+
+    for (let turn = 0; turn < 20; turn++)
+      history.push(
+        {
+          role: "user",
+          text: `Question ${turn}`,
+          attachments: Array.from({ length: 4 }, (_, index) => ({
+            id: `image-${turn}-${index}`,
+            name: "screen.png",
+            mediaType: "image/png" as const,
+            size: 100,
+          })),
+        },
+        assistant,
+      );
+
+    const result = assembleContext(stored(history), [], [incoming], model, defaultPolicy);
+    const users = result.filter((message) => message.role === "user");
+
+    expect(result).toHaveLength(41);
+    expect(users[0]?.text).toContain("Question 0\n[Earlier image not resent:");
+    expect(users.flatMap((message) => message.attachments ?? []).map(({ id }) => id)).toEqual(
+      [18, 19].flatMap((turn) => Array.from({ length: 4 }, (_, index) => `image-${turn}-${index}`)),
+    );
+    expect(result.at(-1)).toEqual(incoming);
+  });
+
   test("when history reaches turn or byte limits, keeps complete tool exchanges and continuation together", () => {
     const history = stored([{ role: "user", text: "Old question" }, assistant, ...toolExchange]);
     expect(

@@ -180,7 +180,7 @@ export const assembleContext = (
 
   const available = contextAvailable(model, policy);
 
-  let selected: ReadonlyArray<Message> = [...incoming];
+  let selected: ReadonlyArray<Message> = limitImages(incoming, policy.imagesPerRequest);
 
   if (contextSize(selected, tools, prompt, policy.imageContextBytes) > available)
     throw new AgentError({
@@ -190,11 +190,11 @@ export const assembleContext = (
     });
 
   for (const exchange of exchanges.slice(-policy.historyTurns).toReversed()) {
-    const candidate = [...exchange, ...selected];
+    const candidate = limitImages([...exchange, ...selected], policy.imagesPerRequest);
 
     if (contextSize(candidate, tools, prompt, policy.imageContextBytes) > available) break;
     selected = candidate;
   }
 
-  return limitImages(selected, policy.imagesPerRequest);
+  return selected;
 };
