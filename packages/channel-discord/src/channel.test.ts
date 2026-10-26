@@ -286,11 +286,13 @@ describe("discordChannelLayer", () => {
             mentioned: true,
           };
 
-          expect(yield* channel.conversation(incoming).pipe(Effect.result)).toHaveProperty(
-            "failure.reason",
-            "unavailable",
-          );
-          expect(yield* channel.conversation(incoming)).toBe("400");
+          expect(
+            yield* channel.naming.conversation(incoming, "New conversation").pipe(Effect.result),
+          ).toHaveProperty("failure.reason", "unavailable");
+          expect(yield* channel.naming.conversation(incoming, "New conversation")).toEqual({
+            id: "400",
+            managedName: null,
+          });
           const naming = channel.naming;
 
           if (!naming) throw new Error("Missing naming capability");

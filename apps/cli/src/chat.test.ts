@@ -388,7 +388,6 @@ const exampleChannel = (id: string) => {
               policy: { ownerId: "owner", scopeId: "guild" },
               homeConversationId: "home",
               messages: Stream.fromQueue(incoming),
-              conversation: (message) => Effect.succeed(message.conversationId ?? "thread"),
               checkAccess: () => Effect.void,
               destination: (conversationId) =>
                 ["thread", "home"].includes(conversationId)

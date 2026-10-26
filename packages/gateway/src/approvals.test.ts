@@ -29,7 +29,6 @@ const channel = (sent: string[]): MessagingChannel["Service"] => ({
   accountId: Effect.succeed("bot"),
   policy: { ownerId: "owner", scopeId: "guild" },
   messages: Stream.never,
-  conversation: () => Effect.die("Unexpected conversation"),
   checkAccess: () => Effect.void,
   destination: () => Effect.die("Unexpected destination"),
   typing: () => Effect.void,

@@ -395,8 +395,6 @@ export const discordChannelLayer = (
             },
             catch: discordFailure,
           }),
-        conversation: (message) =>
-          conversation(message, "New conversation").pipe(Effect.map((result) => result.id)),
         naming: {
           sanitize: threadName,
           conversation,

@@ -50,8 +50,6 @@ export class MessagingChannel extends Context.Service<
     /** Default destination for proactive messages, if configured. */
     readonly homeConversationId?: string;
     readonly messages: Stream.Stream<IncomingMessage, ChannelError>;
-    /** Finds or creates the remote conversation for a source message. */
-    readonly conversation: (message: IncomingMessage) => Effect.Effect<string, ChannelError>;
     /** Rechecks current authorization and remote permissions before execution or delivery. */
     readonly checkAccess: (
       message: IncomingMessage,
