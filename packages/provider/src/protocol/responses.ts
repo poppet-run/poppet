@@ -20,6 +20,7 @@ import {
   type ModelRequest,
   type Output,
 } from "#src/index";
+import { userParts } from "#src/protocol/attachments";
 import { inferenceFailure, remoteFailure, type InferenceOptions } from "#src/protocol/errors";
 import { inIndexOrder, modelStream } from "#src/protocol/scoped-stream";
 
@@ -139,7 +140,18 @@ const responseInput = (description: ModelDescription, request: ModelRequest) => 
   const input: ResponseInput = [];
 
   for (const message of request.messages) {
-    if (message.role === "user") input.push({ role: "user", content: message.text });
+    if (message.role === "user")
+      input.push({
+        role: "user",
+        content:
+          message.attachments === undefined
+            ? message.text
+            : userParts(description, request, message).map((part) =>
+                part.type === "text"
+                  ? { type: "input_text", text: part.text }
+                  : { type: "input_image", image_url: part.url, detail: "auto" },
+              ),
+      });
     else if (message.role === "tool")
       input.push({ type: "function_call_output", call_id: message.callId, output: message.output });
     else if (message.continuation !== null) {

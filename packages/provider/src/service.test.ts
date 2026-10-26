@@ -28,6 +28,7 @@ const model = (events: ReadonlyArray<ModelEvent>): ModelOperations => ({
     name: "Fake model",
     capabilities: {
       tools: false,
+      images: false,
       generationSettings: ["maxOutputTokens"],
       contextWindow: null,
       maxOutputTokens: 10,

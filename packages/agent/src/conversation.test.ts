@@ -1432,6 +1432,7 @@ describe.concurrent("conversation", () => {
         name: "Test Responses",
         capabilities: {
           tools: true,
+          images: false,
           generationSettings: [],
           contextWindow: null,
           maxOutputTokens: null,

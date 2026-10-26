@@ -34,6 +34,7 @@ const supportedModels: ReadonlyArray<
     protocol: "responses",
     capabilities: {
       tools: true,
+      images: false,
       generationSettings: ["maxOutputTokens"],
       contextWindow: null,
       maxOutputTokens: null,
@@ -46,6 +47,7 @@ const supportedModels: ReadonlyArray<
     protocol: "chat-completions",
     capabilities: {
       tools: true,
+      images: false,
       generationSettings: ["temperature", "maxOutputTokens"],
       contextWindow: null,
       maxOutputTokens: null,

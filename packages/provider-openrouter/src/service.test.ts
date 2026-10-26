@@ -20,11 +20,12 @@ const catalogEntry = (
   parameters = ["tools", "tool_choice", "temperature", "max_tokens"],
   outputs = ["text"],
   tokenizer = "GPT",
+  inputs = ["text", "image"],
 ) => ({
   id,
   name: id,
   context_length: 10000,
-  architecture: { input_modalities: ["text", "image"], output_modalities: outputs, tokenizer },
+  architecture: { input_modalities: inputs, output_modalities: outputs, tokenizer },
   supported_parameters: parameters,
   top_provider: { max_completion_tokens: 2000 },
 });
@@ -217,7 +218,7 @@ describe("makeOpenRouterProvider", () => {
   test("when discovering models without credentials, returns concrete text models and catalog capabilities", async () => {
     const harness = fixture([
       catalogEntry("vendor/model"),
-      catalogEntry("vendor/text-only", ["max_completion_tokens"]),
+      catalogEntry("vendor/text-only", ["max_completion_tokens"], ["text"], "GPT", ["text"]),
       catalogEntry("openrouter/auto", [], ["text"], "Router"),
       catalogEntry("openrouter/free", [], ["text"], "Router"),
       catalogEntry("vendor/router", [], ["text"], "Router"),
@@ -233,6 +234,7 @@ describe("makeOpenRouterProvider", () => {
         "vendor/model",
         {
           tools: true,
+          images: true,
           generationSettings: ["temperature", "maxOutputTokens"],
           contextWindow: 10000,
           maxOutputTokens: 2000,
@@ -242,6 +244,7 @@ describe("makeOpenRouterProvider", () => {
         "vendor/text-only",
         {
           tools: false,
+          images: false,
           generationSettings: ["maxOutputTokens"],
           contextWindow: 10000,
           maxOutputTokens: 2000,

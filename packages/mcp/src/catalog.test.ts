@@ -199,7 +199,13 @@ const description: ModelDescription = {
   provider: "fixture",
   id: "fixture",
   name: "Fixture",
-  capabilities: { tools: true, generationSettings: [], contextWindow: null, maxOutputTokens: null },
+  capabilities: {
+    tools: true,
+    images: false,
+    generationSettings: [],
+    contextWindow: null,
+    maxOutputTokens: null,
+  },
 };
 
 describe("definition", () => {
