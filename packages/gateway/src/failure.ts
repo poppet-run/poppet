@@ -14,7 +14,11 @@ export interface FailureDecision {
 const failureReply = (error: ChatFailure | ChannelError | null) => {
   if (error === null || error instanceof StoreError) return null;
 
-  if (error instanceof AgentError && error.reason.startsWith("command-")) return error.message;
+  if (
+    error instanceof AgentError &&
+    (error.reason.startsWith("command-") || error.reason === "attachment")
+  )
+    return error.message;
 
   return "The request failed. Use /status in this conversation to inspect its session before sending a new request.";
 };

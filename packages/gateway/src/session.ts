@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { sessionTitle, type Skills } from "@poppet/agent";
+import { sessionTitle, type AttachmentInput, type Skills } from "@poppet/agent";
 import type { AppConfig } from "@poppet/config";
 import { Effect, Result } from "effect";
 
@@ -13,6 +13,8 @@ import { messagingRequest } from "#src/request";
 export interface SessionSetup {
   readonly config: AppConfig["Service"];
   readonly skills: Skills["Service"];
+  /** The largest attachment the agent accepts; larger downloads are refused. */
+  readonly attachmentBytes: number;
 }
 
 /** Resolves and binds a session before inference, reusing saved IDs and skill snapshots on recovery. */
@@ -23,13 +25,17 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
     const account = yield* channel.accountId;
 
     const ownerText = entry.message.text;
-    const parsed = yield* messagingRequest(ownerText).pipe(Effect.result);
+    const incoming = entry.message.attachments ?? [];
+    const parsed = yield* messagingRequest(ownerText, incoming.length > 0).pipe(Effect.result);
     const prompt = Result.isSuccess(parsed) ? parsed.success.prompt : ownerText;
 
     const created =
       entry.conversationId !== null
         ? { id: entry.conversationId, managedName: null }
-        : yield* channel.naming.conversation(entry.message, sessionTitle(prompt));
+        : yield* channel.naming.conversation(
+            entry.message,
+            sessionTitle(prompt.trim() || incoming[0]?.name || ""),
+          );
 
     const conversation = created.id;
     yield* channel.checkAccess(entry.message, conversation);
@@ -45,6 +51,31 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
 
     if (Result.isFailure(parsed)) return yield* reject(parsed.failure.message);
     const request = parsed.success;
+
+    // Every file is needed; answering without one the owner sent would mislead them.
+    const attachments: AttachmentInput[] = [];
+
+    for (const attachment of incoming) {
+      if (channel.download === undefined)
+        return yield* reject("This messaging channel cannot receive attachments.");
+
+      const downloaded = yield* channel
+        .download(attachment, setup.attachmentBytes)
+        .pipe(Effect.result);
+
+      if (Result.isSuccess(downloaded)) {
+        attachments.push({ name: attachment.name, body: downloaded.success });
+        continue;
+      }
+
+      const { reason, message } = downloaded.failure;
+
+      // Transient failures retry while no run is saved; others are answered now.
+      if (reason === "unavailable" || reason === "uncertain")
+        return yield* Effect.fail(downloaded.failure);
+
+      return yield* reject(`Cannot attach ${JSON.stringify(attachment.name)}: ${message}`);
+    }
 
     const existing = yield* repo.binding(channel.id, account, entry.message.scopeId, conversation);
 
@@ -92,5 +123,5 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
 
     yield* repo.attach(entry.id, conversation, session.id, created.managedName, request.fresh);
 
-    return { conversation, session, prompt: request.prompt };
+    return { conversation, session, prompt: request.prompt, attachments };
   });

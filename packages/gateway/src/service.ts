@@ -33,12 +33,16 @@ const gateway = Effect.gen(function* () {
 
   const running = runningRequests();
   // The agent's limit, so the gateway never claims more requests than the agent can start.
-  const { maxConcurrentRequests } = yield* ChatSettings;
+  const { maxConcurrentRequests, imageBytes, textFileBytes } = yield* ChatSettings;
   const approvals = commandApprovals(channel);
 
   const execution: Execution = {
     agent,
-    setup: { config: yield* AppConfig, skills: yield* Skills },
+    setup: {
+      config: yield* AppConfig,
+      skills: yield* Skills,
+      attachmentBytes: Math.max(imageBytes, textFileBytes),
+    },
     approvals,
     running,
   };

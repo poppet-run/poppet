@@ -9,6 +9,16 @@ export class ChannelError extends Data.TaggedError("ChannelError")<{
 
 const ExternalId = Schema.NonEmptyString.check(Schema.isMaxLength(128));
 
+/** A file on a message, downloaded through its adapter only when the request runs. */
+export const IncomingAttachment = Schema.Struct({
+  id: ExternalId,
+  name: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
+  size: Schema.Natural,
+  url: Schema.NonEmptyString.check(Schema.isMaxLength(4096)),
+});
+
+export type IncomingAttachment = typeof IncomingAttachment.Type;
+
 /** Adapter-normalized input with source IDs retained for authorization and deduplication. */
 export const IncomingMessage = Schema.Struct({
   messageId: ExternalId,
@@ -18,6 +28,7 @@ export const IncomingMessage = Schema.Struct({
   senderId: ExternalId,
   text: Schema.String.check(Schema.isMaxLength(8192)),
   mentioned: Schema.Boolean,
+  attachments: Schema.optionalKey(Schema.Array(IncomingAttachment).check(Schema.isMaxLength(10))),
 });
 
 export type IncomingMessage = typeof IncomingMessage.Type;
@@ -63,6 +74,14 @@ export class MessagingChannel extends Context.Service<
       message: IncomingMessage,
       state: "working" | "completed" | "stopped",
     ) => Effect.Effect<void, ChannelError>;
+    /**
+     * Downloads an attachment's bytes, refusing more than `maxBytes`. Permission and
+     * configuration failures are final; unavailable ones may be retried.
+     */
+    readonly download?: (
+      attachment: IncomingAttachment,
+      maxBytes: number,
+    ) => Effect.Effect<Uint8Array, ChannelError>;
     /** Sends one text chunk with a stable nonce and returns its remote message ID. */
     readonly send: (
       conversationId: string,

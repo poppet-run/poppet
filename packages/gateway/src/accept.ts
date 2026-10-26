@@ -89,7 +89,11 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
       ),
     );
 
-    if (!authorized(channel.policy, message) || !message.text.trim()) return;
+    if (
+      !authorized(channel.policy, message) ||
+      (!message.text.trim() && (message.attachments ?? []).length === 0)
+    )
+      return;
     const conversation = message.conversationId;
 
     const session =

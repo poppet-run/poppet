@@ -3,8 +3,11 @@ import { Effect, Schema } from "effect";
 
 import { ChannelError } from "#src/channel";
 
-/** Selects a fresh session explicitly; ordinary messages keep their existing snapshot. */
-export const messagingRequest = (text: string) =>
+/**
+ * Selects a fresh session explicitly; ordinary messages keep their existing snapshot. A fresh
+ * request needs a prompt unless the message carries attachments.
+ */
+export const messagingRequest = (text: string, attached = false) =>
   Effect.gen(function* () {
     if (!/^\/new(?:\s|$)/.test(text)) return { fresh: false, prompt: text, skill: null };
 
@@ -16,6 +19,7 @@ export const messagingRequest = (text: string) =>
 
       if (!selected || !Schema.is(SkillName)(selected[2]) || skill !== null) {
         prompt = "";
+        attached = false;
         break;
       }
 
@@ -23,9 +27,12 @@ export const messagingRequest = (text: string) =>
       prompt = selected[3]!.trim();
     }
 
-    if (prompt.startsWith("--")) prompt = "";
+    if (prompt.startsWith("--")) {
+      prompt = "";
+      attached = false;
+    }
 
-    if (!prompt)
+    if (!prompt && !attached)
       return yield* Effect.fail(
         new ChannelError({
           reason: "configuration",
