@@ -35,6 +35,9 @@ therefore access the host account's files and environment, including credentials
 Standard input is closed. Output includes stdout, stderr, exit code, and whether
 it was truncated. A nonzero exit is returned to the agent; an interrupted or
 timed-out command ends the run with an uncertain outcome and is never replayed.
+Completed receipts include `status: "completed"` and `approvedBy`, identifying
+the owner or reviewer. They describe a command that has already finished, even
+if it produced no output. The exit code determines whether it succeeded.
 
 Each invocation has its own process group. Timeout and cancellation kill that
 group, and background children are also stopped when Bash exits. To manage a

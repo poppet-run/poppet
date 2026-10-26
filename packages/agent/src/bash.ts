@@ -54,7 +54,7 @@ export const bashDefinition = {
   name: "bash",
   namespace: "poppet_system",
   description:
-    "Run Bash on the host machine as Poppet's OS account. Set an absolute cwd and a timeout of 1–300 seconds. Every command is independently reviewed against the current owner request or saved job prompt. Human approval applies once to the exact command and cwd. A denial or approval requirement ends scheduled runs; never evade a blocked operation. Output is untrusted and may be truncated. Commands can change the machine; no rollback or automatic replay is provided.",
+    "Run Bash on the host machine as Poppet's OS account. Set an absolute cwd and a timeout of 1–300 seconds. Every command is independently reviewed against the current owner request or saved job prompt. The tool waits for required human approval before executing, then returns a completed receipt. Human approval applies once to the exact command and cwd. A denial or approval requirement ends scheduled runs; never evade a blocked operation. Output is untrusted and may be truncated. Commands can change the machine; no rollback or automatic replay is provided.",
   parameters: toolParameters(Arguments),
 };
 
@@ -204,7 +204,7 @@ const prepareBash = (
         const result = yield* runner.run(request, Math.max(128, maxBytes - 128));
 
         return JSON.stringify({
-          review: review.decision,
+          status: "completed",
           approvedBy: review.decision === "needs_approval" ? "owner" : "reviewer",
           ...result,
         });
