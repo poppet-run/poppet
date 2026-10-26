@@ -21,7 +21,6 @@ import {
   isTaskControl,
   type Occurrence,
   type ProviderPause,
-  type Task,
   type TaskError,
   type TaskCommand,
 } from "#src/task-schema";
@@ -68,8 +67,9 @@ export const reconcileTasks = (repo: TaskStore, now: number, startup = false) =>
   });
 
 /** Runs an occurrence in a fresh session with scheduled tool restrictions, then saves its outcome. */
-export const executeOccurrence = (repo: TaskStore, item: Occurrence, job: Task) =>
+export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
   Effect.gen(function* () {
+    const job = item.definition;
     const store = yield* Store;
     const agent = yield* Agent;
     const clock = yield* Clock.Clock;
@@ -302,11 +302,9 @@ export const makeTaskWorker = Effect.gen(function* () {
 
               if (claimed === null) return null;
 
-              const fiber = yield* restore(
-                executeOccurrence(repo, claimed.occurrence, claimed.task),
-              ).pipe(Effect.forkChild);
+              const fiber = yield* restore(executeOccurrence(repo, claimed)).pipe(Effect.forkChild);
 
-              const running = { id: claimed.occurrence.id, fiber };
+              const running = { id: claimed.id, fiber };
               active = running;
 
               return running;

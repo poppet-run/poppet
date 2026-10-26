@@ -76,7 +76,7 @@ describe.concurrent("TaskRepository", () => {
           const job = yield* repo.add(once, start);
           yield* repo.reconcile(start);
           const original = (yield* repo.claim(start))!;
-          yield* repo.finish(original.occurrence.id, "failed", "test", start);
+          yield* repo.finish(original.id, "failed", "test", start);
           yield* repo.pause(job.id, start);
           yield* repo.control(
             {
@@ -89,18 +89,18 @@ describe.concurrent("TaskRepository", () => {
           expect((yield* repo.task(job.id)).paused).toBe(1);
           yield* repo.resume(job.id, start);
           expect((yield* repo.task(job.id)).nextAt).toBe(start + 1000);
-          yield* repo.retry(original.occurrence.id, start);
+          yield* repo.retry(original.id, start);
           yield* repo.reconcile(start + 1000);
           expect((yield* repo.task(job.id)).nextAt).toBe(start + 1000);
-          expect((yield* repo.claim(start + 1000))?.task).toMatchObject({
+          expect(yield* repo.claim(start + 1000)).toMatchObject({
             revision: 0,
-            prompt: once.prompt,
+            definition: { prompt: once.prompt },
           });
-          yield* repo.finish(original.occurrence.id, "completed", null, start + 1000);
+          yield* repo.finish(original.id, "completed", null, start + 1000);
           yield* repo.reconcile(start + 1000);
-          expect((yield* repo.claim(start + 1000))?.task).toMatchObject({
+          expect(yield* repo.claim(start + 1000)).toMatchObject({
             revision: 1,
-            prompt: "New one-off",
+            definition: { prompt: "New one-off" },
           });
           expect((yield* repo.task(job.id)).nextAt).toBeNull();
         }),
@@ -156,11 +156,11 @@ describe.concurrent("TaskRepository", () => {
 
           expect(noop).toMatchObject({ changedFields: [], replacedOccurrenceIds: [] });
           const claimed = (yield* repo.claim(start + 4))!;
-          expect(claimed.task).toMatchObject({
+          expect(claimed.definition).toMatchObject({
             name: "Renamed",
             prompt: "Read the current decisions",
           });
-          yield* repo.finish(claimed.occurrence.id, "completed", null, start + 4);
+          yield* repo.finish(claimed.id, "completed", null, start + 4);
           expect(yield* repo.clear()).toBe(1);
         }),
       );
@@ -189,7 +189,7 @@ describe.concurrent("TaskRepository", () => {
           yield* repo.resume(job.id, start);
           yield* repo.reconcile(start);
           const item = (yield* repo.claim(start))!;
-          yield* repo.finish(item.occurrence.id, "completed", null, start);
+          yield* repo.finish(item.id, "completed", null, start);
           yield* repo.control(
             {
               action: "edit",
@@ -221,9 +221,8 @@ describe.concurrent("TaskRepository", () => {
             start + 1,
           );
           yield* repo.reconcile(start + 1000);
-          expect((yield* repo.claim(start + 1000))?.task).toMatchObject({
-            name: "Finished",
-            prompt: "New prompt",
+          expect(yield* repo.claim(start + 1000)).toMatchObject({
+            definition: { name: "Finished", prompt: "New prompt" },
             revision: 3,
           });
         }),
@@ -348,7 +347,7 @@ describe.concurrent("TaskRepository", () => {
           yield* repo.blockProvider(recurring.provider, "quota", until);
           expect(yield* repo.claim(until)).toBeNull();
           yield* repo.resumeProvider(recurring.provider, until + 1);
-          expect((yield* repo.claim(until + 1))?.occurrence.id).toBe(saved.occurrence);
+          expect((yield* repo.claim(until + 1))?.id).toBe(saved.occurrence);
           yield* repo.finish(saved.occurrence, "failed", "test", until + 1);
           yield* repo.retry(saved.occurrence, until + 1);
           yield* repo.blockProvider(recurring.provider, "quota", until + 1);
@@ -360,9 +359,9 @@ describe.concurrent("TaskRepository", () => {
           yield* repo.reconcile(until + recurringExpiry);
           expect(yield* repo.claim(until + recurringExpiry)).toBeNull();
           yield* repo.reconcile(until + recurringExpiry + 60_000);
-          expect(
-            (yield* repo.claim(until + recurringExpiry + 60_000))?.occurrence.scheduledAt,
-          ).toBe(until + recurringExpiry + 60_000);
+          expect((yield* repo.claim(until + recurringExpiry + 60_000))?.scheduledAt).toBe(
+            until + recurringExpiry + 60_000,
+          );
           expect((yield* repo.skips(saved.id)).length).toBeGreaterThan(0);
         }),
       );
@@ -501,7 +500,7 @@ describe.concurrent("TaskRepository", () => {
             availableAt: start,
             origin: "manual",
           });
-          expect((yield* repo.claim(start))?.task.id).toBe(single.id);
+          expect((yield* repo.claim(start))?.jobId).toBe(single.id);
         }),
       );
     } finally {
@@ -518,7 +517,7 @@ describe.concurrent("TaskRepository", () => {
           const job = yield* repo.add(once, start);
           yield* repo.reconcile(start);
           const original = (yield* repo.claim(start))!;
-          yield* repo.finish(original.occurrence.id, "failed", "test", start);
+          yield* repo.finish(original.id, "failed", "test", start);
           yield* repo.control(
             {
               action: "edit",
@@ -527,10 +526,9 @@ describe.concurrent("TaskRepository", () => {
             },
             start,
           );
-          yield* repo.retry(original.occurrence.id, start + 2 * recurringExpiry);
-          expect((yield* repo.claim(start + 2 * recurringExpiry))?.task).toMatchObject({
-            prompt: once.prompt,
-            schedule: once.schedule,
+          yield* repo.retry(original.id, start + 2 * recurringExpiry);
+          expect(yield* repo.claim(start + 2 * recurringExpiry)).toMatchObject({
+            definition: { prompt: once.prompt, schedule: once.schedule },
             revision: 0,
           });
         }),
@@ -594,8 +592,8 @@ describe.concurrent("TaskRepository", () => {
           const run = yield* store.queueRun(session.id, [{ role: "user", text: "private prompt" }]);
           yield* store.startRun(run.id);
           yield* store.finishRun(run.id, { status: "failed", reason: "provider:authentication" });
-          yield* repo.link(active.occurrence.id, session.id, run.id);
-          yield* repo.finish(active.occurrence.id, "failed", "private provider diagnostic", start);
+          yield* repo.link(active.id, session.id, run.id);
+          yield* repo.finish(active.id, "failed", "private provider diagnostic", start);
           yield* repo.blockProvider("test-provider", "quota", start);
           const overview = yield* repo.status();
 
@@ -614,7 +612,7 @@ describe.concurrent("TaskRepository", () => {
                 jobId: job.id,
                 runId: run.id,
                 failureReason: "provider:authentication",
-                action: `Run provider login test-provider, then tasks retry ${active.occurrence.id}.`,
+                action: `Run provider login test-provider, then tasks retry ${active.id}.`,
               },
             ],
           });
@@ -645,22 +643,21 @@ describe.concurrent("TaskRepository", () => {
           const session = yield* store.createSession("test-provider", "test-model");
           const queued = yield* store.queueRun(session.id, [{ role: "user", text: once.prompt }]);
           yield* store.startRun(queued.id);
-          yield* repo.link(active.occurrence.id, session.id, queued.id);
+          yield* repo.link(active.id, session.id, queued.id);
           yield* store.finishRun(queued.id, { status: "failed", reason: "provider:quota" });
           yield* sql.unsafe(
             "CREATE TRIGGER reject_pause BEFORE INSERT ON job_provider_pauses BEGIN SELECT RAISE(ABORT, 'Pause write failed'); END",
           );
 
           expect(
-            (yield* Effect.flip(
-              repo.finish(active.occurrence.id, "failed", "Quota", start + 1, "quota"),
-            )).message,
+            (yield* Effect.flip(repo.finish(active.id, "failed", "Quota", start + 1, "quota")))
+              .message,
           ).toContain("Could not read or update scheduled tasks.");
-          expect((yield* repo.occurrence(active.occurrence.id)).status).toBe("running");
+          expect((yield* repo.occurrence(active.id)).status).toBe("running");
           expect(yield* repo.providers()).toEqual([]);
           yield* sql.unsafe("DROP TRIGGER reject_pause");
 
-          return { occurrence: active.occurrence.id, run: queued.id, next: next.id };
+          return { occurrence: active.id, run: queued.id, next: next.id };
         }),
       );
 
@@ -676,7 +673,7 @@ describe.concurrent("TaskRepository", () => {
           yield* repo.resumeProvider("test-provider", start + 1000);
           yield* repo.recover(start + 2000);
           expect(yield* repo.providers()).toEqual([]);
-          expect((yield* repo.claim(start + 2000))?.task.id).toBe(saved.next);
+          expect((yield* repo.claim(start + 2000))?.jobId).toBe(saved.next);
         }),
       );
     } finally {
@@ -715,8 +712,8 @@ describe.concurrent("TaskRepository", () => {
             },
           });
 
-          yield* repo.link(active.occurrence.id, session.id, completed.id);
-          yield* repo.finish(active.occurrence.id, "completed", null, start + 60_000);
+          yield* repo.link(active.id, session.id, completed.id);
+          yield* repo.finish(active.id, "completed", null, start + 60_000);
           yield* sql.unsafe(
             "INSERT INTO memory_revisions (key, revision, action, value, origin, source_run_id, created_at) VALUES ('project', 1, 'remember', 'Acorn', 'turn', ?, ?)",
             [completed.id, start],
@@ -787,7 +784,7 @@ describe.concurrent("TaskRepository", () => {
           const session = yield* store.createSession("test-provider", "test-model");
           const queued = yield* store.queueRun(session.id, [{ role: "user", text: once.prompt }]);
           yield* store.startRun(queued.id);
-          yield* repo.link(active.occurrence.id, session.id, queued.id);
+          yield* repo.link(active.id, session.id, queued.id);
           yield* store.finishRun(queued.id, {
             status: "completed",
             response: {
@@ -803,7 +800,7 @@ describe.concurrent("TaskRepository", () => {
             },
           });
 
-          return active.occurrence.id;
+          return active.id;
         }),
       );
 
@@ -966,10 +963,10 @@ describe.concurrent("TaskRepository", () => {
             },
           ]);
           yield* repo.pause(job.id, start + 5 * 60_000);
-          expect((yield* repo.occurrence(active!.occurrence.id)).status).toBe("running");
-          yield* repo.cancel(active!.occurrence.id, start + 5 * 60_000);
-          yield* repo.finish(active!.occurrence.id, "interrupted", "cancelled", start + 5 * 60_000);
-          expect((yield* repo.occurrence(active!.occurrence.id)).status).toBe("cancelled");
+          expect((yield* repo.occurrence(active!.id)).status).toBe("running");
+          yield* repo.cancel(active!.id, start + 5 * 60_000);
+          yield* repo.finish(active!.id, "interrupted", "cancelled", start + 5 * 60_000);
+          expect((yield* repo.occurrence(active!.id)).status).toBe("cancelled");
           yield* repo.resume(job.id, start + 5 * 60_000);
           yield* repo.reconcile(start + 6 * 60_000);
           yield* repo.pause(job.id, start + 6 * 60_000);
@@ -1003,10 +1000,10 @@ describe.concurrent("TaskRepository", () => {
           const session = yield* store.createSession("test-provider", "test-model");
           const queued = yield* store.queueRun(session.id, [{ role: "user", text: first.prompt }]);
           const running = yield* store.startRun(queued.id);
-          yield* repo.link(active.occurrence.id, session.id, running.id);
+          yield* repo.link(active.id, session.id, running.id);
 
           return {
-            active: active.occurrence.id,
+            active: active.id,
             pending: (yield* repo.occurrences(second.id))[0]!.id,
             run: running.id,
           };
@@ -1045,12 +1042,12 @@ describe.concurrent("TaskRepository", () => {
           yield* repo.reconcile(start + 60_000);
           yield* repo.reconcile(start + 5 * 60_000);
           expect(yield* repo.occurrences(job.id)).toHaveLength(1);
-          expect((yield* repo.claim(start + 5 * 60_000))?.task.id).toBe(other.id);
+          expect((yield* repo.claim(start + 5 * 60_000))?.jobId).toBe(other.id);
           expect(yield* repo.claim(start + 5 * 60_000)).toBeNull();
           yield* repo.resumeProvider("test-provider", start + recurringExpiry + 60_000);
           expect((yield* repo.occurrences(job.id))[0]?.status).toBe("expired");
           expect((yield* repo.occurrences(single.id))[0]?.status).toBe("pending");
-          expect((yield* repo.claim(start + recurringExpiry + 60_000))?.task.id).toBe(single.id);
+          expect((yield* repo.claim(start + recurringExpiry + 60_000))?.jobId).toBe(single.id);
           expect(
             (yield* Effect.flip(
               repo.retry(
@@ -1076,7 +1073,7 @@ describe.concurrent("TaskRepository", () => {
           yield* repo.add({ ...once, schedule: { type: "once", at: start + 1 } }, start);
           yield* repo.reconcile(start + 1);
           const active = (yield* repo.claim(start))!;
-          yield* repo.finish(active.occurrence.id, "failed", "temporary", start, "temporary");
+          yield* repo.finish(active.id, "failed", "temporary", start, "temporary");
           expect(yield* repo.claim(start + 29_999)).toBeNull();
           expect(yield* repo.claim(start + 30_000)).not.toBeNull();
           expect((yield* repo.occurrences(first.id))[0]?.status).toBe("failed");

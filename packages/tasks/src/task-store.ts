@@ -54,15 +54,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       decodeRows(Occurrence),
     );
 
-  // Run the definition saved with the occurrence, not later edits to its task.
-  const executionTask = (item: Occurrence) =>
-    Effect.map(task(item.jobId), (job): Task => ({
-      ...job,
-      ...item.definition,
-      revision: item.revision,
-      destination: item.destination,
-    }));
-
   // Scheduled occurrences are idempotent per task revision and time.
   const queue = (job: Task, scheduledAt: number) =>
     insertOccurrence(job, scheduledAt, { ignoreDuplicate: true });
@@ -312,7 +303,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
         yield* sql`UPDATE job_occurrences SET status = 'running' WHERE id = ${item.id}`;
 
-        return { occurrence: yield* occurrence(item.id), task: yield* executionTask(item) };
+        return yield* occurrence(item.id);
       }),
     );
 
