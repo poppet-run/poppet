@@ -54,8 +54,8 @@ export type ChatEvent =
 export type ChatFailure = AgentError | ProviderError | StoreError;
 
 export interface SendOptions {
-  /** Excludes memory writes and task management, as scheduled runs require. */
-  readonly readOnlyTools?: boolean;
+  /** Selects scheduled tool restrictions when the request comes from the task worker. */
+  readonly origin?: RunContext["origin"];
   readonly approveCommand?: ApproveCommand;
   readonly runId?: string;
   readonly reasoningLog?: (line: string) => Effect.Effect<void>;
@@ -256,7 +256,7 @@ export const AgentLive = Layer.effect(
                   history,
                   runs,
                   prompt,
-                  readOnlyTools: options.readOnlyTools ?? false,
+                  origin: options.origin ?? "interactive",
                   selectedSkill: session.skill?.name ?? null,
                   approveCommand: options.approveCommand ?? null,
                   here: options.here ?? null,

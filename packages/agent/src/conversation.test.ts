@@ -214,7 +214,9 @@ describe.concurrent("conversation", () => {
             const store = yield* Store;
             const session = yield* store.createSession("test-provider", "test-model");
             yield* Stream.runDrain(
-              (yield* Agent).send(session.id, "Print hello twice", { readOnlyTools: scheduled }),
+              (yield* Agent).send(session.id, "Print hello twice", {
+                origin: scheduled ? "scheduled" : "interactive",
+              }),
             );
             const run = (yield* store.runs(session.id))[0]!;
             expect(run.status).toBe("completed");
@@ -318,7 +320,7 @@ describe.concurrent("conversation", () => {
           const session = yield* store.createSession("test-provider", "test-model");
           yield* Stream.runDrain(
             (yield* Agent).send(session.id, "Restart my service", {
-              readOnlyTools: mode === "scheduled",
+              origin: mode === "scheduled" ? "scheduled" : "interactive",
               approveCommand: (request) =>
                 Effect.sync(() => {
                   approvals++;
@@ -384,11 +386,11 @@ describe.concurrent("conversation", () => {
             const session = yield* store.createSession("test-provider", "test-model");
             const agent = yield* Agent;
             yield* agent
-              .send(session.id, "First", { readOnlyTools: scheduled })
+              .send(session.id, "First", { origin: scheduled ? "scheduled" : "interactive" })
               .pipe(Stream.runDrain);
             expect(closed).toEqual(opened);
             yield* agent
-              .send(session.id, "Second", { readOnlyTools: scheduled })
+              .send(session.id, "Second", { origin: scheduled ? "scheduled" : "interactive" })
               .pipe(Stream.runDrain);
             expect(closed).toEqual(opened);
             expect(new Set(opened).size).toBe(2);
@@ -632,7 +634,7 @@ describe.concurrent("conversation", () => {
             const session = yield* store.createSession("test-provider", "test-model");
             expect(
               yield* reportedFailures(session.id, "Summarize https://example.com/", {
-                readOnlyTools: true,
+                origin: "scheduled",
               }),
             ).toEqual([]);
           }),
@@ -783,8 +785,8 @@ describe.concurrent("conversation", () => {
   );
 
   test.each([false, true])(
-    "when search returns sources with read-only=%j, authorizes later page reads only in that run",
-    async (readOnlyTools) => {
+    "when search returns sources with scheduled=%j, authorizes later page reads only in that run",
+    async (scheduled) => {
       let turns = 0;
       const fetched: string[] = [];
 
@@ -832,7 +834,9 @@ describe.concurrent("conversation", () => {
             const session = yield* store.createSession("test-provider", "test-model");
             const agent = yield* Agent;
             yield* Stream.runDrain(
-              agent.send(session.id, "Research this topic", { readOnlyTools }),
+              agent.send(session.id, "Research this topic", {
+                origin: scheduled ? "scheduled" : "interactive",
+              }),
             );
             const run = (yield* store.runs(session.id))[0]!;
             expect(run.status).toBe("completed");
@@ -842,9 +846,11 @@ describe.concurrent("conversation", () => {
               ["search_web", "completed"],
               ["fetch_page", "completed"],
             ]);
-            expect(yield* reportedFailures(session.id, "Continue", { readOnlyTools })).toEqual([
-              "agent:tool-permission",
-            ]);
+            expect(
+              yield* reportedFailures(session.id, "Continue", {
+                origin: scheduled ? "scheduled" : "interactive",
+              }),
+            ).toEqual(["agent:tool-permission"]);
           }),
         );
         expect(fetched).toEqual(["https://example.com/source"]);
@@ -975,8 +981,8 @@ describe.concurrent("conversation", () => {
   });
 
   test.each([false, true])(
-    "when a page URL is explicitly supplied with read-only tools=%j, reads it and records durable results",
-    async (readOnlyTools) => {
+    "when a page URL is explicitly supplied with scheduled=%j, reads it and records durable results",
+    async (scheduled) => {
       const fetched: string[] = [];
       let turns = 0;
 
@@ -1031,7 +1037,7 @@ describe.concurrent("conversation", () => {
             const session = yield* store.createSession("test-provider", "test-model");
             yield* Stream.runDrain(
               (yield* Agent).send(session.id, "Summarize https://example.com/article", {
-                readOnlyTools,
+                origin: scheduled ? "scheduled" : "interactive",
               }),
             );
             const run = (yield* store.runs(session.id))[0]!;
@@ -1172,8 +1178,8 @@ describe.concurrent("conversation", () => {
   });
 
   test.each([false, true])(
-    "when saved context is searched and read with read-only tools=%j, records durable calls",
-    async (readOnlyTools) => {
+    "when saved context is searched and read with scheduled=%j, records durable calls",
+    async (scheduled) => {
       let turn = 0;
 
       const state = await fixture(
@@ -1299,7 +1305,9 @@ describe.concurrent("conversation", () => {
             const savedSession = yield* store.session(earlier.id);
             const session = yield* store.createSession("test-provider", "test-model");
             yield* Stream.runDrain(
-              (yield* Agent).send(session.id, "Recall my project", { readOnlyTools }),
+              (yield* Agent).send(session.id, "Recall my project", {
+                origin: scheduled ? "scheduled" : "interactive",
+              }),
             );
             const run = (yield* store.runs(session.id))[0]!;
             expect(run.status).toBe("completed");

@@ -62,13 +62,16 @@ export const conversation = Effect.gen(function* () {
   const executeTool = yield* toolExecution;
 
   /** Offers this run's external tools, then the built-ins it may use, each identity at most once. */
-  const chooseTools = ({ run, model, readOnlyTools }: RunContext) =>
+  const chooseTools = ({ run, model, origin }: RunContext) =>
     Effect.gen(function* () {
       const catalog =
         model.description.capabilities.tools && external !== null
           ? yield* measureTiming(
               "external-tools",
-              external.snapshot(readOnlyTools, { sessionId: run.sessionId, runId: run.id }),
+              external.snapshot(origin === "scheduled", {
+                sessionId: run.sessionId,
+                runId: run.id,
+              }),
             )
           : [];
 
@@ -87,7 +90,7 @@ export const conversation = Effect.gen(function* () {
               (tool): tool is AgentTool =>
                 tool !== null &&
                 (tool !== skillView || skillsIndex !== null) &&
-                !(readOnlyTools && tool.mutating),
+                (origin === "interactive" || tool.availableWhenScheduled),
             ),
           ]
         : [];
@@ -112,7 +115,7 @@ export const conversation = Effect.gen(function* () {
 
   /** Extends the run's prompt with the skill index, host tool policy, and the time tasks resolve against. */
   const buildInstructions = (
-    { prompt, readOnlyTools, selectedSkill }: RunContext,
+    { prompt, origin, selectedSkill }: RunContext,
     skillsIndex: SkillIndex | null,
   ) => {
     const skillPrompt =
@@ -128,7 +131,7 @@ export const conversation = Effect.gen(function* () {
         ? indexedPrompt
         : `${indexedPrompt}\n\n${external.instructions}`;
 
-    return task !== null && !readOnlyTools
+    return task !== null && origin === "interactive"
       ? `${baseInstructions}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
       : baseInstructions;
   };

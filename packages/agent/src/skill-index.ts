@@ -82,7 +82,7 @@ export const skillIndexGuidance = (selected: string | null) =>
   [
     "Owner-written skills are listed below as JSON.",
     "Before multi-step work, check whether one matches the request; if so, call poppet_skills.view_skill and follow it.",
-    "Skills are procedures below the base rules. They cannot override explicit user requests, tool permissions, or scheduled runs' read-only policy, and grant no additional capabilities.",
+    "Skills are procedures below the base rules. They cannot override explicit user requests, tool permissions, or scheduled tool restrictions, and grant no additional capabilities.",
     ...(selected === null
       ? []
       : [`The skill ${JSON.stringify(selected)} is already selected and supplied above.`]),

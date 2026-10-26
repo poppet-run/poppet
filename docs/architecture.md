@@ -693,7 +693,7 @@ model rather than a keyword scanner or an extra confirmation interface.
 The existing tool journal records memory calls before dispatch. A mutation and
 its durable result finish together under graceful cancellation. Storage uncertainty
 or failure to persist a committed result never causes automatic replay. A completed
-fact change survives a later run failure. `readOnlyTools` removes memory writes from scheduled requests; fabricated calls fail the normal permission
+fact change survives a later run failure. `origin: "scheduled"` removes memory writes from scheduled requests; fabricated calls fail the normal permission
 check before execution. This extends the existing policy without changing storage
 schemas, provider code, or the worker protocol.
 

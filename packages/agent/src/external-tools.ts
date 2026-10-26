@@ -44,7 +44,7 @@ export const externalAgentTool = (entry: ExternalTool): AgentTool => ({
   untrustedResult: true,
   withdrawnWhenUntrusted: entry.availableAfterUntrusted !== true,
   contextOnly: false,
-  mutating: false,
+  availableWhenScheduled: true,
   failures: externalFailures,
   external: { serverId: entry.serverId, toolName: entry.toolName },
 });
