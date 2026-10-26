@@ -21,6 +21,8 @@ export {
   SessionReadMessage,
   SessionReadResult,
   StoredMessage,
+  NewAttachment,
+  SavedAttachment,
   Run,
   RunStatus,
   RunOutcome,

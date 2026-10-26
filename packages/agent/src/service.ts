@@ -24,6 +24,7 @@ import {
 } from "effect";
 
 import type { RunContext } from "#src/agent-tool";
+import { prepareAttachments, type AttachmentInput } from "#src/attachments";
 import type { ApproveCommand } from "#src/bash";
 import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
@@ -63,6 +64,8 @@ export interface SendOptions {
   readonly here?: RunContext["here"];
   readonly home?: RunContext["home"];
   readonly destination?: RunContext["destination"];
+  /** Files sent with the message; saved with the run once they pass validation. */
+  readonly attachments?: ReadonlyArray<AttachmentInput>;
 }
 
 /** Coordinates model requests, tool execution, and saved conversation history. */
@@ -166,7 +169,18 @@ export const AgentLive = Layer.effect(
             const requestedAt = yield* Clock.currentTimeMillis;
             startedAt = requestedAt;
 
-            if (text.trim().length === 0)
+            const files = yield* Effect.try({
+              try: () => prepareAttachments(options.attachments ?? [], policy),
+              catch: (cause) =>
+                cause instanceof AgentError
+                  ? cause
+                  : new AgentError({
+                      reason: "attachment",
+                      message: "Cannot read the attachments.",
+                    }),
+            });
+
+            if (text.trim().length === 0 && files.references.length === 0)
               return yield* Effect.fail(
                 new AgentError({ reason: "invalid-request", message: "Enter a nonempty message." }),
               );
@@ -185,9 +199,14 @@ export const AgentLive = Layer.effect(
               Effect.gen(function* () {
                 const pending = yield* store.queueRun(
                   sessionId,
-                  [{ role: "user", text }],
+                  [
+                    files.references.length === 0
+                      ? { role: "user", text }
+                      : { role: "user", text, attachments: files.references },
+                  ],
                   options.runId,
-                  sessionTitle(text),
+                  sessionTitle(text.trim() || files.references[0]!.name),
+                  files.attachments,
                 );
 
                 active = pending;
@@ -246,6 +265,17 @@ export const AgentLive = Layer.effect(
                         "The resolved model does not match this session. No fallback is allowed.",
                     }),
                   );
+
+                if (
+                  !model.description.capabilities.images &&
+                  files.references.some((reference) => reference.mediaType !== "text/plain")
+                )
+                  return yield* Effect.fail(
+                    new AgentError({
+                      reason: "attachment",
+                      message: `${model.description.name} does not accept images. Start a new session with a model that does.`,
+                    }),
+                  );
                 const history = yield* store.messages(sessionId);
                 const runs = yield* store.runs(sessionId);
 
@@ -253,6 +283,7 @@ export const AgentLive = Layer.effect(
                   run,
                   model,
                   text,
+                  attachments: files.references,
                   history,
                   runs,
                   prompt,
@@ -362,7 +393,10 @@ export const AgentLive = Layer.effect(
         );
 
         if (original?.message.role !== "user") return;
-        const prompt = original.message.text;
+
+        const prompt =
+          original.message.text.trim() ||
+          (original.message.attachments ?? []).map((reference) => reference.name).join(", ");
 
         const result = yield* measureTiming(
           "session-title",

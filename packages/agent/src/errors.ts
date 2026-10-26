@@ -24,6 +24,7 @@ export class AgentError extends Data.TaggedError("AgentError")<{
     | "command-unavailable"
     | "budget"
     | "memory-storage"
-    | "memory-limit";
+    | "memory-limit"
+    | "attachment";
   readonly message: string;
 }> {}

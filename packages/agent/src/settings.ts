@@ -19,6 +19,13 @@ export interface ChatPolicy {
   readonly runDeadlineSeconds: number;
   /** Chat requests that may run at once across messaging, interactive chat, and scheduled runs. */
   readonly maxConcurrentRequests: number;
+  readonly attachmentsPerMessage: number;
+  readonly imageBytes: number;
+  readonly textFileBytes: number;
+  /** Images resent in one request; older ones in retained history become a text placeholder. */
+  readonly imagesPerRequest: number;
+  /** Context bytes each image counts as, since providers bill images by size, not encoding. */
+  readonly imageContextBytes: number;
 }
 
 /** Supplies validated chat limits shared by context assembly and the tool loop. */
@@ -41,6 +48,11 @@ export const defaultPolicy: ChatPolicy = {
   skillIndexBytes: 8192,
   runDeadlineSeconds: 300,
   maxConcurrentRequests: 3,
+  attachmentsPerMessage: 4,
+  imageBytes: 5 * 1024 * 1024,
+  textFileBytes: 64 * 1024,
+  imagesPerRequest: 8,
+  imageContextBytes: 6144,
 };
 
 const bounded = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }));

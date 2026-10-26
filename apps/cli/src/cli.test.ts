@@ -851,7 +851,7 @@ describe("makeCLI", () => {
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
         path: join(directory, "store/poppet.sqlite"),
-        schemaVersion: 2,
+        schemaVersion: 3,
         sessions: 0,
         messages: 0,
         runs: 0,
