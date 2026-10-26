@@ -1298,12 +1298,12 @@ describe.concurrent("Gateway", () => {
 
   test("when a message carries an image and no text, downloads it and sends it to the model", async () => {
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    const downloads: { url: string; maxBytes: number }[] = [];
+    const downloads: { ref: string; maxBytes: number }[] = [];
 
     const state = await fixture({
       download: (attachment, maxBytes) =>
         Effect.sync(() => {
-          downloads.push({ url: attachment.url, maxBytes });
+          downloads.push({ ref: attachment.ref, maxBytes });
 
           return png;
         }),
@@ -1316,14 +1316,14 @@ describe.concurrent("Gateway", () => {
 
           yield* gateway.accept({
             ...message("image", null, ""),
-            attachments: [{ id: "a1", name: "screen.png", size: 8, url: "https://cdn/a1" }],
+            attachments: [{ id: "a1", name: "screen.png", ref: "file-a1" }],
           });
           yield* gateway.processNext;
           yield* gateway.deliverNext;
         }),
       );
 
-      expect(downloads).toEqual([{ url: "https://cdn/a1", maxBytes: 5 * 1024 * 1024 }]);
+      expect(downloads).toEqual([{ ref: "file-a1", maxBytes: 5 * 1024 * 1024 }]);
       expect(state.requests[0]?.messages.at(-1)).toMatchObject({
         role: "user",
         text: "",
@@ -1370,7 +1370,7 @@ describe.concurrent("Gateway", () => {
 
             yield* gateway.accept({
               ...message("file", null, "Summarize this"),
-              attachments: [{ id: "a1", name: "report.pdf", size: 8, url: "https://cdn/a1" }],
+              attachments: [{ id: "a1", name: "report.pdf", size: 8, ref: "file-a1" }],
             });
             yield* gateway.processNext;
             yield* gateway.deliverNext;

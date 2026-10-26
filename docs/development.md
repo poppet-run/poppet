@@ -294,6 +294,18 @@ the authenticated bot identity; status remains available while login retries.
 The channel policy limits incoming requests to one owner and scope. Adapters
 validate platform permissions in `checkAccess`. An optional `homeConversationId`
 supplies the default proactive destination; `destination` resolves its parent.
+
+To receive files, an adapter lists them in `IncomingMessage.attachments` and
+implements `download`. Each attachment has the platform's ID, a display name, an
+optional size the platform reports before download, and `ref`, the adapter's own
+locator such as a URL or file ID; the gateway never reads it. The gateway calls
+`download(attachment, maxBytes)` when the request runs, so `ref` must still
+resolve then. `download` must stop at `maxBytes` bytes received, and fail with
+`unavailable` or `uncertain` to retry or with any other reason to refuse the file
+with a reply. Without `download`, a message with files gets a reply that the
+channel cannot receive them. The agent identifies file types and applies limits
+for every channel. A platform that delivers file bytes inline with the message,
+with nothing to fetch later, is not yet supported.
 Shared `loadChannelSettings` and `saveChannelSettings` preserve
 bounded reads, ownership checks, atomic replacement, and protected file modes
 while adapters own their schemas.
