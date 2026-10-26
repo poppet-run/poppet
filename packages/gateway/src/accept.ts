@@ -10,7 +10,7 @@ import {
   type GatewayContext,
   type RunningRequest,
 } from "#src/context";
-import { gatewayStorage, type Inbox } from "#src/repository";
+import type { Inbox } from "#src/repository";
 import { isCommandApproval, isControl } from "#src/request";
 
 /** What control commands act on: pending approvals and the running request. */
@@ -41,11 +41,11 @@ const controlReply = (
 
       yield* claims.withPermit(
         Effect.gen(function* () {
-          yield* gatewayStorage(repo.cancel(channel.id, entry.account, conversation));
+          yield* repo.cancel(channel.id, entry.account, conversation);
 
           for (const request of requests.values())
             if (request.entry.conversationId === conversation) {
-              yield* gatewayStorage(repo.state(request.entry.id, "cancelled"));
+              yield* repo.state(request.entry.id, "cancelled");
               yield* Fiber.interrupt(request.fiber);
             }
         }),
@@ -95,18 +95,18 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
     const session =
       conversation === null
         ? null
-        : yield* gatewayStorage(repo.binding(channel.id, account, message.scopeId, conversation));
+        : yield* repo.binding(channel.id, account, message.scopeId, conversation);
 
     if (session === null && !message.mentioned) return;
 
-    const entry = yield* gatewayStorage(repo.accept(channel.id, account, message));
+    const entry = yield* repo.accept(channel.id, account, message);
 
     if (entry === null) return;
     yield* wake(context.wakes.inbox);
 
     if (!isControl(message.text)) return;
     // Controls never create sessions or wait behind the model they may need to cancel.
-    yield* gatewayStorage(repo.state(entry.id, "cancelled"));
+    yield* repo.state(entry.id, "cancelled");
 
     if (conversation === null || session === null) return;
     yield* handleControl(context, controls, entry, message, conversation, session);

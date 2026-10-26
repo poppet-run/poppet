@@ -15,7 +15,7 @@ import {
 import { resolveDestination } from "#src/destination";
 import { failureDecision } from "#src/failure";
 import { answer } from "#src/replies";
-import { gatewayStorage, type Inbox } from "#src/repository";
+import type { Inbox } from "#src/repository";
 import { prepareSession, type SessionSetup } from "#src/session";
 
 /** What executing a request needs beyond the shared context. */
@@ -31,12 +31,12 @@ export const recover = (context: GatewayContext) =>
   Effect.gen(function* () {
     const { channel, repo, store } = context;
     const account = yield* channel.accountId;
-    yield* gatewayStorage(repo.recoverDelivery(channel.id, account));
+    yield* repo.recoverDelivery(channel.id, account);
 
-    for (const entry of yield* gatewayStorage(repo.executing(channel.id, account))) {
+    for (const entry of yield* repo.executing(channel.id, account)) {
       const run = yield* store.run(entry.runId);
 
-      if (run === null) yield* gatewayStorage(repo.state(entry.id, "queued"));
+      if (run === null) yield* repo.state(entry.id, "queued");
       else {
         yield* finish(context, entry.id, answer(run));
         yield* mark(context, entry.message, run.status === "completed" ? "completed" : "stopped");
@@ -62,16 +62,16 @@ const settleFailure = (
     );
 
     if (retryAfterMs !== null && (yield* store.run(entry.runId)) === null) {
-      yield* gatewayStorage(repo.retry(entry, clock.currentTimeMillisUnsafe() + retryAfterMs));
+      yield* repo.retry(entry, clock.currentTimeMillisUnsafe() + retryAfterMs);
 
       return;
     }
 
-    const saved = yield* gatewayStorage(repo.item(entry.id));
+    const saved = yield* repo.item(entry.id);
 
     if (reply !== null && saved.conversationId !== null)
       yield* finish(context, entry.id, reply, "failed");
-    else yield* gatewayStorage(repo.state(entry.id, "failed"));
+    else yield* repo.state(entry.id, "failed");
   });
 
 /** Prepares the session, runs the agent with typing shown, and saves the run's answer. */
@@ -167,19 +167,17 @@ const claimNext = (
       const { requests } = execution.running;
       const account = yield* channel.accountId;
 
-      const entry = yield* gatewayStorage(
-        repo.next(channel.id, account, clock.currentTimeMillisUnsafe()),
-      );
+      const entry = yield* repo.next(channel.id, account, clock.currentTimeMillisUnsafe());
 
       if (entry === null) return null;
 
       if (!authorized(channel.policy, entry.message)) {
-        yield* gatewayStorage(repo.state(entry.id, "cancelled"));
+        yield* repo.state(entry.id, "cancelled");
 
         return "skipped" as const;
       }
 
-      if (!(yield* gatewayStorage(repo.claim(entry.id)))) return "skipped" as const;
+      if (!(yield* repo.claim(entry.id))) return "skipped" as const;
       const registered = yield* Deferred.make<void>();
 
       const request = Deferred.await(registered).pipe(

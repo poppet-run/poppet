@@ -4,7 +4,7 @@ import { type Clock, type Duration, Effect, type Fiber, Queue, Semaphore } from 
 
 import type { ChannelError, ChannelPolicy, IncomingMessage, MessagingChannel } from "#src/channel";
 import { chunks } from "#src/replies";
-import { type GatewayRepository, gatewayStorage, type Inbox } from "#src/repository";
+import type { GatewayRepository, Inbox } from "#src/repository";
 
 /** Signals that let a loop run as soon as another loop gives it work. */
 export interface GatewayWakes {
@@ -62,9 +62,9 @@ export const finish = (
   text: string,
   state: "completed" | "failed" = "completed",
 ) =>
-  gatewayStorage(context.repo.complete(id, chunks(text, context.channel.textLimit), state)).pipe(
-    Effect.andThen(wake(context.wakes.delivery)),
-  );
+  context.repo
+    .complete(id, chunks(text, context.channel.textLimit), state)
+    .pipe(Effect.andThen(wake(context.wakes.delivery)));
 
 // shortcut: Reactions are best effort; add durable reconciliation if stale markers after crashes matter.
 export const mark = (

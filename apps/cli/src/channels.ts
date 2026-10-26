@@ -10,7 +10,7 @@ import {
   GatewayRepository,
   GatewayRepositoryLive,
 } from "@poppet/gateway";
-import { DeliveryDestination, StoreError, reportAs } from "@poppet/store";
+import { DeliveryDestination, StoreError } from "@poppet/store";
 import {
   Cause,
   Clock,
@@ -59,15 +59,6 @@ const loadChannels = (registered: ReadonlyArray<ChannelRegistration>) =>
       ),
     ),
   );
-
-const counts = (repo: GatewayRepository["Service"]) =>
-  repo
-    .status()
-    .pipe(
-      reportAs(
-        () => new StoreError({ reason: "storage", message: "Cannot read messaging status." }),
-      ),
-    );
 
 /** Restart counts and the latest failure an adapter recovered from, for status output. */
 export interface AdapterHealth {
@@ -201,7 +192,7 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
           return {
             enabled: channels.some((channel) => channel.enabled),
             channels,
-            ...(yield* counts(repo)),
+            ...(yield* repo.status()),
           };
         }),
       };
@@ -223,7 +214,7 @@ export const stoppedMessagingStatus = (registered: ReadonlyArray<ChannelRegistra
       running: false,
       enabled: channels.some((channel) => channel.enabled),
       channels,
-      ...(yield* counts(repo)),
+      ...(yield* repo.status()),
     };
   });
 

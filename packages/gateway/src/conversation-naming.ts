@@ -2,7 +2,7 @@ import type { Agent } from "@poppet/agent";
 import { Effect, Result } from "effect";
 
 import { authorized, type GatewayContext } from "#src/context";
-import { gatewayStorage, type Inbox } from "#src/repository";
+import type { Inbox } from "#src/repository";
 
 export const conversationNaming = (context: GatewayContext, agent: Agent["Service"]) => {
   const { channel, repo, store } = context;
@@ -15,7 +15,7 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
 
       if (destination === null || !authorized(channel.policy, entry.message)) return;
 
-      const binding = yield* gatewayStorage(repo.namedBinding(channel.id, account, destination));
+      const binding = yield* repo.namedBinding(channel.id, account, destination);
 
       if (
         !binding ||
@@ -36,21 +36,21 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       const current = yield* naming.current(entry.message, destination);
 
       if (binding.pendingName !== null && current === binding.pendingName) {
-        yield* gatewayStorage(repo.nameConfirmed(key, current));
+        yield* repo.nameConfirmed(key, current);
       } else if (current !== binding.managedName || binding.pendingName !== null) {
-        yield* gatewayStorage(repo.disableNaming(key));
+        yield* repo.disableNaming(key);
 
         return;
       }
 
       const session = yield* store.session(binding.sessionId);
       const title = session?.title;
-      yield* gatewayStorage(repo.nameAttempted(key, title ?? null));
+      yield* repo.nameAttempted(key, title ?? null);
 
       if (!title || naming.sanitize(title) === current) return;
       const desired = naming.sanitize(title);
 
-      const pending = yield* gatewayStorage(repo.namePending(key, desired));
+      const pending = yield* repo.namePending(key, desired);
 
       if (!pending) return;
 
@@ -61,8 +61,8 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       if (Result.isSuccess(result)) {
         const confirmed = result.success;
 
-        if (confirmed === null) yield* gatewayStorage(repo.disableNaming(key));
-        else yield* gatewayStorage(repo.nameConfirmed(key, confirmed));
+        if (confirmed === null) yield* repo.disableNaming(key);
+        else yield* repo.nameConfirmed(key, confirmed);
 
         return;
       }
@@ -71,27 +71,27 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       const observed = yield* naming.current(entry.message, destination).pipe(Effect.result);
 
       if (Result.isSuccess(observed) && observed.success === desired)
-        yield* gatewayStorage(repo.nameConfirmed(key, observed.success));
-      else yield* gatewayStorage(repo.disableNaming(key));
+        yield* repo.nameConfirmed(key, observed.success);
+      else yield* repo.disableNaming(key);
     }).pipe(
       Effect.timeout("10 seconds"),
       Effect.catch(() =>
         entry.conversationId === null || entry.sessionId === null
           ? Effect.void
-          : gatewayStorage(
-              repo.disableNaming({
+          : repo
+              .disableNaming({
                 adapter: channel.id,
                 account,
                 conversation: entry.conversationId,
                 session: entry.sessionId,
-              }),
-            ).pipe(Effect.asVoid),
+              })
+              .pipe(Effect.asVoid),
       ),
     );
 
   const nameNext = Effect.gen(function* () {
     const account = yield* channel.accountId;
-    const entries = yield* gatewayStorage(repo.namingEntries(channel.id, account));
+    const entries = yield* repo.namingEntries(channel.id, account);
 
     for (const entry of entries) {
       if (entry.sessionId === null) continue;
@@ -103,24 +103,22 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
   const externalNameChange = (destination: string) =>
     Effect.gen(function* () {
       const account = yield* channel.accountId;
-      const entry = yield* gatewayStorage(repo.namingEntry(channel.id, account, destination));
+      const entry = yield* repo.namingEntry(channel.id, account, destination);
 
       if (!entry) return;
 
-      const binding = yield* gatewayStorage(repo.namedBinding(channel.id, account, destination));
+      const binding = yield* repo.namedBinding(channel.id, account, destination);
 
       if (!binding || binding.namingDisabled || binding.managedName === null) return;
       const current = yield* channel.naming.current(entry.message, destination);
 
       if (current !== binding.managedName && current !== binding.pendingName)
-        yield* gatewayStorage(
-          repo.disableNaming({
-            adapter: channel.id,
-            account,
-            conversation: destination,
-            session: binding.sessionId,
-          }),
-        );
+        yield* repo.disableNaming({
+          adapter: channel.id,
+          account,
+          conversation: destination,
+          session: binding.sessionId,
+        });
     }).pipe(Effect.catch(() => Effect.void));
 
   return { nameNext, externalNameChange };
