@@ -10,9 +10,11 @@ import {
   Options,
   RateLimitError,
   type Message,
+  type MessageCreateOptions,
 } from "discord.js";
 import { Deferred, Effect, Layer, Queue, Redacted, Stream } from "effect";
 
+import { approvalActions, approvalComponents } from "#src/approvals";
 import type { DiscordSettings } from "#src/settings";
 
 const discordFailure = (cause: unknown, sending = false) =>
@@ -82,6 +84,10 @@ export const discordChannelLayer = (
         Effect.sync(() => {
           connectionError = error.message;
         });
+
+      const actions = yield* approvalActions(client, settings, () => {
+        connectionError = "Discord approval interaction failed.";
+      });
 
       const requireReady = () => {
         if (!client.isReady())
@@ -276,6 +282,32 @@ export const discordChannelLayer = (
           catch: discordFailure,
         }).pipe(Effect.tapError(reportError));
 
+      const send = (conversationId: string, text: string, nonce: string, requestId?: string) =>
+        Effect.tryPromise({
+          try: async () => {
+            requireReady();
+            const target = await guildChannel(conversationId);
+
+            if (target === null)
+              throw new ChannelError({
+                reason: "permission",
+                message: "Discord text channel or thread is unavailable.",
+              });
+
+            const options: MessageCreateOptions = {
+              content: text,
+              nonce,
+              enforceNonce: true,
+              allowedMentions: { parse: [], repliedUser: false },
+            };
+
+            if (requestId) options.components = approvalComponents(requestId);
+
+            return (await target.send(options)).id;
+          },
+          catch: (cause) => discordFailure(cause, true),
+        });
+
       return {
         id: "discord",
         accountId: Deferred.await(identity),
@@ -411,29 +443,37 @@ export const discordChannelLayer = (
               ),
             ),
         },
-        send: (conversationId, text, nonce) =>
-          Effect.tryPromise({
-            try: async () => {
-              requireReady();
-              const target = await guildChannel(conversationId);
+        send,
+        approvals: {
+          actions,
+          send,
+          update: (conversationId, messageId, requestId, state) =>
+            Effect.tryPromise({
+              try: async () => {
+                const botId = requireReady();
+                const target = await guildChannel(conversationId);
 
-              if (target === null)
-                throw new ChannelError({
-                  reason: "permission",
-                  message: "Discord text channel or thread is unavailable.",
-                });
+                if (target === null)
+                  throw new ChannelError({
+                    reason: "permission",
+                    message: "Approval conversation is unavailable.",
+                  });
+                const prompt = await target.messages.fetch({ message: messageId, force: true });
 
-              return (
-                await target.send({
-                  content: text,
-                  nonce,
-                  enforceNonce: true,
+                if (prompt.author.id !== botId || prompt.webhookId !== null)
+                  throw new ChannelError({
+                    reason: "permission",
+                    message: "Cannot update this approval message.",
+                  });
+
+                await prompt.edit({
+                  components: approvalComponents(requestId, state),
                   allowedMentions: { parse: [], repliedUser: false },
-                })
-              ).id;
-            },
-            catch: (cause) => discordFailure(cause, true),
-          }),
+                });
+              },
+              catch: (cause) => discordFailure(cause, true),
+            }),
+        },
       } satisfies MessagingChannel["Service"];
     }),
   );

@@ -43,16 +43,25 @@ Processes that deliberately detach from the group are outside that cleanup guara
 
 ## Discord approval
 
-Poppet shows the exact invocation and reason in the original conversation. Reply
-`/approve <id>` or `/deny <id>`. Only the configured owner in the same authorized
-conversation can answer, and access is checked again before execution. Approval
-covers that command, directory, and timeout for one invocation. It grants no
-future permissions.
+Poppet shows the exact invocation and reason in the original conversation, with
+**Approve once** and **Deny** buttons. You can also reply `/approve <id>` or
+`/deny <id>` using the ID in the message. Both methods settle the same request;
+repeated clicks or replies cannot execute it again. Only the configured owner in
+the same authorized conversation can answer, and access is checked again before
+execution. Approval covers that command, directory, and timeout for one invocation.
+It grants no future permissions.
+
+Buttons appear after the full invocation, even when it spans several messages.
+Poppet confirms button clicks privately and replaces the buttons with a disabled
+status when the request ends. Text replies update the buttons too. Updating the
+message is best effort; a failed update cannot reopen a settled request.
 
 Requests expire after two minutes or when the run is cancelled or the worker
-restarts. Expired IDs cannot be revived. Ask for the operation again to obtain a
-new reviewed invocation. CLI commands that need approval stop and direct you to
-Discord; CLI commands the reviewer allows run normally.
+restarts. Expired IDs cannot be revived. After a crash, an old prompt may still
+show buttons, but clicking them reports that the request is no longer available.
+Ask for the operation again to obtain a new reviewed invocation. CLI commands
+that need approval stop and direct you to Discord; CLI commands the reviewer
+allows run normally.
 
 ## Scheduled runs
 
@@ -73,12 +82,18 @@ The reviewed Bash tool can perform host changes authorized by the saved prompt.
 
 Automated checks use fixture model decisions and isolated local shell commands.
 They cover execution, bounded output, process cleanup, denied and unavailable
-reviews, owner approvals, conversation isolation, expiry, replay rejection, and
-logged cron failures and successful result delivery. They do not establish a live model's review accuracy.
+reviews, owner approvals through buttons and text replies, conversation and prompt
+isolation, competing decisions, expiry, cancellation, restart rejection, and failed
+message updates. Discord interaction tests use fixture HTTP responses. Tests also
+cover logged cron failures and successful result delivery. They do not establish
+live Discord behavior or a live model's review accuracy.
 
 For a manual smoke test, ask for a harmless filesystem check in Discord, verify
 its Bash receipt, then request an operation whose review asks for approval and
-deny it. Confirm no command ran. Repeat with approval, then schedule a harmless
-job and verify its result arrives. Finally, verify a scheduled command needing
-approval logs a failure without executing or posting to the destination, and
-retains the reason in `tasks show`.
+deny it with the button. Confirm no command ran and the buttons become disabled.
+Repeat with **Approve once**, then check `/approve <id>` and `/deny <id>` on new
+requests. Check another account cannot answer, and that expiry and `/cancel`
+disable the controls. After a worker restart, an old request must remain unusable.
+Then schedule a harmless job and verify its result arrives. Finally, verify a
+scheduled command needing approval logs a failure without executing or posting
+to the destination, and retains the reason in `tasks show`.

@@ -1,4 +1,11 @@
-export { ChannelError, IncomingMessage, MessagingChannel, type ChannelPolicy } from "#src/channel";
+export {
+  ChannelError,
+  IncomingMessage,
+  MessagingChannel,
+  type ApprovalAction,
+  type ApprovalState,
+  type ChannelPolicy,
+} from "#src/channel";
 
 export { ChannelEnvironment, ChannelInput, type ChannelRegistration } from "#src/registration";
 

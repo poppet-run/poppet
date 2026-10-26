@@ -28,6 +28,17 @@ export interface ChannelPolicy {
   readonly scopeId: string;
 }
 
+export type ApprovalState = "approved" | "denied" | "expired" | "cancelled" | "unavailable";
+
+/** A button decision, with the prompt and actor IDs supplied by the adapter. */
+export interface ApprovalAction {
+  readonly requestId: string;
+  readonly decision: "approve" | "deny";
+  readonly source: IncomingMessage;
+  /** Completes the adapter's already acknowledged, private interaction response. */
+  readonly reply: (text: string) => Effect.Effect<void, ChannelError>;
+}
+
 /** Remote messaging operations supplied by an adapter; the gateway owns queueing and inference. */
 export class MessagingChannel extends Context.Service<
   MessagingChannel,
@@ -60,6 +71,22 @@ export class MessagingChannel extends Context.Service<
       text: string,
       nonce: string,
     ) => Effect.Effect<string, ChannelError>;
+    /** Optional buttons for approval prompts; text controls remain available. */
+    readonly approvals?: {
+      readonly actions: Stream.Stream<ApprovalAction, ChannelError>;
+      readonly send: (
+        conversationId: string,
+        text: string,
+        nonce: string,
+        requestId: string,
+      ) => Effect.Effect<string, ChannelError>;
+      readonly update: (
+        conversationId: string,
+        messageId: string,
+        requestId: string,
+        state: ApprovalState,
+      ) => Effect.Effect<void, ChannelError>;
+    };
     readonly status: Effect.Effect<Schema.JsonObject>;
     readonly textLimit: number;
     /** Naming for conversations whose creation ownership the adapter can prove. */

@@ -49,6 +49,7 @@ const gateway = Effect.gen(function* () {
   const service = {
     resolveDestination: (requested: string | null = null) => resolveDestination(channel, requested),
     accept: (input: IncomingMessage) => accept(context, { approvals, running }, input),
+    answerApproval: approvals.answerAction,
     processNext: processNext(context, execution),
     deliverNext: deliverNext(context),
     nameNext,
@@ -78,6 +79,7 @@ const gateway = Effect.gen(function* () {
     yield* Effect.all(
       [
         receive,
+        Stream.runForEach(channel.approvals?.actions ?? Stream.never, approvals.answerAction),
         loop(
           dispatchNext(context, execution, active, maxConcurrentRequests),
           context.wakes.inbox,

@@ -19,7 +19,13 @@ import { Console, Deferred, Effect, Fiber, Layer, Match, Queue, Stream } from "e
 import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
-import { ChannelError, MessagingChannel, type IncomingMessage } from "#src/channel";
+import {
+  ChannelError,
+  MessagingChannel,
+  type ApprovalAction,
+  type ApprovalState,
+  type IncomingMessage,
+} from "#src/channel";
 import { chunks } from "#src/replies";
 import { GatewayRepository, GatewayRepositoryLive, TaskDeliveriesLive } from "#src/repository";
 import { Gateway, GatewayLive } from "#src/service";
@@ -229,12 +235,64 @@ const scheduled = (destination: DeliveryDestination | null) =>
   });
 
 describe.concurrent("Gateway", () => {
-  test.each(["approve", "deny", "timeout", "cancel", "revoked"])(
-    "when command approval ends with %s, binds the decision to the owner and original conversation",
-    async (action) => {
+  test("when an old approval button arrives through the channel, replies privately without inference", async () => {
+    const actions = Effect.runSync(Queue.make<ApprovalAction>());
+    const replied = Deferred.makeUnsafe<string>();
+
+    const f = await fixture({
+      approvals: {
+        actions: Stream.fromQueue(actions),
+        send: () => Effect.die("Unexpected prompt"),
+        update: () => Effect.die("Unexpected update"),
+      },
+    });
+
+    try {
+      await f.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const running = yield* gateway.run.pipe(Effect.forkChild);
+          yield* Queue.offer(actions, {
+            requestId: "expired",
+            decision: "approve",
+            source: message("old-prompt", "thread"),
+            reply: (text) => Deferred.succeed(replied, text).pipe(Effect.asVoid),
+          });
+          expect(yield* Deferred.await(replied)).toStartWith("No matching pending approval");
+          expect(f.requests).toEqual([]);
+          expect(f.sent).toEqual([]);
+          yield* Fiber.interrupt(running);
+        }),
+      );
+    } finally {
+      await f.close();
+    }
+  });
+
+  test.each(
+    ["text", "button"].flatMap((transport) =>
+      ["approve", "deny", "timeout", "cancel", "revoked", "update-failed"].map((action) => [
+        transport,
+        action,
+      ]),
+    ),
+  )(
+    "when %s command approval ends with %s, binds the decision to the owner and original conversation",
+    async (transport, action) => {
       const requested = Effect.runSync(Deferred.make<string>());
       let executed = 0;
       let revoked = false;
+      const updates: ApprovalState[] = [];
+      const replies: string[] = [];
+
+      const send = (_conversation: string, text: string) =>
+        Effect.gen(function* () {
+          const id = /Reply \/approve ([a-f0-9-]{36})/.exec(text)?.[1];
+
+          if (id) yield* Deferred.succeed(requested, id);
+
+          return "approval-message";
+        });
 
       const state = await fixture(
         {
@@ -243,18 +301,28 @@ describe.concurrent("Gateway", () => {
               if (revoked)
                 return Effect.fail(new ChannelError({ reason: "permission", message: "Revoked" }));
 
-              if (action === "revoked" && input.messageId === "decision") revoked = true;
+              if (
+                action === "revoked" &&
+                input.messageId === (transport === "button" ? "approval-message" : "decision")
+              )
+                revoked = true;
 
               return Effect.void;
             }),
-          send: (_conversation, text) =>
-            Effect.gen(function* () {
-              const id = /Reply \/approve ([a-f0-9-]{36})/.exec(text)?.[1];
+          send,
+          approvals: {
+            actions: Stream.never,
+            send,
+            update: (_conversation, _messageId, _id, resultState) =>
+              Effect.gen(function* () {
+                updates.push(resultState);
 
-              if (id) yield* Deferred.succeed(requested, id);
-
-              return "sent";
-            }),
+                if (action === "update-failed")
+                  return yield* Effect.fail(
+                    new ChannelError({ reason: "unavailable", message: "Lost update" }),
+                  );
+              }),
+          },
         },
         (request) => {
           if (request.settings.toolChoice === "none")
@@ -311,14 +379,49 @@ describe.concurrent("Gateway", () => {
             yield* gateway.accept(message("start", "thread", "Restart the service"));
             const running = yield* gateway.processNext.pipe(Effect.forkChild);
             const id = yield* Deferred.await(requested);
+            // The send fixture signals before returning its remote ID. Finish delivery first.
+            yield* TestClock.adjust(0);
+
+            const click = (
+              source = message("approval-message", "thread"),
+              decision: "approve" | "deny" = "approve",
+            ): ApprovalAction => ({
+              requestId: id,
+              decision,
+              source,
+              reply: (text) =>
+                Effect.sync(() => {
+                  replies.push(text);
+                }),
+            });
+
             yield* gateway.accept({
               ...message("stranger", "thread", `/approve ${id}`),
               senderId: "stranger",
             });
             yield* gateway.accept(message("other", "other-thread", `/approve ${id}`));
+
+            if (transport === "button") {
+              for (const source of [
+                { ...message("approval-message", "thread"), senderId: "stranger" },
+                { ...message("approval-message", "thread"), scopeId: "other-guild" },
+                { ...message("approval-message", "thread"), parentId: "other-parent" },
+                message("approval-message", "other-thread"),
+                message("other-message", "thread"),
+              ])
+                yield* gateway.answerApproval(click(source));
+
+              expect(replies).toHaveLength(5);
+              expect(replies.every((text) => !text.startsWith("Approved"))).toBe(true);
+            }
+
             expect(executed).toBe(0);
 
             if (action === "timeout") yield* TestClock.adjust("2 minutes");
+            else if (transport === "button" && action !== "cancel")
+              yield* gateway.answerApproval(
+                click(undefined, action === "deny" ? "deny" : "approve"),
+              );
             else
               yield* gateway.accept(
                 message(
@@ -326,15 +429,29 @@ describe.concurrent("Gateway", () => {
                   "thread",
                   action === "cancel"
                     ? "/cancel"
-                    : `/${action === "revoked" ? "approve" : action} ${id}`,
+                    : `/${action === "revoked" || action === "update-failed" ? "approve" : action} ${id}`,
                 ),
               );
             yield* Fiber.join(running);
-            expect(executed).toBe(action === "approve" ? 1 : 0);
+            const approved = action === "approve" || action === "update-failed";
+            expect(executed).toBe(approved ? 1 : 0);
+            expect(updates).toEqual([
+              approved
+                ? "approved"
+                : action === "deny"
+                  ? "denied"
+                  : action === "cancel"
+                    ? "cancelled"
+                    : action === "timeout"
+                      ? "expired"
+                      : "unavailable",
+            ]);
             revoked = false;
             yield* gateway.accept(message("replay", "thread", `/approve ${id}`));
+            yield* gateway.answerApproval(click());
+            expect(replies.at(-1)).toStartWith("No matching pending approval");
             expect(yield* gateway.processNext).toBe(false);
-            expect(executed).toBe(action === "approve" ? 1 : 0);
+            expect(executed).toBe(approved ? 1 : 0);
           }),
         );
       } finally {
