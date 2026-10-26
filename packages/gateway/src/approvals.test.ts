@@ -57,7 +57,7 @@ const prompted = (sent: string[], approvals: CommandApprovals) =>
     const fiber = yield* approvals.request(message, "thread", approval).pipe(Effect.forkChild);
 
     while (sent.length === 0) yield* Effect.yieldNow;
-    const id = /Reply \/approve ([a-f0-9-]{36})/.exec(sent[0]!)?.[1];
+    const id = /\/approve ([a-f0-9-]{36})/.exec(sent[0]!)?.[1];
 
     return { fiber, id: id! };
   });
@@ -335,7 +335,7 @@ describe("commandApprovals", () => {
             );
             expect(buttons).toHaveLength(1);
             expect(buttons[0]!.text).toContain(
-              `/approve ${buttons[0]!.id} or /deny ${buttons[0]!.id}`,
+              `\`/approve ${buttons[0]!.id}\` or \`/deny ${buttons[0]!.id}\``,
             );
             yield* approvals.answer("thread", `/deny ${buttons[0]!.id}`);
             expect(yield* Fiber.join(fiber)).toBe(false);

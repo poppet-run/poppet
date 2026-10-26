@@ -287,7 +287,7 @@ describe.concurrent("Gateway", () => {
 
       const send = (_conversation: string, text: string) =>
         Effect.gen(function* () {
-          const id = /Reply \/approve ([a-f0-9-]{36})/.exec(text)?.[1];
+          const id = /\/approve ([a-f0-9-]{36})/.exec(text)?.[1];
 
           if (id) yield* Deferred.succeed(requested, id);
 
@@ -2205,7 +2205,7 @@ describe.concurrent("Gateway concurrent requests", () => {
       {
         send: (conversation, text) =>
           Effect.sync(() => {
-            const id = /Reply \/approve ([a-f0-9-]{36})/.exec(text)?.[1];
+            const id = /\/approve ([a-f0-9-]{36})/.exec(text)?.[1];
 
             if (id) prompts.set(conversation, id);
 

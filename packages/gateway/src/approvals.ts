@@ -50,7 +50,7 @@ export const commandApprovals = (channel: MessagingChannel["Service"]) => {
         if (!authorized(channel.policy, message)) return false;
         yield* channel.checkAccess(message, conversation);
         const details = `Bash approval required: ${approval.reason}\nExact invocation: ${JSON.stringify({ command: approval.command, cwd: approval.cwd, timeoutSeconds: approval.timeoutSeconds })}`;
-        const controls = `Reply /approve ${id} or /deny ${id}. Expires in two minutes; permits one execution only.`;
+        const controls = `Reply \`/approve ${id}\` or \`/deny ${id}\`. Expires in two minutes; permits one execution only.`;
 
         // Keep the fallback commands intact, with buttons only after all invocation details.
         const parts =
