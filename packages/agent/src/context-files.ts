@@ -1,9 +1,8 @@
-/* eslint-disable no-await-in-loop -- Reads stay bounded and check cancellation between filesystem operations. */
 import { lstat, opendir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
-import { isMissingFile, openNoFollow } from "@poppet/io";
+import { isMissingFile, openNoFollow, readFileBounded } from "@poppet/io";
 import { SkillName, SkillSnapshot } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
@@ -53,18 +52,7 @@ export const contextFiles = Effect.gen(function* () {
           const info = await handle.stat();
 
           if (!info.isFile() || info.nlink !== 1 || info.size > maxBytes) throw invalid();
-          const buffer = Buffer.alloc(maxBytes + 1);
-          let length = 0;
-
-          while (length < buffer.length) {
-            signal.throwIfAborted();
-            const result = await handle.read(buffer, length, buffer.length - length, length);
-
-            if (result.bytesRead === 0) break;
-            length += result.bytesRead;
-          }
-
-          if (length > maxBytes) throw invalid();
+          const buffer = await readFileBounded(handle, maxBytes, invalid, signal);
           await directoryInfo(root);
           const current = await directoryInfo(parent);
           const target = await lstat(path);
@@ -81,7 +69,7 @@ export const contextFiles = Effect.gen(function* () {
           signal.throwIfAborted();
 
           return Schema.decodeUnknownSync(SkillSnapshot.fields.content)(
-            new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, length)),
+            new TextDecoder("utf-8", { fatal: true }).decode(buffer),
           );
         } finally {
           await handle.close();
