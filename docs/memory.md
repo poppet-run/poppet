@@ -67,7 +67,7 @@ The tool does not edit `profile.md`, `soul.md`, or credential files.
 
 Scheduled runs retain their starting fact snapshot but have no memory-writing
 tool, even when a task or selected skill asks for changes. The shared
-`readOnlyTools` policy enforces this restriction.
+`origin: "scheduled"` policy enforces this restriction.
 
 Automated checks cover local/worker chat, mutation provenance, restart, argument
 validation, byte limits, protected scheduled runs, cancellation, and storage/journal

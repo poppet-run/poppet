@@ -159,13 +159,7 @@ export const reviewCommand = (
 const prepareBash = (
   call: ToolCall,
   runner: Bash["Service"],
-  {
-    model,
-    run,
-    text: ownerRequest,
-    readOnlyTools: scheduled,
-    approveCommand: approve,
-  }: ToolContext,
+  { model, run, text: ownerRequest, origin, approveCommand: approve }: ToolContext,
   maxBytes: number,
 ) =>
   Effect.gen(function* () {
@@ -184,11 +178,11 @@ const prepareBash = (
           );
 
         if (review.decision === "needs_approval") {
-          if (scheduled || approve === null)
+          if (origin === "scheduled" || approve === null)
             return yield* Effect.fail(
               new AgentError({
                 reason: "command-approval-required",
-                message: `Command needs approval: ${review.reason}. Nothing was executed. ${scheduled ? "This occurrence has stopped." : "Request this operation in Discord to approve it."}`,
+                message: `Command needs approval: ${review.reason}. Nothing was executed. ${origin === "scheduled" ? "This occurrence has stopped." : "Request this operation in Discord to approve it."}`,
               }),
             );
 
@@ -242,7 +236,7 @@ export const bashTool = Effect.gen(function* () {
     untrustedResult: true,
     withdrawnWhenUntrusted: false,
     contextOnly: false,
-    mutating: false,
+    availableWhenScheduled: true,
     failures: bashFailures,
   } satisfies AgentTool;
 });

@@ -113,7 +113,7 @@ export const memoryTool = Effect.gen(function* () {
     untrustedResult: false,
     withdrawnWhenUntrusted: true,
     contextOnly: false,
-    mutating: true,
+    availableWhenScheduled: false,
     failures: memoryFailures,
     uninterruptible: true,
   } satisfies AgentTool;

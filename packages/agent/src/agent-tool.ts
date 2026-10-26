@@ -16,8 +16,8 @@ export interface RunContext {
   readonly history: ReadonlyArray<StoredMessage>;
   readonly runs: ReadonlyArray<Run>;
   readonly prompt: string;
-  /** Scheduled runs exclude mutating tools and cannot ask the owner to approve commands. */
-  readonly readOnlyTools: boolean;
+  /** Scheduled runs use the host's scheduled tool policy and cannot ask for command approval. */
+  readonly origin: "interactive" | "scheduled";
   readonly selectedSkill: string | null;
   readonly approveCommand: ApproveCommand | null;
   /** Host-only validation of this run's authorized messaging conversation. */
@@ -68,8 +68,8 @@ export interface AgentTool {
   readonly withdrawnWhenUntrusted: boolean;
   /** The result only adds context, so an oversized one can be refused without loss. */
   readonly contextOnly: boolean;
-  /** The tool changes owner state, so read-only (scheduled) runs exclude it. */
-  readonly mutating: boolean;
+  /** Whether scheduled runs may use this tool; external catalogs also apply host allowlists. */
+  readonly availableWhenScheduled: boolean;
   readonly failures: FailurePolicy;
   /** Keep an atomic write and its durable result together on graceful cancellation. */
   readonly uninterruptible?: boolean;
@@ -115,6 +115,6 @@ export const contextTool = (
   ...tool,
   withdrawnWhenUntrusted: false,
   contextOnly: true,
-  mutating: false,
+  availableWhenScheduled: true,
   failures: builtinFailures,
 });

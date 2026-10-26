@@ -172,11 +172,11 @@ export const taskTool = Effect.gen(function* () {
 
   return {
     definition: taskDefinition,
-    prepare: (call, { run, readOnlyTools, here, home, destination }) =>
+    prepare: (call, { run, origin, here, home, destination }) =>
       decodeTaskCall(call).pipe(
         Effect.flatMap((action) =>
           tasks.prepare(action, {
-            origin: readOnlyTools ? "scheduled" : "interactive",
+            origin,
             runId: run.id,
             callId: call.callId,
             here,
@@ -188,7 +188,7 @@ export const taskTool = Effect.gen(function* () {
     untrustedResult: false,
     withdrawnWhenUntrusted: true,
     contextOnly: false,
-    mutating: true,
+    availableWhenScheduled: false,
     failures: taskFailures,
     recordsOwnResult: true,
   } satisfies AgentTool;

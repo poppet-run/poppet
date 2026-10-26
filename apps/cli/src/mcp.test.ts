@@ -334,7 +334,7 @@ describe("ExternalAgentToolsLive", () => {
             const agent = yield* Agent;
             const session = yield* store.createSession("fixture", "fixture");
             yield* agent
-              .send(session.id, "Read the fixture", { readOnlyTools: true })
+              .send(session.id, "Read the fixture", { origin: "scheduled" })
               .pipe(Stream.runDrain);
             const runs = yield* store.runs(session.id);
             const calls = yield* store.toolCalls(runs[0]!.id);
@@ -367,7 +367,7 @@ describe("ExternalAgentToolsLive", () => {
             const session = yield* store.createSession("fixture", "fixture");
 
             yield* (yield* Agent)
-              .send(session.id, "Read the fixture", { readOnlyTools: true })
+              .send(session.id, "Read the fixture", { origin: "scheduled" })
               .pipe(Stream.runDrain);
 
             const run = (yield* store.runs(session.id))[0]!;

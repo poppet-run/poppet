@@ -122,7 +122,7 @@ const fixture = async (
 };
 
 describe.concurrent("makeTaskWorker", () => {
-  test("when worker controls queue immediate execution, preserves snapshots and uses the scheduled read-only runner", async () => {
+  test("when worker controls queue immediate execution, preserves snapshots and uses the scheduled tool restrictions", async () => {
     const state = await fixture(() => final());
 
     try {
