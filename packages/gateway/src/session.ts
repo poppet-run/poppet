@@ -6,7 +6,7 @@ import { Effect, Result } from "effect";
 
 import { ChannelError } from "#src/channel";
 import { finish, mark, type GatewayContext } from "#src/context";
-import { gatewayStorage, type Inbox } from "#src/repository";
+import type { Inbox } from "#src/repository";
 import { messagingRequest } from "#src/request";
 
 /** What starting a new session needs: the configured model and the skill library. */
@@ -36,7 +36,7 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
 
     const reject = (text: string) =>
       Effect.gen(function* () {
-        yield* gatewayStorage(repo.address(entry.id, conversation));
+        yield* repo.address(entry.id, conversation);
         yield* finish(context, entry.id, text, "failed");
         yield* mark(context, entry.message, "stopped");
 
@@ -46,9 +46,7 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
     if (Result.isFailure(parsed)) return yield* reject(parsed.failure.message);
     const request = parsed.success;
 
-    const existing = yield* gatewayStorage(
-      repo.binding(channel.id, account, entry.message.scopeId, conversation),
-    );
+    const existing = yield* repo.binding(channel.id, account, entry.message.scopeId, conversation);
 
     // Fresh requests include their reserved run ID so recovery reuses the same skill snapshot.
     const id =
@@ -92,9 +90,7 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
       });
     }
 
-    yield* gatewayStorage(
-      repo.attach(entry.id, conversation, session.id, created.managedName, request.fresh),
-    );
+    yield* repo.attach(entry.id, conversation, session.id, created.managedName, request.fresh);
 
     return { conversation, session, prompt: request.prompt };
   });
