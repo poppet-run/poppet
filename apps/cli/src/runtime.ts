@@ -72,40 +72,6 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
       Layer.provide(environment),
     );
 
-  const provider = Layer.unwrap(
-    Effect.gen(function* () {
-      const settings = yield* AppConfig;
-
-      return selectedProvider(settings.provider);
-    }),
-  ).pipe(Layer.provideMerge(config));
-
-  const resolveModel = Effect.gen(function* () {
-    const settings = yield* AppConfig;
-
-    if (settings.model === null)
-      return yield* Effect.fail(
-        invalidRequest(
-          settings.provider,
-          "Set model in config.json to a model from provider models.",
-        ),
-      );
-
-    // The caller's scope keeps provider resources alive until inference finishes.
-    const context = yield* Layer.build(selectedProvider(settings.provider));
-    const model = yield* Context.get(context, Provider).resolve(settings.model);
-
-    if (model.description.provider !== settings.provider || model.description.id !== settings.model)
-      return yield* Effect.fail(
-        invalidRequest(
-          settings.provider,
-          "The provider resolved a different model. No fallback is allowed.",
-        ),
-      );
-
-    return model;
-  });
-
   const store = StoreLive.pipe(Layer.provide(config));
 
   const memory = LocalMemoryLive.pipe(Layer.provide([store, config]));
@@ -195,8 +161,6 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   return {
     config,
     chatSettings,
-    provider,
-    resolveModel,
     selectedProvider,
     store,
     memory,
