@@ -1,4 +1,4 @@
-import type { ModelOperations, Output, Tool } from "@poppet/provider";
+import type { AttachmentReference, ModelOperations, Output, Tool } from "@poppet/provider";
 import type { DeliveryDestination, Run, StoredMessage, StoreError } from "@poppet/store";
 import type { Effect } from "effect";
 
@@ -13,6 +13,8 @@ export interface RunContext {
   readonly model: ModelOperations;
   /** The owner's request, or the saved prompt of a scheduled task. */
   readonly text: string;
+  /** Files saved with the owner's request; empty for scheduled runs. */
+  readonly attachments: ReadonlyArray<AttachmentReference>;
   readonly history: ReadonlyArray<StoredMessage>;
   readonly runs: ReadonlyArray<Run>;
   readonly prompt: string;

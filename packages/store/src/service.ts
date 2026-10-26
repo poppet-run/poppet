@@ -9,8 +9,10 @@ import { readSession } from "#src/recall";
 import { storeRecords } from "#src/records";
 import { runOperations } from "#src/runs";
 import {
+  type NewAttachment,
   Run,
   RunOutcome,
+  type SavedAttachment,
   Session,
   SkillSnapshot,
   type SessionSearchResult,
@@ -62,13 +64,22 @@ export interface StoreOperations {
   ) => Effect.Effect<SessionReadResult, StoreError>;
   /** Reads messages in session order. */
   readonly messages: (sessionId: string) => Effect.Effect<ReadonlyArray<StoredMessage>, StoreError>;
-  /** Saves a pending run and its inputs together; rejects any other pending or running run. */
+  /**
+   * Saves a pending run, its inputs, and the attachments they reference together; rejects
+   * any other pending or running run.
+   */
   readonly queueRun: (
     sessionId: string,
     input: ReadonlyArray<ModelMessage>,
     id?: string,
     fallbackTitle?: string,
+    attachments?: ReadonlyArray<NewAttachment>,
   ) => Effect.Effect<Run, StoreError>;
+  /** Reads the requested attachments saved in a session; missing IDs are omitted. */
+  readonly attachments: (
+    sessionId: string,
+    ids: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<SavedAttachment>, StoreError>;
   /** Transitions a pending run to running; already-started or terminal runs are rejected. */
   readonly startRun: (id: string) => Effect.Effect<Run, StoreError>;
   /** Saves the terminal outcome and final answer together, settling any unfinished tools. */

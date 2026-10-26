@@ -50,6 +50,7 @@ describe("StoreDatabaseLive migrations", () => {
       expect(database.query("SELECT migration_id, name FROM effect_sql_migrations").all()).toEqual([
         { migration_id: 1, name: "baseline" },
         { migration_id: 2, name: "session_active_run" },
+        { migration_id: 3, name: "attachments" },
       ]);
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions'").get(),
@@ -105,11 +106,12 @@ describe("StoreDatabaseLive migrations", () => {
       const pending = Migrator.fromRecord({
         "1_baseline": Effect.void,
         "2_session_active_run": Effect.void,
-        "3_index": Effect.gen(function* () {
+        "3_attachments": Effect.void,
+        "4_index": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`CREATE INDEX sessions_by_provider ON sessions (provider)`;
         }),
-        "4_broken": Effect.gen(function* () {
+        "5_broken": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`invalid SQL`;
         }),
@@ -120,6 +122,7 @@ describe("StoreDatabaseLive migrations", () => {
       expect(database.query("SELECT migration_id FROM effect_sql_migrations").all()).toEqual([
         { migration_id: 1 },
         { migration_id: 2 },
+        { migration_id: 3 },
       ]);
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions_by_provider'").get(),

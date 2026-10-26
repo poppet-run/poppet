@@ -715,7 +715,7 @@ describe("Store", () => {
             { role: "assistant", output: response.output, continuation: response.continuation },
           ]);
           expect(yield* store.status).toMatchObject({
-            schemaVersion: 2,
+            schemaVersion: 3,
             sessions: 1,
             messages: 4,
             runs: 1,
@@ -725,6 +725,64 @@ describe("Store", () => {
       expect((await stat(join(fixtureStore.directory, "store"))).mode & 0o777).toBe(0o700);
       expect((await stat(fixtureStore.path)).mode & 0o777).toBe(0o600);
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
+    } finally {
+      await fixtureStore.close();
+    }
+  });
+
+  test("when a run is queued with attachments, saves their bytes with it and reads them only within the session", async () => {
+    const fixtureStore = await fixture();
+
+    try {
+      const body = new Uint8Array([137, 80, 78, 71]);
+
+      const reference = {
+        id: "image-1",
+        name: "screen.png",
+        mediaType: "image/png",
+        size: 4,
+      } as const;
+
+      const attached: Message = { role: "user", text: "", attachments: [reference] };
+
+      const attachment = {
+        id: "image-1",
+        name: "screen.png",
+        mediaType: "image/png",
+        body,
+      } as const;
+
+      await fixtureStore.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("first-provider", "selected-model");
+          const other = yield* store.createSession("first-provider", "selected-model");
+
+          const mismatched = yield* store
+            .queueRun(session.id, [attached], undefined, undefined, [
+              { ...attachment, body: new Uint8Array([1]) },
+            ])
+            .pipe(Effect.flip);
+
+          expect(mismatched).toMatchObject({ reason: "invalid-request" });
+
+          const unreferenced = yield* store
+            .queueRun(session.id, [user], undefined, undefined, [attachment])
+            .pipe(Effect.flip);
+
+          expect(unreferenced).toMatchObject({ reason: "invalid-request" });
+
+          yield* store.queueRun(session.id, [attached], undefined, undefined, [attachment]);
+
+          expect((yield* store.messages(session.id)).map((entry) => entry.message)).toEqual([
+            attached,
+          ]);
+          expect(yield* store.attachments(session.id, ["image-1", "missing"])).toEqual([
+            { id: "image-1", mediaType: "image/png", body },
+          ]);
+          expect(yield* store.attachments(other.id, ["image-1"])).toEqual([]);
+        }),
+      );
     } finally {
       await fixtureStore.close();
     }
@@ -1007,7 +1065,7 @@ describe("Store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 2,
+        schemaVersion: 3,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));

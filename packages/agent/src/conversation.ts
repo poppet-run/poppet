@@ -1,5 +1,11 @@
 import { measureTiming, recordTiming } from "@poppet/provider";
-import type { Completion, Message, ModelEvent, ProviderError } from "@poppet/provider";
+import type {
+  AttachmentContent,
+  Completion,
+  Message,
+  ModelEvent,
+  ProviderError,
+} from "@poppet/provider";
 import { Store, StoreError } from "@poppet/store";
 import { Cause, Clock, Effect, Exit, Option, Result, Stream } from "effect";
 
@@ -139,14 +145,14 @@ export const conversation = Effect.gen(function* () {
   return (runContext: RunContext) =>
     Stream.unwrap(
       Effect.gen(function* () {
-        const { run, model, text, history, runs } = runContext;
+        const { run, model, text, attachments, history, runs } = runContext;
         const { tools, skillsIndex } = yield* chooseTools(runContext);
         const instructions = buildInstructions(runContext, skillsIndex);
         const allowedURLs = suppliedPageURLs(text);
         const context: ToolContext = { ...runContext, pageURLs: allowedURLs };
 
         // Untrusted content withdraws task and memory mutations; external tools need explicit opt-in to remain.
-        let untrusted = false;
+        let untrusted = attachments.length > 0;
 
         const activeTools = () =>
           (untrusted ? tools.filter((tool) => !tool.withdrawnWhenUntrusted) : tools).map(
@@ -187,7 +193,42 @@ export const conversation = Effect.gen(function* () {
             } satisfies PlannedCall;
           });
 
-        const current: Message[] = [{ role: "user", text }];
+        const current: Message[] = [
+          attachments.length === 0 ? { role: "user", text } : { role: "user", text, attachments },
+        ];
+
+        // Saved attachment contents, read once per run as the assembled context first needs them.
+        const contents = new Map<string, AttachmentContent>();
+
+        const attachmentContents = (messages: ReadonlyArray<Message>) =>
+          Effect.gen(function* () {
+            const references = messages.flatMap((message) =>
+              message.role === "user" ? (message.attachments ?? []) : [],
+            );
+
+            const missing = references.filter((reference) => !contents.has(reference.id));
+
+            for (const saved of yield* store.attachments(
+              run.sessionId,
+              missing.map((reference) => reference.id),
+            ))
+              contents.set(
+                saved.id,
+                saved.mediaType === "text/plain"
+                  ? { id: saved.id, text: new TextDecoder().decode(saved.body) }
+                  : { id: saved.id, base64: Buffer.from(saved.body).toString("base64") },
+              );
+
+            if (references.some((reference) => !contents.has(reference.id)))
+              return yield* Effect.fail(
+                new AgentError({
+                  reason: "history",
+                  message: "A saved attachment is missing. Start a new session.",
+                }),
+              );
+
+            return references.map((reference) => contents.get(reference.id)!);
+          });
 
         const available = contextAvailable(model.description, policy);
         let turns = 0;
@@ -228,6 +269,8 @@ export const conversation = Effect.gen(function* () {
                       }),
               });
 
+              const sent = yield* attachmentContents(messages);
+
               const settings = model.description.capabilities.generationSettings.includes(
                 "maxOutputTokens",
               )
@@ -245,6 +288,7 @@ export const conversation = Effect.gen(function* () {
                   instructions,
                   messages,
                   tools: activeTools(),
+                  attachments: sent,
                   settings: policy.logReasoning
                     ? { ...settings, reasoningSummary: true }
                     : settings,
@@ -426,6 +470,7 @@ export const conversation = Effect.gen(function* () {
                   [...current, { role: "tool", callId, output }],
                   activeTools(),
                   instructions,
+                  policy.imageContextBytes,
                 );
 
                 return needed <= available

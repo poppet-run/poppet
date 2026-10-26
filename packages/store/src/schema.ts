@@ -1,4 +1,11 @@
-import { Completion, Message, ModelRequest, ProviderId, Tool } from "@poppet/provider";
+import {
+  AttachmentReference,
+  Completion,
+  Message,
+  ModelRequest,
+  ProviderId,
+  Tool,
+} from "@poppet/provider";
 import { Schema } from "effect";
 
 /** A bounded identifier shared by persisted sessions, runs, and task records. */
@@ -118,6 +125,21 @@ export const StoredMessage = Schema.Struct({
   message: Message,
 });
 
+/** An attachment's bytes, saved with the run whose user message references it. */
+export const NewAttachment = Schema.Struct({
+  id: AttachmentReference.fields.id,
+  name: AttachmentReference.fields.name,
+  mediaType: AttachmentReference.fields.mediaType,
+  body: Schema.Uint8Array,
+});
+
+/** A saved attachment's bytes, read back for a model request. */
+export const SavedAttachment = Schema.Struct({
+  id: AttachmentReference.fields.id,
+  mediaType: AttachmentReference.fields.mediaType,
+  body: Schema.Uint8Array,
+});
+
 /** A run starts pending, becomes running, then ends completed, failed, or interrupted. */
 export const RunStatus = Schema.Literals([
   "pending",
@@ -192,6 +214,10 @@ export const ToolOutcome = Schema.Union([
     reason: Schema.NonEmptyString,
   }),
 ]);
+
+export type NewAttachment = typeof NewAttachment.Type;
+
+export type SavedAttachment = typeof SavedAttachment.Type;
 
 export type ToolCall = typeof ToolCall.Type;
 

@@ -5,6 +5,7 @@ import { Migrator, SqlClient } from "effect/sql";
 import { StoreError } from "#src/errors";
 import { baseline } from "#src/migrations/0001_baseline";
 import { sessionActiveRun } from "#src/migrations/0002_session_active_run";
+import { attachments } from "#src/migrations/0003_attachments";
 import { decodeRow } from "#src/sql";
 
 /** One package's migrations and the ledger table that records them. */
@@ -44,6 +45,7 @@ export const packageSchema = (
 export const storeSchema = packageSchema("effect_sql_migrations", {
   "1_baseline": baseline,
   "2_session_active_run": sessionActiveRun,
+  "3_attachments": attachments,
 });
 
 const migrationFailure = (message: string) => new StoreError({ reason: "migration", message });

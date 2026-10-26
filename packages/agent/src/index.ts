@@ -9,6 +9,8 @@ export {
 
 export { AgentError } from "#src/errors";
 
+export { identifyAttachment, type AttachmentInput } from "#src/attachments";
+
 export { ExternalTools, type ExternalTool, type PreparedExternalCall } from "#src/external-tools";
 
 export { Skills, SkillsLive } from "#src/skills";
