@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Agent, ModelResolver } from "@poppet/agent";
-import { AppConfig, type Settings } from "@poppet/config";
 import {
   Provider,
   ProviderConnection,
@@ -20,13 +19,6 @@ import { WorkerConnections } from "@poppet/tasks";
 import { ConfigProvider, Context, Effect, Layer, Stream } from "effect";
 
 import { runtimeLayers } from "#src/runtime";
-
-const config: Settings = {
-  applicationName: "Test",
-  dataDirectory: "/unused",
-  provider: "openai-chatgpt",
-  model: "selected-model",
-};
 
 const fakeModel = (provider: ProviderId, id: string): ModelOperations => ({
   description: {
@@ -104,43 +96,44 @@ describe("runtimeLayers", () => {
         ["first-provider", "second-provider"].map((id) => register(id, layer(id))),
       );
 
-      const result = await Effect.runPromise(
-        Effect.gen(function* () {
-          const model = yield* runtime.resolveModel;
-          expect(closed).toEqual([]);
+      const directory = await mkdtemp(join(tmpdir(), "poppet-runtime-selection-"));
+      const configuration = ConfigProvider.fromEnv({ env: { POPPET_DATA_DIR: directory } });
 
-          return yield* completeModel(model, {
-            sessionId: "fake-session",
-            workload: "assistant",
-            instructions: "",
-            messages: [{ role: "user", text: "Hello" }],
-            tools: [],
-            settings: {},
-          });
-        }).pipe(Effect.provideService(AppConfig, { ...config, provider: selected }), Effect.scoped),
-      );
+      try {
+        const result = await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const model = yield* (yield* ModelResolver).resolve(selected, "selected-model");
+              expect(closed).toEqual([]);
 
-      expect(built).toEqual([selected]);
-      expect(closed).toEqual([selected]);
-      expect(resolved).toEqual(["selected-model"]);
-      expect(result.output).toEqual([{ type: "text", text: "fake model answer" }]);
+              const response = yield* completeModel(model, {
+                sessionId: "fake-session",
+                workload: "assistant",
+                instructions: "",
+                messages: [{ role: "user", text: "Hello" }],
+                tools: [],
+                settings: {},
+              });
+
+              expect(closed).toEqual([]);
+
+              return response;
+            }),
+          ).pipe(
+            Effect.provide(runtime.chat),
+            Effect.provideService(ConfigProvider.ConfigProvider, configuration),
+          ),
+        );
+
+        expect(built).toEqual([selected]);
+        expect(closed).toEqual([selected]);
+        expect(resolved).toEqual(["selected-model"]);
+        expect(result.output).toEqual([{ type: "text", text: "fake model answer" }]);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
     },
   );
-
-  test("when no model is selected, fails before discovery or inference", async () => {
-    const runtime = runtimeLayers([
-      register("openai-chatgpt", Layer.effect(Provider, Effect.die("Provider must not be built"))),
-    ]);
-
-    await expect(
-      Effect.runPromise(
-        runtime.resolveModel.pipe(
-          Effect.provideService(AppConfig, { ...config, model: null }),
-          Effect.scoped,
-        ),
-      ),
-    ).rejects.toMatchObject({ reason: "invalid-request" });
-  });
 
   test.each(["other-provider", "other-model"])(
     "when resolution returns %s, rejects the mismatched selection",
@@ -161,14 +154,31 @@ describe("runtimeLayers", () => {
         ),
       ]);
 
-      await expect(
-        Effect.runPromise(
-          runtime.resolveModel.pipe(Effect.provideService(AppConfig, config), Effect.scoped),
-        ),
-      ).rejects.toMatchObject({
-        reason: "invalid-request",
-        message: "The provider resolved a different model. No fallback is allowed.",
-      });
+      const directory = await mkdtemp(join(tmpdir(), "poppet-runtime-mismatch-"));
+      const configuration = ConfigProvider.fromEnv({ env: { POPPET_DATA_DIR: directory } });
+
+      try {
+        await expect(
+          Effect.runPromise(
+            Effect.gen(function* () {
+              const session = yield* (yield* Store).createSession(
+                "openai-chatgpt",
+                "selected-model",
+              );
+
+              yield* Stream.runDrain((yield* Agent).send(session.id, "Hello"));
+            }).pipe(
+              Effect.provide(runtime.chat),
+              Effect.provideService(ConfigProvider.ConfigProvider, configuration),
+            ),
+          ),
+        ).rejects.toMatchObject({
+          reason: "invalid-request",
+          message: "The resolved model does not match this session. No fallback is allowed.",
+        });
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
     },
   );
 
