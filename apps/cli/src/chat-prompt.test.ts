@@ -128,6 +128,37 @@ describe.concurrent("interactiveChat", () => {
     expect(state.errors.join("\n")).toContain("Lost response. Not retried.");
   });
 
+  test("when files are added with /attach, sends them with the next message only", async () => {
+    const state = fixture([
+      "/attach ./screen one.png",
+      "/attach notes.md",
+      "Look",
+      "Again",
+      "/exit",
+    ]);
+
+    await state.run(
+      interactiveChat(
+        { coding: false },
+        (command, acknowledge) =>
+          Effect.sync(() => {
+            state.commands.push(command);
+          }).pipe(Effect.andThen(acknowledge("saved-session"))),
+        state.read,
+      ),
+    );
+
+    expect(state.commands).toEqual([
+      {
+        action: "new",
+        coding: false,
+        text: "Look",
+        attachments: ["./screen one.png", "notes.md"],
+      },
+      { action: "send", id: "saved-session", text: "Again" },
+    ]);
+  });
+
   test("when a failed request is unacknowledged, stops without creating another session", async () => {
     const state = fixture(["First request", "Must not send"]);
 

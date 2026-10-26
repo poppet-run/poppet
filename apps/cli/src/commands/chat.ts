@@ -13,7 +13,7 @@ import {
 } from "#src/chat";
 import { interactiveChat, interactiveChatOutput } from "#src/chat-prompt";
 import type { CLIContext } from "#src/commands/context";
-import { codingFlag, skillFlag, textArgument } from "#src/commands/flags";
+import { attachFlag, codingFlag, skillFlag, textArgument } from "#src/commands/flags";
 
 export const chatCommand = (context: CLIContext) => {
   const { runtime, throughWorker, write, writeThinking, readLine } = context;
@@ -99,10 +99,11 @@ export const chatCommand = (context: CLIContext) => {
         {
           coding: codingFlag,
           skill: skillFlag,
+          attach: attachFlag,
           text: textArgument("message").pipe(Argument.withSchema(MessageText)),
         },
-        ({ coding, text, skill }) => {
-          const command: ChatCommand = { action: "new", coding, text };
+        ({ coding, text, skill, attach }) => {
+          const command: ChatCommand = { action: "new", coding, text, attachments: attach };
 
           const selected = skill === undefined ? command : { ...command, skill };
 
@@ -113,9 +114,10 @@ export const chatCommand = (context: CLIContext) => {
         "send",
         {
           id: Argument.String("session").pipe(Argument.withSchema(Session.fields.id)),
+          attach: attachFlag,
           text: textArgument("message").pipe(Argument.withSchema(MessageText)),
         },
-        ({ id, text }) => runChat({ action: "send", id, text }),
+        ({ id, text, attach }) => runChat({ action: "send", id, text, attachments: attach }),
       ).pipe(Command.withDescription("Continue a saved session")),
       Command.make(
         "rename",

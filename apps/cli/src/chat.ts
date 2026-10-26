@@ -1,3 +1,6 @@
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
+import { basename, resolve } from "node:path";
 import { styleText } from "node:util";
 
 import {
@@ -8,8 +11,10 @@ import {
   Skills,
   sessionTitle,
   type ChatEvent,
+  type SendOptions,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
+import { readFileBounded } from "@poppet/io";
 import {
   Session,
   SessionSearchQuery,
@@ -25,6 +30,16 @@ export const MessageText = Schema.NonEmptyString.check(
   Schema.makeFilter((text) => text.trim().length > 0 || "Enter a nonempty message."),
 );
 
+/** A file read by the command line, carried to the worker as base64. */
+const ChatAttachment = Schema.Struct({
+  name: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
+  base64: Schema.String,
+});
+
+const ChatAttachments = Schema.optionalKey(
+  Schema.Array(ChatAttachment).check(Schema.isMaxLength(defaultPolicy.attachmentsPerMessage)),
+);
+
 /** Validated local or worker chat requests; new sessions carry an explicit model selection. */
 export const ChatRequest = Schema.Union([
   Schema.Struct({
@@ -34,8 +49,14 @@ export const ChatRequest = Schema.Union([
     model: Session.fields.model,
     workload: Session.fields.workload,
     skill: Schema.optionalKey(SkillName),
+    attachments: ChatAttachments,
   }),
-  Schema.Struct({ action: Schema.Literal("send"), id: Session.fields.id, text: MessageText }),
+  Schema.Struct({
+    action: Schema.Literal("send"),
+    id: Session.fields.id,
+    text: MessageText,
+    attachments: ChatAttachments,
+  }),
   Schema.Struct({ action: Schema.Literal("rename"), id: Session.fields.id, text: MessageText }),
   Schema.Struct({ action: Schema.Literal("show"), id: Session.fields.id }),
   Schema.Struct({ action: Schema.Literal("sessions") }),
@@ -44,14 +65,24 @@ export const ChatRequest = Schema.Union([
 
 export type ChatRequest = typeof ChatRequest.Type;
 
-/** Parsed chat actions; only a new session still needs its provider and model resolved. */
+/**
+ * Parsed chat actions; a new session still needs its provider and model resolved, and attached
+ * files are paths until they are read.
+ */
 export type ChatCommand =
-  | Exclude<ChatRequest, { readonly action: "new" }>
+  | Exclude<ChatRequest, { readonly action: "new" | "send" }>
+  | {
+      readonly action: "send";
+      readonly id: string;
+      readonly text: string;
+      readonly attachments?: ReadonlyArray<string>;
+    }
   | {
       readonly action: "new";
       readonly text: string;
       readonly coding: boolean;
       readonly skill?: string;
+      readonly attachments?: ReadonlyArray<string>;
     };
 
 type ChatSubmission = Extract<ChatRequest, { action: "new" | "send" }>;
@@ -164,11 +195,60 @@ export const inspectChat = (
     );
   });
 
+const attachmentLimit = Math.max(defaultPolicy.imageBytes, defaultPolicy.textFileBytes);
+
+/** Reads one attached file within the largest size the agent accepts, without blocking on a FIFO. */
+const readAttachment = (path: string) =>
+  Effect.tryPromise({
+    try: async () => {
+      const name = basename(path);
+      await using handle = await open(resolve(path), constants.O_RDONLY | constants.O_NONBLOCK);
+
+      if (!(await handle.stat()).isFile())
+        throw new AgentError({
+          reason: "attachment",
+          message: `Cannot attach ${JSON.stringify(name)}: it is not a regular file.`,
+        });
+
+      const body = await readFileBounded(
+        handle,
+        attachmentLimit,
+        () =>
+          new AgentError({
+            reason: "attachment",
+            message: `Cannot attach ${JSON.stringify(name)}: the file is larger than ${attachmentLimit / 1024 / 1024} MiB.`,
+          }),
+      );
+
+      return { name, base64: body.toString("base64") };
+    },
+    catch: (cause) =>
+      cause instanceof AgentError
+        ? cause
+        : new AgentError({
+            reason: "attachment",
+            message: `Cannot read ${JSON.stringify(path)}. Check the path and its permissions.`,
+          }),
+  });
+
 export const prepareChat = (
   command: Extract<ChatCommand, { action: "new" | "send" }>,
 ): Effect.Effect<ChatSubmission, AgentError, AppConfig> =>
   Effect.gen(function* () {
-    if (command.action === "send") return command;
+    if ((command.attachments?.length ?? 0) > defaultPolicy.attachmentsPerMessage)
+      return yield* Effect.fail(
+        new AgentError({
+          reason: "attachment",
+          message: `Attach at most ${defaultPolicy.attachmentsPerMessage} files to one message.`,
+        }),
+      );
+
+    const read = command.attachments ?? [];
+    const attachments = yield* Effect.forEach(read, readAttachment);
+    const attached = attachments.length === 0 ? {} : { attachments };
+
+    if (command.action === "send")
+      return { action: "send", id: command.id, text: command.text, ...attached };
     const config = yield* AppConfig;
     const model = config.model;
 
@@ -186,6 +266,7 @@ export const prepareChat = (
       provider: config.provider,
       model,
       workload: command.coding ? "coding" : "assistant",
+      ...attached,
     };
 
     return command.skill === undefined ? request : { ...request, skill: command.skill };
@@ -222,13 +303,18 @@ export const sendChat = (
     yield* announce(`Session: ${sessionId}`, sessionId);
     const agent = yield* Agent;
 
-    const options = reasoning.log === undefined ? {} : { reasoningLog: reasoning.log };
+    const options: SendOptions = {
+      attachments: (command.attachments ?? []).map(({ name, base64 }) => ({
+        name,
+        body: Buffer.from(base64, "base64"),
+      })),
+    };
 
-    const reply = agent.send(
-      sessionId,
-      command.text,
-      timingLog === undefined ? options : { ...options, timingLog },
-    );
+    const reply = agent.send(sessionId, command.text, {
+      ...options,
+      ...(reasoning.log !== undefined && { reasoningLog: reasoning.log }),
+      ...(timingLog !== undefined && { timingLog }),
+    });
 
     yield* Stream.runForEach(reply, (event) => {
       if (event.type === "started") return announce(`Run: ${event.run.id}`);

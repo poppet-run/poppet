@@ -5,6 +5,7 @@ export {
   logChatDiagnostic,
   type ChatEvent,
   type ChatFailure,
+  type SendOptions,
 } from "#src/service";
 
 export { AgentError } from "#src/errors";

@@ -69,7 +69,7 @@ export const requestWorker = async (
   if (response?.status === 413)
     throw new WorkerRequestError({
       message:
-        "The worker request exceeds the 2 MiB size limit. Shorten it; the command was not retried.",
+        "The worker request exceeds the 32 MiB size limit. Shorten it; the command was not retried.",
     });
 
   return response;
@@ -105,8 +105,8 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
 
           const options: Bun.Serve.Options<undefined> = {
             unix: path,
-            // Chat budgets allow 1 MiB of serialized context. Leave room for command metadata.
-            maxRequestBodySize: 2 * 1024 * 1024,
+            // Four 5 MiB attachments arrive as base64; leave room for the message and metadata.
+            maxRequestBodySize: 32 * 1024 * 1024,
             fetch(request, listener) {
               listener.timeout(request, 10);
 

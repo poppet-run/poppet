@@ -18,11 +18,21 @@ export const commandArgs = (
     while (offset < args.length) {
       const token = args[offset]!;
 
-      if (token === "--skill") offset += 2;
-      else if (token === "--coding" || token.startsWith("--skill=")) offset++;
+      if (token === "--skill" || token === "--attach") offset += 2;
+      else if (token === "--coding" || /^--(?:skill|attach)=/.test(token)) offset++;
       else break;
     }
-  } else if (args[0] === "chat" && ["send", "rename"].includes(args[1] ?? "")) {
+  } else if (args[0] === "chat" && args[1] === "send") {
+    offset = 3;
+
+    while (offset < args.length) {
+      const token = args[offset]!;
+
+      if (token === "--attach") offset += 2;
+      else if (token.startsWith("--attach=")) offset++;
+      else break;
+    }
+  } else if (args[0] === "chat" && args[1] === "rename") {
     offset = 3;
   } else if (args[0] === "memory" && args[1] === "set") {
     offset = 3;

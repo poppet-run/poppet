@@ -242,8 +242,11 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
       });
 
     yield* Console.error(
-      "Enter one message per line. /exit or Ctrl-D leaves the prompt; Ctrl-C cancels and exits.",
+      "Enter one message per line. /attach <path> adds a file to the next message. /exit or Ctrl-D leaves the prompt; Ctrl-C cancels and exits.",
     );
+
+    // Files added with /attach go with the next message, whether or not it succeeds.
+    let attachments: string[] = [];
 
     for (;;) {
       const text = yield* read;
@@ -252,12 +255,23 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
 
       if (text.trim().length === 0) continue;
 
-      const command =
+      const attach = /^\/attach\s+(.+)$/.exec(text.trim());
+
+      if (attach !== null) {
+        attachments.push(attach[1]!);
+        yield* Console.error(`Attached ${attach[1]!} to the next message.`);
+        continue;
+      }
+
+      const base =
         sessionId !== undefined
           ? { action: "send" as const, id: sessionId, text }
           : options.skill === undefined
             ? { action: "new" as const, coding: options.coding, text }
             : { action: "new" as const, coding: options.coding, skill: options.skill, text };
+
+      const command = attachments.length === 0 ? base : { ...base, attachments };
+      attachments = [];
 
       const result = yield* send(command, acknowledgeSession).pipe(Effect.result);
 
