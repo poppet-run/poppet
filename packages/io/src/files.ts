@@ -46,6 +46,39 @@ export const openNoFollow = (path: string): Promise<FileHandle | null> =>
     },
   );
 
+/** Reads from the start, allowing one extra byte to detect growth beyond the limit. The caller owns the handle. */
+export const readFileBounded = async (
+  handle: {
+    readonly read: (
+      buffer: Buffer,
+      offset: number,
+      length: number,
+      position: number,
+    ) => Promise<{ readonly bytesRead: number }>;
+  },
+  maxBytes: number,
+  tooLarge: () => Error,
+  signal?: AbortSignal,
+): Promise<Buffer> => {
+  const buffer = Buffer.alloc(maxBytes + 1);
+  let length = 0;
+
+  while (length < buffer.length) {
+    signal?.throwIfAborted();
+    // eslint-disable-next-line no-await-in-loop -- Short reads must advance the offset before reading again.
+    const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
+
+    if (bytesRead === 0) break;
+    length += bytesRead;
+  }
+
+  signal?.throwIfAborted();
+
+  if (length > maxBytes) throw tooLarge();
+
+  return buffer.subarray(0, length);
+};
+
 /**
  * Reads a regular file owned by this user with exactly one link; null when missing.
  * Optionally bounds its size, rejects group/other write access, or narrows it to 0o600.
@@ -76,10 +109,12 @@ export const readProtectedFile = async (
       throw new Error("Invalid protected file");
 
     if (makePrivate) await handle.chmod(0o600);
-    const bytes = await handle.readFile();
 
     // The file can grow between stat and read.
-    if (bytes.byteLength > maxBytes) throw new Error("Protected file is too large");
+    const bytes =
+      maxBytes === Infinity
+        ? await handle.readFile()
+        : await readFileBounded(handle, maxBytes, () => new Error("Protected file is too large"));
 
     return bytes.toString("utf8");
   } finally {

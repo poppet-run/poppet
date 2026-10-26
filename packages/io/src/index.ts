@@ -2,6 +2,7 @@ export {
   ensurePrivateDirectory,
   isMissingFile,
   openNoFollow,
+  readFileBounded,
   readProtectedFile,
   unlinkIfPresent,
   writeFileAtomic,

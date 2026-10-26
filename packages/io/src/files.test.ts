@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+  appendFile,
   chmod,
   link,
   mkdir,
   mkdtemp,
+  open,
   readdir,
   rm,
   stat,
@@ -16,6 +18,7 @@ import { join } from "node:path";
 import {
   ensurePrivateDirectory,
   isMissingFile,
+  readFileBounded,
   readProtectedFile,
   writeFileAtomic,
 } from "#src/files";
@@ -31,6 +34,90 @@ afterEach(async () => {
 });
 
 describe("files.ts", () => {
+  test("when filesystem reads are short, reads the complete file through the exact byte limit", async () => {
+    const path = join(directory, "short-reads.txt");
+    const text = "a🙂z";
+    await writeFile(path, text);
+    const handle = await open(path, "r");
+
+    try {
+      const bytes = await readFileBounded(
+        {
+          read: (buffer, offset, length, position) =>
+            handle.read(buffer, offset, Math.min(length, 2), position),
+        },
+        Buffer.byteLength(text),
+        () => new Error("Too large"),
+      );
+
+      expect(bytes.toString("utf8")).toBe(text);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  test("when a file grows after stat, consumes only one byte beyond the limit before rejecting it", async () => {
+    const path = join(directory, "growing.txt");
+    await writeFile(path, "ok");
+    const handle = await open(path, "r");
+
+    try {
+      const { size } = await handle.stat();
+      await appendFile(path, "x".repeat(1024));
+      let consumed = 0;
+      const failure = new Error("Too large");
+
+      await expect(
+        readFileBounded(
+          {
+            read: async (buffer, offset, length, position) => {
+              const result = await handle.read(buffer, offset, length, position);
+              consumed += result.bytesRead;
+
+              return result;
+            },
+          },
+          size,
+          () => failure,
+        ),
+      ).rejects.toBe(failure);
+      expect(consumed).toBe(size + 1);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  test("when cancelled during a short read, stops before requesting more bytes", async () => {
+    const path = join(directory, "cancelled.txt");
+    await writeFile(path, "unfinished");
+    const handle = await open(path, "r");
+    const controller = new AbortController();
+    const failure = new Error("Cancelled");
+    let reads = 0;
+
+    try {
+      await expect(
+        readFileBounded(
+          {
+            read: async (buffer, offset, length, position) => {
+              reads++;
+              const result = await handle.read(buffer, offset, Math.min(length, 2), position);
+              controller.abort(failure);
+
+              return result;
+            },
+          },
+          100,
+          () => new Error("Too large"),
+          controller.signal,
+        ),
+      ).rejects.toBe(failure);
+      expect(reads).toBe(1);
+    } finally {
+      await handle.close();
+    }
+  });
+
   test("when a private directory is missing, creates it only if asked", async () => {
     const path = join(directory, "auth");
 
