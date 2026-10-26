@@ -64,6 +64,7 @@ const describeModel = (model: typeof CatalogModel.Type): ModelDescription => {
       tools:
         model.supported_parameters.includes("tools") &&
         model.supported_parameters.includes("tool_choice"),
+      images: model.architecture.input_modalities.includes("image"),
       generationSettings,
       contextWindow: model.context_length,
       maxOutputTokens: model.top_provider.max_completion_tokens,

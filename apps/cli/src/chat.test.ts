@@ -45,6 +45,7 @@ const description: ModelDescription = {
   name: "Chat model",
   capabilities: {
     tools: false,
+    images: false,
     generationSettings: [],
     contextWindow: null,
     maxOutputTokens: null,

@@ -46,11 +46,35 @@ export const Continuation = Schema.Struct({
   data: Schema.JsonObject,
 });
 
+/** Media types an owner can attach; images need a model that accepts them. */
+export const AttachmentType = Schema.Literals([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "text/plain",
+]);
+
+/** A saved attachment named by a user message; its contents travel separately in the request. */
+export const AttachmentReference = Schema.Struct({
+  id: Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/)),
+  name: Schema.NonEmptyString.check(Schema.isMaxLength(255)),
+  mediaType: AttachmentType,
+  size: Schema.Natural,
+});
+
+/** Base64 bytes for an image, or the decoded text of a text file. */
+export const AttachmentContent = Schema.Union([
+  Schema.Struct({ id: AttachmentReference.fields.id, base64: Schema.String }),
+  Schema.Struct({ id: AttachmentReference.fields.id, text: Schema.String }),
+]);
+
 /** Shared conversation history that each provider translates into its own request format. */
 export const Message = Schema.Union([
   Schema.Struct({
     role: Schema.Literal("user"),
     text: Schema.String,
+    attachments: Schema.optionalKey(Schema.Array(AttachmentReference)),
   }),
   Schema.Struct({
     role: Schema.Literal("assistant"),
@@ -71,6 +95,7 @@ export const ModelDescription = Schema.Struct({
   name: Schema.NonEmptyString,
   capabilities: Schema.Struct({
     tools: Schema.Boolean,
+    images: Schema.Boolean,
     generationSettings: Schema.Array(GenerationSetting),
     contextWindow: Schema.NullOr(Schema.Natural),
     maxOutputTokens: Schema.NullOr(Schema.Natural),
@@ -84,6 +109,8 @@ export const ModelRequest = Schema.Struct({
   instructions: Schema.String,
   messages: Schema.Array(Message),
   tools: Schema.Array(Tool),
+  /** Contents for every attachment the messages reference. */
+  attachments: Schema.optionalKey(Schema.Array(AttachmentContent)),
   settings: Schema.Struct({
     temperature: Schema.optionalKey(
       Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 2 })),
@@ -118,6 +145,12 @@ export type Tool = typeof Tool.Type;
 export type Output = typeof Output.Type;
 
 export type Continuation = typeof Continuation.Type;
+
+export type AttachmentType = typeof AttachmentType.Type;
+
+export type AttachmentReference = typeof AttachmentReference.Type;
+
+export type AttachmentContent = typeof AttachmentContent.Type;
 
 export type Message = typeof Message.Type;
 

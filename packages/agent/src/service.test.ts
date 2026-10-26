@@ -77,6 +77,7 @@ const description: ModelOperations["description"] = {
   name: "Test model",
   capabilities: {
     tools: true,
+    images: false,
     generationSettings: ["maxOutputTokens"],
     contextWindow: null,
     maxOutputTokens: 1000,

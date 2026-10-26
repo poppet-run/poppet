@@ -10,7 +10,13 @@ const model: ModelDescription = {
   provider: "test-provider",
   id: "test-model",
   name: "Test",
-  capabilities: { tools: true, generationSettings: [], contextWindow: null, maxOutputTokens: null },
+  capabilities: {
+    tools: true,
+    images: false,
+    generationSettings: [],
+    contextWindow: null,
+    maxOutputTokens: null,
+  },
 };
 
 const assistant: Message = {

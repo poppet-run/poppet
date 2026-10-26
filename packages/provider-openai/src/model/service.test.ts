@@ -201,7 +201,48 @@ describe("ChatGPTModel", () => {
   );
 });
 
+const modalityCatalog: HttpFetch = async () =>
+  Response.json({
+    models: [
+      {
+        slug: "vision-model",
+        display_name: "Vision",
+        visibility: "list",
+        input_modalities: ["text", "image"],
+      },
+      {
+        slug: "text-model",
+        display_name: "Text",
+        visibility: "list",
+        input_modalities: ["text"],
+      },
+      { slug: "unlisted-model", display_name: "Unlisted", visibility: "list" },
+    ],
+  });
+
 describe("makeChatGPTProvider", () => {
+  test("when the catalog lists input modalities, reports image input only for models that list images", async () => {
+    const auth: ChatGPTAuth["Service"] = {
+      accessToken: Effect.succeed(Redacted.make("test-token")),
+      login: () => Effect.die("Login must not run."),
+      status: Effect.die("Status must not run."),
+      signOut: Effect.die("Sign-out must not run."),
+      recordVerification: () => Effect.die("Verification must not be recorded."),
+    };
+
+    const models = await Effect.runPromise(
+      Effect.gen(function* () {
+        return yield* makeChatGPTProvider(yield* makeChatGPTModel(modalityCatalog)).models;
+      }).pipe(Effect.provideService(ChatGPTAuth, auth)),
+    );
+
+    expect(models.map((model) => [model.id, model.capabilities.images])).toEqual([
+      ["vision-model", true],
+      ["text-model", false],
+      ["unlisted-model", false],
+    ]);
+  });
+
   test.each([
     ["subscription_sharing_invalid_user", "authentication"],
     ["subscription_sharing_user_not_eligible", "permission"],

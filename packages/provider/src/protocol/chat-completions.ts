@@ -18,6 +18,7 @@ import {
   type Output,
   type Tool,
 } from "#src/index";
+import { userParts } from "#src/protocol/attachments";
 import { inferenceFailure, type InferenceOptions } from "#src/protocol/errors";
 import { inIndexOrder, modelStream } from "#src/protocol/scoped-stream";
 
@@ -116,6 +117,7 @@ const toolNames = (description: ModelDescription, request: ModelRequest) => {
 };
 
 const chatMessages = (
+  description: ModelDescription,
   request: ModelRequest,
   continuation: ChatContinuation,
 ): ChatCompletionMessageParam[] => {
@@ -124,7 +126,18 @@ const chatMessages = (
   ];
 
   for (const message of request.messages) {
-    if (message.role === "user") messages.push({ role: "user", content: message.text });
+    if (message.role === "user")
+      messages.push({
+        role: "user",
+        content:
+          message.attachments === undefined
+            ? message.text
+            : userParts(description, request, message).map((part) =>
+                part.type === "text"
+                  ? { type: "text", text: part.text }
+                  : { type: "image_url", image_url: { url: part.url } },
+              ),
+      });
     else if (message.role === "tool")
       messages.push({ role: "tool", tool_call_id: message.callId, content: message.output });
     else {
@@ -190,7 +203,7 @@ export const chatCompletionsModel = (
             });
 
             const messages = yield* Effect.try({
-              try: () => chatMessages(decoded, continuation),
+              try: () => chatMessages(description, decoded, continuation),
               catch: () =>
                 invalidRequest(
                   description.provider,

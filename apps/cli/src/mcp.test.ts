@@ -74,6 +74,7 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
                   name: "Fixture",
                   capabilities: {
                     tools: true,
+                    images: false,
                     generationSettings: [],
                     contextWindow: null,
                     maxOutputTokens: null,

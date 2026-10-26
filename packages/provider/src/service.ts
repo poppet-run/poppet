@@ -103,6 +103,30 @@ export const validateRequest = (description: ModelDescription, request: ModelReq
       names.add(name);
     }
 
+    const contents = new Map(decoded.attachments?.map((content) => [content.id, content]));
+
+    for (const message of decoded.messages) {
+      if (message.role !== "user") continue;
+
+      for (const reference of message.attachments ?? []) {
+        const content = contents.get(reference.id);
+        const image = reference.mediaType !== "text/plain";
+
+        if (content === undefined || "base64" in content !== image)
+          return yield* Effect.fail(
+            invalidRequest(description.provider, "An attachment's contents are missing."),
+          );
+
+        if (image && !description.capabilities.images)
+          return yield* Effect.fail(
+            invalidRequest(
+              description.provider,
+              `${description.name} does not accept images. Start a new session with a model that does.`,
+            ),
+          );
+      }
+    }
+
     for (const message of decoded.messages) {
       if (message.role !== "assistant" || message.continuation === null) continue;
 

@@ -30,6 +30,8 @@ const ModelCatalog = Schema.Struct({
       slug: Schema.NonEmptyString,
       display_name: Schema.NonEmptyString,
       visibility: Schema.String,
+      // Unverified against a live catalog; a model without it is treated as text-only.
+      input_modalities: Schema.optionalKey(Schema.Array(Schema.String)),
     }),
   ),
 });
@@ -189,7 +191,13 @@ const describeModel = (model: AvailableModel): ModelDescription => ({
   provider: "openai-chatgpt",
   id: model.slug,
   name: model.display_name,
-  capabilities: { tools: true, generationSettings: [], contextWindow: null, maxOutputTokens: null },
+  capabilities: {
+    tools: true,
+    images: model.input_modalities?.includes("image") ?? false,
+    generationSettings: [],
+    contextWindow: null,
+    maxOutputTokens: null,
+  },
 });
 
 export const makeChatGPTProvider = (connection: ChatGPTModel["Service"]): ProviderOperations => ({
