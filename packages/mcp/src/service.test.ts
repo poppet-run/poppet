@@ -381,6 +381,49 @@ describe("MCP", () => {
     }
   });
 
+  test("when reconnects keep failing, doubles the delay and keeps tools unavailable until the next attempt", async () => {
+    const state = await fixture("no-tools", ["read"]);
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const mcp = yield* MCP;
+          yield* TestClock.setTime(1_000_000);
+
+          for (const delay of [30_000, 60_000, 120_000]) {
+            expect(yield* mcp.snapshot(false)).toEqual([]);
+            const failedAt = yield* Clock.currentTimeMillis;
+            const status = (yield* mcp.status)[0]!;
+            expect(status).toMatchObject({
+              state: "unavailable",
+              pid: null,
+              availableTools: [],
+              retryAt: failedAt + delay,
+            });
+            expect(status.diagnostic).toContain("does not advertise tools capability");
+            yield* TestClock.adjust(delay - 1);
+            expect(yield* mcp.snapshot(false)).toEqual([]);
+            expect((yield* mcp.status)[0]).toEqual(status);
+            yield* TestClock.adjust(1);
+          }
+        }).pipe(
+          Effect.provide(state.layer),
+          Effect.provide(TestClock.layer()),
+          Effect.provideService(Console.Console, {
+            ...console,
+            error: (...values) => state.errors.push(values.join(" ")),
+          }),
+        ),
+      );
+      expect((await state.events()).filter((event) => event.method === "initialize")).toHaveLength(
+        3,
+      );
+      expect(state.errors).toHaveLength(3);
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each(["", "false"])(
     "when a selected environment value is %j, permits discovery",
     async (value) => {

@@ -30,26 +30,34 @@ export interface MCPTool {
 
 class MCPDiagnostic extends Data.TaggedError("MCPDiagnostic")<{ readonly message: string }> {}
 
+type ConnectionState =
+  | { readonly status: "idle"; readonly retries: number }
+  | { readonly status: "disabled" }
+  | { readonly status: "connected"; readonly tools: ReadonlyArray<MCPTool> }
+  | {
+      readonly status: "unavailable";
+      readonly diagnostic: string;
+      readonly failedAt: number;
+      /** Failed reconnects since the last successful connection. */
+      readonly retries: number;
+    };
+
 interface Connection {
   readonly client: Client;
   readonly transport: ScopedStdioTransport | ScopedHTTPTransport;
-  /** Reconnection attempts since this server last connected successfully. */
-  retries: number;
   readonly now: () => number;
-  state: "idle" | "connected" | "unavailable" | "disabled";
-  diagnostic: string | null;
-  failedAt: number | null;
-  tools: ReadonlyArray<MCPTool>;
+  state: ConnectionState;
   closing: Promise<void> | null;
 }
 
 // A failed server reconnects on a later request after this delay, doubling per attempt.
 const reconnectDelay = (retries: number) => Math.min(30_000 * 2 ** retries, 600_000);
 
-const retryAt = (connection: Connection) =>
-  connection.state === "unavailable" && connection.failedAt !== null
-    ? connection.failedAt + reconnectDelay(connection.retries)
-    : null;
+const retryAt = (state: Extract<ConnectionState, { status: "unavailable" }>) =>
+  state.failedAt + reconnectDelay(state.retries);
+
+const diagnostic = (connection: Connection) =>
+  connection.state.status === "unavailable" ? connection.state.diagnostic : null;
 
 export class MCP extends Context.Service<
   MCP,
@@ -58,7 +66,7 @@ export class MCP extends Context.Service<
       ReadonlyArray<{
         readonly id: string;
         readonly enabled: boolean;
-        readonly state: Connection["state"];
+        readonly state: ConnectionState["status"];
         readonly transport: "stdio" | "http";
         /** The HTTP endpoint's origin; paths and queries are omitted. */
         readonly origin: string | null;
@@ -101,9 +109,16 @@ const close = (connection: Connection): Promise<void> => {
 };
 
 const invalidate = (connection: Connection, message: string) => {
-  connection.state = "unavailable";
-  connection.diagnostic ??= message;
-  connection.failedAt ??= connection.now();
+  const state = connection.state;
+
+  // Repeated callbacks keep the first failure and its original backoff deadline.
+  if (state.status !== "unavailable")
+    connection.state = {
+      status: "unavailable",
+      diagnostic: message,
+      failedAt: connection.now(),
+      retries: state.status === "idle" ? state.retries : 0,
+    };
 
   return close(connection);
 };
@@ -261,9 +276,9 @@ const makeTool = (
 
   const execute = (args: Schema.JsonObject) =>
     Effect.gen(function* () {
-      if (connection.state !== "connected")
+      if (connection.state.status !== "connected")
         return yield* Effect.fail(
-          failed(connection.diagnostic ?? `MCP ${config.id} is unavailable.`),
+          failed(diagnostic(connection) ?? `MCP ${config.id} is unavailable.`),
         );
 
       const result = yield* Effect.tryPromise({
@@ -338,13 +353,14 @@ export const makeMCPLive = (toolBytes: number) =>
           let retries = 0;
 
           if (prior !== undefined) {
-            const due = retryAt(prior);
+            const state = prior.state;
 
-            if (due === null || clock.currentTimeMillisUnsafe() < due) return prior;
+            if (state.status !== "unavailable" || clock.currentTimeMillisUnsafe() < retryAt(state))
+              return prior;
             // Replace the failed client only after its process has been reaped.
             yield* Effect.promise(() => close(prior).catch(() => {}));
             connections.delete(config.id);
-            retries = prior.retries + 1;
+            retries = state.retries + 1;
           }
 
           // Transports read these at start or per request, after startup resolves references.
@@ -380,12 +396,8 @@ export const makeMCPLive = (toolBytes: number) =>
           const connection: Connection = {
             client,
             transport,
-            retries,
             now: () => clock.currentTimeMillisUnsafe(),
-            state: config.enabled ? "idle" : "disabled",
-            diagnostic: null,
-            failedAt: null,
-            tools: [],
+            state: config.enabled ? { status: "idle", retries } : { status: "disabled" },
             closing: null,
           };
 
@@ -394,7 +406,7 @@ export const makeMCPLive = (toolBytes: number) =>
             void invalidate(
               connection,
               // Startup failures keep their configuration hint; no call has been dispatched yet.
-              connection.state === "idle"
+              connection.state.status === "idle"
                 ? `${startupFailure(config, null).message} Poppet retries on a later request.`
                 : `MCP ${config.id}: disconnected or invalid protocol. Dispatched calls may have unknown effects; Poppet reconnects on a later request.`,
             ).catch(() => {});
@@ -429,13 +441,9 @@ export const makeMCPLive = (toolBytes: number) =>
             });
 
             // A protocol callback can fail the connection before discovery's Promise resumes.
-            if (connection.state === "unavailable")
-              return yield* Effect.fail(
-                failed(connection.diagnostic ?? `MCP ${config.id}: startup failed.`),
-              );
-            connection.tools = tools;
-            connection.state = "connected";
-            connection.retries = 0;
+            if (connection.state.status === "unavailable")
+              return yield* Effect.fail(failed(connection.state.diagnostic));
+            connection.state = { status: "connected", tools };
           }).pipe(Effect.timeout("8 seconds"));
 
           yield* startup.pipe(
@@ -447,7 +455,7 @@ export const makeMCPLive = (toolBytes: number) =>
                     `${error instanceof MCPError ? error.message : `MCP ${config.id}: startup timed out.`} Poppet retries on a later request.`,
                   ),
                 );
-                yield* Console.error(connection.diagnostic);
+                yield* Console.error(diagnostic(connection));
               }),
             ),
             Effect.onInterrupt(() =>
@@ -466,26 +474,24 @@ export const makeMCPLive = (toolBytes: number) =>
       const status = Effect.sync(() =>
         servers.map((config) => {
           const connection = connections.get(config.id);
+          const state = connection?.state;
 
           return {
             id: config.id,
             enabled: config.enabled,
-            state:
-              connection?.state ?? (config.enabled ? ("idle" as const) : ("disabled" as const)),
+            state: state?.status ?? (config.enabled ? ("idle" as const) : ("disabled" as const)),
             transport: isHTTPServer(config) ? ("http" as const) : ("stdio" as const),
             origin: isHTTPServer(config) ? new URL(config.url).origin : null,
             pid:
               connection?.transport instanceof ScopedStdioTransport
                 ? connection.transport.pid
                 : null,
-            diagnostic: connection?.diagnostic ?? null,
-            retryAt: connection === undefined ? null : retryAt(connection),
+            diagnostic: state?.status === "unavailable" ? state.diagnostic : null,
+            retryAt: state?.status === "unavailable" ? retryAt(state) : null,
             tools: config.tools,
             scheduledTools: config.scheduledTools ?? [],
             availableTools:
-              connection?.state === "connected"
-                ? connection.tools.map((tool) => tool.toolName)
-                : [],
+              state?.status === "connected" ? state.tools.map((tool) => tool.toolName) : [],
           };
         }),
       );
@@ -500,10 +506,10 @@ export const makeMCPLive = (toolBytes: number) =>
             );
           const connection = yield* connect(config);
 
-          if (connection.state !== "connected")
-            return yield* Effect.fail(failed(connection.diagnostic ?? `MCP ${id} is disabled.`));
+          if (connection.state.status !== "connected")
+            return yield* Effect.fail(failed(diagnostic(connection) ?? `MCP ${id} is disabled.`));
 
-          return connection.tools.map((tool) => ({
+          return connection.state.tools.map((tool) => ({
             serverId: tool.serverId,
             toolName: tool.toolName,
             definition: tool.definition,
@@ -523,8 +529,8 @@ export const makeMCPLive = (toolBytes: number) =>
             (config) =>
               connect(config).pipe(
                 Effect.map((connection) =>
-                  connection.state === "connected"
-                    ? connection.tools.filter(
+                  connection.state.status === "connected"
+                    ? connection.state.tools.filter(
                         (tool) => !scheduled || config.scheduledTools?.includes(tool.toolName),
                       )
                     : [],
