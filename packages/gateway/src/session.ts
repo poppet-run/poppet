@@ -6,6 +6,7 @@ import { Effect, Result } from "effect";
 
 import { ChannelError } from "#src/channel";
 import { finish, mark, type GatewayContext } from "#src/context";
+import { failureDecision } from "#src/failure";
 import type { Inbox } from "#src/repository";
 import { messagingRequest } from "#src/request";
 
@@ -68,10 +69,10 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
         continue;
       }
 
-      const { reason, message } = downloaded.failure;
+      const { message } = downloaded.failure;
 
-      // Transient failures retry while no run is saved; others are answered now.
-      if (reason === "unavailable" || reason === "uncertain")
+      // Once retries are exhausted, save the destination and reply with the file's error.
+      if (failureDecision(downloaded.failure, entry.attempts).retryAfterMs !== null)
         return yield* Effect.fail(downloaded.failure);
 
       return yield* reject(`Cannot attach ${JSON.stringify(attachment.name)}: ${message}`);
