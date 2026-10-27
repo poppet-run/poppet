@@ -142,6 +142,9 @@ bun packages/browser/src/test/browser-check.ts
 
 It checks JavaScript rendering, a form action, restricted and wildcard navigation,
 redirects and subresources, WebRTC blocking, isolated runs, and daemon cleanup.
-Local socket access is required; it does not call an inference provider. Live-model CLI and authorized
-messaging completion remain manual. Use a disposable allowed site, inspect saved
-calls, cancel a running workflow, and stop the worker to verify cleanup.
+Local socket access is required; it does not call an inference provider.
+
+Live-model checks passed on 2026-10-27 with agent-browser 0.39.4 and Chrome for
+Testing 156.0.8078.47: CLI and authorized messaging extraction and a form action
+on a disposable allowed site, saved calls, denied navigation, cancellation, and
+cleanup after cancellation and worker shutdown.
