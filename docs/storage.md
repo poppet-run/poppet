@@ -160,4 +160,4 @@ with a `process-exit` reason. Poppet does not automatically replay them.
 Tests cover persistent tool exchanges for all providers, migration ordering and
 rollback, transaction rollback, invalid records, run transitions, competing
 owners, and scoped cleanup. Live ChatGPT token renewal
-remains a separate phase 3 follow-up.
+remains a separate manual check.

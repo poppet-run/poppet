@@ -37,4 +37,4 @@ for persistent settings.
 
 - [Development](development.md): workspace layout, checks, tests, and adding providers or channels.
 - [Architecture](architecture.md): service boundaries, Effect conventions, storage, and execution contracts.
-- [Implementation plan](implementation-plan.md): completed phases, validation records, and planned work.
+- [Implementation plan](implementation-plan.md): planned work.

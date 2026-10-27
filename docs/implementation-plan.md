@@ -2,18 +2,12 @@
 
 [Documentation index](README.md)
 
-Phases 1–21 and 24 are implemented with automated checks. Phase 25's text
-attachments were removed because no messaging adapter supplied attachments.
-Phases 28–34 are planned only. Phase 37's image and text-file attachments are
-implemented; its live Discord and provider checks passed on 2026-10-27. Plans do not authorize implementation. Phase 35's
-parallel messaging is implemented and on by default
-(`chat.maxConcurrentRequests` is 3); its live Discord check passed on 2026-10-27.
-Phase 36's HTTP MCP servers are implemented; its live remote-server check
-passed on 2026-10-27.
+Phases 28–34 are planned only. Plans do not authorize implementation. Phase
+25's text attachments were removed because no messaging adapter supplied
+attachments; image and text-file attachments replaced them.
 
-Implemented phases have no phase page. Use the linked guides for current
-behavior and setup. Git history retains their delivery plans, validation
-records, and outstanding checks.
+Implemented work has no phase page. Use the linked guides for current behavior,
+setup, and validation. Git history retains delivery plans and validation records.
 
 The remaining priority order is browser login state, doctor, then calendar
 briefing and weekly review trials using existing tools. Independent work such as
@@ -23,14 +17,13 @@ Reusable workflows start with [drafting a skill in chat](skills.md#draft-a-skill
 owner review, and manual saving into the local skill library. The agent can read
 matching skills from an index; it cannot write skills or curate facts automatically.
 
-Updated: 2026-10-26
+Updated: 2026-10-27
 
 Storage history: the unreleased base schema was consolidated into version 1.
-Phases 23–26 add migrations 2–5 for monitoring, task controls, attachments, and
-projects while retaining earlier data. Migrations 6–8 retain archived learning data and active fact history. Phase 35
-adds store migration 2, which allows one active run per session instead of one
-across the store. Historical validation records describe
-checks performed at delivery time, not checks rerun for this documentation update.
+Migrations 2–5 add monitoring, task controls, attachments, and projects while
+retaining earlier data. Migrations 6–8 retain archived learning data and active
+fact history. Store migration 2 allows one active run per session instead of one
+across the store.
 See [storage](storage.md#schema-and-saved-records),
 [development](development.md#store-migrations), and
 [architecture](architecture.md) for current contracts and dependency boundaries.

@@ -129,7 +129,7 @@ hosts can resolve to private addresses; this is not an OS network sandbox. Only
 allow hosts you trust. See upstream [security limitations](https://agent-browser.dev/security).
 Persistent login state, auth-vault access, browser attachments, arbitrary JavaScript,
 uploads/downloads, clipboard access, screenshots, PDFs, cloud browsers, and a
-general approval workflow remain outside this phase.
+general approval workflow are not supported.
 
 ## Validation
 

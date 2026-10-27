@@ -311,15 +311,15 @@ See [messaging package boundaries](architecture.md#package-boundaries) for the c
 Local tests cover all providers' text and tool exchanges, reasoning
 continuation, output ordering, malformed and incomplete streams, cancellation,
 deadlines, error classification, and provider selection. These tests do not prove
-live account access. The earlier phase 1 live ChatGPT check remains separate
-evidence; Go and OpenRouter inference have not been verified against live accounts.
+live account access. Live ChatGPT subscription inference and a tool round trip
+passed on 2026-10-13; Go and OpenRouter inference have not been verified against live accounts.
 
 The [storage guide](storage.md#permissions-and-recovery) describes local recovery checks.
 Live chat, ChatGPT token renewal, Discord setup and reconnection, macOS and Linux login
 startup and physical sleep/wake remain separate manual checks. Follow the
 [Discord guide](gateways/discord.md) and [worker manual validation](worker.md#manual-validation)
-for those paths. The [implementation plan](implementation-plan.md) records
-phase-specific validation and remaining work.
+for those paths. The [implementation plan](implementation-plan.md) lists
+planned work.
 
 ### Manual live test checklist
 

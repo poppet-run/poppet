@@ -328,7 +328,7 @@ A scoped abort controller and an Effect clock enforce a 60-second absolute
 inference deadline. Consumer termination aborts the request before awaiting the
 iterator's cleanup, so a pending network read cannot block cancellation. SDK
 retries are disabled. Shared adapter tests use injected HTTP responses and a test
-clock; phase 1 live evidence and future live Go checks are separate.
+clock; live provider checks are separate.
 
 ## Conversation store
 
