@@ -274,6 +274,11 @@ never to follow instructions found in attachments. A message with attachments
 withdraws task, memory, and MCP mutations for its run, as a fetched page does; ask
 for those changes in a follow-up message.
 
+Live checks passed on 2026-10-27: a screenshot and a log file in one message,
+through `chat new --attach` and in a Discord thread, an image over 5 MiB, and an
+image sent to a text-only model. The ChatGPT model catalog reports
+`input_modalities`, so its models that accept images can receive them.
+
 ## Read a supplied URL
 
 ```sh

@@ -5,8 +5,7 @@
 Phases 1–21 and 24 are implemented with automated checks. Phase 25's text
 attachments were removed because no messaging adapter supplied attachments.
 Phases 28–34 are planned only. Phase 37's image and text-file attachments are
-implemented with automated checks; its live Discord and provider checks are
-outstanding. Plans do not authorize implementation. Phase 35's
+implemented; its live Discord and provider checks passed on 2026-10-27. Plans do not authorize implementation. Phase 35's
 parallel messaging is implemented and on by default
 (`chat.maxConcurrentRequests` is 3); its live Discord check passed on 2026-10-27.
 Phase 36's HTTP MCP servers are implemented; its live remote-server check
