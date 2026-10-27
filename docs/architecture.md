@@ -421,7 +421,7 @@ finish reason, output limits, and agreement with streamed text. Complete tool
 requests pass through the shared contract; no SDK types enter the agent.
 
 The loop advertises only allowed tools, validates the whole batch, and requires
-another model turn before performing side effects. Default budgets are eight
+another model turn before performing side effects. Default budgets are sixteen
 model turns, sixteen calls, and 16 KiB per tool result. Current-run messages are
 never trimmed independently of their tool pairs. Definitions and tool results
 count toward the context estimate; overflowing the current exchange fails clearly.

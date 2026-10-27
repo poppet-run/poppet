@@ -379,7 +379,7 @@ only the request, not saved history. Answers are limited to 128 KiB of text and
 1 MiB including continuation. The runner has a five-minute absolute deadline by default
 (`chat.runDeadlineSeconds`);
 provider inference also retains its 60-second deadline. Each run permits at most
-eight model turns and sixteen tool calls, with 16 KiB per tool result.
+sixteen model turns and sixteen tool calls, with 16 KiB per tool result.
 
 Tool-capable models receive conversation search,
 page reading, explicit memory, interactive task management, and web search when configured. Models without tool

@@ -39,7 +39,7 @@ export const defaultPolicy: ChatPolicy = {
   contextBytes: 262144,
   historyTurns: 20,
   outputTokens: 2048,
-  modelTurns: 8,
+  modelTurns: 16,
   toolCalls: 16,
   toolBytes: 16384,
   soulBytes: 8192,
