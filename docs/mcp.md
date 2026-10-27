@@ -208,6 +208,8 @@ real server, inspect its allowed catalog, complete a real-model tool round trip
 from the CLI and an authorized messaging conversation, and inspect `chat show`.
 Then allow one reviewed read in `scheduledTools`, restart the worker, schedule
 that read, and inspect its result. Stop the worker and confirm its MCP PIDs have
-exited. With one trusted remote server that accepts a bearer token, configure the
+exited. These stdio checks passed on 2026-10-27.
+
+With one trusted remote server that accepts a bearer token, configure the
 token as a protected credential header, inspect its catalog from the worker, and
-complete a CLI tool round trip. These live checks remain manual.
+complete a CLI tool round trip. This remote check remains manual.
