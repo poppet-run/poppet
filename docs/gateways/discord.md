@@ -145,6 +145,12 @@ Successful cron results go to each task's configured destination.
 Automated tests use injected Discord events and API responses. Live bot setup,
 permissions, reconnection, and model inference still need manual validation.
 
+Parallel conversations passed a live check on 2026-10-27 with `openai-chatgpt`
+and the default three slots: a channel mention was answered while another
+thread's request ran, two simultaneous requests shared one ChatGPT account,
+replies within one thread stayed in order, and cancelling one thread left
+another running.
+
 See [worker modes](../worker.md#foreground-modes) to run messaging with scheduling or install the combined login worker.
 
 ## Thread names
