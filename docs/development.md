@@ -52,14 +52,8 @@ Keep subprocess tests for process behaviour such as stdin, terminal requirements
 exit codes, signals, and worker ownership. The isolation runner applies to all
 tests, including package tests that launch subprocesses.
 
-The root test command records file durations in `.bun-test-timings.json` so later
-runs can start slower files first. This local cache is ignored by Git and can be
-deleted to reset the timings. Tests still use four workers and at most two
-concurrent tests per worker.
-
-GitHub Actions runs the full suite in one job and restores timing history from
-successful runs of the same Bun version. This keeps one complete set of timings
-for scheduling files across workers.
+The root test command uses four workers and at most two concurrent tests per
+worker.
 
 ## Store migrations
 

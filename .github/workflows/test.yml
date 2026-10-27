@@ -12,5 +12,3 @@ permissions:
 jobs:
   test:
     uses: poppet-run/workflows/.github/workflows/test.yml@main
-    with:
-      timings-file: .bun-test-timings.json
