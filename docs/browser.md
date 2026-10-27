@@ -12,12 +12,12 @@ composes them with MCP tools through the agent's external-tool contract.
 
 ## Install and configure
 
-The integration pins agent-browser **0.39.1** and Chrome for Testing
-**155.0.8059.84**, on macOS and Linux. For example, install the CLI with Node 24 or
+The integration pins agent-browser **0.39.4** and Chrome for Testing
+**156.0.8078.47**, on macOS and Linux. For example, install the CLI with Node 24 or
 later and npm:
 
 ```sh
-npm install -g agent-browser@0.39.1
+npm install -g agent-browser@0.39.4
 agent-browser --version
 command -v agent-browser
 ```
@@ -28,13 +28,13 @@ so it can own that exact daemon process. The worker's `PATH` must include the
 installation, or you can set `command` to the native executable explicitly.
 
 Download and extract the pinned browser into
-`~/.agent-browser/browsers/chrome-155.0.8059.84/`:
+`~/.agent-browser/browsers/chrome-156.0.8078.47/`:
 
 | Platform            | Download                                                                                                           |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Apple silicon macOS | [mac-arm64](https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.84/mac-arm64/chrome-mac-arm64.zip) |
-| Intel macOS         | [mac-x64](https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.84/mac-x64/chrome-mac-x64.zip)       |
-| Linux x64           | [linux64](https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.84/linux64/chrome-linux64.zip)       |
+| Apple silicon macOS | [mac-arm64](https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/mac-arm64/chrome-mac-arm64.zip) |
+| Intel macOS         | [mac-x64](https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/mac-x64/chrome-mac-x64.zip)       |
+| Linux x64           | [linux64](https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/linux64/chrome-linux64.zip)       |
 
 `agent-browser install` selects current stable Chrome, which may differ from this
 pin. Use the testing browser without your everyday Chrome profile. Add this

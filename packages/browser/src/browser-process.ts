@@ -5,9 +5,9 @@ import { Effect, type Schema } from "effect";
 
 import { BrowserError } from "#src/errors";
 
-export const agentBrowserVersion = "0.39.1";
+export const agentBrowserVersion = "0.39.4";
 
-export const chromiumVersion = "155.0.8059.84";
+export const chromiumVersion = "156.0.8078.47";
 
 const maxProcessBytes = 262144;
 

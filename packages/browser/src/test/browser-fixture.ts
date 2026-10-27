@@ -83,10 +83,10 @@ if (process.env.AGENT_BROWSER_DAEMON === "1") {
 } else if (args[0] === "--version") {
   console.log(
     executable === "chromium"
-      ? "Google Chrome for Testing 155.0.8059.84"
+      ? "Google Chrome for Testing 156.0.8078.47"
       : mode === "version"
         ? "agent-browser 0.0.0"
-        : "agent-browser 0.39.1",
+        : "agent-browser 0.39.4",
   );
 } else if (mode === "stall") {
   await Bun.sleep(60000);
