@@ -9,8 +9,8 @@ implemented with automated checks; its live Discord and provider checks are
 outstanding. Plans do not authorize implementation. Phase 35's
 parallel messaging is implemented and on by default
 (`chat.maxConcurrentRequests` is 3); its live Discord check passed on 2026-10-27.
-Phase 36's HTTP MCP servers are implemented with automated checks; its live
-remote-server check is outstanding.
+Phase 36's HTTP MCP servers are implemented; its live remote-server check
+passed on 2026-10-27.
 
 Implemented phases have no phase page. Use the linked guides for current
 behavior and setup. Git history retains their delivery plans, validation

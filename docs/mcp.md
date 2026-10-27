@@ -212,4 +212,4 @@ exited. These stdio checks passed on 2026-10-27.
 
 With one trusted remote server that accepts a bearer token, configure the
 token as a protected credential header, inspect its catalog from the worker, and
-complete a CLI tool round trip. This remote check remains manual.
+complete a CLI tool round trip. This remote check passed on 2026-10-27.
