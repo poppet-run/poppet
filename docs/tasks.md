@@ -318,3 +318,11 @@ See [worker modes](worker.md#foreground-modes) to run scheduling with messaging,
 Each occurrence uses the task name as its session title, shortened to the same
 80-character limit as chat titles. Scheduled runs skip title inference and have
 no extra naming usage. The task prompt and scheduled tool policy stay the same.
+
+## Manual validation
+
+Live checks for task controls passed on 2026-10-27 with the installed worker:
+CLI edits kept task IDs and history, skip-next and run-now kept the cron cadence,
+and a snoozed one-off ran once after a worker restart. A real model performed the
+same controls through CLI chat and an authorized Discord thread, with receipts
+and delivery of the result to that thread.
