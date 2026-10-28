@@ -18,8 +18,8 @@ export interface RunContext {
   readonly history: ReadonlyArray<StoredMessage>;
   readonly runs: ReadonlyArray<Run>;
   readonly prompt: string;
-  /** Scheduled runs use the host's scheduled tool policy and cannot ask for command approval. */
-  readonly origin: "interactive" | "scheduled";
+  /** Background runs cannot ask for approval; webhooks also exclude Bash and external tools. */
+  readonly origin: "interactive" | "scheduled" | "webhook";
   readonly selectedSkill: string | null;
   readonly approveCommand: ApproveCommand | null;
   /** Host-only validation of this run's authorized messaging conversation. */

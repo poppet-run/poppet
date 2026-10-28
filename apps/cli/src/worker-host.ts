@@ -10,6 +10,7 @@ import { serveWorker, workerSocketPath, WorkerRequests } from "@poppet/worker";
 import { Clock, Console, Effect, Option } from "effect";
 
 import { MessagingWorker } from "#src/channels";
+import { serveWebhooks } from "#src/webhooks";
 
 /** Serves commands and runs scheduling, plus messaging when provided, until shutdown closes their shared scope. */
 export const runWorker = Effect.scoped(
@@ -34,6 +35,8 @@ export const runWorker = Effect.scoped(
               }),
             ),
     };
+
+    yield* serveWebhooks.pipe(Effect.provideService(TaskDestinations, destinations));
 
     yield* serveWorker(workerSocketPath(config.dataDirectory), (request, body) => {
       if (new URL(request.url).pathname !== "/v1/tasks") return commands.handle(request, body);

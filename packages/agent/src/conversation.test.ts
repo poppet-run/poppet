@@ -402,6 +402,66 @@ describe.concurrent("conversation", () => {
     },
   );
 
+  test("webhook runs reject fabricated Bash calls and never load external tools", async () => {
+    let executed = 0;
+    let catalogs = 0;
+
+    const state = await fixture(
+      (request) => {
+        expect(toolNames(request)).not.toContain("bash");
+        expect(toolNames(request)).not.toContain("manage_tasks");
+        expect(toolNames(request)).not.toContain("set_fact");
+
+        return request.messages.at(-1)?.role === "tool"
+          ? final()
+          : completed([
+              tool(
+                "bash",
+                JSON.stringify({ command: "touch forbidden", cwd: "/tmp", timeoutSeconds: 5 }),
+                "call-webhook",
+                "poppet_system",
+              ),
+            ]);
+      },
+      {
+        bash: {
+          run: () =>
+            Effect.sync(() => {
+              executed++;
+
+              return { stdout: "", stderr: "", exitCode: 0, truncated: false };
+            }),
+        },
+        externalTools: {
+          snapshot: () =>
+            Effect.sync(() => {
+              catalogs++;
+
+              return [externalTool("write", true)];
+            }),
+        },
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const session = yield* (yield* Store).createSession("test-provider", "test-model");
+
+          const failures = yield* reportedFailures(session.id, "Untrusted event", {
+            origin: "webhook",
+          });
+
+          expect(failures).toContain("agent:tool-permission");
+        }),
+      );
+      expect(executed).toBe(0);
+      expect(catalogs).toBe(0);
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when external preflight finds an invalid batch, reports it before executing any call", async () => {
     let executed = 0;
 

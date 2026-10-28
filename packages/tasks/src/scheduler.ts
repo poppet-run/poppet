@@ -95,7 +95,9 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
 
       yield* repo.link(item.id, session.id, null);
       yield* Stream.runForEach(
-        agent.send(session.id, job.prompt, { origin: "scheduled" }),
+        agent.send(session.id, job.prompt, {
+          origin: job.source === "webhook" ? "webhook" : "scheduled",
+        }),
         (event) =>
           event.type === "started" ? repo.link(item.id, session.id, event.run.id) : Effect.void,
       );

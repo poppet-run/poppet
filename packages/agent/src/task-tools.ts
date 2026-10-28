@@ -74,7 +74,7 @@ export type ChatTaskAction =
 
 /** The host supplies origin and the current destination; model arguments cannot grant either. */
 export interface ChatTaskContext {
-  readonly origin: "interactive" | "scheduled";
+  readonly origin: "interactive" | "scheduled" | "webhook";
   readonly runId: string;
   readonly callId: string;
   readonly here: Effect.Effect<DeliveryDestination, AgentError> | null;

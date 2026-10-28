@@ -6,6 +6,7 @@ import { BrowserSettings, browserFileValue } from "@poppet/browser/config";
 import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { readProtectedFile, writeFileAtomic } from "@poppet/io";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
+import { ProviderId } from "@poppet/provider";
 import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
 
 export const ConfigText = Schema.NonEmptyString.check(Schema.isTrimmed());
@@ -21,8 +22,31 @@ export const DiscordConfiguration = Schema.Struct({
   homeChannelId: Schema.String.check(Schema.isPattern(/^\d{1,20}$/)),
 });
 
+/** Incoming hooks are opt-in; credentials stay in separate protected files. */
+export const WebhookSettings = Schema.Struct({
+  port: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })),
+  hooks: Schema.Array(
+    Schema.Struct({
+      id: ConfigText.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,64}$/)),
+      secretFile: ConfigText,
+      prompt: ConfigText.check(Schema.makeFilter((text) => Buffer.byteLength(text) <= 8192)),
+      provider: ProviderId,
+      model: ConfigText.check(Schema.makeFilter((text) => Buffer.byteLength(text) <= 1024)),
+      delivery: Schema.optionalKey(
+        Schema.Struct({
+          adapter: ConfigText,
+          conversationId: Schema.NullOr(ConfigText),
+        }),
+      ),
+    }),
+  ).check(
+    Schema.makeFilter((hooks) => new Set(hooks.map((hook) => hook.id)).size === hooks.length),
+  ),
+});
+
 const FileSettings = Schema.Struct({
   discord: Schema.optionalKey(DiscordConfiguration),
+  webhooks: Schema.optionalKey(WebhookSettings),
   applicationName: Schema.optionalKey(ConfigText),
   provider: Schema.optionalKey(ConfigText),
   model: Schema.optionalKey(ConfigText),
@@ -100,6 +124,7 @@ export const loadConfigSource = Effect.gen(function* () {
     mcpServers: mcpFileValue(file.mcpServers, directory),
     gatewayPackages:
       file.gatewayPackages === undefined ? undefined : JSON.stringify(file.gatewayPackages),
+    webhooks: file.webhooks === undefined ? undefined : JSON.stringify(file.webhooks),
     catchUpMinutes: file.tasks?.catchUpMinutes,
     logReasoning: file.chat?.logReasoning,
     logTimings: file.chat?.logTimings,

@@ -33,7 +33,7 @@ export const latestTime = (schedule: Schedule, atOrBefore: number) =>
 
 export const taskRecords = (sql: SqlClient.SqlClient) => {
   const tasks = sql`SELECT id, name, prompt, provider, model, workload, schedule, revision, skill,
-    destination, next_at, paused, created_at FROM jobs`;
+    destination, next_at, paused, created_at, source FROM jobs`;
 
   const occurrences = sql`SELECT id, job_id, scheduled_at, status, revision, definition,
     available_at, origin, destination, session_id, run_id, finished_at, reason

@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { mcpServers } from "@poppet/mcp/config";
-import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
+import { Config, ConfigProvider, Context, Effect, Option, Schema } from "effect";
 
 import {
   browserSettings,
   loadConfig,
   taskCatchUpMinutes,
+  webhookSettings,
   webSearchEnabled,
   webSearchProvider,
 } from "#src/config";
@@ -47,6 +48,18 @@ describe("loadConfigSource", () => {
         model: "file-model",
         webSearch: true,
         webSearchProvider: "kagi",
+        webhooks: {
+          port: 8787,
+          hooks: [
+            {
+              id: "deploy",
+              secretFile: "secrets/deploy",
+              prompt: "Summarize",
+              provider: "test-provider",
+              model: "test-model",
+            },
+          ],
+        },
         tasks: { catchUpMinutes: 15 },
         chat: { outputTokens: 4096 },
         browser: { enabled: true, command: "bin/browser", allowedDomains: ["example.com"] },
@@ -91,6 +104,7 @@ describe("loadConfigSource", () => {
         Effect.all({
           search: webSearchEnabled,
           provider: webSearchProvider,
+          webhooks: webhookSettings,
           catchUp: taskCatchUpMinutes,
           browser: browserSettings,
           mcp: mcpServers,
@@ -108,6 +122,7 @@ describe("loadConfigSource", () => {
         browser: { command: join(directory, "bin/browser") },
         mcp: [{ cwd: join(directory, "local") }],
       });
+      expect(Option.getOrNull(resolved.webhooks)).toEqual(file.webhooks);
       expect(JSON.stringify(loaded.source)).not.toContain("secret-key");
     } finally {
       await rm(directory, { recursive: true, force: true });

@@ -4,6 +4,7 @@ import { Config, Context, Effect, Layer, Option, Schema } from "effect";
 import {
   ConfigSourceLive,
   ConfigText,
+  WebhookSettings,
   dataDirectory as configuredDataDirectory,
 } from "#src/source";
 
@@ -80,3 +81,8 @@ export const makeAppConfigLive = (
   Layer.effect(AppConfig, loadConfig(defaultProvider, providers)).pipe(
     Layer.provideMerge(ConfigSourceLive),
   );
+
+export const webhookSettings = Config.schema(
+  Schema.fromJsonString(WebhookSettings),
+  "webhooks",
+).pipe(Config.option);

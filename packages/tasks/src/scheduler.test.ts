@@ -122,6 +122,34 @@ const fixture = async (
 };
 
 describe.concurrent("makeTaskWorker", () => {
+  test("accepted webhook tasks execute with webhook restrictions and save their output", async () => {
+    const state = await fixture((request) => {
+      expect(request.instructions).toContain("triggered by an external webhook");
+      expect(request.tools.map((tool) => tool.name)).not.toContain("manage_tasks");
+
+      return final();
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const receipt = yield* repo.acceptWebhook("deploy", "event", "digest", state.task, 0);
+          const occurrence = (yield* repo.claim(0))!;
+          yield* executeOccurrence(repo, occurrence);
+          const saved = yield* repo.occurrence(occurrence.id);
+          expect(saved.status).toBe("completed");
+          expect(saved.jobId).toBe(receipt.taskId!);
+          expect((yield* (yield* Store).run(saved.runId!))?.result?.output).toEqual([
+            { type: "text", text: "Acorn summary" },
+          ]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when worker controls queue immediate execution, preserves snapshots and uses the scheduled tool restrictions", async () => {
     const state = await fixture(() => final());
 
