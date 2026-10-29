@@ -170,19 +170,32 @@ describe("main.ts", () => {
   });
 
   // Two sequential CLI startups need headroom when CI runs process tests concurrently.
-  test.concurrent("when channel setup reads stdin, bounds and saves the token without printing it", async () => {
+  test.concurrent("when channel setup receives flags, validates and saves the token without printing it", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-channel-input-"));
-    const args = ["gateway", "discord", "setup", "200", "300", "400", "--key-stdin"];
+
+    const args = [
+      "gateway",
+      "discord",
+      "setup",
+      "--owner-id",
+      "200",
+      "--guild-id",
+      "300",
+      "--home-channel-id",
+      "400",
+      "--bot-token",
+    ];
+
     const environment = { POPPET_DATA_DIR: directory };
 
     try {
-      const result = await invokeProcess(args, environment, "x".repeat(8195));
+      const result = await invokeProcess([...args, "x".repeat(8193)], environment);
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain("exceeds 8192 characters");
+      expect(result.stderr).toContain("nonempty bot token without whitespace");
       expect(await readdir(directory)).toEqual([]);
       expect(result.stdout + result.stderr).not.toContain("x".repeat(64));
 
-      const saved = await invokeProcess(args, environment, "discord-test-secret\n");
+      const saved = await invokeProcess([...args, "discord-test-secret"], environment);
       expect(saved.exitCode).toBe(0);
       expect(saved.stdout + saved.stderr).not.toContain("discord-test-secret");
       expect(

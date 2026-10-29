@@ -209,12 +209,12 @@ is running. Use `--to <gateway>` to deliver to that gateway's home channel, or
 
 ## Messaging
 
-| Command                                                                     | Action                                                   |
-| --------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `gateway discord setup <owner-id> <guild-id> <home-channel-id> --key-stdin` | Save Discord settings and read the bot token from stdin. |
+| Command                                                                                            | Action                                   |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `gateway discord setup --owner-id <id> --guild-id <id> --home-channel-id <id> --bot-token <token>` | Save Discord settings and the bot token. |
 
 See [Discord](gateways/discord.md) for setup, conversation behavior,
-controls, and uncertain deliveries. The bot token is never accepted as a command-line argument.
+controls, and uncertain deliveries. Use `poppet setup` for masked token entry.
 
 ## Worker
 

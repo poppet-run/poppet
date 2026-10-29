@@ -18,36 +18,19 @@ channel access can read replies containing personal memory and conversation cont
 Run `poppet setup` to choose an assistant-capable provider and model, then configure
 Discord with token input masked by asterisks. Reruns can reuse the saved token while editing IDs.
 
-For separate gateway setup, save the bot token through stdin as shown below. The
-token is never accepted as an argument.
-
-Bash / POSIX sh:
+For separate gateway setup, pass the Discord settings as named flags. All four
+flags are required and can appear in any order. This command works in Bash,
+POSIX sh, and fish:
 
 ```sh
-(
-    saved_tty=$(stty -g) || exit 1
-    trap 'stty "$saved_tty"' 0
-    trap 'exit 1' 1 2 3 15
-    printf '%s' 'Discord bot token: '
-    stty -echo || exit 1
-    IFS= read -r discord_token || exit 1
-    stty "$saved_tty"
-    printf '\n'
-    printf '%s\n' "$discord_token" | poppet gateway discord setup <your-user-id> <server-id> <home-channel-id> --key-stdin
-)
+poppet gateway discord setup --owner-id <your-user-id> --guild-id <server-id> --home-channel-id <home-channel-id> --bot-token <bot-token>
 poppet worker run
 ```
 
-fish:
+Use `poppet setup` for masked token entry without putting the token in command
+arguments or shell history.
 
-```fish
-read --silent --prompt-str 'Discord bot token: ' discord_token
-printf '%s\n' $discord_token | poppet gateway discord setup <your-user-id> <server-id> <home-channel-id> --key-stdin
-set -e discord_token
-poppet worker run
-```
-
-Replace the angle-bracket placeholders with Discord IDs before running the
+Replace the angle-bracket placeholders with Discord IDs and the bot token before running the
 setup command. The home channel receives proactive messages and is the default
 destination for scheduled results. It does not restrict where you can use the bot. Ordinary
 settings are merged into the `discord` section of `config.json`. The token stays in `<POPPET_DATA_DIR>/channels/discord.json`, protected with `0600`
