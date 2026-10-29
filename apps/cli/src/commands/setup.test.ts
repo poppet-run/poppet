@@ -251,12 +251,24 @@ describe("setup", () => {
     const f = await fixture();
     f.state.connected = true;
     await Effect.runPromise(
-      channels[0]!.setup(["setup", "200", "300", "400", "--key-stdin"]).pipe(
-        Effect.provideService(ChannelEnvironment, { dataDirectory: f.directory }),
-        Effect.provideService(ChannelInput, {
-          readSecret: Effect.succeed(Redacted.make("saved-secret")),
-        }),
-      ),
+      channels[0]!
+        .setup([
+          "setup",
+          "--owner-id",
+          "200",
+          "--guild-id",
+          "300",
+          "--home-channel-id",
+          "400",
+          "--bot-token",
+          "saved-secret",
+        ])
+        .pipe(
+          Effect.provideService(ChannelEnvironment, { dataDirectory: f.directory }),
+          Effect.provideService(ChannelInput, {
+            readSecret: Effect.die("Setup must not read stdin"),
+          }),
+        ),
     );
     expect(
       await f.run([
