@@ -121,7 +121,7 @@ already have posted them. Use the session ID and `chat show <session>` to inspec
 the saved answer before manually reposting it. No reply is redirected to another
 channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#deliver-results-to-discord) default to the home
 channel with `--channel discord`. Add `--conversation <channel-or-thread-id>` to
-select another destination. Use the combined worker to execute and deliver
+select another destination. Use the worker to execute and deliver
 them. Scheduled results use the same queue and do not alter thread sessions.
 Discord is the only bundled adapter. Additional adapters can use the
 [external package contract](../development.md#adding-a-channel).
@@ -151,7 +151,7 @@ thread's request ran, two simultaneous requests shared one ChatGPT account,
 replies within one thread stayed in order, and cancelling one thread left
 another running.
 
-See [worker modes](../worker.md#foreground-modes) to run messaging with scheduling or install the combined login worker.
+See [worker documentation](../worker.md#foreground-worker) to run messaging with scheduling or install the login worker.
 
 ## Thread names
 

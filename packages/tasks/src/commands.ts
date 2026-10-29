@@ -100,8 +100,7 @@ export const executeTaskCommand = (
         if (resolver === null)
           return yield* Effect.fail(
             new TaskError({
-              message:
-                "Start worker run without --tasks-only before selecting a messaging destination.",
+              message: "Start worker run before selecting a messaging destination.",
             }),
           );
 

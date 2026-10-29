@@ -416,7 +416,7 @@ describe("makeCLI", () => {
     }
   });
 
-  test("when prompts are missing or task IDs are invalid, rejects arguments before opening the store", async () => {
+  test("when prompts, task IDs, or worker flags are invalid, rejects arguments before opening the store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-invalid-"));
 
     try {
@@ -433,6 +433,9 @@ describe("makeCLI", () => {
       const invalid = await invoke(["tasks", "show", "bad/id"], environment);
       expect(invalid.exitCode).toBe(1);
       expect(invalid.stderr).toContain("argument <task>");
+      const removedFlag = await invoke(["worker", "run", "--tasks-only"], environment);
+      expect(removedFlag.exitCode).toBe(1);
+      expect(removedFlag.stderr).toContain("--tasks-only");
       expect(await readdir(directory)).toEqual(["config.json"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -495,16 +498,13 @@ describe("makeCLI", () => {
       POPPET_DATA_DIR: directory,
     };
 
-    const worker = Bun.spawn(
-      [process.execPath, "apps/cli/src/main.ts", "worker", "run", "--tasks-only"],
-      {
-        cwd: fileURLToPath(new URL("../../..", import.meta.url)),
-        env: environment,
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
+    const worker = Bun.spawn([process.execPath, "apps/cli/src/main.ts", "worker", "run"], {
+      cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+      env: environment,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
     const errors = new Response(worker.stderr).text();
 
@@ -622,23 +622,20 @@ describe("makeCLI", () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-cli-"));
     const environment = { PATH: process.env.PATH ?? "", POPPET_DATA_DIR: directory };
 
-    const worker = Bun.spawn(
-      [process.execPath, "apps/cli/src/main.ts", "worker", "run", "--tasks-only"],
-      {
-        cwd: fileURLToPath(new URL("../../..", import.meta.url)),
-        env: environment,
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
+    const worker = Bun.spawn([process.execPath, "apps/cli/src/main.ts", "worker", "run"], {
+      cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+      env: environment,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
     const errors = new Response(worker.stderr).text();
 
     try {
       const ready = await worker.stdout.getReader().read();
       expect(new TextDecoder().decode(ready.value)).toContain("Worker running.");
-      const second = await invoke(["worker", "run", "--tasks-only"], environment);
+      const second = await invoke(["worker", "run"], environment);
       expect(second.exitCode).toBe(1);
       expect(second.stderr).toContain("Another Poppet process has the store open");
 
@@ -678,7 +675,12 @@ describe("makeCLI", () => {
         running: true,
         pid: worker.pid,
         taskCount: 1,
-        services: { tasks: true, gateway: false },
+        services: { tasks: true, gateway: true },
+        messaging: {
+          running: true,
+          enabled: false,
+          channels: [{ id: "discord", enabled: false }],
+        },
         connections: [
           {
             provider: "openai-chatgpt",
@@ -824,7 +826,7 @@ describe("makeCLI", () => {
       );
 
       expect(rejected.exitCode).toBe(1);
-      expect(rejected.stderr).toContain("Start worker run without --tasks-only");
+      expect(rejected.stderr).toContain("Start worker run");
       expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
 
       const local = await invoke(

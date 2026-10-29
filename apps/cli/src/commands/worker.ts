@@ -7,7 +7,6 @@ import { Command } from "effect/cli";
 
 import { stoppedMessagingStatus } from "#src/channels";
 import type { CLIContext } from "#src/commands/context";
-import { booleanFlag } from "#src/commands/flags";
 
 export const workerCommand = (context: CLIContext) => {
   const { runtime, worker, startWorker, channels } = context;
@@ -70,13 +69,9 @@ export const workerCommand = (context: CLIContext) => {
   return Command.make("worker").pipe(
     Command.withDescription("Run and manage the background worker"),
     Command.withSubcommands([
-      Command.make(
-        "run",
-        {
-          tasksOnly: booleanFlag("tasks-only", "Run scheduling without messaging"),
-        },
-        ({ tasksOnly }) => startWorker(tasksOnly ? "tasks" : "all"),
-      ).pipe(Command.withDescription("Run scheduling and messaging in one foreground worker")),
+      Command.make("run", {}, () => startWorker()).pipe(
+        Command.withDescription("Run scheduling and messaging in one foreground worker"),
+      ),
       ...(["install", "start", "restart", "stop", "status", "logs", "uninstall"] as const).map(
         (action) =>
           Command.make(action, {}, () => runWorkerCommand(action)).pipe(

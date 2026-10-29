@@ -65,7 +65,7 @@ prompts, followed by Discord if selected. Cancellation or a later failure keeps
 completed saves and reports that they remain. Invalid configuration is never
 overwritten. Setup does not run inference or test Discord access.
 
-On macOS, setup offers to install and start the combined worker, start an installed
+On macOS, setup offers to install and start the worker, start an installed
 worker, or explicitly restart a loaded worker. Restarting can interrupt active runs.
 Other platforms get the foreground command. Use the individual provider, gateway,
 and worker commands for scripts; setup has no noninteractive mode.
@@ -217,19 +217,19 @@ controls, and uncertain deliveries. The bot token is never accepted as a command
 
 ## Worker
 
-| Command                     | Action                                                          |
-| --------------------------- | --------------------------------------------------------------- |
-| `worker run [--tasks-only]` | Run scheduling and messaging, or scheduling only.               |
-| `worker install`            | Install and start the login worker.                             |
-| `worker start`              | Start an installed worker.                                      |
-| `worker restart`            | Restart an installed worker, interrupting active work.          |
-| `worker stop`               | Stop it until the next login or explicit start.                 |
-| `worker status`             | Show login service, scheduling, provider, and messaging status. |
-| `worker logs`               | Print the last 64 KiB of worker logs.                           |
-| `worker uninstall`          | Stop and remove login startup, retaining saved data.            |
+| Command            | Action                                                          |
+| ------------------ | --------------------------------------------------------------- |
+| `worker run`       | Run scheduling and configured messaging adapters.               |
+| `worker install`   | Install and start the login worker.                             |
+| `worker start`     | Start an installed worker.                                      |
+| `worker restart`   | Restart an installed worker, interrupting active work.          |
+| `worker stop`      | Stop it until the next login or explicit start.                 |
+| `worker status`    | Show login service, scheduling, provider, and messaging status. |
+| `worker logs`      | Print the last 64 KiB of worker logs.                           |
+| `worker uninstall` | Stop and remove login startup, retaining saved data.            |
 
 See [worker](worker.md) for foreground modes, login lifecycle commands, logs,
 interactive requests, and recovery. `worker status` includes messaging connection,
-queue, and delivery status under `worker.messaging`. Only one worker mode can own a data directory
+queue, and delivery status under `worker.messaging`. Only one worker can own a data directory
 at a time. Commands use the worker while it is running and run locally when it
 is stopped; a lost response does not cause command replay.

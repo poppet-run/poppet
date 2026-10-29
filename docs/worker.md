@@ -2,27 +2,26 @@
 
 [Documentation index](README.md)
 
-## Foreground modes
+## Foreground worker
 
-Choose one foreground mode for a data directory:
+Run scheduling and configured messaging adapters in one foreground worker:
 
 ```sh
-poppet worker run               # Scheduling and messaging
-poppet worker run --tasks-only  # Scheduling only
+poppet worker run
 ```
 
-Both modes own enabled [MCP connections](mcp.md), started lazily on discovery
+The worker owns enabled [MCP connections](mcp.md), started lazily on discovery
 or an eligible agent run and closed on shutdown. CLI discovery uses these same
 connections. `mcp servers` inspects them without starting a process. Restart the
 worker after changing server configuration or to reconnect a failed server.
 
-Both modes own one SQLite connection and serve task, chat, memory, and store-status commands
+The worker owns one SQLite connection and serves task, chat, memory, and store-status commands
 through `store/tasks.sock`, protected by the `0700` store directory and `0600`
 socket. Commands use the worker when it is running and execute locally when it
 is stopped. Inspecting saved data needs no model or provider credentials.
-Task-only mode does not initialize messaging adapters. `worker status`
-reports the host's selected services, and its `worker.messaging` field reports
-whether messaging is running. Only one mode can own a data directory at a time.
+Unconfigured messaging adapters remain disabled. `worker status`
+reports the host's services, and its `worker.messaging` field reports
+whether messaging is running. Only one worker can own a data directory at a time.
 Interactive, scheduled, and messaging model requests share
 [`chat.maxConcurrentRequests`](configuration.md) slots, 3 by default. Requests to one
 session always run one at a time, so a CLI chat sent to a session that a Discord
@@ -49,7 +48,7 @@ closes those resources. Browser tools are omitted from scheduled tasks.
 ## Login startup
 
 On macOS and on Linux with systemd, stop any foreground worker, then install a
-user service to start the combined `worker run` host at login and keep it running
+user service to start the `worker run` host at login and keep it running
 while you are logged in. macOS uses a LaunchAgent in `~/Library/LaunchAgents`.
 Linux uses a systemd user unit in `$XDG_CONFIG_HOME/systemd/user`, or
 `~/.config/systemd/user` when `XDG_CONFIG_HOME` is unset or relative:
@@ -85,8 +84,7 @@ Saved data and credentials are retained.
 
 If an existing installation launches `tasks work`, use `worker uninstall` followed
 by `worker install` once to update it to `worker run`. Saved data and credentials
-are retained. Restarting that old installation alone keeps its saved command and
-now runs scheduling only.
+are retained. Restarting that old installation alone keeps its obsolete command.
 
 API keys are excluded from the service's environment. Save them first with
 `provider login openrouter` or `provider login opencode-go`; ChatGPT uses its existing

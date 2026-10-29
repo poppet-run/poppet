@@ -11,28 +11,21 @@ import { Clock, Console, Effect, Option } from "effect";
 
 import { MessagingWorker } from "#src/channels";
 
-/** Serves commands and runs scheduling, plus messaging when provided, until shutdown closes their shared scope. */
+/** Serves commands and runs scheduling and messaging until shutdown closes their shared scope. */
 export const runWorker = Effect.scoped(
   Effect.gen(function* () {
     const config = yield* AppConfig;
     const commands = yield* WorkerRequests;
     const tasks = yield* makeTaskWorker;
-    const messaging = Option.getOrNull(yield* Effect.serviceOption(MessagingWorker));
+    const messaging = yield* MessagingWorker;
     const deliveries = Option.getOrNull(yield* Effect.serviceOption(TaskDeliveries));
     const startedAt = yield* Clock.currentTimeMillis;
 
     const destinations: TaskDestinations["Service"] = {
       resolve: (adapter, conversationId) =>
-        messaging !== null
-          ? messaging
-              .resolveDestination(adapter, conversationId)
-              .pipe(Effect.mapError((error) => new TaskError({ message: error.message })))
-          : Effect.fail(
-              new TaskError({
-                message:
-                  "Start worker run without --tasks-only before selecting a messaging destination.",
-              }),
-            ),
+        messaging
+          .resolveDestination(adapter, conversationId)
+          .pipe(Effect.mapError((error) => new TaskError({ message: error.message }))),
     };
 
     yield* serveWorker(workerSocketPath(config.dataDirectory), (request, body) => {
@@ -44,22 +37,19 @@ export const runWorker = Effect.scoped(
 
           if (command.action !== "status") return value;
 
-          const messagingStatus =
-            messaging === null
-              ? { running: false, enabled: false, channels: [] }
-              : {
-                  running: true,
-                  ...(yield* messaging.status.pipe(
-                    Effect.mapError((error) => new TaskError({ message: error.message })),
-                  )),
-                };
+          const messagingStatus = {
+            running: true,
+            ...(yield* messaging.status.pipe(
+              Effect.mapError((error) => new TaskError({ message: error.message })),
+            )),
+          };
 
           return {
             ...value,
             running: true,
             pid: process.pid,
             startedAt,
-            services: { tasks: true, gateway: messaging !== null },
+            services: { tasks: true, gateway: true },
             messaging: messagingStatus,
           };
         }).pipe(
@@ -74,7 +64,7 @@ export const runWorker = Effect.scoped(
       "Worker running. Use commands in another terminal; Ctrl-C stops the worker.",
     );
 
-    yield* Effect.all([tasks.run, messaging?.run ?? Effect.never], {
+    yield* Effect.all([tasks.run, messaging.run], {
       concurrency: 2,
       discard: true,
     });

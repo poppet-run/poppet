@@ -736,7 +736,7 @@ The chat runner uses `ModelResolver` to resolve the saved provider/model for eac
 SQLite owns durable records. An Effect queue can wake a worker, but it does not
 replace persisted pending runs or task occurrences. A single owner executes runs
 and refreshes credentials. The neutral worker host uses the store lock and a
-protected Unix socket for commands while its selected services are active.
+protected Unix socket for commands while its services are active.
 
 Store normalized model messages, tool requests, tool results, versioned provider
 continuation data, and each run's provider/model selection. Trimming context must
@@ -820,15 +820,14 @@ validation in addition to injected lifecycle and clock tests.
 ## Worker host
 
 `apps/cli/src/worker-host.ts` owns one scoped runtime and protected listener.
-`worker run` starts scheduling and messaging together, and `worker run --tasks-only` starts only
-scheduling. Both use the same store,
+`worker run` starts scheduling and configured messaging adapters together, sharing the store,
 agent, memory, provider resolver, and command functions. The store lock prevents
-starting another mode against that data directory. No separate processes or
+starting another worker against that data directory. No separate processes or
 cross-process model coordination are introduced.
 
 `makeTaskWorker` exposes scheduling and task commands without opening a socket.
-The host routes task commands to that service. Task-only mode never builds the
-messaging layer. Status includes the selected services and messaging status.
+The host routes task commands to that service and builds the messaging layer.
+Unconfigured adapters remain disabled. Status includes services and messaging status.
 Fatal service failures stop the host and its siblings before storage is released.
 
 `@poppet/worker` owns request protection, body limits, deadlines, disconnect and

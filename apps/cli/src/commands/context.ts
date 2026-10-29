@@ -23,9 +23,9 @@ export const createCLIContext = (
   const runtime = runtimeLayers(registered);
   validateChannels(registeredChannels);
 
-  const startWorker = (mode: "all" | "tasks") => {
+  const startWorker = () => {
     const requests = WorkerRequestsLive.pipe(
-      Layer.provideMerge(mode === "tasks" ? Layer.empty : MessagingWorkerLive(registeredChannels)),
+      Layer.provideMerge(MessagingWorkerLive(registeredChannels)),
       Layer.provideMerge(runtime.tasks),
       Layer.provideMerge(runtime.chat),
     );
