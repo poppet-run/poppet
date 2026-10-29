@@ -202,6 +202,74 @@ describe("makeCLI", () => {
     }
   });
 
+  test("when relative times are supplied, saves absolute times and rejects conflicting schedules before storage", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-relative-tasks-"));
+    const environment = await configure(directory, { model: "saved-model" });
+
+    try {
+      await Array.fromAsync(
+        [
+          ["--in", "0m"],
+          ["--in", "-1m"],
+          ["--in", "1.5h"],
+          ["--in", "1h30m"],
+          ["--in", "99999999999999999999d"],
+          ["--in", "1m", "--at", "2099-10-22T09:00:00Z"],
+          ["--in", "1m", "--cron", "* * * * *", "--tz", "UTC"],
+          ["--in", "1m", "--tz", "UTC"],
+          ["--in", "1m", "--in", "2m"],
+        ],
+        async (flags) => {
+          expect(
+            (await invoke(["tasks", "add", "Invalid", ...flags, "Summary"], environment)).exitCode,
+          ).toBe(1);
+        },
+      );
+
+      expect(await readdir(directory)).toEqual(["config.json"]);
+      const before = Date.now();
+
+      const added = await invoke(
+        ["tasks", "add", "Soon", "--in=1m", "Summary --literal"],
+        environment,
+      );
+
+      expect(added.exitCode).toBe(0);
+      const job = JSON.parse(added.stdout);
+      expect(job.prompt).toBe("Summary --literal");
+      expect(job.schedule.type).toBe("once");
+      expect(job.schedule.at).toBeGreaterThanOrEqual(before + 60_000);
+      expect(job.schedule.at).toBeLessThanOrEqual(Date.now() + 60_000);
+      const snoozeStart = Date.now();
+      const snoozed = await invoke(["tasks", "snooze", job.id, "--for", "1h"], environment);
+      expect(snoozed.exitCode).toBe(0);
+      const receipt = JSON.parse(snoozed.stdout);
+      expect(receipt.scheduledAt).toBe(job.schedule.at);
+      expect(receipt.availableAt).toBeGreaterThanOrEqual(snoozeStart + 3_600_000);
+      expect(receipt.availableAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
+
+      await Array.fromAsync(
+        [
+          [],
+          ["--for", "0m"],
+          ["--for", "1m"],
+          ["--for", "1h", "--until", "2099-10-22T09:00:00Z"],
+          ["--for", "1h", "--for", "2h"],
+        ],
+        async (flags) => {
+          expect((await invoke(["tasks", "snooze", job.id, ...flags], environment)).exitCode).toBe(
+            1,
+          );
+        },
+      );
+
+      const shown = await invoke(["tasks", "show", job.id], environment);
+      expect(JSON.parse(shown.stdout).target.availableAt).toBe(receipt.availableAt);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("when saved tasks are edited, skipped, snoozed, or queued offline, preserves snapshots and cadence", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-controls-cli-"));
     const environment = await configure(directory, { model: "saved-model" });

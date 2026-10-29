@@ -29,21 +29,16 @@ if its environment selects a different model later.
 
 For a quick test, schedule a review of recent conversations one minute from now:
 
-Bash / POSIX sh:
-
-```sh
-when=$(bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
-poppet tasks add summary --at "$when" "Summarize recent conversations"
-poppet worker run
-```
-
-fish:
-
 ```fish
-set when (bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
-poppet tasks add summary --at $when "Summarize recent conversations"
+poppet tasks add summary --in 1m "Summarize recent conversations"
 poppet worker run
 ```
+
+`--in` accepts a positive whole number followed by `s`, `m`, `h`, or `d`.
+For example, `30s`, `10m`, `2h`, or `1d`. A day is exactly 24 elapsed hours.
+The CLI resolves the duration once and saves an absolute time. Use `--at` for
+an exact timestamp, or `--cron` with `--tz` for recurring work. These schedule
+forms cannot be combined.
 
 The worker prints timestamped lifecycle messages for starts, completed or failed
 runs, interruptions, cancellation, skipped intervals, and task/provider pauses and
@@ -73,8 +68,12 @@ poppet tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
 poppet tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
 poppet tasks skip <task-id>
 poppet tasks snooze <task-id> --until 2099-10-22T10:00:00+01:00
+poppet tasks snooze <task-id> --for 1h
 poppet tasks run <task-id>
 ```
+
+Snooze accepts either `--until` or `--for`. A relative snooze is measured from
+now, and must still be later than the selected execution's current ready time.
 
 Edits change only supplied name, prompt, or schedule fields. A cron replacement
 requires both expression and timezone; a one-off replacement requires a future

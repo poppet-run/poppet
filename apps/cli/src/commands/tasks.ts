@@ -6,7 +6,13 @@ import { Argument, Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
 import { codingFlag, skillFlag, textArgument } from "#src/commands/flags";
-import { parseTaskDestination, parseTaskSchedule, prepareTask, runTaskCommand } from "#src/tasks";
+import {
+  parseRelativeTime,
+  parseTaskDestination,
+  parseTaskSchedule,
+  prepareTask,
+  runTaskCommand,
+} from "#src/tasks";
 
 export const tasksCommand = (context: CLIContext) => {
   const { runtime } = context;
@@ -72,25 +78,36 @@ export const tasksCommand = (context: CLIContext) => {
         {
           id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)),
           until: Flag.String("until").pipe(Flag.atMost(1)),
+          duration: Flag.String("for").pipe(
+            Flag.withDescription("Delay until this duration from now, such as 1h"),
+            Flag.atMost(1),
+          ),
         },
-        ({ id, until }) =>
+        ({ id, until, duration }) =>
           Effect.gen(function* () {
             const at = yield* taskOperation(() => {
-              if (until[0] === undefined)
+              if (until.length + duration.length !== 1)
                 throw new TaskError({
-                  message: "Use --until with a future timestamp including Z or an offset.",
+                  message: "Use --until <timestamp> or --for <duration>.",
                 });
 
-              return parseTimestamp(until[0]);
+              return duration[0] !== undefined
+                ? parseRelativeTime(duration[0])
+                : parseTimestamp(until[0]!);
             });
 
             yield* runTaskCommand(runtime, { action: "snooze", id, until: at });
           }),
-      ).pipe(Command.withDescription("Delay the next execution until a later absolute time")),
+      ).pipe(Command.withDescription("Delay the next execution")),
       Command.make(
         "add",
         {
           name: Argument.String("name"),
+          delay: Flag.String("in").pipe(
+            Flag.withDescription("Run once after a duration, such as 10m"),
+            Flag.atMost(1),
+            Flag.map(([value]) => Option.fromUndefinedOr(value)),
+          ),
           at: Flag.String("at").pipe(
             Flag.withDescription("One-off timestamp with timezone"),
             Flag.atMost(1),
@@ -115,9 +132,9 @@ export const tasksCommand = (context: CLIContext) => {
           ),
           prompt: textArgument("prompt"),
         },
-        ({ name, at, cron, tz, coding, prompt, skill, to }) =>
+        ({ name, at, cron, tz, delay, coding, prompt, skill, to }) =>
           Effect.gen(function* () {
-            const schedule = yield* taskOperation(() => parseTaskSchedule(at, cron, tz));
+            const schedule = yield* taskOperation(() => parseTaskSchedule(at, cron, tz, delay));
 
             const delivery = yield* taskOperation(() => parseTaskDestination(to));
 
