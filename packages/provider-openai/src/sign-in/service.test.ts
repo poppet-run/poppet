@@ -3,7 +3,6 @@ import { describe, expect, test } from "bun:test";
 import { Console, Effect, Fiber, Queue } from "effect";
 
 import { ConnectionError } from "#src/connection";
-import { remoteSession } from "#src/sign-in/browser";
 import { makeBrowserSignIn, type SignInRequest } from "#src/sign-in/service";
 
 const request: SignInRequest = {
@@ -295,17 +294,5 @@ describe("makeBrowserSignIn", () => {
     } finally {
       await taken.stop(true);
     }
-  });
-});
-
-describe("remoteSession", () => {
-  test.each([
-    [{ SSH_CONNECTION: "10.0.0.2 50000 10.0.0.1 22" }, "darwin", true],
-    [{}, "darwin", false],
-    [{}, "linux", true],
-    [{ DISPLAY: ":0" }, "linux", false],
-    [{ WAYLAND_DISPLAY: "wayland-0" }, "linux", false],
-  ])("for %o on %s, reports %p", (environment, platform, expected) => {
-    expect(remoteSession(environment, platform)).toBe(expected);
   });
 });

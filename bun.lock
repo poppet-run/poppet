@@ -190,6 +190,7 @@
         "@poppet/credentials": "workspace:*",
         "@poppet/io": "workspace:*",
         "@poppet/provider": "workspace:*",
+        "@poppet/sign-in": "workspace:*",
         "effect": "4.0.4",
         "jose": "6.2.12",
         "openai": "7.32.0",
@@ -213,6 +214,13 @@
         "@poppet/provider": "workspace:*",
         "effect": "4.0.4",
         "openai": "7.32.0",
+      },
+    },
+    "packages/sign-in": {
+      "name": "@poppet/sign-in",
+      "version": "0.0.0",
+      "dependencies": {
+        "effect": "4.0.4",
       },
     },
     "packages/store": {
@@ -395,6 +403,8 @@
     "@poppet/provider-opencode": ["@poppet/provider-opencode@workspace:packages/provider-opencode"],
 
     "@poppet/provider-openrouter": ["@poppet/provider-openrouter@workspace:packages/provider-openrouter"],
+
+    "@poppet/sign-in": ["@poppet/sign-in@workspace:packages/sign-in"],
 
     "@poppet/store": ["@poppet/store@workspace:packages/store"],
 

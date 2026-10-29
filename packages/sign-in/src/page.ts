@@ -1,8 +1,9 @@
-export const callbackResponse = (accepted: boolean) => {
+/** The page a browser shows after its callback; `received` tells the owner what happens next. */
+export const callbackResponse = (accepted: boolean, received: string) => {
   const title = accepted ? "Authorization received" : "Sign-in could not be completed";
 
   const message = accepted
-    ? "Return to your terminal while Poppet finishes checking your identity and ChatGPT permissions."
+    ? received
     : "Return to your terminal for details, then start a new sign-in when you're ready.";
 
   return new Response(

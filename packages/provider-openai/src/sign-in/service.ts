@@ -1,8 +1,18 @@
-import { Console, Context, Effect, Layer } from "effect";
+import { createHash, randomBytes } from "node:crypto";
+
+import { authorizeInBrowser, openBrowser, remoteSession, startCallback } from "@poppet/sign-in";
+import { Context, Effect, Layer, Redacted } from "effect";
 
 import { ConnectionError, requestedScopes, resource } from "#src/connection";
-import { openBrowser, remoteSession } from "#src/sign-in/browser";
-import { type Authorization, startCallback } from "#src/sign-in/callback";
+
+/** A validated browser callback plus the local verifier needed for the code exchange. */
+export interface Authorization {
+  readonly code: Redacted.Redacted<string>;
+  readonly verifier: Redacted.Redacted<string>;
+  readonly nonce: string;
+  readonly clientId: string;
+  readonly redirectUri: string;
+}
 
 /** Browser authorization settings; a null clientId requests a new client registration. */
 export interface SignInRequest {
@@ -31,7 +41,7 @@ export class BrowserSignIn extends Context.Service<
 >()("poppet/BrowserSignIn") {}
 
 export const makeBrowserSignIn = (
-  open: (url: string) => Effect.Effect<void, ConnectionError>,
+  open: (url: string) => Effect.Effect<void, unknown>,
   timeoutMs = 300_000,
   // True when the system browser would open on another machine or nowhere.
   remote = false,
@@ -41,7 +51,38 @@ export const makeBrowserSignIn = (
     // browser. Success, failure, timeout, and interruption all close it.
     Effect.scoped(
       Effect.gen(function* () {
-        const callback = yield* startCallback(request.clientId, request.callbackPort);
+        // Nonce links the ID token to this attempt. PKCE later proves that the code
+        // exchange holds this verifier.
+        const nonce = randomBytes(32).toString("base64url");
+        const verifier = randomBytes(64).toString("base64url");
+        const selected = request.clientId;
+
+        const callback = yield* startCallback({
+          port: request.callbackPort,
+          service: "ChatGPT",
+          received:
+            "Return to your terminal while Poppet finishes checking your identity and ChatGPT permissions.",
+          accept: (code, parameters, redirectUri): Authorization | null => {
+            const clientId = parameters.get("client_id") ?? selected;
+
+            if (
+              parameters.getAll("client_id").length > 1 ||
+              !clientId ||
+              clientId === "dynamic_agent_client" ||
+              (selected !== null && clientId !== selected)
+            )
+              return null;
+
+            return {
+              code: Redacted.make(code),
+              verifier: Redacted.make(verifier),
+              nonce,
+              clientId,
+              redirectUri,
+            };
+          },
+        });
+
         const url = new URL(request.endpoint);
         url.search = new URLSearchParams({
           // The first sign-in asks for a registration. Later attempts reuse the
@@ -53,9 +94,9 @@ export const makeBrowserSignIn = (
           scope: requestedScopes,
           resource,
           state: callback.state,
-          nonce: callback.nonce,
+          nonce,
           code_challenge_method: "S256",
-          code_challenge: callback.challenge,
+          code_challenge: createHash("sha256").update(verifier).digest("base64url"),
         }).toString();
 
         if (request.clientId === null)
@@ -63,55 +104,19 @@ export const makeBrowserSignIn = (
 
         if (request.consent) url.searchParams.set("prompt", "consent");
 
-        if (!request.noBrowser && !remote) {
-          yield* Console.log(
-            `Continue with ChatGPT:\n${url.toString()}\nWaiting for the browser callback. Press Ctrl+C to cancel.`,
-          );
-          yield* open(url.toString()).pipe(
-            Effect.catch(() =>
-              Console.error("Could not open the system browser. Open the sign-in link above."),
-            ),
-          );
-
-          return yield* callback.authorization;
-        }
-
-        yield* Console.log(
-          `Open this link in a browser on any device to continue with ChatGPT:\n${url.toString()}\n` +
-            `If that browser then shows an error page for ${callback.redirectUri}, copy the full address from its address bar and paste it here.`,
-        );
-
-        // Keep reading until a pasted URL completes the attempt. A forwarded
-        // browser callback can still finish first and interrupts the prompt.
-        const pasted = Effect.gen(function* () {
-          while (true) {
-            const line = yield* request.paste;
-
-            if (line.trim() === "") continue;
-
-            if (callback.submitPasted(line).completed) return;
-            yield* Console.error(
-              "That address does not match this sign-in. Paste the full address from the browser after signing in.",
-            );
-          }
+        return yield* authorizeInBrowser(callback, url.toString(), {
+          service: "ChatGPT",
+          noBrowser: request.noBrowser,
+          remote,
+          paste: request.paste,
+          open,
+          timeoutMs,
         });
-
-        return yield* Effect.raceFirst(
-          callback.authorization,
-          pasted.pipe(Effect.andThen(callback.authorization)),
-        );
       }),
     ).pipe(
-      Effect.timeoutOrElse({
-        duration: timeoutMs,
-        orElse: () =>
-          Effect.fail(
-            new ConnectionError({
-              reason: "callback",
-              message: "Sign-in timed out. Start a new sign-in.",
-            }),
-          ),
-      }),
+      Effect.catchTag("SignInError", (error) =>
+        Effect.fail(new ConnectionError({ reason: error.reason, message: error.message })),
+      ),
     ),
 });
 

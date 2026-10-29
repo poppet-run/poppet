@@ -1,34 +1,45 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
-import { Deferred, Effect, Redacted } from "effect";
+import { Deferred, Effect } from "effect";
 
-import { ConnectionError } from "#src/connection";
-import { callbackResponse } from "#src/sign-in/page";
-
-/** A validated browser callback plus the local verifier needed for the code exchange. */
-export interface Authorization {
-  readonly code: Redacted.Redacted<string>;
-  readonly verifier: Redacted.Redacted<string>;
-  readonly nonce: string;
-  readonly clientId: string;
-  readonly redirectUri: string;
-}
+import { SignInError } from "#src/errors";
+import { callbackResponse } from "#src/page";
 
 /** How a callback ended the attempt, or why it was ignored so a valid one can still arrive. */
 export type CallbackOutcome =
   | { readonly completed: true; readonly accepted: boolean }
   | { readonly completed: false; readonly status: 400 | 404 | 410; readonly message: string };
 
-export const startCallback = (selectedClientId: string | null, port: number | null) =>
+export interface CallbackOptions<A> {
+  /** A fixed listener port for SSH forwarding; null picks any free port. */
+  readonly port: number | null;
+  /** Names the service in the declined-sign-in message. */
+  readonly service: string;
+  /** Shown by the browser once the callback is accepted. */
+  readonly received: string;
+  /**
+   * Completes the attempt from a callback that carries this attempt's state and exactly one
+   * code. Null rejects it, for example when service-specific parameters are invalid.
+   */
+  readonly accept: (code: string, parameters: URLSearchParams, redirectUri: string) => A | null;
+}
+
+/** A loopback callback listener for one authorization attempt, owned by the caller's scope. */
+export interface Callback<A> {
+  readonly state: string;
+  readonly redirectUri: string;
+  /** Checks a callback URL copied from a browser that could not reach the listener. */
+  readonly submitPasted: (pasted: string) => CallbackOutcome;
+  readonly authorization: Effect.Effect<A, SignInError>;
+}
+
+export const startCallback = <A>(options: CallbackOptions<A>) =>
   Effect.gen(function* () {
-    // State links the callback to this attempt; nonce does the same for the ID
-    // token. PKCE later proves that the code exchange holds this verifier.
+    // State links the callback to this attempt.
     const state = randomBytes(32).toString("base64url");
-    const nonce = randomBytes(32).toString("base64url");
-    const verifier = randomBytes(64).toString("base64url");
     // The listener or a pasted callback URL completes this Deferred once,
     // allowing the sign-in Effect to wait for either without polling.
-    const result = yield* Deferred.make<Authorization, ConnectionError>();
+    const result = yield* Deferred.make<A, SignInError>();
     let consumed = false;
 
     // Both callback sources share these checks. The origin is the one the
@@ -45,7 +56,7 @@ export const startCallback = (selectedClientId: string | null, port: number | nu
 
       const reject = (message: string, reason: "callback" | "denied" = "callback") => {
         consumed = true;
-        Deferred.doneUnsafe(result, Effect.fail(new ConnectionError({ reason, message })));
+        Deferred.doneUnsafe(result, Effect.fail(new SignInError({ reason, message })));
 
         return { completed: true, accepted: false } as const;
       };
@@ -59,33 +70,23 @@ export const startCallback = (selectedClientId: string | null, port: number | nu
         return { completed: false, status: 400, message: "Invalid sign-in state." };
 
       if (callback.searchParams.has("error"))
-        return reject("ChatGPT sign-in was declined or could not be completed.", "denied");
+        return reject(
+          `${options.service} sign-in was declined or could not be completed.`,
+          "denied",
+        );
 
       const code = callback.searchParams.get("code");
-      const returnedClientId = callback.searchParams.get("client_id");
-      const clientId = returnedClientId ?? selectedClientId;
 
-      if (
-        !code ||
-        callback.searchParams.getAll("code").length !== 1 ||
-        callback.searchParams.getAll("client_id").length > 1 ||
-        !clientId ||
-        clientId === "dynamic_agent_client" ||
-        (selectedClientId !== null && clientId !== selectedClientId)
-      )
+      const accepted =
+        code && callback.searchParams.getAll("code").length === 1
+          ? options.accept(code, callback.searchParams, `${origin}/auth/callback`)
+          : null;
+
+      if (accepted === null)
         return reject("The sign-in callback had an invalid code or registration.");
 
       consumed = true;
-      Deferred.doneUnsafe(
-        result,
-        Effect.succeed({
-          code: Redacted.make(code),
-          verifier: Redacted.make(verifier),
-          nonce,
-          clientId,
-          redirectUri: `${origin}/auth/callback`,
-        }),
-      );
+      Deferred.doneUnsafe(result, Effect.succeed(accepted));
 
       return { completed: true, accepted: true };
     };
@@ -95,7 +96,7 @@ export const startCallback = (selectedClientId: string | null, port: number | nu
         try: () =>
           Bun.serve({
             hostname: "127.0.0.1",
-            port: port ?? 0,
+            port: options.port ?? 0,
             fetch: (httpRequest, listener) => {
               const headers = {
                 "Cache-Control": "no-store",
@@ -109,17 +110,17 @@ export const startCallback = (selectedClientId: string | null, port: number | nu
               const outcome = submit(new URL(httpRequest.url), `http://127.0.0.1:${listener.port}`);
 
               return outcome.completed
-                ? callbackResponse(outcome.accepted)
+                ? callbackResponse(outcome.accepted, options.received)
                 : new Response(outcome.message, { status: outcome.status, headers });
             },
           }),
         catch: () =>
-          new ConnectionError({
+          new SignInError({
             reason: "callback",
             message:
-              port === null
+              options.port === null
                 ? "Could not start the local sign-in callback listener."
-                : `Could not listen for the sign-in callback on 127.0.0.1:${port}. Choose another callback port.`,
+                : `Could not listen for the sign-in callback on 127.0.0.1:${options.port}. Choose another callback port.`,
           }),
       }),
       // Drain the callback response before releasing the listener. Force-closing
@@ -131,10 +132,7 @@ export const startCallback = (selectedClientId: string | null, port: number | nu
 
     return {
       state,
-      nonce,
       redirectUri: `${origin}/auth/callback`,
-      challenge: createHash("sha256").update(verifier).digest("base64url"),
-      /** Checks a callback URL copied from a browser that could not reach the listener. */
       submitPasted: (pasted: string) => {
         const callback = URL.parse(pasted.trim());
 
@@ -143,5 +141,5 @@ export const startCallback = (selectedClientId: string | null, port: number | nu
           : submit(callback, origin);
       },
       authorization: Deferred.await(result),
-    };
+    } satisfies Callback<A>;
   });

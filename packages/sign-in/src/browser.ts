@@ -1,9 +1,9 @@
 import { Effect } from "effect";
 
-import { ConnectionError } from "#src/connection";
+import { SignInError } from "#src/errors";
 
 const browserError = () =>
-  new ConnectionError({ reason: "callback", message: "Could not open the system browser." });
+  new SignInError({ reason: "callback", message: "Could not open the system browser." });
 
 export const openBrowser = (url: string) =>
   Effect.scoped(
