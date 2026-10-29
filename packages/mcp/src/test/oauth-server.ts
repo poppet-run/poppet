@@ -19,6 +19,10 @@ const inputSchema = {
 export interface OAuthFixtureOptions {
   /** Metadata reports this issuer instead of the server's own address. */
   issuer?: string;
+  /** Advertise non-default metadata and issuer paths only through the challenge. */
+  customDiscovery?: boolean;
+  /** Issue access tokens without refresh tokens. */
+  noRefreshToken?: boolean;
   /** Access tokens expire at the resource server after this many tool calls. */
   tokenUses?: number;
   /** Refresh responses fail with this OAuth error code. */
@@ -48,13 +52,16 @@ export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
     access.set(accessToken, 0);
     refresh.add(refreshToken);
 
-    return Response.json({
+    const issued = {
       access_token: accessToken,
       token_type: "Bearer",
       expires_in: 3600,
-      refresh_token: refreshToken,
       scope: "read",
-    });
+    };
+
+    return Response.json(
+      options.noRefreshToken ? issued : { ...issued, refresh_token: refreshToken },
+    );
   };
 
   const server = Bun.serve({
@@ -66,21 +73,32 @@ export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
       const authorization = request.headers.get("authorization");
       events.push({ path: url.pathname, authorization });
 
-      if (url.pathname === "/.well-known/oauth-protected-resource/mcp")
-        return Response.json({ resource: `${origin}/mcp`, authorization_servers: [`${origin}/`] });
+      const metadataPath = options.customDiscovery
+        ? "/custom-resource"
+        : "/.well-known/oauth-protected-resource/mcp";
 
-      if (url.pathname === "/.well-known/oauth-authorization-server")
+      const issuer = options.customDiscovery ? `${origin}/auth` : `${origin}/`;
+
+      if (url.pathname === metadataPath)
+        return Response.json({ resource: `${origin}/mcp`, authorization_servers: [issuer] });
+
+      if (
+        url.pathname ===
+        (options.customDiscovery
+          ? "/.well-known/oauth-authorization-server/auth"
+          : "/.well-known/oauth-authorization-server")
+      )
         return Response.json({
-          issuer: options.issuer ?? `${origin}/`,
+          issuer: options.issuer ?? issuer,
           authorization_endpoint: `${origin}/authorize`,
           token_endpoint: `${origin}/token`,
-          registration_endpoint: `${origin}/register`,
+          registration_endpoint: `${origin}${options.customDiscovery ? "/custom-register" : "/register"}`,
           response_types_supported: ["code"],
           code_challenge_methods_supported: ["S256"],
           grant_types_supported: ["authorization_code", "refresh_token"],
         });
 
-      if (url.pathname === "/register") {
+      if (url.pathname === (options.customDiscovery ? "/custom-register" : "/register")) {
         const metadata = Schema.decodeUnknownSync(
           Schema.Struct({ redirect_uris: Schema.Array(Schema.String) }),
         )(await request.json());
@@ -146,7 +164,7 @@ export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
         return new Response(null, {
           status: 401,
           headers: {
-            "www-authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
+            "www-authenticate": `Bearer resource_metadata="${origin}${metadataPath}"`,
           },
         });
 

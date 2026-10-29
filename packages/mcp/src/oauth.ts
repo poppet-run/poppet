@@ -1,5 +1,6 @@
 import {
   auth,
+  extractWWWAuthenticateParams,
   type AuthOptions,
   type AuthProvider,
   type FetchLike,
@@ -351,6 +352,25 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
           },
         });
 
+      // Ask the resource itself before falling back to well-known discovery. Never
+      // forward endpoint credentials or follow redirects to an authorization server.
+      const challenge = yield* Effect.tryPromise({
+        try: async (signal) => {
+          const response = await fetchFn(config.url, {
+            method: "GET",
+            redirect: "manual",
+            signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+            headers: { Accept: "application/json, text/event-stream" },
+          });
+
+          const parameters = response.status === 401 ? extractWWWAuthenticateParams(response) : {};
+          await response.body?.cancel();
+
+          return parameters;
+        },
+        catch: failure,
+      });
+
       yield* signIns.update(config.id, (saved) =>
         Effect.tryPromise({
           try: async () => {
@@ -363,8 +383,20 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
             )
               delete record.client;
 
+            const authorization = authOptions(config, fetchFn);
+
+            if (challenge.resourceMetadataUrl !== undefined) {
+              authorization.resourceMetadataUrl = challenge.resourceMetadataUrl;
+
+              if (record.discovery?.resourceMetadataUrl !== challenge.resourceMetadataUrl.href)
+                delete record.discovery;
+            }
+
+            if (authorization.scope === undefined && challenge.scope !== undefined)
+              authorization.scope = challenge.scope;
+
             const result = await auth(provider(record), {
-              ...authOptions(config, fetchFn),
+              ...authorization,
               forceReauthorization: true,
             });
 
@@ -462,6 +494,16 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
             return current;
           }
 
+          if (latest?.refresh_token === undefined) {
+            state.loginRequired = true;
+
+            if (current === null || current.url !== config.url) return current;
+            delete record.tokens;
+            delete record.tokensSavedAt;
+
+            return record;
+          }
+
           const provider = makeProvider(
             config,
             record,
@@ -499,7 +541,19 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
     );
 
     const authProvider: AuthProvider = {
-      token: () => Promise.resolve(token),
+      token: async () => {
+        const current = await Effect.runPromise(signIns.read(config.id));
+        const latest = current?.url === config.url ? accessToken(current) : null;
+
+        if (latest === null || state.loginRequired) {
+          state.loginRequired = true;
+          throw required(config.id, "sign-in required.");
+        }
+
+        token = latest.access_token;
+
+        return token;
+      },
       onUnauthorized: async () => {
         await Effect.runPromise(refresh);
 
