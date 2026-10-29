@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import { Schema } from "effect";
 
+import { serveOAuth } from "../../../packages/mcp/src/test/oauth-server";
+
 const invoke = async (directory: string, args: ReadonlyArray<string>, input: string | null) => {
   const subprocess = Bun.spawn([process.execPath, "apps/cli/src/main.ts", ...args], {
     cwd: fileURLToPath(new URL("../../..", import.meta.url)),
@@ -188,6 +190,80 @@ describe("mcp add and remove", () => {
       expect(added.output).toContain("requires OAuth sign-in");
       expect(added.output).toContain("No tools are allowed yet");
       expect((await state.config()).mcpServers).toHaveLength(1);
+    } finally {
+      await server.stop();
+      await state.close();
+    }
+  });
+
+  test.concurrent("when an OAuth server is added, signs in through the printed link and later signs out and forgets the sign-in", async () => {
+    const state = await harness();
+    const server = serveOAuth();
+
+    try {
+      const subprocess = Bun.spawn(
+        [
+          process.execPath,
+          "apps/cli/src/main.ts",
+          "mcp",
+          "add",
+          "remote",
+          "--url",
+          server.url,
+          "--auth",
+          "oauth",
+          "--no-browser",
+          "--tool",
+          "read",
+        ],
+        {
+          cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+          env: { PATH: process.env.PATH ?? "", POPPET_DATA_DIR: state.directory },
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+
+      // Without a terminal nothing can be pasted, so the consenting browser reaches the listener.
+      let output = "";
+      let approved = false;
+      const decoder = new TextDecoder();
+      const reader = subprocess.stdout.getReader();
+
+      while (true) {
+        // oxlint-disable-next-line no-await-in-loop
+        const { done, value } = await reader.read();
+
+        if (done) break;
+        output += decoder.decode(value);
+        const link = /http:\/\/127\.0\.0\.1:\d+\/authorize\?\S+/.exec(output)?.[0];
+
+        if (link !== undefined && !approved) {
+          approved = true;
+          // oxlint-disable-next-line no-await-in-loop
+          await fetch(await server.approve(new URL(link)));
+        }
+      }
+
+      expect(await subprocess.exited).toBe(0);
+      expect(output).toContain("Signed in to MCP server remote.");
+      expect(output).toContain("Available tools: read");
+      expect((await state.config()).mcpServers[0].oauth).toEqual({});
+
+      const record = await readFile(join(state.directory, "auth/mcp-oauth-remote.json"), "utf8");
+      expect(record).toContain("access-");
+      expect(await readFile(join(state.directory, "config.json"), "utf8")).not.toContain("access-");
+
+      const status = JSON.parse((await invoke(state.directory, ["mcp", "servers"], null)).output);
+      expect(status[0].signIn).toMatchObject({ signedIn: true, scopes: ["read"] });
+
+      expect((await invoke(state.directory, ["mcp", "logout", "remote"], null)).exitCode).toBe(0);
+      const after = JSON.parse((await invoke(state.directory, ["mcp", "servers"], null)).output);
+      expect(after[0].signIn).toMatchObject({ signedIn: false });
+
+      expect((await invoke(state.directory, ["mcp", "remove", "remote"], null)).exitCode).toBe(0);
+      expect(await readdir(join(state.directory, "auth"))).not.toContain("mcp-oauth-remote.json");
     } finally {
       await server.stop();
       await state.close();

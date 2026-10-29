@@ -42,7 +42,7 @@ after editing settings: `poppet worker restart`.
 | `webSearch`                  | `false`                | Enable search when the selected search provider has credentials                       |
 | `webSearchProvider`          | `brave`                | `brave` or `kagi`                                                                     |
 | `browser`                    | `{ "enabled": false }` | [Browser access and allowed hosts](browser.md)                                        |
-| `mcpServers`                 | `[]`                   | [Local servers and tool permissions](mcp.md)                                          |
+| `mcpServers`                 | `[]`                   | [MCP servers, sign-in, and tool permissions](mcp.md)                                  |
 | `gatewayPackages`            | `[]`                   | Explicitly installed [external gateway packages](development.md#adding-a-channel)     |
 | `tasks.catchUpMinutes`       | `60`                   | Missed recurring-job window, from 0 to 1440 minutes                                   |
 | `chat.outputTokens`          | `2048`                 | Requested output limit, from 1 to 32768, capped by model metadata                     |

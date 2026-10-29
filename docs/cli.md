@@ -110,20 +110,24 @@ for provider-specific setup and logout behavior.
 
 ## MCP servers
 
-| Command                                               | Action                                                                           |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `mcp servers`                                         | Show permissions, connection diagnostics, and tools without launching servers.   |
-| `mcp tools <server>`                                  | Explicitly discover the server's allowed tools using the owner or a local scope. |
-| `mcp add <server> --url <url> --auth <none\|api-key>` | Save a remote server, then connect once and list every tool it offers.           |
-| `mcp remove <server>`                                 | Remove the entry and the key that `mcp add` saved for it.                        |
+| Command                                                      | Action                                                                           |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `mcp servers`                                                | Show permissions, connection diagnostics, sign-in state, and tools.              |
+| `mcp tools <server>`                                         | Explicitly discover the server's allowed tools using the owner or a local scope. |
+| `mcp add <server> --url <url> --auth <none\|api-key\|oauth>` | Save a remote server, sign in for OAuth, then list every tool it offers.         |
+| `mcp login <server>`                                         | Sign in to an OAuth server again.                                                |
+| `mcp logout <server>`                                        | Delete an OAuth server's saved tokens.                                           |
+| `mcp remove <server>`                                        | Remove the entry and the key or sign-in that Poppet saved for it.                |
 
 `mcp add` takes repeatable `--tool` and `--scheduled-tool` flags. With
 `--auth api-key` it reads the key from a hidden prompt or `--key-stdin`; use
-`--header` and `--prefix` for schemes other than `Authorization: Bearer`.
+`--header` and `--prefix` for schemes other than `Authorization: Bearer`. With
+`--auth oauth` it accepts `--client-id`, repeatable `--scope`,
+`--callback-port`, and `--no-login`; `add` and `login` accept `--no-browser`.
 `servers` and `tools` need no model and route through the worker when it is
 running. `add` and `remove` edit `config.json` locally; restart the worker
-afterwards. See [MCP tools](mcp.md) for configuration, permissions, and process
-ownership.
+afterwards. A running worker uses a new sign-in on its next request. See
+[MCP tools](mcp.md) for configuration, permissions, and process ownership.
 
 ## Web search setup
 

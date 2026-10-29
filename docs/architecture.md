@@ -37,12 +37,12 @@ The Bun monorepo uses private workspaces:
 | ----------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                 | Config, agent, browser, MCP, memory, skills, tasks, store, platform, provider layers |
 | `@poppet/browser`             | Isolated browser tools, settings, pinned daemon lifecycle, bounded native requests | I/O helpers, provider contract, Effect                                               |
-| `@poppet/mcp`                 | Scoped stdio/HTTP clients, bounded discovery, schema validation, result limits     | Credentials, provider contract                                                       |
+| `@poppet/mcp`                 | Scoped stdio/HTTP clients, OAuth sign-in, bounded discovery, schema validation     | Credentials, sign-in, provider contract                                              |
 | `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                    | Config, I/O helpers, memory, skills, store, web search, provider contract            |
 | `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation   | None                                                                                 |
 | `@poppet/web-search`          | Brave/Kagi search adapters, validation, and bounded source results                 | I/O helpers, Effect                                                                  |
 | `@poppet/config`              | Validated settings and the `AppConfig` service                                     | Provider contract, credential locks, browser and MCP configuration schemas           |
-| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                        | Provider contract                                                                    |
+| `@poppet/credentials`         | Protected API-key and record storage, locks, and environment overrides             | Provider contract                                                                    |
 | `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle              | Config, credentials, provider contract                                               |
 | `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                   | Config and store for the local implementation                                        |
 | `@poppet/platform`            | Worker actions, errors, status, launch description, and bounded log reading        | I/O helpers                                                                          |

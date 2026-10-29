@@ -6,6 +6,7 @@ import { TestClock } from "effect/testing";
 
 import { type MCPHTTPServer } from "#src/config";
 import { MCP, makeMCPLive } from "#src/service";
+import { NoSignInsLive } from "#src/test/sign-ins";
 
 const Request = Schema.Struct({
   id: Schema.optionalKey(Schema.Json),
@@ -139,6 +140,7 @@ const layer = (url: string, headers: MCPHTTPServer["headers"] = {}, tools = ["re
 
   return makeMCPLive(16384).pipe(
     Layer.provide([
+      NoSignInsLive,
       Layer.succeed(ApiKeyStore, {
         read: (name) => {
           expect(name).toBe("remote");

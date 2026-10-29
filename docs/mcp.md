@@ -60,16 +60,17 @@ Add a remote server from the CLI:
 poppet mcp add remote --url https://mcp.example.com/mcp --auth api-key --tool lookup_record
 ```
 
-`--auth` is required: `none` sends no credentials, and `api-key` reads a key
+`--auth` is required: `none` sends no credentials, `api-key` reads a key
 from a hidden prompt or `--key-stdin` (never an argument), saves it as the
-protected credential `mcp-<id>`, and sends it as `Authorization: Bearer <key>`.
-`--header X-API-Key --prefix ""` selects another scheme. The command validates
-the complete server list before saving anything, then connects once and prints
-every tool the server offers. Only tools named with `--tool` are allowed;
-review the printed names and add others to `tools` yourself. A server that
-answers with an OAuth challenge is saved with a diagnostic. `poppet mcp remove
-<id>` deletes the entry and its `mcp-<id>` credential. Restart the worker after
-either command.
+protected credential `mcp-<id>`, and sends it as `Authorization: Bearer <key>`,
+and `oauth` signs in through the browser (see [OAuth sign-in](#oauth-sign-in)).
+`--header X-API-Key --prefix ""` selects another API-key scheme. The command
+validates the complete server list before saving anything, then connects once
+and prints every tool the server offers. Only tools named with `--tool` are
+allowed; review the printed names and add others to `tools` yourself. A server
+that answers with an OAuth challenge is saved with a diagnostic suggesting
+`--auth oauth`. `poppet mcp remove <id>` deletes the entry, its `mcp-<id>`
+credential, and any saved sign-in. Restart the worker after either command.
 
 An entry with `url` instead of `command` connects over Streamable HTTP:
 
@@ -101,6 +102,49 @@ regardless of case. `Accept`, `Content-Type`, `Content-Length`, `Host`,
 transport and cannot be configured. A missing reference makes that server
 unavailable. Resolved header values are redacted from results and rejected in
 tool definitions, like selected environment values.
+
+### OAuth sign-in
+
+```sh
+poppet mcp add notes --url https://mcp.example.com/mcp --auth oauth --tool search
+```
+
+This saves `"oauth": {}` in the entry and starts sign-in. Poppet discovers the
+server's authorization server from its protected resource metadata, registers
+itself as a public client when the authorization server offers dynamic
+registration, and opens the browser with PKCE and a resource indicator. The
+callback, `--no-browser`, pasted callback addresses, and SSH forwarding work as
+for [ChatGPT sign-in](providers/openai-chatgpt.md). `--no-login` saves the entry
+without signing in. Run `poppet mcp login <id>` to sign in again and
+`poppet mcp logout <id>` to delete tokens while keeping the registration;
+logging out does not revoke the grant at the authorization server.
+
+`oauth` accepts optional `clientId`, `clientSecret` (a `{ "credential": "name" }`
+reference, never a literal), `scopes`, and `callbackPort` (1024–65535), also
+set by `--client-id`, `--scope`, and `--callback-port`. Use a pre-registered
+client when the authorization server has no dynamic registration; register a
+fixed loopback redirect such as `http://127.0.0.1:1455/auth/callback` and set
+the same `callbackPort`. Without `scopes`, Poppet requests what the server's
+metadata advertises. An OAuth entry cannot also configure an `Authorization`
+header; other headers are sent only to the MCP endpoint. Client metadata
+documents and unattended grants are unsupported.
+
+Tokens live in `<data directory>/auth/mcp-oauth-<id>.json`, protected like API
+keys and bound to the configured URL: changing the URL requires a new sign-in.
+Discovery, registration, and token requests use HTTPS (plain HTTP only to
+loopback) and the same size cap as MCP messages. Access tokens are redacted
+from results and rejected in tool definitions.
+
+A run never opens a browser. When the server rejects an access token, Poppet
+refreshes it under the record's lock; a worker and a CLI process never both
+spend one refresh token, and the second adopts the first's result. A rejected
+refresh token, a missing sign-in, or a changed URL puts the server in
+`needs-login`: its tools are unavailable, other servers keep working, and no
+backoff applies. The next request after `mcp login` reconnects, including in a
+running worker. A server asking for more scope fails that call with a
+diagnostic naming the scope; add it to `scopes` and sign in again.
+`mcp servers` reports `signIn` with `signedIn`, `expiresAt`, and granted
+`scopes`, never token values.
 
 Set `mcpServers` to `[]` in `config.json` to disable every server. Worker settings
 change after restart, including allowlist changes.
@@ -177,10 +221,9 @@ child credentials, without automatically attaching history or global memory.
 
 The official TypeScript client SDK is pinned at 2.3.1 and exercised under Bun 1.4.4.
 Connections use the SDK's legacy initialization handshake for the 2025 protocol.
-Poppet supports tool discovery and invocation only. OAuth, the legacy HTTP+SSE
+Poppet supports tool discovery and invocation only. The legacy HTTP+SSE
 transport, resources, prompts, sampling, elicitation, MCP tasks, and media
-forwarding are outside this implementation. HTTP servers needing OAuth can be
-reached through a stdio bridge that owns the sign-in. Resource links and media are marked omitted and never fetched.
+forwarding are outside this implementation. Resource links and media are marked omitted and never fetched.
 
 - At most 8 configured servers, 8 discovery pages per server, 128 discovered tools,
   and 256 KiB of discovery JSON per server.
@@ -230,3 +273,10 @@ exited. These stdio checks passed on 2026-10-27.
 With one trusted remote server that accepts a bearer token, configure the
 token as a protected credential header, inspect its catalog from the worker, and
 complete a CLI tool round trip. This remote check passed on 2026-10-27.
+
+With one real OAuth server that supports dynamic registration, add it with
+`--auth oauth` and sign in over SSH with a pasted callback, complete a CLI and
+a worker tool round trip, wait for or force token expiry and confirm the next
+call refreshes, then log out and confirm `mcp servers` shows `needs-login`.
+Fixture tests do not establish that a real authorization server interoperates;
+this check has not been run.

@@ -1,20 +1,37 @@
 import { AppConfig, readConfigFile, updateConfigFile } from "@poppet/config";
 import { ApiKeyStore } from "@poppet/credentials";
-import { MCPServers, probeServer, type MCPHTTPServer } from "@poppet/mcp";
+import {
+  forgetSignIn,
+  isHTTPServer,
+  isOAuthServer,
+  MCPServers,
+  probeServer,
+  signIn,
+  signOut,
+  type MCPHTTPServer,
+  type MCPOAuthServer,
+} from "@poppet/mcp";
 import { CredentialInput } from "@poppet/provider";
-import { Console, Effect, Option, Schema, type Types } from "effect";
+import { openBrowser, remoteSession } from "@poppet/sign-in";
+import { Clock, Console, Effect, Option, Schema, type Types } from "effect";
 
+import { readVisibleLine } from "#src/api-key-input";
 import { UsageError } from "#src/commands/errors";
 
 export interface AddServer {
   readonly id: string;
   readonly url: string;
-  readonly auth: "none" | "api-key";
+  readonly auth: "none" | "api-key" | "oauth";
   readonly tools: ReadonlyArray<string>;
   readonly scheduledTools: ReadonlyArray<string>;
   readonly header: string;
   readonly prefix: string;
   readonly keyStdin: boolean;
+  readonly clientId: Option.Option<string>;
+  readonly scopes: ReadonlyArray<string>;
+  readonly callbackPort: Option.Option<number>;
+  readonly login: boolean;
+  readonly openBrowser: boolean;
 }
 
 /** Saved MCP keys share the protected auth directory, so the prefix keeps them apart from providers. */
@@ -49,6 +66,14 @@ export const addMCPServer = (options: AddServer) =>
     if (options.auth !== "api-key" && options.keyStdin)
       return yield* invalid("--key-stdin applies only to --auth api-key.");
 
+    if (
+      options.auth !== "oauth" &&
+      (Option.isSome(options.clientId) ||
+        options.scopes.length > 0 ||
+        Option.isSome(options.callbackPort))
+    )
+      return yield* invalid("--client-id, --scope and --callback-port apply only to --auth oauth.");
+
     const entry: Types.Mutable<MCPHTTPServer> = {
       id: options.id,
       enabled: true,
@@ -60,6 +85,17 @@ export const addMCPServer = (options: AddServer) =>
       entry.headers = { [options.header]: { credential, prefix: options.prefix } };
 
     if (options.scheduledTools.length > 0) entry.scheduledTools = options.scheduledTools;
+
+    if (options.auth === "oauth") {
+      const oauth: Types.Mutable<MCPOAuthServer["oauth"]> = {};
+
+      if (Option.isSome(options.clientId)) oauth.clientId = options.clientId.value;
+
+      if (options.scopes.length > 0) oauth.scopes = options.scopes;
+
+      if (Option.isSome(options.callbackPort)) oauth.callbackPort = options.callbackPort.value;
+      entry.oauth = oauth;
+    }
 
     if (existing.some((server) => server.id === options.id))
       return yield* invalid(`MCP server ${options.id} already exists. Remove it first.`);
@@ -87,6 +123,24 @@ export const addMCPServer = (options: AddServer) =>
     );
     yield* Console.log(`Saved MCP server ${options.id}.`);
 
+    if (isOAuthServer(entry)) {
+      if (!options.login) {
+        yield* Console.log(`Run poppet mcp login ${options.id} to sign in. ${restart}`);
+
+        return;
+      }
+
+      // A failed sign-in keeps the entry so the owner can retry with mcp login.
+      const signedIn = yield* login(entry, options.openBrowser).pipe(
+        Effect.tapError((error) =>
+          Console.error(`${error.message} Run poppet mcp login ${options.id} to try again.`),
+        ),
+        Effect.option,
+      );
+
+      if (Option.isNone(signedIn)) return;
+    }
+
     const discovered = yield* probeServer(entry).pipe(
       Effect.tapError((error) => Console.error(error.message)),
       Effect.option,
@@ -103,6 +157,49 @@ export const addMCPServer = (options: AddServer) =>
       options.tools.length === 0
         ? `No tools are allowed yet. Review the names, then add them to tools for ${options.id} in config.json. ${restart}`
         : `Allowed tools: ${options.tools.join(", ")}. ${restart}`,
+    );
+  });
+
+const login = (server: MCPOAuthServer, browser: boolean) =>
+  Effect.gen(function* () {
+    const clock = yield* Clock.Clock;
+
+    yield* signIn(server, {
+      noBrowser: !browser,
+      remote: remoteSession(process.env, process.platform),
+      paste: readVisibleLine(server.id, "Callback URL: "),
+      open: openBrowser,
+      timeoutMs: 300_000,
+      now: () => clock.currentTimeMillisUnsafe(),
+    });
+    yield* Console.log(`Signed in to MCP server ${server.id}.`);
+  });
+
+const oauthServer = (id: string) =>
+  Effect.gen(function* () {
+    const { dataDirectory } = yield* AppConfig;
+    const { file } = yield* readConfigFile(dataDirectory);
+    const server = (file.mcpServers ?? []).find((candidate) => candidate.id === id);
+
+    if (server === undefined)
+      return yield* invalid(`Unknown MCP server ${id}. Use mcp servers to find its ID.`);
+
+    if (!isHTTPServer(server) || !isOAuthServer(server))
+      return yield* invalid(`MCP server ${id} does not use OAuth.`);
+
+    return server;
+  });
+
+/** A running worker adopts the new tokens on its next request to this server. */
+export const loginMCPServer = (id: string, browser: boolean) =>
+  oauthServer(id).pipe(Effect.flatMap((server) => login(server, browser)));
+
+export const logoutMCPServer = (id: string) =>
+  Effect.gen(function* () {
+    yield* oauthServer(id);
+    yield* signOut(id);
+    yield* Console.log(
+      `Removed saved tokens for MCP server ${id}. The authorization server may still list this sign-in until you revoke it there.`,
     );
   });
 
@@ -123,5 +220,6 @@ export const removeMCPServer = (id: string) =>
     // references may be shared and are left in place.
     if (credentialName(id).length <= 64)
       yield* ApiKeyStore.use((store) => store.remove(credentialName(id)));
+    yield* forgetSignIn(id);
     yield* Console.log(`Removed MCP server ${id}. ${restart}`);
   });

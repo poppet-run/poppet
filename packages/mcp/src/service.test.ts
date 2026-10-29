@@ -10,6 +10,7 @@ import { TestClock } from "effect/testing";
 
 import { type MCPStdioServer } from "#src/config";
 import { MCP, makeMCPLive } from "#src/service";
+import { NoSignInsLive } from "#src/test/sign-ins";
 
 const fixture = async (
   mode = "normal",
@@ -44,6 +45,7 @@ const fixture = async (
 
   const layer = makeMCPLive(1024).pipe(
     Layer.provide([
+      NoSignInsLive,
       Layer.succeed(ApiKeyStore, {
         read: () => Effect.succeed(Redacted.make("saved-mcp-secret")),
         write: () => Effect.die("Unexpected credential write"),
@@ -492,6 +494,7 @@ describe("MCP", () => {
 
     const layer = makeMCPLive(16384).pipe(
       Layer.provide([
+        NoSignInsLive,
         Layer.succeed(ApiKeyStore, {
           read: (name) => {
             expect(name).toBe("mcp-fixture");
