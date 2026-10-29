@@ -52,7 +52,7 @@ const setupWorker = (context: CLIContext, directory: string) =>
     } else {
       yield* Console.log(
         status.active
-          ? "Restart the worker when ready to apply these settings: poppet worker stop; poppet worker start"
+          ? "Restart the worker when ready to apply these settings: poppet worker restart"
           : "Start scheduling and messaging when ready: poppet worker run",
       );
     }

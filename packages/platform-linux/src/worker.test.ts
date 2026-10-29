@@ -27,6 +27,7 @@ const fakeSystemd = () => {
         break;
       case "enable":
       case "start":
+      case "restart":
         state.active = true;
         break;
       case "stop":
@@ -56,6 +57,49 @@ const launchIn = (home: string) => ({
 });
 
 describe("manageWorker", () => {
+  test("restart requires installation, restarts running or stopped units, and retains configuration on failure", async () => {
+    const home = await mkdtemp(join(tmpdir(), "poppet-systemd-restart-"));
+    const launch = launchIn(home);
+    const paths = workerPaths(launch, home);
+    const { calls, state, systemctl } = fakeSystemd();
+
+    try {
+      await expect(
+        Effect.runPromise(manageWorker("restart", launch, home, systemctl)),
+      ).rejects.toMatchObject({ message: expect.stringContaining("Install the worker first") });
+      expect(calls.map((args) => args[0])).toEqual(["show"]);
+      await Effect.runPromise(manageWorker("install", launch, home, systemctl));
+      const original = await readFile(paths.file, "utf8");
+
+      await Array.fromAsync([true, false], async (running) => {
+        state.active = running;
+        state.loaded = running;
+        calls.length = 0;
+        expect(await Effect.runPromise(manageWorker("restart", launch, home, systemctl))).toContain(
+          "Worker restarted",
+        );
+        expect(calls).toEqual([
+          ["show", "--property=LoadState,ActiveState", paths.unit],
+          ...(running ? [] : [["daemon-reload"]]),
+          ["restart", paths.unit],
+        ]);
+        expect(state.active).toBe(true);
+        expect(await readFile(paths.file, "utf8")).toBe(original);
+      });
+
+      await expect(
+        Effect.runPromise(
+          manageWorker("restart", launch, home, async (args) =>
+            args[0] === "restart" ? { code: 1, stdout: "", stderr: "" } : systemctl(args),
+          ),
+        ),
+      ).rejects.toMatchObject({ message: expect.stringContaining("restart failed") });
+      expect(await readFile(paths.file, "utf8")).toBe(original);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   test("when managing a login worker, escapes the launch description and protects installed files", async () => {
     const home = await mkdtemp(join(tmpdir(), "poppet-systemd-"));
 
@@ -169,7 +213,7 @@ describe("manageWorker", () => {
       };
 
       await Promise.all(
-        (["status", "stop", "uninstall"] as const).map(async (action) => {
+        (["status", "restart", "stop", "uninstall"] as const).map(async (action) => {
           await expect(
             Effect.runPromise(manageWorker(action, launch, home, failed)),
           ).rejects.toMatchObject({ message: expect.stringContaining("show failed (exit 1)") });

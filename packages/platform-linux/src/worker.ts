@@ -173,7 +173,11 @@ export const manageWorker = (
       };
 
       // A unit file written while the manager was running is unknown until it reloads.
-      if (installed && !loaded && (action === "start" || action === "uninstall"))
+      if (
+        installed &&
+        !loaded &&
+        (action === "start" || action === "restart" || action === "uninstall")
+      )
         await command(["daemon-reload"]);
 
       if (action === "stop" || action === "uninstall") {
@@ -214,9 +218,11 @@ export const manageWorker = (
       } else if (!installed) {
         throw new WorkerError({ message: "Install the worker first with worker install." });
       } else {
-        // Starting an active unit is a no-op, so this never interrupts a running request.
-        await command(["start", paths.unit]);
+        // Only an explicit restart interrupts an active unit.
+        await command([action === "restart" ? "restart" : "start", paths.unit]);
       }
+
+      if (action === "restart") return "Worker restarted. Check worker status for readiness.";
 
       return "Worker started. It will run at login while this user is logged in. Check worker status for readiness.";
     },

@@ -54,7 +54,7 @@ settings are merged into the `discord` section of `config.json`. The token stays
 file and `0700` directory permissions. Removing the `discord` section disables
 Discord. Model-provider credentials remain separate. Restart an existing worker
 after changing channel settings;
-on macOS, use `worker stop` followed by `worker start`. The installed worker reads
+on macOS or Linux with systemd, use `worker restart`. The installed worker reads
 the saved settings without placing the bot token in its service environment.
 
 ## Thread sessions
