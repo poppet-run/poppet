@@ -21,6 +21,7 @@ import { isHTTPServer, mcpServers, type MCPReference, type MCPServer } from "#sr
 import { MCPError } from "#src/errors";
 import {
   isOAuthServer,
+  MCPLoginRequired,
   MCPSignIns,
   runtimeAuthorization,
   signInStatus,
@@ -125,6 +126,16 @@ const startupFailure = (config: MCPServer, cause: unknown) =>
     `MCP ${config.id}: ${cause instanceof MCPDiagnostic ? cause.message : isHTTPServer(config) ? "Startup or protocol failed. Check the URL, headers and server compatibility." : "Startup or protocol failed. Check the executable and server compatibility."}`,
   );
 
+const authorizationFailure = (
+  config: MCPServer,
+  cause: Effect.Error<ReturnType<typeof runtimeAuthorization>>,
+) =>
+  failed(
+    cause instanceof MCPLoginRequired
+      ? cause.message
+      : `MCP ${config.id}: cannot read its saved sign-in or client secret.`,
+  );
+
 const close = (connection: Connection): Promise<void> => {
   connection.closing ??= (async () => {
     await connection.client.close().catch(() => {});
@@ -134,20 +145,27 @@ const close = (connection: Connection): Promise<void> => {
   return connection.closing;
 };
 
+const requireLogin = (connection: Connection, message: string) => {
+  connection.state = { status: "needs-login", diagnostic: message };
+
+  return close(connection);
+};
+
 const invalidate = (connection: Connection, message: string) => {
   const state = connection.state;
 
   // Repeated callbacks keep the first failure and its original backoff deadline.
-  if (state.status !== "unavailable" && state.status !== "needs-login")
-    connection.state =
-      connection.signIn?.required() === true
-        ? { status: "needs-login", diagnostic: connection.signIn.message }
-        : {
-            status: "unavailable",
-            diagnostic: message,
-            failedAt: connection.now(),
-            retries: state.status === "idle" ? state.retries : 0,
-          };
+  if (state.status !== "unavailable" && state.status !== "needs-login") {
+    if (connection.signIn?.required() === true)
+      return requireLogin(connection, connection.signIn.message);
+
+    connection.state = {
+      status: "unavailable",
+      diagnostic: message,
+      failedAt: connection.now(),
+      retries: state.status === "idle" ? state.retries : 0,
+    };
+  }
 
   return close(connection);
 };
@@ -525,13 +543,9 @@ export const makeMCPLive = (toolBytes: number) =>
                 Effect.catchTag("MCPLoginRequired", (error) => {
                   missing.value = true;
 
-                  return Effect.fail(failed(error.message));
+                  return Effect.fail(error);
                 }),
-                Effect.mapError((error) =>
-                  error instanceof MCPError
-                    ? error
-                    : failed(`MCP ${config.id}: cannot read its saved sign-in or client secret.`),
-                ),
+                Effect.mapError((error) => authorizationFailure(config, error)),
               );
 
             const current = () =>
@@ -603,13 +617,10 @@ export const makeMCPLive = (toolBytes: number) =>
                 )
               : null;
 
-          if (connection?.state.status === "connected" && signIn?.signedIn === false) {
-            connection.state = {
-              status: "needs-login",
-              diagnostic: connection.signIn!.message,
-            };
-            yield* Effect.promise(() => close(connection).catch(() => {}));
-          }
+          if (connection?.state.status === "connected" && signIn?.signedIn === false)
+            yield* Effect.promise(() =>
+              requireLogin(connection, connection.signIn!.message).catch(() => {}),
+            );
 
           const state = connection?.state;
 
@@ -696,14 +707,7 @@ export const probeServer = (config: MCPServer) =>
     if (oauth !== null)
       authorization.current = yield* runtimeAuthorization(oauth, () =>
         clock.currentTimeMillisUnsafe(),
-      ).pipe(
-        Effect.catchTag("MCPLoginRequired", (error) => Effect.fail(failed(error.message))),
-        Effect.mapError((error) =>
-          error instanceof MCPError
-            ? error
-            : failed(`MCP ${config.id}: cannot read its saved sign-in or client secret.`),
-        ),
-      );
+      ).pipe(Effect.mapError((error) => authorizationFailure(config, error)));
     const base = boundedFetch(262144);
 
     // A 401 naming protected resource metadata means the server expects OAuth.
