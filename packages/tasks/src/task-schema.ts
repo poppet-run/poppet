@@ -142,6 +142,11 @@ export const TaskCommand = Schema.Union([
     action: Schema.Literals(["show", "pause", "resume", "delete", "cancel", "retry"]),
     id: Session.fields.id,
   }),
+  Schema.Struct({
+    action: Schema.Literals(["cancel-task", "retry-task"]),
+    id: Session.fields.id,
+    occurrenceId: Schema.optionalKey(Session.fields.id),
+  }),
   Schema.Struct({ action: Schema.Literal("resume-provider"), provider: ProviderId }),
 ]);
 

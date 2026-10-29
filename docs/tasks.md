@@ -291,10 +291,24 @@ Pausing cancels pending work and keeps previous results. An active run needs an
 explicit cancellation:
 
 ```sh
-poppet tasks cancel <occurrence-id>
-poppet tasks retry <occurrence-id>
+poppet tasks cancel <task-id>
+poppet tasks retry <task-id>
 poppet tasks providers
 poppet tasks resume-provider openai-chatgpt
+```
+
+These commands take a task ID. Older CLI versions took an occurrence ID directly.
+Restart an already-running worker after upgrading to use the task-based commands.
+
+Cancel selects the task's pending or running occurrence. If none exists, use
+`tasks skip` to skip its next scheduled execution. Retry selects the latest
+occurrence by scheduled time, then revision and insertion order. It fails if that
+occurrence succeeded or is still active; it never searches backward for a failure.
+Use `--occurrence <occurrence-id>` with either command to select a particular
+occurrence belonging to the task. For example:
+
+```fish
+poppet tasks retry <task-id> --occurrence <occurrence-id>
 ```
 
 Quota failures pause scheduled requests for that provider until `resume-provider`.
@@ -315,7 +329,7 @@ poppet tasks remove <task-id>
 This works with the worker running or stopped. It removes the selected task and
 its occurrence/skip history, including pending work, and retains conversations
 and runs. Other tasks are unaffected. If the task has a running occurrence,
-wait for it to finish or use `poppet tasks cancel <occurrence-id>` first.
+wait for it to finish or use `poppet tasks cancel <task-id>` first.
 An unknown task ID returns an error.
 
 ## Clear tasks

@@ -1182,7 +1182,7 @@ describe.concurrent("makeTaskWorker", () => {
           });
           yield* remoteTaskCommand(path, { action: "pause", id: job.id });
           expect((yield* repo.occurrence(active.id)).status).toBe("running");
-          yield* remoteTaskCommand(path, { action: "cancel", id: active.id });
+          yield* remoteTaskCommand(path, { action: "cancel-task", id: job.id });
           expect((yield* repo.occurrence(active.id)).status).toBe("cancelled");
           expect((yield* store.run(active.runId!))?.status).toBe("interrupted");
           yield* repo.blockProvider("test-provider", "quota", Date.now());
