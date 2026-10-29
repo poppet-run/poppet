@@ -71,7 +71,7 @@ poppet tasks edit <task-id> --name "Morning review"
 poppet tasks edit <task-id> --prompt "Summarize open decisions from recent conversations."
 poppet tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
 poppet tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
-poppet tasks skip-next <task-id>
+poppet tasks skip <task-id>
 poppet tasks snooze <task-id> --until 2099-10-22T10:00:00+01:00
 poppet tasks run <task-id>
 ```
@@ -91,13 +91,13 @@ A schedule change cancels pending work, clears its snooze, and computes the next
 future slot. Editing a completed one-off's name/prompt does not rerun it; supply
 a different future schedule to rearm it.
 
-| Control     | Behavior                                                                                                                                                                                                                            |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skip-next` | Consume exactly the selected pending occurrence or next slot. A recurring task keeps its cadence; a one-off has no next execution.                                                                                                  |
-| `snooze`    | Delay that execution until a later future instant. `scheduledAt` keeps its original slot; `availableAt` is its effective ready time. The hold survives restart, and intervening cron slots do not build a backlog.                  |
-| `run`       | Queue through the normal scheduled runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
+| Control  | Behavior                                                                                                                                                                                                                            |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skip`   | Consume exactly the selected pending occurrence or next slot. A recurring task keeps its cadence; a one-off has no next execution.                                                                                                  |
+| `snooze` | Delay that execution until a later future instant. `scheduledAt` keeps its original slot; `availableAt` is its effective ready time. The hold survives restart, and intervening cron slots do not build a backlog.                  |
+| `run`    | Queue through the normal scheduled runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
 
-Skip-next, snooze, and run act on the task's next execution when the command
+Skip, snooze, and run act on the task's next execution when the command
 commits: its pending occurrence if one exists, otherwise its next scheduled time.
 A task with no upcoming execution needs a schedule edit first. Receipts include
 changed fields, affected occurrence IDs, next time, and snooze changes. Lost responses never trigger local
