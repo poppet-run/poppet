@@ -48,7 +48,11 @@ class MCPDiagnostic extends Data.TaggedError("MCPDiagnostic")<{ readonly message
 type ConnectionState =
   | { readonly status: "idle"; readonly retries: number }
   | { readonly status: "disabled" }
-  | { readonly status: "connected"; readonly tools: ReadonlyArray<MCPTool> }
+  | {
+      readonly status: "connected";
+      readonly tools: ReadonlyArray<MCPTool>;
+      readonly discovered: ReadonlyArray<string>;
+    }
   | {
       readonly status: "unavailable";
       readonly diagnostic: string;
@@ -111,7 +115,8 @@ export class MCP extends Context.Service<
       ReadonlyArray<{
         readonly serverId: string;
         readonly toolName: string;
-        readonly definition: MCPTool["definition"];
+        readonly definition: MCPTool["definition"] | null;
+        readonly allowed: boolean;
         readonly scheduled: boolean;
       }>,
       MCPError
@@ -279,7 +284,7 @@ const discoverTools = async (config: MCPServer, client: Client, signal: AbortSig
       message: "An allowlisted tool was not discovered. Check tools in config.json.",
     });
 
-  return discovered.filter((tool) => config.tools.includes(tool.name));
+  return discovered;
 };
 
 /** Filled during startup, after the saved sign-in has been read. */
@@ -567,14 +572,25 @@ export const makeMCPLive = (toolBytes: number) =>
 
             const tools = yield* Effect.try({
               try: () =>
-                discovered.map((tool) => makeTool(config, tool, connection, current, toolBytes)),
+                discovered
+                  .filter((tool) => config.tools.includes(tool.name))
+                  .map((tool) => makeTool(config, tool, connection, current, toolBytes)),
               catch: (cause) => startupFailure(config, cause),
             });
 
             // A protocol callback can fail the connection before discovery's Promise resumes.
             if (connection.state.status === "unavailable")
               return yield* Effect.fail(failed(connection.state.diagnostic));
-            connection.state = { status: "connected", tools };
+
+            if (discovered.some((tool) => containsSecret(tool.name, current())))
+              return yield* Effect.fail(
+                failed(`MCP ${config.id}: tool names contain credentials.`),
+              );
+            connection.state = {
+              status: "connected",
+              tools,
+              discovered: discovered.map((tool) => tool.name),
+            };
           }).pipe(Effect.timeout("8 seconds"));
 
           yield* startup.pipe(
@@ -661,11 +677,14 @@ export const makeMCPLive = (toolBytes: number) =>
           if (connection.state.status !== "connected")
             return yield* Effect.fail(failed(diagnostic(connection) ?? `MCP ${id} is disabled.`));
 
-          return connection.state.tools.map((tool) => ({
-            serverId: tool.serverId,
-            toolName: tool.toolName,
-            definition: tool.definition,
-            scheduled: config.scheduledTools?.includes(tool.toolName) ?? false,
+          const allowed = connection.state.tools;
+
+          return connection.state.discovered.map((name) => ({
+            serverId: config.id,
+            toolName: name,
+            definition: allowed.find((tool) => tool.toolName === name)?.definition ?? null,
+            allowed: config.tools.includes(name),
+            scheduled: config.scheduledTools?.includes(name) ?? false,
           }));
         });
 

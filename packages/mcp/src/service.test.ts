@@ -145,6 +145,27 @@ const reaped = (pid: number) =>
   });
 
 describe("MCP", () => {
+  test("when inspection discovers blocked tools, agent snapshots still contain only permitted tools", async () => {
+    const state = await fixture("normal", ["read"], ["read"]);
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const mcp = yield* MCP;
+          const tools = yield* mcp.tools("fixture");
+          expect(tools.slice(0, 2)).toMatchObject([
+            { toolName: "read", allowed: true, scheduled: true },
+            { toolName: "write", allowed: false, scheduled: false, definition: null },
+          ]);
+          expect((yield* mcp.snapshot(false)).map((tool) => tool.toolName)).toEqual(["read"]);
+          expect((yield* mcp.snapshot(true)).map((tool) => tool.toolName)).toEqual(["read"]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when MCP is inspected, discovered, called, and closed, starts lazily, walks pages, validates arguments, and reaps the child", async () => {
     const state = await fixture();
     let pid = 0;
@@ -158,7 +179,10 @@ describe("MCP", () => {
           expect(yield* Effect.promise(() => readdir(state.directory))).toEqual([]);
           expect(yield* external.snapshot(true)).toEqual([]);
           const tools = yield* mcp.tools("fixture");
-          expect(tools.map((tool) => tool.toolName)).toEqual(["read", "write"]);
+          expect(tools.filter((tool) => tool.allowed).map((tool) => tool.toolName)).toEqual([
+            "read",
+            "write",
+          ]);
           const catalog = yield* external.snapshot(false);
           const read = catalog[0]!;
           expect(read.definition.parameters).toMatchObject({

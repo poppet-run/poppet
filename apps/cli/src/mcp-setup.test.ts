@@ -29,7 +29,8 @@ const invoke = async (directory: string, args: ReadonlyArray<string>, input: str
 const Request = Schema.Struct({ id: Schema.optionalKey(Schema.Json), method: Schema.String });
 
 /** A Streamable HTTP server that accepts one bearer key, or challenges for OAuth without it. */
-const serve = (key: string | null) => {
+const serve = (key: string | null, beforeList?: () => Promise<void>) => {
+  const tools = ["read", "write"];
   const authorizations: (string | null)[] = [];
 
   const server = Bun.serve({
@@ -58,6 +59,8 @@ const serve = (key: string | null) => {
       const reply = (result: Schema.JsonObject) =>
         Response.json({ jsonrpc: "2.0", id: message.id!, result });
 
+      if (message.method === "tools/list") await beforeList?.();
+
       return message.method === "initialize"
         ? reply({
             protocolVersion: "2025-11-25",
@@ -65,7 +68,7 @@ const serve = (key: string | null) => {
             serverInfo: { name: "fixture", version: "1" },
           })
         : reply({
-            tools: ["read", "write"].map((name) => ({
+            tools: tools.map((name) => ({
               name,
               inputSchema: { type: "object" },
             })),
@@ -76,6 +79,7 @@ const serve = (key: string | null) => {
   return {
     url: `http://127.0.0.1:${server.port}/mcp`,
     authorizations,
+    tools,
     stop: () => server.stop(true),
   };
 };
@@ -91,47 +95,36 @@ const harness = async () => {
 };
 
 describe("mcp add and remove", () => {
-  test.concurrent("when an API-key server is added, saves the key apart from configuration and lists its tools", async () => {
+  test.concurrent("when an API-key server is added, saves the key apart from configuration without connecting", async () => {
     const state = await harness();
-    const server = serve("mcp-stdin-secret");
+    const server = serve("mcp-flag-secret");
 
     try {
       const added = await invoke(
         state.directory,
-        [
-          "mcp",
-          "add",
-          "remote",
-          "--url",
-          server.url,
-          "--auth",
-          "api-key",
-          "--key-stdin",
-          "--tool",
-          "read",
-        ],
-        "mcp-stdin-secret\n",
+        ["mcp", "add", "remote", server.url, "--auth", "api-key", "--api-key", "mcp-flag-secret"],
+        null,
       );
 
       expect(added.exitCode).toBe(0);
-      expect(added.output).toContain("Available tools: read, write");
-      expect(added.output).not.toContain("mcp-stdin-secret");
-      expect(server.authorizations).toContain("Bearer mcp-stdin-secret");
+      expect(added.output).toContain("mcp tools remote");
+      expect(added.output).not.toContain("mcp-flag-secret");
+      expect(server.authorizations).toEqual([]);
       expect((await state.config()).mcpServers).toEqual([
         {
           id: "remote",
           enabled: true,
           url: server.url,
           headers: { Authorization: { credential: "mcp-remote", prefix: "Bearer " } },
-          tools: ["read"],
+          tools: [],
         },
       ]);
       expect(await readFile(join(state.directory, "config.json"), "utf8")).not.toContain(
-        "mcp-stdin-secret",
+        "mcp-flag-secret",
       );
       expect(
         JSON.parse(await readFile(join(state.directory, "auth/mcp-remote.json"), "utf8")).key,
-      ).toBe("mcp-stdin-secret");
+      ).toBe("mcp-flag-secret");
 
       const removed = await invoke(state.directory, ["mcp", "remove", "remote"], null);
       expect(removed.exitCode).toBe(0);
@@ -143,35 +136,120 @@ describe("mcp add and remove", () => {
     }
   });
 
-  test.concurrent("when all tools are allowed, saves every discovered name and the reviewed scheduled subset", async () => {
+  test.concurrent("when permissions change, discovers blocked tools and keeps scheduled access an explicit subset", async () => {
     const state = await harness();
-    const server = serve("mcp-stdin-secret");
+    const server = serve("mcp-flag-secret");
+    const run = (...args: string[]) => invoke(state.directory, ["mcp", ...args], null);
 
     try {
-      const added = await invoke(
-        state.directory,
-        [
-          "mcp",
-          "add",
-          "remote",
-          "--url",
-          server.url,
-          "--auth",
-          "api-key",
-          "--key-stdin",
-          "--all-tools",
-          "--scheduled-tool",
-          "read",
-        ],
-        "mcp-stdin-secret\n",
-      );
-
-      expect(added.exitCode).toBe(0);
-      expect(added.output).toContain("Allowed tools: read, write");
+      expect(
+        (
+          await run(
+            "add",
+            "remote",
+            server.url,
+            "--auth",
+            "api-key",
+            "--api-key",
+            "mcp-flag-secret",
+          )
+        ).exitCode,
+      ).toBe(0);
+      const listed = await run("tools", "remote");
+      expect(listed.exitCode).toBe(0);
+      expect(
+        JSON.parse(listed.output).map(
+          ({
+            toolName,
+            allowed,
+            scheduled,
+          }: {
+            toolName: string;
+            allowed: boolean;
+            scheduled: boolean;
+          }) => ({ toolName, allowed, scheduled }),
+        ),
+      ).toEqual([
+        { toolName: "read", allowed: false, scheduled: false },
+        { toolName: "write", allowed: false, scheduled: false },
+      ]);
+      expect(server.authorizations).toContain("Bearer mcp-flag-secret");
+      expect((await run("allow", "remote", "read", "--scheduled")).exitCode).toBe(0);
+      expect((await state.config()).mcpServers[0]).toMatchObject({
+        tools: ["read"],
+        scheduledTools: ["read"],
+      });
+      expect((await run("allow", "remote", "--all")).exitCode).toBe(0);
       expect((await state.config()).mcpServers[0]).toMatchObject({
         tools: ["read", "write"],
         scheduledTools: ["read"],
       });
+
+      for (const args of [
+        ["allow", "remote"],
+        ["allow", "remote", "missing"],
+        ["allow", "remote", "read", "--all"],
+        ["allow", "remote", "--all", "--scheduled"],
+        ["deny", "remote"],
+        ["allow", "missing", "read"],
+      ]) {
+        // oxlint-disable-next-line no-await-in-loop
+        expect((await run(...args)).exitCode).toBe(1);
+      }
+
+      expect((await state.config()).mcpServers[0]).toMatchObject({
+        tools: ["read", "write"],
+        scheduledTools: ["read"],
+      });
+      server.tools.push("new-tool");
+      const refreshed = JSON.parse((await run("tools", "remote")).output);
+      expect(
+        refreshed.find((tool: { toolName: string }) => tool.toolName === "new-tool"),
+      ).toMatchObject({ allowed: false, scheduled: false });
+      expect((await run("deny", "remote", "read", "--scheduled")).exitCode).toBe(0);
+      expect((await state.config()).mcpServers[0]).toMatchObject({
+        tools: ["read", "write"],
+        scheduledTools: [],
+      });
+      expect((await run("allow", "remote", "read", "read", "--scheduled")).exitCode).toBe(0);
+      await server.stop();
+      expect((await run("deny", "remote", "read")).exitCode).toBe(0);
+      expect((await state.config()).mcpServers[0]).toMatchObject({
+        tools: ["write"],
+        scheduledTools: [],
+      });
+      expect((await run("allow", "remote", "--all")).exitCode).toBe(1);
+      expect((await state.config()).mcpServers[0]).toMatchObject({
+        tools: ["write"],
+        scheduledTools: [],
+      });
+    } finally {
+      await server.stop();
+      await state.close();
+    }
+  });
+
+  test.concurrent("when configuration changes during discovery, refuses to grant stale permissions", async () => {
+    const state = await harness();
+
+    const server = serve("mcp-flag-secret", async () => {
+      const config = await state.config();
+      config.mcpServers[0].enabled = false;
+      await writeFile(join(state.directory, "config.json"), JSON.stringify(config));
+    });
+
+    try {
+      const added = await invoke(
+        state.directory,
+        ["mcp", "add", "remote", server.url, "--auth", "api-key", "--api-key", "mcp-flag-secret"],
+        null,
+      );
+
+      expect(added.exitCode).toBe(0);
+      const allowed = await invoke(state.directory, ["mcp", "allow", "remote", "--all"], null);
+      expect(allowed.exitCode).toBe(1);
+      expect(allowed.output).toContain("configuration changed");
+      expect((await state.config()).mcpServers[0]).toMatchObject({ enabled: false, tools: [] });
     } finally {
       await server.stop();
       await state.close();
@@ -181,46 +259,41 @@ describe("mcp add and remove", () => {
   test.each([
     {
       name: "duplicate server",
-      args: ["remote", "--url", "https://other.example/mcp", "--auth", "api-key", "--key-stdin"],
+      args: [
+        "remote",
+        "https://other.example/mcp",
+        "--auth",
+        "api-key",
+        "--api-key",
+        "unsaved-key",
+      ],
+      message: "already exists",
     },
     {
       name: "API key over HTTP",
-      args: ["plain", "--url", "http://mcp.example/mcp", "--auth", "api-key", "--key-stdin"],
+      args: ["plain", "http://mcp.example/mcp", "--auth", "api-key", "--api-key", "unsaved-key"],
+      message: "The server cannot be added",
     },
     {
-      name: "scheduled tool outside the allowed tools",
-      args: [
-        "subset",
-        "--url",
-        "https://mcp.example/mcp",
-        "--auth",
-        "none",
-        "--scheduled-tool",
-        "read",
-      ],
+      name: "removed scheduled-tool flag",
+      args: ["subset", "https://mcp.example/mcp", "--auth", "none", "--scheduled-tool", "read"],
+      message: "Unrecognized flag: --scheduled-tool",
     },
     {
-      name: "conflicting tool flags",
-      args: [
-        "both",
-        "--url",
-        "https://mcp.example/mcp",
-        "--auth",
-        "none",
-        "--all-tools",
-        "--tool",
-        "read",
-      ],
+      name: "removed all-tools flag",
+      args: ["both", "https://mcp.example/mcp", "--auth", "none", "--all-tools"],
+      message: "Unrecognized flag: --all-tools",
     },
-  ])("rejects $name without saving configuration or a key", async ({ args }) => {
+  ])("rejects $name without saving configuration or a key", async ({ args, message }) => {
     const state = await harness();
     const existing = [{ id: "remote", enabled: true, url: "https://mcp.example/mcp", tools: [] }];
     await writeFile(join(state.directory, "config.json"), JSON.stringify({ mcpServers: existing }));
 
     try {
-      const result = await invoke(state.directory, ["mcp", "add", ...args], "unsaved-key\n");
+      const result = await invoke(state.directory, ["mcp", "add", ...args], null);
 
       expect(result.exitCode).toBe(1);
+      expect(result.output).toContain(message);
       expect(result.output).not.toContain("unsaved-key");
       expect((await state.config()).mcpServers).toEqual(existing);
       expect(await readdir(state.directory)).not.toContain("auth");
@@ -229,47 +302,67 @@ describe("mcp add and remove", () => {
     }
   });
 
-  test.concurrent("when a server challenges for OAuth, keeps the entry and suggests OAuth", async () => {
+  test.concurrent("when API-key input is invalid or unavailable, leaves configuration and credentials untouched", async () => {
     const state = await harness();
-    const server = serve(null);
 
     try {
-      const added = await invoke(
-        state.directory,
-        ["mcp", "add", "remote", "--url", server.url, "--auth", "none"],
-        null,
-      );
+      for (const { args, message } of [
+        {
+          args: ["--auth", "none", "--api-key", "unused-secret"],
+          message: "--api-key applies only to --auth api-key",
+        },
+        {
+          args: ["--auth", "api-key", "--api-key", "invalid secret"],
+          message: "Enter a nonempty API key without whitespace",
+        },
+        {
+          args: ["--auth", "api-key", "--api-key", ""],
+          message: "Enter a nonempty API key without whitespace",
+        },
+        { args: ["--auth", "api-key"], message: "interactive terminal or --api-key" },
+        { args: ["--auth", "api-key", "--key-stdin"], message: "Unrecognized flag: --key-stdin" },
+      ]) {
+        // oxlint-disable-next-line no-await-in-loop
+        const result = await invoke(
+          state.directory,
+          ["mcp", "add", "remote", "https://mcp.example/mcp", ...args],
+          null,
+        );
 
-      expect(added.exitCode).toBe(0);
-      expect(added.output).toContain("requires OAuth sign-in");
-      expect(added.output).toContain("No tools are allowed yet");
-      expect((await state.config()).mcpServers).toHaveLength(1);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain(message);
+        expect(result.output).not.toContain("unused-secret");
+        expect(result.output).not.toContain("invalid secret");
+      }
+
+      expect(await readdir(state.directory)).not.toContain("config.json");
+      expect(await readdir(state.directory)).not.toContain("auth");
     } finally {
-      await server.stop();
       await state.close();
     }
   });
 
-  test.concurrent("when an OAuth server is added, signs in through the printed link and later signs out and forgets the sign-in", async () => {
+  test.concurrent("when an OAuth server is added, separate login signs in through the printed link and later signs out and forgets the sign-in", async () => {
     const state = await harness();
     const server = serveOAuth();
 
     try {
+      const added = await invoke(
+        state.directory,
+        ["mcp", "add", "remote", server.url, "--auth", "oauth"],
+        null,
+      );
+
+      expect(added.exitCode).toBe(0);
+      expect(added.output).toContain("mcp login remote");
+      expect(await readdir(state.directory)).not.toContain("auth");
+      expect(
+        (await invoke(state.directory, ["mcp", "login", "remote", "--callback-port", "80"], null))
+          .exitCode,
+      ).toBe(1);
+
       const subprocess = Bun.spawn(
-        [
-          process.execPath,
-          "apps/cli/src/main.ts",
-          "mcp",
-          "add",
-          "remote",
-          "--url",
-          server.url,
-          "--auth",
-          "oauth",
-          "--no-browser",
-          "--tool",
-          "read",
-        ],
+        [process.execPath, "apps/cli/src/main.ts", "mcp", "login", "remote", "--no-browser"],
         {
           cwd: fileURLToPath(new URL("../../..", import.meta.url)),
           env: { PATH: process.env.PATH ?? "", POPPET_DATA_DIR: state.directory },
@@ -302,7 +395,7 @@ describe("mcp add and remove", () => {
 
       expect(await subprocess.exited).toBe(0);
       expect(output).toContain("Signed in to MCP server remote.");
-      expect(output).toContain("Available tools: read");
+
       expect((await state.config()).mcpServers[0].oauth).toEqual({});
 
       const record = await readFile(join(state.directory, "auth/mcp-oauth-remote.json"), "utf8");
