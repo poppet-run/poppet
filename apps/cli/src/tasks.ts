@@ -32,7 +32,15 @@ export const parseTaskSchedule = (
   at: Option.Option<string>,
   cron: Option.Option<string>,
   tz: Option.Option<string>,
+  delay: Option.Option<string> = Option.none(),
 ): Schedule => {
+  if (Option.isSome(delay)) {
+    if (Option.isSome(at) || Option.isSome(cron) || Option.isSome(tz))
+      throw new TaskError({ message: "Use --in alone, without --at, --cron, or --tz." });
+
+    return { type: "once", at: parseRelativeTime(delay.value) };
+  }
+
   if (Option.isSome(at) && Option.isNone(cron) && Option.isNone(tz))
     return { type: "once", at: parseTimestamp(at.value) };
 
@@ -40,7 +48,7 @@ export const parseTaskSchedule = (
     return { type: "cron", expression: cron.value, timezone: tz.value };
 
   throw new TaskError({
-    message: "Use either --at <timestamp> or --cron <expression> --tz <timezone>.",
+    message: "Use --in <duration>, --at <timestamp>, or --cron <expression> --tz <timezone>.",
   });
 };
 
@@ -107,4 +115,20 @@ export const parseTaskDestination = (text: string | undefined) => {
     throw new TaskError({ message: "Use --to <gateway> or --to <gateway>:<conversation-id>." });
 
   return { adapter, conversationId };
+};
+
+/** Durations are elapsed time, independent of local timezone and DST transitions. */
+export const parseRelativeTime = (text: string, now = Date.now()): number => {
+  const match = /^([1-9][0-9]*)(s|m|h|d)$/.exec(text);
+
+  if (match === null)
+    throw new TaskError({ message: "Use a positive whole duration such as 30s, 10m, 2h, or 1d." });
+  const units = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+  // SAFETY: The regex above restricts the unit to exactly s, m, h, or d.
+  const at = now + Number(match[1]) * units[match[2] as keyof typeof units];
+
+  if (!Number.isSafeInteger(at) || at > 8_640_000_000_000_000 || at <= now)
+    throw new TaskError({ message: "The duration is too large." });
+
+  return at;
 };
