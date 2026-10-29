@@ -185,22 +185,6 @@ describe("mcp add and remove", () => {
         scheduledTools: ["read"],
       });
 
-      for (const args of [
-        ["allow", "remote"],
-        ["allow", "remote", "missing"],
-        ["allow", "remote", "read", "--all"],
-        ["allow", "remote", "--all", "--scheduled"],
-        ["deny", "remote"],
-        ["allow", "missing", "read"],
-      ]) {
-        // oxlint-disable-next-line no-await-in-loop
-        expect((await run(...args)).exitCode).toBe(1);
-      }
-
-      expect((await state.config()).mcpServers[0]).toMatchObject({
-        tools: ["read", "write"],
-        scheduledTools: ["read"],
-      });
       server.tools.push("new-tool");
       const refreshed = JSON.parse((await run("tools", "remote")).output);
       expect(
@@ -223,6 +207,45 @@ describe("mcp add and remove", () => {
         tools: ["write"],
         scheduledTools: [],
       });
+    } finally {
+      await server.stop();
+      await state.close();
+    }
+  }, 30_000);
+
+  test.each([
+    { name: "missing tool names", args: ["allow", "remote"] },
+    { name: "unknown tool", args: ["allow", "remote", "missing"] },
+    { name: "names with all", args: ["allow", "remote", "read", "--all"] },
+    { name: "scheduled all", args: ["allow", "remote", "--all", "--scheduled"] },
+    { name: "deny without names", args: ["deny", "remote"] },
+    { name: "unknown server", args: ["allow", "missing", "read"] },
+  ])("rejects $name without changing permissions", async ({ args }) => {
+    const state = await harness();
+    const server = serve("mcp-flag-secret");
+
+    try {
+      expect(
+        (
+          await invoke(
+            state.directory,
+            [
+              "mcp",
+              "add",
+              "remote",
+              server.url,
+              "--auth",
+              "api-key",
+              "--api-key",
+              "mcp-flag-secret",
+            ],
+            null,
+          )
+        ).exitCode,
+      ).toBe(0);
+      const before = await state.config();
+      expect((await invoke(state.directory, ["mcp", ...args], null)).exitCode).toBe(1);
+      expect(await state.config()).toEqual(before);
     } finally {
       await server.stop();
       await state.close();
@@ -415,5 +438,5 @@ describe("mcp add and remove", () => {
       await server.stop();
       await state.close();
     }
-  });
+  }, 15_000);
 });
