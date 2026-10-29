@@ -98,10 +98,13 @@ const expireRequest = async <A>(
 ) => {
   let expired = false;
 
+  // Atomics waits use real time even while Bun redirects timer functions to its fake clock.
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+
   // Install the real deadline before Bun replaces timers and monotonic clocks.
   const deadline = setTimeout(() => {
     expired = true;
-  }, 2000);
+  }, 5000);
 
   jest.useFakeTimers();
 
@@ -121,7 +124,15 @@ const expireRequest = async <A>(
           if (!(yield* Effect.promise(() => readdir(state.directory))).includes("events")) continue;
           const events = yield* Effect.promise(() => state.events());
 
-          if (events.some((event) => event.method === method)) jest.advanceTimersToNextTimer();
+          if (events.some((event) => event.method === method)) {
+            jest.advanceTimersToNextTimer();
+
+            // Teardown polls a real child every 10 ms. Preserve that opportunity to exit
+            // instead of exhausting all 100 polls while the OS is still processing SIGKILL.
+            yield* Effect.promise(async () => {
+              await Atomics.waitAsync(pause, 0, 0, 10).value;
+            });
+          }
         }
       }),
     );
