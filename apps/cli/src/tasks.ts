@@ -1,4 +1,5 @@
 import { AppConfig } from "@poppet/config";
+import { DeliveryDestination } from "@poppet/store";
 import {
   remoteTaskCommand,
   executeLocalTaskCommand,
@@ -90,3 +91,20 @@ export const prepareTask = (
       ),
     );
   });
+
+/** Split only the first colon; the rest belongs to the adapter's conversation ID. */
+export const parseTaskDestination = (text: string | undefined) => {
+  if (text === undefined) return undefined;
+  const separator = text.indexOf(":");
+  const adapter = separator < 0 ? text : text.slice(0, separator);
+  const conversationId = separator < 0 ? null : text.slice(separator + 1);
+
+  if (
+    !Schema.is(DeliveryDestination.fields.adapter)(adapter) ||
+    (conversationId !== null &&
+      (conversationId.length === 0 || conversationId.trim() !== conversationId))
+  )
+    throw new TaskError({ message: "Use --to <gateway> or --to <gateway>:<conversation-id>." });
+
+  return { adapter, conversationId };
+};

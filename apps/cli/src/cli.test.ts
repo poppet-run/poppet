@@ -811,31 +811,29 @@ describe("makeCLI", () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-destination-"));
     const environment = await configure(directory, { model: "test-model" });
 
-    const command = [
-      "tasks",
-      "add",
-      "Summary",
-      "--at",
-      "2099-10-15T09:00:00Z",
-      "--channel",
-      "discord",
-      "--conversation",
-    ];
+    const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z", "--to"];
 
     try {
-      await Array.fromAsync([["--conversation", "400"]], async (flags) => {
-        const incomplete = await invoke(
-          ["tasks", "add", "Incomplete", "--at", "2099-10-15T09:00:00Z", ...flags, "Summary"],
-          environment,
-        );
+      await Array.fromAsync(
+        [
+          ["--to", ":400"],
+          ["--to", "discord:"],
+          ["--to", "bad/id:400"],
+        ],
+        async (flags) => {
+          const incomplete = await invoke(
+            ["tasks", "add", "Incomplete", "--at", "2099-10-15T09:00:00Z", ...flags, "Summary"],
+            environment,
+          );
 
-        expect(incomplete.exitCode).toBe(1);
-        expect(incomplete.stderr).toContain("Use --channel when selecting --conversation");
-        expect(await readdir(directory)).toEqual(["config.json"]);
-      });
+          expect(incomplete.exitCode).toBe(1);
+          expect(incomplete.stderr).toContain("Use --to <gateway>");
+          expect(await readdir(directory)).toEqual(["config.json"]);
+        },
+      );
 
       const rejected = await invoke(
-        [...command, "400", "Summarize recent conversations"],
+        [...command, "discord:400", "Summarize recent conversations"],
         environment,
       );
 
@@ -1250,17 +1248,7 @@ describe("makeCLI", () => {
       ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--at", at, "Hello"],
       ["tasks", "add", "Later", "--at", at, "--discord-thread", "400", "Hello"],
-      [
-        "tasks",
-        "add",
-        "Later",
-        "--at",
-        at,
-        "--channel=a",
-        "--channel=b",
-        "--conversation=400",
-        "Hello",
-      ],
+      ["tasks", "add", "Later", "--at", at, "--to=a", "--to=b:400", "Hello"],
       ["provider", "status", "--provider", "openrouter", "--provider", "opencode-go"],
       ["provider", "login", "--key-stdin", "--key-stdin"],
       ["worker", "start", "extra"],

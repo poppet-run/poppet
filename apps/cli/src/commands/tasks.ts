@@ -6,7 +6,7 @@ import { Argument, Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
 import { codingFlag, skillFlag, textArgument } from "#src/commands/flags";
-import { parseTaskSchedule, prepareTask, runTaskCommand } from "#src/tasks";
+import { parseTaskDestination, parseTaskSchedule, prepareTask, runTaskCommand } from "#src/tasks";
 
 export const tasksCommand = (context: CLIContext) => {
   const { runtime } = context;
@@ -108,35 +108,18 @@ export const tasksCommand = (context: CLIContext) => {
           ),
           coding: codingFlag,
           skill: skillFlag,
-          channel: Flag.String("channel").pipe(
-            Flag.withSchema(Schema.NonEmptyString),
-            Flag.withDescription("Gateway ID for scheduled result delivery"),
-            Flag.atMost(1),
-            Flag.map(([value]) => value),
-          ),
-          conversation: Flag.String("conversation").pipe(
-            Flag.withSchema(Schema.NonEmptyString),
-            Flag.withDescription(
-              "Channel or thread ID for results (defaults to the gateway home channel)",
-            ),
+          to: Flag.String("to").pipe(
+            Flag.withDescription("Deliver to <gateway> or <gateway>:<conversation-id>"),
             Flag.atMost(1),
             Flag.map(([value]) => value),
           ),
           prompt: textArgument("prompt"),
         },
-        ({ name, at, cron, tz, coding, prompt, skill, channel, conversation }) =>
+        ({ name, at, cron, tz, coding, prompt, skill, to }) =>
           Effect.gen(function* () {
             const schedule = yield* taskOperation(() => parseTaskSchedule(at, cron, tz));
 
-            if (channel === undefined && conversation !== undefined)
-              return yield* Effect.fail(
-                new TaskError({ message: "Use --channel when selecting --conversation." }),
-              );
-
-            const delivery =
-              channel !== undefined
-                ? { adapter: channel, conversationId: conversation ?? null }
-                : undefined;
+            const delivery = yield* taskOperation(() => parseTaskDestination(to));
 
             const command = yield* prepareTask(name, schedule, coding, prompt, skill, delivery);
 

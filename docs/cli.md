@@ -183,28 +183,29 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 
 ## Scheduled tasks
 
-| Command                                                                                                                            | Action                                                             |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `tasks add <name> --at <timestamp> [--coding] [--skill <name>] [--channel <id> [--conversation <id>]] <prompt>`                    | Schedule a one-off request.                                        |
-| `tasks add <name> --cron <expression> --tz <timezone> [--coding] [--skill <name>] [--channel <id> [--conversation <id>]] <prompt>` | Schedule recurring work.                                           |
-| `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> --tz <timezone>]`                  | Edit definition fields while retaining task identity and history.  |
-| `tasks skip <task>`                                                                                                                | Consume exactly the next execution.                                |
-| `tasks snooze <task> --until <timestamp>`                                                                                          | Delay the next execution to a later offset-qualified instant.      |
-| `tasks run <task>`                                                                                                                 | Queue normal scheduled work without shifting recurring cadence.    |
-| `tasks` / `tasks list`                                                                                                             | List saved tasks.                                                  |
-| `tasks show <task>`                                                                                                                | Show occurrences, results, delivery states, and skipped intervals. |
-| `tasks pause <task>`                                                                                                               | Pause scheduling and cancel pending work.                          |
-| `tasks resume <task>`                                                                                                              | Resume future occurrences.                                         |
-| `tasks cancel <task> [--occurrence <id>]`                                                                                          | Cancel pending or active work.                                     |
-| `tasks retry <task> [--occurrence <id>]`                                                                                           | Explicitly retry an unsuccessful occurrence.                       |
-| `tasks providers`                                                                                                                  | Show provider quota pauses and temporary backoff.                  |
-| `tasks resume-provider <provider>`                                                                                                 | Allow scheduled requests for a provider again.                     |
-| `tasks remove <task>`                                                                                                              | Remove one task and its history; rejects running tasks.            |
-| `tasks clear`                                                                                                                      | Interrupt active work and remove all tasks and task history.       |
+| Command                                                                                                                          | Action                                                             |
+| -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `tasks add <name> --at <timestamp> [--coding] [--skill <name>] [--to <gateway>[:<conversation-id>]] <prompt>`                    | Schedule a one-off request.                                        |
+| `tasks add <name> --cron <expression> --tz <timezone> [--coding] [--skill <name>] [--to <gateway>[:<conversation-id>]] <prompt>` | Schedule recurring work.                                           |
+| `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> --tz <timezone>]`                | Edit definition fields while retaining task identity and history.  |
+| `tasks skip <task>`                                                                                                              | Consume exactly the next execution.                                |
+| `tasks snooze <task> --until <timestamp>`                                                                                        | Delay the next execution to a later offset-qualified instant.      |
+| `tasks run <task>`                                                                                                               | Queue normal scheduled work without shifting recurring cadence.    |
+| `tasks` / `tasks list`                                                                                                           | List saved tasks.                                                  |
+| `tasks show <task>`                                                                                                              | Show occurrences, results, delivery states, and skipped intervals. |
+| `tasks pause <task>`                                                                                                             | Pause scheduling and cancel pending work.                          |
+| `tasks resume <task>`                                                                                                            | Resume future occurrences.                                         |
+| `tasks cancel <task> [--occurrence <id>]`                                                                                        | Cancel pending or active work.                                     |
+| `tasks retry <task> [--occurrence <id>]`                                                                                         | Explicitly retry an unsuccessful occurrence.                       |
+| `tasks providers`                                                                                                                | Show provider quota pauses and temporary backoff.                  |
+| `tasks resume-provider <provider>`                                                                                               | Allow scheduled requests for a provider again.                     |
+| `tasks remove <task>`                                                                                                            | Remove one task and its history; rejects running tasks.            |
+| `tasks clear`                                                                                                                    | Interrupt active work and remove all tasks and task history.       |
 
 See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what
 `clear` deletes or retains. Tasks execute while a worker with scheduling enabled
-is running. Use `--channel` to deliver to that gateway's home channel. Add `--conversation` to select another channel or thread.
+is running. Use `--to <gateway>` to deliver to that gateway's home channel, or
+`--to <gateway>:<conversation-id>` to select another channel or thread.
 
 ## Messaging
 
