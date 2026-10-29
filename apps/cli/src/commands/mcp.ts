@@ -58,6 +58,10 @@ export const mcpCommand = (context: CLIContext) => {
             Flag.withDescription("Allow a discovered tool; repeat for each tool"),
             Flag.atMost(128),
           ),
+          allTools: booleanFlag(
+            "all-tools",
+            "Allow every tool the server lists now; tools it adds later stay unallowed",
+          ),
           scheduledTools: Flag.String("scheduled-tool").pipe(
             Flag.withDescription("Also allow a reviewed read-only tool in scheduled runs"),
             Flag.atMost(128),

@@ -143,6 +143,41 @@ describe("mcp add and remove", () => {
     }
   });
 
+  test.concurrent("when all tools are allowed, saves every discovered name and the reviewed scheduled subset", async () => {
+    const state = await harness();
+    const server = serve("mcp-stdin-secret");
+
+    try {
+      const added = await invoke(
+        state.directory,
+        [
+          "mcp",
+          "add",
+          "remote",
+          "--url",
+          server.url,
+          "--auth",
+          "api-key",
+          "--key-stdin",
+          "--all-tools",
+          "--scheduled-tool",
+          "read",
+        ],
+        "mcp-stdin-secret\n",
+      );
+
+      expect(added.exitCode).toBe(0);
+      expect(added.output).toContain("Allowed tools: read, write");
+      expect((await state.config()).mcpServers[0]).toMatchObject({
+        tools: ["read", "write"],
+        scheduledTools: ["read"],
+      });
+    } finally {
+      await server.stop();
+      await state.close();
+    }
+  });
+
   test.concurrent("when an entry is invalid or duplicated, saves neither configuration nor key", async () => {
     const state = await harness();
     const existing = [{ id: "remote", enabled: true, url: "https://mcp.example/mcp", tools: [] }];
@@ -159,6 +194,16 @@ describe("mcp add and remove", () => {
           "--auth",
           "none",
           "--scheduled-tool",
+          "read",
+        ],
+        [
+          "both",
+          "--url",
+          "https://mcp.example/mcp",
+          "--auth",
+          "none",
+          "--all-tools",
+          "--tool",
           "read",
         ],
       ]) {

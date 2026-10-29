@@ -119,7 +119,8 @@ for provider-specific setup and logout behavior.
 | `mcp logout <server>`                                        | Delete an OAuth server's saved tokens.                                           |
 | `mcp remove <server>`                                        | Remove the entry and the key or sign-in that Poppet saved for it.                |
 
-`mcp add` takes repeatable `--tool` and `--scheduled-tool` flags. With
+`mcp add` takes repeatable `--tool` and `--scheduled-tool` flags, or
+`--all-tools` to allow every tool the server lists when it is added. With
 `--auth api-key` it reads the key from a hidden prompt or `--key-stdin`; use
 `--header` and `--prefix` for schemes other than `Authorization: Bearer`. With
 `--auth oauth` it accepts `--client-id`, repeatable `--scope`,
