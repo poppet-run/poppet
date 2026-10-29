@@ -67,7 +67,11 @@ and `oauth` signs in through the browser (see [OAuth sign-in](#oauth-sign-in)).
 `--header X-API-Key --prefix ""` selects another API-key scheme. The command
 validates the complete server list before saving anything, then connects once
 and prints every tool the server offers. Only tools named with `--tool` are
-allowed; review the printed names and add others to `tools` yourself. A server
+allowed; review the printed names and add others to `tools` yourself.
+`--all-tools` instead saves every name the server lists now as explicit
+`tools` entries; tools the server adds later stay unallowed until you add them.
+It cannot be combined with `--tool` or `--no-login`, and `--scheduled-tool`
+names must be among the discovered tools. A server
 that answers with an OAuth challenge is saved with a diagnostic suggesting
 `--auth oauth`. `poppet mcp remove <id>` deletes the entry, its `mcp-<id>`
 credential, and any saved sign-in. Restart the worker after either command.

@@ -23,6 +23,8 @@ export interface AddServer {
   readonly url: string;
   readonly auth: "none" | "api-key" | "oauth";
   readonly tools: ReadonlyArray<string>;
+  /** Allows every tool the server lists now, saved as explicit names. */
+  readonly allTools: boolean;
   readonly scheduledTools: ReadonlyArray<string>;
   readonly header: string;
   readonly prefix: string;
@@ -74,6 +76,12 @@ export const addMCPServer = (options: AddServer) =>
     )
       return yield* invalid("--client-id, --scope and --callback-port apply only to --auth oauth.");
 
+    if (options.allTools && options.tools.length > 0)
+      return yield* invalid("Use either --all-tools or --tool.");
+
+    if (options.allTools && options.auth === "oauth" && !options.login)
+      return yield* invalid("--all-tools needs sign-in to list tools; omit --no-login.");
+
     const entry: Types.Mutable<MCPHTTPServer> = {
       id: options.id,
       enabled: true,
@@ -84,7 +92,9 @@ export const addMCPServer = (options: AddServer) =>
     if (options.auth === "api-key")
       entry.headers = { [options.header]: { credential, prefix: options.prefix } };
 
-    if (options.scheduledTools.length > 0) entry.scheduledTools = options.scheduledTools;
+    // With --all-tools, scheduled tools are saved once discovery confirms they exist.
+    if (options.scheduledTools.length > 0 && !options.allTools)
+      entry.scheduledTools = options.scheduledTools;
 
     if (options.auth === "oauth") {
       const oauth: Types.Mutable<MCPOAuthServer["oauth"]> = {};
@@ -153,11 +163,50 @@ export const addMCPServer = (options: AddServer) =>
           : `Available tools: ${discovered.value.join(", ")}`,
       );
 
+    const allowed = options.allTools
+      ? yield* allowDiscovered(dataDirectory, options, Option.getOrNull(discovered))
+      : options.tools;
+
     yield* Console.log(
-      options.tools.length === 0
+      allowed.length === 0
         ? `No tools are allowed yet. Review the names, then add them to tools for ${options.id} in config.json. ${restart}`
-        : `Allowed tools: ${options.tools.join(", ")}. ${restart}`,
+        : `Allowed tools: ${allowed.join(", ")}. ${restart}`,
     );
+  });
+
+/** Saves every discovered name as an explicit allowlist; later server additions stay unallowed. */
+const allowDiscovered = (
+  dataDirectory: string,
+  options: AddServer,
+  discovered: ReadonlyArray<string> | null,
+) =>
+  Effect.gen(function* () {
+    if (discovered === null || discovered.length === 0) return [];
+
+    const missing = options.scheduledTools.filter((name) => !discovered.includes(name));
+
+    if (missing.length > 0) {
+      yield* Console.error(
+        `The server does not offer ${missing.join(", ")}, so no tools were allowed.`,
+      );
+
+      return [];
+    }
+
+    yield* updateConfigFile(dataDirectory, (current) => ({
+      ...current,
+      mcpServers: (current.mcpServers ?? []).map((server) => {
+        if (server.id !== options.id) return server;
+
+        const allowed = { ...server, tools: discovered };
+
+        return options.scheduledTools.length === 0
+          ? allowed
+          : { ...allowed, scheduledTools: options.scheduledTools };
+      }),
+    }));
+
+    return discovered;
   });
 
 const login = (server: MCPOAuthServer, browser: boolean) =>
