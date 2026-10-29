@@ -583,7 +583,9 @@ describe("makeCLI", () => {
         schedule: { expression: "0 9 * * *", timezone: "Europe/London" },
       });
       const offline = { POPPET_DATA_DIR: directory };
-      expect(JSON.parse((await invoke(["tasks", "list"], offline)).stdout)).toHaveLength(1);
+      expect(JSON.parse((await invoke(["tasks"], offline)).stdout)).toEqual(
+        JSON.parse((await invoke(["tasks", "list"], offline)).stdout),
+      );
       expect(JSON.parse((await invoke(["tasks", "pause", task.id], offline)).stdout).paused).toBe(
         1,
       );

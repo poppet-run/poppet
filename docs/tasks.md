@@ -54,11 +54,13 @@ An idle worker does not print polling messages.
 Leave the worker running. In another terminal using the same `POPPET_DATA_DIR`:
 
 ```sh
-poppet tasks list
+poppet tasks
 poppet tasks show <task-id>
 poppet tasks pause <task-id>
 poppet tasks resume <task-id>
 ```
+
+Running `poppet tasks` lists saved tasks. The explicit `tasks list` command is also supported.
 
 ## Edit and control the next execution
 

@@ -11,7 +11,7 @@ import { parseTaskSchedule, prepareTask, runTaskCommand } from "#src/tasks";
 export const tasksCommand = (context: CLIContext) => {
   const { runtime } = context;
 
-  return Command.make("tasks").pipe(
+  return Command.make("tasks", {}, () => runTaskCommand(runtime, { action: "list" })).pipe(
     Command.withDescription("Schedule and manage requests"),
     Command.withSubcommands([
       Command.make(
