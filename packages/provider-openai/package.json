@@ -18,6 +18,7 @@
     "@poppet/credentials": "workspace:*",
     "@poppet/io": "workspace:*",
     "@poppet/provider": "workspace:*",
+    "@poppet/sign-in": "workspace:*",
     "effect": "4.0.4",
     "jose": "6.2.12",
     "openai": "7.32.0"

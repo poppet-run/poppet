@@ -55,7 +55,8 @@ The Bun monorepo uses private workspaces:
 | `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export  | None                                                                                 |
 | `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                    | Provider contract, credentials, protocol adapters                                    |
 | `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                   | Provider contract, credentials, protocol adapters                                    |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference        | Credentials, provider contract, protocol adapters                                    |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference        | Credentials, sign-in, provider contract, protocol adapters                           |
+| `@poppet/sign-in`             | Browser authorization: loopback callback, pasted callbacks, deadline               | Effect                                                                               |
 
 The CLI lives in `apps/cli`; libraries live in `packages/`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
@@ -90,8 +91,8 @@ filesystem tests use temporary directories.
 Each capability's service module defines its contextual service and live layer.
 Its workflow modules contain the operations, while pure helpers stay separate.
 The auth layer captures login and refresh dependencies once and wraps those
-operations in one shared semaphore. The sign-in service scopes the callback
-listener; the OAuth service owns cached discovery. These helpers do not add
+operations in one shared semaphore. The sign-in service scopes the shared
+`@poppet/sign-in` callback listener; the OAuth service owns cached discovery. These helpers do not add
 services or layers of their own.
 
 Tests live beside their capability modules. The provider's `src/test/fixtures/` composes injected

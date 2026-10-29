@@ -174,6 +174,9 @@ packages/
     src/worker.ts         LaunchAgent control and plist generation
   platform-linux/         @poppet/platform-linux
     src/worker.ts         systemd user unit control and unit file generation
+  sign-in/                @poppet/sign-in
+    src/callback.ts       Scoped loopback callback with state and paste checks
+    src/authorize.ts      Browser launch or printed link, pasted callbacks, deadline
   provider/               @poppet/provider
     src/schema.ts         Normalized messages, tools, events, and continuation
     src/service.ts        Provider service, model operations, and typed errors
@@ -186,7 +189,7 @@ packages/
       connection.ts       Credential schemas and redacted secrets
       auth/               Login, refresh, status, protected credential storage
       oauth/              Discovery, token exchange, JWT identity validation
-      sign-in/            Browser sign-in and scoped loopback callback
+      sign-in/            ChatGPT authorization request and callback checks
       model/              Model catalog, subscription errors, verification
       registration.ts     Provider-owned live composition and connection operations
       test/fixtures/      Local OAuth and model servers for behavior tests
