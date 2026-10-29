@@ -18,7 +18,7 @@ import {
   type BrowserOptions,
   type SignInError,
 } from "@poppet/sign-in";
-import { Context, Data, Effect, Layer, Option, Redacted, Schema } from "effect";
+import { Context, Data, Effect, Layer, Option, Redacted, Schema, type Types } from "effect";
 
 import type { MCPHTTPServer, MCPOAuth } from "#src/config";
 import { boundedFetch } from "#src/transport";
@@ -53,13 +53,7 @@ const SavedSignIn = Schema.Struct({
 type SavedSignIn = typeof SavedSignIn.Type;
 
 /** A working copy the SDK provider mutates; it is written back as a whole under the record lock. */
-interface Working {
-  url: string;
-  client?: Schema.JsonObject;
-  tokens?: Schema.JsonObject;
-  tokensSavedAt?: number;
-  discovery?: Schema.JsonObject;
-}
+type Working = Types.Mutable<SavedSignIn>;
 
 const recordName = (id: string) => `mcp-oauth-${id}`;
 
@@ -148,6 +142,9 @@ const accessToken = (record: Working | SavedSignIn | null) =>
   record?.tokens === undefined
     ? null
     : Option.getOrNull(Schema.decodeUnknownOption(AccessToken)(record.tokens));
+
+const tokenForServer = (saved: SavedSignIn | null, config: MCPOAuthServer) =>
+  saved?.url === config.url ? accessToken(saved) : null;
 
 const RedirectURIs = Schema.Struct({ redirect_uris: Schema.Array(Schema.String) });
 
@@ -295,7 +292,7 @@ const Issued = Schema.Struct({
 export const signInStatus = (config: MCPOAuthServer) =>
   Effect.gen(function* () {
     const saved = yield* MCPSignIns.use((signIns) => signIns.read(config.id));
-    const token = saved?.url === config.url ? accessToken(saved) : null;
+    const token = tokenForServer(saved, config);
 
     const details = Option.getOrElse(Schema.decodeUnknownOption(Issued)(saved?.tokens ?? {}), () =>
       Issued.make({}),
@@ -474,7 +471,7 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
     const signIns = yield* MCPSignIns;
     const secret = yield* clientSecret(config);
     const saved = yield* signIns.read(config.id);
-    const initial = saved?.url === config.url ? accessToken(saved) : null;
+    const initial = tokenForServer(saved, config);
 
     if (initial === null) return yield* Effect.fail(required(config.id, "sign-in required."));
 
@@ -543,7 +540,7 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
     const authProvider: AuthProvider = {
       token: async () => {
         const current = await Effect.runPromise(signIns.read(config.id));
-        const latest = current?.url === config.url ? accessToken(current) : null;
+        const latest = tokenForServer(current, config);
 
         if (latest === null || state.loginRequired) {
           state.loginRequired = true;
