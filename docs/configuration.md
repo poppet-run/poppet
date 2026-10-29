@@ -29,7 +29,7 @@ precedence where supported.
 `poppet config` validates and prints the invoking process's settings, config-file
 location, and whether `POPPET_DATA_DIR` is set. It does not open storage, load
 credentials, contact providers, or inspect a running worker. Restart the worker
-after editing settings: `poppet worker stop`, then `poppet worker start`.
+after editing settings: `poppet worker restart`.
 
 ## Settings
 

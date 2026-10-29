@@ -77,19 +77,21 @@ export const workerCommand = (context: CLIContext) => {
         },
         ({ tasksOnly }) => startWorker(tasksOnly ? "tasks" : "all"),
       ).pipe(Command.withDescription("Run scheduling and messaging in one foreground worker")),
-      ...(["install", "start", "stop", "status", "logs", "uninstall"] as const).map((action) =>
-        Command.make(action, {}, () => runWorkerCommand(action)).pipe(
-          Command.withDescription(
-            {
-              install: "Install and start the login worker",
-              start: "Start an installed worker",
-              stop: "Stop it until the next login or explicit start",
-              status: "Show login service, scheduling, provider, and messaging status",
-              logs: "Print the last 64 KiB of worker logs",
-              uninstall: "Stop and remove login startup; retain saved data",
-            }[action],
+      ...(["install", "start", "restart", "stop", "status", "logs", "uninstall"] as const).map(
+        (action) =>
+          Command.make(action, {}, () => runWorkerCommand(action)).pipe(
+            Command.withDescription(
+              {
+                install: "Install and start the login worker",
+                start: "Start an installed worker",
+                restart: "Restart an installed worker, interrupting active work",
+                stop: "Stop it until the next login or explicit start",
+                status: "Show login service, scheduling, provider, and messaging status",
+                logs: "Print the last 64 KiB of worker logs",
+                uninstall: "Stop and remove login startup; retain saved data",
+              }[action],
+            ),
           ),
-        ),
       ),
     ]),
   );

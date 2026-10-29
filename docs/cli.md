@@ -210,6 +210,7 @@ controls, and uncertain deliveries. The bot token is never accepted as a command
 | `worker run [--tasks-only]` | Run scheduling and messaging, or scheduling only.               |
 | `worker install`            | Install and start the login worker.                             |
 | `worker start`              | Start an installed worker.                                      |
+| `worker restart`            | Restart an installed worker, interrupting active work.          |
 | `worker stop`               | Stop it until the next login or explicit start.                 |
 | `worker status`             | Show login service, scheduling, provider, and messaging status. |
 | `worker logs`               | Print the last 64 KiB of worker logs.                           |

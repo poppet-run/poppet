@@ -4,6 +4,7 @@ import { Data, Schema } from "effect";
 export const WorkerAction = Schema.Literals([
   "install",
   "start",
+  "restart",
   "stop",
   "status",
   "logs",

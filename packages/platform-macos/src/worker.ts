@@ -147,8 +147,12 @@ export const manageWorker = (
         throw new WorkerError({ message: "Install the worker first with worker install." });
       }
 
-      if (!active) await command(["bootstrap", domain, paths.plist]);
+      if (action === "restart" && active) await command(["bootout", target]);
+
+      if (!active || action === "restart") await command(["bootstrap", domain, paths.plist]);
       else await command(["kickstart", target]);
+
+      if (action === "restart") return "Worker restarted. Check worker status for readiness.";
 
       return "Worker started. It will run at login while this user is logged in. Check worker status for readiness.";
     },

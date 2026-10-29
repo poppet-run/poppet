@@ -340,7 +340,7 @@ assistant-capable provider and model for messaging and scheduled tasks.
       duplicate replies.
 - [ ] Save provider/model settings in `config.json` and credentials in protected
       storage. Stop foreground workers, then run `poppet worker install`, or
-      `poppet worker stop` followed by `poppet worker start` for an
+      `poppet worker restart` for an
       existing installation. Check `poppet worker status` and
       `poppet worker logs`.
 - [ ] Log out of macOS and back in. Confirm the worker starts automatically,

@@ -1074,6 +1074,34 @@ describe("makeCLI", () => {
     }
   });
 
+  test("when restarting a worker, validates configuration before calling the service manager", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-worker-restart-"));
+    const calls: string[] = [];
+
+    const worker: typeof manageWorker = (action, selectedDirectory) =>
+      Effect.sync(() => {
+        expect(selectedDirectory).toBe(directory);
+        calls.push(action);
+
+        return "Worker restarted.";
+      });
+
+    try {
+      const environment = await configure(directory, { model: 123 });
+      expect((await invoke(["worker", "restart"], environment, worker)).exitCode).toBe(1);
+      expect(calls).toEqual([]);
+      await configure(directory, {});
+      expect(await invoke(["worker", "restart"], environment, worker)).toEqual({
+        stdout: "Worker restarted.\n",
+        stderr: "",
+        exitCode: 0,
+      });
+      expect(calls).toEqual(["restart"]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test.each(["stop", "uninstall", "logs"])(
     "when worker recovery runs %s, ignores invalid file settings and rejects an empty data directory",
     async (action) => {
@@ -1129,6 +1157,7 @@ describe("makeCLI", () => {
       "tasks providers",
       "tasks resume-provider",
       "worker stop",
+      "worker restart",
     ];
 
     try {

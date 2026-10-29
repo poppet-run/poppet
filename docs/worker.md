@@ -67,8 +67,8 @@ save them for the background worker.
 
 Installation starts it immediately. It records the absolute Bun executable, CLI
 entry point, current working directory, and `POPPET_DATA_DIR`. The worker reads
-`config.json` on startup. After editing settings, use `worker stop` followed by
-`worker start`. Keep the checkout and Bun executable in place; moving either
+`config.json` on startup. After editing settings, use `worker restart`.
+Keep the checkout and Bun executable in place; moving either
 requires uninstalling and installing again. Each data directory has its own
 service. Manage it with the same `POPPET_DATA_DIR`.
 
@@ -159,11 +159,12 @@ its output before closing the log. A worker that does not exit within 25 seconds
 is killed to stay within the service manager's 30-second stop deadline. A logging failure stops the
 worker rather than allowing it to run without captured diagnostics.
 
-## Stop, start, and uninstall
+## Stop, start, restart, and uninstall
 
 ```sh
 poppet worker stop
 poppet worker start
+poppet worker restart
 poppet worker uninstall
 ```
 
@@ -177,6 +178,10 @@ before an interruption returns; each launchctl or systemctl subprocess has a
 35-second timeout.
 Starting an already
 loaded worker does not interrupt an active request.
+Restarting interrupts active work and starts the installed service again, including
+when it was stopped. It retains the service configuration and saved data. Restart
+validates configuration before stopping the service and requires an installed worker.
+For a foreground worker, stop and rerun `worker run` instead.
 
 ## Interactive commands
 
@@ -209,7 +214,7 @@ which leaves room for four 5 MiB attachments sent as base64, the chat context, a
 command metadata. Oversized requests report a size error without being retried.
 Only an absent socket or refused connection permits local fallback. A lost,
 incomplete, or incompatible response fails without replaying the command. Restart
-the worker with `worker stop` followed by `worker start` after updating code.
+the worker with `worker restart` after updating code.
 The current protocol uses `/v1/commands` and `/v1/tasks`; other routes are rejected.
 
 ## Sleep and missed schedules
