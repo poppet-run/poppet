@@ -1,4 +1,11 @@
-import { Client, type FetchLike, type Tool as ServerTool } from "@modelcontextprotocol/client";
+import {
+  Client,
+  InsufficientScopeError,
+  type AuthProvider,
+  type FetchLike,
+  type StreamableHTTPClientTransportOptions,
+  type Tool as ServerTool,
+} from "@modelcontextprotocol/client";
 import { ApiKeyStore } from "@poppet/credentials";
 import type { Tool } from "@poppet/provider";
 import { Clock, Console, Context, Data, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
@@ -12,6 +19,13 @@ import {
 } from "#src/catalog";
 import { isHTTPServer, mcpServers, type MCPReference, type MCPServer } from "#src/config";
 import { MCPError } from "#src/errors";
+import {
+  isOAuthServer,
+  MCPSignIns,
+  runtimeAuthorization,
+  signInStatus,
+  type RuntimeAuthorization,
+} from "#src/oauth";
 import { boundedFetch, ScopedHTTPTransport, ScopedStdioTransport } from "#src/transport";
 
 /** An allowed discovered tool with validation and invocation owned by this package. */
@@ -40,7 +54,9 @@ type ConnectionState =
       readonly failedAt: number;
       /** Failed reconnects since the last successful connection. */
       readonly retries: number;
-    };
+    }
+  /** An OAuth server waits for `mcp login` rather than retrying on a backoff. */
+  | { readonly status: "needs-login"; readonly diagnostic: string };
 
 interface Connection {
   readonly client: Client;
@@ -48,6 +64,8 @@ interface Connection {
   readonly now: () => number;
   state: ConnectionState;
   closing: Promise<void> | null;
+  /** OAuth servers report when their saved sign-in is missing or was rejected. */
+  readonly signIn: { readonly required: () => boolean; readonly message: string } | null;
 }
 
 // A failed server reconnects on a later request after this delay, doubling per attempt.
@@ -57,7 +75,9 @@ const retryAt = (state: Extract<ConnectionState, { status: "unavailable" }>) =>
   state.failedAt + reconnectDelay(state.retries);
 
 const diagnostic = (connection: Connection) =>
-  connection.state.status === "unavailable" ? connection.state.diagnostic : null;
+  connection.state.status === "unavailable" || connection.state.status === "needs-login"
+    ? connection.state.diagnostic
+    : null;
 
 export class MCP extends Context.Service<
   MCP,
@@ -77,6 +97,12 @@ export class MCP extends Context.Service<
         readonly tools: ReadonlyArray<string>;
         readonly scheduledTools: ReadonlyArray<string>;
         readonly availableTools: ReadonlyArray<string>;
+        /** Saved OAuth sign-in for OAuth servers, without token values. */
+        readonly signIn: {
+          readonly signedIn: boolean;
+          readonly expiresAt: number | null;
+          readonly scopes: ReadonlyArray<string>;
+        } | null;
       }>
     >;
     readonly snapshot: (scheduled: boolean) => Effect.Effect<ReadonlyArray<MCPTool>, MCPError>;
@@ -112,13 +138,16 @@ const invalidate = (connection: Connection, message: string) => {
   const state = connection.state;
 
   // Repeated callbacks keep the first failure and its original backoff deadline.
-  if (state.status !== "unavailable")
-    connection.state = {
-      status: "unavailable",
-      diagnostic: message,
-      failedAt: connection.now(),
-      retries: state.status === "idle" ? state.retries : 0,
-    };
+  if (state.status !== "unavailable" && state.status !== "needs-login")
+    connection.state =
+      connection.signIn?.required() === true
+        ? { status: "needs-login", diagnostic: connection.signIn.message }
+        : {
+            status: "unavailable",
+            diagnostic: message,
+            failedAt: connection.now(),
+            retries: state.status === "idle" ? state.retries : 0,
+          };
 
   return close(connection);
 };
@@ -235,6 +264,19 @@ const discoverTools = async (config: MCPServer, client: Client, signal: AbortSig
   return discovered.filter((tool) => config.tools.includes(tool.name));
 };
 
+/** Filled during startup, after the saved sign-in has been read. */
+interface AuthorizationSlot {
+  current: RuntimeAuthorization | null;
+}
+
+const delegate = (authorization: AuthorizationSlot): AuthProvider => ({
+  token: () => Promise.resolve(authorization.current?.token()),
+  onUnauthorized: (context) =>
+    authorization.current === null
+      ? Promise.reject(new Error("Sign-in required."))
+      : authorization.current.authProvider.onUnauthorized!(context),
+});
+
 const makeClient = () =>
   new Client({ name: "poppet", version: "0.0.0" }, { capabilities: {}, listMaxPages: 8 });
 
@@ -243,28 +285,36 @@ const makeTransport = (
   config: MCPServer,
   references: Record<string, string>,
   fetch: FetchLike = boundedFetch(262144),
-) =>
-  isHTTPServer(config)
-    ? new ScopedHTTPTransport(new URL(config.url), {
-        requestInit: { headers: references },
-        fetch,
-        redirectPolicy: "same-origin",
-        // Poppet's own backoff owns reconnection; a dropped stream fails the connection.
-        reconnectionOptions: {
-          initialReconnectionDelay: 1000,
-          maxReconnectionDelay: 30000,
-          reconnectionDelayGrowFactor: 1.5,
-          maxRetries: 0,
-        },
-      })
-    : new ScopedStdioTransport({
-        command: config.command,
-        args: [...config.args],
-        cwd: config.cwd ?? process.cwd(),
-        env: references,
-        stderr: "ignore",
-        maxBufferSize: 262144,
-      });
+  authorization: AuthorizationSlot = { current: null },
+) => {
+  if (!isHTTPServer(config))
+    return new ScopedStdioTransport({
+      command: config.command,
+      args: [...config.args],
+      cwd: config.cwd ?? process.cwd(),
+      env: references,
+      stderr: "ignore",
+      maxBufferSize: 262144,
+    });
+
+  const options: StreamableHTTPClientTransportOptions = {
+    requestInit: { headers: references },
+    fetch,
+    redirectPolicy: "same-origin",
+    // Poppet's own backoff owns reconnection; a dropped stream fails the connection.
+    reconnectionOptions: {
+      initialReconnectionDelay: 1000,
+      maxReconnectionDelay: 30000,
+      reconnectionDelayGrowFactor: 1.5,
+      maxRetries: 0,
+    },
+  };
+
+  // Startup supplies OAuth tokens after reading the saved sign-in, like other references.
+  if (isOAuthServer(config)) options.authProvider = delegate(authorization);
+
+  return new ScopedHTTPTransport(new URL(config.url), options);
+};
 
 const compile = (input: Schema.JsonObject) => {
   try {
@@ -281,7 +331,8 @@ const makeTool = (
   config: MCPServer,
   tool: ServerTool,
   connection: Connection,
-  secrets: ReadonlyArray<string>,
+  /** Read per use, because OAuth refresh replaces the access token. */
+  secrets: () => ReadonlyArray<string>,
   toolBytes: number,
 ): MCPTool => {
   if ((tool.description?.length ?? 0) > 4096 || tool.execution?.taskSupport === "required")
@@ -290,8 +341,8 @@ const makeTool = (
     });
 
   if (
-    secrets.length > 0 &&
-    containsSecret(Schema.decodeUnknownSync(Schema.JsonObject)(tool), secrets)
+    secrets().length > 0 &&
+    containsSecret(Schema.decodeUnknownSync(Schema.JsonObject)(tool), secrets())
   )
     throw new MCPDiagnostic({ message: "Tool definition contains a selected credential." });
   const schema = Schema.decodeUnknownSync(Schema.JsonObject)(tool.inputSchema);
@@ -324,7 +375,18 @@ const makeTool = (
             { method: "tools/call", params: { name: tool.name, arguments: args } },
             { signal, timeout: 10000 },
           ),
-        catch: uncertain,
+        // A rejected sign-in or missing scope is a refusal before the call ran.
+        catch: (cause) => {
+          if (connection.signIn?.required() === true) return failed(connection.signIn.message);
+
+          if (cause instanceof InsufficientScopeError)
+            return new MCPError({
+              reason: "tool-permission",
+              message: `MCP ${config.id}/${tool.name}: the server requires the scope ${cause.requiredScope ?? "it names"}. Add it to oauth.scopes and run poppet mcp login ${config.id}.`,
+            });
+
+          return uncertain();
+        },
       });
 
       return yield* Effect.try({
@@ -332,13 +394,13 @@ const makeTool = (
           if (!result.isError && output !== null && !output(result.structuredContent))
             throw new Error("Invalid structured output.");
 
-          return toolResult(result, toolBytes, secrets);
+          return toolResult(result, toolBytes, secrets());
         },
         catch: (cause) => (cause instanceof MCPError ? cause : uncertain()),
       });
     }).pipe(
       Effect.tapError((error) =>
-        error.reason === "tool-uncertain"
+        error.reason === "tool-uncertain" || connection.signIn?.required() === true
           ? Effect.promise(() => invalidate(connection, error.message))
           : Effect.void,
       ),
@@ -375,9 +437,11 @@ export const makeMCPLive = (toolBytes: number) =>
     Effect.gen(function* () {
       const servers = yield* mcpServers;
       const credentials = yield* ApiKeyStore;
+      const signIns = yield* MCPSignIns;
       // Each server starts under its own lock, so one slow server never delays the others.
       const locks = new Map(servers.map((config) => [config.id, Semaphore.makeUnsafe(1)]));
       const clock = yield* Clock.Clock;
+      const now = () => clock.currentTimeMillisUnsafe();
       const connections = new Map<string, Connection>();
 
       yield* Effect.addFinalizer(() =>
@@ -392,26 +456,42 @@ export const makeMCPLive = (toolBytes: number) =>
           if (prior !== undefined) {
             const state = prior.state;
 
-            if (state.status !== "unavailable" || clock.currentTimeMillisUnsafe() < retryAt(state))
+            // A server waiting for sign-in rechecks its saved sign-in, which `mcp login` may
+            // have replaced from another process, on every request without contacting it.
+            if (
+              state.status !== "needs-login" &&
+              (state.status !== "unavailable" || clock.currentTimeMillisUnsafe() < retryAt(state))
+            )
               return prior;
             // Replace the failed client only after its process has been reaped.
             yield* Effect.promise(() => close(prior).catch(() => {}));
             connections.delete(config.id);
-            retries = state.retries + 1;
+            retries = state.status === "unavailable" ? state.retries + 1 : 0;
           }
 
           const references: Record<string, string> = {};
+          const authorization: AuthorizationSlot = { current: null };
+          const missing = { value: false };
+          const oauth = isHTTPServer(config) && isOAuthServer(config) ? config : null;
 
           const client = makeClient();
 
-          const transport = makeTransport(config, references);
+          const transport = makeTransport(config, references, undefined, authorization);
 
           const connection: Connection = {
             client,
             transport,
-            now: () => clock.currentTimeMillisUnsafe(),
+            now,
             state: config.enabled ? { status: "idle", retries } : { status: "disabled" },
             closing: null,
+            signIn:
+              oauth === null
+                ? null
+                : {
+                    required: () =>
+                      missing.value || authorization.current?.loginRequired() === true,
+                    message: `MCP ${config.id}: sign-in required. Run poppet mcp login ${config.id}.`,
+                  },
           };
 
           const disconnected = () => {
@@ -438,6 +518,27 @@ export const makeMCPLive = (toolBytes: number) =>
             const { values, secrets } = yield* resolveReferences(config, credentials);
             Object.assign(references, values);
 
+            if (oauth !== null)
+              authorization.current = yield* runtimeAuthorization(oauth, now).pipe(
+                Effect.provideService(MCPSignIns, signIns),
+                Effect.provideService(ApiKeyStore, credentials),
+                Effect.catchTag("MCPLoginRequired", (error) => {
+                  missing.value = true;
+
+                  return Effect.fail(failed(error.message));
+                }),
+                Effect.mapError((error) =>
+                  error instanceof MCPError
+                    ? error
+                    : failed(`MCP ${config.id}: cannot read its saved sign-in or client secret.`),
+                ),
+              );
+
+            const current = () =>
+              authorization.current === null
+                ? secrets
+                : [...secrets, authorization.current.token()];
+
             const discovered = yield* Effect.tryPromise({
               try: async (signal) => {
                 await client.connect(transport, { signal, timeout: 5000 });
@@ -449,7 +550,7 @@ export const makeMCPLive = (toolBytes: number) =>
 
             const tools = yield* Effect.try({
               try: () =>
-                discovered.map((tool) => makeTool(config, tool, connection, secrets, toolBytes)),
+                discovered.map((tool) => makeTool(config, tool, connection, current, toolBytes)),
               catch: (cause) => startupFailure(config, cause),
             });
 
@@ -468,7 +569,13 @@ export const makeMCPLive = (toolBytes: number) =>
                     `${error instanceof MCPError ? error.message : `MCP ${config.id}: startup timed out.`} Poppet retries on a later request.`,
                   ),
                 );
-                yield* Console.error(diagnostic(connection));
+
+                // A server still waiting for sign-in reported it on its first failure.
+                if (
+                  prior?.state.status !== "needs-login" ||
+                  connection.state.status !== "needs-login"
+                )
+                  yield* Console.error(diagnostic(connection));
               }),
             ),
             Effect.onInterrupt(() =>
@@ -484,10 +591,18 @@ export const makeMCPLive = (toolBytes: number) =>
           return connection;
         }).pipe(locks.get(config.id)!.withPermit);
 
-      const status = Effect.sync(() =>
-        servers.map((config) => {
+      const status = Effect.forEach(servers, (config) =>
+        Effect.gen(function* () {
           const connection = connections.get(config.id);
           const state = connection?.state;
+
+          const signIn =
+            isHTTPServer(config) && isOAuthServer(config)
+              ? yield* signInStatus(config).pipe(
+                  Effect.provideService(MCPSignIns, signIns),
+                  Effect.orElseSucceed(() => null),
+                )
+              : null;
 
           return {
             id: config.id,
@@ -499,12 +614,13 @@ export const makeMCPLive = (toolBytes: number) =>
               connection?.transport instanceof ScopedStdioTransport
                 ? connection.transport.pid
                 : null,
-            diagnostic: state?.status === "unavailable" ? state.diagnostic : null,
+            diagnostic: connection === undefined ? null : diagnostic(connection),
             retryAt: state?.status === "unavailable" ? retryAt(state) : null,
             tools: config.tools,
             scheduledTools: config.scheduledTools ?? [],
             availableTools:
               state?.status === "connected" ? state.tools.map((tool) => tool.toolName) : [],
+            signIn,
           };
         }),
       );
@@ -562,8 +678,23 @@ export const makeMCPLive = (toolBytes: number) =>
 export const probeServer = (config: MCPServer) =>
   Effect.gen(function* () {
     const credentials = yield* ApiKeyStore;
+    const clock = yield* Clock.Clock;
     const { values } = yield* resolveReferences(config, credentials);
+    const oauth = isHTTPServer(config) && isOAuthServer(config) ? config : null;
+    const authorization: AuthorizationSlot = { current: null };
     let challenged = false;
+
+    if (oauth !== null)
+      authorization.current = yield* runtimeAuthorization(oauth, () =>
+        clock.currentTimeMillisUnsafe(),
+      ).pipe(
+        Effect.catchTag("MCPLoginRequired", (error) => Effect.fail(failed(error.message))),
+        Effect.mapError((error) =>
+          error instanceof MCPError
+            ? error
+            : failed(`MCP ${config.id}: cannot read its saved sign-in or client secret.`),
+        ),
+      );
     const base = boundedFetch(262144);
 
     // A 401 naming protected resource metadata means the server expects OAuth.
@@ -580,7 +711,7 @@ export const probeServer = (config: MCPServer) =>
     };
 
     const client = makeClient();
-    const transport = makeTransport(config, values, observe);
+    const transport = makeTransport(config, values, observe, authorization);
 
     return yield* Effect.tryPromise({
       try: async (signal) => {
@@ -589,7 +720,7 @@ export const probeServer = (config: MCPServer) =>
         return (await listTools(client, signal)).map((tool) => tool.name);
       },
       catch: (cause) =>
-        challenged
+        challenged && oauth === null
           ? failed(`MCP ${config.id}: the server requires OAuth sign-in. Add it with --auth oauth.`)
           : startupFailure(config, cause),
     }).pipe(

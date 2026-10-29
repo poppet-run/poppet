@@ -20,6 +20,7 @@
     "@poppet/credentials": "workspace:*",
     "@poppet/io": "workspace:*",
     "@poppet/provider": "workspace:*",
+    "@poppet/sign-in": "workspace:*",
     "ajv": "8.20.0",
     "effect": "4.0.4"
   },

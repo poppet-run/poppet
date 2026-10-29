@@ -79,10 +79,25 @@ export const MCPStdioServer = Schema.Struct({
   environment: Schema.optionalKey(Schema.Record(Variable, Reference)),
 });
 
+const Scope = Schema.String.check(Schema.isPattern(/^[!#-[\]-~]{1,256}$/));
+
+/** OAuth sign-in through `mcp login`; client secrets are protected credential references. */
+const OAuth = Schema.Struct({
+  clientId: Schema.optionalKey(Text),
+  clientSecret: Schema.optionalKey(Schema.Struct({ credential: Id })),
+  scopes: Schema.optionalKey(Schema.Array(Scope).check(Schema.isMaxLength(32))),
+  callbackPort: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65535 })),
+  ),
+});
+
+export type MCPOAuth = typeof OAuth.Type;
+
 export const MCPHTTPServer = Schema.Struct({
   ...shared,
   url: Endpoint,
   headers: Schema.optionalKey(Schema.Record(HeaderName, HeaderReference)),
+  oauth: Schema.optionalKey(OAuth),
 });
 
 export const MCPServer = Schema.Union([MCPStdioServer, MCPHTTPServer]);
@@ -113,6 +128,12 @@ export const MCPServers = Schema.Array(MCPServer).check(
         const names = Object.keys(server.headers ?? {}).map((name) => name.toLowerCase());
 
         if (new Set(names).size !== names.length) return "MCP header names must be unique.";
+
+        if (server.oauth !== undefined && names.includes("authorization"))
+          return "OAuth servers cannot also configure an Authorization header.";
+
+        if (server.oauth?.clientSecret !== undefined && server.oauth.clientId === undefined)
+          return "An OAuth client secret needs its client ID.";
       } else if (server.args.some((arg) => arg.includes("\0")) || server.command.includes("\0"))
         return "MCP commands and arguments cannot contain NUL.";
     }
@@ -134,7 +155,7 @@ export const mcpServers = Config.String("mcpServers").pipe(
       new Config.ConfigError(
         new ConfigProvider.SourceError({
           message:
-            "Invalid mcpServers in config.json. Use unique enabled server entries with either a command or an https url, named environment/credential/header references and scheduledTools contained in tools. See docs/mcp.md.",
+            "Invalid mcpServers in config.json. Use unique enabled server entries with either a command or an https url, named environment/credential/header references, OAuth without an Authorization header, and scheduledTools contained in tools. See docs/mcp.md.",
         }),
       ),
   ),
