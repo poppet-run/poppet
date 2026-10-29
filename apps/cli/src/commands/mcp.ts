@@ -3,10 +3,16 @@ import { CredentialInput } from "@poppet/provider";
 import { Console, Effect } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 
-import { terminalKeyInput } from "#src/api-key-input";
+import { readHiddenKey, terminalKeyInput } from "#src/api-key-input";
 import type { CLIContext } from "#src/commands/context";
 import { booleanFlag } from "#src/commands/flags";
-import { addMCPServer, loginMCPServer, logoutMCPServer, removeMCPServer } from "#src/mcp-setup";
+import {
+  addMCPServer,
+  loginMCPServer,
+  logoutMCPServer,
+  removeMCPServer,
+  changeMCPPermissions,
+} from "#src/mcp-setup";
 
 export const mcpCommand = (context: CLIContext) => {
   const { runtime, throughWorker } = context;
@@ -21,7 +27,14 @@ export const mcpCommand = (context: CLIContext) => {
   // settings until restart.
   const setup = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
-      Effect.provideService(CredentialInput, terminalKeyInput),
+      Effect.provideService(CredentialInput, {
+        ...terminalKeyInput,
+        readKey: (provider) =>
+          readHiddenKey(
+            provider,
+            "API-key setup needs an interactive terminal or --api-key <key>.",
+          ),
+      }),
       Effect.provide([runtime.searchCredentials, runtime.mcpSignIns, runtime.config]),
     );
 
@@ -43,64 +56,55 @@ export const mcpCommand = (context: CLIContext) => {
         runMCP({ action: "tools", server }),
       ).pipe(
         Command.withDescription(
-          "Discover allowed tools using the worker or scoped local connections",
+          "Discover all tools and their permissions using the worker or local connections",
         ),
       ),
       Command.make(
         "add",
         {
           id: Argument.String("server"),
-          url: Flag.String("url").pipe(Flag.withDescription("Streamable HTTP endpoint")),
+          url: Argument.String("url"),
           auth: Flag.Literals("auth", ["none", "api-key", "oauth"]).pipe(
             Flag.withDescription("How Poppet authenticates to the server"),
           ),
-          tools: Flag.String("tool").pipe(
-            Flag.withDescription("Allow a discovered tool; repeat for each tool"),
-            Flag.atMost(128),
-          ),
-          allTools: booleanFlag(
-            "all-tools",
-            "Allow every tool the server lists now; tools it adds later stay unallowed",
-          ),
-          scheduledTools: Flag.String("scheduled-tool").pipe(
-            Flag.withDescription("Also allow a reviewed read-only tool in scheduled runs"),
-            Flag.atMost(128),
-          ),
-          header: Flag.String("header").pipe(
-            Flag.withDescription("Header carrying the API key (default Authorization)"),
-            Flag.withDefault("Authorization"),
-          ),
-          prefix: Flag.String("prefix").pipe(
-            Flag.withDescription('Text before the API key (default "Bearer ")'),
-            Flag.withDefault("Bearer "),
-          ),
-          keyStdin: booleanFlag("key-stdin", "Read the API key from stdin"),
-          clientId: Flag.String("client-id").pipe(
-            Flag.withDescription("Pre-registered OAuth client ID; omit to register automatically"),
+          apiKey: Flag.String("api-key").pipe(
+            Flag.withDescription("API key; omit to enter it at a hidden prompt"),
             Flag.optional,
           ),
-          scopes: Flag.String("scope").pipe(
-            Flag.withDescription("Request an OAuth scope; repeat for each scope"),
-            Flag.atMost(32),
-          ),
-          callbackPort: Flag.Int("callback-port").pipe(
-            Flag.withDescription(
-              "Fixed OAuth callback port, for SSH forwarding or a registered client",
-            ),
-            Flag.optional,
-          ),
-          login: Flag.Boolean("login").pipe(
-            Flag.withDescription("Sign in after saving; --no-login saves only"),
-            Flag.atMost(1),
-            Flag.map(([value = true]) => value),
-          ),
-          browser,
         },
-        ({ browser: openBrowser, ...options }) => setup(addMCPServer({ ...options, openBrowser })),
-      ).pipe(Command.withDescription("Add a remote MCP server and list its tools")),
-      Command.make("login", { id: Argument.String("server"), browser }, ({ id, browser: open }) =>
-        setup(loginMCPServer(id, open)),
+        (options) => setup(addMCPServer(options)),
+      ).pipe(Command.withDescription("Save a remote MCP server with no tools allowed")),
+      Command.make(
+        "login",
+        {
+          id: Argument.String("server"),
+          browser,
+          callbackPort: Flag.Int("callback-port").pipe(
+            Flag.withDescription("Override the OAuth callback port for this sign-in"),
+            Flag.optional,
+          ),
+        },
+        ({ id, browser: open, callbackPort }) => setup(loginMCPServer(id, open, callbackPort)),
       ).pipe(Command.withDescription("Sign in to an OAuth MCP server")),
+      Command.make(
+        "allow",
+        {
+          id: Argument.String("server"),
+          tools: Argument.String("tools").pipe(Argument.variadic()),
+          all: booleanFlag("all", "Allow every currently discovered tool"),
+          scheduled: booleanFlag("scheduled", "Also allow reviewed tools in scheduled runs"),
+        },
+        (options) => setup(changeMCPPermissions({ ...options, action: "allow" })),
+      ).pipe(Command.withDescription("Allow discovered tools")),
+      Command.make(
+        "deny",
+        {
+          id: Argument.String("server"),
+          tools: Argument.String("tools").pipe(Argument.variadic({ min: 1 })),
+          scheduled: booleanFlag("scheduled", "Remove only scheduled access"),
+        },
+        (options) => setup(changeMCPPermissions({ ...options, all: false, action: "deny" })),
+      ).pipe(Command.withDescription("Remove tool permissions")),
       Command.make("logout", { id: Argument.String("server") }, ({ id }) =>
         setup(logoutMCPServer(id)),
       ).pipe(Command.withDescription("Remove an OAuth MCP server's saved tokens")),

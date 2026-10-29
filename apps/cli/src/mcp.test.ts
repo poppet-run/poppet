@@ -267,7 +267,13 @@ describe("ExternalAgentToolsLive", () => {
         expect(state.built()).toBe(0);
         expect(await readdir(state.directory)).not.toContain("pid");
         const tools = JSON.parse(await state.invoke(["mcp", "tools", "fixture"]));
-        expect(tools).toHaveLength(1);
+        expect(tools).toHaveLength(9);
+        expect(tools[1]).toMatchObject({
+          toolName: "write",
+          allowed: false,
+          scheduled: false,
+          definition: null,
+        });
         expect(tools[0]).toMatchObject({ serverId: "fixture", toolName: "read", scheduled: false });
 
         if (worker) pid = JSON.parse(await state.invoke(["mcp", "servers"]))[0].pid;

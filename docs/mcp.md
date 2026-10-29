@@ -57,24 +57,35 @@ a background worker.
 Add a remote server from the CLI:
 
 ```sh
-poppet mcp add remote --url https://mcp.example.com/mcp --auth api-key --tool lookup_record
+poppet mcp add remote https://mcp.example.com/mcp --auth api-key
+poppet mcp tools remote
+poppet mcp allow remote lookup_record
 ```
 
+`add` saves an enabled server with no tools allowed and does not connect to it.
 `--auth` is required: `none` sends no credentials, `api-key` reads a key
-from a hidden prompt or `--key-stdin` (never an argument), saves it as the
-protected credential `mcp-<id>`, and sends it as `Authorization: Bearer <key>`,
-and `oauth` signs in through the browser (see [OAuth sign-in](#oauth-sign-in)).
-`--header X-API-Key --prefix ""` selects another API-key scheme. The command
-validates the complete server list before saving anything, then connects once
-and prints every tool the server offers. Only tools named with `--tool` are
-allowed; review the printed names and add others to `tools` yourself.
-`--all-tools` instead saves every name the server lists now as explicit
-`tools` entries; tools the server adds later stay unallowed until you add them.
-It cannot be combined with `--tool` or `--no-login`, and `--scheduled-tool`
-names must be among the discovered tools. A server
-that answers with an OAuth challenge is saved with a diagnostic suggesting
-`--auth oauth`. `poppet mcp remove <id>` deletes the entry, its `mcp-<id>`
-credential, and any saved sign-in. Restart the worker after either command.
+from a hidden prompt or `--api-key <key>`, saves it as the protected credential
+`mcp-<id>`, and sends it as `Authorization: Bearer <key>`. `oauth` configures
+OAuth for a separate `mcp login` step.
+
+`mcp tools <id>` discovers tools and shows their `allowed` and `scheduled`
+permissions. `mcp allow <id> <tools...>` adds discovered names to the interactive
+allowlist. `mcp allow <id> --all` saves all names discovered now; tools the
+server adds later remain blocked. It cannot be combined with explicit names
+or `--scheduled`. Use `mcp allow <id> <tools...> --scheduled` for explicitly
+reviewed read-only tools; this grants both interactive and scheduled access.
+Unknown tools and failed discovery leave permissions unchanged.
+
+`mcp deny <id> <tools...>` removes both permissions without connecting to the
+server. Add `--scheduled` to remove only scheduled access. These commands work
+with both HTTP and configured stdio servers. Restart the worker after adding,
+removing, or changing permissions. Until then inspection through that worker
+reflects its existing configuration.
+
+Custom API-key header names and prefixes belong in `headers` in `config.json`.
+For example, use `"X-API-Key": { "credential": "mcp-remote" }` instead of the
+Authorization entry for an unprefixed key. `poppet mcp remove <id>` deletes
+the entry, its `mcp-<id>` credential, and any saved sign-in.
 
 An entry with `url` instead of `command` connects over Streamable HTTP:
 
@@ -110,22 +121,26 @@ tool definitions, like selected environment values.
 ### OAuth sign-in
 
 ```sh
-poppet mcp add notes --url https://mcp.example.com/mcp --auth oauth --tool search
+poppet mcp add notes https://mcp.example.com/mcp --auth oauth
+poppet mcp login notes
+poppet mcp tools notes
+poppet mcp allow notes search
 ```
 
-This saves `"oauth": {}` in the entry and starts sign-in. Poppet discovers the
+`add` saves `"oauth": {}` in the entry. `login` starts sign-in and discovers the
 server's authorization server from its protected resource metadata, registers
 itself as a public client when the authorization server offers dynamic
 registration, and opens the browser with PKCE and a resource indicator. The
 callback, `--no-browser`, pasted callback addresses, and SSH forwarding work as
-for [ChatGPT sign-in](providers/openai-chatgpt.md). `--no-login` saves the entry
-without signing in. Run `poppet mcp login <id>` to sign in again and
+for [ChatGPT sign-in](providers/openai-chatgpt.md). `login --no-browser` prints
+the sign-in link. Run `poppet mcp login <id>` to sign in again and
 `poppet mcp logout <id>` to delete tokens while keeping the registration;
 logging out does not revoke the grant at the authorization server.
 
 `oauth` accepts optional `clientId`, `clientSecret` (a `{ "credential": "name" }`
-reference, never a literal), `scopes`, and `callbackPort` (1024–65535), also
-set by `--client-id`, `--scope`, and `--callback-port`. Use a pre-registered
+reference, never a literal), `scopes`, and `callbackPort` (1024–65535) in
+`config.json`. `mcp login <id> --callback-port <port>` overrides the port for
+that sign-in without changing configuration. Use a pre-registered
 client when the authorization server has no dynamic registration; register a
 fixed loopback redirect such as `http://127.0.0.1:1455/auth/callback` and set
 the same `callbackPort`. Without `scopes`, Poppet requests what the server's
@@ -181,8 +196,9 @@ poppet chat new "Use reference to look up record 123"
 
 `servers` shows configured permissions, transport, connection state,
 PID (stdio only), the HTTP endpoint's origin, available tools, and diagnostics. They never launch servers or require a model.
-`tools <server>` explicitly starts discovery when needed and prints only allowed
-tools, their model definitions, and scheduled permissions. Both commands use
+`tools <server>` explicitly starts discovery when needed and prints every discovered
+tool with `allowed` and `scheduled` permission flags. Allowed tools include their
+model definitions; blocked tools have `definition: null`. Both commands use
 the owning worker when available. Without a worker, discovery uses a local scope
 and closes the server before returning. There is no arbitrary tool-execution
 socket command.
@@ -285,7 +301,7 @@ token as a protected credential header, inspect its catalog from the worker, and
 complete a CLI tool round trip. This remote check passed on 2026-10-27.
 
 With one real OAuth server that supports dynamic registration, add it with
-`--auth oauth` and sign in over SSH with a pasted callback, complete a CLI and
+`--auth oauth`, run `mcp login <id> --no-browser`, and sign in over SSH with a pasted callback, complete a CLI and
 a worker tool round trip, wait for or force token expiry and confirm the next
 call refreshes, then log out and confirm `mcp servers` shows `needs-login`.
 Fixture tests do not establish that a real authorization server interoperates;

@@ -110,25 +110,32 @@ for provider-specific setup and logout behavior.
 
 ## MCP servers
 
-| Command                                                      | Action                                                                           |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| `mcp servers`                                                | Show permissions, connection diagnostics, sign-in state, and tools.              |
-| `mcp tools <server>`                                         | Explicitly discover the server's allowed tools using the owner or a local scope. |
-| `mcp add <server> --url <url> --auth <none\|api-key\|oauth>` | Save a remote server, sign in for OAuth, then list every tool it offers.         |
-| `mcp login <server>`                                         | Sign in to an OAuth server again.                                                |
-| `mcp logout <server>`                                        | Delete an OAuth server's saved tokens.                                           |
-| `mcp remove <server>`                                        | Remove the entry and the key or sign-in that Poppet saved for it.                |
+| Command                                                | Purpose                                                             |
+| ------------------------------------------------------ | ------------------------------------------------------------------- |
+| `mcp servers`                                          | Show permissions, connection diagnostics, sign-in state, and tools. |
+| `mcp tools <server>`                                   | Discover every tool with its interactive and scheduled permissions. |
+| `mcp add <server> <url> --auth <none\|api-key\|oauth>` | Save a remote server without connecting or allowing tools.          |
+| `mcp login <server>`                                   | Sign in to an OAuth server.                                         |
+| `mcp logout <server>`                                  | Delete an OAuth server's saved tokens.                              |
+| `mcp allow <server> <tools...>`                        | Allow discovered tools for interactive runs.                        |
+| `mcp allow <server> --all`                             | Allow all currently discovered names for interactive runs.          |
+| `mcp deny <server> <tools...>`                         | Remove interactive and scheduled permissions.                       |
+| `mcp remove <server>`                                  | Remove the entry and the key or sign-in that Poppet saved for it.   |
 
-`mcp add` takes repeatable `--tool` and `--scheduled-tool` flags, or
-`--all-tools` to allow every tool the server lists when it is added. With
-`--auth api-key` it reads the key from a hidden prompt or `--key-stdin`; use
-`--header` and `--prefix` for schemes other than `Authorization: Bearer`. With
-`--auth oauth` it accepts `--client-id`, repeatable `--scope`,
-`--callback-port`, and `--no-login`; `add` and `login` accept `--no-browser`.
-`servers` and `tools` need no model and route through the worker when it is
-running. `add` and `remove` edit `config.json` locally; restart the worker
-afterwards. A running worker uses a new sign-in on its next request. See
-[MCP tools](mcp.md) for configuration, permissions, and process ownership.
+With `--auth api-key`, `add` reads a hidden prompt or accepts `--api-key <key>`.
+Custom headers and prefixes, OAuth client IDs, and scopes are configured in
+`config.json`. `login` accepts `--no-browser` and `--callback-port <port>`;
+the latter overrides the configured port for that sign-in only.
+
+`allow --scheduled` grants both permissions for explicitly named, reviewed
+read-only tools. `deny --scheduled` removes only scheduled access. `--all`
+cannot be combined with names or `--scheduled`. Failed discovery or unknown
+names leave permissions unchanged; `deny` works without connecting.
+
+`servers` and `tools` need no model and route through the worker when running.
+Configuration changes from `add`, `remove`, `allow`, and `deny` take effect in
+the worker after restart. A running worker uses new sign-in tokens on its next
+request. See [MCP tools](mcp.md) for configuration and permissions.
 
 ## Web search setup
 

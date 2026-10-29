@@ -1,5 +1,5 @@
 import { AppConfig, readConfigFile, updateConfigFile } from "@poppet/config";
-import { ApiKeyStore } from "@poppet/credentials";
+import { ApiKey, ApiKeyStore } from "@poppet/credentials";
 import {
   forgetSignIn,
   isHTTPServer,
@@ -22,18 +22,7 @@ export interface AddServer {
   readonly id: string;
   readonly url: string;
   readonly auth: "none" | "api-key" | "oauth";
-  readonly tools: ReadonlyArray<string>;
-  /** Allows every tool the server lists now, saved as explicit names. */
-  readonly allTools: boolean;
-  readonly scheduledTools: ReadonlyArray<string>;
-  readonly header: string;
-  readonly prefix: string;
-  readonly keyStdin: boolean;
-  readonly clientId: Option.Option<string>;
-  readonly scopes: ReadonlyArray<string>;
-  readonly callbackPort: Option.Option<number>;
-  readonly login: boolean;
-  readonly openBrowser: boolean;
+  readonly apiKey: Option.Option<string>;
 }
 
 /** Saved MCP keys share the protected auth directory, so the prefix keeps them apart from providers. */
@@ -65,47 +54,20 @@ export const addMCPServer = (options: AddServer) =>
     if (options.auth === "api-key" && credential.length > 64)
       return yield* invalid("Use a server ID of at most 60 characters with --auth api-key.");
 
-    if (options.auth !== "api-key" && options.keyStdin)
-      return yield* invalid("--key-stdin applies only to --auth api-key.");
-
-    if (
-      options.auth !== "oauth" &&
-      (Option.isSome(options.clientId) ||
-        options.scopes.length > 0 ||
-        Option.isSome(options.callbackPort))
-    )
-      return yield* invalid("--client-id, --scope and --callback-port apply only to --auth oauth.");
-
-    if (options.allTools && options.tools.length > 0)
-      return yield* invalid("Use either --all-tools or --tool.");
-
-    if (options.allTools && options.auth === "oauth" && !options.login)
-      return yield* invalid("--all-tools needs sign-in to list tools; omit --no-login.");
+    if (options.auth !== "api-key" && Option.isSome(options.apiKey))
+      return yield* invalid("--api-key applies only to --auth api-key.");
 
     const entry: Types.Mutable<MCPHTTPServer> = {
       id: options.id,
       enabled: true,
       url: options.url,
-      tools: options.tools,
+      tools: [],
     };
 
     if (options.auth === "api-key")
-      entry.headers = { [options.header]: { credential, prefix: options.prefix } };
+      entry.headers = { Authorization: { credential, prefix: "Bearer " } };
 
-    // With --all-tools, scheduled tools are saved once discovery confirms they exist.
-    if (options.scheduledTools.length > 0 && !options.allTools)
-      entry.scheduledTools = options.scheduledTools;
-
-    if (options.auth === "oauth") {
-      const oauth: Types.Mutable<MCPOAuthServer["oauth"]> = {};
-
-      if (Option.isSome(options.clientId)) oauth.clientId = options.clientId.value;
-
-      if (options.scopes.length > 0) oauth.scopes = options.scopes;
-
-      if (Option.isSome(options.callbackPort)) oauth.callbackPort = options.callbackPort.value;
-      entry.oauth = oauth;
-    }
+    if (options.auth === "oauth") entry.oauth = {};
 
     if (existing.some((server) => server.id === options.id))
       return yield* invalid(`MCP server ${options.id} already exists. Remove it first.`);
@@ -114,9 +76,13 @@ export const addMCPServer = (options: AddServer) =>
     // The key is saved first so the entry never names a missing credential; a failed
     // configuration write removes it again.
     if (options.auth === "api-key") {
-      const key = yield* CredentialInput.use((input) =>
-        input.readKey(credential, options.keyStdin),
-      );
+      const key = yield* Option.isSome(options.apiKey)
+        ? Schema.decodeUnknownEffect(ApiKey)(options.apiKey.value).pipe(
+            Effect.mapError(
+              () => new UsageError({ message: "Enter a nonempty API key without whitespace." }),
+            ),
+          )
+        : CredentialInput.use((input) => input.readKey(credential, false));
 
       yield* ApiKeyStore.use((store) => store.write(credential, key));
     }
@@ -133,83 +99,85 @@ export const addMCPServer = (options: AddServer) =>
     );
     yield* Console.log(`Saved MCP server ${options.id}.`);
 
-    if (isOAuthServer(entry)) {
-      if (!options.login) {
-        yield* Console.log(`Run poppet mcp login ${options.id} to sign in. ${restart}`);
-
-        return;
-      }
-
-      // A failed sign-in keeps the entry so the owner can retry with mcp login.
-      const signedIn = yield* login(entry, options.openBrowser).pipe(
-        Effect.tapError((error) =>
-          Console.error(`${error.message} Run poppet mcp login ${options.id} to try again.`),
-        ),
-        Effect.option,
-      );
-
-      if (Option.isNone(signedIn)) return;
-    }
-
-    const discovered = yield* probeServer(entry).pipe(
-      Effect.tapError((error) => Console.error(error.message)),
-      Effect.option,
-    );
-
-    if (Option.isSome(discovered))
-      yield* Console.log(
-        discovered.value.length === 0
-          ? "The server offers no tools."
-          : `Available tools: ${discovered.value.join(", ")}`,
-      );
-
-    const allowed = options.allTools
-      ? yield* allowDiscovered(dataDirectory, options, Option.getOrNull(discovered))
-      : options.tools;
-
     yield* Console.log(
-      allowed.length === 0
-        ? `No tools are allowed yet. Review the names, then add them to tools for ${options.id} in config.json. ${restart}`
-        : `Allowed tools: ${allowed.join(", ")}. ${restart}`,
+      `${isOAuthServer(entry) ? `Run poppet mcp login ${options.id} to sign in. ` : ""}Run poppet mcp tools ${options.id} to discover tools, then poppet mcp allow ${options.id} <tools...>. ${restart}`,
     );
   });
 
-/** Saves every discovered name as an explicit allowlist; later server additions stay unallowed. */
-const allowDiscovered = (
-  dataDirectory: string,
-  options: AddServer,
-  discovered: ReadonlyArray<string> | null,
-) =>
+export const changeMCPPermissions = (options: {
+  readonly id: string;
+  readonly action: "allow" | "deny";
+  readonly tools: ReadonlyArray<string>;
+  readonly all: boolean;
+  readonly scheduled: boolean;
+}) =>
   Effect.gen(function* () {
-    if (discovered === null || discovered.length === 0) return [];
+    if (options.all && options.tools.length > 0)
+      return yield* invalid("Use either tool names or --all.");
 
-    const missing = options.scheduledTools.filter((name) => !discovered.includes(name));
+    if (!options.all && options.tools.length === 0)
+      return yield* invalid("Specify at least one tool name or use allow --all.");
 
-    if (missing.length > 0) {
-      yield* Console.error(
-        `The server does not offer ${missing.join(", ")}, so no tools were allowed.`,
+    if (options.all && options.scheduled)
+      return yield* invalid(
+        "Name reviewed tools explicitly with --scheduled; --all grants interactive access only.",
       );
 
-      return [];
+    const { dataDirectory } = yield* AppConfig;
+    const { file } = yield* readConfigFile(dataDirectory);
+    const server = file.mcpServers?.find((entry) => entry.id === options.id);
+
+    if (server === undefined)
+      return yield* invalid(`Unknown MCP server ${options.id}. Use mcp servers to find its ID.`);
+
+    let names = [...new Set(options.tools)];
+
+    if (options.action === "allow") {
+      if (!server.enabled) return yield* invalid(`MCP server ${options.id} is disabled.`);
+      const discovered = yield* probeServer(server);
+
+      if (options.all) names = [...discovered];
+      else if (names.some((name) => !discovered.includes(name)))
+        return yield* invalid(
+          "One or more requested tools were not discovered; no permissions changed.",
+        );
     }
 
+    let changed = false;
     yield* updateConfigFile(dataDirectory, (current) => {
       const servers = current.mcpServers ?? [];
-      const index = servers.findIndex((server) => server.id === options.id);
+      const index = servers.findIndex((entry) => entry.id === options.id);
+      const entry = servers[index];
 
-      if (index === -1) return current;
-
-      const allowed = { ...servers[index]!, tools: discovered };
+      // Discovery authorizes names only for the exact configuration we inspected.
+      if (entry === undefined || JSON.stringify(entry) !== JSON.stringify(server)) return current;
+      const scheduled = entry.scheduledTools ?? [];
 
       const updated =
-        options.scheduledTools.length === 0
-          ? allowed
-          : { ...allowed, scheduledTools: options.scheduledTools };
+        options.action === "allow"
+          ? {
+              ...entry,
+              tools: [...new Set([...entry.tools, ...names])],
+              scheduledTools: options.scheduled
+                ? [...new Set([...scheduled, ...names])]
+                : scheduled,
+            }
+          : {
+              ...entry,
+              tools: options.scheduled
+                ? entry.tools
+                : entry.tools.filter((name) => !names.includes(name)),
+              scheduledTools: scheduled.filter((name) => !names.includes(name)),
+            };
+
+      changed = true;
 
       return { ...current, mcpServers: servers.with(index, updated) };
     });
 
-    return discovered;
+    if (!changed)
+      return yield* invalid("The server configuration changed. Retry the permission command.");
+    yield* Console.log(`Updated permissions for MCP server ${options.id}. ${restart}`);
   });
 
 const login = (server: MCPOAuthServer, browser: boolean) =>
@@ -243,8 +211,20 @@ const oauthServer = (id: string) =>
   });
 
 /** A running worker adopts the new tokens on its next request to this server. */
-export const loginMCPServer = (id: string, browser: boolean) =>
-  oauthServer(id).pipe(Effect.flatMap((server) => login(server, browser)));
+export const loginMCPServer = (id: string, browser: boolean, callbackPort: Option.Option<number>) =>
+  Effect.gen(function* () {
+    if (Option.isSome(callbackPort) && (callbackPort.value < 1024 || callbackPort.value > 65535))
+      return yield* invalid("--callback-port must be between 1024 and 65535.");
+
+    const server = yield* oauthServer(id);
+
+    const configured = Option.isSome(callbackPort)
+      ? { ...server, oauth: { ...server.oauth, callbackPort: callbackPort.value } }
+      : server;
+
+    yield* checkServers([configured]);
+    yield* login(configured, browser);
+  });
 
 export const logoutMCPServer = (id: string) =>
   Effect.gen(function* () {
