@@ -126,6 +126,28 @@ const connectionFailure = () =>
     "Browser connection stopped; effects may be unknown. No action was retried.",
   );
 
+/** Probe readiness without sending a command; binding a socket path alone is not enough. */
+export const browserSocketReady = (path: string, signal: AbortSignal) =>
+  new Promise<boolean>((resolve) => {
+    const socket = createConnection(path);
+
+    const finish = (ready: boolean) => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      socket.destroy();
+      resolve(ready);
+    };
+
+    const abort = () => finish(false);
+    const timer = setTimeout(abort, 100);
+
+    socket.once("connect", () => finish(true));
+    socket.once("error", abort);
+    signal.addEventListener("abort", abort, { once: true });
+
+    if (signal.aborted) abort();
+  });
+
 /** Send one fixed native command to the owned daemon. A lost response is never replayed. */
 export const runBrowserRequest = (
   socketPath: string,

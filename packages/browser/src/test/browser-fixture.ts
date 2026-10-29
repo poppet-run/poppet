@@ -1,4 +1,4 @@
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
@@ -71,6 +71,12 @@ if (process.env.AGENT_BROWSER_DAEMON === "1") {
         ).then((reply) => socket.end(reply));
     });
   });
+
+  if (mode === "delayed-listen") {
+    await writeFile(join(socketDirectory, "browser.sock"), "");
+    await Bun.sleep(150);
+    await rm(join(socketDirectory, "browser.sock"));
+  }
 
   await new Promise<void>((resolve) =>
     server.listen(join(socketDirectory, "browser.sock"), resolve),
