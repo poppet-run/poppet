@@ -2,7 +2,7 @@
 
 [Documentation index](README.md)
 
-Phases 28–34 are planned only. Plans do not authorize implementation. Phase
+Phases 28–34 and 36 are planned only. Plans do not authorize implementation. Phase
 25's text attachments were removed because no messaging adapter supplied
 attachments; image and text-file attachments replaced them.
 
@@ -17,7 +17,7 @@ Reusable workflows start with [drafting a skill in chat](skills.md#draft-a-skill
 owner review, and manual saving into the local skill library. The agent can read
 matching skills from an index; it cannot write skills or curate facts automatically.
 
-Updated: 2026-10-27
+Updated: 2026-10-29
 
 Storage history: the unreleased base schema was consolidated into version 1.
 Migrations 2–5 add monitoring, task controls, attachments, and projects while
@@ -38,6 +38,7 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 32: Host commands in an isolated container](phases/32.md)
 - [Phase 33: Trusted time for scheduled runs](phases/33.md)
 - [Phase 34: Model and reasoning selection for new sessions](phases/34.md)
+- [Phase 36: MCP server setup and OAuth sign-in](phases/36.md)
 
 ## Validation
 
