@@ -242,9 +242,6 @@ export const makeTaskWorker = Effect.gen(function* () {
       if (isTaskControl(command) || command.action === "delete")
         yield* workerLog(now, `Task ${command.id} action=${command.action}`);
 
-      if (command.action === "cancel" && active?.id === command.id)
-        yield* Fiber.interrupt(active.fiber);
-
       if (command.action === "pause" || command.action === "resume") {
         const job = yield* repo.task(command.id);
         yield* workerLog(
@@ -256,12 +253,21 @@ export const makeTaskWorker = Effect.gen(function* () {
         );
       }
 
-      if (command.action === "retry" || command.action === "cancel") {
-        const item = yield* repo.occurrence(command.id);
+      if (
+        command.action === "retry" ||
+        command.action === "cancel" ||
+        command.action === "retry-task" ||
+        command.action === "cancel-task"
+      ) {
+        const { id } = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String }))(result);
+        const item = yield* repo.occurrence(id);
+        const cancelling = command.action === "cancel" || command.action === "cancel-task";
+
+        if (cancelling && active?.id === item.id) yield* Fiber.interrupt(active.fiber);
         const job = yield* repo.task(item.jobId);
         yield* workerLog(
           now,
-          `${occurrenceLabel(job.name, item.id)} ${command.action === "retry" ? "queued for retry" : "cancelled"}`,
+          `${occurrenceLabel(job.name, item.id)} ${cancelling ? "cancelled" : "queued for retry"}`,
         );
       }
 

@@ -256,6 +256,18 @@ describe("makeCLI", () => {
       const repeated = await invoke(["tasks", "run", id], offline);
       expect(repeated.exitCode).toBe(0);
       expect(JSON.parse(repeated.stdout).occurrenceId).toBe(queued.occurrenceId);
+      expect((await invoke(["tasks", "cancel", id], offline)).exitCode).toBe(0);
+
+      const retried = await invoke(
+        ["tasks", "retry", id, "--occurrence", queued.occurrenceId],
+        offline,
+      );
+
+      expect(retried.exitCode).toBe(0);
+      expect(JSON.parse(retried.stdout)).toMatchObject({
+        id: queued.occurrenceId,
+        status: "pending",
+      });
       const shown = await invoke(["tasks", "show", id], offline);
       expect(shown.exitCode).toBe(0);
       expect(JSON.parse(shown.stdout)).toMatchObject({

@@ -195,8 +195,8 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 | `tasks show <task>`                                                                                                                | Show occurrences, results, delivery states, and skipped intervals. |
 | `tasks pause <task>`                                                                                                               | Pause scheduling and cancel pending work.                          |
 | `tasks resume <task>`                                                                                                              | Resume future occurrences.                                         |
-| `tasks cancel <occurrence>`                                                                                                        | Cancel pending or active work.                                     |
-| `tasks retry <occurrence>`                                                                                                         | Explicitly retry an unsuccessful occurrence.                       |
+| `tasks cancel <task> [--occurrence <id>]`                                                                                          | Cancel pending or active work.                                     |
+| `tasks retry <task> [--occurrence <id>]`                                                                                           | Explicitly retry an unsuccessful occurrence.                       |
 | `tasks providers`                                                                                                                  | Show provider quota pauses and temporary backoff.                  |
 | `tasks resume-provider <provider>`                                                                                                 | Allow scheduled requests for a provider again.                     |
 | `tasks remove <task>`                                                                                                              | Remove one task and its history; rejects running tasks.            |

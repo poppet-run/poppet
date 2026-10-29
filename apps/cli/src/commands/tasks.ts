@@ -175,13 +175,40 @@ export const tasksCommand = (context: CLIContext) => {
           ),
         ),
       ),
-      ...(["show", "pause", "resume", "delete", "cancel", "retry"] as const).map((action) =>
+      ...(["cancel", "retry"] as const).map((action) =>
+        Command.make(
+          action,
+          {
+            id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)),
+            occurrence: Flag.String("occurrence").pipe(
+              Flag.withSchema(Session.fields.id),
+              Flag.atMost(1),
+            ),
+          },
+          ({ id, occurrence }) => {
+            const command = {
+              action: action === "cancel" ? ("cancel-task" as const) : ("retry-task" as const),
+              id,
+            };
+
+            return runTaskCommand(
+              runtime,
+              occurrence[0] === undefined ? command : { ...command, occurrenceId: occurrence[0] },
+            );
+          },
+        ).pipe(
+          Command.withDescription(
+            action === "cancel"
+              ? "Cancel the task's pending or active execution"
+              : "Retry the task's latest execution if unsuccessful",
+          ),
+        ),
+      ),
+      ...(["show", "pause", "resume", "delete"] as const).map((action) =>
         Command.make(
           action === "delete" ? "remove" : action,
           {
-            id: Argument.String(
-              action === "cancel" || action === "retry" ? "occurrence" : "task",
-            ).pipe(Argument.withSchema(Session.fields.id)),
+            id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)),
           },
           ({ id }) => runTaskCommand(runtime, { action, id }),
         ).pipe(
@@ -191,8 +218,6 @@ export const tasksCommand = (context: CLIContext) => {
               pause: "Pause scheduling and cancel pending work",
               resume: "Resume future occurrences",
               delete: "Remove a task and its history unless it is running",
-              cancel: "Cancel pending or active work",
-              retry: "Explicitly retry an unsuccessful occurrence",
             }[action],
           ),
         ),
