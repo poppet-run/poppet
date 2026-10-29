@@ -441,25 +441,20 @@ describe.concurrent("chat.ts", () => {
       const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z"];
 
       await expect(
-        chat.invoke([...command, "--channel=unknown", "--conversation=thread", "Summary"]),
+        chat.invoke([...command, "--to=unknown:thread", "Summary"]),
       ).rejects.toMatchObject({ message: expect.stringContaining("Configure and enable") });
       await expect(
-        chat.invoke([...command, "--channel=example-channel", "--conversation=denied", "Summary"]),
+        chat.invoke([...command, "--to=example-channel:denied", "Summary"]),
       ).rejects.toMatchObject({ message: expect.stringContaining("Unknown thread") });
       await chat.invoke(["tasks", "list"]);
       expect(JSON.parse(chat.lines.at(-1)!)).toEqual([]);
 
-      await chat.invoke([
-        ...command,
-        "--channel=example-channel",
-        "--conversation=thread",
-        "Summary --literal",
-      ]);
+      await chat.invoke([...command, "--to=example-channel:thread", "Summary --literal"]);
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
         prompt: "Summary --literal",
         destination: { adapter: "example-channel", conversationId: "thread", parentId: "parent" },
       });
-      await chat.invoke([...command, "--channel=example-channel", "Send home"]);
+      await chat.invoke([...command, "--to=example-channel", "Send home"]);
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
         prompt: "Send home",
         destination: { adapter: "example-channel", conversationId: "home", parentId: "home" },

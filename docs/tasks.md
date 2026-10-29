@@ -175,10 +175,10 @@ Configure [Discord](gateways/discord.md) with a home channel and start
 `poppet worker run`. To deliver scheduled results there:
 
 ```sh
-poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --channel discord "Summarize recent conversations"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --to discord "Summarize recent conversations"
 ```
 
-Add `--conversation <channel-or-thread-id>` before the prompt to select an
+Use `--to discord:<channel-or-thread-id>` before the prompt to select an
 explicit destination. A running messaging worker validates access before creating the task.
 Creation through the worker must finish within eight seconds, including queue
 waiting and destination validation. An expired lookup cannot save a task afterward.
@@ -206,7 +206,11 @@ Results are standalone posts. They do not change the destination's conversation
 history, session binding, or name. A stopped gateway resumes queued delivery when
 it starts again. Already queued replies remain queued if task history is cleared.
 
-`--channel` selects the gateway; omitting `--conversation` uses its home channel.
+`--to <gateway>` selects the gateway's home channel.
+`--to <gateway>:<conversation-id>` selects an explicit destination. Only the first
+colon is a separator; any remaining colons belong to the conversation ID.
+Omit `--to` to keep results local. This replaces the former `--channel` and
+`--conversation` flags.
 The selected adapter validates its conversation ID and access before the task is saved.
 Existing Discord task destinations keep their stored format. Tasks for removed adapters
 retain their history and results but cannot deliver until that adapter is available again.
