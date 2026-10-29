@@ -123,6 +123,115 @@ const execute = (action: ChatTaskAction, context: ChatTaskContext) =>
   });
 
 describe("ChatTasks", () => {
+  test("when deletion commits, removes only the selected task and pending history and replays its receipt", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const first = yield* recorded(create);
+          const id = JSON.parse(yield* execute(create, first.context)).task.id;
+          const other = yield* recorded(create, "other", first.run);
+          const otherId = JSON.parse(yield* execute(create, other.context)).task.id;
+          yield* repo.control({ action: "run-now", id }, now);
+          expect(yield* repo.occurrences(id)).toHaveLength(1);
+
+          const action: ChatTaskAction = { action: "delete", id };
+          const call = yield* recorded(action, "delete", first.run);
+          const receipt = yield* execute(action, call.context);
+          expect(JSON.parse(receipt)).toMatchObject({
+            action: "delete",
+            taskId: id,
+            deleted: true,
+          });
+          expect((yield* repo.list()).map((task) => task.id)).toEqual([otherId]);
+          expect(yield* repo.occurrences(id)).toEqual([]);
+          expect(yield* repo.claim(now)).toBeNull();
+          expect(yield* first.store.run(first.run.id)).not.toBeNull();
+          expect(yield* (yield* (yield* ChatTasks).prepare(action, call.context)).execute).toBe(
+            receipt,
+          );
+
+          const missing = yield* recorded(action, "missing", first.run);
+          expect(yield* execute(action, missing.context).pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "tool-arguments",
+          );
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a task starts after deletion is prepared, rejects deletion without losing the running occurrence", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const first = yield* recorded(create);
+          const id = JSON.parse(yield* execute(create, first.context)).task.id;
+          const action: ChatTaskAction = { action: "delete", id };
+          const call = yield* recorded(action, "delete", first.run);
+          const tasks = yield* ChatTasks;
+
+          expect(
+            yield* tasks
+              .prepare(action, { ...call.context, origin: "scheduled" })
+              .pipe(Effect.result),
+          ).toHaveProperty("failure.reason", "tool-permission");
+
+          const planned = yield* tasks.prepare(action, call.context);
+          yield* repo.control({ action: "run-now", id }, now);
+          const running = yield* repo.claim(now);
+          expect(running).not.toBeNull();
+          yield* first.store.startToolCall(call.context.runId, call.context.callId);
+          expect(yield* planned.execute.pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "invalid-request",
+          );
+          expect((yield* repo.task(id)).id).toBe(id);
+          expect((yield* repo.occurrence(running!.id)).status).toBe("running");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when the deletion receipt cannot be saved, restores the task and pending history", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const sql = yield* SqlClient.SqlClient;
+          const first = yield* recorded(create);
+          const id = JSON.parse(yield* execute(create, first.context)).task.id;
+          yield* repo.control({ action: "run-now", id }, now);
+          const before = yield* repo.occurrences(id);
+          const action: ChatTaskAction = { action: "delete", id };
+          const call = yield* recorded(action, "delete", first.run);
+          yield* sql.unsafe(
+            "CREATE TRIGGER reject_delete_receipt BEFORE UPDATE OF status ON tool_calls WHEN NEW.call_id = 'delete' AND NEW.status = 'completed' BEGIN SELECT RAISE(ABORT, 'receipt failed'); END",
+          );
+          expect(yield* execute(action, call.context).pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "storage",
+          );
+          expect((yield* repo.task(id)).id).toBe(id);
+          expect(yield* repo.occurrences(id)).toEqual(before);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when tasks are edited or snoozed without prior inspection, binds atomic receipts to the host and rolls back invalid or failed changes", async () => {
     const state = await fixture();
 

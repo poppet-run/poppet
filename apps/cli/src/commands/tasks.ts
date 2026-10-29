@@ -175,9 +175,9 @@ export const tasksCommand = (context: CLIContext) => {
           ),
         ),
       ),
-      ...(["show", "pause", "resume", "cancel", "retry"] as const).map((action) =>
+      ...(["show", "pause", "resume", "delete", "cancel", "retry"] as const).map((action) =>
         Command.make(
-          action,
+          action === "delete" ? "remove" : action,
           {
             id: Argument.String(
               action === "cancel" || action === "retry" ? "occurrence" : "task",
@@ -190,6 +190,7 @@ export const tasksCommand = (context: CLIContext) => {
               show: "Show occurrences, results, and skipped intervals",
               pause: "Pause scheduling and cancel pending work",
               resume: "Resume future occurrences",
+              delete: "Remove a task and its history unless it is running",
               cancel: "Cancel pending or active work",
               retry: "Explicitly retry an unsuccessful occurrence",
             }[action],

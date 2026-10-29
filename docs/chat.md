@@ -125,7 +125,7 @@ for provenance, limits, cancellation, and uncertain outcomes.
 
 ## Manage scheduled tasks
 
-Ask a tool-capable model to create, inspect, edit, pause, resume, skip, snooze,
+Ask a tool-capable model to create, inspect, edit, delete, pause, resume, skip, snooze,
 or run a task now through
 `poppet_tasks.manage_tasks`.
 

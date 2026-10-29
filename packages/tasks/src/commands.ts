@@ -129,6 +129,12 @@ export const executeTaskCommand = (
         return yield* repo.pause(command.id, now);
       case "resume":
         return yield* repo.resume(command.id, now);
+      case "delete": {
+        const task = yield* repo.delete(command.id);
+
+        return { action: "delete", taskId: task.id, name: task.name, deleted: true };
+      }
+
       case "cancel":
         return yield* repo.cancel(command.id, now);
       case "retry":

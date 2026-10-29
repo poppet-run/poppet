@@ -777,6 +777,54 @@ describe.concurrent("makeTaskWorker", () => {
     }
   });
 
+  test("when removing a task through the worker, rejects active work and deletes only the selected pending task", async () => {
+    const started = await Effect.runPromise(Deferred.make<void>());
+
+    const state = await fixture(() =>
+      Stream.unwrap(Deferred.succeed(started, undefined).pipe(Effect.as(Stream.never))),
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const job = yield* repo.add(state.task, Date.now());
+          const worker = yield* Effect.forkChild(runTaskWorker);
+          yield* Effect.raceFirst(Deferred.await(started), Fiber.join(worker));
+          const active = (yield* repo.occurrences(job.id))[0]!;
+          const pending = yield* repo.add(state.task, Date.now());
+          yield* repo.reconcile(Date.now());
+          expect((yield* repo.occurrences(pending.id))[0]?.status).toBe("pending");
+          const path = workerSocketPath(state.directory);
+
+          const rejected = yield* remoteTaskCommand(path, { action: "delete", id: job.id }).pipe(
+            Effect.flip,
+          );
+
+          expect(rejected.message).toContain("running occurrence");
+
+          const result = yield* remoteTaskCommand(path, { action: "delete", id: pending.id });
+          expect(result?.value).toEqual({
+            action: "delete",
+            taskId: pending.id,
+            name: pending.name,
+            deleted: true,
+          });
+          expect((yield* repo.list()).map((task) => task.id)).toEqual([job.id]);
+          expect(yield* repo.occurrences(pending.id)).toEqual([]);
+          expect((yield* repo.occurrence(active.id)).status).toBe("running");
+          expect(state.lines).toContainEqual(
+            expect.stringContaining(`Task ${pending.id} action=delete`),
+          );
+          expect((yield* remoteTaskCommand(path, { action: "list" }))?.value).toHaveLength(1);
+          yield* Fiber.interrupt(worker);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when the worker clears active and pending tasks, retains runs and continues serving", async () => {
     const started = await Effect.runPromise(Deferred.make<void>());
 

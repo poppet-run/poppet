@@ -187,6 +187,7 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 | `tasks retry <occurrence>`                                                                                                         | Explicitly retry an unsuccessful occurrence.                       |
 | `tasks providers`                                                                                                                  | Show provider quota pauses and temporary backoff.                  |
 | `tasks resume-provider <provider>`                                                                                                 | Allow scheduled requests for a provider again.                     |
+| `tasks remove <task>`                                                                                                              | Remove one task and its history; rejects running tasks.            |
 | `tasks clear`                                                                                                                      | Interrupt active work and remove all tasks and task history.       |
 
 See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what
