@@ -193,18 +193,21 @@ const allowDiscovered = (
       return [];
     }
 
-    yield* updateConfigFile(dataDirectory, (current) => ({
-      ...current,
-      mcpServers: (current.mcpServers ?? []).map((server) => {
-        if (server.id !== options.id) return server;
+    yield* updateConfigFile(dataDirectory, (current) => {
+      const servers = current.mcpServers ?? [];
+      const index = servers.findIndex((server) => server.id === options.id);
 
-        const allowed = { ...server, tools: discovered };
+      if (index === -1) return current;
 
-        return options.scheduledTools.length === 0
+      const allowed = { ...servers[index]!, tools: discovered };
+
+      const updated =
+        options.scheduledTools.length === 0
           ? allowed
           : { ...allowed, scheduledTools: options.scheduledTools };
-      }),
-    }));
+
+      return { ...current, mcpServers: servers.with(index, updated) };
+    });
 
     return discovered;
   });
