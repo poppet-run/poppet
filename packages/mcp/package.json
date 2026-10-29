@@ -22,7 +22,8 @@
     "@poppet/provider": "workspace:*",
     "@poppet/sign-in": "workspace:*",
     "ajv": "8.20.0",
-    "effect": "4.0.4"
+    "effect": "4.0.4",
+    "re2-wasm": "1.0.2"
   },
   "devDependencies": {
     "openai": "7.32.0"

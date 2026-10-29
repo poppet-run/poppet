@@ -243,8 +243,12 @@ forwarding are outside this implementation. Resource links and media are marked 
 - Allowed descriptions are at most 4096 characters; input/output schemas are at
   most 16 KiB, depth 16, and 512 nodes. Draft-07 and 2020-12 schemas are validated
   with AJV. Valid required-only union branches retain their runtime assertions.
-  Regular expressions, references, and unsupported formats or keywords
-  fail discovery with a diagnostic. Vendor `x-` keywords, such as FastMCP's
+  Patterns use the non-backtracking RE2 engine; lookarounds and backreferences
+  are unsupported, and some Unicode matching differs from JavaScript regexes.
+  References, `patternProperties`, and unsupported formats or keywords fail
+  discovery with a diagnostic naming the tool and input/output schema. Without
+  `$schema`, modern keywords such as `dependentRequired` select 2020-12;
+  otherwise draft-07 is used. Explicit dialect declarations take precedence. Vendor `x-` keywords, such as FastMCP's
   `x-fastmcp-wrap-result`, are ignored; `x-` property names are still validated.
   Required MCP task execution is unsupported.
 - Models receive a strict object containing one required `input` string. That

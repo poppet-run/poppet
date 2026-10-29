@@ -6,6 +6,7 @@ import type { Tool } from "@poppet/provider";
 import Ajv from "ajv";
 import Ajv2020 from "ajv/dist/2020.js";
 import { Schema } from "effect";
+import { RE2 } from "re2-wasm";
 
 import { MCPError } from "#src/errors";
 
@@ -19,7 +20,7 @@ export const toolIdentity = (server: string, tool: string): Pick<Tool, "name" | 
 
 const invalid = () =>
   new Error(
-    "Unsupported MCP schema. Use a JSON object schema of at most 16 KiB, depth 16 and 512 nodes, without references or regular expressions.",
+    "Unsupported MCP schema. Use a JSON object schema of at most 16 KiB, depth 16 and 512 nodes, without references or patternProperties; patterns must be supported by RE2.",
   );
 
 const schemaMaps = new Set([
@@ -49,6 +50,21 @@ const schemaValues = new Set([
   "contentSchema",
 ]);
 
+const modernKeywords = new Set([
+  "dependentRequired",
+  "dependentSchemas",
+  "prefixItems",
+  "unevaluatedProperties",
+  "unevaluatedItems",
+  "minContains",
+  "maxContains",
+]);
+
+// AJV uses this engine for validation, including patterns nested in union branches.
+const regExp = Object.assign((pattern: string, flags: string) => new RE2(pattern, flags), {
+  code: "(pattern, flags) => new (require('re2-wasm').RE2)(pattern, flags)",
+});
+
 /**
  * Reject costly or recursive schemas before compilation, without discarding validation keywords.
  * Vendor `x-` annotations, such as FastMCP's `x-fastmcp-wrap-result`, carry no validation and are
@@ -57,6 +73,7 @@ const schemaValues = new Set([
 export const compileSchema = (input: Schema.JsonObject) => {
   if (Buffer.byteLength(JSON.stringify(input)) > 16384) throw invalid();
   let nodes = 0;
+  let modern = false;
 
   const visit = (
     value: Schema.Json,
@@ -73,9 +90,15 @@ export const compileSchema = (input: Schema.JsonObject) => {
     for (const [key, item] of Object.entries(value)) {
       if (position === "schema" && key.startsWith("x-")) continue;
 
+      if (position === "schema" && modernKeywords.has(key)) modern = true;
+
+      // Check unused definitions too; AJV only compiles reachable patterns.
+      if (position === "schema" && key === "pattern" && Schema.is(Schema.String)(item))
+        regExp(item, "u");
+
       if (
         position === "schema" &&
-        ["$ref", "$dynamicRef", "$recursiveRef", "pattern", "patternProperties"].includes(key)
+        ["$ref", "$dynamicRef", "$recursiveRef", "patternProperties"].includes(key)
       )
         throw invalid();
       let child: "schema" | "map" | "data" = "data";
@@ -103,10 +126,12 @@ export const compileSchema = (input: Schema.JsonObject) => {
     allErrors: false,
     validateFormats: true,
     ownProperties: true,
+    code: { regExp },
   };
 
   const ajv =
-    input.$schema === "https://json-schema.org/draft/2020-12/schema"
+    input.$schema === "https://json-schema.org/draft/2020-12/schema" ||
+    (input.$schema === undefined && modern)
       ? new Ajv2020(options)
       : new Ajv(options);
 

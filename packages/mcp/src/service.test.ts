@@ -187,6 +187,38 @@ describe("MCP", () => {
     }
   });
 
+  test("when executor schemas are discovered, exposes tools and validates before dispatch", async () => {
+    const state = await fixture("executor");
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const mcp = yield* MCP;
+          const tools = yield* mcp.snapshot(false);
+          expect(tools).toHaveLength(2);
+          expect((yield* mcp.status)[0]!.state).toBe("connected");
+          const read = tools[0]!;
+          expect(
+            yield* read
+              .prepare(JSON.stringify({ input: JSON.stringify({ name: "read" }) }))
+              .pipe(Effect.flip),
+          ).toHaveProperty("reason", "tool-arguments");
+
+          const call = yield* read.prepare(
+            JSON.stringify({ input: JSON.stringify({ app: "my-app", name: "read" }) }),
+          );
+
+          expect(yield* call.execute).toContain('"app":"my-app"');
+        }),
+      );
+      expect((await state.events()).filter((event) => event.method === "tools/call")).toHaveLength(
+        1,
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each([
     "duplicate",
     "schema",
@@ -212,6 +244,9 @@ describe("MCP", () => {
               diagnostic: expect.stringContaining("MCP fixture:"),
             });
             expect([status.diagnostic]).toEqual(state.errors);
+
+            if (mode === "schema")
+              expect(state.errors[0]).toContain('Unsupported input schema for tool "read"');
 
             const pid = Number(
               yield* Effect.promise(() => readFile(join(state.directory, "pid"), "utf8")),
