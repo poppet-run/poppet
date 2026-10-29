@@ -251,6 +251,25 @@ export const ChatTasksLive = Layer.effect(
             );
           }
 
+          case "delete":
+            return repo.delete(action.id).pipe(
+              Effect.mapError(
+                (cause) => new StoreError({ reason: "invalid-request", message: cause.message }),
+              ),
+              Effect.flatMap((task) =>
+                bounded(
+                  JSON.stringify({
+                    action: "delete",
+                    taskId: task.id,
+                    name: task.name,
+                    deleted: true,
+                    truncated: false,
+                  }),
+                  toolBytes,
+                ),
+              ),
+            );
+
           case "snooze": {
             const until = yield* Effect.try({
               try: () => parseTimestamp(action.until),

@@ -144,7 +144,7 @@ CLI chat supports local results only; use the CLI destination flags for messagin
 The model cannot select another gateway, account, owner, or provider.
 
 Inspection uses bounded pages and flags shortened prompts or omitted occurrence
-status. Use stable task IDs to pause or resume; duplicate names need clarification.
+status. Use stable task IDs to pause, resume, or delete; duplicate names need clarification.
 Pause cancels pending work and leaves active work running. Resume does not replay
 missed recurring occurrences. Use `edit`, `skip_next`, `snooze`, and `run_now` for
 the corresponding controls above. They act on the task's current state, so no
@@ -153,8 +153,12 @@ offset; ask about an unclear timezone. Each action reads only the fields it uses
 and ignores the rest. Create needs a name, prompt, schedule, and delivery; every
 action except create and list needs an ID; snooze needs `until`; and edit needs
 at least one of name, prompt, or schedule. A missing field fails with a message
-naming it. Deleting tasks, retrying occurrences, cancelling active runs,
-and changing provider pauses remain CLI operations.
+naming it. Ask "Delete my daily summary task" in Discord or CLI chat to use
+`delete`. Deletion permanently removes the selected task and its occurrence
+history, including pending work, while retaining conversations and runs.
+A running occurrence prevents deletion; wait for it to finish or cancel it
+via CLI first. Retrying occurrences, cancelling active runs, and changing
+provider pauses remain CLI operations.
 
 Task changes and their durable tool receipts commit together. A saved change
 survives a later model failure or interrupted answer. Inspect `tasks list`,
@@ -297,6 +301,20 @@ after further failures up to five minutes. A failed occurrence is never retried
 automatically. `retry` creates a fresh session for an unsuccessful occurrence;
 earlier runs remain available through chat inspection. Resume a paused task before
 retrying it. A cancelled one-off needs `retry`, since it has no future occurrences.
+
+## Remove a task
+
+To permanently remove one task by its ID:
+
+```sh
+poppet tasks remove <task-id>
+```
+
+This works with the worker running or stopped. It removes the selected task and
+its occurrence/skip history, including pending work, and retains conversations
+and runs. Other tasks are unaffected. If the task has a running occurrence,
+wait for it to finish or use `poppet tasks cancel <occurrence-id>` first.
+An unknown task ID returns an error.
 
 ## Clear tasks
 

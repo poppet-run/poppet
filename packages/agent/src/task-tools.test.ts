@@ -33,6 +33,7 @@ describe("decodeTaskCall", () => {
     const stray = { ...fields, id: "job", after: "cursor", until, skill: "review" };
 
     expect(await decode({ ...stray, action: "list" })).toEqual({ action: "list", after: "cursor" });
+    expect(await decode({ ...stray, action: "delete" })).toEqual({ action: "delete", id: "job" });
     expect(await decode({ ...stray, action: "pause" })).toEqual({ action: "pause", id: "job" });
     expect(await decode({ ...stray, action: "run_now" })).toEqual({ action: "run_now", id: "job" });
     expect(await decode({ ...stray, action: "snooze" })).toEqual({
@@ -67,6 +68,7 @@ describe("decodeTaskCall", () => {
   test.each([
     [{ ...fields, name: null, schedule: null }, "The create action needs name, schedule."],
     [{ ...fields, delivery: null }, "The create action needs delivery."],
+    [{ ...fields, action: "delete" }, "The delete action needs id."],
     [{ ...fields, action: "show" }, "The show action needs id."],
     [{ ...fields, action: "snooze", id: "job" }, "The snooze action needs until."],
     [

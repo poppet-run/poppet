@@ -597,9 +597,17 @@ describe("makeCLI", () => {
       expect((await invoke(["tasks", "show", "missing"], offline)).stderr).toContain(
         "does not exist",
       );
+      expect((await invoke(["tasks", "remove"], offline)).exitCode).toBe(1);
+      expect((await invoke(["tasks", "remove", task.id, "extra"], offline)).exitCode).toBe(1);
+      const removed = await invoke(["tasks", "remove", task.id], offline);
+      expect(removed.exitCode).toBe(0);
+      expect(JSON.parse(removed.stdout)).toMatchObject({ taskId: task.id, deleted: true });
+      const missing = await invoke(["tasks", "remove", task.id], offline);
+      expect(missing.exitCode).toBe(1);
+      expect(missing.stderr).toContain("does not exist");
       expect((await invoke(["tasks", "clear", "extra"], offline)).exitCode).toBe(1);
       expect(JSON.parse((await invoke(["tasks", "clear"], offline)).stdout)).toEqual({
-        cleared: 1,
+        cleared: 0,
       });
       expect(JSON.parse((await invoke(["tasks", "list"], offline)).stdout)).toEqual([]);
       expect(JSON.parse((await invoke(["tasks", "clear"], offline)).stdout)).toEqual({

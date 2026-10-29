@@ -212,6 +212,24 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       }),
     );
 
+  const deleteTask = (id: string) =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const job = yield* task(id);
+
+        if ((yield* activeOccurrence(id, "running")) !== null)
+          return yield* new TaskError({
+            message:
+              "Wait for the running occurrence to finish or cancel it via CLI before deleting this task.",
+          });
+
+        // History cascades with the task; referenced conversations and runs stay.
+        yield* sql`DELETE FROM jobs WHERE id = ${id}`;
+
+        return job;
+      }),
+    );
+
   const clear = () =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -463,6 +481,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
     recover: operation(recover),
     pause: operation(pause),
     clear: operation(clear),
+    delete: operation(deleteTask),
     resume: operation(resume),
     cancel: operation(cancel),
     retry: operation(retry),

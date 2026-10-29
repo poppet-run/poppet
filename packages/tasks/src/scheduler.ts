@@ -239,7 +239,7 @@ export const makeTaskWorker = Effect.gen(function* () {
 
       const result = yield* executeTaskCommand(repo, store, command, now);
 
-      if (isTaskControl(command))
+      if (isTaskControl(command) || command.action === "delete")
         yield* workerLog(now, `Task ${command.id} action=${command.action}`);
 
       if (command.action === "cancel" && active?.id === command.id)
