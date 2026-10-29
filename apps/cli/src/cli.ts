@@ -85,7 +85,7 @@ export const run = (args: ReadonlyArray<string>, worker: typeof manageWorker = m
       args[0] === "gateway" ||
       (args[0] === "worker" &&
         (args[1] === "run" || args[1] === "status") &&
-        !args.some((arg) => ["--tasks-only", "--help", "-h"].includes(arg)))
+        !args.some((arg) => ["--help", "-h"].includes(arg)))
         ? yield* loadRegisteredChannels
         : channels;
 

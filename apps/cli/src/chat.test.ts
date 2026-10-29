@@ -326,8 +326,8 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     clock,
     program,
     invoke: (args: ReadonlyArray<string>) => Effect.runPromise(program(args)),
-    startWorker: async (mode: "all" | "tasks" = "all", consoleOutput = output) => {
-      const args = ["worker", "run", ...(mode === "tasks" ? ["--tasks-only"] : [])];
+    startWorker: async (consoleOutput = output) => {
+      const args = ["worker", "run"];
 
       const worker = clock.runFork(program(args, readChatLine, consoleOutput));
 
@@ -542,7 +542,7 @@ describe.concurrent("chat.ts", () => {
 
       try {
         if (mode === "worker")
-          worker = await chat.startWorker("all", {
+          worker = await chat.startWorker({
             ...console,
             log: (...values) => {
               chat.lines.push(values.join(" "));
@@ -756,7 +756,7 @@ describe.concurrent("chat.ts", () => {
         chat.state.useTools = true;
 
         if (mode === "worker")
-          worker = await chat.startWorker("all", {
+          worker = await chat.startWorker({
             ...console,
             log: (...values) => {
               chat.lines.push(values.join(" "));
@@ -822,7 +822,7 @@ describe.concurrent("chat.ts", () => {
         await chat.configure({ chat: { logTimings: true } });
 
         if (mode === "worker")
-          worker = await chat.startWorker("all", {
+          worker = await chat.startWorker({
             ...console,
             log: (...values) => {
               chat.lines.push(values.join(" "));
@@ -1296,74 +1296,67 @@ describe.concurrent("chat.ts", () => {
     }
   });
 
-  test.each(["all", "tasks"] as const)(
-    "when worker mode is %s, starts only selected services and keeps shared commands available",
-    async (mode) => {
-      const chat = await fixture();
-      let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
+  test("when messaging configuration is invalid, keeps scheduling and shared commands available", async () => {
+    const chat = await fixture();
+    let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
 
-      try {
-        await mkdir(join(chat.directory, "channels"), { mode: 0o700 });
-        await writeFile(join(chat.directory, "channels/discord.json"), "invalid settings", {
-          mode: 0o600,
-        });
-        await chat.invoke([
-          "tasks",
-          "add",
-          "Due",
-          "--at",
-          new Date(Date.now() + 60_000).toISOString(),
-          "Summarize",
-        ]);
-        worker = await chat.startWorker(mode);
-        await chat.invoke(["worker", "status"]);
-        const status = JSON.parse(chat.lines.at(-1)!).worker;
-        expect(status).toMatchObject({
-          running: true,
-          services: { tasks: true, gateway: mode !== "tasks" },
-        });
-        const gateway = status.messaging;
-        expect(gateway).toMatchObject({
-          running: mode !== "tasks",
+    try {
+      await mkdir(join(chat.directory, "channels"), { mode: 0o700 });
+      await writeFile(join(chat.directory, "channels/discord.json"), "invalid settings", {
+        mode: 0o600,
+      });
+      await chat.invoke([
+        "tasks",
+        "add",
+        "Due",
+        "--at",
+        new Date(Date.now() + 60_000).toISOString(),
+        "Summarize",
+      ]);
+      worker = await chat.startWorker();
+      await chat.invoke(["worker", "status"]);
+      const status = JSON.parse(chat.lines.at(-1)!).worker;
+      expect(status).toMatchObject({
+        running: true,
+        services: { tasks: true, gateway: true },
+      });
+      const gateway = status.messaging;
+      expect(gateway).toMatchObject({
+        running: true,
+        enabled: false,
+      });
+
+      expect(gateway.channels).toMatchObject([
+        {
+          id: "discord",
           enabled: false,
-        });
+          error:
+            "Cannot load Discord configuration or credentials. Check config.json and run gateway discord setup again.",
+        },
+      ]);
+      await chat.clock.runPromise(TestClock.adjust("61 seconds"));
 
-        if (mode === "tasks") expect(gateway.channels).toEqual([]);
-        else
-          expect(gateway.channels).toMatchObject([
-            {
-              id: "discord",
-              enabled: false,
-              error:
-                "Cannot load Discord configuration or credentials. Check config.json and run gateway discord setup again.",
-            },
-          ]);
-        await chat.clock.runPromise(TestClock.adjust("61 seconds"));
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
+        }).pipe(Effect.timeout("2 seconds")),
+      );
+      expect(chat.requests).toHaveLength(1);
 
-        await Effect.runPromise(
-          Effect.gen(function* () {
-            while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
-          }).pipe(Effect.timeout("2 seconds")),
-        );
-        expect(chat.requests).toHaveLength(1);
-
-        const count = chat.requests.length;
-        await chat.invoke(["chat", "new", "Hello from CLI"]);
-        expect(chat.requests).toHaveLength(count + 1);
-        expect(chat.state.peak).toBe(1);
-        await expect(
-          chat.invoke(mode === "tasks" ? ["worker", "run"] : ["worker", "run", "--tasks-only"]),
-        ).rejects.toHaveProperty("reason", "busy");
-        await Effect.runPromise(Fiber.interrupt(worker));
-        worker = undefined;
-        expect(await Bun.file(workerSocketPath(chat.directory)).exists()).toBe(false);
-        await chat.invoke(["store", "status"]);
-      } finally {
-        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
-        await chat.close();
-      }
-    },
-  );
+      const count = chat.requests.length;
+      await chat.invoke(["chat", "new", "Hello from CLI"]);
+      expect(chat.requests).toHaveLength(count + 1);
+      expect(chat.state.peak).toBe(1);
+      await expect(chat.invoke(["worker", "run"])).rejects.toHaveProperty("reason", "busy");
+      await Effect.runPromise(Fiber.interrupt(worker));
+      worker = undefined;
+      expect(await Bun.file(workerSocketPath(chat.directory)).exists()).toBe(false);
+      await chat.invoke(["store", "status"]);
+    } finally {
+      if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+      await chat.close();
+    }
+  });
 
   test("when files are attached, sends their contents locally and through the worker and rejects unreadable paths", async () => {
     const chat = await fixture();

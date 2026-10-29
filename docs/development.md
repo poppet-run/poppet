@@ -259,7 +259,7 @@ or reserved IDs and malformed registrations stop gateway startup with an error.
 Restart the worker after changing the list or installed packages.
 
 Gateway commands and messaging worker startup load the same registrations.
-Other CLI commands and tasks-only workers do not import external adapter code.
+Other CLI commands do not import external adapter code.
 External modules run with the host's privileges. Use the host's compatible
 `@poppet/gateway` and Effect versions; these packages are currently private
 workspaces, so publishing a standalone adapter still requires packaging those

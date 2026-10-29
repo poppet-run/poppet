@@ -203,7 +203,7 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
       return lines.join("\n");
     },
     worker: async () => {
-      const fiber = Effect.runFork(program(["worker", "run", "--tasks-only"]));
+      const fiber = Effect.runFork(program(["worker", "run"]));
 
       try {
         await Effect.runPromise(

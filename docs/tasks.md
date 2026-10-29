@@ -34,7 +34,7 @@ Bash / POSIX sh:
 ```sh
 when=$(bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
 poppet tasks add summary --at "$when" "Summarize recent conversations"
-poppet worker run --tasks-only
+poppet worker run
 ```
 
 fish:
@@ -42,7 +42,7 @@ fish:
 ```fish
 set when (bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
 poppet tasks add summary --at $when "Summarize recent conversations"
-poppet worker run --tasks-only
+poppet worker run
 ```
 
 The worker prints timestamped lifecycle messages for starts, completed or failed
@@ -181,8 +181,8 @@ explicit destination. A running messaging worker validates access before creatin
 Creation through the worker must finish within eight seconds, including queue
 waiting and destination validation. An expired lookup cannot save a task afterward.
 
-`worker run --tasks-only` executes tasks but does not deliver their results or
-validate new destinations. The combined worker does both. Tasks without a messaging destination keep their results local.
+The worker validates messaging destinations and delivers results through configured
+adapters. Tasks without a messaging destination keep their results local.
 
 Each occurrence saves its destination independently of later task or channel
 configuration. Changing the home channel affects newly created tasks only. The
@@ -329,7 +329,7 @@ work before clearing and continues serving commands. Saved chat sessions and run
 facts, credentials, and provider quota pauses are retained. The command
 returns the number of tasks removed, and repeating it on an empty list is safe.
 
-See [worker modes](worker.md#foreground-modes) to run scheduling with messaging, and [task architecture](architecture.md#unattended-operation) for package ownership and execution contracts.
+See [worker documentation](worker.md#foreground-worker) to run scheduling with messaging, and [task architecture](architecture.md#unattended-operation) for package ownership and execution contracts.
 
 ## Occurrence session titles
 
