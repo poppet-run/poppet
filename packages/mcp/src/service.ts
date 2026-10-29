@@ -1,4 +1,4 @@
-import { Client, type Tool as ServerTool } from "@modelcontextprotocol/client";
+import { Client, type FetchLike, type Tool as ServerTool } from "@modelcontextprotocol/client";
 import { ApiKeyStore } from "@poppet/credentials";
 import type { Tool } from "@poppet/provider";
 import { Clock, Console, Context, Data, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
@@ -181,7 +181,7 @@ const resolveReferences = (config: MCPServer, credentials: ApiKeyStore["Service"
     return { values, secrets: secrets.filter((value) => value.length > 0) };
   });
 
-const discoverTools = async (config: MCPServer, client: Client, signal: AbortSignal) => {
+const listTools = async (client: Client, signal: AbortSignal) => {
   if (!client.getServerCapabilities()?.tools)
     throw new MCPDiagnostic({ message: "Server does not advertise tools capability." });
   const discovered: ServerTool[] = [];
@@ -221,13 +221,50 @@ const discoverTools = async (config: MCPServer, client: Client, signal: AbortSig
     cursors.add(cursor);
   }
 
-  if (config.tools.some((name) => !names.has(name)))
+  return discovered;
+};
+
+const discoverTools = async (config: MCPServer, client: Client, signal: AbortSignal) => {
+  const discovered = await listTools(client, signal);
+
+  if (config.tools.some((name) => !discovered.some((tool) => tool.name === name)))
     throw new MCPDiagnostic({
       message: "An allowlisted tool was not discovered. Check tools in config.json.",
     });
 
   return discovered.filter((tool) => config.tools.includes(tool.name));
 };
+
+const makeClient = () =>
+  new Client({ name: "poppet", version: "0.0.0" }, { capabilities: {}, listMaxPages: 8 });
+
+/** Transports read references at start or per request, after startup resolves them. */
+const makeTransport = (
+  config: MCPServer,
+  references: Record<string, string>,
+  fetch: FetchLike = boundedFetch(262144),
+) =>
+  isHTTPServer(config)
+    ? new ScopedHTTPTransport(new URL(config.url), {
+        requestInit: { headers: references },
+        fetch,
+        redirectPolicy: "same-origin",
+        // Poppet's own backoff owns reconnection; a dropped stream fails the connection.
+        reconnectionOptions: {
+          initialReconnectionDelay: 1000,
+          maxReconnectionDelay: 30000,
+          reconnectionDelayGrowFactor: 1.5,
+          maxRetries: 0,
+        },
+      })
+    : new ScopedStdioTransport({
+        command: config.command,
+        args: [...config.args],
+        cwd: config.cwd ?? process.cwd(),
+        env: references,
+        stderr: "ignore",
+        maxBufferSize: 262144,
+      });
 
 const compile = (input: Schema.JsonObject) => {
   try {
@@ -363,35 +400,11 @@ export const makeMCPLive = (toolBytes: number) =>
             retries = state.retries + 1;
           }
 
-          // Transports read these at start or per request, after startup resolves references.
           const references: Record<string, string> = {};
 
-          const client = new Client(
-            { name: "poppet", version: "0.0.0" },
-            { capabilities: {}, listMaxPages: 8 },
-          );
+          const client = makeClient();
 
-          const transport = isHTTPServer(config)
-            ? new ScopedHTTPTransport(new URL(config.url), {
-                requestInit: { headers: references },
-                fetch: boundedFetch(262144),
-                redirectPolicy: "same-origin",
-                // Poppet's own backoff owns reconnection; a dropped stream fails the connection.
-                reconnectionOptions: {
-                  initialReconnectionDelay: 1000,
-                  maxReconnectionDelay: 30000,
-                  reconnectionDelayGrowFactor: 1.5,
-                  maxRetries: 0,
-                },
-              })
-            : new ScopedStdioTransport({
-                command: config.command,
-                args: [...config.args],
-                cwd: config.cwd ?? process.cwd(),
-                env: references,
-                stderr: "ignore",
-                maxBufferSize: 262144,
-              });
+          const transport = makeTransport(config, references);
 
           const connection: Connection = {
             client,
@@ -541,3 +554,54 @@ export const makeMCPLive = (toolBytes: number) =>
       };
     }),
   );
+
+/**
+ * Connects once with an entry and lists every discovered tool name, ignoring its allowlist, so
+ * the owner can review names before allowing them. The connection closes before returning.
+ */
+export const probeServer = (config: MCPServer) =>
+  Effect.gen(function* () {
+    const credentials = yield* ApiKeyStore;
+    const { values } = yield* resolveReferences(config, credentials);
+    let challenged = false;
+    const base = boundedFetch(262144);
+
+    // A 401 naming protected resource metadata means the server expects OAuth.
+    const observe: FetchLike = async (url, init) => {
+      const response = await base(url, init);
+
+      if (
+        response.status === 401 &&
+        /resource_metadata=/i.test(response.headers.get("www-authenticate") ?? "")
+      )
+        challenged = true;
+
+      return response;
+    };
+
+    const client = makeClient();
+    const transport = makeTransport(config, values, observe);
+
+    return yield* Effect.tryPromise({
+      try: async (signal) => {
+        await client.connect(transport, { signal, timeout: 5000 });
+
+        return (await listTools(client, signal)).map((tool) => tool.name);
+      },
+      catch: (cause) =>
+        challenged
+          ? failed(`MCP ${config.id}: the server requires OAuth sign-in. Add it with --auth oauth.`)
+          : startupFailure(config, cause),
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: "8 seconds",
+        orElse: () => Effect.fail(failed(`MCP ${config.id}: startup timed out.`)),
+      }),
+      Effect.ensuring(
+        Effect.promise(async () => {
+          await client.close().catch(() => {});
+          await transport.close().catch(() => {});
+        }),
+      ),
+    );
+  });

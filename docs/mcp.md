@@ -54,6 +54,23 @@ a background worker.
 
 ### HTTP servers
 
+Add a remote server from the CLI:
+
+```sh
+poppet mcp add remote --url https://mcp.example.com/mcp --auth api-key --tool lookup_record
+```
+
+`--auth` is required: `none` sends no credentials, and `api-key` reads a key
+from a hidden prompt or `--key-stdin` (never an argument), saves it as the
+protected credential `mcp-<id>`, and sends it as `Authorization: Bearer <key>`.
+`--header X-API-Key --prefix ""` selects another scheme. The command validates
+the complete server list before saving anything, then connects once and prints
+every tool the server offers. Only tools named with `--tool` are allowed;
+review the printed names and add others to `tools` yourself. A server that
+answers with an OAuth challenge is saved with a diagnostic. `poppet mcp remove
+<id>` deletes the entry and its `mcp-<id>` credential. Restart the worker after
+either command.
+
 An entry with `url` instead of `command` connects over Streamable HTTP:
 
 ```json

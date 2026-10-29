@@ -1,4 +1,4 @@
-export { MCP, makeMCPLive, type MCPTool } from "#src/service";
+export { MCP, makeMCPLive, probeServer, type MCPTool } from "#src/service";
 
 export { MCPError } from "#src/errors";
 
