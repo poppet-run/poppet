@@ -193,6 +193,29 @@ describe.concurrent("browser.ts", () => {
     }
   });
 
+  test("when the socket path appears before listening, waits without dispatching or replaying navigation", async () => {
+    const state = await fixture("delayed-listen");
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const tools = yield* state.tools();
+          yield* call(tools, "open", { url: "https://example.com/" });
+        }),
+      );
+
+      const requests = (await readFile(state.trace, "utf8"))
+        .split("\n")
+        .filter((line) => line.startsWith("{"))
+        .map((line) => JSON.parse(line));
+
+      expect(requests.filter((request) => request.action === "navigate")).toHaveLength(1);
+      await state.cleaned();
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when references omit the @ prefix, accepts current references and rejects stale ones", async () => {
     const state = await fixture();
 

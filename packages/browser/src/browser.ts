@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { fitText } from "@poppet/io";
@@ -9,6 +9,7 @@ import { Effect, Schema, Scope } from "effect";
 import {
   agentBrowserVersion,
   browserFailure,
+  browserSocketReady,
   chromiumVersion,
   launchBrowserProcess,
   runBrowserCommand,
@@ -257,11 +258,10 @@ export const browserTools = (
                 () => "",
               );
 
-              // eslint-disable-next-line no-await-in-loop
-              const ready = await access(join(socketDirectory, "browser.sock")).then(
-                () => true,
-                () => false,
-              );
+              const ready =
+                pid.trim() === String(daemon.pid) &&
+                // eslint-disable-next-line no-await-in-loop
+                (await browserSocketReady(join(socketDirectory, "browser.sock"), signal));
 
               if (pid.trim() === String(daemon.pid) && ready) return;
               // eslint-disable-next-line no-await-in-loop
