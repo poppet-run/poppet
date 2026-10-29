@@ -132,11 +132,11 @@ afterwards. A running worker uses a new sign-in on its next request. See
 
 ## Web search setup
 
-| Command                   | Action                                                                                          |
-| ------------------------- | ----------------------------------------------------------------------------------------------- |
-| `web login [--key-stdin]` | Save the selected search provider's key from the environment, hidden prompt, or explicit stdin. |
-| `web status`              | Show whether search is enabled and a key is configured, without a remote request.               |
-| `web logout`              | Remove the saved search key.                                                                    |
+| Command                       | Action                                                                            |
+| ----------------------------- | --------------------------------------------------------------------------------- |
+| `web login [--api-key <key>]` | Save the selected search provider's key from the flag or hidden prompt.           |
+| `web status`                  | Show whether search is enabled and a key is configured, without a remote request. |
+| `web logout`                  | Remove the saved search key.                                                      |
 
 These commands use `webSearchProvider`, which defaults to `brave` and also accepts
 `kagi`. They do not change inference credentials or require a selected model.

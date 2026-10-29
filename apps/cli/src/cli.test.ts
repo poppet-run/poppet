@@ -353,18 +353,35 @@ describe("makeCLI", () => {
     }
   });
 
+  test.each([
+    { args: ["--api-key", ""] },
+    { args: ["--api-key", "invalid secret"] },
+    { args: ["--api-key"] },
+    { args: ["--key-stdin"] },
+  ])("web login rejects invalid arguments %j without saving credentials", async ({ args }) => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-invalid-key-"));
+
+    try {
+      const result = await invoke(["web", "login", ...args], {
+        POPPET_DATA_DIR: directory,
+        POPPET_BRAVE_SEARCH_API_KEY: "environment-key",
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stdout + result.stderr).not.toContain("invalid secret");
+      expect(await Bun.file(join(directory, "auth/brave-search.json")).exists()).toBe(false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("when Kagi credentials are configured, leaves Brave credentials intact", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-kagi-cli-"));
     const environment = { POPPET_DATA_DIR: directory };
 
     try {
       expect(
-        (
-          await invoke(["web", "login"], {
-            POPPET_DATA_DIR: directory,
-            POPPET_BRAVE_SEARCH_API_KEY: "brave-only-key",
-          })
-        ).exitCode,
+        (await invoke(["web", "login", "--api-key", "brave-only-key"], environment)).exitCode,
       ).toBe(0);
       await configure(directory, { webSearchProvider: "kagi" });
       expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
@@ -374,10 +391,7 @@ describe("makeCLI", () => {
         source: null,
       });
 
-      const login = await invoke(["web", "login"], {
-        ...environment,
-        POPPET_KAGI_SEARCH_API_KEY: "kagi-only-key",
-      });
+      const login = await invoke(["web", "login", "--api-key", "kagi-only-key"], environment);
 
       expect(login.exitCode).toBe(0);
       expect(login.stdout).toContain("Kagi Search key saved");
@@ -394,7 +408,7 @@ describe("makeCLI", () => {
         POPPET_KAGI_SEARCH_API_KEY: "kagi-override-key",
       });
 
-      expect(JSON.parse(overridden.stdout).source).toBe("environment");
+      expect(JSON.parse(overridden.stdout).source).toBe("stored");
       expect(overridden.stdout).not.toContain("kagi-override-key");
 
       const invalid = await invoke(["web", "status"], {
@@ -402,7 +416,7 @@ describe("makeCLI", () => {
         POPPET_KAGI_SEARCH_API_KEY: "",
       });
 
-      expect(invalid.exitCode).not.toBe(0);
+      expect(invalid.exitCode).toBe(0);
 
       const config = await invoke(["config"], {
         ...environment,
@@ -447,10 +461,7 @@ describe("makeCLI", () => {
         source: null,
       });
 
-      const login = await invoke(["web", "login"], {
-        ...environment,
-        POPPET_BRAVE_SEARCH_API_KEY: "search-only-key",
-      });
+      const login = await invoke(["web", "login", "--api-key", "search-only-key"], environment);
 
       expect(login.exitCode).toBe(0);
       expect(login.stdout).not.toContain("search-only-key");
@@ -466,7 +477,7 @@ describe("makeCLI", () => {
         POPPET_BRAVE_SEARCH_API_KEY: "override-key",
       });
 
-      expect(JSON.parse(status.stdout)).toMatchObject({ source: "environment" });
+      expect(JSON.parse(status.stdout)).toMatchObject({ source: "stored" });
       expect(status.stdout).not.toContain("override-key");
 
       const config = await invoke(["config"], {
@@ -489,7 +500,8 @@ describe("makeCLI", () => {
         POPPET_BRAVE_SEARCH_API_KEY: "invalid key",
       });
 
-      expect(invalid.exitCode).toBe(1);
+      expect(invalid.exitCode).toBe(0);
+      expect(JSON.parse(invalid.stdout).configured).toBe(false);
       expect(invalid.stderr).not.toContain("invalid key");
     } finally {
       await rm(directory, { recursive: true, force: true });

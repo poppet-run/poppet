@@ -1,11 +1,10 @@
 import { AgentError, ChatSettings } from "@poppet/agent";
 import { webSearchEnabled, webSearchProvider } from "@poppet/config";
-import { ApiKeyStore, findApiKey, saveApiKey } from "@poppet/credentials";
-import { CredentialInput } from "@poppet/provider";
+import { ApiKeyStore } from "@poppet/credentials";
 import { WebSearch, searchProviders } from "@poppet/web-search";
 import { Console, Effect, Layer } from "effect";
 
-import { terminalKeyInput } from "#src/api-key-input";
+import { decodeKey, readHiddenKey } from "#src/api-key-input";
 
 const searchProvider = Effect.map(webSearchProvider, (id) => ({ id, ...searchProviders[id] }));
 
@@ -16,7 +15,7 @@ export const WebSearchLive = Layer.effect(
 
     if (!(yield* webSearchEnabled)) return { search: null };
 
-    const { key } = yield* findApiKey(provider.credentialId, provider.keyEnvironment).pipe(
+    const key = yield* ApiKeyStore.use((store) => store.read(provider.credentialId)).pipe(
       Effect.mapError(
         () =>
           new AgentError({
@@ -32,32 +31,38 @@ export const WebSearchLive = Layer.effect(
   }),
 );
 
-export const manageWebSearch = (action: "login" | "status" | "logout", keyStdin = false) =>
+export const manageWebSearch = (action: "login" | "status" | "logout", apiKey?: string) =>
   Effect.gen(function* () {
     const store = yield* ApiKeyStore;
     const provider = yield* searchProvider;
-    const { credentialId, keyEnvironment } = provider;
+    const { credentialId } = provider;
 
     if (action === "login") {
-      yield* saveApiKey(credentialId, keyEnvironment, keyStdin).pipe(
-        Effect.provideService(CredentialInput, terminalKeyInput),
-      );
+      const key = yield* apiKey === undefined
+        ? readHiddenKey(
+            credentialId,
+            "Web search login needs an interactive terminal. Use --api-key <key>.",
+          )
+        : decodeKey(credentialId, apiKey);
+
+      yield* store.write(credentialId, key);
+
       yield* Console.log(
         `${provider.name} key saved. Enable webSearch in config.json and restart the worker.`,
       );
     } else if (action === "logout") {
       yield* store.remove(credentialId);
       yield* Console.log(
-        `Saved ${provider.name} key removed. An environment key still overrides storage. Restart the worker; remote keys are not revoked.`,
+        `Saved ${provider.name} key removed. Restart the worker; remote keys are not revoked.`,
       );
     } else {
-      const { key, source } = yield* findApiKey(credentialId, keyEnvironment);
+      const key = yield* store.read(credentialId);
       yield* Console.log(
         JSON.stringify({
           provider: provider.id,
           enabled: yield* webSearchEnabled,
           configured: key !== null,
-          source,
+          source: key === null ? null : "stored",
         }),
       );
     }

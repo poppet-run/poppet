@@ -6,7 +6,7 @@ import { Console, Effect, Option, Queue, Schema, Terminal } from "effect";
 const inputError = (provider: ProviderId, message: string) =>
   new ProviderError({ provider, reason: "authentication", message });
 
-const decodeKey = (provider: ProviderId, value: string) =>
+export const decodeKey = (provider: ProviderId, value: string) =>
   Schema.decodeUnknownEffect(ApiKey)(value).pipe(
     Effect.mapError(() => inputError(provider, "Enter a nonempty API key without whitespace.")),
   );
@@ -17,14 +17,11 @@ export const readKeyStdin = (provider: ProviderId) =>
     catch: () => inputError(provider, "Could not read the API key from stdin."),
   }).pipe(Effect.flatMap((value) => decodeKey(provider, value.replace(/\r?\n$/, ""))));
 
-export const readHiddenKey = (provider: ProviderId) => {
-  if (!process.stdin.isTTY)
-    return Effect.fail(
-      inputError(
-        provider,
-        "API-key login needs an interactive terminal. Supply the key through its environment variable or use --key-stdin.",
-      ),
-    );
+export const readHiddenKey = (
+  provider: ProviderId,
+  unattendedMessage = "API-key login needs an interactive terminal. Supply the key through its environment variable or use --key-stdin.",
+) => {
+  if (!process.stdin.isTTY) return Effect.fail(inputError(provider, unattendedMessage));
 
   return Effect.scoped(
     Effect.gen(function* () {

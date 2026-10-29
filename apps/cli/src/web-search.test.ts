@@ -38,7 +38,12 @@ describe.each(["brave", "kagi"])("WebSearchLive", (provider) => {
           Effect.provide(layer),
           Effect.provideService(
             ConfigProvider.ConfigProvider,
-            ConfigProvider.fromUnknown({ webSearch: enabled, webSearchProvider: provider }),
+            ConfigProvider.fromUnknown({
+              webSearch: enabled,
+              webSearchProvider: provider,
+              POPPET_BRAVE_SEARCH_API_KEY: "invalid environment key",
+              POPPET_KAGI_SEARCH_API_KEY: "invalid environment key",
+            }),
           ),
         ),
       );
