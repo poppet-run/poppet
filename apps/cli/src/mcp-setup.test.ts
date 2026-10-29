@@ -178,41 +178,50 @@ describe("mcp add and remove", () => {
     }
   });
 
-  test.concurrent("when an entry is invalid or duplicated, saves neither configuration nor key", async () => {
+  test.each([
+    {
+      name: "duplicate server",
+      args: ["remote", "--url", "https://other.example/mcp", "--auth", "api-key", "--key-stdin"],
+    },
+    {
+      name: "API key over HTTP",
+      args: ["plain", "--url", "http://mcp.example/mcp", "--auth", "api-key", "--key-stdin"],
+    },
+    {
+      name: "scheduled tool outside the allowed tools",
+      args: [
+        "subset",
+        "--url",
+        "https://mcp.example/mcp",
+        "--auth",
+        "none",
+        "--scheduled-tool",
+        "read",
+      ],
+    },
+    {
+      name: "conflicting tool flags",
+      args: [
+        "both",
+        "--url",
+        "https://mcp.example/mcp",
+        "--auth",
+        "none",
+        "--all-tools",
+        "--tool",
+        "read",
+      ],
+    },
+  ])("rejects $name without saving configuration or a key", async ({ args }) => {
     const state = await harness();
     const existing = [{ id: "remote", enabled: true, url: "https://mcp.example/mcp", tools: [] }];
     await writeFile(join(state.directory, "config.json"), JSON.stringify({ mcpServers: existing }));
 
     try {
-      for (const args of [
-        ["remote", "--url", "https://other.example/mcp", "--auth", "api-key", "--key-stdin"],
-        ["plain", "--url", "http://mcp.example/mcp", "--auth", "api-key", "--key-stdin"],
-        [
-          "subset",
-          "--url",
-          "https://mcp.example/mcp",
-          "--auth",
-          "none",
-          "--scheduled-tool",
-          "read",
-        ],
-        [
-          "both",
-          "--url",
-          "https://mcp.example/mcp",
-          "--auth",
-          "none",
-          "--all-tools",
-          "--tool",
-          "read",
-        ],
-      ]) {
-        // oxlint-disable-next-line no-await-in-loop
-        const result = await invoke(state.directory, ["mcp", "add", ...args], "unsaved-key\n");
-        expect(result.exitCode).toBe(1);
-        expect(result.output).not.toContain("unsaved-key");
-      }
+      const result = await invoke(state.directory, ["mcp", "add", ...args], "unsaved-key\n");
 
+      expect(result.exitCode).toBe(1);
+      expect(result.output).not.toContain("unsaved-key");
       expect((await state.config()).mcpServers).toEqual(existing);
       expect(await readdir(state.directory)).not.toContain("auth");
     } finally {
