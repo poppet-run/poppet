@@ -4,6 +4,8 @@ import { createInterface } from "node:readline";
 
 import * as Schema from "effect/Schema";
 
+import executorSchemas from "./executor-schemas.json";
+
 type FixtureTool = {
   name: string;
   description: string;
@@ -113,9 +115,12 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         description: "Fixture tool",
         inputSchema:
           mode === "schema"
-            ? { type: "object", properties: { text: { type: "string", pattern: "a" } } }
+            ? { type: "object", properties: { text: { type: "string", pattern: "(?=a)" } } }
             : inputSchema,
       };
+
+      if (mode === "executor")
+        tool.inputSchema = name === "read" ? executorSchemas.skills : executorSchemas.resume;
 
       if (mode === "credential-description") tool.description = process.env.SELECTED ?? "";
 

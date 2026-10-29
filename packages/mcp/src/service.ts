@@ -334,13 +334,12 @@ const makeTransport = (
   return new ScopedHTTPTransport(new URL(config.url), options);
 };
 
-const compile = (input: Schema.JsonObject) => {
+const compile = (input: Schema.JsonObject, tool: string, kind: "input" | "output") => {
   try {
     return compileSchema(input);
   } catch {
     throw new MCPDiagnostic({
-      message:
-        "Unsupported tool schema. Use draft-07 or 2020-12 JSON Schema, at most 16 KiB, depth 16 and 512 nodes; references, patterns and unknown formats or keywords are unsupported.",
+      message: `Unsupported ${kind} schema for tool ${JSON.stringify(tool)}. Use draft-07 or 2020-12 JSON Schema, at most 16 KiB, depth 16 and 512 nodes; patterns must be supported by RE2. References, patternProperties and unknown formats or keywords are unsupported.`,
     });
   }
 };
@@ -367,12 +366,16 @@ const makeTool = (
 
   if (schema.type !== "object")
     throw new MCPDiagnostic({ message: "Tool input must be an object schema." });
-  const validate = compile(schema);
+  const validate = compile(schema, tool.name, "input");
 
   const output =
     tool.outputSchema === undefined
       ? null
-      : compile(Schema.decodeUnknownSync(Schema.JsonObject)(tool.outputSchema));
+      : compile(
+          Schema.decodeUnknownSync(Schema.JsonObject)(tool.outputSchema),
+          tool.name,
+          "output",
+        );
 
   const uncertain = () =>
     new MCPError({
