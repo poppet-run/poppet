@@ -181,6 +181,9 @@ loaded worker does not interrupt an active request.
 Restarting interrupts active work and starts the installed service again, including
 when it was stopped. It retains the service configuration and saved data. Restart
 validates configuration before stopping the service and requires an installed worker.
+On macOS, restart waits up to 35 seconds for launchd to remove the old registration
+before loading the service again. If removal times out or inspection fails, it
+reports an error and retains the installed configuration.
 For a foreground worker, stop and rerun `worker run` instead.
 
 ## Interactive commands
