@@ -142,13 +142,15 @@ from results and rejected in tool definitions.
 A run never opens a browser. When the server rejects an access token, Poppet
 refreshes it under the record's lock; a worker and a CLI process never both
 spend one refresh token, and the second adopts the first's result. A rejected
-refresh token, a missing sign-in, or a changed URL puts the server in
+or missing refresh token, a missing sign-in, or a changed URL puts the server in
 `needs-login`: its tools are unavailable, other servers keep working, and no
 backoff applies. The next request after `mcp login` reconnects, including in a
 running worker. A server asking for more scope fails that call with a
 diagnostic naming the scope; add it to `scopes` and sign in again.
 `mcp servers` reports `signIn` with `signedIn`, `expiresAt`, and granted
-`scopes`, never token values.
+`scopes`, never token values. Active connections check saved sign-in before
+sending requests, so logout blocks further calls without restarting the worker.
+Calls already sent before logout may still complete.
 
 Set `mcpServers` to `[]` in `config.json` to disable every server. Worker settings
 change after restart, including allowlist changes.

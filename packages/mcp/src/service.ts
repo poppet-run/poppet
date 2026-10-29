@@ -270,7 +270,7 @@ interface AuthorizationSlot {
 }
 
 const delegate = (authorization: AuthorizationSlot): AuthProvider => ({
-  token: () => Promise.resolve(authorization.current?.token()),
+  token: () => authorization.current?.authProvider.token() ?? Promise.resolve(undefined),
   onUnauthorized: (context) =>
     authorization.current === null
       ? Promise.reject(new Error("Sign-in required."))
@@ -594,7 +594,6 @@ export const makeMCPLive = (toolBytes: number) =>
       const status = Effect.forEach(servers, (config) =>
         Effect.gen(function* () {
           const connection = connections.get(config.id);
-          const state = connection?.state;
 
           const signIn =
             isHTTPServer(config) && isOAuthServer(config)
@@ -603,6 +602,16 @@ export const makeMCPLive = (toolBytes: number) =>
                   Effect.orElseSucceed(() => null),
                 )
               : null;
+
+          if (connection?.state.status === "connected" && signIn?.signedIn === false) {
+            connection.state = {
+              status: "needs-login",
+              diagnostic: connection.signIn!.message,
+            };
+            yield* Effect.promise(() => close(connection).catch(() => {}));
+          }
+
+          const state = connection?.state;
 
           return {
             id: config.id,

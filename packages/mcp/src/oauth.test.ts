@@ -13,6 +13,7 @@ import {
   MCPSignInsLive,
   runtimeAuthorization,
   signIn,
+  signOut,
   type MCPOAuthServer,
 } from "#src/oauth";
 import { MCP, makeMCPLive } from "#src/service";
@@ -99,79 +100,138 @@ const call = Effect.gen(function* () {
 });
 
 describe("MCP OAuth", () => {
-  test("when the owner signs in, calls tools, refreshes an expired token, and redacts tokens from results", async () => {
-    const state = await harness({ tokenUses: 1 });
+  test.each([false, true])(
+    "when custom discovery is %j, signs in, refreshes and redacts tokens from tool results",
+    async (customDiscovery) => {
+      const state = await harness({ tokenUses: 1, customDiscovery });
 
-    try {
-      await state.login();
-      expect(state.opened).toHaveLength(1);
-      expect(state.server.registrations.count).toBe(1);
+      try {
+        await state.login();
+        expect(state.opened).toHaveLength(1);
+        expect(state.server.registrations.count).toBe(1);
 
-      const results = await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const first = yield* call;
-            // The fixture accepts each access token once, so this call refreshes first.
-            const second = yield* call;
-            const status = yield* (yield* MCP).status;
+        if (customDiscovery) {
+          expect(state.server.events.some((event) => event.path === "/custom-resource")).toBe(true);
+          expect(
+            state.server.events.some(
+              (event) => event.path === "/.well-known/oauth-authorization-server/auth",
+            ),
+          ).toBe(true);
+        }
 
-            return { first, second, status };
-          }),
-        ).pipe(Effect.provide(state.mcp()), quiet),
-      );
+        const results = await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const first = yield* call;
+              // The fixture accepts each access token once, so this call refreshes first.
+              const second = yield* call;
+              const status = yield* (yield* MCP).status;
 
-      expect(results.first).toContain("[REDACTED]");
-      expect(results.first).not.toContain("access-");
-      expect(results.second).toContain("[REDACTED]");
-      expect(state.server.events.filter((event) => event.path === "/token")).toHaveLength(2);
-      expect(results.status[0]).toMatchObject({
-        state: "connected",
-        signIn: { signedIn: true, scopes: ["read"] },
-      });
-      expect(state.opened).toHaveLength(1);
-    } finally {
-      await state.close();
-    }
-  });
+              return { first, second, status };
+            }),
+          ).pipe(Effect.provide(state.mcp()), quiet),
+        );
 
-  test("when refresh is rejected, waits for sign-in without opening a browser and reconnects after login", async () => {
-    const state = await harness();
+        expect(results.first).toContain("[REDACTED]");
+        expect(results.first).not.toContain("access-");
+        expect(results.second).toContain("[REDACTED]");
+        expect(state.server.events.filter((event) => event.path === "/token")).toHaveLength(2);
+        expect(results.status[0]).toMatchObject({
+          state: "connected",
+          signIn: { signedIn: true, scopes: ["read"] },
+        });
+        expect(state.opened).toHaveLength(1);
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
-    try {
-      await state.login();
-      state.server.options.tokenUses = 0;
-      state.server.options.refreshError = "invalid_grant";
+  test.each([false, true])(
+    "when refresh is missing (%j) or rejected, waits for sign-in and reconnects after login",
+    async (noRefreshToken) => {
+      const state = await harness({ noRefreshToken });
 
-      const result = await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const mcp = yield* MCP;
-            const failure = yield* Effect.flip(mcp.tools("remote"));
-            const waiting = yield* mcp.status;
+      try {
+        await state.login();
+        state.server.options.tokenUses = 0;
+        state.server.options.refreshError = "invalid_grant";
 
-            // Another process signs in again; the next request reconnects without a backoff.
-            delete state.server.options.tokenUses;
-            delete state.server.options.refreshError;
-            yield* Effect.promise(() => state.login());
-            const tools = yield* mcp.tools("remote");
+        const result = await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const mcp = yield* MCP;
+              const failure = yield* Effect.flip(mcp.tools("remote"));
+              const waiting = yield* mcp.status;
 
-            return { failure, waiting, tools };
-          }),
-        ).pipe(Effect.provide(state.mcp()), quiet),
-      );
+              // Another process signs in again; the next request reconnects without a backoff.
+              delete state.server.options.tokenUses;
+              delete state.server.options.refreshError;
+              yield* Effect.promise(() => state.login());
+              const tools = yield* mcp.tools("remote");
 
-      expect(result.failure.message).toContain("Run poppet mcp login remote.");
-      expect(result.waiting[0]).toMatchObject({
-        state: "needs-login",
-        retryAt: null,
-        signIn: { signedIn: false },
-      });
-      expect(result.tools.map((tool) => tool.toolName)).toEqual(["read"]);
-      expect(state.opened).toHaveLength(2);
-    } finally {
-      await state.close();
-    }
-  });
+              return { failure, waiting, tools };
+            }),
+          ).pipe(Effect.provide(state.mcp()), quiet),
+        );
+
+        expect(result.failure.message).toContain("Run poppet mcp login remote.");
+        expect(result.waiting[0]).toMatchObject({
+          state: "needs-login",
+          retryAt: null,
+          signIn: { signedIn: false },
+        });
+        expect(result.tools.map((tool) => tool.toolName)).toEqual(["read"]);
+        expect(state.opened).toHaveLength(2);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test.each([false, true])(
+    "when logout is followed by status first (%j), blocks retained tools and recovers after login",
+    async (statusFirst) => {
+      const state = await harness();
+
+      try {
+        await state.login();
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const mcp = yield* MCP;
+              const [tool] = yield* mcp.snapshot(false);
+              const prepared = yield* tool!.prepare('{"input":"{}"}');
+              yield* prepared.execute;
+              yield* Effect.promise(() => state.run(signOut("remote")));
+              const requests = state.server.events.length;
+
+              if (statusFirst) {
+                const status = yield* mcp.status;
+                expect(status[0]).toMatchObject({ state: "needs-login", retryAt: null });
+              }
+
+              const error = yield* Effect.flip(prepared.execute);
+              expect(error.reason).not.toBe("tool-uncertain");
+              expect(error.message).toContain("poppet mcp login remote");
+              expect(state.server.events).toHaveLength(requests);
+              const status = yield* mcp.status;
+              expect(status[0]).toMatchObject({
+                state: "needs-login",
+                retryAt: null,
+                signIn: { signedIn: false },
+              });
+              yield* Effect.promise(() => state.login());
+              const result = yield* call;
+              expect(result).toContain("[REDACTED]");
+            }),
+          ).pipe(Effect.provide(state.mcp()), quiet),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
   test("when two processes refresh the same token at once, spends the refresh token once and both keep a valid token", async () => {
     const state = await harness({ tokenUses: 1 });
