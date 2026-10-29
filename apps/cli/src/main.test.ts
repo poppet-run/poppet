@@ -115,25 +115,39 @@ describe("main.ts", () => {
     }
   }, 15000);
 
-  test.concurrent("when web login reads stdin, uses that key instead of an invalid environment key", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-web-stdin-"));
+  test.concurrent("when web login receives an API key, uses it instead of an invalid environment key", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-api-key-"));
 
     try {
-      const saved = await invokeProcess(
-        ["web", "login", "--key-stdin"],
-        {
-          POPPET_DATA_DIR: directory,
-          POPPET_BRAVE_SEARCH_API_KEY: "invalid search key",
-        },
-        "stdin-search-secret\n",
-      );
+      const saved = await invokeProcess(["web", "login", "--api-key", "argument-search-secret"], {
+        POPPET_DATA_DIR: directory,
+        POPPET_BRAVE_SEARCH_API_KEY: "invalid search key",
+      });
 
       expect(saved.exitCode).toBe(0);
-      expect(saved.stdout + saved.stderr).not.toContain("stdin-search-secret");
+      expect(saved.stdout + saved.stderr).not.toContain("argument-search-secret");
       expect(saved.stdout + saved.stderr).not.toContain("invalid search key");
       expect(JSON.parse(await Bun.file(join(directory, "auth/brave-search.json")).text()).key).toBe(
-        "stdin-search-secret",
+        "argument-search-secret",
       );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test.concurrent("web login ignores environment keys and requires explicit input", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-environment-"));
+
+    try {
+      const result = await invokeProcess(["web", "login"], {
+        POPPET_DATA_DIR: directory,
+        POPPET_BRAVE_SEARCH_API_KEY: "unused-environment-key",
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("--api-key <key>");
+      expect(result.stdout + result.stderr).not.toContain("unused-environment-key");
+      expect(await readdir(directory)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

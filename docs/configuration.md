@@ -166,12 +166,12 @@ poppet web login
 poppet web status
 ```
 
-`web login --key-stdin` accepts a piped key. Credentials stay in
-`auth/brave-search.json` or `auth/kagi-search.json`. `POPPET_BRAVE_SEARCH_API_KEY`
-and `POPPET_KAGI_SEARCH_API_KEY` override their respective saved keys. Switching
-providers preserves both keys. Logout removes only the selected saved key, without
-revoking remote access or clearing an environment override. Restart the worker
-after changing settings or credentials.
+`web login --api-key <key>` saves a key supplied as an argument. Without the flag,
+login uses a hidden prompt. Credentials stay in `auth/brave-search.json` or
+`auth/kagi-search.json`. Web search uses only saved credentials; environment
+variables cannot supply or override search keys. Switching providers preserves
+both keys. Logout removes only the selected saved key without revoking remote
+access. Restart the worker after changing settings or credentials.
 
 Queries go to the selected provider and can contain private information chosen
 by the model. Keys are never sent to fetched pages. Search uses a 15-second

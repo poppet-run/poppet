@@ -144,7 +144,7 @@ export const setupCommand = (context: CLIContext) =>
       process.stdin.isTTY && process.stdout.isTTY
         ? runSetup(context).pipe(
             Effect.provideService(CredentialInput, {
-              readKey: readHiddenKey,
+              readKey: (provider) => readHiddenKey(provider),
               readLine: readVisibleLine,
             }),
           )
