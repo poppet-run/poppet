@@ -246,7 +246,7 @@ describe("makeCLI", () => {
 
       expect(rescheduled.exitCode).toBe(0);
       expect(JSON.parse(rescheduled.stdout).snoozeCleared).toBe(true);
-      const skipped = await invoke(["tasks", "skip-next", id], offline);
+      const skipped = await invoke(["tasks", "skip", id], offline);
       expect(skipped.exitCode).toBe(0);
       const nextAt = JSON.parse(skipped.stdout).nextAt;
       const immediate = await invoke(["tasks", "run", id], offline);
