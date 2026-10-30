@@ -19,7 +19,7 @@ import {
 import { readBoundedText } from "@poppet/io";
 import { mcpServers } from "@poppet/mcp";
 import { requestWorker, workerSocketPath } from "@poppet/worker";
-import { Effect, Layer, Result, Schema } from "effect";
+import { Effect, Layer, Match, Result, Schema } from "effect";
 
 import type { CLIContext } from "#src/commands/context";
 import { inspectAuthentication, inspectContext, inspectService, fileInfo } from "#src/doctor-local";
@@ -39,6 +39,15 @@ export const inspectCheck = <E, R>(
 ) =>
   effect.pipe(
     Effect.timeout("2 seconds"),
+    Effect.catchTag("TimeoutError", () =>
+      Effect.succeed(
+        unavailable(
+          id,
+          next,
+          "This check did not finish within two seconds. Try running doctor again.",
+        ),
+      ),
+    ),
     Effect.catchCause(() => Effect.succeed(unavailable(id, next))),
   );
 
@@ -51,7 +60,7 @@ const noSnapshot = (message: string) =>
       "error",
       "not-checked",
       message,
-      "Run poppet worker status; start or update the worker to inspect saved work.",
+      "Run poppet worker status and poppet worker logs to check why the worker is unavailable.",
       true,
     ),
   );
@@ -86,7 +95,9 @@ const inspectWorker = (directory: string, identity: string | null) =>
     if (Result.isFailure(response))
       return [
         unavailable("worker.socket", "Run poppet worker status and poppet worker logs."),
-        ...noSnapshot("Worker inspection failed; no local database was opened."),
+        ...noSnapshot(
+          "Doctor could not get a report from the worker, so it could not check these saved records.",
+        ),
       ];
 
     if (response.success === null) {
@@ -99,21 +110,25 @@ const inspectWorker = (directory: string, identity: string | null) =>
           "worker.socket",
           "warning",
           "local",
-          "No worker is reachable on the protected socket.",
-          "Run poppet worker start, or poppet worker run for foreground use.",
+          "The worker is not responding. It may be stopped, still starting, or failing to start.",
+          "Run poppet worker status and poppet worker logs. If it is stopped, run poppet worker start or poppet worker run.",
         ),
         ...(database === null
-          ? savedChecks.map((id) => finding(id, "skipped", "local", "No saved database exists."))
+          ? savedChecks.map((id) =>
+              finding(id, "skipped", "local", "There is no saved database to check yet."),
+            )
           : noSnapshot(
-              "Offline SQLite inspection is unavailable without risking sidecar changes; the database was not opened.",
+              "Doctor needs a responding worker to check these saved records. It left your database untouched.",
             )),
       ];
     }
 
     if ("unsupported" in response.success)
       return [
-        finding("worker.socket", "ok", "local", "Worker socket is reachable."),
-        ...noSnapshot("Worker does not support this inspection or could not complete it."),
+        finding("worker.socket", "ok", "local", "The worker is responding."),
+        ...noSnapshot(
+          "The worker responded but could not provide this report. It may need restarting after an update.",
+        ),
       ];
     const snapshot = response.success;
 
@@ -123,11 +138,11 @@ const inspectWorker = (directory: string, identity: string | null) =>
           "worker.identity",
           "warning",
           "worker",
-          "CLI configuration is invalid or differs from the running worker.",
-          "Check poppet config and restart the worker with poppet worker restart.",
+          "Doctor could not match your current settings to the settings the worker loaded at startup.",
+          "Check poppet config. If you changed settings, run poppet worker restart to load them.",
         ),
         ...noSnapshot(
-          "Worker summaries were not combined with a different or invalid configuration.",
+          "Doctor could not confirm which settings the worker is using, so it did not use the worker's report.",
         ),
       ];
     const tasks = snapshot.tasks;
@@ -140,37 +155,68 @@ const inspectWorker = (directory: string, identity: string | null) =>
         "worker.socket",
         "ok",
         "worker",
-        "Worker is reachable and its startup configuration matches.",
+        "The worker is responding and is using the same settings as this command.",
       ),
       finding(
         "tasks",
         problem ? "warning" : "ok",
         "worker",
-        `${tasks.failed} failed and ${tasks.interrupted} interrupted occurrences in the last 24 hours; ${tasks.running} running. Next due: ${tasks.nextAt === null ? "none" : new Date(tasks.nextAt).toISOString()}. Running work is not assumed stale.${(snapshot.recent ?? []).map((item) => ` ${item.status}: task ${item.jobId}, occurrence ${item.id}.`).join("")} ${Math.max(0, tasks.failed + tasks.interrupted - (snapshot.recent?.length ?? 0))} recent failure IDs omitted.`,
-        problem ? "Run poppet tasks status to inspect failures before retrying." : null,
+        [
+          `${tasks.failed} failed and ${tasks.interrupted} interrupted task runs in the last 24 hours. ${tasks.running} currently running.`,
+          `Next scheduled run: ${tasks.nextAt === null ? "none" : new Date(tasks.nextAt).toISOString()}.`,
+          ...(tasks.running > 0 ? ["Doctor cannot tell whether a running task is stuck."] : []),
+          ...(snapshot.recent ?? []).map(
+            (item) => `${item.status}: task ${item.jobId}, run ${item.id}.`,
+          ),
+          ...(tasks.failed + tasks.interrupted > (snapshot.recent?.length ?? 0)
+            ? [
+                `${tasks.failed + tasks.interrupted - (snapshot.recent?.length ?? 0)} more failed or interrupted runs not shown.`,
+              ]
+            : []),
+        ].join(" "),
+        problem
+          ? "Run poppet tasks status to review failed or interrupted runs before retrying."
+          : null,
       ),
       finding(
         "provider-holds",
         snapshot.holds.length > 0 ? "warning" : "ok",
         "worker",
-        `${snapshot.holds.length} saved holds; ${snapshot.holdsOmitted} omitted.${snapshot.holds.map((hold) => ` ${hold.provider}: ${hold.reason}: ${hold.resumeAt === null ? "owner action required" : `retry at ${new Date(hold.resumeAt).toISOString()}`}.`).join("")}`,
+        snapshot.holds.length === 0
+          ? "No providers have paused scheduled work."
+          : [
+              ...snapshot.holds.map((hold) => {
+                const reason = Match.value(hold.reason).pipe(
+                  Match.when("quota", () => "a usage limit was reached"),
+                  Match.when("rate-limit", () => "too many requests were sent"),
+                  Match.when("temporary", () => "the provider had a temporary problem"),
+                  Match.when("other", () => "the provider reported a problem"),
+                  Match.exhaustive,
+                );
+
+                return `${hold.provider} is paused because ${reason}. ${hold.resumeAt === null ? "Waiting for you to resume work." : `Scheduled work can retry at ${new Date(hold.resumeAt).toISOString()}.`}`;
+              }),
+              ...(snapshot.holdsOmitted > 0
+                ? [`${snapshot.holdsOmitted} more paused providers not shown.`]
+                : []),
+            ].join(" "),
         snapshot.holds.length > 0
-          ? "Run poppet tasks status; wait until the retry time or inspect quota before using poppet tasks resume-provider."
+          ? "Run poppet tasks status. Wait until the retry time, or use poppet tasks resume-provider with the provider ID once its limit is cleared."
           : null,
       ),
       finding(
         "delivery",
         deliveryProblem ? "warning" : "ok",
         "worker",
-        `${delivery.pending} pending, ${delivery.failed} failed, ${delivery.uncertain} uncertain sends. Delivery age is not stored.`,
+        `${delivery.pending} messages waiting to send, ${delivery.failed} failed sends, ${delivery.uncertain} sends with unknown delivery status.`,
         deliveryProblem
-          ? "Run poppet gateway status. Inspect uncertain sends in the destination before retrying."
+          ? "Run poppet gateway status. Check the destination for messages with unknown delivery status before retrying, to avoid duplicates."
           : null,
       ),
       snapshot.gateway === undefined
         ? unavailable(
             "gateway.connection",
-            "Restart the worker to load gateway observation support.",
+            "Run poppet worker restart so doctor can check messaging connections.",
           )
         : finding(
             "gateway.connection",
@@ -180,7 +226,7 @@ const inspectWorker = (directory: string, identity: string | null) =>
                 ? "skipped"
                 : "ok",
             "worker",
-            `${snapshot.gateway.enabled} enabled adapters; ${snapshot.gateway.disconnected} disconnected; ${snapshot.gateway.configurationErrors} configuration failures; ${snapshot.gateway.unknown} unknown. These are local adapter observations, not a remote probe.`,
+            `${snapshot.gateway.enabled} messaging services enabled. ${snapshot.gateway.disconnected} report being disconnected, ${snapshot.gateway.configurationErrors} have setup problems, and ${snapshot.gateway.unknown} did not report a connection state. Doctor has not sent a test message.`,
             snapshot.gateway.disconnected + snapshot.gateway.configurationErrors > 0
               ? "Run poppet gateway status and poppet worker logs."
               : null,
@@ -241,18 +287,18 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
               "installation",
               "warning",
               "local",
-              "Data directory does not exist; nothing was created.",
+              "This data directory does not exist yet. Doctor did not create it.",
               "Run poppet setup.",
             );
 
           if (!info.isDirectory()) throw new Error("Invalid directory");
 
-          return finding("installation", "ok", "local", "Selected data directory exists.");
+          return finding("installation", "ok", "local", "Your data directory exists.");
         }),
       ),
       inspectCheck(
         "worker.service",
-        "Run poppet worker status to inspect the platform service.",
+        "Run poppet worker status for details about the background service.",
         service(directory),
       ),
       inspectCheck(
@@ -269,13 +315,13 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
           "configuration",
           "ok",
           "local",
-          `Validated ${source.configFile.exists ? "config.json" : "defaults; config.json is absent"}. Selected provider: ${config.provider}.`,
+          `Using ${source.configFile.exists ? "valid settings from config.json" : "default settings because config.json is absent"}. Provider: ${config.provider}.`,
         ),
       );
       basic.push(
         inspectCheck(
           "authentication",
-          "Check auth directory/file permissions and run poppet provider login.",
+          "Check that the auth directory and credential files belong to you and are private. Use poppet provider login if you need to sign in again.",
           inspectAuthentication(
             directory,
             context.registered.find((provider) => provider.id === config.provider)!,
@@ -285,24 +331,57 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
       basic.push(
         inspectCheck(
           "browser",
-          "Check browser executables and domain policy in config.json; see docs/browser.md.",
+          "Check browser.command and browser.chromiumExecutable in config.json. See docs/browser.md for installation steps.",
           Effect.tryPromise(async () => {
             if (!browser.enabled)
               return finding("browser", "skipped", "local", "Browser access is disabled.");
-            const paths = await browserExecutables(browser);
-            await Promise.all(
-              [paths.executable, paths.chromium].map(async (path) => {
-                if (!(await stat(path)).isFile())
-                  throw new Error("Executable is not a regular file");
-                await access(path, constants.X_OK);
+            const paths = await browserExecutables(browser).catch(() => null);
+
+            if (paths === null)
+              return unavailable(
+                "browser",
+                "Install the browser programs or set browser.command and browser.chromiumExecutable in config.json. See docs/browser.md.",
+                "Doctor could not locate agent-browser or its Chrome for Testing installation.",
+              );
+
+            const programs = [
+              { name: "agent-browser", setting: "browser.command", path: paths.executable },
+              {
+                name: "Chrome for Testing",
+                setting: "browser.chromiumExecutable",
+                path: paths.chromium,
+              },
+            ];
+
+            const programChecks = await Promise.all(
+              programs.map(async (program) => {
+                const usable = await stat(program.path)
+                  .then(async (info) => {
+                    if (!info.isFile()) return false;
+                    await access(program.path, constants.X_OK);
+
+                    return true;
+                  })
+                  .catch(() => false);
+
+                return Object.assign(program, { usable });
               }),
             );
+
+            const missing = programChecks.find((program) => !program.usable);
+
+            if (missing !== undefined)
+              return unavailable(
+                "browser",
+                `Check ${missing.setting} in config.json. Make sure it points to an installed program that your user can run.`,
+                `${missing.name} is missing, is not a regular file, or cannot be run by your user.`,
+              );
 
             return finding(
               "browser",
               "ok",
               "local",
-              "Browser executables are available and domain policy is valid. Binary versions and launch are unverified.",
+              "The browser files exist, and your user has permission to run them. Doctor has not started them or checked their versions.",
             );
           }),
         ),
@@ -328,8 +407,8 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
               missing ? "warning" : "ok",
               "local",
               missing
-                ? "An enabled MCP command is unavailable."
-                : "Enabled MCP configuration and scheduled-tool allowlists are valid. Servers, credentials and tools were not exercised.",
+                ? "Doctor could not find a program needed by an enabled MCP server."
+                : "Enabled MCP servers have valid settings and tool permissions. Doctor has not started the servers or tested their sign-in details or tools.",
               missing ? "Check mcpServers commands in config.json." : null,
             );
           }),
@@ -341,14 +420,19 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
           "configuration",
           "error",
           "local",
-          "Configuration is invalid or unreadable; values and parser errors are withheld.",
+          "Doctor could not read or validate config.json. Some settings may be invalid, or the file may be unreadable.",
           "Check config.json against docs/configuration.md.",
           true,
         ),
       );
       checks.push(
         ...["authentication", "browser", "mcp"].map((id) =>
-          finding(id, "skipped", "not-checked", "Requires valid configuration."),
+          finding(
+            id,
+            "skipped",
+            "not-checked",
+            "Doctor needs valid settings before it can check this.",
+          ),
         ),
       );
     }
@@ -363,7 +447,7 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
       Effect.catchCause(() =>
         Effect.succeed([
           unavailable("worker.socket", "Run poppet worker status."),
-          ...noSnapshot("Worker inspection is unavailable."),
+          ...noSnapshot("Doctor could not get a report from the worker."),
         ]),
       ),
     );
