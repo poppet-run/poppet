@@ -1,5 +1,33 @@
 import type { ChannelRegistration } from "@poppet/gateway";
 
+interface TextCommand {
+  /** Positional arguments before the literal text. */
+  readonly positionals: number;
+  /** Options that take a value. */
+  readonly values: ReadonlyArray<string>;
+  /** Options that take no value. */
+  readonly flags: ReadonlyArray<string>;
+  /** Fail on unknown options instead of treating them as the start of the text. */
+  readonly strict?: boolean;
+}
+
+const textCommands = new Map<string, TextCommand>([
+  ["chat new", { positionals: 0, values: ["skill", "attach"], flags: [] }],
+  ["chat send", { positionals: 1, values: ["attach"], flags: [] }],
+  ["chat rename", { positionals: 1, values: [], flags: ["json"] }],
+  ["memory set", { positionals: 1, values: [], flags: ["json"] }],
+  // Unknown options must fail, rather than silently becoming a local task's prompt.
+  [
+    "tasks add",
+    {
+      positionals: 1,
+      values: ["in", "at", "cron", "tz", "skill", "to"],
+      flags: ["json"],
+      strict: true,
+    },
+  ],
+]);
+
 // Insert `--` so prompts, values, and adapter setup arguments reach their handlers as literal text.
 export const commandArgs = (
   args: ReadonlyArray<string>,
@@ -7,48 +35,32 @@ export const commandArgs = (
 ): ReadonlyArray<string> => {
   if (args.length === 0) return ["--help"];
 
-  let offset: number;
+  let offset = 2;
 
   if (args[0] === "gateway" && channels.some((entry) => entry.id === args[1])) {
     if (args.includes("--help") || args.includes("-h")) return args;
-    offset = 2;
-  } else if (args[0] === "chat" && args[1] === "new") {
-    offset = 2;
+  } else {
+    const spec = textCommands.get(`${args[0]} ${args[1]}`);
+
+    if (spec === undefined) return args;
+    let positionals = 0;
 
     while (offset < args.length) {
       const token = args[offset]!;
+      const option = /^--([^=]+)(=?)/.exec(token);
 
-      if (token === "--skill" || token === "--attach") offset += 2;
-      else if (/^--(?:skill|attach)=/.test(token)) offset++;
+      if (token === "--" || token === "--help" || token === "-h") return args;
+
+      if (option !== null && spec.values.includes(option[1]!)) offset += option[2] ? 1 : 2;
+      else if (option !== null && !option[2] && spec.flags.includes(option[1]!)) offset++;
+      else if (positionals < spec.positionals) {
+        if (token.startsWith("-")) return args;
+        positionals++;
+        offset++;
+      } else if (spec.strict && token.startsWith("-")) return args;
       else break;
     }
-  } else if (args[0] === "chat" && args[1] === "send") {
-    offset = 3;
-
-    while (offset < args.length) {
-      const token = args[offset]!;
-
-      if (token === "--attach") offset += 2;
-      else if (token.startsWith("--attach=")) offset++;
-      else break;
-    }
-  } else if (args[0] === "chat" && args[1] === "rename") {
-    offset = 3;
-  } else if (args[0] === "memory" && args[1] === "set") {
-    offset = 3;
-  } else if (args[0] === "tasks" && args[1] === "add") {
-    offset = 3;
-
-    while (offset < args.length) {
-      const token = args[offset]!;
-
-      if (["--in", "--at", "--cron", "--tz", "--skill", "--to"].includes(token)) offset += 2;
-      else if (/^--(?:in|at|cron|tz|skill|to)=/.test(token)) offset++;
-      // Unknown options must fail, rather than silently becoming a local task's prompt.
-      else if (token.startsWith("-") && token !== "--") return args;
-      else break;
-    }
-  } else return args;
+  }
 
   if (offset >= args.length || ["--", "--help", "-h"].includes(args[offset]!)) return args;
 

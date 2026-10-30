@@ -14,6 +14,8 @@ export {
 
 export { TaskRepository, TaskRepositoryLive } from "#src/task-store";
 
+export type { ControlReceipt } from "#src/task-controls";
+
 export {
   TaskDeliveries,
   TaskDestinations,

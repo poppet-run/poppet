@@ -20,6 +20,30 @@ Run `poppet doctor` for read-only setup and worker inspection, or
 `poppet doctor --json` for scripts. See [doctor](doctor.md) for checks, exit codes,
 and limits.
 
+## Output
+
+Commands print human-readable text: lists as aligned tables, single records as
+labelled fields, and changes as a short confirmation. Times are shown in the
+local timezone to the minute. On a terminal, the last table column is shortened
+to fit the window; redirected output keeps full values. `NO_COLOR=1` disables
+styling.
+
+Commands that report data accept `--json` to print the full result as JSON
+instead, with Unix-millisecond timestamps and every field. Use it in scripts:
+
+```sh
+poppet tasks list --json
+poppet memory set --json project "Poppet"
+```
+
+For commands that take free text, put `--json` before the text; after it,
+`--json` is part of the text. `--json` is available on `config`, `doctor`,
+`provider status` and `models`, `web status`, `chat rename`, `search`,
+`sessions` and `show`, `skills list` and `show`, all `memory` and `tasks`
+commands, `mcp servers` and `tools`, `store status`, and `worker status`.
+Commands that stream answers, prompt for input, or only confirm a setup step
+print text only.
+
 ## Shell completions
 
 `poppet --completions <shell>` prints a completion script for `bash`, `zsh`, or
@@ -156,15 +180,15 @@ Enable `webSearch` separately and restart any running worker. See
 
 ## Chat
 
-| Command                                                    | Action                                                      |
-| ---------------------------------------------------------- | ----------------------------------------------------------- |
-| `chat interactive [session] [--skill <name>]`              | Open a terminal prompt for a new or saved session.          |
-| `chat new [--skill <name>] [--attach <path>]... <message>` | Start a session with the configured provider and model.     |
-| `chat send <session> [--attach <path>]... <message>`       | Continue a saved session.                                   |
-| `chat rename <session> <title>`                            | Rename a saved session without inference.                   |
-| `chat search <query>`                                      | Search completed conversation text without inference.       |
-| `chat sessions`                                            | List saved sessions.                                        |
-| `chat show <session>`                                      | Print saved messages, tool calls, and run outcomes as JSON. |
+| Command                                                    | Action                                                  |
+| ---------------------------------------------------------- | ------------------------------------------------------- |
+| `chat interactive [session] [--skill <name>]`              | Open a terminal prompt for a new or saved session.      |
+| `chat new [--skill <name>] [--attach <path>]... <message>` | Start a session with the configured provider and model. |
+| `chat send <session> [--attach <path>]... <message>`       | Continue a saved session.                               |
+| `chat rename <session> <title>`                            | Rename a saved session without inference.               |
+| `chat search <query>`                                      | Search completed conversation text without inference.   |
+| `chat sessions`                                            | List saved sessions.                                    |
+| `chat show <session>`                                      | Show saved messages and run outcomes.                   |
 
 See [chat](chat.md) for session selection, streaming, cancellation, limits,
 attachments, and the tools available during a run.

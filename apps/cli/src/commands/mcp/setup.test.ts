@@ -155,7 +155,7 @@ describe("mcp add and remove", () => {
           )
         ).exitCode,
       ).toBe(0);
-      const listed = await run("tools", "remote");
+      const listed = await run("tools", "remote", "--json");
       expect(listed.exitCode).toBe(0);
       expect(
         JSON.parse(listed.output).map(
@@ -186,7 +186,7 @@ describe("mcp add and remove", () => {
       });
 
       server.tools.push("new-tool");
-      const refreshed = JSON.parse((await run("tools", "remote")).output);
+      const refreshed = JSON.parse((await run("tools", "remote", "--json")).output);
       expect(
         refreshed.find((tool: { toolName: string }) => tool.toolName === "new-tool"),
       ).toMatchObject({ allowed: false, scheduled: false });
@@ -425,11 +425,18 @@ describe("mcp add and remove", () => {
       expect(record).toContain("access-");
       expect(await readFile(join(state.directory, "config.json"), "utf8")).not.toContain("access-");
 
-      const status = JSON.parse((await invoke(state.directory, ["mcp", "servers"], null)).output);
+      const status = JSON.parse(
+        (await invoke(state.directory, ["mcp", "servers", "--json"], null)).output,
+      );
+
       expect(status[0].signIn).toMatchObject({ signedIn: true, scopes: ["read"] });
 
       expect((await invoke(state.directory, ["mcp", "logout", "remote"], null)).exitCode).toBe(0);
-      const after = JSON.parse((await invoke(state.directory, ["mcp", "servers"], null)).output);
+
+      const after = JSON.parse(
+        (await invoke(state.directory, ["mcp", "servers", "--json"], null)).output,
+      );
+
       expect(after[0].signIn).toMatchObject({ signedIn: false });
 
       expect((await invoke(state.directory, ["mcp", "remove", "remote"], null)).exitCode).toBe(0);

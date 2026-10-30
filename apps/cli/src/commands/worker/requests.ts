@@ -53,19 +53,17 @@ const execute = (
   timingLog: (line: string) => Effect.Effect<void>,
 ) =>
   Effect.gen(function* () {
+    const writeJson = <A>(value: A) => write(`${JSON.stringify(value)}\n`);
+
+    // Inspections reply with one JSON value, which the command line formats.
     if (request.kind === "mcp")
-      return yield* inspectMCP(request.command).pipe(Effect.flatMap((text) => write(`${text}\n`)));
+      return yield* inspectMCP(request.command).pipe(Effect.flatMap(writeJson));
 
     if (request.kind === "memory")
-      return yield* manageMemory(request.command).pipe(
-        Effect.flatMap((text) => write(`${text}\n`)),
-      );
+      return yield* manageMemory(request.command).pipe(Effect.flatMap(writeJson));
 
-    if (request.kind === "store") {
-      const store = yield* Store;
-
-      return yield* write(`${JSON.stringify(yield* store.status, null, 2)}\n`);
-    }
+    if (request.kind === "store")
+      return yield* Store.use((store) => store.status).pipe(Effect.flatMap(writeJson));
 
     const command = request.command;
 
@@ -76,7 +74,7 @@ const execute = (
       command.action === "search"
     )
       return yield* inspectChat(command, (yield* ChatSettings).toolBytes).pipe(
-        Effect.flatMap((text) => write(`${text}\n`)),
+        Effect.flatMap(writeJson),
       );
 
     return yield* sendChat(command, write, announce, reasoning, timingLog);

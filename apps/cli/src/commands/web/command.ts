@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
+import { jsonFlag } from "#src/commands/flags";
 import { manageWebSearch } from "#src/commands/web/search";
 
 export const webCommand = (context: CLIContext) => {
@@ -24,17 +25,14 @@ export const webCommand = (context: CLIContext) => {
             Effect.provide([runtime.searchCredentials, runtime.config]),
           ),
       ).pipe(Command.withDescription("Save an API key for the configured search provider")),
-      ...(["status", "logout"] as const).map((action) =>
-        Command.make(action, {}, () =>
-          manageWebSearch(action).pipe(Effect.provide([runtime.searchCredentials, runtime.config])),
-        ).pipe(
-          Command.withDescription(
-            action === "status"
-              ? "Show search setup without secrets"
-              : "Remove the saved search key",
-          ),
+      Command.make("status", { json: jsonFlag }, ({ json }) =>
+        manageWebSearch("status", undefined, json).pipe(
+          Effect.provide([runtime.searchCredentials, runtime.config]),
         ),
-      ),
+      ).pipe(Command.withDescription("Show search setup without secrets")),
+      Command.make("logout", {}, () =>
+        manageWebSearch("logout").pipe(Effect.provide([runtime.searchCredentials, runtime.config])),
+      ).pipe(Command.withDescription("Remove the saved search key")),
     ]),
   );
 };

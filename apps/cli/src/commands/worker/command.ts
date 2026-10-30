@@ -6,12 +6,15 @@ import { Console, Effect } from "effect";
 import { Command } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
+import { jsonFlag } from "#src/commands/flags";
 import { stoppedMessagingStatus } from "#src/commands/gateway/channels";
+import { renderWorkerStatus, WorkerStatusReport } from "#src/commands/worker/format";
+import { printParsed } from "#src/output";
 
 export const workerCommand = (context: CLIContext) => {
   const { runtime, worker, startWorker, channels } = context;
 
-  const runWorkerCommand = (action: WorkerAction) => {
+  const runWorkerCommand = (action: WorkerAction, json = false) => {
     if (action === "stop" || action === "uninstall" || action === "logs")
       return configuredDataDirectory.pipe(
         Effect.flatMap((directory) => worker(action, directory)),
@@ -29,8 +32,11 @@ export const workerCommand = (context: CLIContext) => {
       });
 
       if (reply !== null)
-        return yield* Console.log(
-          JSON.stringify({ service: managed, worker: reply.value }, null, 2),
+        return yield* printParsed(
+          json,
+          { service: managed, worker: reply.value },
+          WorkerStatusReport,
+          renderWorkerStatus,
         );
 
       const overview = yield* readLocalTaskStatus.pipe(Effect.provide(runtime.tasks));
@@ -45,23 +51,22 @@ export const workerCommand = (context: CLIContext) => {
         Effect.forEach(ids, (id) => service.status(id)),
       ).pipe(Effect.provide(runtime.connections));
 
-      yield* Console.log(
-        JSON.stringify(
-          {
-            service: managed,
-            worker: {
-              ...overview,
-              running: false,
-              pid: null,
-              startedAt: null,
-              activeOccurrence: null,
-              connections,
-              messaging,
-            },
+      yield* printParsed(
+        json,
+        {
+          service: managed,
+          worker: {
+            ...overview,
+            running: false,
+            pid: null,
+            startedAt: null,
+            activeOccurrence: null,
+            connections,
+            messaging,
           },
-          null,
-          2,
-        ),
+        },
+        WorkerStatusReport,
+        renderWorkerStatus,
       );
     }).pipe(Effect.provide(runtime.config));
   };
@@ -72,21 +77,24 @@ export const workerCommand = (context: CLIContext) => {
       Command.make("run", {}, () => startWorker()).pipe(
         Command.withDescription("Run scheduling and messaging in one foreground worker"),
       ),
-      ...(["install", "start", "restart", "stop", "status", "logs", "uninstall"] as const).map(
-        (action) =>
-          Command.make(action, {}, () => runWorkerCommand(action)).pipe(
-            Command.withDescription(
-              {
-                install: "Install and start the login worker",
-                start: "Start an installed worker",
-                restart: "Restart an installed worker, interrupting active work",
-                stop: "Stop it until the next login or explicit start",
-                status: "Show login service, scheduling, provider, and messaging status",
-                logs: "Print the last 64 KiB of worker logs",
-                uninstall: "Stop and remove login startup; retain saved data",
-              }[action],
-            ),
+      Command.make("status", { json: jsonFlag }, ({ json }) =>
+        runWorkerCommand("status", json),
+      ).pipe(
+        Command.withDescription("Show login service, scheduling, provider, and messaging status"),
+      ),
+      ...(["install", "start", "restart", "stop", "logs", "uninstall"] as const).map((action) =>
+        Command.make(action, {}, () => runWorkerCommand(action)).pipe(
+          Command.withDescription(
+            {
+              install: "Install and start the login worker",
+              start: "Start an installed worker",
+              restart: "Restart an installed worker, interrupting active work",
+              stop: "Stop it until the next login or explicit start",
+              logs: "Print the last 64 KiB of worker logs",
+              uninstall: "Stop and remove login startup; retain saved data",
+            }[action],
           ),
+        ),
       ),
     ]),
   );

@@ -13,7 +13,7 @@ test("saved tool exchanges display only user and assistant text in order", async
     arguments: "{}",
   };
 
-  const json = JSON.stringify({
+  const inspection = {
     session: { id: "saved" },
     messages: [
       { message: { role: "user", text: "Inspect this" } },
@@ -27,9 +27,9 @@ test("saved tool exchanges display only user and assistant text in order", async
       },
       { message: { role: "user", text: "An unanswered request" } },
     ],
-  });
+  };
 
-  expect(await Effect.runPromise(readChatHistory(json, "saved"))).toEqual([
+  expect(await Effect.runPromise(readChatHistory(inspection, "saved"))).toEqual([
     { role: "user", text: "Inspect this" },
     { role: "assistant", text: "First answer" },
     { role: "user", text: "An unanswered request" },
@@ -38,9 +38,9 @@ test("saved tool exchanges display only user and assistant text in order", async
 
 test.each([
   "{",
-  JSON.stringify({ session: { id: "saved" }, messages: [{}] }),
-  JSON.stringify({ session: { id: "another" }, messages: [] }),
-])("rejects malformed or mismatched history %s", async (json) => {
-  const result = await Effect.runPromise(readChatHistory(json, "saved").pipe(Effect.result));
+  { session: { id: "saved" }, messages: [{}] },
+  { session: { id: "another" }, messages: [] },
+])("rejects malformed or mismatched history %j", async (value) => {
+  const result = await Effect.runPromise(readChatHistory(value, "saved").pipe(Effect.result));
   expect(result).toHaveProperty("failure.reason", "invalid-request");
 });

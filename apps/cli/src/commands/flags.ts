@@ -15,6 +15,9 @@ export const booleanFlag = (name: string, description: string) =>
     Flag.map(([value = false]) => value),
   );
 
+/** Selects machine-readable output in place of the default human-readable text. */
+export const jsonFlag = booleanFlag("json", "Print JSON instead of human-readable text");
+
 export const skillFlag = Flag.String("skill").pipe(
   Flag.withSchema(SkillName),
   Flag.withDescription("Select a local Markdown skill and save its current text"),

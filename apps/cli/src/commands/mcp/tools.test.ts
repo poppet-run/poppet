@@ -262,11 +262,11 @@ describe("ExternalAgentToolsLive", () => {
       let pid = 0;
 
       try {
-        const status = JSON.parse(await state.invoke(["mcp", "servers"]));
+        const status = JSON.parse(await state.invoke(["mcp", "servers", "--json"]));
         expect(status[0]).toMatchObject({ state: "idle", pid: null });
         expect(state.built()).toBe(0);
         expect(await readdir(state.directory)).not.toContain("pid");
-        const tools = JSON.parse(await state.invoke(["mcp", "tools", "fixture"]));
+        const tools = JSON.parse(await state.invoke(["mcp", "tools", "--json", "fixture"]));
         expect(tools).toHaveLength(9);
         expect(tools[1]).toMatchObject({
           toolName: "write",
@@ -276,10 +276,10 @@ describe("ExternalAgentToolsLive", () => {
         });
         expect(tools[0]).toMatchObject({ serverId: "fixture", toolName: "read", scheduled: false });
 
-        if (worker) pid = JSON.parse(await state.invoke(["mcp", "servers"]))[0].pid;
+        if (worker) pid = JSON.parse(await state.invoke(["mcp", "servers", "--json"]))[0].pid;
         expect(await state.invoke(["chat", "new", "Read the fixture"])).toContain("Done");
-        const sessions = JSON.parse(await state.invoke(["chat", "sessions"]));
-        const saved = JSON.parse(await state.invoke(["chat", "show", sessions[0].id]));
+        const sessions = JSON.parse(await state.invoke(["chat", "sessions", "--json"]));
+        const saved = JSON.parse(await state.invoke(["chat", "show", "--json", sessions[0].id]));
         expect(saved.toolCalls).toHaveLength(1);
         expect(saved.toolCalls[0]).toMatchObject({
           serverId: "fixture",
@@ -304,7 +304,8 @@ describe("ExternalAgentToolsLive", () => {
           ),
         ).toBe(true);
 
-        if (worker) expect(JSON.parse(await state.invoke(["mcp", "servers"]))[0].pid).toBe(pid);
+        if (worker)
+          expect(JSON.parse(await state.invoke(["mcp", "servers", "--json"]))[0].pid).toBe(pid);
       } finally {
         if (fiber !== null) await Effect.runPromise(Fiber.interrupt(fiber));
 
@@ -409,8 +410,8 @@ describe("ExternalAgentToolsLive", () => {
           }),
         );
         expect(await state.invoke(["chat", "new", "Read the fixture twice"])).toContain("Done");
-        const sessions = JSON.parse(await state.invoke(["chat", "sessions"]));
-        const saved = JSON.parse(await state.invoke(["chat", "show", sessions[0].id]));
+        const sessions = JSON.parse(await state.invoke(["chat", "sessions", "--json"]));
+        const saved = JSON.parse(await state.invoke(["chat", "show", "--json", sessions[0].id]));
         expect(
           saved.toolCalls.map((call: { status: string; failureReason: string | null }) => [
             call.status,
@@ -477,8 +478,8 @@ describe("ExternalAgentToolsLive", () => {
       await Effect.runPromise(Fiber.interrupt(fiber));
       const pid = Number(await readFile(join(state.directory, "pid"), "utf8"));
       expect(() => process.kill(pid, 0)).toThrow();
-      const sessions = JSON.parse(await state.invoke(["chat", "sessions"]));
-      const saved = JSON.parse(await state.invoke(["chat", "show", sessions[0].id]));
+      const sessions = JSON.parse(await state.invoke(["chat", "sessions", "--json"]));
+      const saved = JSON.parse(await state.invoke(["chat", "show", "--json", sessions[0].id]));
       expect(saved.toolCalls[0]).toMatchObject({
         status: "uncertain",
         serverId: "fixture",
@@ -501,8 +502,8 @@ describe("ExternalAgentToolsLive", () => {
         "reason",
         "tool-uncertain",
       );
-      const sessions = JSON.parse(await state.invoke(["chat", "sessions"]));
-      const saved = JSON.parse(await state.invoke(["chat", "show", sessions[0].id]));
+      const sessions = JSON.parse(await state.invoke(["chat", "sessions", "--json"]));
+      const saved = JSON.parse(await state.invoke(["chat", "show", "--json", sessions[0].id]));
       expect(saved.toolCalls[0]).toMatchObject({
         status: "uncertain",
         serverId: "fixture",
