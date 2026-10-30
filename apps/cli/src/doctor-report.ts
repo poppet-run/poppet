@@ -21,15 +21,36 @@ export const finding = (
   incomplete = false,
 ): DoctorCheck => ({ id, status, source, observedAt: Date.now(), message, nextStep, incomplete });
 
-export const unavailable = (id: string, nextStep: string) =>
-  finding(
-    id,
-    "error",
-    "not-checked",
-    "Inspection could not be completed safely or within its deadline.",
-    nextStep,
-    true,
-  );
+const failedChecks = new Map([
+  [
+    "authentication",
+    "Doctor could not read your sign-in details. The files may be invalid or have unsafe permissions.",
+  ],
+  [
+    "worker.service",
+    "Doctor could not read the background service status from the operating system.",
+  ],
+  ["worker.socket", "Doctor could not read the worker's response. Check its status and logs."],
+  [
+    "context",
+    "Doctor could not read profile.md or soul.md. Check that they are regular UTF-8 files of at most 8 KiB.",
+  ],
+  [
+    "installation",
+    "Doctor could not check this data directory. Check that it exists and you can access it.",
+  ],
+  [
+    "browser",
+    "Doctor could not check the browser programs. Check their installation and file permissions.",
+  ],
+]);
+
+export const unavailable = (
+  id: string,
+  nextStep: string,
+  message = failedChecks.get(id) ??
+    "Doctor could not complete this check. Follow the next step for more details.",
+) => finding(id, "error", "not-checked", message, nextStep, true);
 
 export const doctorReport = (checks: ReadonlyArray<DoctorCheck>, directory: string | null) => ({
   version: 1 as const,
@@ -46,12 +67,12 @@ export const doctorReport = (checks: ReadonlyArray<DoctorCheck>, directory: stri
 const checkLabels = new Map([
   ["installation", "Installation"],
   ["configuration", "Configuration"],
-  ["authentication", "Authentication"],
+  ["authentication", "Provider sign-in"],
   ["worker.service", "Background service"],
   ["worker.socket", "Worker connection"],
   ["worker.identity", "Worker configuration"],
   ["tasks", "Scheduled tasks"],
-  ["provider-holds", "Provider holds"],
+  ["provider-holds", "Paused provider work"],
   ["delivery", "Message delivery"],
   ["gateway.connection", "Messaging connections"],
   ["mcp", "MCP servers"],
@@ -91,9 +112,10 @@ export const renderDoctor = (
   };
 
   const attention = report.checks.filter(
-    (check) => check.status === "warning" || check.status === "error",
+    (check) => !check.incomplete && (check.status === "warning" || check.status === "error"),
   );
 
+  const unchecked = report.checks.filter((check) => check.incomplete);
   const passed = report.checks.filter((check) => check.status === "ok");
   const skipped = report.checks.filter((check) => check.status === "skipped");
   const warnings = attention.filter((check) => check.status === "warning").length;
@@ -102,19 +124,20 @@ export const renderDoctor = (
   const summary = Match.value(report.exitCode).pipe(
     Match.when(0, () => "No actionable problems found"),
     Match.when(1, () => "Attention needed"),
-    Match.orElse(() => "Inspection incomplete"),
+    Match.orElse(() => "Some checks could not finish"),
   );
 
   const lines = [
     style("bold", `Poppet doctor: ${summary}`),
     wrap(
-      `${passed.length} passed, ${warnings} warning${warnings === 1 ? "" : "s"}, ${errors} error${errors === 1 ? "" : "s"}, ${skipped.length} skipped`,
+      `${passed.length} passed, ${warnings} warning${warnings === 1 ? "" : "s"}, ${errors} error${errors === 1 ? "" : "s"}, ${unchecked.length} not checked, ${skipped.length} skipped`,
     ),
     style("gray", `Data directory: ${JSON.stringify(report.dataDirectory)}`),
   ];
 
   for (const section of [
     { title: "Needs attention", checks: attention },
+    { title: "Could not check", checks: unchecked },
     { title: "Passed", checks: passed },
     { title: "Skipped", checks: skipped },
   ]) {
@@ -122,22 +145,32 @@ export const renderDoctor = (
     lines.push("", style("bold", section.title));
 
     for (const check of section.checks) {
-      const badge = Match.value(check.status).pipe(
-        Match.when("ok", () => style("green", "OK   ")),
-        Match.when("warning", () => style("yellow", "WARN ")),
-        Match.when("error", () => style("red", "ERROR")),
-        Match.when("skipped", () => style("gray", "SKIP ")),
+      const badge = check.incomplete
+        ? style("yellow", "UNKNOWN")
+        : Match.value(check.status).pipe(
+            Match.when("ok", () => style("green", "OK     ")),
+            Match.when("warning", () => style("yellow", "WARN   ")),
+            Match.when("error", () => style("red", "ERROR  ")),
+            Match.when("skipped", () => style("gray", "SKIP   ")),
+            Match.exhaustive,
+          );
+
+      const source = Match.value(check.source).pipe(
+        Match.when("local", () => " [this computer]"),
+        Match.when("saved", () => " [saved on disk]"),
+        Match.when("worker", () => " [worker report]"),
+        Match.when("not-checked", () => ""),
         Match.exhaustive,
       );
 
       lines.push(
         "",
-        `  ${badge}  ${style("bold", checkLabels.get(check.id) ?? check.id)} ${style("gray", `[${check.source}]`)}`,
-        wrap(check.message, 9),
+        `  ${badge}  ${style("bold", checkLabels.get(check.id) ?? check.id)}${style("gray", source)}`,
+        wrap(check.message, 11),
       );
 
       if (check.nextStep !== null)
-        lines.push(wrap(`Next: ${check.nextStep}`, 9).replace("Next:", style("bold", "Next:")));
+        lines.push(wrap(`Next: ${check.nextStep}`, 11).replace("Next:", style("bold", "Next:")));
     }
   }
 
@@ -145,9 +178,7 @@ export const renderDoctor = (
     "",
     style(
       "gray",
-      wrap(
-        "Local inspection only. Live provider, MCP, browser and messaging access were not verified.",
-      ),
+      wrap("Doctor checks local setup. It does not test live connections or send messages."),
     ),
   );
 

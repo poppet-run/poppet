@@ -77,9 +77,14 @@ describe("doctor", () => {
     const plain = renderDoctor(report, false, 64);
     const normalized = plain.replace(/\s+/gu, " ");
 
-    expect(plain).toContain("1 passed, 1 warning, 1 error, 1 skipped");
+    expect(plain).toContain("1 passed, 1 warning, 0 errors, 1 not checked, 1 skipped");
+    expect(plain).toContain("Could not check");
+    expect(plain).toContain("UNKNOWN");
+    expect(plain).not.toContain("ERROR");
+    expect(report.exitCode).toBe(2);
+    expect(report.checks[3]?.status).toBe("error");
     expect(plain.indexOf("Needs attention")).toBeLessThan(plain.indexOf("Passed"));
-    expect(plain.indexOf("Authentication")).toBeLessThan(plain.indexOf("Configuration"));
+    expect(plain.indexOf("Provider sign-in")).toBeLessThan(plain.indexOf("Configuration"));
 
     for (const entry of report.checks) {
       expect(normalized).toContain(entry.message);
@@ -126,34 +131,43 @@ describe("doctor", () => {
     }
   });
 
-  test("missing executables and invalid context files produce independent findings", async () => {
-    const directory = await fixture();
+  test.each([
+    ["agent-browser", "/missing/doctor-browser", process.execPath, "browser.command"],
+    ["Chrome for Testing", process.execPath, "/missing/chromium", "browser.chromiumExecutable"],
+  ])(
+    "unusable %s and invalid context files produce independent findings",
+    async (name, command, chromiumExecutable, setting) => {
+      const directory = await fixture();
 
-    try {
-      await writeFile(
-        join(directory, "config.json"),
-        JSON.stringify({
-          browser: {
-            enabled: true,
-            command: "/missing/doctor-browser",
-            chromiumExecutable: "/missing/chromium",
-            allowedDomains: ["example.com"],
-          },
-          mcpServers: [
-            { id: "missing", enabled: true, command: "/missing/doctor-mcp", args: [], tools: [] },
-          ],
-        }),
-      );
-      await writeFile(join(directory, "profile.md"), Buffer.from([0xff]));
-      const report = await Effect.runPromise(collect(directory));
-      expect(check(report, "configuration").status).toBe("ok");
-      expect(check(report, "browser").incomplete).toBe(true);
-      expect(check(report, "mcp").status).toBe("warning");
-      expect(check(report, "context").incomplete).toBe(true);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
+      try {
+        await writeFile(
+          join(directory, "config.json"),
+          JSON.stringify({
+            browser: {
+              enabled: true,
+              command,
+              chromiumExecutable,
+              allowedDomains: ["example.com"],
+            },
+            mcpServers: [
+              { id: "missing", enabled: true, command: "/missing/doctor-mcp", args: [], tools: [] },
+            ],
+          }),
+        );
+        await writeFile(join(directory, "profile.md"), Buffer.from([0xff]));
+        const report = await Effect.runPromise(collect(directory));
+        expect(check(report, "configuration").status).toBe("ok");
+        expect(check(report, "browser").incomplete).toBe(true);
+        expect(check(report, "browser").message).toContain(name);
+        expect(check(report, "browser").nextStep).toContain(setting);
+        expect(check(report, "browser").message).not.toContain("/missing/");
+        expect(check(report, "mcp").status).toBe("warning");
+        expect(check(report, "context").incomplete).toBe(true);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
   test("gateway observations expose connection failures without adapter error text", () => {
     expect(
       gatewayObservation({
@@ -238,7 +252,7 @@ describe("doctor", () => {
       );
       const report = await Effect.runPromise(collect(directory));
       expect(report.exitCode).toBe(2);
-      expect(check(report, "tasks").message).toContain("Offline SQLite");
+      expect(check(report, "tasks").message).toContain("needs a responding worker");
       expect((await readdir(join(directory, "store"))).toSorted()).toEqual(files.toSorted());
 
       expect(
@@ -316,6 +330,7 @@ describe("doctor", () => {
   test("a hanging check returns an incomplete finding without exposing its cause", async () => {
     const result = await Effect.runPromise(inspectCheck("test", "Try status.", Effect.never));
     expect(result.incomplete).toBe(true);
+    expect(result.message).toContain("two seconds");
     expect(doctorReport([result], null).exitCode).toBe(2);
   });
 

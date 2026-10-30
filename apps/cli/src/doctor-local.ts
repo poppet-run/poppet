@@ -25,7 +25,7 @@ export const inspectAuthentication = (directory: string, provider: ProviderRegis
         "authentication",
         "error",
         "not-checked",
-        "This provider has no read-only credential inspector.",
+        "Doctor cannot check saved sign-in details for this provider yet.",
         "Run poppet provider status.",
         true,
       );
@@ -36,7 +36,7 @@ export const inspectAuthentication = (directory: string, provider: ProviderRegis
         "authentication",
         "warning",
         saved.source,
-        "Credentials are missing or sign-in is incomplete.",
+        "No usable sign-in details were found for this provider.",
         `Run poppet provider login ${provider.id}.`,
       );
 
@@ -45,15 +45,17 @@ export const inspectAuthentication = (directory: string, provider: ProviderRegis
         "authentication",
         "warning",
         saved.source,
-        "Saved access token has expired; refresh was not attempted.",
-        `Normal requests may refresh it; run poppet provider login ${provider.id} if refresh fails.`,
+        "Your saved access token has expired. Poppet may renew it automatically when you next use it.",
+        `If your next request fails to sign in, run poppet provider login ${provider.id}.`,
       );
 
     return finding(
       "authentication",
       "ok",
       saved.source,
-      "Credentials are present; current provider access is unverified.",
+      saved.source === "local"
+        ? "An API key is set in your environment. Doctor has not tested it."
+        : "Sign-in details are saved. Doctor has not contacted the provider to test them.",
     );
   });
 
@@ -68,7 +70,7 @@ export const inspectService = (directory: string) =>
         "worker.service",
         "skipped",
         "not-checked",
-        "No supported platform service manager.",
+        "Doctor cannot check background services on this operating system.",
       );
     const darwin = process.platform === "darwin";
     const info = await fileInfo(darwin ? mac.plist : linux.file);
@@ -103,8 +105,8 @@ export const inspectService = (directory: string) =>
         "skipped",
         "local",
         active
-          ? "Service is registered without an installed file; socket readiness is checked separately."
-          : "No background service is installed; foreground use is supported.",
+          ? "The service manager knows about Poppet, but its service file is missing. Check Worker connection to see whether Poppet is responding."
+          : "No background service is installed. You can still run Poppet in a terminal.",
       );
 
     return finding(
@@ -112,8 +114,8 @@ export const inspectService = (directory: string) =>
       active ? "ok" : "warning",
       "local",
       active
-        ? "Background service is registered and active; socket readiness is checked separately."
-        : "Installed background service is stopped.",
+        ? "The service manager has Poppet registered. Check Worker connection to see whether it is responding."
+        : "The background service is installed but is not active.",
       active ? null : "Run poppet worker start.",
     );
   });
@@ -130,6 +132,6 @@ export const inspectContext = (directory: string) =>
       "context",
       "ok",
       "local",
-      "Profile and personality files are absent or readable within their size limits. No skill is selected by doctor.",
+      "Any existing profile.md and soul.md files are readable and within the 8 KiB limit. Doctor does not check skills.",
     );
   });

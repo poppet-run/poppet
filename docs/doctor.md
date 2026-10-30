@@ -7,14 +7,20 @@ Run `poppet doctor` to inspect local setup and get suggested next steps. Use
 the same exit code.
 
 Human output starts with a count summary and groups findings into Needs attention,
-Passed, and Skipped. Each check has a readable name, its observation source, a
-wrapped explanation, and a separate next step when needed. Text wraps to the
+Could not check, Passed, and Skipped. Each check has a readable name, its
+observation source, a wrapped explanation, and a separate next step when needed. Text wraps to the
 terminal width, up to 100 columns, or 88 columns when redirected. Long paths, IDs,
 and URLs remain intact.
 
-Human output uses green for successful checks, yellow for warnings, red for errors,
-and gray for skipped checks and observation sources. Redirected output and
-`NO_COLOR=1` use plain text. JSON output contains no styling.
+Checks that could not finish use an UNKNOWN label and a separate "not checked"
+count. They do not mean that tasks failed or messages were lost. JSON keeps its
+existing status values: an incomplete check still has `incomplete: true` and
+returns exit code 2. Human output uses that flag to distinguish unavailable
+checks from confirmed problems.
+
+Human output uses green for successful checks, yellow for warnings and unknown
+results, red for confirmed errors, and gray for skipped checks and sources.
+Redirected output and `NO_COLOR=1` use plain text. JSON output contains no styling.
 
 Doctor reads the selected `POPPET_DATA_DIR`, or the default data directory. It
 never creates a missing installation. Configuration errors do not prevent
@@ -27,7 +33,7 @@ independent filesystem and worker checks.
 | `installation`       | Whether the selected data directory exists                                                                                         |
 | `configuration`      | Validated file settings and defaults, including chat limits and tool policies                                                      |
 | `authentication`     | Selected provider's saved credential metadata or environment API-key presence, without refresh; expired access tokens are warnings |
-| `worker.service`     | Installed launchd/systemd service and its registration state, independently of socket readiness                                    |
+| `worker.service`     | Service registration, which does not prove that the worker is responding                                                           |
 | `worker.socket`      | Protected local socket reachability and support for doctor inspection                                                              |
 | `worker.identity`    | Reported only when the worker's startup configuration differs from the CLI's configuration or the CLI configuration is invalid     |
 | `tasks`              | Failures and interruptions in the last 24 hours, up to five task/occurrence IDs, omitted count, running count and next due time    |
