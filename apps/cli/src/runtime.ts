@@ -26,9 +26,9 @@ import { ChatTasksLive, TaskRepositoryLive, WorkerConnections } from "@poppet/ta
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { BashLive } from "#src/bash";
+import { ExternalAgentToolsLive } from "#src/commands/mcp/tools";
+import { WebSearchLive } from "#src/commands/web/search";
 import { createConnectionStatus } from "#src/connection-status";
-import { ExternalAgentToolsLive } from "#src/mcp";
-import { WebSearchLive } from "#src/web-search";
 
 export const findProvider = (
   id: ProviderId,

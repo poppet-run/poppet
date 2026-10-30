@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { Effect } from "effect";
 
-import { openWorkerLog, prepareWorkerLogDirectory } from "#src/worker-log";
+import { openWorkerLog, prepareWorkerLogDirectory } from "#src/commands/worker/log";
 
 /** Keeps the service manager's file descriptors out of the worker so rotated files can be closed. */
 export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirectory: string) => {
