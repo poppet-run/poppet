@@ -263,9 +263,7 @@ search account, or additional credentials are needed.
 
 ## Research with web search
 
-[Browser automation](browser.md) is interactive-only. Scheduled runs receive no
-browser tools, even when enabled for chat. Use web search and the protected page
-reader for scheduled research.
+Use web search and the protected page reader for scheduled research.
 
 With [web search configured](configuration.md#web-search), a saved prompt may ask
 for current research without supplying a source URL:

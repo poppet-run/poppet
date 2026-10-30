@@ -41,14 +41,13 @@ independent filesystem and worker checks.
 | `delivery`           | Pending, failed and uncertain sends; inspect the destination before retrying uncertain sends                                       |
 | `gateway.connection` | Local adapter connection observations and configuration failures, without a remote connectivity probe                              |
 | `mcp`                | Enabled configuration, executable availability and scheduled-tool allowlist consistency                                            |
-| `browser`            | Domain policy, executable availability, and compatibility from saved installation details                                          |
 | `context`            | Existing `soul.md` and `profile.md` files against their UTF-8 and 8 KiB limits                                                     |
 
 Disabled optional capabilities are skipped. An uninstalled background service is
 also skipped because foreground operation is supported. An unreachable worker is
 a warning: background scheduling and messaging cannot be confirmed ready.
 
-Doctor does not run model requests, refresh tokens, start MCP servers or browsers,
+Doctor does not run model requests, refresh tokens, start MCP servers,
 send messages, install dependencies, acquire database ownership, migrate data,
 restart services, or repair files. Credential permission problems are reported
 without changing permissions. Suggested commands are text for you to review and
@@ -76,7 +75,7 @@ schemas untouched. If no database exists, saved-work checks are skipped.
 
 Running work is reported without assuming it is stale. Delivery age is unavailable
 because the delivery records do not store creation times. Doctor does not select
-or validate a particular skill. Actual browser binary versions and launch, MCP credential
+or validate a particular skill. MCP credential
 validity and tool behavior, provider reachability, website login, and successful
 message delivery still require explicit live use. A passing report only covers
 the checks it actually performed.

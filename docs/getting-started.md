@@ -73,7 +73,7 @@ Authentication is saved immediately. Cancelling later keeps completed steps;
 setup reports each save. Finishing setup does not verify live inference or a Discord
 connection. Check `poppet worker status`, then send a chat message to try it.
 
-Browser access, web search, and MCP remain separate settings.
+Web search and MCP remain separate settings.
 
 After setup, continue with [chat](#choose-a-model-and-chat). The manual commands
 below are also available for scripts and individual changes.

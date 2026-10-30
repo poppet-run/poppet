@@ -409,14 +409,6 @@ an answer. Failed inputs remain visible and are excluded from subsequent model
 context; sending another message is an explicit new request. Requests are never
 automatically retried or switched to another provider/model.
 
-## Browser automation
-
-With [browser automation](browser.md) configured, interactive and authorized
-messaging chats can navigate websites, inspect rendered text, and perform
-explicitly requested form interactions. Each run has a fresh isolated browser;
-tabs and login state do not persist between messages. `chat show` includes browser
-tool records. Ctrl-C closes the run's resources. Scheduled runs have no browser tools.
-
 ## Context and run limits
 
 Context retains recent complete exchanges, including tool pairs and continuation,
@@ -446,7 +438,7 @@ still bound repeated attempts.
 
 Once a fetched page, web search result, or MCP result enters a run, or your
 message includes attachments, task management, memory changes, and MCP tools are
-withdrawn for the rest of that run. Reading tools and browser tools remain.
+withdrawn for the rest of that run. Reading tools remain.
 The model proposes withdrawn actions instead, and a new message from you can
 confirm them.
 Recorded usage sums all model turns when every turn reports usage, otherwise it

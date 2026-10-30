@@ -36,23 +36,22 @@ after editing settings: `poppet worker restart`.
 
 ## Settings
 
-| Field                        | Default                | Purpose                                                                               |
-| ---------------------------- | ---------------------- | ------------------------------------------------------------------------------------- |
-| `provider`                   | `openai-chatgpt`       | Default provider for new chats and tasks                                              |
-| `model`                      | Unset                  | Required model ID for new chats and tasks                                             |
-| `applicationName`            | `Poppet`               | Name used during initial ChatGPT registration                                         |
-| `discord`                    | Unconfigured           | Owner ID, guild ID, and home channel ID                                               |
-| `webSearch`                  | `false`                | Enable search when the selected search provider has credentials                       |
-| `webSearchProvider`          | `brave`                | `brave` or `kagi`                                                                     |
-| `browser`                    | `{ "enabled": false }` | [Browser access and allowed hosts](browser.md)                                        |
-| `mcpServers`                 | `[]`                   | [MCP servers, sign-in, and tool permissions](mcp.md)                                  |
-| `gatewayPackages`            | `[]`                   | Explicitly installed [external gateway packages](development.md#adding-a-channel)     |
-| `tasks.catchUpMinutes`       | `60`                   | Missed recurring-job window, from 0 to 1440 minutes                                   |
-| `chat.outputTokens`          | `2048`                 | Requested output limit, from 1 to 32768, capped by model metadata                     |
-| `chat.runDeadlineSeconds`    | `300`                  | Overall run deadline, from 30 to 3600 seconds                                         |
-| `chat.logReasoning`          | `false`                | Show readable reasoning in CLI diagnostics and worker logs                            |
-| `chat.logTimings`            | `false`                | Log request-stage durations                                                           |
-| `chat.maxConcurrentRequests` | `3`                    | Chat requests that run at once across messaging, CLI, and scheduled runs, from 1 to 8 |
+| Field                        | Default          | Purpose                                                                               |
+| ---------------------------- | ---------------- | ------------------------------------------------------------------------------------- |
+| `provider`                   | `openai-chatgpt` | Default provider for new chats and tasks                                              |
+| `model`                      | Unset            | Required model ID for new chats and tasks                                             |
+| `applicationName`            | `Poppet`         | Name used during initial ChatGPT registration                                         |
+| `discord`                    | Unconfigured     | Owner ID, guild ID, and home channel ID                                               |
+| `webSearch`                  | `false`          | Enable search when the selected search provider has credentials                       |
+| `webSearchProvider`          | `brave`          | `brave` or `kagi`                                                                     |
+| `mcpServers`                 | `[]`             | [MCP servers, sign-in, and tool permissions](mcp.md)                                  |
+| `gatewayPackages`            | `[]`             | Explicitly installed [external gateway packages](development.md#adding-a-channel)     |
+| `tasks.catchUpMinutes`       | `60`             | Missed recurring-job window, from 0 to 1440 minutes                                   |
+| `chat.outputTokens`          | `2048`           | Requested output limit, from 1 to 32768, capped by model metadata                     |
+| `chat.runDeadlineSeconds`    | `300`            | Overall run deadline, from 30 to 3600 seconds                                         |
+| `chat.logReasoning`          | `false`          | Show readable reasoning in CLI diagnostics and worker logs                            |
+| `chat.logTimings`            | `false`          | Log request-stage durations                                                           |
+| `chat.maxConcurrentRequests` | `3`              | Chat requests that run at once across messaging, CLI, and scheduled runs, from 1 to 8 |
 
 `chat.maxConcurrentRequests` above 1 lets different Discord conversations and
 sessions run at the same time; requests to one session or one conversation stay
@@ -70,7 +69,7 @@ chat settings.
 The file must be valid JSON, at most 64 KiB, owned by the current user, and not
 writable by group or other users. Symlinks and hard links are rejected. Unknown
 keys, incorrect types, and invalid values fail clearly. Text values must be
-nonempty and trimmed. Relative browser command and MCP working-directory paths
+nonempty and trimmed. Relative MCP working-directory paths
 resolve beside `config.json`; bare executable names use `PATH`. Literal `~` is not expanded.
 
 ## Discord
@@ -193,3 +192,7 @@ Page reading uses the fixed model-turn, tool-call, context, and tool-output limi
 Each request has a 15-second deadline, at most three redirects, and a 1 MiB body
 limit. Only HTTP(S) standard ports are accepted. Ambient proxies and credentials
 are not forwarded. See [page reading](chat.md#read-a-supplied-url).
+
+The retired `browser` configuration key is ignored. It can be removed from existing
+config files. Built-in browser automation is no longer available; web search,
+static page reading, and reviewed Bash commands remain available.
