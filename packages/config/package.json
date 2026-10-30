@@ -15,7 +15,6 @@
     "test": "bun --no-env-file ../../tools/testing/run.ts"
   },
   "dependencies": {
-    "@poppet/browser": "workspace:*",
     "@poppet/credentials": "workspace:*",
     "@poppet/io": "workspace:*",
     "@poppet/mcp": "workspace:*",

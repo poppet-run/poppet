@@ -226,7 +226,7 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
 };
 
 describe("ExternalAgentToolsLive", () => {
-  test("when an installed browser is missing but unused, leaves MCP tools and ordinary chat usable", async () => {
+  test("when config retains retired browser settings, leaves MCP and chat usable without browser tools", async () => {
     const state = await fixture();
 
     try {
@@ -247,7 +247,7 @@ describe("ExternalAgentToolsLive", () => {
       expect(await state.invoke(["chat", "new", "Read the fixture"])).toContain("Done");
       expect(state.requests[0]!.tools.some((tool) => tool.namespace === "poppet_mcp")).toBe(true);
       expect(state.requests[0]!.tools.some((tool) => tool.namespace === "poppet_browser")).toBe(
-        true,
+        false,
       );
     } finally {
       await state.close();
@@ -328,12 +328,6 @@ describe("ExternalAgentToolsLive", () => {
             provider: "fixture",
             model: "fixture",
             mcpServers: [state.server],
-            browser: {
-              enabled: true,
-              command: "/must-not-launch-browser",
-              chromiumExecutable: "/missing-chromium",
-              allowedDomains: ["example.com"],
-            },
           }),
         );
         await Effect.runPromise(
@@ -346,9 +340,6 @@ describe("ExternalAgentToolsLive", () => {
               .pipe(Stream.runDrain);
             const runs = yield* store.runs(session.id);
             const calls = yield* store.toolCalls(runs[0]!.id);
-            expect(
-              state.requests[0]!.tools.some((tool) => tool.namespace === "poppet_browser"),
-            ).toBe(false);
             expect(calls.length).toBe(scheduledTools.length);
             expect(state.requests[0]!.tools.some((tool) => tool.namespace === "poppet_mcp")).toBe(
               scheduledTools.length > 0,

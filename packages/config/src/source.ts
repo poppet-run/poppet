@@ -3,7 +3,6 @@ import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { BrowserSettings, browserFileValue } from "@poppet/browser/config";
 import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { readProtectedFile, writeFileAtomic } from "@poppet/io";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
@@ -29,7 +28,6 @@ const FileSettings = Schema.Struct({
   model: Schema.optionalKey(ConfigText),
   webSearch: Schema.optionalKey(Schema.Boolean),
   webSearchProvider: Schema.optionalKey(Schema.Literals(["brave", "kagi"])),
-  browser: Schema.optionalKey(BrowserSettings),
   mcpServers: Schema.optionalKey(MCPServers),
   gatewayPackages: Schema.optionalKey(Schema.Array(ConfigText)),
   tasks: Schema.optionalKey(Schema.Struct({ catchUpMinutes: Schema.optionalKey(Schema.Int) })),
@@ -79,12 +77,13 @@ export const readConfigFile = (directory: string) =>
     const json =
       contents === null
         ? {}
-        : yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(contents).pipe(
-            Effect.mapError(() => fileError(path, "Expected valid JSON.")),
-          );
+        : yield* Schema.decodeUnknownEffect(
+            Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+          )(contents).pipe(Effect.mapError(() => fileError(path, "Expected valid JSON.")));
 
     const file = yield* Schema.decodeUnknownEffect(FileSettings, { onExcessProperty: "error" })(
-      json,
+      // Ignore the retired browser setting without relaxing validation of other keys.
+      Object.fromEntries(Object.entries(json).filter(([key]) => key !== "browser")),
     ).pipe(Effect.mapError((error) => fileError(path, error.message)));
 
     return { file, path, exists: contents !== null };
@@ -102,7 +101,6 @@ export const loadConfigSource = Effect.gen(function* () {
     model: file.model,
     webSearch: file.webSearch,
     webSearchProvider: file.webSearchProvider,
-    browser: browserFileValue(file.browser, directory),
     mcpServers: mcpFileValue(file.mcpServers, directory),
     gatewayPackages:
       file.gatewayPackages === undefined ? undefined : JSON.stringify(file.gatewayPackages),
