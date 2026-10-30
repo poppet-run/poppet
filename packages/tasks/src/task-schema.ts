@@ -154,6 +154,7 @@ export type TaskCommand = typeof TaskCommand.Type;
 /** A persisted task row whose JSON schedule is decoded on read; times are Unix milliseconds. */
 export const Task = Schema.Struct({
   ...NewTask.fields,
+  source: Schema.optionalKey(Schema.NullOr(Schema.Literal("webhook"))),
   revision: Schema.Natural,
   destination: Schema.NullOr(Schema.fromJsonString(DeliveryDestination)),
   skill: Schema.NullOr(Schema.fromJsonString(SkillSnapshot)),
@@ -168,6 +169,7 @@ export type Task = typeof Task.Type;
 
 /** Immutable execution fields, independent of later edits and host defaults. */
 export const TaskDefinition = Schema.Struct({
+  source: Task.fields.source,
   ...NewTask.fields,
   skill: Schema.NullOr(SkillSnapshot),
 });

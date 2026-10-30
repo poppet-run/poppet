@@ -12,6 +12,7 @@ import { SqlClient } from "effect/sql";
 
 import { doctorSnapshot, gatewayObservation } from "#src/commands/doctor/worker";
 import { MessagingWorker } from "#src/commands/gateway/channels";
+import { serveWebhooks } from "#src/webhooks";
 
 /** Serves commands and runs scheduling and messaging until shutdown closes their shared scope. */
 export const runWorker = Effect.scoped(
@@ -31,6 +32,8 @@ export const runWorker = Effect.scoped(
           .resolveDestination(adapter, conversationId)
           .pipe(Effect.mapError((error) => new TaskError({ message: error.message }))),
     };
+
+    yield* serveWebhooks.pipe(Effect.provideService(TaskDestinations, destinations));
 
     yield* serveWorker(workerSocketPath(config.dataDirectory), (request, body) => {
       if (new URL(request.url).pathname === "/v1/doctor")

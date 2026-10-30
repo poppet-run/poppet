@@ -199,6 +199,45 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       }),
     );
 
+  // The event receipt and queued occurrence commit together. Receipts survive task clearing.
+  const acceptWebhook = (
+    hookId: string,
+    eventId: string,
+    digest: string,
+    input: NewTask,
+    now: number,
+    destination: DeliveryDestination | null = null,
+  ) =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const existing = yield* sql`SELECT job_id, digest FROM webhook_events
+        WHERE hook_id = ${hookId} AND event_id = ${eventId}`.pipe(
+          decodeRow(Schema.Struct({ jobId: Schema.String, digest: Schema.String })),
+        );
+
+        if (existing !== null)
+          return {
+            status: existing.digest === digest ? "duplicate" : "conflict",
+            taskId: existing.jobId,
+          } as const;
+
+        const active = yield* sql`SELECT count(*) AS count FROM job_occurrences
+        JOIN jobs ON jobs.id = job_occurrences.job_id
+        WHERE job_occurrences.status IN ('pending', 'running') AND jobs.source = 'webhook'`.pipe(
+          decodeRow(Count),
+        );
+
+        if ((active?.count ?? 0) >= 100) return { status: "full", taskId: null } as const;
+        const job = yield* add(input, now, null, destination);
+        yield* sql`UPDATE jobs SET source = 'webhook', next_at = NULL WHERE id = ${job.id}`;
+        yield* insertOccurrence(yield* task(job.id), now);
+        yield* sql`INSERT INTO webhook_events (hook_id, event_id, digest, job_id)
+        VALUES (${hookId}, ${eventId}, ${digest}, ${job.id})`;
+
+        return { status: "accepted", taskId: job.id } as const;
+      }),
+    );
+
   const pause = (id: string, now: number) =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -502,6 +541,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
   return {
     commandLock,
+    acceptWebhook: operation(acceptWebhook),
     list: operation(list),
     listPage: operation(listPage),
     status: operation(status),

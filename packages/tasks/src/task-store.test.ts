@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { AppConfig } from "@poppet/config";
 import { memorySchema } from "@poppet/memory";
 import { Store, StoreLive, migrate } from "@poppet/store";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Result } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { taskSchema } from "#src/migrations";
@@ -66,6 +66,102 @@ const fixture = async (catchUpMs = 0, schema = taskSchema) => {
 };
 
 describe.concurrent("TaskRepository", () => {
+  test("webhook receipts survive restart and clearing, reject changed payloads, and retain restricted retries", async () => {
+    const state = await fixture();
+
+    try {
+      const first = await state.run((repo) =>
+        repo.acceptWebhook("deploy", "evt-1", "digest", once, start),
+      );
+
+      expect(first.status).toBe("accepted");
+
+      if (first.status !== "accepted") throw new Error("Expected accepted event");
+      await state.run((repo) =>
+        Effect.gen(function* () {
+          expect(yield* repo.acceptWebhook("deploy", "evt-1", "digest", once, start)).toEqual({
+            ...first,
+            status: "duplicate",
+          });
+          expect(
+            (yield* repo.acceptWebhook("deploy", "evt-1", "changed", once, start)).status,
+          ).toBe("conflict");
+          yield* repo.reconcile(start, true);
+          const item = (yield* repo.claim(start))!;
+          expect(item.definition.source).toBe("webhook");
+          yield* repo.finish(item.id, "failed", "test", start);
+          yield* repo.retry(item.id, start + 1);
+          expect((yield* repo.claim(start + 1))?.definition.source).toBe("webhook");
+          yield* repo.finish(item.id, "completed", null, start + 1);
+          yield* repo.clear();
+          expect((yield* repo.acceptWebhook("deploy", "evt-1", "digest", once, start)).status).toBe(
+            "duplicate",
+          );
+          expect(yield* repo.list()).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("a failed webhook receipt rolls back the task and occurrence together", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo, _store, sql) =>
+        Effect.gen(function* () {
+          yield* sql`CREATE TRIGGER reject_webhook BEFORE INSERT ON webhook_events
+          BEGIN SELECT RAISE(ABORT, 'receipt unavailable'); END`;
+
+          const result = yield* repo
+            .acceptWebhook("deploy", "event", "digest", once, start)
+            .pipe(Effect.result);
+
+          expect(Result.isFailure(result)).toBe(true);
+          expect(yield* repo.list()).toEqual([]);
+          expect(yield* repo.claim(start)).toBeNull();
+          yield* sql`DROP TRIGGER reject_webhook`;
+          expect((yield* repo.acceptWebhook("deploy", "event", "digest", once, start)).status).toBe(
+            "accepted",
+          );
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("webhook queue capacity rejects new events while allowing duplicate receipts", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo) =>
+        Effect.gen(function* () {
+          for (let n = 0; n < 100; n++) {
+            expect(
+              (yield* repo.acceptWebhook("deploy", String(n), "digest", once, start)).status,
+            ).toBe("accepted");
+          }
+
+          expect(
+            (yield* repo.acceptWebhook("deploy", "overflow", "digest", once, start)).status,
+          ).toBe("full");
+          expect((yield* repo.acceptWebhook("deploy", "0", "digest", once, start)).status).toBe(
+            "duplicate",
+          );
+          const item = (yield* repo.claim(start))!;
+          yield* repo.finish(item.id, "completed", null, start);
+          expect(
+            (yield* repo.acceptWebhook("deploy", "overflow", "digest", once, start)).status,
+          ).toBe("accepted");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each(["assistant", "coding"])(
     "when upgrading a %s task, preserves and claims its queued occurrence",
     async (workload) => {
@@ -89,12 +185,23 @@ describe.concurrent("TaskRepository", () => {
               next_at: start,
               created_at: start,
             })}`;
-            yield* repo.reconcile(start);
-            yield* sql`UPDATE job_occurrences SET definition = json_set(definition, '$.workload', ${workload})`;
-            const before = yield* repo.task("saved-job");
+            yield* sql`INSERT INTO job_occurrences ${sql.insert({
+              id: "saved-occurrence",
+              job_id: "saved-job",
+              revision: 0,
+              definition: JSON.stringify({ ...once, workload, skill: null }),
+              scheduled_at: start,
+              available_at: start,
+              status: "pending",
+            })}`;
             yield* migrate(taskSchema).pipe(Effect.provideService(SqlClient.SqlClient, sql));
             yield* migrate(taskSchema).pipe(Effect.provideService(SqlClient.SqlClient, sql));
-            expect(yield* repo.task("saved-job")).toEqual(before);
+            expect(yield* repo.task("saved-job")).toMatchObject({
+              ...once,
+              id: "saved-job",
+              nextAt: start,
+              createdAt: start,
+            });
             const claimed = (yield* repo.claim(start))!;
             expect(claimed).toMatchObject({ jobId: "saved-job", definition: once });
             expect(claimed.definition).not.toHaveProperty("workload");

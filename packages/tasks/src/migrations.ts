@@ -62,4 +62,14 @@ const baseline: ReadonlyArray<string> = [
 export const taskSchema = packageSchema("task_migrations", {
   "1_baseline": baseline,
   "2_remove_workload": removeWorkload,
+  "3_webhooks": [
+    "ALTER TABLE jobs ADD COLUMN source TEXT",
+    `CREATE TABLE webhook_events (
+      hook_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      digest TEXT NOT NULL,
+      job_id TEXT NOT NULL,
+      PRIMARY KEY (hook_id, event_id)
+    ) STRICT`,
+  ],
 });

@@ -193,3 +193,9 @@ Page reading uses the fixed model-turn, tool-call, context, and tool-output limi
 Each request has a 15-second deadline, at most three redirects, and a 1 MiB body
 limit. Only HTTP(S) standard ports are accepted. Ambient proxies and credentials
 are not forwarded. See [page reading](chat.md#read-a-supplied-url).
+
+## Incoming webhooks
+
+The optional `webhooks` object configures a localhost listener and named hooks.
+See [incoming webhooks](webhooks.md) for secret files, request examples, delivery,
+and execution limits. Webhooks are disabled when this object is absent.
