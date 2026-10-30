@@ -205,6 +205,23 @@ export const interactiveChatOutput = (
     };
   });
 
+export interface ChatPresentation {
+  readonly welcome: (text: string) => Effect.Effect<void, AgentError>;
+  readonly info: (text: string) => Effect.Effect<void, AgentError>;
+  readonly error: (text: string) => Effect.Effect<void, AgentError>;
+  readonly begin: (text: string) => Effect.Effect<void, AgentError>;
+  readonly finish: Effect.Effect<void, AgentError>;
+  readonly attachments?: (paths: readonly string[]) => Effect.Effect<void, AgentError>;
+}
+
+const plainPresentation: ChatPresentation = {
+  welcome: (text) => Console.log(`\nPoppet chat\n\n${text}\n`),
+  info: Console.log,
+  error: Console.error,
+  begin: () => Console.log("\nPoppet\n"),
+  finish: Console.log(""),
+};
+
 /** Reuses one saved session, including after a failed turn whose identity was already acknowledged. */
 export const interactiveChat = <E extends { readonly message: string }, R>(
   options: InteractiveChatOptions,
@@ -213,6 +230,7 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
     onSession: ChatWriter,
   ) => Effect.Effect<void, E, R>,
   read: Effect.Effect<string | null, AgentError> = readChatLine,
+  presentation: ChatPresentation = plainPresentation,
 ) =>
   Effect.gen(function* () {
     if (options.sessionId !== undefined && options.skill !== undefined)
@@ -239,8 +257,8 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
         return Effect.void;
       });
 
-    yield* Console.error(
-      "Enter one message per line. /attach <path> adds a file to the next message. /exit or Ctrl-D leaves the prompt; Ctrl-C cancels and exits.",
+    yield* presentation.welcome(
+      "/attach <path> adds a file to the next message.\n/exit or Ctrl-D leaves; Ctrl-C cancels and exits.",
     );
 
     // Files added with /attach go with the next message, whether or not it succeeds.
@@ -257,7 +275,8 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
 
       if (attach !== null) {
         attachments.push(attach[1]!);
-        yield* Console.error(`Attached ${attach[1]!} to the next message.`);
+        yield* presentation.attachments?.(attachments) ?? Effect.void;
+        yield* presentation.info(`\nAttached ${attach[1]!} to the next message.\n`);
         continue;
       }
 
@@ -270,8 +289,11 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
 
       const command = attachments.length === 0 ? base : { ...base, attachments };
       attachments = [];
+      yield* presentation.attachments?.(attachments) ?? Effect.void;
 
+      yield* presentation.begin(text);
       const result = yield* send(command, acknowledgeSession).pipe(Effect.result);
+      yield* presentation.finish;
 
       if (Result.isFailure(result)) {
         if (
@@ -279,7 +301,7 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
           (result.failure instanceof AgentError && result.failure.reason === "interrupted")
         )
           return yield* Effect.fail(result.failure);
-        yield* Console.error(`\n${result.failure.message}`);
+        yield* presentation.error(`\n${result.failure.message}`);
       } else if (sessionId === undefined)
         return yield* Effect.fail(
           new AgentError({

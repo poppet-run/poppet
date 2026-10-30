@@ -11,7 +11,8 @@ import {
   sendChat,
   type ChatWriter,
 } from "#src/commands/chat/chat";
-import { interactiveChat, interactiveChatOutput } from "#src/commands/chat/prompt";
+import { readChatLine, interactiveChat, interactiveChatOutput } from "#src/commands/chat/prompt";
+import { openChatTerminal, type ChatTerminal } from "#src/commands/chat/terminal";
 import type { CLIContext } from "#src/commands/context";
 import { attachFlag, skillFlag, textArgument } from "#src/commands/flags";
 
@@ -22,6 +23,7 @@ export const chatCommand = (context: CLIContext) => {
     command: ChatCommand,
     onSession: ChatWriter = () => Effect.void,
     interactive = false,
+    terminal?: ChatTerminal,
   ) => {
     if (
       command.action === "show" ||
@@ -46,9 +48,10 @@ export const chatCommand = (context: CLIContext) => {
     return Effect.scoped(
       Effect.gen(function* () {
         const output =
-          interactive || command.action === "new"
+          terminal ??
+          (interactive || command.action === "new"
             ? yield* interactiveChatOutput(write, writeThinking)
-            : undefined;
+            : undefined);
 
         const submission = yield* prepareChat(command);
 
@@ -87,10 +90,40 @@ export const chatCommand = (context: CLIContext) => {
           skill: skillFlag,
         },
         ({ id, skill }) =>
-          interactiveChat(
-            { sessionId: Option.getOrUndefined(id), skill },
-            (command, onSession) => runChat(command, onSession, true),
-            readLine,
+          Effect.scoped(
+            Effect.gen(function* () {
+              const options = { sessionId: Option.getOrUndefined(id), skill };
+
+              const rich =
+                readLine === readChatLine &&
+                process.stdin.isTTY &&
+                process.stdout.isTTY &&
+                process.env.TERM !== "dumb";
+
+              if (!rich)
+                return yield* interactiveChat(
+                  options,
+                  (command, onSession) => runChat(command, onSession, true),
+                  readLine,
+                );
+              const { terminal, stopped } = yield* openChatTerminal;
+
+              const chat = interactiveChat(
+                options,
+                (command, onSession) => runChat(command, onSession, true, terminal),
+                terminal.read,
+                {
+                  welcome: terminal.welcome,
+                  info: terminal.info,
+                  error: terminal.error,
+                  begin: terminal.begin,
+                  attachments: terminal.setAttachments,
+                  finish: Effect.void,
+                },
+              );
+
+              yield* Effect.raceFirst(chat, stopped);
+            }),
           ),
       ).pipe(Command.withDescription("Open a terminal prompt for a new or saved session")),
       Command.make(
