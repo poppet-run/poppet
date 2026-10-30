@@ -33,30 +33,29 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 The Bun monorepo uses private workspaces:
 
-| Workspace                     | Responsibility                                                                     | Workspace dependencies                                                               |
-| ----------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                 | Config, agent, browser, MCP, memory, skills, tasks, store, platform, provider layers |
-| `@poppet/browser`             | Isolated browser tools, settings, pinned daemon lifecycle, bounded native requests | I/O helpers, provider contract, Effect                                               |
-| `@poppet/mcp`                 | Scoped stdio/HTTP clients, OAuth sign-in, bounded discovery, schema validation     | Credentials, sign-in, provider contract                                              |
-| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                    | Config, I/O helpers, memory, skills, store, web search, provider contract            |
-| `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation   | None                                                                                 |
-| `@poppet/web-search`          | Brave/Kagi search adapters, validation, and bounded source results                 | I/O helpers, Effect                                                                  |
-| `@poppet/config`              | Validated settings and the `AppConfig` service                                     | Provider contract, credential locks, browser and MCP configuration schemas           |
-| `@poppet/credentials`         | Protected API-key and record storage, locks, and environment overrides             | Provider contract                                                                    |
-| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle              | Config, credentials, provider contract                                               |
-| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                   | Config and store for the local implementation                                        |
-| `@poppet/platform`            | Worker actions, errors, status, launch description, and bounded log reading        | I/O helpers                                                                          |
-| `@poppet/platform-macos`      | macOS LaunchAgent control and plist generation                                     | Platform contract                                                                    |
-| `@poppet/platform-linux`      | systemd user unit control and unit file generation                                 | Platform contract, I/O helpers                                                       |
-| `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                          | Config, agent, store, worker transport, provider contract                            |
-| `@poppet/worker`              | Protected local command transport and request lifecycle                            | Effect                                                                               |
-| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery           | Agent, config, credentials, store, provider contract                                 |
-| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings        | Gateway contract                                                                     |
-| `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export  | None                                                                                 |
-| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                    | Provider contract, credentials, protocol adapters                                    |
-| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                   | Provider contract, credentials, protocol adapters                                    |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference        | Credentials, sign-in, provider contract, protocol adapters                           |
-| `@poppet/sign-in`             | Browser authorization: loopback callback, pasted callbacks, deadline               | Effect                                                                               |
+| Workspace                     | Responsibility                                                                    | Workspace dependencies                                                      |
+| ----------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                | Config, agent, MCP, memory, skills, tasks, store, platform, provider layers |
+| `@poppet/mcp`                 | Scoped stdio/HTTP clients, OAuth sign-in, bounded discovery, schema validation    | Credentials, sign-in, provider contract                                     |
+| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                   | Config, I/O helpers, memory, skills, store, web search, provider contract   |
+| `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation  | None                                                                        |
+| `@poppet/web-search`          | Brave/Kagi search adapters, validation, and bounded source results                | I/O helpers, Effect                                                         |
+| `@poppet/config`              | Validated settings and the `AppConfig` service                                    | Provider contract, credential locks, MCP configuration schemas              |
+| `@poppet/credentials`         | Protected API-key and record storage, locks, and environment overrides            | Provider contract                                                           |
+| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle             | Config, credentials, provider contract                                      |
+| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                  | Config and store for the local implementation                               |
+| `@poppet/platform`            | Worker actions, errors, status, launch description, and bounded log reading       | I/O helpers                                                                 |
+| `@poppet/platform-macos`      | macOS LaunchAgent control and plist generation                                    | Platform contract                                                           |
+| `@poppet/platform-linux`      | systemd user unit control and unit file generation                                | Platform contract, I/O helpers                                              |
+| `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                         | Config, agent, store, worker transport, provider contract                   |
+| `@poppet/worker`              | Protected local command transport and request lifecycle                           | Effect                                                                      |
+| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery          | Agent, config, credentials, store, provider contract                        |
+| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings       | Gateway contract                                                            |
+| `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export | None                                                                        |
+| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                   | Provider contract, credentials, protocol adapters                           |
+| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                  | Provider contract, credentials, protocol adapters                           |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference       | Credentials, sign-in, provider contract, protocol adapters                  |
+| `@poppet/sign-in`             | Browser authorization: loopback callback, pasted callbacks, deadline              | Effect                                                                      |
 
 The CLI lives in `apps/cli`; libraries live in `packages/`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
@@ -1126,33 +1125,3 @@ providers. Selected credentials stay out of prompts and inspection. Worker
 inspection exposes only servers, status and allowed catalog discovery; invocation
 continues through the normal durable agent path. See [MCP tools](mcp.md) for limits,
 credential references, supported schemas, and the live validation path.
-
-## Browser automation
-
-The host composes optional browser tools alongside MCP tools through
-`ExternalAgentToolsLive`. The generic `ExternalTools.snapshot` receives host-owned
-session/run IDs and runs in the conversation stream's resource scope. Browser
-setup is deferred until the first browser action and reused within that run. Its
-resources close with the run, including failure and cancellation,
-while general MCP connections retain worker ownership.
-
-`@poppet/browser` owns strict tool arguments, configured host restrictions, snapshots,
-current references, result budgeting, and per-run state. `browser-process.ts`
-owns capped version probes, the pinned native daemon, and bounded requests over
-its private Unix socket. It never invokes a shell or creates another model loop.
-Native MCP schemas and handshake passed a compatibility probe, but unrestricted
-launch/session arguments and detached child ownership require this fixed adapter.
-
-`allowedDomains: ["*"]` explicitly allows all HTTP(S) hosts. This skips the host
-allowlist and omits domain filters from both daemon environment and launch
-arguments. URL credentials, other schemes, and arbitrary browser actions remain
-rejected; isolation, budgets, and lifecycle ownership still apply. Since the
-native domain filter also blocks WebRTC, wildcard launches retain that protection
-through a fixed private startup script and Chrome's non-proxied UDP restriction.
-
-The package exports its settings schema through `@poppet/browser/config`;
-`@poppet/config` reads it alongside other file settings.
-The CLI adapts browser tools and `BrowserError` to the generic agent contract.
-Browser calls use the existing external-tool identity and durable
-uncertain outcomes. Scheduled catalogs omit every browser operation. See
-[browser automation](browser.md) for setup, bounds, permissions, and live checks.

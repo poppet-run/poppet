@@ -16,7 +16,6 @@ for persistent settings.
 - [Doctor](doctor.md): read-only setup checks, worker observations, and actionable findings.
 - [Chat](chat.md): saved sessions, streaming answers, context, and cancellation.
 - [MCP tools](mcp.md): trusted local and HTTP servers, allowlists, inspection, and scheduled reads.
-- [Browser automation](browser.md): agent-browser setup, isolated runs, website permissions, and limits.
 - [Skills](skills.md): explicitly selected local procedures saved with chats and tasks.
 - [Memory](memory.md): an editable profile and explicitly saved facts shared across sessions.
 - [Storage](storage.md): the local database, permissions, ownership, and recovery.

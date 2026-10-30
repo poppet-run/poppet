@@ -17,7 +17,7 @@ bun run check
 The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/credentials`,
-`@poppet/store`, `@poppet/agent`, `@poppet/browser`, `@poppet/io`, `@poppet/mcp`,
+`@poppet/store`, `@poppet/agent`, `@poppet/io`, `@poppet/mcp`,
 `@poppet/memory`, `@poppet/skills`, `@poppet/tasks`, `@poppet/web-search`,
 `@poppet/platform`, `@poppet/platform-macos`, `@poppet/platform-linux`, `@poppet/worker`, `@poppet/gateway`,
 `@poppet/channel-discord`.
@@ -111,11 +111,6 @@ apps/
       providers.ts        Provider registrations; first entry is the default
       worker-background.ts Stable installed-service entry point, output capture, and shutdown forwarding
 packages/
-  browser/                @poppet/browser
-    src/browser.ts        Isolated per-run tools, permissions, references, result limits
-    src/browser-process.ts Pinned daemon, capped probes, bounded Unix socket requests
-    src/config.ts         Browser schemas and environment/file configuration
-    src/errors.ts         Browser failures adapted by the host
   agent/                  @poppet/agent
     src/service.ts        Persisted chat runner, deadlines, run finalization
     src/conversation.ts   Sequential model/tool loop and run budgets

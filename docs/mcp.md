@@ -13,7 +13,6 @@ The `@poppet/mcp` workspace owns the client runtime, server configuration schema
 inspection commands, errors, and prompt policy. The CLI supplies configuration
 and limits and adapts allowed tools to the agent's generic external-tool hook.
 
-Optional [browser automation](browser.md) shares that hook and durable tool loop.
 It has separate configuration, run-owned resources, and no scheduled access. It
 is not a generic MCP server entry or part of the MCP allowlist.
 
