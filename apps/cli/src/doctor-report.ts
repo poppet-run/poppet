@@ -43,36 +43,115 @@ export const doctorReport = (checks: ReadonlyArray<DoctorCheck>, directory: stri
   checks,
 });
 
+const checkLabels = new Map([
+  ["installation", "Installation"],
+  ["configuration", "Configuration"],
+  ["authentication", "Authentication"],
+  ["worker.service", "Background service"],
+  ["worker.socket", "Worker connection"],
+  ["worker.identity", "Worker configuration"],
+  ["tasks", "Scheduled tasks"],
+  ["provider-holds", "Provider holds"],
+  ["delivery", "Message delivery"],
+  ["gateway.connection", "Messaging connections"],
+  ["mcp", "MCP servers"],
+  ["browser", "Browser"],
+  ["context", "Context files"],
+]);
+
 export const renderDoctor = (
   report: ReturnType<typeof doctorReport>,
   color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR,
+  columns = process.stdout.columns || 88,
 ) => {
+  const width = Math.max(32, Math.min(columns, 100));
+
   const style = (format: "green" | "yellow" | "red" | "gray" | "bold", text: string) =>
     color ? styleText(format, text, { validateStream: false }) : text;
 
-  return [
-    `${style("bold", "Doctor:")} ${Match.value(report.exitCode).pipe(
-      Match.when(0, () => "no actionable problems found"),
-      Match.when(1, () => "attention needed"),
-      Match.orElse(() => "inspection incomplete"),
-    )}.`,
-    `Data directory: ${JSON.stringify(report.dataDirectory)}`,
-    ...report.checks.map((check) => {
-      const status = Match.value(check.status).pipe(
-        Match.when("ok", () => style("green", "[ok]")),
-        Match.when("warning", () => style("yellow", "[warning]")),
-        Match.when("error", () => style("red", "[error]")),
-        Match.when("skipped", () => style("gray", "[skipped]")),
+  // Wrap plain text before styling so ANSI sequences do not consume visible columns.
+  // Keep long paths, IDs and URLs intact rather than inserting characters into them.
+  const wrap = (text: string, indent = 0) => {
+    const prefix = " ".repeat(indent);
+    const lines: string[] = [];
+    let line = prefix;
+
+    for (const word of text.split(/\s+/u)) {
+      if (line.length > indent && line.length + 1 + word.length > width) {
+        lines.push(line);
+        line = prefix;
+      }
+
+      line += `${line.length > indent ? " " : ""}${word}`;
+    }
+
+    lines.push(line);
+
+    return lines.join("\n");
+  };
+
+  const attention = report.checks.filter(
+    (check) => check.status === "warning" || check.status === "error",
+  );
+
+  const passed = report.checks.filter((check) => check.status === "ok");
+  const skipped = report.checks.filter((check) => check.status === "skipped");
+  const warnings = attention.filter((check) => check.status === "warning").length;
+  const errors = attention.length - warnings;
+
+  const summary = Match.value(report.exitCode).pipe(
+    Match.when(0, () => "No actionable problems found"),
+    Match.when(1, () => "Attention needed"),
+    Match.orElse(() => "Inspection incomplete"),
+  );
+
+  const lines = [
+    style("bold", `Poppet doctor: ${summary}`),
+    wrap(
+      `${passed.length} passed, ${warnings} warning${warnings === 1 ? "" : "s"}, ${errors} error${errors === 1 ? "" : "s"}, ${skipped.length} skipped`,
+    ),
+    style("gray", `Data directory: ${JSON.stringify(report.dataDirectory)}`),
+  ];
+
+  for (const section of [
+    { title: "Needs attention", checks: attention },
+    { title: "Passed", checks: passed },
+    { title: "Skipped", checks: skipped },
+  ]) {
+    if (section.checks.length === 0) continue;
+    lines.push("", style("bold", section.title));
+
+    for (const check of section.checks) {
+      const badge = Match.value(check.status).pipe(
+        Match.when("ok", () => style("green", "OK   ")),
+        Match.when("warning", () => style("yellow", "WARN ")),
+        Match.when("error", () => style("red", "ERROR")),
+        Match.when("skipped", () => style("gray", "SKIP ")),
         Match.exhaustive,
       );
 
-      return `${status} ${style("bold", check.id)}: ${check.message} ${style("gray", `(${check.source})`)}${check.nextStep === null ? "" : `\n  ${style("bold", "Next:")} ${check.nextStep}`}`;
-    }),
+      lines.push(
+        "",
+        `  ${badge}  ${style("bold", checkLabels.get(check.id) ?? check.id)} ${style("gray", `[${check.source}]`)}`,
+        wrap(check.message, 9),
+      );
+
+      if (check.nextStep !== null)
+        lines.push(wrap(`Next: ${check.nextStep}`, 9).replace("Next:", style("bold", "Next:")));
+    }
+  }
+
+  lines.push(
+    "",
     style(
       "gray",
-      "Local inspection only; live provider, MCP, browser and messaging access were not verified.",
+      wrap(
+        "Local inspection only. Live provider, MCP, browser and messaging access were not verified.",
+      ),
     ),
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 };
 
 const Count = Schema.Natural;

@@ -6,6 +6,12 @@ Run `poppet doctor` to inspect local setup and get suggested next steps. Use
 `poppet doctor --json` for scripts. Both forms perform the same checks and return
 the same exit code.
 
+Human output starts with a count summary and groups findings into Needs attention,
+Passed, and Skipped. Each check has a readable name, its observation source, a
+wrapped explanation, and a separate next step when needed. Text wraps to the
+terminal width, up to 100 columns, or 88 columns when redirected. Long paths, IDs,
+and URLs remain intact.
+
 Human output uses green for successful checks, yellow for warnings, red for errors,
 and gray for skipped checks and observation sources. Redirected output and
 `NO_COLOR=1` use plain text. JSON output contains no styling.
