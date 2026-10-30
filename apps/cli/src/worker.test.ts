@@ -4,11 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Agent, SkillsLive } from "@poppet/agent";
-import { AppConfig } from "@poppet/config";
-import { StoreLive } from "@poppet/store";
+import { AppConfig, ConfigIdentity } from "@poppet/config";
+import { gatewaySchema } from "@poppet/gateway";
+import { StoreLive, migrate } from "@poppet/store";
 import { TaskRepositoryLive, remoteTaskCommand } from "@poppet/tasks";
-import { WorkerRequests, workerSocketPath } from "@poppet/worker";
+import { WorkerRequests, workerSocketPath, requestWorker } from "@poppet/worker";
 import { Console, Deferred, Effect, Fiber, Layer, Stream } from "effect";
+import { SqlClient } from "effect/sql";
 
 import { MessagingWorker } from "#src/channels";
 import { workerLaunch } from "#src/worker";
@@ -60,6 +62,7 @@ describe("runWorker", () => {
 
     const services = Layer.mergeAll(
       store,
+      Layer.succeed(ConfigIdentity, "0".repeat(64)),
       SkillsLive.pipe(Layer.provide(config)),
       TaskRepositoryLive.pipe(Layer.provide(store)),
       Layer.succeed(Agent, {
@@ -92,6 +95,7 @@ describe("runWorker", () => {
       await Effect.runPromise(
         Effect.scoped(
           Effect.gen(function* () {
+            yield* migrate(gatewaySchema);
             const fiber = yield* runWorker.pipe(Effect.forkScoped);
             yield* Deferred.await(ready);
 
@@ -111,6 +115,29 @@ describe("runWorker", () => {
             expect(
               (yield* remoteTaskCommand(workerSocketPath(directory), { action: "list" }))?.value,
             ).toMatchObject([{ destination }]);
+            const sql = yield* SqlClient.SqlClient;
+            const before = yield* sql`SELECT * FROM job_occurrences`;
+
+            const observation = yield* Effect.tryPromise(async (signal) => {
+              const response = await requestWorker(
+                workerSocketPath(directory),
+                "/v1/doctor",
+                { version: 1 },
+                signal,
+              );
+
+              expect(response?.status).toBe(200);
+
+              return response?.json();
+            });
+
+            expect(observation).toMatchObject({
+              version: 1,
+              identity: "0".repeat(64),
+              tasks: { failed: 0 },
+              gateway: { unknown: 1 },
+            });
+            expect(yield* sql`SELECT * FROM job_occurrences`).toEqual(before);
             yield* Fiber.interrupt(fiber);
           }),
         ).pipe(Effect.provide(services), Effect.provideService(Console.Console, output)),

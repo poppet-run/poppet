@@ -2,6 +2,9 @@
 
 [Documentation index](README.md)
 
+Use [`poppet doctor`](doctor.md) to inspect setup and worker state without
+repairs or live provider/tool probes.
+
 ## Foreground worker
 
 Run scheduling and configured messaging adapters in one foreground worker:

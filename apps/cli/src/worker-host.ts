@@ -1,4 +1,4 @@
-import { AppConfig } from "@poppet/config";
+import { AppConfig, ConfigIdentity } from "@poppet/config";
 import {
   makeTaskWorker,
   TaskDeliveries,
@@ -8,8 +8,10 @@ import {
 } from "@poppet/tasks";
 import { serveWorker, workerSocketPath, WorkerRequests } from "@poppet/worker";
 import { Clock, Console, Effect, Option } from "effect";
+import { SqlClient } from "effect/sql";
 
 import { MessagingWorker } from "#src/channels";
+import { doctorSnapshot, gatewayObservation } from "#src/doctor-worker";
 
 /** Serves commands and runs scheduling and messaging until shutdown closes their shared scope. */
 export const runWorker = Effect.scoped(
@@ -20,6 +22,8 @@ export const runWorker = Effect.scoped(
     const messaging = yield* MessagingWorker;
     const deliveries = Option.getOrNull(yield* Effect.serviceOption(TaskDeliveries));
     const startedAt = yield* Clock.currentTimeMillis;
+    const identity = Option.getOrNull(yield* Effect.serviceOption(ConfigIdentity));
+    const sql = yield* SqlClient.SqlClient;
 
     const destinations: TaskDestinations["Service"] = {
       resolve: (adapter, conversationId) =>
@@ -29,6 +33,25 @@ export const runWorker = Effect.scoped(
     };
 
     yield* serveWorker(workerSocketPath(config.dataDirectory), (request, body) => {
+      if (new URL(request.url).pathname === "/v1/doctor")
+        return (
+          identity === null
+            ? Effect.fail(new Error("Configuration identity unavailable"))
+            : doctorSnapshot(identity)
+        ).pipe(
+          Effect.provideService(SqlClient.SqlClient, sql),
+          Effect.flatMap((snapshot) =>
+            messaging.status.pipe(
+              Effect.map((status) => ({ ...snapshot, gateway: gatewayObservation(status) })),
+            ),
+          ),
+          Effect.timeout("2 seconds"),
+          Effect.match({
+            onSuccess: (snapshot) => Response.json(snapshot),
+            onFailure: () => Response.json({ version: 1, unavailable: true }, { status: 503 }),
+          }),
+        );
+
       if (new URL(request.url).pathname !== "/v1/tasks") return commands.handle(request, body);
 
       return taskResponse(body, (command) =>

@@ -2,6 +2,9 @@
 
 [Documentation index](README.md)
 
+Use [`poppet doctor`](doctor.md) to inspect setup and worker state without
+repairs or live provider/tool probes.
+
 ## Configuration file
 
 Keep ordinary settings in `~/.config/poppet/config.json`. The file and every

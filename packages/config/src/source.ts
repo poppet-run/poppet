@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -42,6 +43,11 @@ const FileSettings = Schema.Struct({
     }),
   ),
 });
+
+/** Fingerprint of the file and data directory captured while loading this configuration. */
+export class ConfigIdentity extends Context.Service<ConfigIdentity, string>()(
+  "poppet/ConfigIdentity",
+) {}
 
 /** Describes the non-secret sources used by the current process. */
 export class ConfigSource extends Context.Service<
@@ -122,6 +128,10 @@ export const loadConfigSource = Effect.gen(function* () {
     discord: file.discord ?? null,
     environmentOverrides,
   }).pipe(
+    Context.add(
+      ConfigIdentity,
+      createHash("sha256").update(JSON.stringify({ directory, file })).digest("hex"),
+    ),
     Context.add(
       ConfigProvider.ConfigProvider,
       ConfigProvider.make((key) =>
