@@ -87,23 +87,29 @@ excluded from linting and formatting.
 
 ## Source layout
 
+Commands with supporting modules live under `src/commands/<command>/`, with
+`command.ts` defining the command tree and tests alongside the modules they cover.
+Shared CLI code stays in `src/`; shared command helpers stay in `src/commands/`.
+
 ```text
 apps/
   cli/                    @poppet/cli
     src/
       main.ts             Bun process entry point and Effect runtime
       cli.ts              Command tree assembly and CLI parsing
-      commands/           Per-area command trees, runners, shared context, and flags
-      chat.ts             Chat commands, streaming output, session inspection
+      commands/           Shared command context, flags, and single-file commands
+        chat/             Chat command, streaming output, and interactive prompt
+        doctor/           Read-only checks, report rendering, and worker observations
+        gateway/          Gateway command, channel setup, and registrations
+        mcp/              MCP command, setup, and agent tool wiring
+        memory/           Memory command and operations
+        setup/            Interactive setup command
+        tasks/            Task command and argument parsing
+        web/              Web search command and service
+        worker/           Worker command, platform selection, host, transport, and logs
       runtime.ts          Generic selection and host configuration layers
       providers.ts        Provider registrations; first entry is the default
-      channel-registry.ts Channel registrations
-      channels.ts         Generic channel setup, loading, and status
-      tasks.ts            Task argument parsing
-      worker.ts           Worker argument parsing, launch settings, and platform selection
-      worker-background.ts Background launcher, output capture, and shutdown forwarding
-      worker-log.ts       Protected file writes and bounded archive retention
-      worker-commands.ts  Interactive command transport and host request handling
+      worker-background.ts Stable installed-service entry point, output capture, and shutdown forwarding
 packages/
   browser/                @poppet/browser
     src/browser.ts        Isolated per-run tools, permissions, references, result limits

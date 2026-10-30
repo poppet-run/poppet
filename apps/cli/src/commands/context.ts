@@ -4,13 +4,17 @@ import type { ProviderRegistration } from "@poppet/provider";
 import { workerSocketPath } from "@poppet/worker";
 import { Effect, Layer } from "effect";
 
-import { MessagingWorkerLive, validateChannels } from "#src/channels";
-import type { ChatWriter, ChatReasoningWriter } from "#src/chat";
-import { readChatLine } from "#src/chat-prompt";
+import type { ChatWriter, ChatReasoningWriter } from "#src/commands/chat/chat";
+import { readChatLine } from "#src/commands/chat/prompt";
+import { MessagingWorkerLive, validateChannels } from "#src/commands/gateway/channels";
+import { runWorker } from "#src/commands/worker/host";
+import {
+  remoteWorkerCommand,
+  WorkerRequestsLive,
+  type WorkerCommand,
+} from "#src/commands/worker/requests";
+import { manageWorker } from "#src/commands/worker/service";
 import { runtimeLayers } from "#src/runtime";
-import { manageWorker } from "#src/worker";
-import { remoteWorkerCommand, WorkerRequestsLive, type WorkerCommand } from "#src/worker-commands";
-import { runWorker } from "#src/worker-host";
 
 export const createCLIContext = (
   registered: ReadonlyArray<ProviderRegistration>,

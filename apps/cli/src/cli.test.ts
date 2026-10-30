@@ -9,8 +9,8 @@ import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { ConfigProvider, Console, Effect, type Schema } from "effect";
 
 import { makeCLI } from "#src/cli";
+import type { manageWorker } from "#src/commands/worker/service";
 import { providers } from "#src/providers";
-import type { manageWorker } from "#src/worker";
 
 const configure = async (directory: string, settings: Schema.JsonObject) => {
   await mkdir(directory, { recursive: true });

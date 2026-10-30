@@ -816,7 +816,7 @@ validation in addition to injected lifecycle and clock tests.
 
 ## Worker host
 
-`apps/cli/src/worker-host.ts` owns one scoped runtime and protected listener.
+`apps/cli/src/commands/worker/host.ts` owns one scoped runtime and protected listener.
 `worker run` starts scheduling and configured messaging adapters together, sharing the store,
 agent, memory, provider resolver, and command functions. The store lock prevents
 starting another worker against that data directory. No separate processes or
@@ -904,7 +904,7 @@ that supports the selected model. Call the typed agent interface directly
 and consume completed runs rather than parsing CLI stdout or stderr.
 
 `ChannelRegistration` in `@poppet/gateway` defines identity, setup help, setup,
-and lazy loading. The CLI registry is `apps/cli/src/channel-registry.ts`; it is the
+and lazy loading. The CLI registry is `apps/cli/src/commands/gateway/registry.ts`; it is the
 only CLI module importing a concrete channel package. The generic host generates
 help, dispatches setup, and composes each configured channel with its own gateway
 instance. Gateways share the store, repository, and agent permit. A fresh gateway
