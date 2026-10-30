@@ -39,10 +39,6 @@ const failedChecks = new Map([
     "installation",
     "Doctor could not check this data directory. Check that it exists and you can access it.",
   ],
-  [
-    "browser",
-    "Doctor could not check the browser programs. Check their installation and file permissions.",
-  ],
 ]);
 
 export const unavailable = (
@@ -76,7 +72,6 @@ const checkLabels = new Map([
   ["delivery", "Message delivery"],
   ["gateway.connection", "Messaging connections"],
   ["mcp", "MCP servers"],
-  ["browser", "Browser"],
   ["context", "Context files"],
 ]);
 

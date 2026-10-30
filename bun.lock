@@ -18,7 +18,6 @@
       "dependencies": {
         "@effect/platform-bun": "4.0.4",
         "@poppet/agent": "workspace:*",
-        "@poppet/browser": "workspace:*",
         "@poppet/channel-discord": "workspace:*",
         "@poppet/config": "workspace:*",
         "@poppet/credentials": "workspace:*",
@@ -61,15 +60,6 @@
         "openai": "7.32.0",
       },
     },
-    "packages/browser": {
-      "name": "@poppet/browser",
-      "version": "0.0.0",
-      "dependencies": {
-        "@poppet/io": "workspace:*",
-        "@poppet/provider": "workspace:*",
-        "effect": "4.0.4",
-      },
-    },
     "packages/channel-discord": {
       "name": "@poppet/channel-discord",
       "version": "0.0.0",
@@ -85,7 +75,6 @@
       "name": "@poppet/config",
       "version": "0.0.0",
       "dependencies": {
-        "@poppet/browser": "workspace:*",
         "@poppet/credentials": "workspace:*",
         "@poppet/io": "workspace:*",
         "@poppet/mcp": "workspace:*",
@@ -437,8 +426,6 @@
     "@oxlint/plugins": ["@oxlint/plugins@1.89.0", "", {}, "sha512-TJBBNl4KIxbxrSk7gsqlz6iM1kxidfyTizEzfWqXvijF2Ou8/Da58GvjemBVmCmaUamwRij+JwsVc0kpBFuqfg=="],
 
     "@poppet/agent": ["@poppet/agent@workspace:packages/agent"],
-
-    "@poppet/browser": ["@poppet/browser@workspace:packages/browser"],
 
     "@poppet/channel-discord": ["@poppet/channel-discord@workspace:packages/channel-discord"],
 

@@ -53,7 +53,7 @@ describe("doctor", () => {
     const report = doctorReport(
       [
         finding("configuration", "ok", "local", "Settings are valid."),
-        finding("browser", "skipped", "local", "Browser access is disabled."),
+        finding("mcp", "skipped", "local", "No MCP servers are enabled."),
         finding(
           "authentication",
           "warning",
@@ -131,93 +131,27 @@ describe("doctor", () => {
     }
   });
 
-  test.each([
-    ["0.41.0", "156.0.8078.80", "ok", "Browser programs were found"],
-    ["0.39.3", "156.0.8078.80", "error", "older than the minimum"],
-    ["0.42.0", "156.0.8078.80", "warning", "has not been validated"],
-    ["0.41.0", "157.0.0.0", "warning", "has not been validated"],
-    ["private-invalid-version", "156.0.8078.80", "warning", "agent-browser version is unknown"],
-  ] as const)(
-    "reports installed browser compatibility for %s and Chrome %s without running programs",
-    async (agentVersion, chromeVersion, status, message) => {
-      const directory = await fixture();
+  test("unusable MCP and invalid context files produce independent findings", async () => {
+    const directory = await fixture();
 
-      try {
-        const bin = join(directory, "package", "bin");
-        const chrome = join(directory, `chrome-${chromeVersion}`, "chrome");
-        await mkdir(bin, { recursive: true });
-        await mkdir(join(directory, `chrome-${chromeVersion}`));
-        const command = join(bin, "agent-browser");
-        const script = '#!/bin/sh\ntouch "$0.ran"\n';
-        await writeFile(command, script, { mode: 0o700 });
-        await writeFile(chrome, script, { mode: 0o700 });
-        await writeFile(
-          join(directory, "package", "package.json"),
-          JSON.stringify({ name: "agent-browser", version: agentVersion }),
-        );
-        await writeFile(
-          join(directory, "config.json"),
-          JSON.stringify({
-            browser: {
-              enabled: true,
-              command,
-              chromiumExecutable: chrome,
-              allowedDomains: ["example.com"],
-            },
-          }),
-        );
-        const report = await Effect.runPromise(collect(directory));
-        const browser = check(report, "browser");
-        expect(browser.status).toBe(status);
-        expect(browser.incomplete).toBe(false);
-        expect(browser.message).toContain(message);
-        expect(browser.message).toContain("Doctor has not run either program");
-        expect(JSON.stringify(report)).not.toContain("private-invalid-version");
-        expect(await readdir(bin)).toEqual(["agent-browser"]);
-        expect(await readdir(join(directory, `chrome-${chromeVersion}`))).toEqual(["chrome"]);
-      } finally {
-        await rm(directory, { recursive: true, force: true });
-      }
-    },
-  );
-
-  test.each([
-    ["agent-browser", "/missing/doctor-browser", process.execPath, "browser.command"],
-    ["Chrome for Testing", process.execPath, "/missing/chromium", "browser.chromiumExecutable"],
-  ])(
-    "unusable %s and invalid context files produce independent findings",
-    async (name, command, chromiumExecutable, setting) => {
-      const directory = await fixture();
-
-      try {
-        await writeFile(
-          join(directory, "config.json"),
-          JSON.stringify({
-            browser: {
-              enabled: true,
-              command,
-              chromiumExecutable,
-              allowedDomains: ["example.com"],
-            },
-            mcpServers: [
-              { id: "missing", enabled: true, command: "/missing/doctor-mcp", args: [], tools: [] },
-            ],
-          }),
-        );
-        await writeFile(join(directory, "profile.md"), Buffer.from([0xff]));
-        const report = await Effect.runPromise(collect(directory));
-        expect(check(report, "configuration").status).toBe("ok");
-        expect(check(report, "browser").incomplete).toBe(true);
-        expect(check(report, "browser").message).toContain(name);
-        expect(check(report, "browser").nextStep).toContain(setting);
-        expect(check(report, "browser").message).not.toContain("/missing/");
-        expect(check(report, "mcp").status).toBe("warning");
-        expect(check(report, "context").incomplete).toBe(true);
-      } finally {
-        await rm(directory, { recursive: true, force: true });
-      }
-    },
-  );
+    try {
+      await writeFile(
+        join(directory, "config.json"),
+        JSON.stringify({
+          mcpServers: [
+            { id: "missing", enabled: true, command: "/missing/doctor-mcp", args: [], tools: [] },
+          ],
+        }),
+      );
+      await writeFile(join(directory, "profile.md"), Buffer.from([0xff]));
+      const report = await Effect.runPromise(collect(directory));
+      expect(check(report, "configuration").status).toBe("ok");
+      expect(check(report, "mcp").status).toBe("warning");
+      expect(check(report, "context").incomplete).toBe(true);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   test("gateway observations expose connection failures without adapter error text", () => {
     expect(
       gatewayObservation({

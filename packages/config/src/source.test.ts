@@ -6,13 +6,7 @@ import { join } from "node:path";
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
-import {
-  browserSettings,
-  loadConfig,
-  taskCatchUpMinutes,
-  webSearchEnabled,
-  webSearchProvider,
-} from "#src/config";
+import { loadConfig, taskCatchUpMinutes, webSearchEnabled, webSearchProvider } from "#src/config";
 import { ConfigSource, loadConfigSource } from "#src/source";
 
 const load = (environment: Record<string, string>) =>
@@ -92,7 +86,6 @@ describe("loadConfigSource", () => {
           search: webSearchEnabled,
           provider: webSearchProvider,
           catchUp: taskCatchUpMinutes,
-          browser: browserSettings,
           mcp: mcpServers,
           output: Config.schema(Schema.Int, "outputTokens"),
           secret: Config.String("POPPET_OPENROUTER_API_KEY"),
@@ -105,7 +98,6 @@ describe("loadConfigSource", () => {
         catchUp: 15,
         output: 4096,
         secret: "secret-key",
-        browser: { command: join(directory, "bin/browser") },
         mcp: [{ cwd: join(directory, "local") }],
       });
       expect(JSON.stringify(loaded.source)).not.toContain("secret-key");
