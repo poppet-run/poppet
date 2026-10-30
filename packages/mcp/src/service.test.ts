@@ -114,7 +114,9 @@ const expireRequest = async <A>(
       settled = true;
     });
 
-    // File IO lets the real subprocess progress while only its timers advance.
+    const pause = new Int32Array(new SharedArrayBuffer(4));
+
+    // Give the real subprocess time to exit between advances of its shutdown timers.
     await Effect.runPromise(
       Effect.gen(function* () {
         for (;;) {
@@ -123,7 +125,12 @@ const expireRequest = async <A>(
           if (!(yield* Effect.promise(() => readdir(state.directory))).includes("events")) continue;
           const events = yield* Effect.promise(() => state.events());
 
-          if (events.some((event) => event.method === method)) jest.advanceTimersToNextTimer();
+          if (events.some((event) => event.method === method)) {
+            jest.advanceTimersToNextTimer();
+            yield* Effect.promise(async () => {
+              await Atomics.waitAsync(pause, 0, 0, 10).value;
+            });
+          }
         }
       }),
     );
