@@ -66,14 +66,8 @@ poppet tasks edit <task-id> --name "Morning review"
 poppet tasks edit <task-id> --prompt "Summarize open decisions from recent conversations."
 poppet tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
 poppet tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
-poppet tasks skip <task-id>
-poppet tasks snooze <task-id> --until 2099-10-22T10:00:00+01:00
-poppet tasks snooze <task-id> --for 1h
 poppet tasks run <task-id>
 ```
-
-Snooze accepts either `--until` or `--for`. A relative snooze is measured from
-now, and must still be later than the selected execution's current ready time.
 
 Edits change only supplied name, prompt, or schedule fields. A cron replacement
 requires both expression and timezone; a one-off replacement requires a future
@@ -90,13 +84,13 @@ A schedule change cancels pending work, clears its snooze, and computes the next
 future slot. Editing a completed one-off's name/prompt does not rerun it; supply
 a different future schedule to rearm it.
 
-| Control  | Behavior                                                                                                                                                                                                                            |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skip`   | Consume exactly the selected pending occurrence or next slot. A recurring task keeps its cadence; a one-off has no next execution.                                                                                                  |
-| `snooze` | Delay that execution until a later future instant. `scheduledAt` keeps its original slot; `availableAt` is its effective ready time. The hold survives restart, and intervening cron slots do not build a backlog.                  |
-| `run`    | Queue through the normal scheduled runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
+| Control              | Behavior                                                                                                                                                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skip_next` via chat | Consume exactly the selected pending occurrence or next slot. A recurring task keeps its cadence; a one-off has no next execution.                                                                                                  |
+| `snooze` via chat    | Delay that execution until a later future instant. `scheduledAt` keeps its original slot; `availableAt` is its effective ready time. The hold survives restart, and intervening cron slots do not build a backlog.                  |
+| `run`                | Queue through the normal scheduled runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
 
-Skip, snooze, and run act on the task's next execution when the command
+Chat skip and snooze actions and the run command act on the task's next execution when the command
 commits: its pending occurrence if one exists, otherwise its next scheduled time.
 A task with no upcoming execution needs a schedule edit first. Receipts include
 changed fields, affected occurrence IDs, next time, and snooze changes. Lost responses never trigger local
@@ -293,15 +287,13 @@ explicit cancellation:
 ```sh
 poppet tasks cancel <task-id>
 poppet tasks retry <task-id>
-poppet tasks providers
-poppet tasks resume-provider openai-chatgpt
 ```
 
 These commands take a task ID. Older CLI versions took an occurrence ID directly.
 Restart an already-running worker after upgrading to use the task-based commands.
 
-Cancel selects the task's pending or running occurrence. If none exists, use
-`tasks skip` to skip its next scheduled execution. Retry selects the latest
+Cancel selects the task's pending or running occurrence. If none exists, it fails
+without changing the schedule. Retry selects the latest
 occurrence by scheduled time, then revision and insertion order. It fails if that
 occurrence succeeded or is still active; it never searches backward for a failure.
 Use `--occurrence <occurrence-id>` with either command to select a particular
@@ -311,7 +303,8 @@ occurrence belonging to the task. For example:
 poppet tasks retry <task-id> --occurrence <occurrence-id>
 ```
 
-Quota failures pause scheduled requests for that provider until `resume-provider`.
+Quota failures pause scheduled requests for that provider indefinitely. The CLI
+has no command to clear a quota pause. Inspect provider pauses with `worker status`.
 Temporary and rate-limit failures delay subsequent work by 30 seconds, doubling
 after further failures up to five minutes. A failed occurrence is never retried
 automatically. `retry` creates a fresh session for an unsuccessful occurrence;

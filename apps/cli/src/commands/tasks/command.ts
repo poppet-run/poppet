@@ -1,13 +1,11 @@
-import { ProviderId } from "@poppet/provider";
 import { Session } from "@poppet/store";
-import { TaskPatch, NewTask, parseTimestamp, TaskError, taskOperation } from "@poppet/tasks";
+import { TaskPatch, NewTask, TaskError, taskOperation } from "@poppet/tasks";
 import { Effect, Option, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
 import { jsonFlag, skillFlag, textArgument } from "#src/commands/flags";
 import {
-  parseRelativeTime,
   parseTaskDestination,
   parseTaskSchedule,
   prepareTask,
@@ -63,49 +61,14 @@ export const tasksCommand = (context: CLIContext) => {
             yield* runTaskCommand(runtime, { action: "edit", id, patch }, json);
           }),
       ).pipe(Command.withDescription("Edit a task's name, prompt or complete schedule")),
-      ...(["skip-next", "run-now"] as const).map((action) =>
-        Command.make(
-          action === "run-now" ? "run" : "skip",
-          {
-            id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)),
-            json: jsonFlag,
-          },
-          ({ id, json }) => runTaskCommand(runtime, { action, id }, json),
-        ).pipe(
-          Command.withDescription(
-            action === "skip-next"
-              ? "Skip the next execution"
-              : "Queue one execution through the worker",
-          ),
-        ),
-      ),
       Command.make(
-        "snooze",
+        "run",
         {
           id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)),
-          until: Flag.String("until").pipe(Flag.atMost(1)),
-          duration: Flag.String("for").pipe(
-            Flag.withDescription("Delay until this duration from now, such as 1h"),
-            Flag.atMost(1),
-          ),
           json: jsonFlag,
         },
-        ({ id, until, duration, json }) =>
-          Effect.gen(function* () {
-            const at = yield* taskOperation(() => {
-              if (until.length + duration.length !== 1)
-                throw new TaskError({
-                  message: "Use --until <timestamp> or --for <duration>.",
-                });
-
-              return duration[0] !== undefined
-                ? parseRelativeTime(duration[0])
-                : parseTimestamp(until[0]!);
-            });
-
-            yield* runTaskCommand(runtime, { action: "snooze", id, until: at }, json);
-          }),
-      ).pipe(Command.withDescription("Delay the next execution")),
+        ({ id, json }) => runTaskCommand(runtime, { action: "run-now", id }, json),
+      ).pipe(Command.withDescription("Queue one execution through the worker")),
       Command.make(
         "add",
         {
@@ -162,18 +125,6 @@ export const tasksCommand = (context: CLIContext) => {
           },
         ]),
       ),
-      Command.make("providers", { json: jsonFlag }, ({ json }) =>
-        runTaskCommand(runtime, { action: "providers" }, json),
-      ).pipe(Command.withDescription("Show provider quota pauses and temporary backoff")),
-      Command.make(
-        "resume-provider",
-        {
-          provider: Argument.String("provider").pipe(Argument.withSchema(ProviderId)),
-          json: jsonFlag,
-        },
-        ({ provider, json }) =>
-          runTaskCommand(runtime, { action: "resume-provider", provider }, json),
-      ).pipe(Command.withDescription("Allow scheduled requests for a provider again")),
       ...(["list", "clear"] as const).map((action) =>
         Command.make(action, { json: jsonFlag }, ({ json }) =>
           runTaskCommand(runtime, { action }, json),

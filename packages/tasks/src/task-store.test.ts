@@ -702,7 +702,7 @@ describe.concurrent("TaskRepository", () => {
             providerPauses: [
               {
                 provider: "test-provider",
-                action: "Run tasks resume-provider test-provider when quota is available.",
+                action: "Scheduled work is paused by a quota limit.",
               },
             ],
             recent: [
