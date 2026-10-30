@@ -1,5 +1,7 @@
 import { packageSchema } from "@poppet/store";
 
+import { removeWorkload } from "#src/migrations/0002_remove_workload";
+
 // Scheduled tasks. Deleting a task deletes its history. An occurrence snapshots its task definition. Each statement runs separately; append new migrations, never edit applied ones.
 const baseline: ReadonlyArray<string> = [
   `CREATE TABLE jobs (
@@ -59,7 +61,8 @@ const baseline: ReadonlyArray<string> = [
 /** Migrations for this package's tables, recorded in their own ledger. */
 export const taskSchema = packageSchema("task_migrations", {
   "1_baseline": baseline,
-  "2_webhooks": [
+  "2_remove_workload": removeWorkload,
+  "3_webhooks": [
     "ALTER TABLE jobs ADD COLUMN source TEXT",
     `CREATE TABLE webhook_events (
       hook_id TEXT NOT NULL,

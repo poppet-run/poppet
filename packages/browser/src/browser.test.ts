@@ -193,6 +193,29 @@ describe.concurrent("browser.ts", () => {
     }
   });
 
+  test("when the socket path appears before listening, waits without dispatching or replaying navigation", async () => {
+    const state = await fixture("delayed-listen");
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const tools = yield* state.tools();
+          yield* call(tools, "open", { url: "https://example.com/" });
+        }),
+      );
+
+      const requests = (await readFile(state.trace, "utf8"))
+        .split("\n")
+        .filter((line) => line.startsWith("{"))
+        .map((line) => JSON.parse(line));
+
+      expect(requests.filter((request) => request.action === "navigate")).toHaveLength(1);
+      await state.cleaned();
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when references omit the @ prefix, accepts current references and rejects stale ones", async () => {
     const state = await fixture();
 
@@ -456,32 +479,37 @@ describe.concurrent("browser.ts", () => {
     },
   );
 
-  test("when browser support is disabled or incompatible, launches no daemon", async () => {
-    const state = await fixture("version");
+  test.each(["version", "untested", "chrome-untested"])(
+    "when disabled or encountering the %s fixture version, launches no daemon",
+    async (mode) => {
+      const state = await fixture(mode);
 
-    try {
-      expect(
-        await state.run(browserTools({ enabled: false }, "disabled", 4096, state.launch)),
-      ).toEqual([]);
-      expect(state.commands).toHaveLength(0);
-      await state.run(
-        Effect.gen(function* () {
-          const tools = yield* state.tools();
-          expect(state.commands).toHaveLength(0);
+      try {
+        expect(
+          await state.run(browserTools({ enabled: false }, "disabled", 4096, state.launch)),
+        ).toEqual([]);
+        expect(state.commands).toHaveLength(0);
+        await state.run(
+          Effect.gen(function* () {
+            const tools = yield* state.tools();
+            expect(state.commands).toHaveLength(0);
 
-          for (let attempt = 0; attempt < 2; attempt++)
-            expect(
-              yield* call(tools, "open", { url: "https://example.com/" }).pipe(Effect.flip),
-            ).toHaveProperty("reason", "tool-network");
-          expect(state.commands).toHaveLength(2);
-        }),
-      );
-      expect(state.environments.every((env) => env.AGENT_BROWSER_DAEMON === undefined)).toBe(true);
-      await state.cleaned();
-    } finally {
-      await state.close();
-    }
-  });
+            for (let attempt = 0; attempt < 2; attempt++)
+              expect(
+                yield* call(tools, "open", { url: "https://example.com/" }).pipe(Effect.flip),
+              ).toHaveProperty("reason", "tool-network");
+            expect(state.commands).toHaveLength(2);
+          }),
+        );
+        expect(state.environments.every((env) => env.AGENT_BROWSER_DAEMON === undefined)).toBe(
+          true,
+        );
+        await state.cleaned();
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
   test("when an interaction is cancelled, stops it and the run-owned daemon", async () => {
     const state = await fixture("stall");

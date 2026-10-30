@@ -31,10 +31,14 @@
     "@poppet/provider-openai": "workspace:*",
     "@poppet/provider-opencode": "workspace:*",
     "@poppet/provider-openrouter": "workspace:*",
+    "@poppet/sign-in": "workspace:*",
     "@poppet/store": "workspace:*",
     "@poppet/tasks": "workspace:*",
     "@poppet/web-search": "workspace:*",
     "@poppet/worker": "workspace:*",
-    "effect": "4.0.4"
+    "effect": "4.0.4",
+    "marked": "18.1.2",
+    "marked-terminal": "8.0.0",
+    "wrap-ansi": "10.0.0"
   }
 }

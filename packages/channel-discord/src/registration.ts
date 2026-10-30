@@ -1,37 +1,58 @@
-import {
-  ChannelEnvironment,
-  ChannelError,
-  ChannelInput,
-  type ChannelRegistration,
-} from "@poppet/gateway";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { parseArgs } from "node:util";
+
+import { ChannelEnvironment, ChannelError, type ChannelRegistration } from "@poppet/gateway";
+import { Effect, Layer, Schema } from "effect";
 
 import { DiscordSettings, loadDiscordSettings, saveDiscordSettings } from "#src/settings";
 import { promptDiscordSetup } from "#src/setup";
 
-export const discord: ChannelRegistration = {
+const setupHelp =
+  "setup --owner-id <id> --guild-id <id> --home-channel-id <id> --bot-token <token>";
+
+const parseSetup = (args: ReadonlyArray<string>) =>
+  Effect.try({
+    try: () => {
+      if (args[0] !== "setup") throw new Error("Expected setup");
+
+      const { values, tokens } = parseArgs({
+        args: args.slice(1),
+        options: {
+          "owner-id": { type: "string" },
+          "guild-id": { type: "string" },
+          "home-channel-id": { type: "string" },
+          "bot-token": { type: "string" },
+        },
+        strict: true,
+        allowPositionals: false,
+        tokens: true,
+      });
+
+      const names = tokens.filter((token) => token.kind === "option").map((token) => token.name);
+
+      if (names.length !== 4 || new Set(names).size !== 4)
+        throw new Error("Expected each setup flag exactly once");
+
+      return values;
+    },
+    catch: () =>
+      new ChannelError({ reason: "configuration", message: `Use gateway discord ${setupHelp}.` }),
+  });
+
+export const discord = {
   id: "discord",
   name: "Discord",
   promptSetup: promptDiscordSetup,
-  setupHelp: "setup <owner-id> <guild-id> <home-channel-id> --key-stdin",
+  setupHelp,
   setup: (args) =>
     Effect.gen(function* () {
-      if (args.length !== 5 || args[0] !== "setup" || args.at(-1) !== "--key-stdin")
-        return yield* Effect.fail(
-          new ChannelError({
-            reason: "configuration",
-            message:
-              "Use gateway discord setup <owner-id> <guild-id> <home-channel-id> --key-stdin.",
-          }),
-        );
+      const values = yield* parseSetup(args);
       const environment = yield* ChannelEnvironment;
-      const input = yield* (yield* ChannelInput).readSecret;
 
       const settings = yield* Schema.decodeUnknownEffect(DiscordSettings)({
-        ownerId: args[1],
-        guildId: args[2],
-        homeChannelId: args[3],
-        token: Redacted.value(input),
+        ownerId: values["owner-id"],
+        guildId: values["guild-id"],
+        homeChannelId: values["home-channel-id"],
+        token: values["bot-token"],
       }).pipe(
         Effect.mapError(
           () =>
@@ -58,4 +79,4 @@ export const discord: ChannelRegistration = {
       ),
     );
   }),
-};
+} satisfies ChannelRegistration;

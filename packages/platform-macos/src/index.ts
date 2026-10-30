@@ -1,1 +1,1 @@
-export { manageWorker } from "#src/worker";
+export { workerPaths, manageWorker } from "#src/worker";

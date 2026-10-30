@@ -44,28 +44,56 @@ describe("config.ts", () => {
     ).rejects.toHaveProperty("_tag", "ConfigError");
   });
 
-  test("when an HTTP server is configured, accepts https or loopback http and rejects secrets in the URL, managed headers, and stdio fields", async () => {
+  test("when an HTTP server is configured, accepts https or loopback http and OAuth, and rejects secrets in the URL, managed headers, OAuth beside an Authorization header, and stdio fields", async () => {
     const server = { id: "remote", enabled: true, url: "https://mcp.example.com/mcp", tools: [] };
 
-    const accepted = [
+    const accepted: object[] = [];
+
+    for (const url of [
       "https://mcp.example.com/mcp?team=1",
       "http://127.0.0.1:8080/mcp",
       "http://[::1]/mcp",
-    ].map((url) => ({ ...server, url }));
+    ]) {
+      accepted.push({ ...server, url });
+    }
 
-    const rejected = [
-      ...[
-        "http://mcp.example.com/mcp",
-        "https://user:secret@mcp.example.com/mcp",
-        "https://mcp.example.com/mcp#token",
-        "file:///tmp/mcp",
-        "/mcp",
-      ].map((url) => ({ ...server, url })),
+    accepted.push(
+      { ...server, oauth: {} },
+      {
+        ...server,
+        headers: { "X-Team": { env: "TEAM" } },
+        oauth: {
+          clientId: "registered",
+          clientSecret: { credential: "remote-secret" },
+          scopes: ["read", "offline_access"],
+          callbackPort: 1455,
+        },
+      },
+    );
+
+    const rejected: object[] = [];
+
+    for (const url of [
+      "http://mcp.example.com/mcp",
+      "https://user:secret@mcp.example.com/mcp",
+      "https://mcp.example.com/mcp#token",
+      "file:///tmp/mcp",
+      "/mcp",
+    ]) {
+      rejected.push({ ...server, url });
+    }
+
+    rejected.push(
       { ...server, headers: { "Mcp-Session-Id": { env: "SESSION" } } },
       { ...server, headers: { Authorization: "Bearer secret-literal" } },
       { ...server, headers: { "X-Key": { env: "A" }, "x-key": { env: "B" } } },
       { ...server, command: "/usr/bin/example", args: [] },
-    ];
+      { ...server, headers: { authorization: { credential: "remote" } }, oauth: {} },
+      { ...server, oauth: { clientSecret: { credential: "remote-secret" } } },
+      { ...server, oauth: { clientId: "registered", clientSecret: "secret-literal" } },
+      { ...server, oauth: { callbackPort: 80 } },
+      { id: "local", enabled: true, command: "/usr/bin/example", args: [], tools: [], oauth: {} },
+    );
 
     const exits = await Effect.runPromise(
       Effect.forEach([...accepted, ...rejected], (entry) => Effect.exit(decode([entry]))),

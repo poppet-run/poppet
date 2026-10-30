@@ -73,8 +73,7 @@ Authentication is saved immediately. Cancelling later keeps completed steps;
 setup reports each save. Finishing setup does not verify live inference or a Discord
 connection. Check `poppet worker status`, then send a chat message to try it.
 
-OpenCode Go supports coding workloads only. Choose ChatGPT or OpenRouter for a
-general personal agent. Browser access, web search, and MCP remain separate settings.
+Browser access, web search, and MCP remain separate settings.
 
 After setup, continue with [chat](#choose-a-model-and-chat). The manual commands
 below are also available for scripts and individual changes.
@@ -95,8 +94,7 @@ the terminal for the final checks. See [ChatGPT](providers/openai-chatgpt.md) fo
 consent, credential storage, and logout.
 
 Alternatively, follow the [OpenCode Go](providers/opencode-go.md) or
-[OpenRouter](providers/openrouter.md) guide. OpenCode Go requires coding workloads;
-use ChatGPT or OpenRouter for general assistant chat and summaries.
+[OpenRouter](providers/openrouter.md) guide.
 
 ## Choose a model and chat
 
@@ -135,7 +133,7 @@ poppet chat show $session_id
 ```
 
 For a terminal prompt, run `poppet chat interactive`, or append a saved
-session ID to resume it. Enter one message per line and use `/exit` to leave.
+session ID to resume it. Enter sends a message, Shift+Enter adds a newline, and `/exit` leaves.
 See the [interactive prompt guide](chat.md#interactive-prompt) for cancellation.
 
 New sessions use the

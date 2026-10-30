@@ -106,6 +106,7 @@ export class MessagingChannel extends Context.Service<
         state: ApprovalState,
       ) => Effect.Effect<void, ChannelError>;
     };
+    /** Local connection observations only; must not send requests or change state. */
     readonly status: Effect.Effect<Schema.JsonObject>;
     readonly textLimit: number;
     /** Naming for conversations whose creation ownership the adapter can prove. */

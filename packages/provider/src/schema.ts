@@ -105,7 +105,6 @@ export const ModelDescription = Schema.Struct({
 /** One inference turn, including history, available tools, and explicitly requested settings. */
 export const ModelRequest = Schema.Struct({
   sessionId: Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/)),
-  workload: Schema.Literals(["assistant", "coding"]),
   instructions: Schema.String,
   messages: Schema.Array(Message),
   tools: Schema.Array(Tool),

@@ -9,8 +9,8 @@ import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { ConfigProvider, Console, Effect, type Schema } from "effect";
 
 import { makeCLI } from "#src/cli";
+import type { manageWorker } from "#src/commands/worker/service";
 import { providers } from "#src/providers";
-import type { manageWorker } from "#src/worker";
 
 const configure = async (directory: string, settings: Schema.JsonObject) => {
   await mkdir(directory, { recursive: true });
@@ -202,6 +202,74 @@ describe("makeCLI", () => {
     }
   });
 
+  test("when relative times are supplied, saves absolute times and rejects conflicting schedules before storage", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-relative-tasks-"));
+    const environment = await configure(directory, { model: "saved-model" });
+
+    try {
+      await Array.fromAsync(
+        [
+          ["--in", "0m"],
+          ["--in", "-1m"],
+          ["--in", "1.5h"],
+          ["--in", "1h30m"],
+          ["--in", "99999999999999999999d"],
+          ["--in", "1m", "--at", "2099-10-22T09:00:00Z"],
+          ["--in", "1m", "--cron", "* * * * *", "--tz", "UTC"],
+          ["--in", "1m", "--tz", "UTC"],
+          ["--in", "1m", "--in", "2m"],
+        ],
+        async (flags) => {
+          expect(
+            (await invoke(["tasks", "add", "Invalid", ...flags, "Summary"], environment)).exitCode,
+          ).toBe(1);
+        },
+      );
+
+      expect(await readdir(directory)).toEqual(["config.json"]);
+      const before = Date.now();
+
+      const added = await invoke(
+        ["tasks", "add", "Soon", "--in=1m", "Summary --literal"],
+        environment,
+      );
+
+      expect(added.exitCode).toBe(0);
+      const job = JSON.parse(added.stdout);
+      expect(job.prompt).toBe("Summary --literal");
+      expect(job.schedule.type).toBe("once");
+      expect(job.schedule.at).toBeGreaterThanOrEqual(before + 60_000);
+      expect(job.schedule.at).toBeLessThanOrEqual(Date.now() + 60_000);
+      const snoozeStart = Date.now();
+      const snoozed = await invoke(["tasks", "snooze", job.id, "--for", "1h"], environment);
+      expect(snoozed.exitCode).toBe(0);
+      const receipt = JSON.parse(snoozed.stdout);
+      expect(receipt.scheduledAt).toBe(job.schedule.at);
+      expect(receipt.availableAt).toBeGreaterThanOrEqual(snoozeStart + 3_600_000);
+      expect(receipt.availableAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
+
+      await Array.fromAsync(
+        [
+          [],
+          ["--for", "0m"],
+          ["--for", "1m"],
+          ["--for", "1h", "--until", "2099-10-22T09:00:00Z"],
+          ["--for", "1h", "--for", "2h"],
+        ],
+        async (flags) => {
+          expect((await invoke(["tasks", "snooze", job.id, ...flags], environment)).exitCode).toBe(
+            1,
+          );
+        },
+      );
+
+      const shown = await invoke(["tasks", "show", job.id], environment);
+      expect(JSON.parse(shown.stdout).target.availableAt).toBe(receipt.availableAt);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("when saved tasks are edited, skipped, snoozed, or queued offline, preserves snapshots and cadence", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-controls-cli-"));
     const environment = await configure(directory, { model: "saved-model" });
@@ -246,7 +314,7 @@ describe("makeCLI", () => {
 
       expect(rescheduled.exitCode).toBe(0);
       expect(JSON.parse(rescheduled.stdout).snoozeCleared).toBe(true);
-      const skipped = await invoke(["tasks", "skip-next", id], offline);
+      const skipped = await invoke(["tasks", "skip", id], offline);
       expect(skipped.exitCode).toBe(0);
       const nextAt = JSON.parse(skipped.stdout).nextAt;
       const immediate = await invoke(["tasks", "run", id], offline);
@@ -256,6 +324,18 @@ describe("makeCLI", () => {
       const repeated = await invoke(["tasks", "run", id], offline);
       expect(repeated.exitCode).toBe(0);
       expect(JSON.parse(repeated.stdout).occurrenceId).toBe(queued.occurrenceId);
+      expect((await invoke(["tasks", "cancel", id], offline)).exitCode).toBe(0);
+
+      const retried = await invoke(
+        ["tasks", "retry", id, "--occurrence", queued.occurrenceId],
+        offline,
+      );
+
+      expect(retried.exitCode).toBe(0);
+      expect(JSON.parse(retried.stdout)).toMatchObject({
+        id: queued.occurrenceId,
+        status: "pending",
+      });
       const shown = await invoke(["tasks", "show", id], offline);
       expect(shown.exitCode).toBe(0);
       expect(JSON.parse(shown.stdout)).toMatchObject({
@@ -273,18 +353,35 @@ describe("makeCLI", () => {
     }
   });
 
+  test.each([
+    { args: ["--api-key", ""] },
+    { args: ["--api-key", "invalid secret"] },
+    { args: ["--api-key"] },
+    { args: ["--key-stdin"] },
+  ])("web login rejects invalid arguments %j without saving credentials", async ({ args }) => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-invalid-key-"));
+
+    try {
+      const result = await invoke(["web", "login", ...args], {
+        POPPET_DATA_DIR: directory,
+        POPPET_BRAVE_SEARCH_API_KEY: "environment-key",
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stdout + result.stderr).not.toContain("invalid secret");
+      expect(await Bun.file(join(directory, "auth/brave-search.json")).exists()).toBe(false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("when Kagi credentials are configured, leaves Brave credentials intact", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-kagi-cli-"));
     const environment = { POPPET_DATA_DIR: directory };
 
     try {
       expect(
-        (
-          await invoke(["web", "login"], {
-            POPPET_DATA_DIR: directory,
-            POPPET_BRAVE_SEARCH_API_KEY: "brave-only-key",
-          })
-        ).exitCode,
+        (await invoke(["web", "login", "--api-key", "brave-only-key"], environment)).exitCode,
       ).toBe(0);
       await configure(directory, { webSearchProvider: "kagi" });
       expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
@@ -294,10 +391,7 @@ describe("makeCLI", () => {
         source: null,
       });
 
-      const login = await invoke(["web", "login"], {
-        ...environment,
-        POPPET_KAGI_SEARCH_API_KEY: "kagi-only-key",
-      });
+      const login = await invoke(["web", "login", "--api-key", "kagi-only-key"], environment);
 
       expect(login.exitCode).toBe(0);
       expect(login.stdout).toContain("Kagi Search key saved");
@@ -314,7 +408,7 @@ describe("makeCLI", () => {
         POPPET_KAGI_SEARCH_API_KEY: "kagi-override-key",
       });
 
-      expect(JSON.parse(overridden.stdout).source).toBe("environment");
+      expect(JSON.parse(overridden.stdout).source).toBe("stored");
       expect(overridden.stdout).not.toContain("kagi-override-key");
 
       const invalid = await invoke(["web", "status"], {
@@ -322,7 +416,7 @@ describe("makeCLI", () => {
         POPPET_KAGI_SEARCH_API_KEY: "",
       });
 
-      expect(invalid.exitCode).not.toBe(0);
+      expect(invalid.exitCode).toBe(0);
 
       const config = await invoke(["config"], {
         ...environment,
@@ -367,10 +461,7 @@ describe("makeCLI", () => {
         source: null,
       });
 
-      const login = await invoke(["web", "login"], {
-        ...environment,
-        POPPET_BRAVE_SEARCH_API_KEY: "search-only-key",
-      });
+      const login = await invoke(["web", "login", "--api-key", "search-only-key"], environment);
 
       expect(login.exitCode).toBe(0);
       expect(login.stdout).not.toContain("search-only-key");
@@ -386,7 +477,7 @@ describe("makeCLI", () => {
         POPPET_BRAVE_SEARCH_API_KEY: "override-key",
       });
 
-      expect(JSON.parse(status.stdout)).toMatchObject({ source: "environment" });
+      expect(JSON.parse(status.stdout)).toMatchObject({ source: "stored" });
       expect(status.stdout).not.toContain("override-key");
 
       const config = await invoke(["config"], {
@@ -409,14 +500,15 @@ describe("makeCLI", () => {
         POPPET_BRAVE_SEARCH_API_KEY: "invalid key",
       });
 
-      expect(invalid.exitCode).toBe(1);
+      expect(invalid.exitCode).toBe(0);
+      expect(JSON.parse(invalid.stdout).configured).toBe(false);
       expect(invalid.stderr).not.toContain("invalid key");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
 
-  test("when prompts are missing or task IDs are invalid, rejects arguments before opening the store", async () => {
+  test("when prompts, task IDs, or worker flags are invalid, rejects arguments before opening the store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-invalid-"));
 
     try {
@@ -433,6 +525,9 @@ describe("makeCLI", () => {
       const invalid = await invoke(["tasks", "show", "bad/id"], environment);
       expect(invalid.exitCode).toBe(1);
       expect(invalid.stderr).toContain("argument <task>");
+      const removedFlag = await invoke(["worker", "run", "--tasks-only"], environment);
+      expect(removedFlag.exitCode).toBe(1);
+      expect(removedFlag.stderr).toContain("--tasks-only");
       expect(await readdir(directory)).toEqual(["config.json"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -495,16 +590,13 @@ describe("makeCLI", () => {
       POPPET_DATA_DIR: directory,
     };
 
-    const worker = Bun.spawn(
-      [process.execPath, "apps/cli/src/main.ts", "worker", "run", "--tasks-only"],
-      {
-        cwd: fileURLToPath(new URL("../../..", import.meta.url)),
-        env: environment,
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
+    const worker = Bun.spawn([process.execPath, "apps/cli/src/main.ts", "worker", "run"], {
+      cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+      env: environment,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
     const errors = new Response(worker.stderr).text();
 
@@ -583,7 +675,9 @@ describe("makeCLI", () => {
         schedule: { expression: "0 9 * * *", timezone: "Europe/London" },
       });
       const offline = { POPPET_DATA_DIR: directory };
-      expect(JSON.parse((await invoke(["tasks", "list"], offline)).stdout)).toHaveLength(1);
+      expect(JSON.parse((await invoke(["tasks"], offline)).stdout)).toEqual(
+        JSON.parse((await invoke(["tasks", "list"], offline)).stdout),
+      );
       expect(JSON.parse((await invoke(["tasks", "pause", task.id], offline)).stdout).paused).toBe(
         1,
       );
@@ -622,23 +716,20 @@ describe("makeCLI", () => {
     const directory = await mkdtemp(join(tmpdir(), "p7-cli-"));
     const environment = { PATH: process.env.PATH ?? "", POPPET_DATA_DIR: directory };
 
-    const worker = Bun.spawn(
-      [process.execPath, "apps/cli/src/main.ts", "worker", "run", "--tasks-only"],
-      {
-        cwd: fileURLToPath(new URL("../../..", import.meta.url)),
-        env: environment,
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
+    const worker = Bun.spawn([process.execPath, "apps/cli/src/main.ts", "worker", "run"], {
+      cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+      env: environment,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
     const errors = new Response(worker.stderr).text();
 
     try {
       const ready = await worker.stdout.getReader().read();
       expect(new TextDecoder().decode(ready.value)).toContain("Worker running.");
-      const second = await invoke(["worker", "run", "--tasks-only"], environment);
+      const second = await invoke(["worker", "run"], environment);
       expect(second.exitCode).toBe(1);
       expect(second.stderr).toContain("Another Poppet process has the store open");
 
@@ -678,7 +769,12 @@ describe("makeCLI", () => {
         running: true,
         pid: worker.pid,
         taskCount: 1,
-        services: { tasks: true, gateway: false },
+        services: { tasks: true, gateway: true },
+        messaging: {
+          running: true,
+          enabled: false,
+          channels: [{ id: "discord", enabled: false }],
+        },
         connections: [
           {
             provider: "openai-chatgpt",
@@ -795,36 +891,34 @@ describe("makeCLI", () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-destination-"));
     const environment = await configure(directory, { model: "test-model" });
 
-    const command = [
-      "tasks",
-      "add",
-      "Summary",
-      "--at",
-      "2099-10-15T09:00:00Z",
-      "--channel",
-      "discord",
-      "--conversation",
-    ];
+    const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z", "--to"];
 
     try {
-      await Array.fromAsync([["--conversation", "400"]], async (flags) => {
-        const incomplete = await invoke(
-          ["tasks", "add", "Incomplete", "--at", "2099-10-15T09:00:00Z", ...flags, "Summary"],
-          environment,
-        );
+      await Array.fromAsync(
+        [
+          ["--to", ":400"],
+          ["--to", "discord:"],
+          ["--to", "bad/id:400"],
+        ],
+        async (flags) => {
+          const incomplete = await invoke(
+            ["tasks", "add", "Incomplete", "--at", "2099-10-15T09:00:00Z", ...flags, "Summary"],
+            environment,
+          );
 
-        expect(incomplete.exitCode).toBe(1);
-        expect(incomplete.stderr).toContain("Use --channel when selecting --conversation");
-        expect(await readdir(directory)).toEqual(["config.json"]);
-      });
+          expect(incomplete.exitCode).toBe(1);
+          expect(incomplete.stderr).toContain("Use --to <gateway>");
+          expect(await readdir(directory)).toEqual(["config.json"]);
+        },
+      );
 
       const rejected = await invoke(
-        [...command, "400", "Summarize recent conversations"],
+        [...command, "discord:400", "Summarize recent conversations"],
         environment,
       );
 
       expect(rejected.exitCode).toBe(1);
-      expect(rejected.stderr).toContain("Start worker run without --tasks-only");
+      expect(rejected.stderr).toContain("Start worker run");
       expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
 
       const local = await invoke(
@@ -859,7 +953,7 @@ describe("makeCLI", () => {
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
         path: join(directory, "store/poppet.sqlite"),
-        schemaVersion: 3,
+        schemaVersion: 4,
         sessions: 0,
         messages: 0,
         runs: 0,
@@ -1074,6 +1168,34 @@ describe("makeCLI", () => {
     }
   });
 
+  test("when restarting a worker, validates configuration before calling the service manager", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-worker-restart-"));
+    const calls: string[] = [];
+
+    const worker: typeof manageWorker = (action, selectedDirectory) =>
+      Effect.sync(() => {
+        expect(selectedDirectory).toBe(directory);
+        calls.push(action);
+
+        return "Worker restarted.";
+      });
+
+    try {
+      const environment = await configure(directory, { model: 123 });
+      expect((await invoke(["worker", "restart"], environment, worker)).exitCode).toBe(1);
+      expect(calls).toEqual([]);
+      await configure(directory, {});
+      expect(await invoke(["worker", "restart"], environment, worker)).toEqual({
+        stdout: "Worker restarted.\n",
+        stderr: "",
+        exitCode: 0,
+      });
+      expect(calls).toEqual(["restart"]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test.each(["stop", "uninstall", "logs"])(
     "when worker recovery runs %s, ignores invalid file settings and rejects an empty data directory",
     async (action) => {
@@ -1129,6 +1251,7 @@ describe("makeCLI", () => {
       "tasks providers",
       "tasks resume-provider",
       "worker stop",
+      "worker restart",
     ];
 
     try {
@@ -1205,17 +1328,7 @@ describe("makeCLI", () => {
       ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],
       ["tasks", "add", "Later", "--at", at, "--at", at, "Hello"],
       ["tasks", "add", "Later", "--at", at, "--discord-thread", "400", "Hello"],
-      [
-        "tasks",
-        "add",
-        "Later",
-        "--at",
-        at,
-        "--channel=a",
-        "--channel=b",
-        "--conversation=400",
-        "Hello",
-      ],
+      ["tasks", "add", "Later", "--at", at, "--to=a", "--to=b:400", "Hello"],
       ["provider", "status", "--provider", "openrouter", "--provider", "opencode-go"],
       ["provider", "login", "--key-stdin", "--key-stdin"],
       ["worker", "start", "extra"],
@@ -1264,7 +1377,6 @@ describe("makeCLI", () => {
           "Later",
           "--at",
           "2099-10-15T09:00:00Z",
-          "--coding",
           "Explain",
           "--coding",
           "--help",
@@ -1276,7 +1388,6 @@ describe("makeCLI", () => {
 
       expect(added.exitCode).toBe(0);
       expect(JSON.parse(added.stdout)).toMatchObject({
-        workload: "coding",
         prompt: "Explain --coding --help -- -h",
       });
     } finally {

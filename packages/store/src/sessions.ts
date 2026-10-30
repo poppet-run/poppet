@@ -6,7 +6,7 @@ import { SqlClient } from "effect/sql";
 
 import { decodeInput, reportAs, storeFailure } from "#src/errors";
 import { SessionRow, MessageRow, type StoreRecords } from "#src/records";
-import { Id, ModelId, Session, SessionTitle, SkillSnapshot } from "#src/schema";
+import { Id, ModelId, SessionTitle, SkillSnapshot } from "#src/schema";
 import type { StoreOperations } from "#src/service";
 import { decodeRows } from "#src/sql";
 
@@ -16,7 +16,7 @@ export const sessionOperations = (sql: SqlClient.SqlClient, records: StoreRecord
   const createSession: StoreOperations["createSession"] = (
     provider,
     model,
-    { workload = "assistant", id = randomUUID(), taskTitle, skill = null } = {},
+    { id = randomUUID(), taskTitle, skill = null } = {},
   ) =>
     Effect.gen(function* () {
       const at = yield* Clock.currentTimeMillis;
@@ -28,7 +28,6 @@ export const sessionOperations = (sql: SqlClient.SqlClient, records: StoreRecord
         id: yield* decodeInput(Id, id),
         provider: yield* decodeInput(ProviderId, provider),
         model: yield* decodeInput(ModelId, model),
-        workload: yield* decodeInput(Session.fields.workload, workload),
         createdAt: at,
         updatedAt: at,
         title,

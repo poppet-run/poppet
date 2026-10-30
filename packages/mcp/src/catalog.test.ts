@@ -7,6 +7,8 @@ import OpenAI from "openai";
 
 import { compileSchema, definition, toolIdentity, toolResult } from "#src/catalog";
 
+import executorSchemas from "./test/executor-schemas.json";
+
 describe("toolIdentity", () => {
   test("when server and tool names have ambiguous punctuation, produces distinct identities", () => {
     const names = [
@@ -87,14 +89,92 @@ describe("compileSchema", () => {
     expect(() =>
       compileSchema({
         type: "object",
-        $defs: { value: { anyOf: [{ type: "string", pattern: "a" }] } },
+        $defs: { value: { anyOf: [{ type: "string", pattern: "(?=a)" }] } },
       }),
-    ).toThrow("Unsupported MCP schema");
+    ).toThrow();
   });
 
-  test("when tool schemas contain regular expressions, rejects them", () => {
-    for (const pattern of ["(a+)+$", "^a+$", ".*"])
-      expect(() => compileSchema({ type: "string", pattern })).toThrow("Unsupported MCP schema");
+  test("when patterns require backtracking-only features, rejects discovery", () => {
+    for (const pattern of ["(?=a)", "(a)\\1", "["])
+      expect(() => compileSchema({ type: "string", pattern })).toThrow();
+  });
+
+  test("when patterns have nested repetition, validates long inputs without backtracking", () => {
+    const validate = compileSchema({ type: "string", pattern: "^(a+)+$" });
+    expect(validate("a".repeat(64000))).toBe(true);
+    expect(validate("a".repeat(64000) + "!")).toBe(false);
+  });
+
+  test("when executor skills omit the dialect, preserves patterns and dependent requirements", () => {
+    const validate = compileSchema(executorSchemas.skills);
+    expect(validate({})).toBe(true);
+    expect(
+      validate({ app: "my-app", name: "read", version: "dpl_1", revision: "a".repeat(64) }),
+    ).toBe(true);
+
+    for (const args of [
+      { app: "-bad" },
+      { app: "A" },
+      { app: "a".repeat(64) },
+      { name: "read" },
+      { app: "ok", file: "README.md" },
+      { app: "ok", version: "dpl_" },
+      { app: "ok", revision: "g".repeat(64) },
+    ])
+      expect(validate(args)).toBe(false);
+    expect(validate({ app: "a".repeat(63), name: "read", file: "README.md" })).toBe(true);
+  });
+
+  test("when executor resumes requests, enforces ID patterns and response branches", () => {
+    const validate = compileSchema(executorSchemas.resume);
+
+    for (const requestId of ["apr_123", "elc_123", "apr_🌻\n"]) {
+      expect(
+        validate({
+          requestId,
+          response: { action: "accept", content: { choices: ["one"], enabled: true } },
+        }),
+      ).toBe(true);
+      expect(validate({ requestId, response: { action: "decline" } })).toBe(true);
+    }
+
+    for (const args of [
+      { requestId: "apr_", response: { action: "accept" } },
+      { requestId: "wrong_123", response: { action: "cancel" } },
+      { requestId: "elc_123", response: { action: "unknown" } },
+      { requestId: "elc_123", response: { action: "accept", content: { choices: [1] } } },
+      { requestId: "elc_123" },
+    ])
+      expect(validate(args)).toBe(false);
+  });
+
+  test("when dialects are explicit or use legacy tuple items, preserves their semantics", () => {
+    expect(() =>
+      compileSchema({
+        ...executorSchemas.skills,
+        $schema: "http://json-schema.org/draft-07/schema#",
+      }),
+    ).toThrow();
+
+    const validate = compileSchema({
+      type: "array",
+      items: [{ type: "string" }],
+      minItems: 1,
+      maxItems: 1,
+    });
+
+    expect(validate(["yes"])).toBe(true);
+    expect(validate([1])).toBe(false);
+
+    const modern = compileSchema({
+      type: "array",
+      prefixItems: [{ type: "string" }],
+      minItems: 1,
+      items: false,
+    });
+
+    expect(modern(["yes"])).toBe(true);
+    expect(modern([1])).toBe(false);
   });
 
   test("when schemas carry vendor x- annotations, ignores them as keywords but keeps x- property names", () => {
@@ -285,7 +365,6 @@ describe("definition", () => {
         model
           .stream({
             sessionId: "fixture",
-            workload: "assistant",
             instructions: "Fixture",
             messages: [{ role: "user", text: "Use MCP" }],
             tools: [tool],

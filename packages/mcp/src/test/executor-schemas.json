@@ -1,0 +1,122 @@
+{
+  "skills": {
+    "type": "object",
+    "properties": {
+      "app": {
+        "type": "string",
+        "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1
+      },
+      "file": {
+        "type": "string"
+      },
+      "version": {
+        "type": "string",
+        "pattern": "^dpl_[\\s\\S]+$"
+      },
+      "revision": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "accounts": {}
+    },
+    "additionalProperties": true,
+    "dependentRequired": {
+      "name": ["app"],
+      "file": ["app", "name"],
+      "version": ["app"],
+      "revision": ["app"],
+      "accounts": ["app"]
+    }
+  },
+  "resume": {
+    "type": "object",
+    "properties": {
+      "requestId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^apr_[\\s\\S]+$"
+          },
+          {
+            "type": "string",
+            "pattern": "^elc_[\\s\\S]+$"
+          }
+        ]
+      },
+      "response": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "_meta": {
+                "anyOf": [
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "action": {
+                "type": "string",
+                "enum": ["accept"]
+              },
+              "content": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "required": ["action"],
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "properties": {
+              "_meta": {
+                "anyOf": [
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "action": {
+                "type": "string",
+                "enum": ["cancel", "decline"]
+              }
+            },
+            "required": ["action"],
+            "additionalProperties": true
+          }
+        ]
+      }
+    },
+    "required": ["requestId", "response"],
+    "additionalProperties": true
+  }
+}

@@ -16,6 +16,10 @@ spaces; flags inside that text stay literal. Use `--` before the text when it
 starts with `--help` or `-h`. For task prompts, use `--` before any initial
 flag-like text; unknown task options are rejected.
 
+Run `poppet doctor` for read-only setup and worker inspection, or
+`poppet doctor --json` for scripts. See [doctor](doctor.md) for checks, exit codes,
+and limits.
+
 ## Shell completions
 
 `poppet --completions <shell>` prints a completion script for `bash`, `zsh`, or
@@ -65,7 +69,7 @@ prompts, followed by Discord if selected. Cancellation or a later failure keeps
 completed saves and reports that they remain. Invalid configuration is never
 overwritten. Setup does not run inference or test Discord access.
 
-On macOS, setup offers to install and start the combined worker, start an installed
+On macOS, setup offers to install and start the worker, start an installed
 worker, or explicitly restart a loaded worker. Restarting can interrupt active runs.
 Other platforms get the foreground command. Use the individual provider, gateway,
 and worker commands for scripts; setup has no noninteractive mode.
@@ -108,23 +112,42 @@ See [ChatGPT](providers/openai-chatgpt.md), [OpenCode Go](providers/opencode-go.
 [OpenRouter](providers/openrouter.md), and [API-key handling](configuration.md#api-keys)
 for provider-specific setup and logout behavior.
 
-## MCP inspection
+## MCP servers
 
-| Command              | Action                                                                           |
-| -------------------- | -------------------------------------------------------------------------------- |
-| `mcp servers`        | Show permissions, connection diagnostics, and tools without launching servers.   |
-| `mcp tools <server>` | Explicitly discover the server's allowed tools using the owner or a local scope. |
+| Command                                                | Purpose                                                             |
+| ------------------------------------------------------ | ------------------------------------------------------------------- |
+| `mcp servers`                                          | Show permissions, connection diagnostics, sign-in state, and tools. |
+| `mcp tools <server>`                                   | Discover every tool with its interactive and scheduled permissions. |
+| `mcp add <server> <url> --auth <none\|api-key\|oauth>` | Save a remote server without connecting or allowing tools.          |
+| `mcp login <server>`                                   | Sign in to an OAuth server.                                         |
+| `mcp logout <server>`                                  | Delete an OAuth server's saved tokens.                              |
+| `mcp allow <server> <tools...>`                        | Allow discovered tools for interactive runs.                        |
+| `mcp allow <server> --all`                             | Allow all currently discovered names for interactive runs.          |
+| `mcp deny <server> <tools...>`                         | Remove interactive and scheduled permissions.                       |
+| `mcp remove <server>`                                  | Remove the entry and the key or sign-in that Poppet saved for it.   |
 
-These commands need no model. They route through the worker when it is running.
-See [MCP tools](mcp.md) for configuration, permissions, and process ownership.
+With `--auth api-key`, `add` reads a hidden prompt or accepts `--api-key <key>`.
+Custom headers and prefixes, OAuth client IDs, and scopes are configured in
+`config.json`. `login` accepts `--no-browser` and `--callback-port <port>`;
+the latter overrides the configured port for that sign-in only.
+
+`allow --scheduled` grants both permissions for explicitly named, reviewed
+read-only tools. `deny --scheduled` removes only scheduled access. `--all`
+cannot be combined with names or `--scheduled`. Failed discovery or unknown
+names leave permissions unchanged; `deny` works without connecting.
+
+`servers` and `tools` need no model and route through the worker when running.
+Configuration changes from `add`, `remove`, `allow`, and `deny` take effect in
+the worker after restart. A running worker uses new sign-in tokens on its next
+request. See [MCP tools](mcp.md) for configuration and permissions.
 
 ## Web search setup
 
-| Command                   | Action                                                                                          |
-| ------------------------- | ----------------------------------------------------------------------------------------------- |
-| `web login [--key-stdin]` | Save the selected search provider's key from the environment, hidden prompt, or explicit stdin. |
-| `web status`              | Show whether search is enabled and a key is configured, without a remote request.               |
-| `web logout`              | Remove the saved search key.                                                                    |
+| Command                       | Action                                                                            |
+| ----------------------------- | --------------------------------------------------------------------------------- |
+| `web login [--api-key <key>]` | Save the selected search provider's key from the flag or hidden prompt.           |
+| `web status`                  | Show whether search is enabled and a key is configured, without a remote request. |
+| `web logout`                  | Remove the saved search key.                                                      |
 
 These commands use `webSearchProvider`, which defaults to `brave` and also accepts
 `kagi`. They do not change inference credentials or require a selected model.
@@ -133,15 +156,15 @@ Enable `webSearch` separately and restart any running worker. See
 
 ## Chat
 
-| Command                                                               | Action                                                      |
-| --------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `chat interactive [session] [--coding] [--skill <name>]`              | Open a terminal prompt for a new or saved session.          |
-| `chat new [--coding] [--skill <name>] [--attach <path>]... <message>` | Start a session with the configured provider and model.     |
-| `chat send <session> [--attach <path>]... <message>`                  | Continue a saved session.                                   |
-| `chat rename <session> <title>`                                       | Rename a saved session without inference.                   |
-| `chat search <query>`                                                 | Search completed conversation text without inference.       |
-| `chat sessions`                                                       | List saved sessions.                                        |
-| `chat show <session>`                                                 | Print saved messages, tool calls, and run outcomes as JSON. |
+| Command                                                    | Action                                                      |
+| ---------------------------------------------------------- | ----------------------------------------------------------- |
+| `chat interactive [session] [--skill <name>]`              | Open a terminal prompt for a new or saved session.          |
+| `chat new [--skill <name>] [--attach <path>]... <message>` | Start a session with the configured provider and model.     |
+| `chat send <session> [--attach <path>]... <message>`       | Continue a saved session.                                   |
+| `chat rename <session> <title>`                            | Rename a saved session without inference.                   |
+| `chat search <query>`                                      | Search completed conversation text without inference.       |
+| `chat sessions`                                            | List saved sessions.                                        |
+| `chat show <session>`                                      | Print saved messages, tool calls, and run outcomes as JSON. |
 
 See [chat](chat.md) for session selection, streaming, cancellation, limits,
 attachments, and the tools available during a run.
@@ -171,52 +194,54 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 
 ## Scheduled tasks
 
-| Command                                                                                                                            | Action                                                             |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `tasks add <name> --at <timestamp> [--coding] [--skill <name>] [--channel <id> [--conversation <id>]] <prompt>`                    | Schedule a one-off request.                                        |
-| `tasks add <name> --cron <expression> --tz <timezone> [--coding] [--skill <name>] [--channel <id> [--conversation <id>]] <prompt>` | Schedule recurring work.                                           |
-| `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> --tz <timezone>]`                  | Edit definition fields while retaining task identity and history.  |
-| `tasks skip-next <task>`                                                                                                           | Consume exactly the next execution.                                |
-| `tasks snooze <task> --until <timestamp>`                                                                                          | Delay the next execution to a later offset-qualified instant.      |
-| `tasks run <task>`                                                                                                                 | Queue normal scheduled work without shifting recurring cadence.    |
-| `tasks list`                                                                                                                       | List saved tasks.                                                  |
-| `tasks show <task>`                                                                                                                | Show occurrences, results, delivery states, and skipped intervals. |
-| `tasks pause <task>`                                                                                                               | Pause scheduling and cancel pending work.                          |
-| `tasks resume <task>`                                                                                                              | Resume future occurrences.                                         |
-| `tasks cancel <occurrence>`                                                                                                        | Cancel pending or active work.                                     |
-| `tasks retry <occurrence>`                                                                                                         | Explicitly retry an unsuccessful occurrence.                       |
-| `tasks providers`                                                                                                                  | Show provider quota pauses and temporary backoff.                  |
-| `tasks resume-provider <provider>`                                                                                                 | Allow scheduled requests for a provider again.                     |
-| `tasks remove <task>`                                                                                                              | Remove one task and its history; rejects running tasks.            |
-| `tasks clear`                                                                                                                      | Interrupt active work and remove all tasks and task history.       |
+| Command                                                                                                                 | Action                                                             |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `tasks add <name> (--at <timestamp> \| --in <duration>) [--skill <name>] [--to <gateway>[:<conversation-id>]] <prompt>` | Schedule a one-off request.                                        |
+| `tasks add <name> --cron <expression> --tz <timezone> [--skill <name>] [--to <gateway>[:<conversation-id>]] <prompt>`   | Schedule recurring work.                                           |
+| `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> --tz <timezone>]`       | Edit definition fields while retaining task identity and history.  |
+| `tasks skip <task>`                                                                                                     | Consume exactly the next execution.                                |
+| `tasks snooze <task> (--until <timestamp> \| --for <duration>)`                                                         | Delay the next execution.                                          |
+| `tasks run <task>`                                                                                                      | Queue normal scheduled work without shifting recurring cadence.    |
+| `tasks` / `tasks list`                                                                                                  | List saved tasks.                                                  |
+| `tasks show <task>`                                                                                                     | Show occurrences, results, delivery states, and skipped intervals. |
+| `tasks pause <task>`                                                                                                    | Pause scheduling and cancel pending work.                          |
+| `tasks resume <task>`                                                                                                   | Resume future occurrences.                                         |
+| `tasks cancel <task> [--occurrence <id>]`                                                                               | Cancel pending or active work.                                     |
+| `tasks retry <task> [--occurrence <id>]`                                                                                | Explicitly retry an unsuccessful occurrence.                       |
+| `tasks providers`                                                                                                       | Show provider quota pauses and temporary backoff.                  |
+| `tasks resume-provider <provider>`                                                                                      | Allow scheduled requests for a provider again.                     |
+| `tasks remove <task>`                                                                                                   | Remove one task and its history; rejects running tasks.            |
+| `tasks clear`                                                                                                           | Interrupt active work and remove all tasks and task history.       |
 
 See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what
 `clear` deletes or retains. Tasks execute while a worker with scheduling enabled
-is running. Use `--channel` to deliver to that gateway's home channel. Add `--conversation` to select another channel or thread.
+is running. Use `--to <gateway>` to deliver to that gateway's home channel, or
+`--to <gateway>:<conversation-id>` to select another channel or thread.
 
 ## Messaging
 
-| Command                                                                     | Action                                                   |
-| --------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `gateway discord setup <owner-id> <guild-id> <home-channel-id> --key-stdin` | Save Discord settings and read the bot token from stdin. |
+| Command                                                                                            | Action                                   |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `gateway discord setup --owner-id <id> --guild-id <id> --home-channel-id <id> --bot-token <token>` | Save Discord settings and the bot token. |
 
 See [Discord](gateways/discord.md) for setup, conversation behavior,
-controls, and uncertain deliveries. The bot token is never accepted as a command-line argument.
+controls, and uncertain deliveries. Use `poppet setup` for masked token entry.
 
 ## Worker
 
-| Command                     | Action                                                          |
-| --------------------------- | --------------------------------------------------------------- |
-| `worker run [--tasks-only]` | Run scheduling and messaging, or scheduling only.               |
-| `worker install`            | Install and start the login worker.                             |
-| `worker start`              | Start an installed worker.                                      |
-| `worker stop`               | Stop it until the next login or explicit start.                 |
-| `worker status`             | Show login service, scheduling, provider, and messaging status. |
-| `worker logs`               | Print the last 64 KiB of worker logs.                           |
-| `worker uninstall`          | Stop and remove login startup, retaining saved data.            |
+| Command            | Action                                                          |
+| ------------------ | --------------------------------------------------------------- |
+| `worker run`       | Run scheduling and configured messaging adapters.               |
+| `worker install`   | Install and start the login worker.                             |
+| `worker start`     | Start an installed worker.                                      |
+| `worker restart`   | Restart an installed worker, interrupting active work.          |
+| `worker stop`      | Stop it until the next login or explicit start.                 |
+| `worker status`    | Show login service, scheduling, provider, and messaging status. |
+| `worker logs`      | Print the last 64 KiB of worker logs.                           |
+| `worker uninstall` | Stop and remove login startup, retaining saved data.            |
 
 See [worker](worker.md) for foreground modes, login lifecycle commands, logs,
 interactive requests, and recovery. `worker status` includes messaging connection,
-queue, and delivery status under `worker.messaging`. Only one worker mode can own a data directory
+queue, and delivery status under `worker.messaging`. Only one worker can own a data directory
 at a time. Commands use the worker while it is running and run locally when it
 is stopped; a lost response does not cause command replay.

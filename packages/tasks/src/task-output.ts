@@ -79,7 +79,6 @@ export const detailsOutput = (
         prompt,
         provider: task.provider,
         model: task.model,
-        workload: task.workload,
         skill: task.skill?.name ?? null,
       },
       occurrences: shown,

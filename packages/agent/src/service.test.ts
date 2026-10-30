@@ -321,7 +321,7 @@ describe.concurrent("Agent", () => {
     },
   );
 
-  test("when a session reopens, resumes streaming with its saved identity, workload, and continuation", async () => {
+  test("when a session reopens, resumes streaming with its saved identity and continuation", async () => {
     const requests: ModelRequest[] = [];
     const events: ChatEvent[] = [];
 
@@ -348,16 +348,13 @@ describe.concurrent("Agent", () => {
         Effect.gen(function* () {
           const store = yield* Store;
 
-          const session = yield* store.createSession("test-provider", "test-model", {
-            workload: "coding",
-          });
+          const session = yield* store.createSession("test-provider", "test-model", {});
 
           yield* Stream.runForEach((yield* Agent).send(session.id, "First"), (event) =>
             Effect.sync(() => events.push(event)),
           );
           expect((yield* store.runs(session.id))[0]).toMatchObject({
             status: "completed",
-            workload: "coding",
             result: response(),
           });
 
@@ -388,7 +385,6 @@ describe.concurrent("Agent", () => {
       ).toBe("Hello");
       expect(requests[1]).toMatchObject({
         sessionId: savedSession.id,
-        workload: "coding",
         settings: { maxOutputTokens: 1000 },
         messages: [
           { role: "user", text: "First" },
@@ -736,9 +732,7 @@ describe("Agent.nameSession", () => {
           const store = yield* Store;
           const agent = yield* Agent;
 
-          const session = yield* store.createSession(description.provider, description.id, {
-            workload: "coding",
-          });
+          const session = yield* store.createSession(description.provider, description.id, {});
 
           yield* Stream.runDrain(agent.send(session.id, "First\n  question\u0000 with 😀"));
           expect(yield* store.session(session.id)).toMatchObject({
@@ -770,7 +764,6 @@ describe("Agent.nameSession", () => {
       expect(requests).toHaveLength(2);
       expect(requests[1]).toMatchObject({
         sessionId: id,
-        workload: "coding",
         tools: [],
         settings: { maxOutputTokens: 128, toolChoice: "none" },
         messages: [{ role: "user", text: JSON.stringify("First\n  question\u0000 with 😀") }],

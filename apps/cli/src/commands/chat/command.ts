@@ -1,0 +1,231 @@
+import { ChatSettings, logChatDiagnostic } from "@poppet/agent";
+import { Session, SessionSearchQuery } from "@poppet/store";
+import { Console, Effect, Option } from "effect";
+import { Argument, Command } from "effect/cli";
+
+import {
+  inspectChat,
+  type ChatCommand,
+  MessageText,
+  prepareChat,
+  sendChat,
+  type ChatWriter,
+} from "#src/commands/chat/chat";
+import { readChatHistory } from "#src/commands/chat/history";
+import {
+  readChatLine,
+  readChatInput,
+  interactiveChat,
+  interactiveChatOutput,
+} from "#src/commands/chat/prompt";
+import { openChatTerminal, type ChatTerminal } from "#src/commands/chat/terminal";
+import type { CLIContext } from "#src/commands/context";
+import { attachFlag, skillFlag, textArgument } from "#src/commands/flags";
+
+export const chatCommand = (context: CLIContext) => {
+  const { runtime, throughWorker, write, writeThinking, readLine } = context;
+
+  const runChat = (
+    command: ChatCommand,
+    onSession: ChatWriter = () => Effect.void,
+    interactive = false,
+    terminal?: ChatTerminal,
+  ) => {
+    if (
+      command.action === "show" ||
+      command.action === "sessions" ||
+      command.action === "rename" ||
+      command.action === "search"
+    ) {
+      const inspection =
+        command.action === "search"
+          ? ChatSettings.pipe(
+              Effect.flatMap(({ toolBytes }) => inspectChat(command, toolBytes)),
+              Effect.provide(runtime.chatSettings),
+            )
+          : inspectChat(command);
+
+      return throughWorker(
+        { kind: "chat", command },
+        inspection.pipe(Effect.provide(runtime.store), Effect.flatMap(Console.log)),
+      );
+    }
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const baseOutput =
+          terminal ??
+          (interactive || command.action === "new"
+            ? yield* interactiveChatOutput(write, writeThinking)
+            : undefined);
+
+        const output =
+          interactive && baseOutput !== undefined
+            ? {
+                answer: baseOutput.answer,
+                reasoning: baseOutput.reasoning,
+                announce: (text: string) =>
+                  text.startsWith("Session: ") || text.startsWith("Run: ")
+                    ? Effect.void
+                    : baseOutput.announce(text),
+              }
+            : baseOutput;
+
+        const submission = yield* prepareChat(command);
+
+        yield* throughWorker(
+          { kind: "chat", command: submission },
+          sendChat(
+            submission,
+            output?.answer ?? write,
+            (text, sessionId) =>
+              Effect.gen(function* () {
+                if (sessionId !== undefined) yield* onSession(sessionId);
+                yield* output?.announce(text) ?? logChatDiagnostic(text);
+              }),
+            output === undefined ? {} : { write: output.reasoning, log: () => Effect.void },
+            output === undefined
+              ? Console.error
+              : (line) => output.announce(line).pipe(Effect.ignore),
+          ).pipe(Effect.provide(runtime.chat)),
+          onSession,
+          output,
+        );
+      }).pipe(Effect.provide(runtime.config)),
+    );
+  };
+
+  const loadHistory = (id: string, terminal?: ChatTerminal) =>
+    Effect.gen(function* () {
+      yield* terminal?.loadingHistory ?? Effect.void;
+      let json = "";
+
+      const collect: ChatWriter = (text) =>
+        Effect.sync(() => {
+          json += text;
+        });
+
+      const command = { action: "show" as const, id };
+
+      yield* throughWorker(
+        { kind: "chat", command },
+        inspectChat(command).pipe(Effect.provide(runtime.store), Effect.flatMap(collect)),
+        () => Effect.void,
+        { answer: collect, reasoning: () => Effect.void, announce: terminal?.info ?? Console.log },
+      );
+      const messages = yield* readChatHistory(json, id);
+
+      if (terminal) yield* terminal.showHistory(messages);
+      else
+        yield* Effect.forEach(
+          messages,
+          (message) =>
+            Console.log(`\n${message.role === "user" ? "You" : "Poppet"}\n\n${message.text}\n`),
+          { discard: true },
+        );
+    });
+
+  return Command.make("chat").pipe(
+    Command.withDescription("Chat with the configured provider and model"),
+    Command.withSubcommands([
+      Command.make(
+        "interactive",
+        {
+          id: Argument.String("session").pipe(
+            Argument.withSchema(Session.fields.id),
+            Argument.optional,
+          ),
+          skill: skillFlag,
+        },
+        ({ id, skill }) =>
+          Effect.scoped(
+            Effect.gen(function* () {
+              const options = { sessionId: Option.getOrUndefined(id), skill };
+
+              const rich =
+                readLine === readChatLine &&
+                process.stdin.isTTY &&
+                process.stdout.isTTY &&
+                process.env.TERM !== "dumb";
+
+              if (!rich)
+                return yield* interactiveChat(
+                  options,
+                  (command, onSession) => runChat(command, onSession, true),
+                  readChatInput(readLine),
+                  undefined,
+                  (sessionId) => loadHistory(sessionId),
+                );
+              const { terminal, stopped } = yield* openChatTerminal;
+
+              const chat = interactiveChat(
+                options,
+                (command, onSession) => runChat(command, onSession, true, terminal),
+                terminal.read,
+                {
+                  welcome: terminal.welcome,
+                  session: terminal.session,
+                  info: terminal.info,
+                  error: terminal.error,
+                  begin: terminal.begin,
+                  finish: Effect.void,
+                },
+                (sessionId) => loadHistory(sessionId, terminal),
+              );
+
+              yield* Effect.raceFirst(chat, stopped).pipe(
+                Effect.provideService(Console.Console, terminal.console(yield* Console.Console)),
+              );
+            }),
+          ),
+      ).pipe(Command.withDescription("Open a terminal prompt for a new or saved session")),
+      Command.make(
+        "new",
+        {
+          skill: skillFlag,
+          attach: attachFlag,
+          text: textArgument("message").pipe(Argument.withSchema(MessageText)),
+        },
+        ({ text, skill, attach }) => {
+          const command: ChatCommand = { action: "new", text, attachments: attach };
+
+          const selected = skill === undefined ? command : { ...command, skill };
+
+          return runChat(selected);
+        },
+      ).pipe(Command.withDescription("Start a session")),
+      Command.make(
+        "send",
+        {
+          id: Argument.String("session").pipe(Argument.withSchema(Session.fields.id)),
+          attach: attachFlag,
+          text: textArgument("message").pipe(Argument.withSchema(MessageText)),
+        },
+        ({ id, text, attach }) => runChat({ action: "send", id, text, attachments: attach }),
+      ).pipe(Command.withDescription("Continue a saved session")),
+      Command.make(
+        "rename",
+        {
+          id: Argument.String("session").pipe(Argument.withSchema(Session.fields.id)),
+          text: textArgument("title").pipe(Argument.withSchema(MessageText)),
+        },
+        ({ id, text }) => runChat({ action: "rename", id, text }),
+      ).pipe(Command.withDescription("Rename a saved session")),
+      Command.make("sessions", {}, () => runChat({ action: "sessions" })).pipe(
+        Command.withDescription("List sessions"),
+      ),
+      Command.make(
+        "search",
+        { query: textArgument("query").pipe(Argument.withSchema(SessionSearchQuery)) },
+        ({ query }) => runChat({ action: "search", query }),
+      ).pipe(Command.withDescription("Search completed conversations")),
+      Command.make(
+        "show",
+        {
+          id: Argument.String("session").pipe(Argument.withSchema(Session.fields.id)),
+        },
+        ({ id }) => runChat({ action: "show", id }),
+      ).pipe(Command.withDescription("Show messages and run outcomes")),
+    ]),
+  );
+};

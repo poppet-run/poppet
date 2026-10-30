@@ -87,23 +87,29 @@ excluded from linting and formatting.
 
 ## Source layout
 
+Commands with supporting modules live under `src/commands/<command>/`, with
+`command.ts` defining the command tree and tests alongside the modules they cover.
+Shared CLI code stays in `src/`; shared command helpers stay in `src/commands/`.
+
 ```text
 apps/
   cli/                    @poppet/cli
     src/
       main.ts             Bun process entry point and Effect runtime
       cli.ts              Command tree assembly and CLI parsing
-      commands/           Per-area command trees, runners, shared context, and flags
-      chat.ts             Chat commands, streaming output, session inspection
+      commands/           Shared command context, flags, and single-file commands
+        chat/             Chat command, streaming output, and interactive prompt
+        doctor/           Read-only checks, report rendering, and worker observations
+        gateway/          Gateway command, channel setup, and registrations
+        mcp/              MCP command, setup, and agent tool wiring
+        memory/           Memory command and operations
+        setup/            Interactive setup command
+        tasks/            Task command and argument parsing
+        web/              Web search command and service
+        worker/           Worker command, platform selection, host, transport, and logs
       runtime.ts          Generic selection and host configuration layers
       providers.ts        Provider registrations; first entry is the default
-      channel-registry.ts Channel registrations
-      channels.ts         Generic channel setup, loading, and status
-      tasks.ts            Task argument parsing
-      worker.ts           Worker argument parsing, launch settings, and platform selection
-      worker-background.ts Background launcher, output capture, and shutdown forwarding
-      worker-log.ts       Protected file writes and bounded archive retention
-      worker-commands.ts  Interactive command transport and host request handling
+      worker-background.ts Stable installed-service entry point, output capture, and shutdown forwarding
 packages/
   browser/                @poppet/browser
     src/browser.ts        Isolated per-run tools, permissions, references, result limits
@@ -174,6 +180,9 @@ packages/
     src/worker.ts         LaunchAgent control and plist generation
   platform-linux/         @poppet/platform-linux
     src/worker.ts         systemd user unit control and unit file generation
+  sign-in/                @poppet/sign-in
+    src/callback.ts       Scoped loopback callback with state and paste checks
+    src/authorize.ts      Browser launch or printed link, pasted callbacks, deadline
   provider/               @poppet/provider
     src/schema.ts         Normalized messages, tools, events, and continuation
     src/service.ts        Provider service, model operations, and typed errors
@@ -186,7 +195,7 @@ packages/
       connection.ts       Credential schemas and redacted secrets
       auth/               Login, refresh, status, protected credential storage
       oauth/              Discovery, token exchange, JWT identity validation
-      sign-in/            Browser sign-in and scoped loopback callback
+      sign-in/            ChatGPT authorization request and callback checks
       model/              Model catalog, subscription errors, verification
       registration.ts     Provider-owned live composition and connection operations
       test/fixtures/      Local OAuth and model servers for behavior tests
@@ -256,7 +265,7 @@ or reserved IDs and malformed registrations stop gateway startup with an error.
 Restart the worker after changing the list or installed packages.
 
 Gateway commands and messaging worker startup load the same registrations.
-Other CLI commands and tasks-only workers do not import external adapter code.
+Other CLI commands do not import external adapter code.
 External modules run with the host's privileges. Use the host's compatible
 `@poppet/gateway` and Effect versions; these packages are currently private
 workspaces, so publishing a standalone adapter still requires packaging those
@@ -340,7 +349,7 @@ assistant-capable provider and model for messaging and scheduled tasks.
       duplicate replies.
 - [ ] Save provider/model settings in `config.json` and credentials in protected
       storage. Stop foreground workers, then run `poppet worker install`, or
-      `poppet worker stop` followed by `poppet worker start` for an
+      `poppet worker restart` for an
       existing installation. Check `poppet worker status` and
       `poppet worker logs`.
 - [ ] Log out of macOS and back in. Confirm the worker starts automatically,

@@ -58,32 +58,73 @@ poppet chat interactive
 poppet chat interactive $session_id
 ```
 
-Enter one message at each `You>` prompt and wait for the answer before entering
-the next. Each turn uses the same saved session, provider, model, workload, and
-skill. Blank lines are ignored. `/exit`, Ctrl-D at an empty prompt, or Ctrl-C
-leaves the prompt. Ctrl-C during inference cancels the active request and exits;
+The conversation appears above a bordered input box at the bottom of the terminal.
+Messages have bold yellow `You` and bold cyan `Poppet` labels, with blank lines
+between them. Instructions,
+attachments, and session details use neutral colours; errors use red. `NO_COLOR`
+disables colour styling.
+
+Poppet's answers render Markdown headings, emphasis, inline code, lists,
+blockquotes, links, tables, and fenced code blocks. Recognized code languages use
+syntax highlighting when terminal colour is enabled. Saved answers use the same
+formatting when you resume a session. User messages and the composer remain plain
+text, and the original Markdown stays in storage. Rendering updates as text arrives
+and reflows on resize. Links show their destination and images appear as text.
+
+Press Enter to send and Shift+Enter to insert a newline. Shift+Enter requires a
+terminal that reports modified keys separately; the chat enables the enhanced
+keyboard protocol where supported. Terminals that send Shift+Enter as plain Enter
+cannot distinguish the shortcut. Pasted multiline text stays in
+the composer until you press Enter in terminals supporting bracketed paste.
+Left and Right move the cursor, Backspace and Delete remove characters, and
+Home/End or Ctrl-A/Ctrl-E move to the start/end of the draft. Ctrl-U clears the
+text before the cursor. Up/Down recall messages sent during this invocation and
+restore your draft when you move past the latest entry. History is not saved to disk.
+
+You can draft the next message while Poppet responds. Enter queues it above the
+input box and clears the composer. Queued messages run in order after the current
+request finishes, and move into the conversation when their turn starts.
+`/attach <path>` binds a file to the next message you submit, including queued
+messages. Attachment paths are captured on submission; files are read when the turn starts.
+Use `/queue remove N` to remove the numbered pending message and its attachments.
+
+If a turn fails and the session can continue, the queue pauses. `/queue retry`
+retries the failed message before the queue; `/queue resume` skips the failed
+message and continues with pending messages. Neither happens automatically.
+Queued messages exist only in this invocation and are discarded on exit.
+
+The status line animates `Thinking...` until the answer starts, then animates
+`Responding...` until the turn finishes, using the same cyan sweep as `chat new` in 256-colour terminals
+and cycling dots otherwise. It stops on errors, completion, and exit. The status
+line also shows response progress and the number of attachments staged for the next
+message. Page Up/Page Down scroll through this invocation's conversation. Resizing
+the terminal reflows text and preserves the draft. On exit, the normal terminal
+screen is restored and a command is printed to resume the session. The conversation
+is not copied into terminal scrollback. If no session was created, the exit message
+says so instead.
+
+The session ID appears once at the start when resuming, or when the first message
+creates a new session. Interactive chat does not display run IDs.
+
+Each turn uses the same saved session, provider, model, and skill.
+Blank messages are ignored. `/exit`, Ctrl-D at an empty idle composer, or Ctrl-C
+leaves the chat. Ctrl-C during inference cancels the active request and exits;
 the interrupted run remains inspectable. Earlier completed answers remain saved.
 There is no automatic retry.
 
-An animated `Thinking...` indicator stays on its own line below streamed
-reasoning until the answer starts. In terminals supporting 256 colours, a soft
-cyan highlight sweeps across the text. `NO_COLOR` and terminals with fewer colours
-use cycling dots instead. It clears before answers or errors appear
-and also clears on cancellation. The indicator works with reasoning logging
-disabled and is omitted when stderr is redirected or the terminal is `dumb`.
+With `chat.logReasoning` enabled, provider reasoning appears under a muted
+`Thinking` heading before the answer. The background worker still writes its
+structured reasoning log entries. Providers may return no readable reasoning for
+a turn; in that case no heading is printed.
 
-With `chat.logReasoning` enabled, provider reasoning streams under a `Thinking:`
-heading before the answer. Thinking uses muted cyan in colour-enabled terminals;
-the answer uses the normal terminal colour. `NO_COLOR` disables the styling.
-Text appears as chunks arrive, with normal newlines and no diagnostic timestamps
-or IDs. OpenAI Responses reasoning sections are separated by blank lines.
-The background worker still writes its structured reasoning log entries.
-Providers may return no readable reasoning for a turn; in that case no heading
-is printed.
+`TERM=dumb` uses a simple, single-line `You>` prompt without message queuing. The plain prompt and
+`chat new` retain the streamed thinking output on stderr and answers on stdout.
+On supported terminals, their `Thinking...` indicator animates until the answer
+starts, using cyan when colour is available. It clears on completion or
+cancellation and is omitted for redirected stderr or `TERM=dumb`.
 
-For a new session, `--coding` and `--skill <name>` work as
-they do with `chat new`.
-Omit them when supplying a session ID, which retains its original selection.
+For a new session, `--skill <name>` works as it does with `chat new`.
+Omit it when supplying a session ID, which retains its original selection.
 A session is created only when you submit its first nonblank message. Failed turns
 keep the acknowledged session so a fresh message can continue it. If the first
 worker response is lost before its session identity arrives, the prompt stops
@@ -93,15 +134,20 @@ The worker returns structured session metadata alongside its session announcemen
 The prompt uses the existing worker when one is running, and local execution
 otherwise. It opens storage for each request rather than holding it while waiting
 for input. Both stdin and stdout must be terminals; use the one-shot commands for
-scripts. This version accepts single-line messages, with native line editing,
-and does not save an input-history file or add a full-screen interface.
+scripts. Resuming a session loads its saved user and assistant text before the
+first prompt, with attachment names shown on user messages. The screen starts at
+the latest messages; Page Up scrolls to earlier ones. History loading uses the
+worker when available and does not call the provider or replay tools. Use
+`chat show` for run details and tool records.
 
 Automated checks cover local and worker turns, saved selection and skill snapshots,
-failed-first-turn recovery, cancellation, and ambiguous worker replies. An isolated
-pseudo-terminal check with a fake provider covers two turns, line editing, Ctrl-D,
-and Ctrl-C while idle and during inference. Live provider behavior remains a manual
-check: exchange two messages, exit, resume the printed session ID, then interrupt
-one request and inspect it with `chat show`.
+failed-first-turn recovery, cancellation, and ambiguous worker replies.
+Automated terminal checks cover multiline paste, draft preservation during streaming,
+input history, resizing, scrolling, and colour handling. A pseudo-terminal check
+covers cancellation during inference and restoration of raw mode, input listeners,
+and the normal screen. Live provider behavior remains a manual check: exchange two
+messages, draft while a response streams, attach a file, resize, exit, resume the
+printed session ID, then interrupt one request and inspect it with `chat show`.
 
 ## Select a skill
 
@@ -129,8 +175,8 @@ Ask a tool-capable model to create, inspect, edit, delete, pause, resume, skip, 
 or run a task now through
 `poppet_tasks.manage_tasks`.
 
-New tasks keep this session's provider, model, and
-workload. Supply a clear prompt and time with an explicit offset or timezone;
+New tasks keep this session's provider and model. Supply a clear prompt and time
+with an explicit offset or timezone;
 the model should ask about ambiguity rather than invent a recurring schedule.
 In messaging, scheduled results default to the home channel. Request delivery
 here to use the current thread, or local delivery to keep results on the machine.
@@ -155,7 +201,7 @@ management tool.
 New sessions save a title from their initial prompt before inference. Poppet
 normalizes whitespace and controls and limits titles to 80 Unicode characters.
 After the first successful answer is printed, it attempts one optional title
-request through the saved provider, model, and workload. The request uses only a
+request through the saved provider and model. The request uses only a
 bounded excerpt of the original prompt, with no tools, memory, or conversation
 continuation. It has a ten-second deadline and can extend CLI exit time and use
 additional provider quota. Failure or cancellation leaves the answer completed
@@ -336,9 +382,8 @@ providers. Search uses the existing model-turn, tool-call, and context budgets.
 
 New sessions use the configured `provider` and required `model`, with
 both read from `config.json`. Existing
-sessions keep their saved provider, model, and workload when configuration
-changes. Start a new session to change that selection. OpenCode Go requires a
-coding session:
+sessions keep their saved provider and model when configuration
+changes. Start a new session to change that selection.
 
 Save the provider and model in `config.json`:
 
@@ -350,7 +395,7 @@ Save the provider and model in `config.json`:
 ```
 
 ```sh
-poppet chat new --coding "Explain how to structure a TypeScript CLI"
+poppet chat new "Explain how to structure a TypeScript CLI"
 ```
 
 ## Failures and cancellation

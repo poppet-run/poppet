@@ -79,7 +79,7 @@ export default defineConfig({
       },
     },
     {
-      files: ["apps/cli/src/providers.ts", "apps/cli/src/channel-registry.ts"],
+      files: ["apps/cli/src/providers.ts", "apps/cli/src/commands/gateway/registry.ts"],
       rules: { "no-restricted-imports": "off" },
     },
     {

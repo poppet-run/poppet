@@ -28,7 +28,7 @@ and `<POPPET_DATA_DIR>/auth/openrouter.json`.
 ## Models and requests
 
 Chat requests consume OpenRouter credits. The key is redacted and omitted from `config`.
-The adapter accepts both assistant and coding workloads through Chat Completions.
+The adapter uses Chat Completions.
 It derives tools, image input, temperature, output limits, and context size from
 catalog metadata; a model accepts image attachments when its input modalities
 include `image`. Models that generate images or audio and dynamic model routers such as

@@ -55,7 +55,7 @@ messaging gateway, add a fixed destination to the hook:
 A null `conversationId` selects that gateway's configured home channel. The worker
 validates the destination before accepting an event. While the gateway is
 connecting or unavailable, requests for that destination return 503. Hooks with messaging delivery require the
-normal worker; local-only hooks also work with `poppet worker run --tasks-only`.
+normal worker with `poppet worker run`.
 Restart the worker after editing configuration or rotating a secret. Removing
 `webhooks` disables the listener after restart; already accepted tasks remain queued.
 

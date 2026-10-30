@@ -88,7 +88,6 @@ export const NewTask = Schema.Struct({
   prompt: boundedText(16_384),
   provider: ProviderId,
   model: boundedText(1024),
-  workload: Session.fields.workload,
   schedule: Schedule,
 });
 
@@ -141,6 +140,11 @@ export const TaskCommand = Schema.Union([
   Schema.Struct({
     action: Schema.Literals(["show", "pause", "resume", "delete", "cancel", "retry"]),
     id: Session.fields.id,
+  }),
+  Schema.Struct({
+    action: Schema.Literals(["cancel-task", "retry-task"]),
+    id: Session.fields.id,
+    occurrenceId: Schema.optionalKey(Session.fields.id),
   }),
   Schema.Struct({ action: Schema.Literal("resume-provider"), provider: ProviderId }),
 ]);

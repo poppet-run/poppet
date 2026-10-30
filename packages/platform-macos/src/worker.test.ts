@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,156 @@ import { Effect, Fiber } from "effect";
 import { manageWorker, workerPaths } from "#src/worker";
 
 describe("manageWorker", () => {
+  test("restart requires installation, reloads running or stopped services, and stops on failure", async () => {
+    const home = await mkdtemp(join(tmpdir(), "poppet-launchd-restart-"));
+
+    const launch = {
+      dataDirectory: join(home, "data"),
+      executable: "/custom/poppet",
+      arguments: ["worker", "run"],
+      workingDirectory: home,
+      environment: new Map<string, string>(),
+    };
+
+    const paths = workerPaths(launch, home);
+    const domain = `gui/${process.getuid?.()}`;
+    const target = `${domain}/${paths.label}`;
+    const calls: ReadonlyArray<string>[] = [];
+    let active = false;
+    let failed = "";
+
+    const launchctl = async (args: ReadonlyArray<string>) => {
+      calls.push(args);
+
+      if (args[0] === "print") return active ? 0 : 113;
+
+      if (args[0] === failed) return 1;
+
+      if (args[0] === "bootstrap") active = true;
+
+      if (args[0] === "bootout") active = false;
+
+      return 0;
+    };
+
+    try {
+      await expect(
+        Effect.runPromise(manageWorker("restart", launch, home, launchctl)),
+      ).rejects.toMatchObject({ message: expect.stringContaining("Install the worker first") });
+      expect(calls).toEqual([["print", target]]);
+      await Effect.runPromise(manageWorker("install", launch, home, launchctl));
+      const original = await readFile(paths.plist, "utf8");
+
+      await Array.fromAsync([true, false], async (running) => {
+        active = running;
+        calls.length = 0;
+        expect(await Effect.runPromise(manageWorker("restart", launch, home, launchctl))).toContain(
+          "Worker restarted",
+        );
+        expect(calls).toEqual([
+          ["print", target],
+          ...(running
+            ? [
+                ["bootout", target],
+                ["print", target],
+              ]
+            : []),
+          ["bootstrap", domain, paths.plist],
+        ]);
+        expect(active).toBe(true);
+        expect(await readFile(paths.plist, "utf8")).toBe(original);
+      });
+
+      await Array.fromAsync(["bootout", "bootstrap"], async (failure) => {
+        active = true;
+        failed = failure;
+        calls.length = 0;
+        await expect(
+          Effect.runPromise(manageWorker("restart", launch, home, launchctl)),
+        ).rejects.toMatchObject({ message: expect.stringContaining(`${failure} failed`) });
+        expect(calls.map((args) => args[0])).toEqual(
+          failure === "bootout" ? ["print", "bootout"] : ["print", "bootout", "print", "bootstrap"],
+        );
+        expect(await readFile(paths.plist, "utf8")).toBe(original);
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  test("restart waits for removal and refuses to bootstrap after inspection errors or timeout", async () => {
+    const home = await mkdtemp(join(tmpdir(), "poppet-launchd-removal-"));
+
+    const launch = {
+      dataDirectory: join(home, "data"),
+      executable: "/custom/poppet",
+      arguments: ["worker", "run"],
+      workingDirectory: home,
+      environment: new Map<string, string>(),
+    };
+
+    const paths = workerPaths(launch, home);
+
+    try {
+      await Effect.runPromise(
+        manageWorker("install", launch, home, async (args) => (args[0] === "print" ? 113 : 0)),
+      );
+      const original = await readFile(paths.plist, "utf8");
+
+      await Array.fromAsync(["removed", "inspection error", "timeout"], async (outcome) => {
+        let stopping = false;
+        let pending = 2;
+        let bootstrapped = false;
+        const clock = outcome === "timeout" ? spyOn(performance, "now") : null;
+        clock?.mockReturnValueOnce(0).mockReturnValue(35_000);
+
+        const launchctl = async (args: ReadonlyArray<string>) => {
+          if (args[0] === "bootout") stopping = true;
+
+          if (args[0] === "print") {
+            if (!stopping) return 0;
+
+            if (outcome === "inspection error") return 1;
+
+            if (pending-- > 0) return 0;
+
+            return 113;
+          }
+
+          if (args[0] === "bootstrap") {
+            // launchd rejects a replacement until the old registration is gone.
+            if (pending >= 0) return 5;
+            bootstrapped = true;
+          }
+
+          return 0;
+        };
+
+        try {
+          const restart = Effect.runPromise(manageWorker("restart", launch, home, launchctl));
+
+          if (outcome === "removed") {
+            expect(await restart).toContain("Worker restarted");
+            expect(bootstrapped).toBe(true);
+          } else {
+            await expect(restart).rejects.toMatchObject({
+              message: expect.stringContaining(
+                outcome === "timeout" ? "Timed out" : "print failed (exit 1)",
+              ),
+            });
+            expect(bootstrapped).toBe(false);
+          }
+
+          expect(await readFile(paths.plist, "utf8")).toBe(original);
+        } finally {
+          clock?.mockRestore();
+        }
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   test("when managing a login worker, uses the supplied launch description and protects installed files", async () => {
     const home = await mkdtemp(join(tmpdir(), "poppet-launchd-"));
 
@@ -126,7 +276,7 @@ describe("manageWorker", () => {
       };
 
       await Promise.all(
-        (["status", "stop", "uninstall"] as const).map(async (action) => {
+        (["status", "restart", "stop", "uninstall"] as const).map(async (action) => {
           await expect(
             Effect.runPromise(manageWorker(action, launch, home, failed)),
           ).rejects.toMatchObject({ message: expect.stringContaining("print failed (exit 1)") });

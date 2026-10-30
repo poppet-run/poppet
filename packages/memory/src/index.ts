@@ -13,3 +13,5 @@ export {
 export { LocalMemoryLive } from "#src/local";
 
 export { memorySchema } from "#src/migrations";
+
+export { readContextFile } from "#src/context-file";

@@ -160,7 +160,7 @@ try {
   );
 
   console.log(
-    "Pinned browser check passed: JavaScript, form action, restricted and wildcard navigation/redirect/subresource, WebRTC blocking, isolated runs, and daemon cleanup.",
+    "Installed browser check passed: JavaScript, form action, restricted and wildcard navigation/redirect/subresource, WebRTC blocking, isolated runs, and daemon cleanup.",
   );
 } finally {
   site.stop(true);

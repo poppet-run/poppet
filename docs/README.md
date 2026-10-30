@@ -13,6 +13,7 @@ for persistent settings.
 
 - [Configuration](configuration.md): one settings file, credentials, Discord migration, and run controls.
 - [Command line](cli.md): commands, provider selection, and verification.
+- [Doctor](doctor.md): read-only setup checks, worker observations, and actionable findings.
 - [Chat](chat.md): saved sessions, streaming answers, context, and cancellation.
 - [MCP tools](mcp.md): trusted local and HTTP servers, allowlists, inspection, and scheduled reads.
 - [Browser automation](browser.md): agent-browser setup, isolated runs, website permissions, and limits.
@@ -31,7 +32,7 @@ for persistent settings.
 ## Providers
 
 - [ChatGPT](providers/openai-chatgpt.md): browser sign-in, subscription access, consent, and logout.
-- [OpenCode Go](providers/opencode-go.md): API-key setup, supported models, and coding workloads.
+- [OpenCode Go](providers/opencode-go.md): API-key setup and supported models.
 - [OpenRouter](providers/openrouter.md): API-key setup, model discovery, and routing constraints.
 
 ## Development

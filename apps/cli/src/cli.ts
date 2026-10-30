@@ -4,26 +4,27 @@ import type { ProviderRegistration } from "@poppet/provider";
 import { Effect } from "effect";
 import { CliConfig, CliOutput, Command, GlobalFlag } from "effect/cli";
 
-import { channels, loadRegisteredChannels } from "#src/channel-registry";
-import { type ChatWriter, writeChatText, writeChatThinking } from "#src/chat";
-import { readChatLine } from "#src/chat-prompt";
 import { commandArgs } from "#src/command-args";
-import { chatCommand } from "#src/commands/chat";
+import { type ChatWriter, writeChatText, writeChatThinking } from "#src/commands/chat/chat";
+import { chatCommand } from "#src/commands/chat/command";
+import { readChatLine } from "#src/commands/chat/prompt";
 import { configCommand } from "#src/commands/config";
 import { createCLIContext } from "#src/commands/context";
+import { doctorCommand } from "#src/commands/doctor/command";
 import { UsageError } from "#src/commands/errors";
-import { gatewayCommand } from "#src/commands/gateway";
-import { mcpCommand } from "#src/commands/mcp";
-import { memoryCommand } from "#src/commands/memory";
+import { gatewayCommand } from "#src/commands/gateway/command";
+import { channels, loadRegisteredChannels } from "#src/commands/gateway/registry";
+import { mcpCommand } from "#src/commands/mcp/command";
+import { memoryCommand } from "#src/commands/memory/command";
 import { providerCommand } from "#src/commands/provider";
-import { setupCommand } from "#src/commands/setup";
+import { setupCommand } from "#src/commands/setup/command";
 import { skillsCommand } from "#src/commands/skills";
 import { storeCommand } from "#src/commands/store";
-import { tasksCommand } from "#src/commands/tasks";
-import { webCommand } from "#src/commands/web";
-import { workerCommand } from "#src/commands/worker";
+import { tasksCommand } from "#src/commands/tasks/command";
+import { webCommand } from "#src/commands/web/command";
+import { workerCommand } from "#src/commands/worker/command";
+import { manageWorker } from "#src/commands/worker/service";
 import { providers } from "#src/providers";
-import { manageWorker } from "#src/worker";
 
 export const makeCLI = (
   registered: ReadonlyArray<ProviderRegistration>,
@@ -47,6 +48,7 @@ export const makeCLI = (
     Command.withSubcommands([
       chatCommand(context),
       configCommand(context),
+      doctorCommand(context),
       gatewayCommand(context),
       mcpCommand(context),
       memoryCommand(context),
@@ -85,7 +87,7 @@ export const run = (args: ReadonlyArray<string>, worker: typeof manageWorker = m
       args[0] === "gateway" ||
       (args[0] === "worker" &&
         (args[1] === "run" || args[1] === "status") &&
-        !args.some((arg) => ["--tasks-only", "--help", "-h"].includes(arg)))
+        !args.some((arg) => ["--help", "-h"].includes(arg)))
         ? yield* loadRegisteredChannels
         : channels;
 

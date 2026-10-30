@@ -10,7 +10,7 @@ import {
 import { AppConfig, makeAppConfigLive } from "@poppet/config";
 import { ApiKeyStoreLive } from "@poppet/credentials";
 import { GatewayRepositoryLive, TaskDeliveriesLive } from "@poppet/gateway";
-import { makeMCPLive } from "@poppet/mcp";
+import { MCPSignInsLive, makeMCPLive } from "@poppet/mcp";
 import { LocalMemoryLive } from "@poppet/memory";
 import {
   Provider,
@@ -26,9 +26,9 @@ import { ChatTasksLive, TaskRepositoryLive, WorkerConnections } from "@poppet/ta
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { BashLive } from "#src/bash";
+import { ExternalAgentToolsLive } from "#src/commands/mcp/tools";
+import { WebSearchLive } from "#src/commands/web/search";
 import { createConnectionStatus } from "#src/connection-status";
-import { ExternalAgentToolsLive } from "#src/mcp";
-import { WebSearchLive } from "#src/web-search";
 
 export const findProvider = (
   id: ProviderId,
@@ -132,9 +132,11 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   const webSearch = WebSearchLive.pipe(Layer.provide([config, chatSettings, searchCredentials]));
   const chatTasks = ChatTasksLive.pipe(Layer.provide([tasks, store, skills, chatSettings]));
 
+  const mcpSignIns = MCPSignInsLive.pipe(Layer.provide(environment), Layer.provide(config));
+
   const mcp = Layer.unwrap(
     ChatSettings.pipe(Effect.map(({ toolBytes }) => makeMCPLive(toolBytes))),
-  ).pipe(Layer.provide([config, chatSettings, searchCredentials]));
+  ).pipe(Layer.provide([config, chatSettings, searchCredentials, mcpSignIns]));
 
   const externalTools = ExternalAgentToolsLive.pipe(
     Layer.provideMerge(mcp),
@@ -169,6 +171,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     chat,
     connections,
     searchCredentials,
+    mcpSignIns,
     mcp,
     messagingStatus: GatewayRepositoryLive.pipe(
       Layer.provideMerge(store),

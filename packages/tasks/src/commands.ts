@@ -100,8 +100,7 @@ export const executeTaskCommand = (
         if (resolver === null)
           return yield* Effect.fail(
             new TaskError({
-              message:
-                "Start worker run without --tasks-only before selecting a messaging destination.",
+              message: "Start worker run before selecting a messaging destination.",
             }),
           );
 
@@ -135,6 +134,9 @@ export const executeTaskCommand = (
         return { action: "delete", taskId: task.id, name: task.name, deleted: true };
       }
 
+      case "cancel-task":
+      case "retry-task":
+        return yield* repo.controlOccurrence(command.action, command.id, now, command.occurrenceId);
       case "cancel":
         return yield* repo.cancel(command.id, now);
       case "retry":

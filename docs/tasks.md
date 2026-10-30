@@ -29,21 +29,16 @@ if its environment selects a different model later.
 
 For a quick test, schedule a review of recent conversations one minute from now:
 
-Bash / POSIX sh:
-
-```sh
-when=$(bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
-poppet tasks add summary --at "$when" "Summarize recent conversations"
-poppet worker run --tasks-only
-```
-
-fish:
-
 ```fish
-set when (bun -e 'console.log(new Date(Date.now() + 60_000).toISOString())')
-poppet tasks add summary --at $when "Summarize recent conversations"
-poppet worker run --tasks-only
+poppet tasks add summary --in 1m "Summarize recent conversations"
+poppet worker run
 ```
+
+`--in` accepts a positive whole number followed by `s`, `m`, `h`, or `d`.
+For example, `30s`, `10m`, `2h`, or `1d`. A day is exactly 24 elapsed hours.
+The CLI resolves the duration once and saves an absolute time. Use `--at` for
+an exact timestamp, or `--cron` with `--tz` for recurring work. These schedule
+forms cannot be combined.
 
 The worker prints timestamped lifecycle messages for starts, completed or failed
 runs, interruptions, cancellation, skipped intervals, and task/provider pauses and
@@ -54,11 +49,13 @@ An idle worker does not print polling messages.
 Leave the worker running. In another terminal using the same `POPPET_DATA_DIR`:
 
 ```sh
-poppet tasks list
+poppet tasks
 poppet tasks show <task-id>
 poppet tasks pause <task-id>
 poppet tasks resume <task-id>
 ```
+
+Running `poppet tasks` lists saved tasks. The explicit `tasks list` command is also supported.
 
 ## Edit and control the next execution
 
@@ -69,16 +66,20 @@ poppet tasks edit <task-id> --name "Morning review"
 poppet tasks edit <task-id> --prompt "Summarize open decisions from recent conversations."
 poppet tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
 poppet tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
-poppet tasks skip-next <task-id>
+poppet tasks skip <task-id>
 poppet tasks snooze <task-id> --until 2099-10-22T10:00:00+01:00
+poppet tasks snooze <task-id> --for 1h
 poppet tasks run <task-id>
 ```
+
+Snooze accepts either `--until` or `--for`. A relative snooze is measured from
+now, and must still be later than the selected execution's current ready time.
 
 Edits change only supplied name, prompt, or schedule fields. A cron replacement
 requires both expression and timezone; a one-off replacement requires a future
 offset-qualified timestamp. Empty patches, unknown fields, conflicting schedules,
 and timezone-only changes are rejected. Identical values are a no-op. Provider,
-model, workload, skill, and destination remain unchanged.
+model, skill, and destination remain unchanged.
 Paused tasks may be edited without resuming them. Cancel a running occurrence
 explicitly before using any of these controls on that task.
 
@@ -89,13 +90,13 @@ A schedule change cancels pending work, clears its snooze, and computes the next
 future slot. Editing a completed one-off's name/prompt does not rerun it; supply
 a different future schedule to rearm it.
 
-| Control     | Behavior                                                                                                                                                                                                                            |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skip-next` | Consume exactly the selected pending occurrence or next slot. A recurring task keeps its cadence; a one-off has no next execution.                                                                                                  |
-| `snooze`    | Delay that execution until a later future instant. `scheduledAt` keeps its original slot; `availableAt` is its effective ready time. The hold survives restart, and intervening cron slots do not build a backlog.                  |
-| `run`       | Queue through the normal scheduled runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
+| Control  | Behavior                                                                                                                                                                                                                            |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skip`   | Consume exactly the selected pending occurrence or next slot. A recurring task keeps its cadence; a one-off has no next execution.                                                                                                  |
+| `snooze` | Delay that execution until a later future instant. `scheduledAt` keeps its original slot; `availableAt` is its effective ready time. The hold survives restart, and intervening cron slots do not build a backlog.                  |
+| `run`    | Queue through the normal scheduled runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
 
-Skip-next, snooze, and run act on the task's next execution when the command
+Skip, snooze, and run act on the task's next execution when the command
 commits: its pending occurrence if one exists, otherwise its next scheduled time.
 A task with no upcoming execution needs a schedule edit first. Receipts include
 changed fields, affected occurrence IDs, next time, and snooze changes. Lost responses never trigger local
@@ -124,7 +125,7 @@ Resume task <task-id>.
 ```
 
 The `poppet_tasks.manage_tasks` tool uses the existing scheduler. New tasks retain
-the current session's provider, model, and workload, with a self-contained prompt
+the current session's provider and model, with a self-contained prompt
 and an optional explicitly selected skill snapshot. They start fresh occurrence
 sessions. The agent receives the current UTC time for relative dates and should
 ask when the intended time, timezone, prompt, or task is unclear. One-off times
@@ -173,16 +174,16 @@ Configure [Discord](gateways/discord.md) with a home channel and start
 `poppet worker run`. To deliver scheduled results there:
 
 ```sh
-poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --channel discord "Summarize recent conversations"
+poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --to discord "Summarize recent conversations"
 ```
 
-Add `--conversation <channel-or-thread-id>` before the prompt to select an
+Use `--to discord:<channel-or-thread-id>` before the prompt to select an
 explicit destination. A running messaging worker validates access before creating the task.
 Creation through the worker must finish within eight seconds, including queue
 waiting and destination validation. An expired lookup cannot save a task afterward.
 
-`worker run --tasks-only` executes tasks but does not deliver their results or
-validate new destinations. The combined worker does both. Tasks without a messaging destination keep their results local.
+The worker validates messaging destinations and delivers results through configured
+adapters. Tasks without a messaging destination keep their results local.
 
 Each occurrence saves its destination independently of later task or channel
 configuration. Changing the home channel affects newly created tasks only. The
@@ -204,7 +205,11 @@ Results are standalone posts. They do not change the destination's conversation
 history, session binding, or name. A stopped gateway resumes queued delivery when
 it starts again. Already queued replies remain queued if task history is cleared.
 
-`--channel` selects the gateway; omitting `--conversation` uses its home channel.
+`--to <gateway>` selects the gateway's home channel.
+`--to <gateway>:<conversation-id>` selects an explicit destination. Only the first
+colon is a separator; any remaining colons belong to the conversation ID.
+Omit `--to` to keep results local. This replaces the former `--channel` and
+`--conversation` flags.
 The selected adapter validates its conversation ID and access before the task is saved.
 Existing Discord task destinations keep their stored format. Tasks for removed adapters
 retain their history and results but cannot deliver until that adapter is available again.
@@ -233,7 +238,6 @@ times as UTC milliseconds. `show` includes final answers, run/session IDs, failu
 and skipped intervals. Each occurrence has a fresh session, current profile and
 facts, conversation search/recall, page reading, and web search when
 configured. Returned memory calls are rejected.
-Use `--coding` before the prompt only for coding work that the chosen provider accepts.
 
 Scheduled runs can use `poppet_history.read_session` after a conversation search
 to read saved context around a match, or page forward with stable message IDs.
@@ -289,10 +293,24 @@ Pausing cancels pending work and keeps previous results. An active run needs an
 explicit cancellation:
 
 ```sh
-poppet tasks cancel <occurrence-id>
-poppet tasks retry <occurrence-id>
+poppet tasks cancel <task-id>
+poppet tasks retry <task-id>
 poppet tasks providers
 poppet tasks resume-provider openai-chatgpt
+```
+
+These commands take a task ID. Older CLI versions took an occurrence ID directly.
+Restart an already-running worker after upgrading to use the task-based commands.
+
+Cancel selects the task's pending or running occurrence. If none exists, use
+`tasks skip` to skip its next scheduled execution. Retry selects the latest
+occurrence by scheduled time, then revision and insertion order. It fails if that
+occurrence succeeded or is still active; it never searches backward for a failure.
+Use `--occurrence <occurrence-id>` with either command to select a particular
+occurrence belonging to the task. For example:
+
+```fish
+poppet tasks retry <task-id> --occurrence <occurrence-id>
 ```
 
 Quota failures pause scheduled requests for that provider until `resume-provider`.
@@ -313,7 +331,7 @@ poppet tasks remove <task-id>
 This works with the worker running or stopped. It removes the selected task and
 its occurrence/skip history, including pending work, and retains conversations
 and runs. Other tasks are unaffected. If the task has a running occurrence,
-wait for it to finish or use `poppet tasks cancel <occurrence-id>` first.
+wait for it to finish or use `poppet tasks cancel <task-id>` first.
 An unknown task ID returns an error.
 
 ## Clear tasks
@@ -329,7 +347,7 @@ work before clearing and continues serving commands. Saved chat sessions and run
 facts, credentials, and provider quota pauses are retained. The command
 returns the number of tasks removed, and repeating it on an empty list is safe.
 
-See [worker modes](worker.md#foreground-modes) to run scheduling with messaging, and [task architecture](architecture.md#unattended-operation) for package ownership and execution contracts.
+See [worker documentation](worker.md#foreground-worker) to run scheduling with messaging, and [task architecture](architecture.md#unattended-operation) for package ownership and execution contracts.
 
 ## Occurrence session titles
 

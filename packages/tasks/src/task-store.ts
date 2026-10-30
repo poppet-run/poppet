@@ -185,7 +185,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
           prompt: valid.prompt,
           provider: valid.provider,
           model: valid.model,
-          workload: valid.workload,
           schedule: JSON.stringify(valid.schedule),
           nextAt:
             valid.schedule.type === "once"
@@ -344,6 +343,43 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       }),
     );
 
+  // Select and change the occurrence in one transaction, including ownership checks.
+  const controlOccurrence = (
+    action: "cancel-task" | "retry-task",
+    id: string,
+    now: number,
+    occurrenceId?: string,
+  ) =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        yield* task(id);
+
+        const item =
+          occurrenceId !== undefined
+            ? yield* occurrence(occurrenceId)
+            : action === "cancel-task"
+              ? ((yield* activeOccurrence(id, "running")) ??
+                (yield* activeOccurrence(id, "pending")))
+              : yield* sql`${occurrences} WHERE job_id = ${id}
+                  ORDER BY scheduled_at DESC, revision DESC, rowid DESC LIMIT 1`.pipe(
+                  decodeRow(Occurrence),
+                );
+
+        if (item === null)
+          return yield* new TaskError({
+            message:
+              action === "cancel-task"
+                ? "The task has no pending or running occurrence. Use tasks skip to skip its next scheduled execution."
+                : "The task has no occurrence to retry.",
+          });
+
+        if (item.jobId !== id)
+          return yield* new TaskError({ message: "The occurrence does not belong to this task." });
+
+        return yield* action === "cancel-task" ? cancel(item.id, now) : retry(item.id, now);
+      }),
+    );
+
   /** Atomically starts the oldest eligible occurrence, respecting task and provider pauses. */
   const claim = (now: number) =>
     sql.withTransaction(
@@ -483,9 +519,9 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
           Object.assign(item, {
             action:
               item.failureReason === "provider:authentication"
-                ? `Run provider login ${item.provider}, then tasks retry ${item.id}.`
+                ? `Run provider login ${item.provider}, then tasks retry ${item.jobId} --occurrence ${item.id}.`
                 : item.status === "interrupted"
-                  ? `Run tasks retry ${item.id} if this work should run again.`
+                  ? `Run tasks retry ${item.jobId} --occurrence ${item.id} if this work should run again.`
                   : item.status === "failed"
                     ? `Run tasks show ${item.jobId} to inspect the failure before retrying.`
                     : null,
@@ -523,6 +559,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
     clear: operation(clear),
     delete: operation(deleteTask),
     resume: operation(resume),
+    controlOccurrence: operation(controlOccurrence),
     cancel: operation(cancel),
     retry: operation(retry),
     claim: operation(claim),

@@ -27,7 +27,6 @@ export const verifyModel = (model: ModelOperations) =>
 
     const request: ModelRequest = {
       sessionId: randomUUID(),
-      workload: "coding",
       instructions: "Verify the local coding tool exactly once. Return its token verbatim.",
       messages: [
         {

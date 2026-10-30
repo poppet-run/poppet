@@ -37,12 +37,12 @@ The Bun monorepo uses private workspaces:
 | ----------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                 | Config, agent, browser, MCP, memory, skills, tasks, store, platform, provider layers |
 | `@poppet/browser`             | Isolated browser tools, settings, pinned daemon lifecycle, bounded native requests | I/O helpers, provider contract, Effect                                               |
-| `@poppet/mcp`                 | Scoped stdio/HTTP clients, bounded discovery, schema validation, result limits     | Credentials, provider contract                                                       |
+| `@poppet/mcp`                 | Scoped stdio/HTTP clients, OAuth sign-in, bounded discovery, schema validation     | Credentials, sign-in, provider contract                                              |
 | `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                    | Config, I/O helpers, memory, skills, store, web search, provider contract            |
 | `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation   | None                                                                                 |
 | `@poppet/web-search`          | Brave/Kagi search adapters, validation, and bounded source results                 | I/O helpers, Effect                                                                  |
 | `@poppet/config`              | Validated settings and the `AppConfig` service                                     | Provider contract, credential locks, browser and MCP configuration schemas           |
-| `@poppet/credentials`         | Protected API-key storage, locks, and environment overrides                        | Provider contract                                                                    |
+| `@poppet/credentials`         | Protected API-key and record storage, locks, and environment overrides             | Provider contract                                                                    |
 | `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle              | Config, credentials, provider contract                                               |
 | `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                   | Config and store for the local implementation                                        |
 | `@poppet/platform`            | Worker actions, errors, status, launch description, and bounded log reading        | I/O helpers                                                                          |
@@ -55,7 +55,8 @@ The Bun monorepo uses private workspaces:
 | `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export  | None                                                                                 |
 | `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                    | Provider contract, credentials, protocol adapters                                    |
 | `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                   | Provider contract, credentials, protocol adapters                                    |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference        | Credentials, provider contract, protocol adapters                                    |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference        | Credentials, sign-in, provider contract, protocol adapters                           |
+| `@poppet/sign-in`             | Browser authorization: loopback callback, pasted callbacks, deadline               | Effect                                                                               |
 
 The CLI lives in `apps/cli`; libraries live in `packages/`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
@@ -90,8 +91,8 @@ filesystem tests use temporary directories.
 Each capability's service module defines its contextual service and live layer.
 Its workflow modules contain the operations, while pure helpers stay separate.
 The auth layer captures login and refresh dependencies once and wraps those
-operations in one shared semaphore. The sign-in service scopes the callback
-listener; the OAuth service owns cached discovery. These helpers do not add
+operations in one shared semaphore. The sign-in service scopes the shared
+`@poppet/sign-in` callback listener; the OAuth service owns cached discovery. These helpers do not add
 services or layers of their own.
 
 Tests live beside their capability modules. The provider's `src/test/fixtures/` composes injected
@@ -281,7 +282,7 @@ appear in printable application settings.
 The CLI builds only the selected provider's live dependencies. Resolve the
 selection at run start and record it with the run. Keep it fixed through every
 tool round trip. Configuration changes affect new sessions. Resumed sessions
-retain their saved provider/model/workload because continuation data may not be portable.
+retain their saved provider/model because continuation data may not be portable.
 Do not silently fall back to another provider or model.
 
 ### Adapter requirements
@@ -297,16 +298,14 @@ OpenCode Go uses an API key and documents Responses, Chat Completions, and
 Anthropic Messages endpoints depending on the model. Its adapter selects the
 protocol per model and sends a Poppet user agent and a stable
 `x-opencode-session` conversation ID. Start with an explicit supported
-model/protocol set and expand it as each protocol passes validation. OpenCode Go
-specifies coding-agent traffic; the adapter rejects assistant workloads before
-reading credentials or sending inference requests.
+model/protocol set and expand it as each protocol passes validation. See the
+provider documentation for usage requirements.
 [OpenCode Go requirements](https://opencode.ai/v2/docs/console/go/)
 
 The first Go model set is `gpt-6-luna` using Responses and `glm-5.3` using
 Chat Completions. Only these models are listed from the remote public catalog;
 unrecognized models and Messages protocol models are rejected. The key is read
-from `POPPET_OPENCODE_GO_API_KEY` or protected API-key storage only when inference begins. Go requests require
-`workload: "coding"`; general assistant tasks fail before credentials are read.
+from `POPPET_OPENCODE_GO_API_KEY` or protected API-key storage only when inference begins.
 
 The reusable protocol adapters in `@poppet/provider/protocol` bind a model
 description and a supplied client Effect. Both providers reuse Responses parsing;
@@ -351,7 +350,7 @@ also refuses databases it did not create.
 `schema.ts` defines session, message, run, and terminal-outcome records with
 Effect Schema. `service.ts` validates caller input, checks continuation identity
 before saving messages, and decodes rows on read. Table checks enforce valid run
-and tool-call states, runs take their provider, model, and workload from their
+and tool-call states, runs take their provider and model from their
 session when read, and a partial unique index permits only one pending or
 running run per session. Services rely on these rules instead of repeating them.
 
@@ -569,8 +568,7 @@ Provider packages and channel transports remain unchanged.
 Only interactive runs advertise the tool. All model calls, including task
 preparation, pass whole-batch validation before any tool executes. Preparation
 checks action-specific fields, existing IDs, schedules, future one-off times,
-selected skill files, and delivery authorization. The current run supplies provider,
-model, and workload. Gateway code rechecks the accepted owner and resolves the
+selected skill files, and delivery authorization. The current run supplies the provider and model. Gateway code rechecks the accepted owner and resolves the
 current conversation, home channel, or an explicitly selected channel or thread ID
 through the same destination and access checks. Model arguments cannot select
 another gateway or supply account identities or permission flags. The host
@@ -735,7 +733,7 @@ The chat runner uses `ModelResolver` to resolve the saved provider/model for eac
 SQLite owns durable records. An Effect queue can wake a worker, but it does not
 replace persisted pending runs or task occurrences. A single owner executes runs
 and refreshes credentials. The neutral worker host uses the store lock and a
-protected Unix socket for commands while its selected services are active.
+protected Unix socket for commands while its services are active.
 
 Store normalized model messages, tool requests, tool results, versioned provider
 continuation data, and each run's provider/model selection. Trimming context must
@@ -818,16 +816,15 @@ validation in addition to injected lifecycle and clock tests.
 
 ## Worker host
 
-`apps/cli/src/worker-host.ts` owns one scoped runtime and protected listener.
-`worker run` starts scheduling and messaging together, and `worker run --tasks-only` starts only
-scheduling. Both use the same store,
+`apps/cli/src/commands/worker/host.ts` owns one scoped runtime and protected listener.
+`worker run` starts scheduling and configured messaging adapters together, sharing the store,
 agent, memory, provider resolver, and command functions. The store lock prevents
-starting another mode against that data directory. No separate processes or
+starting another worker against that data directory. No separate processes or
 cross-process model coordination are introduced.
 
 `makeTaskWorker` exposes scheduling and task commands without opening a socket.
-The host routes task commands to that service. Task-only mode never builds the
-messaging layer. Status includes the selected services and messaging status.
+The host routes task commands to that service and builds the messaging layer.
+Unconfigured adapters remain disabled. Status includes services and messaging status.
 Fatal service failures stop the host and its siblings before storage is released.
 
 `@poppet/worker` owns request protection, body limits, deadlines, disconnect and
@@ -842,9 +839,8 @@ The neutral host's protected socket accepts interactive requests.
 `WorkerRequests` lets the CLI supply `/v1/commands` without importing CLI command
 schemas or memory behavior into the task package. The host validates chat,
 memory, and store-status payloads and uses the same command functions as direct
-local execution. New chat payloads include the client's provider, model, and
-workload; continued chats resolve their saved session. Chat
-budgets come from the worker's existing layers.
+local execution. New chat payloads include the client's provider and model; continued chats
+resolve their saved session. Chat budgets come from the worker's existing layers.
 
 The listener owns the full request, including JSON body decoding, in a scoped
 fiber. Body reads have a 10-second deadline. The Unix-socket listener disables
@@ -904,11 +900,11 @@ message and conversation IDs, sender ID, text, and reply destination. Keep
 platform IDs as opaque strings. Adapters expose scoped incoming events and text
 delivery, typing, and message-status operations; add other capabilities only when implemented. Messaging is
 independent of inference providers, so a channel can use any configured provider
-that supports the session's workload. Call the typed agent interface directly
+that supports the selected model. Call the typed agent interface directly
 and consume completed runs rather than parsing CLI stdout or stderr.
 
 `ChannelRegistration` in `@poppet/gateway` defines identity, setup help, setup,
-and lazy loading. The CLI registry is `apps/cli/src/channel-registry.ts`; it is the
+and lazy loading. The CLI registry is `apps/cli/src/commands/gateway/registry.ts`; it is the
 only CLI module importing a concrete channel package. The generic host generates
 help, dispatches setup, and composes each configured channel with its own gateway
 instance. Gateways share the store, repository, and agent permit. A fresh gateway
@@ -959,7 +955,7 @@ for proactive messages. The flow is:
    explicitly starts a fresh session with `/new`. Follow-ups in an attached thread
    do not require a mention.
 4. Replies remain in the thread. A different thread starts a separate session;
-   an existing binding retains its saved provider, model, and workload.
+   an existing binding retains its saved provider and model.
 
 Persist a unique binding from adapter, bot account, guild, and thread IDs to the
 Poppet session ID. Keep the initiating message ID for thread-creation recovery.

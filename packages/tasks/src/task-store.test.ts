@@ -21,7 +21,6 @@ const recurring: NewTask = {
   prompt: "Summarize recent conversations",
   provider: "test-provider",
   model: "test-model",
-  workload: "assistant",
   schedule: { type: "cron", expression: "* * * * *", timezone: "UTC" },
 };
 
@@ -32,7 +31,7 @@ const morning: NewTask = {
   schedule: { type: "cron", expression: "0 9 * * *", timezone: "UTC" },
 };
 
-const fixture = async (catchUpMs = 0) => {
+const fixture = async (catchUpMs = 0, schema = taskSchema) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-tasks-"));
 
   const config = Layer.succeed(AppConfig, {
@@ -56,7 +55,7 @@ const fixture = async (catchUpMs = 0) => {
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const store = yield* Store;
-          yield* migrate(taskSchema);
+          yield* migrate(schema);
           yield* migrate(memorySchema);
 
           return yield* body(makeTaskStore(sql, catchUpMs), store, sql);
@@ -156,6 +155,116 @@ describe.concurrent("TaskRepository", () => {
           expect(
             (yield* repo.acceptWebhook("deploy", "overflow", "digest", once, start)).status,
           ).toBe("accepted");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each(["assistant", "coding"])(
+    "when upgrading a %s task, preserves and claims its queued occurrence",
+    async (workload) => {
+      const state = await fixture(0, {
+        ...taskSchema,
+        version: 1,
+        loader: taskSchema.loader.pipe(Effect.map((entries) => entries.filter(([id]) => id === 1))),
+      });
+
+      try {
+        await state.run((repo, _store, sql) =>
+          Effect.gen(function* () {
+            yield* sql`INSERT INTO jobs ${sql.insert({
+              id: "saved-job",
+              name: once.name,
+              prompt: once.prompt,
+              provider: once.provider,
+              model: once.model,
+              workload,
+              schedule: JSON.stringify(once.schedule),
+              next_at: start,
+              created_at: start,
+            })}`;
+            yield* sql`INSERT INTO job_occurrences ${sql.insert({
+              id: "saved-occurrence",
+              job_id: "saved-job",
+              revision: 0,
+              definition: JSON.stringify({ ...once, workload, skill: null }),
+              scheduled_at: start,
+              available_at: start,
+              status: "pending",
+            })}`;
+            yield* migrate(taskSchema).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+            yield* migrate(taskSchema).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+            expect(yield* repo.task("saved-job")).toMatchObject({
+              ...once,
+              id: "saved-job",
+              nextAt: start,
+              createdAt: start,
+            });
+            const claimed = (yield* repo.claim(start))!;
+            expect(claimed).toMatchObject({ jobId: "saved-job", definition: once });
+            expect(claimed.definition).not.toHaveProperty("workload");
+            expect(
+              yield* sql`SELECT name FROM pragma_table_info('jobs') WHERE name = 'workload'`,
+            ).toEqual([]);
+            expect(
+              yield* sql`SELECT id FROM job_occurrences WHERE json_type(definition, '$.workload') IS NOT NULL`,
+            ).toEqual([]);
+            expect(yield* repo.add(once, start)).toMatchObject(once);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when controlling occurrences by task, selects current work and never retries an older failure implicitly", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo) =>
+        Effect.gen(function* () {
+          const job = yield* repo.add(recurring, start);
+          expect(
+            (yield* Effect.flip(repo.controlOccurrence("cancel-task", job.id, start))).message,
+          ).toContain("no pending or running");
+          expect(
+            (yield* Effect.flip(repo.controlOccurrence("retry-task", job.id, start))).message,
+          ).toContain("no occurrence");
+          yield* repo.reconcile(start + 60_000);
+          const first = (yield* repo.occurrences(job.id))[0]!;
+          expect((yield* repo.controlOccurrence("cancel-task", job.id, start + 60_000)).id).toBe(
+            first.id,
+          );
+          expect((yield* repo.controlOccurrence("retry-task", job.id, start + 60_000)).status).toBe(
+            "pending",
+          );
+          yield* repo.claim(start + 60_000);
+          yield* repo.finish(first.id, "failed", "test", start + 60_000);
+          yield* repo.reconcile(start + 120_000);
+          const latest = (yield* repo.claim(start + 120_000))!;
+          yield* repo.finish(latest.id, "completed", null, start + 120_000);
+          expect(
+            (yield* Effect.flip(repo.controlOccurrence("retry-task", job.id, start + 120_000)))
+              .message,
+          ).toContain("Only unsuccessful");
+          const other = yield* repo.add(once, start);
+          expect(
+            (yield* Effect.flip(
+              repo.controlOccurrence("retry-task", other.id, start + 120_000, first.id),
+            )).message,
+          ).toContain("does not belong");
+          expect(
+            (yield* repo.controlOccurrence("retry-task", job.id, start + 120_000, first.id)).id,
+          ).toBe(first.id);
+          yield* repo.pause(job.id, start + 120_000);
+          expect(
+            (yield* Effect.flip(
+              repo.controlOccurrence("retry-task", job.id, start + 120_000, first.id),
+            )).message,
+          ).toContain("Resume the task");
         }),
       );
     } finally {
@@ -708,7 +817,7 @@ describe.concurrent("TaskRepository", () => {
                 jobId: job.id,
                 runId: run.id,
                 failureReason: "provider:authentication",
-                action: `Run provider login test-provider, then tasks retry ${active.id}.`,
+                action: `Run provider login test-provider, then tasks retry ${job.id} --occurrence ${active.id}.`,
               },
             ],
           });

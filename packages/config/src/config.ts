@@ -9,6 +9,7 @@ import {
 } from "#src/source";
 
 export {
+  ConfigIdentity,
   ConfigSource,
   ConfigSourceLive,
   dataDirectory,

@@ -147,8 +147,38 @@ export const manageWorker = (
         throw new WorkerError({ message: "Install the worker first with worker install." });
       }
 
-      if (!active) await command(["bootstrap", domain, paths.plist]);
+      if (action === "restart" && active) {
+        await command(["bootout", target]);
+        const deadline = performance.now() + 35_000;
+
+        // bootout returns before launchd finishes the service's SIGTERM cleanup.
+        // Bootstrapping while its registration still exists fails with exit 5.
+        // Poll sequentially because each result decides whether bootstrap is safe.
+        /* eslint-disable no-await-in-loop */
+        while (true) {
+          const removal = await launchctl(["print", target]);
+
+          if (removal === 113) break;
+
+          if (removal !== 0)
+            throw new WorkerError({
+              message: `launchctl print failed (exit ${removal}) while waiting for the worker to stop. Its installed configuration was retained.`,
+            });
+
+          if (performance.now() >= deadline)
+            throw new WorkerError({
+              message:
+                "Timed out waiting for launchd to remove the worker. Check worker status and worker logs before starting it again. Its installed configuration was retained.",
+            });
+          await Bun.sleep(100);
+        }
+        /* eslint-enable no-await-in-loop */
+      }
+
+      if (!active || action === "restart") await command(["bootstrap", domain, paths.plist]);
       else await command(["kickstart", target]);
+
+      if (action === "restart") return "Worker restarted. Check worker status for readiness.";
 
       return "Worker started. It will run at login while this user is logged in. Check worker status for readiness.";
     },

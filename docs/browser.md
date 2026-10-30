@@ -12,12 +12,17 @@ composes them with MCP tools through the agent's external-tool contract.
 
 ## Install and configure
 
-The integration pins agent-browser **0.39.4** and Chrome for Testing
-**156.0.8078.47**, on macOS and Linux. For example, install the CLI with Node 24 or
-later and npm:
+Poppet supports agent-browser **0.39.4 through 0.41.x** and Chrome for Testing
+**156.x**, on macOS and Linux. Patch updates within those release lines do not
+require a Poppet update. Tests use exact versions from
+[`test-versions.json`](../packages/browser/test-versions.json), currently
+agent-browser 0.41.0 and Chrome 156.0.8078.80.
+
+Homebrew installations work when they provide a supported version. For a
+reproducible npm installation, use Node 24 or later:
 
 ```sh
-npm install -g agent-browser@0.39.4
+npm install -g agent-browser@0.41.0
 agent-browser --version
 command -v agent-browser
 ```
@@ -27,17 +32,17 @@ JavaScript launchers, it selects the platform's native binary beside the launche
 so it can own that exact daemon process. The worker's `PATH` must include the
 installation, or you can set `command` to the native executable explicitly.
 
-Download and extract the pinned browser into
-`~/.agent-browser/browsers/chrome-156.0.8078.47/`:
+To install the browser used by our tests, download and extract it into
+`~/.agent-browser/browsers/chrome-156.0.8078.80/`:
 
 | Platform            | Download                                                                                                           |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Apple silicon macOS | [mac-arm64](https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/mac-arm64/chrome-mac-arm64.zip) |
-| Intel macOS         | [mac-x64](https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/mac-x64/chrome-mac-x64.zip)       |
-| Linux x64           | [linux64](https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/linux64/chrome-linux64.zip)       |
+| Apple silicon macOS | [mac-arm64](https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/mac-arm64/chrome-mac-arm64.zip) |
+| Intel macOS         | [mac-x64](https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/mac-x64/chrome-mac-x64.zip)       |
+| Linux x64           | [linux64](https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/linux64/chrome-linux64.zip)       |
 
 `agent-browser install` selects current stable Chrome, which may differ from this
-pin. Use the testing browser without your everyday Chrome profile. Add this
+supported release line. Poppet never uses your everyday Chrome profile. Add this
 section to your existing `<data directory>/config.json`:
 
 ```json
@@ -52,10 +57,13 @@ section to your existing `<data directory>/config.json`:
 Both executable settings are optional overrides. `command` selects a native
 agent-browser executable; file command paths containing `/` resolve beside
 `config.json`. `chromiumExecutable` must be absolute when provided. Otherwise,
-Poppet finds the pinned Chrome in the invoking user's agent-browser cache before
-isolating the run's `HOME`. Both the installer's flattened layout and the original
-archive's platform directory are supported. Discovery never selects a different
-version or uses your everyday Chrome. For restricted browsing, allow 1–32 exact
+Poppet searches the invoking user's agent-browser cache before isolating the
+run's `HOME`. It selects the newest usable Chrome 156 installation. Both the
+installer's flattened layout and the original archive's platform directory are
+supported. If only untested Chrome releases are installed, Poppet identifies the
+newest one so it can explain the version problem. It does not start that browser.
+
+For restricted browsing, allow 1–32 exact
 lowercase hostnames without schemes, ports, paths, or wildcards. Include required
 CDN hosts explicitly. An allowed hostname covers its ports.
 
@@ -71,9 +79,19 @@ to the model.
 
 Set `browser.enabled` to `false` in `config.json` to disable
 access. `poppet config` shows the invoking process's settings without
-launching a browser. Restart the worker after edits. Executables and versions are checked only on the first browser action. Missing
-executables or wrong versions fail that action with a sanitized diagnostic;
-unused browser support does not interfere with ordinary chat or MCP tools. Poppet never installs or upgrades software.
+launching a browser. Restart the worker after edits.
+
+`poppet doctor` finds the installed programs and reads their saved version details
+without running them. It distinguishes missing programs, versions older than the
+minimum, and newer releases that have not been validated. Custom installations
+may have no readable version details. Doctor reports that uncertainty without
+calling the programs incompatible.
+
+Before the first browser action, Poppet runs bounded version checks against the
+actual binaries. Unsupported or untested versions stop that action before a
+daemon starts. New agent-browser minor releases and Chrome major releases need
+validation before the supported range is widened. Ordinary chat and MCP tools
+remain available. Poppet never installs or upgrades software.
 
 ## Use and lifecycle
 
@@ -92,7 +110,7 @@ The first browser action creates a fresh private home, directory, namespace,
 daemon, and browser, reused for the rest of that run. Publishing tools and
 validating arguments create no files or processes.
 Cookies, tabs, login state, and references do not persist between messages.
-Fixed native commands use the pinned CLI daemon's private Unix socket. Native
+Fixed native commands use the CLI daemon's private Unix socket. Native
 MCP was checked, but its session/launch overrides and detached CLI lifecycle do
 not directly meet these ownership requirements. Existing MCP tools remain available.
 
@@ -133,8 +151,9 @@ general approval workflow are not supported.
 
 ## Validation
 
-Run `bun run check` for fixture and injected-model tests. With pinned executables,
-run the standalone local-site self-check:
+Run `bun run check` for fixture and injected-model tests. The Browser workflow
+also installs the exact test versions and runs the local-site check on Linux.
+To check your installed browser tools, run:
 
 ```sh
 bun packages/browser/src/test/browser-check.ts
@@ -143,6 +162,10 @@ bun packages/browser/src/test/browser-check.ts
 It checks JavaScript rendering, a form action, restricted and wildcard navigation,
 redirects and subresources, WebRTC blocking, isolated runs, and daemon cleanup.
 Local socket access is required; it does not call an inference provider.
+
+The local-site check passed on macOS on 2026-10-30 with the Homebrew
+agent-browser 0.41.0 installation and Chrome for Testing 156.0.8078.80. This check
+does not exercise a model or messaging.
 
 Live-model checks passed on 2026-10-27 with agent-browser 0.39.4 and Chrome for
 Testing 156.0.8078.47: CLI and authorized messaging extraction and a form action

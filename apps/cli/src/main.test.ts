@@ -115,25 +115,39 @@ describe("main.ts", () => {
     }
   }, 15000);
 
-  test.concurrent("when web login reads stdin, uses that key instead of an invalid environment key", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-web-stdin-"));
+  test.concurrent("when web login receives an API key, uses it instead of an invalid environment key", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-api-key-"));
 
     try {
-      const saved = await invokeProcess(
-        ["web", "login", "--key-stdin"],
-        {
-          POPPET_DATA_DIR: directory,
-          POPPET_BRAVE_SEARCH_API_KEY: "invalid search key",
-        },
-        "stdin-search-secret\n",
-      );
+      const saved = await invokeProcess(["web", "login", "--api-key", "argument-search-secret"], {
+        POPPET_DATA_DIR: directory,
+        POPPET_BRAVE_SEARCH_API_KEY: "invalid search key",
+      });
 
       expect(saved.exitCode).toBe(0);
-      expect(saved.stdout + saved.stderr).not.toContain("stdin-search-secret");
+      expect(saved.stdout + saved.stderr).not.toContain("argument-search-secret");
       expect(saved.stdout + saved.stderr).not.toContain("invalid search key");
       expect(JSON.parse(await Bun.file(join(directory, "auth/brave-search.json")).text()).key).toBe(
-        "stdin-search-secret",
+        "argument-search-secret",
       );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test.concurrent("web login ignores environment keys and requires explicit input", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-environment-"));
+
+    try {
+      const result = await invokeProcess(["web", "login"], {
+        POPPET_DATA_DIR: directory,
+        POPPET_BRAVE_SEARCH_API_KEY: "unused-environment-key",
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("--api-key <key>");
+      expect(result.stdout + result.stderr).not.toContain("unused-environment-key");
+      expect(await readdir(directory)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -156,19 +170,32 @@ describe("main.ts", () => {
   });
 
   // Two sequential CLI startups need headroom when CI runs process tests concurrently.
-  test.concurrent("when channel setup reads stdin, bounds and saves the token without printing it", async () => {
+  test.concurrent("when channel setup receives flags, validates and saves the token without printing it", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-channel-input-"));
-    const args = ["gateway", "discord", "setup", "200", "300", "400", "--key-stdin"];
+
+    const args = [
+      "gateway",
+      "discord",
+      "setup",
+      "--owner-id",
+      "200",
+      "--guild-id",
+      "300",
+      "--home-channel-id",
+      "400",
+      "--bot-token",
+    ];
+
     const environment = { POPPET_DATA_DIR: directory };
 
     try {
-      const result = await invokeProcess(args, environment, "x".repeat(8195));
+      const result = await invokeProcess([...args, "x".repeat(8193)], environment);
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain("exceeds 8192 characters");
+      expect(result.stderr).toContain("nonempty bot token without whitespace");
       expect(await readdir(directory)).toEqual([]);
       expect(result.stdout + result.stderr).not.toContain("x".repeat(64));
 
-      const saved = await invokeProcess(args, environment, "discord-test-secret\n");
+      const saved = await invokeProcess([...args, "discord-test-secret"], environment);
       expect(saved.exitCode).toBe(0);
       expect(saved.stdout + saved.stderr).not.toContain("discord-test-secret");
       expect(

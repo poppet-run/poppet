@@ -10,6 +10,7 @@ import { TestClock } from "effect/testing";
 
 import { type MCPStdioServer } from "#src/config";
 import { MCP, makeMCPLive } from "#src/service";
+import { NoSignInsLive } from "#src/test/sign-ins";
 
 const fixture = async (
   mode = "normal",
@@ -44,6 +45,7 @@ const fixture = async (
 
   const layer = makeMCPLive(1024).pipe(
     Layer.provide([
+      NoSignInsLive,
       Layer.succeed(ApiKeyStore, {
         read: () => Effect.succeed(Redacted.make("saved-mcp-secret")),
         write: () => Effect.die("Unexpected credential write"),
@@ -98,13 +100,10 @@ const expireRequest = async <A>(
 ) => {
   let expired = false;
 
-  // Atomics waits use real time even while Bun redirects timer functions to its fake clock.
-  const pause = new Int32Array(new SharedArrayBuffer(4));
-
   // Install the real deadline before Bun replaces timers and monotonic clocks.
   const deadline = setTimeout(() => {
     expired = true;
-  }, 5000);
+  }, 2000);
 
   jest.useFakeTimers();
 
@@ -115,7 +114,9 @@ const expireRequest = async <A>(
       settled = true;
     });
 
-    // File IO lets the real subprocess progress while only its timers advance.
+    const pause = new Int32Array(new SharedArrayBuffer(4));
+
+    // Give the real subprocess time to exit between advances of its shutdown timers.
     await Effect.runPromise(
       Effect.gen(function* () {
         for (;;) {
@@ -126,9 +127,6 @@ const expireRequest = async <A>(
 
           if (events.some((event) => event.method === method)) {
             jest.advanceTimersToNextTimer();
-
-            // Teardown polls a real child every 10 ms. Preserve that opportunity to exit
-            // instead of exhausting all 100 polls while the OS is still processing SIGKILL.
             yield* Effect.promise(async () => {
               await Atomics.waitAsync(pause, 0, 0, 10).value;
             });
@@ -154,6 +152,27 @@ const reaped = (pid: number) =>
   });
 
 describe("MCP", () => {
+  test("when inspection discovers blocked tools, agent snapshots still contain only permitted tools", async () => {
+    const state = await fixture("normal", ["read"], ["read"]);
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const mcp = yield* MCP;
+          const tools = yield* mcp.tools("fixture");
+          expect(tools.slice(0, 2)).toMatchObject([
+            { toolName: "read", allowed: true, scheduled: true },
+            { toolName: "write", allowed: false, scheduled: false, definition: null },
+          ]);
+          expect((yield* mcp.snapshot(false)).map((tool) => tool.toolName)).toEqual(["read"]);
+          expect((yield* mcp.snapshot(true)).map((tool) => tool.toolName)).toEqual(["read"]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when MCP is inspected, discovered, called, and closed, starts lazily, walks pages, validates arguments, and reaps the child", async () => {
     const state = await fixture();
     let pid = 0;
@@ -167,7 +186,10 @@ describe("MCP", () => {
           expect(yield* Effect.promise(() => readdir(state.directory))).toEqual([]);
           expect(yield* external.snapshot(true)).toEqual([]);
           const tools = yield* mcp.tools("fixture");
-          expect(tools.map((tool) => tool.toolName)).toEqual(["read", "write"]);
+          expect(tools.filter((tool) => tool.allowed).map((tool) => tool.toolName)).toEqual([
+            "read",
+            "write",
+          ]);
           const catalog = yield* external.snapshot(false);
           const read = catalog[0]!;
           expect(read.definition.parameters).toMatchObject({
@@ -191,6 +213,38 @@ describe("MCP", () => {
       const events = await state.events();
       expect(events.filter((event) => event.method === "tools/list")).toHaveLength(2);
       expect(events.filter((event) => event.method === "tools/call")).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when executor schemas are discovered, exposes tools and validates before dispatch", async () => {
+    const state = await fixture("executor");
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const mcp = yield* MCP;
+          const tools = yield* mcp.snapshot(false);
+          expect(tools).toHaveLength(2);
+          expect((yield* mcp.status)[0]!.state).toBe("connected");
+          const read = tools[0]!;
+          expect(
+            yield* read
+              .prepare(JSON.stringify({ input: JSON.stringify({ name: "read" }) }))
+              .pipe(Effect.flip),
+          ).toHaveProperty("reason", "tool-arguments");
+
+          const call = yield* read.prepare(
+            JSON.stringify({ input: JSON.stringify({ app: "my-app", name: "read" }) }),
+          );
+
+          expect(yield* call.execute).toContain('"app":"my-app"');
+        }),
+      );
+      expect((await state.events()).filter((event) => event.method === "tools/call")).toHaveLength(
+        1,
+      );
     } finally {
       await state.close();
     }
@@ -221,6 +275,9 @@ describe("MCP", () => {
               diagnostic: expect.stringContaining("MCP fixture:"),
             });
             expect([status.diagnostic]).toEqual(state.errors);
+
+            if (mode === "schema")
+              expect(state.errors[0]).toContain('Unsupported input schema for tool "read"');
 
             const pid = Number(
               yield* Effect.promise(() => readFile(join(state.directory, "pid"), "utf8")),
@@ -503,6 +560,7 @@ describe("MCP", () => {
 
     const layer = makeMCPLive(16384).pipe(
       Layer.provide([
+        NoSignInsLive,
         Layer.succeed(ApiKeyStore, {
           read: (name) => {
             expect(name).toBe("mcp-fixture");

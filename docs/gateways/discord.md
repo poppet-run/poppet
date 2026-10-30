@@ -18,43 +18,26 @@ channel access can read replies containing personal memory and conversation cont
 Run `poppet setup` to choose an assistant-capable provider and model, then configure
 Discord with token input masked by asterisks. Reruns can reuse the saved token while editing IDs.
 
-For separate gateway setup, save the bot token through stdin as shown below. The
-token is never accepted as an argument.
-
-Bash / POSIX sh:
+For separate gateway setup, pass the Discord settings as named flags. All four
+flags are required and can appear in any order. This command works in Bash,
+POSIX sh, and fish:
 
 ```sh
-(
-    saved_tty=$(stty -g) || exit 1
-    trap 'stty "$saved_tty"' 0
-    trap 'exit 1' 1 2 3 15
-    printf '%s' 'Discord bot token: '
-    stty -echo || exit 1
-    IFS= read -r discord_token || exit 1
-    stty "$saved_tty"
-    printf '\n'
-    printf '%s\n' "$discord_token" | poppet gateway discord setup <your-user-id> <server-id> <home-channel-id> --key-stdin
-)
+poppet gateway discord setup --owner-id <your-user-id> --guild-id <server-id> --home-channel-id <home-channel-id> --bot-token <bot-token>
 poppet worker run
 ```
 
-fish:
+Use `poppet setup` for masked token entry without putting the token in command
+arguments or shell history.
 
-```fish
-read --silent --prompt-str 'Discord bot token: ' discord_token
-printf '%s\n' $discord_token | poppet gateway discord setup <your-user-id> <server-id> <home-channel-id> --key-stdin
-set -e discord_token
-poppet worker run
-```
-
-Replace the angle-bracket placeholders with Discord IDs before running the
+Replace the angle-bracket placeholders with Discord IDs and the bot token before running the
 setup command. The home channel receives proactive messages and is the default
 destination for scheduled results. It does not restrict where you can use the bot. Ordinary
 settings are merged into the `discord` section of `config.json`. The token stays in `<POPPET_DATA_DIR>/channels/discord.json`, protected with `0600`
 file and `0700` directory permissions. Removing the `discord` section disables
 Discord. Model-provider credentials remain separate. Restart an existing worker
 after changing channel settings;
-on macOS, use `worker stop` followed by `worker start`. The installed worker reads
+on macOS or Linux with systemd, use `worker restart`. The installed worker reads
 the saved settings without placing the bot token in its service environment.
 
 ## Thread sessions
@@ -121,7 +104,7 @@ already have posted them. Use the session ID and `chat show <session>` to inspec
 the saved answer before manually reposting it. No reply is redirected to another
 channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#deliver-results-to-discord) default to the home
 channel with `--channel discord`. Add `--conversation <channel-or-thread-id>` to
-select another destination. Use the combined worker to execute and deliver
+select another destination. Use the worker to execute and deliver
 them. Scheduled results use the same queue and do not alter thread sessions.
 Discord is the only bundled adapter. Additional adapters can use the
 [external package contract](../development.md#adding-a-channel).
@@ -151,7 +134,7 @@ thread's request ran, two simultaneous requests shared one ChatGPT account,
 replies within one thread stayed in order, and cancelling one thread left
 another running.
 
-See [worker modes](../worker.md#foreground-modes) to run messaging with scheduling or install the combined login worker.
+See [worker documentation](../worker.md#foreground-worker) to run messaging with scheduling or install the login worker.
 
 ## Thread names
 

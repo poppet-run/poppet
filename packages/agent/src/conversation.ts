@@ -290,7 +290,6 @@ export const conversation = Effect.gen(function* () {
                 model,
                 {
                   sessionId: run.sessionId,
-                  workload: run.workload,
                   instructions,
                   messages,
                   tools: activeTools(),

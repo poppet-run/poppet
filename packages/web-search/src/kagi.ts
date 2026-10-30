@@ -51,6 +51,5 @@ export const makeKagiSearch = (
 export const kagiSearch = {
   name: "Kagi Search",
   credentialId: "kagi-search",
-  keyEnvironment: "POPPET_KAGI_SEARCH_API_KEY",
   make: makeKagiSearch,
 } as const;

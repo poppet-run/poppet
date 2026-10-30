@@ -2,6 +2,9 @@
 
 [Documentation index](README.md)
 
+Use [`poppet doctor`](doctor.md) to inspect setup and worker state without
+repairs or live provider/tool probes.
+
 ## Configuration file
 
 Keep ordinary settings in `~/.config/poppet/config.json`. The file and every
@@ -29,7 +32,7 @@ precedence where supported.
 `poppet config` validates and prints the invoking process's settings, config-file
 location, and whether `POPPET_DATA_DIR` is set. It does not open storage, load
 credentials, contact providers, or inspect a running worker. Restart the worker
-after editing settings: `poppet worker stop`, then `poppet worker start`.
+after editing settings: `poppet worker restart`.
 
 ## Settings
 
@@ -42,7 +45,7 @@ after editing settings: `poppet worker stop`, then `poppet worker start`.
 | `webSearch`                  | `false`                | Enable search when the selected search provider has credentials                       |
 | `webSearchProvider`          | `brave`                | `brave` or `kagi`                                                                     |
 | `browser`                    | `{ "enabled": false }` | [Browser access and allowed hosts](browser.md)                                        |
-| `mcpServers`                 | `[]`                   | [Local servers and tool permissions](mcp.md)                                          |
+| `mcpServers`                 | `[]`                   | [MCP servers, sign-in, and tool permissions](mcp.md)                                  |
 | `gatewayPackages`            | `[]`                   | Explicitly installed [external gateway packages](development.md#adding-a-channel)     |
 | `tasks.catchUpMinutes`       | `60`                   | Missed recurring-job window, from 0 to 1440 minutes                                   |
 | `chat.outputTokens`          | `2048`                 | Requested output limit, from 1 to 32768, capped by model metadata                     |
@@ -166,12 +169,12 @@ poppet web login
 poppet web status
 ```
 
-`web login --key-stdin` accepts a piped key. Credentials stay in
-`auth/brave-search.json` or `auth/kagi-search.json`. `POPPET_BRAVE_SEARCH_API_KEY`
-and `POPPET_KAGI_SEARCH_API_KEY` override their respective saved keys. Switching
-providers preserves both keys. Logout removes only the selected saved key, without
-revoking remote access or clearing an environment override. Restart the worker
-after changing settings or credentials.
+`web login --api-key <key>` saves a key supplied as an argument. Without the flag,
+login uses a hidden prompt. Credentials stay in `auth/brave-search.json` or
+`auth/kagi-search.json`. Web search uses only saved credentials; environment
+variables cannot supply or override search keys. Switching providers preserves
+both keys. Logout removes only the selected saved key without revoking remote
+access. Restart the worker after changing settings or credentials.
 
 Queries go to the selected provider and can contain private information chosen
 by the model. Keys are never sent to fetched pages. Search uses a 15-second

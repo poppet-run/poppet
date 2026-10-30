@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ChannelEnvironment, ChannelInput } from "@poppet/gateway";
+import { ChannelEnvironment } from "@poppet/gateway";
 import { Effect, Redacted } from "effect";
 
 import { discord } from "#src/registration";
@@ -25,11 +25,18 @@ describe.concurrent("settings.ts", () => {
 
       const message = await Effect.runPromise(
         discord
-          .setup(["setup", "200", "300", "400", "--key-stdin"])
-          .pipe(
-            Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
-            Effect.provideService(ChannelInput, { readSecret: Effect.succeed(settings.token) }),
-          ),
+          .setup([
+            "setup",
+            "--owner-id",
+            "200",
+            "--guild-id",
+            "300",
+            "--home-channel-id",
+            "400",
+            "--bot-token",
+            "discord-secret",
+          ])
+          .pipe(Effect.provideService(ChannelEnvironment, { dataDirectory: directory })),
       );
 
       expect(message).not.toContain(Redacted.value(settings.token));
@@ -42,6 +49,111 @@ describe.concurrent("settings.ts", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  test("setup accepts reordered flags and equals syntax", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-discord-flags-"));
+
+    try {
+      await Effect.runPromise(
+        discord
+          .setup([
+            "setup",
+            "--bot-token=discord-secret",
+            "--home-channel-id=400",
+            "--owner-id=200",
+            "--guild-id=300",
+          ])
+          .pipe(Effect.provideService(ChannelEnvironment, { dataDirectory: directory })),
+      );
+      expect(await Effect.runPromise(loadDiscordSettings(directory))).toEqual(settings);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    {
+      name: "missing flag",
+      args: [
+        "setup",
+        "--owner-id",
+        "200",
+        "--guild-id",
+        "300",
+        "--bot-token",
+        "replacement-secret",
+      ],
+    },
+    {
+      name: "missing value",
+      args: [
+        "setup",
+        "--owner-id",
+        "200",
+        "--guild-id",
+        "300",
+        "--home-channel-id",
+        "400",
+        "--bot-token",
+      ],
+    },
+    { name: "duplicate flag", extra: ["--owner-id", "500"] },
+    { name: "unknown flag", extra: ["--replacement-secret"] },
+    { name: "extra positional", extra: ["replacement-secret"] },
+    {
+      name: "invalid ID",
+      args: [
+        "setup",
+        "--owner-id",
+        "invalid",
+        "--guild-id",
+        "300",
+        "--home-channel-id",
+        "400",
+        "--bot-token",
+        "replacement-secret",
+      ],
+    },
+  ])(
+    "setup rejects $name without changing saved settings or exposing values",
+    async ({ args, extra }) => {
+      const directory = await mkdtemp(join(tmpdir(), "poppet-discord-arguments-"));
+
+      try {
+        await Effect.runPromise(saveDiscordSettings(directory, settings));
+        const paths = [join(directory, "config.json"), join(directory, "channels/discord.json")];
+        const before = await Promise.all(paths.map((path) => readFile(path, "utf8")));
+
+        const result = await Effect.runPromise(
+          discord
+            .setup(
+              args ?? [
+                "setup",
+                "--owner-id",
+                "200",
+                "--guild-id",
+                "300",
+                "--home-channel-id",
+                "400",
+                "--bot-token",
+                "replacement-secret",
+                ...extra!,
+              ],
+            )
+            .pipe(
+              Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
+              Effect.result,
+            ),
+        );
+
+        expect(result).toHaveProperty("failure.reason", "configuration");
+        expect(JSON.stringify(result)).not.toContain("replacement-secret");
+        expect(await Promise.all(paths.map((path) => readFile(path, "utf8")))).toEqual(before);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("saving preserves other settings and loading uses only the configured policy", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-discord-policy-"));
@@ -87,20 +199,29 @@ describe.concurrent("settings.ts", () => {
     }
   });
 
-  test.each(["", "x".repeat(8193)])(
+  test.each(["", "token with spaces", "x".repeat(8193)])(
     "when the Discord token is invalid in case %#, rejects setup before writing settings",
     async (token) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-discord-input-"));
 
       try {
         const result = await Effect.runPromise(
-          discord.setup(["setup", "200", "300", "400", "--key-stdin"]).pipe(
-            Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
-            Effect.provideService(ChannelInput, {
-              readSecret: Effect.succeed(Redacted.make(token)),
-            }),
-            Effect.result,
-          ),
+          discord
+            .setup([
+              "setup",
+              "--owner-id",
+              "200",
+              "--guild-id",
+              "300",
+              "--home-channel-id",
+              "400",
+              "--bot-token",
+              token,
+            ])
+            .pipe(
+              Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
+              Effect.result,
+            ),
         );
 
         expect(result).toHaveProperty("failure.reason", "configuration");

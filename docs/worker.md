@@ -2,27 +2,29 @@
 
 [Documentation index](README.md)
 
-## Foreground modes
+Use [`poppet doctor`](doctor.md) to inspect setup and worker state without
+repairs or live provider/tool probes.
 
-Choose one foreground mode for a data directory:
+## Foreground worker
+
+Run scheduling and configured messaging adapters in one foreground worker:
 
 ```sh
-poppet worker run               # Scheduling and messaging
-poppet worker run --tasks-only  # Scheduling only
+poppet worker run
 ```
 
-Both modes own enabled [MCP connections](mcp.md), started lazily on discovery
+The worker owns enabled [MCP connections](mcp.md), started lazily on discovery
 or an eligible agent run and closed on shutdown. CLI discovery uses these same
 connections. `mcp servers` inspects them without starting a process. Restart the
 worker after changing server configuration or to reconnect a failed server.
 
-Both modes own one SQLite connection and serve task, chat, memory, and store-status commands
+The worker owns one SQLite connection and serves task, chat, memory, and store-status commands
 through `store/tasks.sock`, protected by the `0700` store directory and `0600`
 socket. Commands use the worker when it is running and execute locally when it
 is stopped. Inspecting saved data needs no model or provider credentials.
-Task-only mode does not initialize messaging adapters. `worker status`
-reports the host's selected services, and its `worker.messaging` field reports
-whether messaging is running. Only one mode can own a data directory at a time.
+Unconfigured messaging adapters remain disabled. `worker status`
+reports the host's services, and its `worker.messaging` field reports
+whether messaging is running. Only one worker can own a data directory at a time.
 Interactive, scheduled, and messaging model requests share
 [`chat.maxConcurrentRequests`](configuration.md) slots, 3 by default. Requests to one
 session always run one at a time, so a CLI chat sent to a session that a Discord
@@ -49,7 +51,7 @@ closes those resources. Browser tools are omitted from scheduled tasks.
 ## Login startup
 
 On macOS and on Linux with systemd, stop any foreground worker, then install a
-user service to start the combined `worker run` host at login and keep it running
+user service to start the `worker run` host at login and keep it running
 while you are logged in. macOS uses a LaunchAgent in `~/Library/LaunchAgents`.
 Linux uses a systemd user unit in `$XDG_CONFIG_HOME/systemd/user`, or
 `~/.config/systemd/user` when `XDG_CONFIG_HOME` is unset or relative:
@@ -67,8 +69,8 @@ save them for the background worker.
 
 Installation starts it immediately. It records the absolute Bun executable, CLI
 entry point, current working directory, and `POPPET_DATA_DIR`. The worker reads
-`config.json` on startup. After editing settings, use `worker stop` followed by
-`worker start`. Keep the checkout and Bun executable in place; moving either
+`config.json` on startup. After editing settings, use `worker restart`.
+Keep the checkout and Bun executable in place; moving either
 requires uninstalling and installing again. Each data directory has its own
 service. Manage it with the same `POPPET_DATA_DIR`.
 
@@ -85,8 +87,7 @@ Saved data and credentials are retained.
 
 If an existing installation launches `tasks work`, use `worker uninstall` followed
 by `worker install` once to update it to `worker run`. Saved data and credentials
-are retained. Restarting that old installation alone keeps its saved command and
-now runs scheduling only.
+are retained. Restarting that old installation alone keeps its obsolete command.
 
 API keys are excluded from the service's environment. Save them first with
 `provider login openrouter` or `provider login opencode-go`; ChatGPT uses its existing
@@ -159,11 +160,12 @@ its output before closing the log. A worker that does not exit within 25 seconds
 is killed to stay within the service manager's 30-second stop deadline. A logging failure stops the
 worker rather than allowing it to run without captured diagnostics.
 
-## Stop, start, and uninstall
+## Stop, start, restart, and uninstall
 
 ```sh
 poppet worker stop
 poppet worker start
+poppet worker restart
 poppet worker uninstall
 ```
 
@@ -177,6 +179,13 @@ before an interruption returns; each launchctl or systemctl subprocess has a
 35-second timeout.
 Starting an already
 loaded worker does not interrupt an active request.
+Restarting interrupts active work and starts the installed service again, including
+when it was stopped. It retains the service configuration and saved data. Restart
+validates configuration before stopping the service and requires an installed worker.
+On macOS, restart waits up to 35 seconds for launchd to remove the old registration
+before loading the service again. If removal times out or inspection fails, it
+reports an error and retains the installed configuration.
+For a foreground worker, stop and rerun `worker run` instead.
 
 ## Interactive commands
 
@@ -199,7 +208,7 @@ poppet memory list
 poppet store status
 ```
 
-New chats use the invoking terminal's provider, model, and workload; continued
+New chats use the invoking terminal's provider and model; continued
 chats use their saved selection. The worker's startup budgets
 apply to remote requests, including conversation-search result limits. Search
 runs on the owning store connection and needs no provider request. Memory changes are loaded on the next run. Chat output
@@ -209,7 +218,7 @@ which leaves room for four 5 MiB attachments sent as base64, the chat context, a
 command metadata. Oversized requests report a size error without being retried.
 Only an absent socket or refused connection permits local fallback. A lost,
 incomplete, or incompatible response fails without replaying the command. Restart
-the worker with `worker stop` followed by `worker start` after updating code.
+the worker with `worker restart` after updating code.
 The current protocol uses `/v1/commands` and `/v1/tasks`; other routes are rejected.
 
 ## Sleep and missed schedules

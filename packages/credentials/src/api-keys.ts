@@ -21,6 +21,10 @@ import {
 } from "@poppet/provider";
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 
+import { readCredentialFile } from "#src/inspection";
+
+export { readCredentialFile } from "#src/inspection";
+
 import { acquireOwnerLock } from "#src/lock";
 
 /** A nonempty key without whitespace, redacted in diagnostic output. */
@@ -276,6 +280,24 @@ export const apiKeyProvider = (options: {
         apiKey: true,
         help: `API key from hidden input, --key-stdin, or ${options.environment}.`,
       },
+      inspectSaved: (directory) =>
+        Effect.gen(function* () {
+          const configured = yield* environmentApiKey(options.id, options.environment);
+
+          if (Option.isSome(configured))
+            return { connected: true, expiresAt: null, source: "local" as const };
+
+          const text = yield* Effect.tryPromise(() =>
+            readCredentialFile(directory, `${options.id}.json`),
+          );
+
+          if (text === null) return { connected: false, expiresAt: null, source: "saved" as const };
+          const saved = yield* Schema.decodeUnknownEffect(SavedKey)(text);
+
+          if (saved.provider !== options.id) return yield* Effect.fail(storageError(options.id));
+
+          return { connected: true, expiresAt: null, source: "saved" as const };
+        }).pipe(Effect.mapError(() => storageError(options.id))),
       layer,
     } satisfies ProviderRegistration,
   };

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { fitText } from "@poppet/io";
@@ -7,15 +7,15 @@ import { toolParameters, type Tool } from "@poppet/provider";
 import { Effect, Schema, Scope } from "effect";
 
 import {
-  agentBrowserVersion,
   browserFailure,
-  chromiumVersion,
+  browserSocketReady,
   launchBrowserProcess,
   runBrowserCommand,
   runBrowserRequest,
   startBrowserDaemon,
   type BrowserLauncher,
 } from "#src/browser-process";
+import { browserVersionCompatibility } from "#src/compatibility";
 import { type BrowserSettings } from "#src/config";
 import { BrowserError } from "#src/errors";
 import { browserExecutables } from "#src/executables";
@@ -226,14 +226,17 @@ export const browserTools = (
           5000,
         );
 
-        if (
-          version.trim() !== `agent-browser ${agentBrowserVersion}` ||
-          chromeVersion.trim() !== `Google Chrome for Testing ${chromiumVersion}`
-        )
+        const compatibility = browserVersionCompatibility(version, chromeVersion);
+
+        const rejected = [compatibility.agentBrowser, compatibility.chromium].find(
+          (entry) => entry.status !== "supported",
+        );
+
+        if (rejected !== undefined)
           return yield* Effect.fail(
             browserFailure(
               "tool-network",
-              `Browser requires agent-browser ${agentBrowserVersion} and Chrome for Testing ${chromiumVersion}. See docs/browser.md.`,
+              `${rejected.message} No browser was started. See docs/browser.md.`,
             ),
           );
 
@@ -257,11 +260,10 @@ export const browserTools = (
                 () => "",
               );
 
-              // eslint-disable-next-line no-await-in-loop
-              const ready = await access(join(socketDirectory, "browser.sock")).then(
-                () => true,
-                () => false,
-              );
+              const ready =
+                pid.trim() === String(daemon.pid) &&
+                // eslint-disable-next-line no-await-in-loop
+                (await browserSocketReady(join(socketDirectory, "browser.sock"), signal));
 
               if (pid.trim() === String(daemon.pid) && ready) return;
               // eslint-disable-next-line no-await-in-loop

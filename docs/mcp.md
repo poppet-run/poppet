@@ -54,6 +54,39 @@ a background worker.
 
 ### HTTP servers
 
+Add a remote server from the CLI:
+
+```sh
+poppet mcp add remote https://mcp.example.com/mcp --auth api-key
+poppet mcp tools remote
+poppet mcp allow remote lookup_record
+```
+
+`add` saves an enabled server with no tools allowed and does not connect to it.
+`--auth` is required: `none` sends no credentials, `api-key` reads a key
+from a hidden prompt or `--api-key <key>`, saves it as the protected credential
+`mcp-<id>`, and sends it as `Authorization: Bearer <key>`. `oauth` configures
+OAuth for a separate `mcp login` step.
+
+`mcp tools <id>` discovers tools and shows their `allowed` and `scheduled`
+permissions. `mcp allow <id> <tools...>` adds discovered names to the interactive
+allowlist. `mcp allow <id> --all` saves all names discovered now; tools the
+server adds later remain blocked. It cannot be combined with explicit names
+or `--scheduled`. Use `mcp allow <id> <tools...> --scheduled` for explicitly
+reviewed read-only tools; this grants both interactive and scheduled access.
+Unknown tools and failed discovery leave permissions unchanged.
+
+`mcp deny <id> <tools...>` removes both permissions without connecting to the
+server. Add `--scheduled` to remove only scheduled access. These commands work
+with both HTTP and configured stdio servers. Restart the worker after adding,
+removing, or changing permissions. Until then inspection through that worker
+reflects its existing configuration.
+
+Custom API-key header names and prefixes belong in `headers` in `config.json`.
+For example, use `"X-API-Key": { "credential": "mcp-remote" }` instead of the
+Authorization entry for an unprefixed key. `poppet mcp remove <id>` deletes
+the entry, its `mcp-<id>` credential, and any saved sign-in.
+
 An entry with `url` instead of `command` connects over Streamable HTTP:
 
 ```json
@@ -85,6 +118,55 @@ transport and cannot be configured. A missing reference makes that server
 unavailable. Resolved header values are redacted from results and rejected in
 tool definitions, like selected environment values.
 
+### OAuth sign-in
+
+```sh
+poppet mcp add notes https://mcp.example.com/mcp --auth oauth
+poppet mcp login notes
+poppet mcp tools notes
+poppet mcp allow notes search
+```
+
+`add` saves `"oauth": {}` in the entry. `login` starts sign-in and discovers the
+server's authorization server from its protected resource metadata, registers
+itself as a public client when the authorization server offers dynamic
+registration, and opens the browser with PKCE and a resource indicator. The
+callback, `--no-browser`, pasted callback addresses, and SSH forwarding work as
+for [ChatGPT sign-in](providers/openai-chatgpt.md). `login --no-browser` prints
+the sign-in link. Run `poppet mcp login <id>` to sign in again and
+`poppet mcp logout <id>` to delete tokens while keeping the registration;
+logging out does not revoke the grant at the authorization server.
+
+`oauth` accepts optional `clientId`, `clientSecret` (a `{ "credential": "name" }`
+reference, never a literal), `scopes`, and `callbackPort` (1024–65535) in
+`config.json`. `mcp login <id> --callback-port <port>` overrides the port for
+that sign-in without changing configuration. Use a pre-registered
+client when the authorization server has no dynamic registration; register a
+fixed loopback redirect such as `http://127.0.0.1:1455/auth/callback` and set
+the same `callbackPort`. Without `scopes`, Poppet requests what the server's
+metadata advertises. An OAuth entry cannot also configure an `Authorization`
+header; other headers are sent only to the MCP endpoint. Client metadata
+documents and unattended grants are unsupported.
+
+Tokens live in `<data directory>/auth/mcp-oauth-<id>.json`, protected like API
+keys and bound to the configured URL: changing the URL requires a new sign-in.
+Discovery, registration, and token requests use HTTPS (plain HTTP only to
+loopback) and the same size cap as MCP messages. Access tokens are redacted
+from results and rejected in tool definitions.
+
+A run never opens a browser. When the server rejects an access token, Poppet
+refreshes it under the record's lock; a worker and a CLI process never both
+spend one refresh token, and the second adopts the first's result. A rejected
+or missing refresh token, a missing sign-in, or a changed URL puts the server in
+`needs-login`: its tools are unavailable, other servers keep working, and no
+backoff applies. The next request after `mcp login` reconnects, including in a
+running worker. A server asking for more scope fails that call with a
+diagnostic naming the scope; add it to `scopes` and sign in again.
+`mcp servers` reports `signIn` with `signedIn`, `expiresAt`, and granted
+`scopes`, never token values. Active connections check saved sign-in before
+sending requests, so logout blocks further calls without restarting the worker.
+Calls already sent before logout may still complete.
+
 Set `mcpServers` to `[]` in `config.json` to disable every server. Worker settings
 change after restart, including allowlist changes.
 
@@ -114,8 +196,9 @@ poppet chat new "Use reference to look up record 123"
 
 `servers` shows configured permissions, transport, connection state,
 PID (stdio only), the HTTP endpoint's origin, available tools, and diagnostics. They never launch servers or require a model.
-`tools <server>` explicitly starts discovery when needed and prints only allowed
-tools, their model definitions, and scheduled permissions. Both commands use
+`tools <server>` explicitly starts discovery when needed and prints every discovered
+tool with `allowed` and `scheduled` permission flags. Allowed tools include their
+model definitions; blocked tools have `definition: null`. Both commands use
 the owning worker when available. Without a worker, discovery uses a local scope
 and closes the server before returning. There is no arbitrary tool-execution
 socket command.
@@ -160,10 +243,9 @@ child credentials, without automatically attaching history or global memory.
 
 The official TypeScript client SDK is pinned at 2.3.1 and exercised under Bun 1.4.4.
 Connections use the SDK's legacy initialization handshake for the 2025 protocol.
-Poppet supports tool discovery and invocation only. OAuth, the legacy HTTP+SSE
+Poppet supports tool discovery and invocation only. The legacy HTTP+SSE
 transport, resources, prompts, sampling, elicitation, MCP tasks, and media
-forwarding are outside this implementation. HTTP servers needing OAuth can be
-reached through a stdio bridge that owns the sign-in. Resource links and media are marked omitted and never fetched.
+forwarding are outside this implementation. Resource links and media are marked omitted and never fetched.
 
 - At most 8 configured servers, 8 discovery pages per server, 128 discovered tools,
   and 256 KiB of discovery JSON per server.
@@ -177,8 +259,12 @@ reached through a stdio bridge that owns the sign-in. Resource links and media a
 - Allowed descriptions are at most 4096 characters; input/output schemas are at
   most 16 KiB, depth 16, and 512 nodes. Draft-07 and 2020-12 schemas are validated
   with AJV. Valid required-only union branches retain their runtime assertions.
-  Regular expressions, references, and unsupported formats or keywords
-  fail discovery with a diagnostic. Vendor `x-` keywords, such as FastMCP's
+  Patterns use the non-backtracking RE2 engine; lookarounds and backreferences
+  are unsupported, and some Unicode matching differs from JavaScript regexes.
+  References, `patternProperties`, and unsupported formats or keywords fail
+  discovery with a diagnostic naming the tool and input/output schema. Without
+  `$schema`, modern keywords such as `dependentRequired` select 2020-12;
+  otherwise draft-07 is used. Explicit dialect declarations take precedence. Vendor `x-` keywords, such as FastMCP's
   `x-fastmcp-wrap-result`, are ignored; `x-` property names are still validated.
   Required MCP task execution is unsupported.
 - Models receive a strict object containing one required `input` string. That
@@ -213,3 +299,10 @@ exited. These stdio checks passed on 2026-10-27.
 With one trusted remote server that accepts a bearer token, configure the
 token as a protected credential header, inspect its catalog from the worker, and
 complete a CLI tool round trip. This remote check passed on 2026-10-27.
+
+With one real OAuth server that supports dynamic registration, add it with
+`--auth oauth`, run `mcp login <id> --no-browser`, and sign in over SSH with a pasted callback, complete a CLI and
+a worker tool round trip, wait for or force token expiry and confirm the next
+call refreshes, then log out and confirm `mcp servers` shows `needs-login`.
+Fixture tests do not establish that a real authorization server interoperates;
+this check has not been run.

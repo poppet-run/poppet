@@ -59,5 +59,14 @@ export interface ProviderRegistration {
     readonly apiKey: boolean;
     readonly help: string;
   };
+  /** Read local metadata only: no writes, locks, token refresh, or network access. */
+  readonly inspectSaved?: (directory: string) => Effect.Effect<
+    {
+      readonly connected: boolean;
+      readonly expiresAt: number | null;
+      readonly source: "local" | "saved";
+    },
+    ProviderError
+  >;
   readonly layer: Layer.Layer<Provider | ProviderConnection, ProviderError, ProviderEnvironment>;
 }
