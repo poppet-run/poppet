@@ -1,3 +1,5 @@
+import { styleText } from "node:util";
+
 import { Match, Schema } from "effect";
 
 export interface DoctorCheck {
@@ -41,20 +43,37 @@ export const doctorReport = (checks: ReadonlyArray<DoctorCheck>, directory: stri
   checks,
 });
 
-export const renderDoctor = (report: ReturnType<typeof doctorReport>) =>
-  [
-    `Doctor: ${Match.value(report.exitCode).pipe(
+export const renderDoctor = (
+  report: ReturnType<typeof doctorReport>,
+  color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR,
+) => {
+  const style = (format: "green" | "yellow" | "red" | "gray" | "bold", text: string) =>
+    color ? styleText(format, text, { validateStream: false }) : text;
+
+  return [
+    `${style("bold", "Doctor:")} ${Match.value(report.exitCode).pipe(
       Match.when(0, () => "no actionable problems found"),
       Match.when(1, () => "attention needed"),
       Match.orElse(() => "inspection incomplete"),
     )}.`,
     `Data directory: ${JSON.stringify(report.dataDirectory)}`,
-    ...report.checks.map(
-      (check) =>
-        `[${check.status}] ${check.id}: ${check.message} (${check.source})${check.nextStep === null ? "" : `\n  Next: ${check.nextStep}`}`,
+    ...report.checks.map((check) => {
+      const status = Match.value(check.status).pipe(
+        Match.when("ok", () => style("green", "[ok]")),
+        Match.when("warning", () => style("yellow", "[warning]")),
+        Match.when("error", () => style("red", "[error]")),
+        Match.when("skipped", () => style("gray", "[skipped]")),
+        Match.exhaustive,
+      );
+
+      return `${status} ${style("bold", check.id)}: ${check.message} ${style("gray", `(${check.source})`)}${check.nextStep === null ? "" : `\n  ${style("bold", "Next:")} ${check.nextStep}`}`;
+    }),
+    style(
+      "gray",
+      "Local inspection only; live provider, MCP, browser and messaging access were not verified.",
     ),
-    "Local inspection only; live provider, MCP, browser and messaging access were not verified.",
   ].join("\n");
+};
 
 const Count = Schema.Natural;
 const Time = Schema.NullOr(Schema.Natural.check(Schema.isLessThanOrEqualTo(8640000000000000)));

@@ -6,6 +6,10 @@ Run `poppet doctor` to inspect local setup and get suggested next steps. Use
 `poppet doctor --json` for scripts. Both forms perform the same checks and return
 the same exit code.
 
+Human output uses green for successful checks, yellow for warnings, red for errors,
+and gray for skipped checks and observation sources. Redirected output and
+`NO_COLOR=1` use plain text. JSON output contains no styling.
+
 Doctor reads the selected `POPPET_DATA_DIR`, or the default data directory. It
 never creates a missing installation. Configuration errors do not prevent
 independent filesystem and worker checks.
