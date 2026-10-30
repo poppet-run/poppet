@@ -7,16 +7,15 @@ import { toolParameters, type Tool } from "@poppet/provider";
 import { Effect, Schema, Scope } from "effect";
 
 import {
-  agentBrowserVersion,
   browserFailure,
   browserSocketReady,
-  chromiumVersion,
   launchBrowserProcess,
   runBrowserCommand,
   runBrowserRequest,
   startBrowserDaemon,
   type BrowserLauncher,
 } from "#src/browser-process";
+import { browserVersionCompatibility } from "#src/compatibility";
 import { type BrowserSettings } from "#src/config";
 import { BrowserError } from "#src/errors";
 import { browserExecutables } from "#src/executables";
@@ -227,14 +226,17 @@ export const browserTools = (
           5000,
         );
 
-        if (
-          version.trim() !== `agent-browser ${agentBrowserVersion}` ||
-          chromeVersion.trim() !== `Google Chrome for Testing ${chromiumVersion}`
-        )
+        const compatibility = browserVersionCompatibility(version, chromeVersion);
+
+        const rejected = [compatibility.agentBrowser, compatibility.chromium].find(
+          (entry) => entry.status !== "supported",
+        );
+
+        if (rejected !== undefined)
           return yield* Effect.fail(
             browserFailure(
               "tool-network",
-              `Browser requires agent-browser ${agentBrowserVersion} and Chrome for Testing ${chromiumVersion}. See docs/browser.md.`,
+              `${rejected.message} No browser was started. See docs/browser.md.`,
             ),
           );
 

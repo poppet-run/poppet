@@ -5,10 +5,6 @@ import { Effect, type Schema } from "effect";
 
 import { BrowserError } from "#src/errors";
 
-export const agentBrowserVersion = "0.39.4";
-
-export const chromiumVersion = "156.0.8078.47";
-
 const maxProcessBytes = 262144;
 
 export const browserFailure = (reason: BrowserError["reason"], message: string) =>
@@ -62,7 +58,7 @@ export const runBrowserCommand = (
         : browserFailure("tool-uncertain", "Browser command failed; effects may be unknown."),
   });
 
-/** Own the pinned native daemon directly, rather than letting short-lived CLI commands detach it. */
+/** Own the native daemon directly, rather than letting short-lived CLI commands detach it. */
 export const startBrowserDaemon = (
   executable: string,
   directory: string,
@@ -94,7 +90,7 @@ export const startBrowserDaemon = (
     alive: () => !failed && !exited,
     stop: () => {
       closing ??= (async () => {
-        // SIGTERM runs the pinned daemon's browser-tree cleanup, including during a pending action.
+        // SIGTERM runs the daemon's browser-tree cleanup, including during a pending action.
         child.kill("SIGTERM");
         let timer: ReturnType<typeof setTimeout> | undefined;
 

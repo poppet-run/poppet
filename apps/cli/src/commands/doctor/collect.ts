@@ -3,7 +3,13 @@ import { access, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import { ChatSettings, ChatSettingsLive } from "@poppet/agent";
-import { browserExecutables } from "@poppet/browser";
+import {
+  browserExecutables,
+  browserInstallationVersions,
+  agentBrowserCompatibility,
+  chromiumCompatibility,
+  BrowserError,
+} from "@poppet/browser";
 import {
   AppConfig,
   browserSettings,
@@ -340,13 +346,25 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
           Effect.tryPromise(async () => {
             if (!browser.enabled)
               return finding("browser", "skipped", "local", "Browser access is disabled.");
-            const paths = await browserExecutables(browser).catch(() => null);
+
+            // Discovery errors from this helper contain only fixed installation guidance.
+            // OS errors stay opaque because they can contain configured paths.
+            const paths = await browserExecutables(browser).catch((cause: unknown) =>
+              cause instanceof BrowserError ? cause : null,
+            );
 
             if (paths === null)
               return unavailable(
                 "browser",
                 "Install the browser programs or set browser.command and browser.chromiumExecutable in config.json. See docs/browser.md.",
                 "Doctor could not locate agent-browser or its Chrome for Testing installation.",
+              );
+
+            if (paths instanceof BrowserError)
+              return unavailable(
+                "browser",
+                "Check the browser installation described in docs/browser.md.",
+                paths.message,
               );
 
             const programs = [
@@ -382,11 +400,45 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
                 `${missing.name} is missing, is not a regular file, or cannot be run by your user.`,
               );
 
+            const versions = await browserInstallationVersions(paths);
+
+            const compatibility = [
+              versions.agentBrowser === null
+                ? null
+                : agentBrowserCompatibility(versions.agentBrowser),
+              versions.chromium === null ? null : chromiumCompatibility(versions.chromium),
+            ];
+
+            const unsupported = compatibility.some((entry) => entry?.status === "unsupported");
+
+            const uncertain = compatibility.some(
+              (entry) => entry === null || entry.status === "untested",
+            );
+
+            const status = unsupported ? "error" : uncertain ? "warning" : "ok";
+
             return finding(
               "browser",
-              "ok",
-              "local",
-              "The browser files exist, and your user has permission to run them. Doctor has not started them or checked their versions.",
+              status,
+              "saved",
+              [
+                "Browser programs were found. Saved installation details show:",
+                versions.agentBrowser === null
+                  ? "agent-browser version is unknown."
+                  : `agent-browser ${versions.agentBrowser}.`,
+                versions.chromium === null
+                  ? "Chrome for Testing version is unknown."
+                  : `Chrome for Testing ${versions.chromium}.`,
+                ...compatibility.flatMap((entry) =>
+                  entry !== null && entry.status !== "supported" ? [entry.message] : [],
+                ),
+                "Doctor has not run either program. Poppet checks their versions before the first browser action.",
+              ].join(" "),
+              unsupported
+                ? "Install a supported agent-browser version. See docs/browser.md."
+                : uncertain
+                  ? "See docs/browser.md for supported versions. If a version is unknown, Poppet will check it when you use the browser."
+                  : null,
             );
           }),
         ),
