@@ -2,7 +2,7 @@ import { describe, expect, jest, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
-import { Effect } from "effect";
+import { Console, Effect } from "effect";
 
 import { ChatTerminal } from "#src/commands/chat/terminal";
 
@@ -88,6 +88,37 @@ describe("ChatTerminal", () => {
     },
   );
 
+  test("service diagnostics enter the conversation without writing over the input cursor", () => {
+    const { terminal, frame, screen } = fixture(true);
+    const directWrites: unknown[][] = [];
+
+    const base = {
+      ...console,
+      error: (...values: unknown[]) => {
+        directWrites.push(values);
+      },
+    };
+
+    try {
+      Effect.runSync(terminal.begin("Hello"));
+      terminal.input("my next draft");
+      screen();
+      const before = frame();
+      Effect.runSync(
+        Console.error(
+          "Optional session naming failed; the saved answer and fallback title are unchanged.",
+        ).pipe(Effect.provideService(Console.Console, terminal.console(base))),
+      );
+      expect(directWrites).toEqual([]);
+      expect(frame()).toBe(before);
+      expect(screen()).toContain("Optional session naming failed");
+      expect(screen()).toContain("my next draft");
+      expect(frame()).not.toContain("\u001b[31m");
+    } finally {
+      terminal.close();
+    }
+  });
+
   test("streams answers while retaining an edited draft and blocks concurrent submission", async () => {
     const { terminal, screen } = fixture();
 
@@ -172,6 +203,35 @@ describe("ChatTerminal", () => {
       Effect.runSync(terminal.answer("New answer"));
       expect(screen()).toContain("Earlier message 29");
       expect(screen()).toContain("New answer");
+    } finally {
+      terminal.close();
+    }
+  });
+
+  test("renders saved and streamed assistant Markdown while keeping user input literal", () => {
+    const { terminal, output, screen } = fixture(true);
+    output.rows = 30;
+
+    try {
+      Effect.runSync(
+        terminal.showHistory([
+          { role: "user", text: "Keep **my input** literal" },
+          { role: "assistant", text: "## Saved answer\n\nUse **this command**." },
+        ]),
+      );
+      expect(screen()).toContain("**my input**");
+      expect(screen()).toContain("Saved answer");
+      expect(screen()).not.toContain("## Saved answer");
+      expect(screen()).not.toContain("**this command**");
+      Effect.runSync(terminal.begin("Continue"));
+      terminal.input("**draft**");
+      Effect.runSync(terminal.answer("```js\nconst value = 1;"));
+      expect(screen()).toContain("const value = 1;");
+      expect(screen()).not.toContain("```js");
+      Effect.runSync(terminal.answer("\n```\n\n**Done.**"));
+      expect(screen()).toContain("Done.");
+      expect(screen()).not.toContain("**Done.**");
+      expect(screen()).toContain("**draft**");
     } finally {
       terminal.close();
     }

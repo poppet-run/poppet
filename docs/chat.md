@@ -59,9 +59,17 @@ poppet chat interactive $session_id
 ```
 
 The conversation appears above a bordered input box at the bottom of the terminal.
-Messages have `You` and `Poppet` labels, with blank lines between them. Instructions,
+Messages have bold yellow `You` and bold cyan `Poppet` labels, with blank lines
+between them. Instructions,
 attachments, and session details use neutral colours; errors use red. `NO_COLOR`
 disables colour styling.
+
+Poppet's answers render Markdown headings, emphasis, inline code, lists,
+blockquotes, links, tables, and fenced code blocks. Recognized code languages use
+syntax highlighting when terminal colour is enabled. Saved answers use the same
+formatting when you resume a session. User messages and the composer remain plain
+text, and the original Markdown stays in storage. Rendering updates as text arrives
+and reflows on resize. Links show their destination and images appear as text.
 
 Press Enter to send and Shift+Enter to insert a newline. Shift+Enter requires a
 terminal that reports modified keys separately; the chat enables the enhanced

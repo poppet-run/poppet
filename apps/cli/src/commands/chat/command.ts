@@ -169,7 +169,9 @@ export const chatCommand = (context: CLIContext) => {
                 (sessionId) => loadHistory(sessionId, terminal),
               );
 
-              yield* Effect.raceFirst(chat, stopped);
+              yield* Effect.raceFirst(chat, stopped).pipe(
+                Effect.provideService(Console.Console, terminal.console(yield* Console.Console)),
+              );
             }),
           ),
       ).pipe(Command.withDescription("Open a terminal prompt for a new or saved session")),
