@@ -11,6 +11,7 @@ import {
   sendChat,
   type ChatWriter,
 } from "#src/commands/chat/chat";
+import { readChatHistory } from "#src/commands/chat/history";
 import { readChatLine, interactiveChat, interactiveChatOutput } from "#src/commands/chat/prompt";
 import { openChatTerminal, type ChatTerminal } from "#src/commands/chat/terminal";
 import type { CLIContext } from "#src/commands/context";
@@ -47,11 +48,23 @@ export const chatCommand = (context: CLIContext) => {
 
     return Effect.scoped(
       Effect.gen(function* () {
-        const output =
+        const baseOutput =
           terminal ??
           (interactive || command.action === "new"
             ? yield* interactiveChatOutput(write, writeThinking)
             : undefined);
+
+        const output =
+          interactive && baseOutput !== undefined
+            ? {
+                answer: baseOutput.answer,
+                reasoning: baseOutput.reasoning,
+                announce: (text: string) =>
+                  text.startsWith("Session: ") || text.startsWith("Run: ")
+                    ? Effect.void
+                    : baseOutput.announce(text),
+              }
+            : baseOutput;
 
         const submission = yield* prepareChat(command);
 
@@ -76,6 +89,36 @@ export const chatCommand = (context: CLIContext) => {
       }).pipe(Effect.provide(runtime.config)),
     );
   };
+
+  const loadHistory = (id: string, terminal?: ChatTerminal) =>
+    Effect.gen(function* () {
+      yield* terminal?.loadingHistory ?? Effect.void;
+      let json = "";
+
+      const collect: ChatWriter = (text) =>
+        Effect.sync(() => {
+          json += text;
+        });
+
+      const command = { action: "show" as const, id };
+
+      yield* throughWorker(
+        { kind: "chat", command },
+        inspectChat(command).pipe(Effect.provide(runtime.store), Effect.flatMap(collect)),
+        () => Effect.void,
+        { answer: collect, reasoning: () => Effect.void, announce: terminal?.info ?? Console.log },
+      );
+      const messages = yield* readChatHistory(json, id);
+
+      if (terminal) yield* terminal.showHistory(messages);
+      else
+        yield* Effect.forEach(
+          messages,
+          (message) =>
+            Console.log(`\n${message.role === "user" ? "You" : "Poppet"}\n\n${message.text}\n`),
+          { discard: true },
+        );
+    });
 
   return Command.make("chat").pipe(
     Command.withDescription("Chat with the configured provider and model"),
@@ -105,6 +148,8 @@ export const chatCommand = (context: CLIContext) => {
                   options,
                   (command, onSession) => runChat(command, onSession, true),
                   readLine,
+                  undefined,
+                  (sessionId) => loadHistory(sessionId),
                 );
               const { terminal, stopped } = yield* openChatTerminal;
 
@@ -114,12 +159,14 @@ export const chatCommand = (context: CLIContext) => {
                 terminal.read,
                 {
                   welcome: terminal.welcome,
+                  session: terminal.session,
                   info: terminal.info,
                   error: terminal.error,
                   begin: terminal.begin,
                   attachments: terminal.setAttachments,
                   finish: Effect.void,
                 },
+                (sessionId) => loadHistory(sessionId, terminal),
               );
 
               yield* Effect.raceFirst(chat, stopped);

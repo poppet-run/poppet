@@ -79,8 +79,13 @@ answer starts, using the same cyan sweep as `chat new` in 256-colour terminals
 and cycling dots otherwise. It stops on errors, completion, and exit. The status
 line also shows response progress and the number of queued attachments. `/attach <path>` adds a file to the next
 message. Page Up/Page Down scroll through this invocation's conversation. Resizing
-the terminal reflows text and preserves the draft. On exit, the transcript is
-printed into normal terminal scrollback.
+the terminal reflows text and preserves the draft. On exit, the normal terminal
+screen is restored and a command is printed to resume the session. The conversation
+is not copied into terminal scrollback. If no session was created, the exit message
+says so instead.
+
+The session ID appears once at the start when resuming, or when the first message
+creates a new session. Interactive chat does not display run IDs.
 
 Each turn uses the same saved session, provider, model, and skill.
 Blank messages are ignored. `/exit`, Ctrl-D at an empty idle composer, or Ctrl-C
@@ -110,8 +115,11 @@ The worker returns structured session metadata alongside its session announcemen
 The prompt uses the existing worker when one is running, and local execution
 otherwise. It opens storage for each request rather than holding it while waiting
 for input. Both stdin and stdout must be terminals; use the one-shot commands for
-scripts. Resuming a session retains its saved context but does not load earlier
-messages into the screen; use `chat show` to inspect them.
+scripts. Resuming a session loads its saved user and assistant text before the
+first prompt, with attachment names shown on user messages. The screen starts at
+the latest messages; Page Up scrolls to earlier ones. History loading uses the
+worker when available and does not call the provider or replay tools. Use
+`chat show` for run details and tool records.
 
 Automated checks cover local and worker turns, saved selection and skill snapshots,
 failed-first-turn recovery, cancellation, and ambiguous worker replies.

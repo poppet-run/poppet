@@ -151,6 +151,32 @@ describe("ChatTerminal", () => {
     }
   });
 
+  test("loads earlier messages into the scrollable conversation without starting a turn", () => {
+    const { terminal, screen } = fixture();
+
+    try {
+      const history = Array.from({ length: 30 }, (_, index) => ({
+        role: "user" as const,
+        text: `Earlier message ${index}`,
+      }));
+
+      Effect.runSync(terminal.showHistory(history));
+      expect(screen()).toContain("Earlier message 29");
+      expect(screen()).toContain("Ready");
+      expect(screen()).not.toContain("Thinking");
+      terminal.input("\u001b[5~");
+      expect(screen()).not.toContain("Earlier message 29");
+      expect(screen()).toContain("Earlier message 23");
+      terminal.input("\u001b[6~");
+      Effect.runSync(terminal.begin("New message"));
+      Effect.runSync(terminal.answer("New answer"));
+      expect(screen()).toContain("Earlier message 29");
+      expect(screen()).toContain("New answer");
+    } finally {
+      terminal.close();
+    }
+  });
+
   test("wraps wide text, scrolls history, and retains input through resize", () => {
     const { terminal, output, screen, frame } = fixture();
 
@@ -219,7 +245,7 @@ describe("ChatTerminal", () => {
   });
 });
 
-test.each(["cancel", "exit", "eof"])(
+test.each(["cancel", "exit", "eof", "empty"])(
   "a real terminal restores raw mode, listeners, and screen after %s",
   async (mode) => {
     let transcript = "";
@@ -240,6 +266,7 @@ test.each(["cancel", "exit", "eof"])(
       const { terminal, stopped } = yield* openChatTerminal;
       const chat = Effect.gen(function* () {
         yield* terminal.welcome("/attach <path> adds a file to the next message.");
+        if (${JSON.stringify(mode)} !== "empty") yield* terminal.session("saved-session");
         const text = yield* terminal.read;
         if (text === "/exit") return;
         yield* terminal.begin(text);
@@ -262,7 +289,9 @@ test.each(["cancel", "exit", "eof"])(
 
             if (!submitted && transcript.includes("/attach <path>")) {
               submitted = true;
-              terminal.write({ exit: "/exit\r", eof: "\u0004", cancel: "Hello\r" }[mode]!);
+              terminal.write(
+                { exit: "/exit\r", eof: "\u0004", empty: "\u0004", cancel: "Hello\r" }[mode]!,
+              );
             }
 
             if (!cancelled && transcript.includes("STREAMING")) {
@@ -298,7 +327,13 @@ test.each(["cancel", "exit", "eof"])(
       expect(screen).toContain("/attach <path>");
       expect(scrollback).not.toContain("/attach <path>");
 
-      if (mode === "cancel") expect(scrollback).toContain("STREAMING");
+      expect(scrollback).not.toContain("STREAMING");
+      expect(scrollback).not.toContain("Hello");
+
+      if (mode === "empty") {
+        expect(scrollback).toContain("No session was created.");
+        expect(scrollback).not.toContain("poppet chat interactive");
+      } else expect(scrollback).toContain("poppet chat interactive saved-session");
     } catch (error) {
       console.error(transcript);
       throw error;

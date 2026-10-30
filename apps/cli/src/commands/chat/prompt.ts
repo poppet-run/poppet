@@ -207,6 +207,7 @@ export const interactiveChatOutput = (
 
 export interface ChatPresentation {
   readonly welcome: (text: string) => Effect.Effect<void, AgentError>;
+  readonly session: (id: string) => Effect.Effect<void, AgentError>;
   readonly info: (text: string) => Effect.Effect<void, AgentError>;
   readonly error: (text: string) => Effect.Effect<void, AgentError>;
   readonly begin: (text: string) => Effect.Effect<void, AgentError>;
@@ -216,6 +217,7 @@ export interface ChatPresentation {
 
 const plainPresentation: ChatPresentation = {
   welcome: (text) => Console.log(`\nPoppet chat\n\n${text}\n`),
+  session: (id) => Console.log(`Session: ${id}`),
   info: Console.log,
   error: Console.error,
   begin: () => Console.log("\nPoppet\n"),
@@ -231,6 +233,7 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
   ) => Effect.Effect<void, E, R>,
   read: Effect.Effect<string | null, AgentError> = readChatLine,
   presentation: ChatPresentation = plainPresentation,
+  loadHistory: (id: string) => Effect.Effect<void, E, R> = () => Effect.void,
 ) =>
   Effect.gen(function* () {
     if (options.sessionId !== undefined && options.skill !== undefined)
@@ -252,14 +255,20 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
               message: "The chat returned a different session. The prompt has stopped.",
             }),
           );
+        const isNew = sessionId === undefined;
         sessionId = id;
 
-        return Effect.void;
+        return isNew ? presentation.session(id) : Effect.void;
       });
 
     yield* presentation.welcome(
       "/attach <path> adds a file to the next message.\n/exit or Ctrl-D leaves; Ctrl-C cancels and exits.",
     );
+
+    if (sessionId !== undefined) {
+      yield* presentation.session(sessionId);
+      yield* loadHistory(sessionId);
+    }
 
     // Files added with /attach go with the next message, whether or not it succeeds.
     let attachments: string[] = [];
