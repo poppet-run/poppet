@@ -2,22 +2,23 @@
 
 [Documentation index](README.md)
 
-Phases 28–34 and 36 are planned only. Plans do not authorize implementation. Phase
+Phases 28, 30–34 and 36 are planned only. Plans do not authorize implementation. Phase
 25's text attachments were removed because no messaging adapter supplied
 attachments; image and text-file attachments replaced them.
 
 Implemented work has no phase page. Use the linked guides for current behavior,
 setup, and validation. Git history retains delivery plans and validation records.
 
-The remaining priority order is browser login state, doctor, then calendar
-briefing and weekly review trials using existing tools. Independent work such as
-doctor need not wait for earlier phases.
+The remaining priority order is browser login state, then calendar briefing and
+weekly review trials using existing tools. The [doctor command](doctor.md) now
+provides local inspection and bounded worker summaries; its guide documents
+checks that remain unavailable.
 
 Reusable workflows start with [drafting a skill in chat](skills.md#draft-a-skill-from-a-completed-procedure),
 owner review, and manual saving into the local skill library. The agent can read
 matching skills from an index; it cannot write skills or curate facts automatically.
 
-Updated: 2026-10-29
+Updated: 2026-10-30
 
 Storage history: the unreleased base schema was consolidated into version 1.
 Migrations 2–5 add monitoring, task controls, attachments, and projects while
@@ -32,7 +33,6 @@ See [storage](storage.md#schema-and-saved-records),
 
 - [Phase 25: Text attachments (removed)](phases/25.md)
 - [Phase 28: Browser login state across requests](phases/28.md)
-- [Phase 29: A useful `poppet doctor`](phases/29.md)
 - [Phase 30: Calendar briefings and weekly reviews](phases/30.md)
 - [Phase 31: Summaries of trimmed conversation history](phases/31.md)
 - [Phase 32: Host commands in an isolated container](phases/32.md)

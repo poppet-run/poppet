@@ -1,1 +1,1 @@
-export { manageWorker, userConfigHome } from "#src/worker";
+export { workerPaths, manageWorker, userConfigHome } from "#src/worker";

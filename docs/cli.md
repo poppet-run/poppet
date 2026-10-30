@@ -16,6 +16,10 @@ spaces; flags inside that text stay literal. Use `--` before the text when it
 starts with `--help` or `-h`. For task prompts, use `--` before any initial
 flag-like text; unknown task options are rejected.
 
+Run `poppet doctor` for read-only setup and worker inspection, or
+`poppet doctor --json` for scripts. See [doctor](doctor.md) for checks, exit codes,
+and limits.
+
 ## Shell completions
 
 `poppet --completions <shell>` prints a completion script for `bash`, `zsh`, or

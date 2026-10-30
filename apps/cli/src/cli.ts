@@ -11,6 +11,7 @@ import { commandArgs } from "#src/command-args";
 import { chatCommand } from "#src/commands/chat";
 import { configCommand } from "#src/commands/config";
 import { createCLIContext } from "#src/commands/context";
+import { doctorCommand } from "#src/commands/doctor";
 import { UsageError } from "#src/commands/errors";
 import { gatewayCommand } from "#src/commands/gateway";
 import { mcpCommand } from "#src/commands/mcp";
@@ -47,6 +48,7 @@ export const makeCLI = (
     Command.withSubcommands([
       chatCommand(context),
       configCommand(context),
+      doctorCommand(context),
       gatewayCommand(context),
       mcpCommand(context),
       memoryCommand(context),

@@ -1,9 +1,15 @@
-import { CredentialInput, ProviderConnection, type ProviderRegistration } from "@poppet/provider";
-import { Effect, Layer } from "effect";
+import { readCredentialFile } from "@poppet/credentials";
+import {
+  CredentialInput,
+  ProviderConnection,
+  ProviderError,
+  type ProviderRegistration,
+} from "@poppet/provider";
+import { Effect, Layer, Schema } from "effect";
 
 import { CredentialStoreLive } from "#src/auth/credentials";
 import { ChatGPTAuth, ChatGPTAuthLive } from "#src/auth/service";
-import { ConnectionError } from "#src/connection";
+import { Connection, ConnectionError } from "#src/connection";
 import { providerFailure } from "#src/model/errors";
 import { ChatGPTModel, ChatGPTModelLive, ChatGPTProviderLive } from "#src/model/service";
 import { OAuthClientLive } from "#src/oauth/client";
@@ -69,6 +75,33 @@ export const chatGPT: ProviderRegistration = {
     apiKey: false,
     help: "Browser sign-in with ChatGPT plan-usage consent. Over SSH or with --no-browser, finish in any browser and paste the callback address.",
   },
+  inspectSaved: (directory) =>
+    Effect.gen(function* () {
+      const text = yield* Effect.tryPromise(() => readCredentialFile(directory, "connection.json"));
+
+      if (text === null) return { connected: false, expiresAt: null, source: "saved" as const };
+      const saved = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Connection))(text);
+
+      return {
+        connected:
+          saved.clientId !== null &&
+          saved.identity !== null &&
+          saved.credentials !== null &&
+          saved.credentials.scopes.includes("chatgpt.tokens.use.direct") &&
+          (saved.credentials.accessToken !== null || saved.credentials.refreshToken !== null),
+        expiresAt: saved.credentials?.expiresAt ?? null,
+        source: "saved" as const,
+      };
+    }).pipe(
+      Effect.mapError(
+        () =>
+          new ProviderError({
+            provider: "openai-chatgpt",
+            reason: "authentication",
+            message: "Cannot inspect saved ChatGPT credentials.",
+          }),
+      ),
+    ),
   layer: Layer.effectContext(
     Layer.build(
       Layer.merge(connection, ChatGPTProviderLive.pipe(Layer.provide(authentication))),
