@@ -133,7 +133,7 @@ poppet chat show $session_id
 ```
 
 For a terminal prompt, run `poppet chat interactive`, or append a saved
-session ID to resume it. Enter one message per line and use `/exit` to leave.
+session ID to resume it. Enter sends a message, Shift+Enter adds a newline, and `/exit` leaves.
 See the [interactive prompt guide](chat.md#interactive-prompt) for cancellation.
 
 New sessions use the

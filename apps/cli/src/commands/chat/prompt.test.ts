@@ -76,6 +76,7 @@ const fixture = (lines: (string | null)[]) => {
   let reads = 0;
   const commands: ChatCommand[] = [];
   const errors: string[] = [];
+  const messages: string[] = [];
 
   const read = Effect.sync(() => {
     reads++;
@@ -88,11 +89,15 @@ const fixture = (lines: (string | null)[]) => {
     read,
     reads: () => reads,
     errors,
+    messages,
     run: <A, E>(program: Effect.Effect<A, E>) =>
       Effect.runPromise(
         program.pipe(
           Effect.provideService(Console.Console, {
             ...console,
+            log: (...values) => {
+              messages.push(values.join(" "));
+            },
             error: (...values) => {
               errors.push(values.join(" "));
             },
@@ -148,6 +153,9 @@ describe.concurrent("interactiveChat", () => {
       ),
     );
 
+    expect(state.errors).toEqual([]);
+    expect(state.messages.join("\n")).toContain("\nAttached notes.md to the next message.\n");
+    expect(state.messages).toContain("\nPoppet\n");
     expect(state.commands).toEqual([
       {
         action: "new",

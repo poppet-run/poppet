@@ -58,28 +58,46 @@ poppet chat interactive
 poppet chat interactive $session_id
 ```
 
-Enter one message at each `You>` prompt and wait for the answer before entering
-the next. Each turn uses the same saved session, provider, model, and
-skill. Blank lines are ignored. `/exit`, Ctrl-D at an empty prompt, or Ctrl-C
-leaves the prompt. Ctrl-C during inference cancels the active request and exits;
+The conversation appears above a bordered input box at the bottom of the terminal.
+Messages have `You` and `Poppet` labels, with blank lines between them. Instructions,
+attachments, and session details use neutral colours; errors use red. `NO_COLOR`
+disables colour styling.
+
+Press Enter to send and Shift+Enter to insert a newline. Shift+Enter requires a
+terminal that reports modified keys separately; the chat enables the enhanced
+keyboard protocol where supported. Terminals that send Shift+Enter as plain Enter
+cannot distinguish the shortcut. Pasted multiline text stays in
+the composer until you press Enter in terminals supporting bracketed paste.
+Left and Right move the cursor, Backspace and Delete remove characters, and
+Home/End or Ctrl-A/Ctrl-E move to the start/end of the draft. Ctrl-U clears the
+text before the cursor. Up/Down recall messages sent during this invocation and
+restore your draft when you move past the latest entry. History is not saved to disk.
+
+You can draft the next message while Poppet responds. Enter sends only when the
+current request has finished. The status line animates `Thinking...` until the
+answer starts, using the same cyan sweep as `chat new` in 256-colour terminals
+and cycling dots otherwise. It stops on errors, completion, and exit. The status
+line also shows response progress and the number of queued attachments. `/attach <path>` adds a file to the next
+message. Page Up/Page Down scroll through this invocation's conversation. Resizing
+the terminal reflows text and preserves the draft. On exit, the transcript is
+printed into normal terminal scrollback.
+
+Each turn uses the same saved session, provider, model, and skill.
+Blank messages are ignored. `/exit`, Ctrl-D at an empty idle composer, or Ctrl-C
+leaves the chat. Ctrl-C during inference cancels the active request and exits;
 the interrupted run remains inspectable. Earlier completed answers remain saved.
 There is no automatic retry.
 
-An animated `Thinking...` indicator stays on its own line below streamed
-reasoning until the answer starts. In terminals supporting 256 colours, a soft
-cyan highlight sweeps across the text. `NO_COLOR` and terminals with fewer colours
-use cycling dots instead. It clears before answers or errors appear
-and also clears on cancellation. The indicator works with reasoning logging
-disabled and is omitted when stderr is redirected or the terminal is `dumb`.
+With `chat.logReasoning` enabled, provider reasoning appears under a muted
+`Thinking` heading before the answer. The background worker still writes its
+structured reasoning log entries. Providers may return no readable reasoning for
+a turn; in that case no heading is printed.
 
-With `chat.logReasoning` enabled, provider reasoning streams under a `Thinking:`
-heading before the answer. Thinking uses muted cyan in colour-enabled terminals;
-the answer uses the normal terminal colour. `NO_COLOR` disables the styling.
-Text appears as chunks arrive, with normal newlines and no diagnostic timestamps
-or IDs. OpenAI Responses reasoning sections are separated by blank lines.
-The background worker still writes its structured reasoning log entries.
-Providers may return no readable reasoning for a turn; in that case no heading
-is printed.
+`TERM=dumb` uses a simple, single-line `You>` prompt. The plain prompt and
+`chat new` retain the streamed thinking output on stderr and answers on stdout.
+On supported terminals, their `Thinking...` indicator animates until the answer
+starts, using cyan when colour is available. It clears on completion or
+cancellation and is omitted for redirected stderr or `TERM=dumb`.
 
 For a new session, `--skill <name>` works as it does with `chat new`.
 Omit it when supplying a session ID, which retains its original selection.
@@ -92,15 +110,17 @@ The worker returns structured session metadata alongside its session announcemen
 The prompt uses the existing worker when one is running, and local execution
 otherwise. It opens storage for each request rather than holding it while waiting
 for input. Both stdin and stdout must be terminals; use the one-shot commands for
-scripts. This version accepts single-line messages, with native line editing,
-and does not save an input-history file or add a full-screen interface.
+scripts. Resuming a session retains its saved context but does not load earlier
+messages into the screen; use `chat show` to inspect them.
 
 Automated checks cover local and worker turns, saved selection and skill snapshots,
-failed-first-turn recovery, cancellation, and ambiguous worker replies. An isolated
-pseudo-terminal check with a fake provider covers two turns, line editing, Ctrl-D,
-and Ctrl-C while idle and during inference. Live provider behavior remains a manual
-check: exchange two messages, exit, resume the printed session ID, then interrupt
-one request and inspect it with `chat show`.
+failed-first-turn recovery, cancellation, and ambiguous worker replies.
+Automated terminal checks cover multiline paste, draft preservation during streaming,
+input history, resizing, scrolling, and colour handling. A pseudo-terminal check
+covers cancellation during inference and restoration of raw mode, input listeners,
+and the normal screen. Live provider behavior remains a manual check: exchange two
+messages, draft while a response streams, attach a file, resize, exit, resume the
+printed session ID, then interrupt one request and inspect it with `chat show`.
 
 ## Select a skill
 
