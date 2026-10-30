@@ -15,8 +15,6 @@ export const booleanFlag = (name: string, description: string) =>
     Flag.map(([value = false]) => value),
   );
 
-export const codingFlag = booleanFlag("coding", "Use the coding workload");
-
 export const skillFlag = Flag.String("skill").pipe(
   Flag.withSchema(SkillName),
   Flag.withDescription("Select a local Markdown skill and save its current text"),

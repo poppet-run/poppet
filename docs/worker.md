@@ -205,7 +205,7 @@ poppet memory list
 poppet store status
 ```
 
-New chats use the invoking terminal's provider, model, and workload; continued
+New chats use the invoking terminal's provider and model; continued
 chats use their saved selection. The worker's startup budgets
 apply to remote requests, including conversation-search result limits. Search
 runs on the owning store connection and needs no provider request. Memory changes are loaded on the next run. Chat output

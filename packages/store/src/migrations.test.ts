@@ -51,6 +51,7 @@ describe("StoreDatabaseLive migrations", () => {
         { migration_id: 1, name: "baseline" },
         { migration_id: 2, name: "session_active_run" },
         { migration_id: 3, name: "attachments" },
+        { migration_id: 4, name: "remove_workload" },
       ]);
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions'").get(),
@@ -59,6 +60,57 @@ describe("StoreDatabaseLive migrations", () => {
       await store.close();
     }
   });
+
+  test.each(["assistant", "coding"])(
+    "when upgrading a %s session, preserves its history and selection",
+    async (workload) => {
+      const store = await fixture();
+
+      try {
+        await mkdir(join(store.directory, "store"), { recursive: true });
+        await Effect.runPromise(
+          migrate({
+            ...storeSchema,
+            version: 3,
+            loader: storeSchema.loader.pipe(
+              Effect.map((entries) => entries.filter(([id]) => id <= 3)),
+            ),
+          }).pipe(Effect.provide(SqliteClient.layer({ filename: store.path }))),
+        );
+        using old = new Database(store.path);
+        old.run(
+          "INSERT INTO sessions (id, provider, model, workload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+          ["saved", "opencode-go", "glm-5.3", workload, 1, 2],
+        );
+        old.run(
+          "INSERT INTO runs (id, session_id, status, created_at) VALUES ('run', 'saved', 'pending', 2)",
+        );
+        old.close();
+
+        expect(await store.open()).toBe(true);
+        expect(await store.open()).toBe(true);
+        using database = new Database(store.path, { readonly: true });
+        expect(
+          database
+            .query(
+              "SELECT provider, model, created_at, updated_at FROM sessions WHERE id = 'saved'",
+            )
+            .get(),
+        ).toEqual({ provider: "opencode-go", model: "glm-5.3", created_at: 1, updated_at: 2 });
+        expect(
+          database.query("SELECT session_id, status FROM runs WHERE id = 'run'").get(),
+        ).toEqual({ session_id: "saved", status: "pending" });
+        expect(
+          database
+            .query("SELECT name FROM pragma_table_info('sessions') WHERE name = 'workload'")
+            .all(),
+        ).toEqual([]);
+        expect(database.query("PRAGMA foreign_key_check").all()).toEqual([]);
+      } finally {
+        await store.close();
+      }
+    },
+  );
 
   test.each(["older-build", "other-application"])(
     "when the database came from an %s, refuses it without changes",
@@ -107,11 +159,12 @@ describe("StoreDatabaseLive migrations", () => {
         "1_baseline": Effect.void,
         "2_session_active_run": Effect.void,
         "3_attachments": Effect.void,
-        "4_index": Effect.gen(function* () {
+        "4_remove_workload": Effect.void,
+        "5_index": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`CREATE INDEX sessions_by_provider ON sessions (provider)`;
         }),
-        "5_broken": Effect.gen(function* () {
+        "6_broken": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`invalid SQL`;
         }),
@@ -123,6 +176,7 @@ describe("StoreDatabaseLive migrations", () => {
         { migration_id: 1 },
         { migration_id: 2 },
         { migration_id: 3 },
+        { migration_id: 4 },
       ]);
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions_by_provider'").get(),

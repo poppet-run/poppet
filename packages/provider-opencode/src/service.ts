@@ -15,7 +15,7 @@ import {
   chatCompletionsModel,
   responsesModel,
 } from "@poppet/provider/protocol";
-import { Effect, Redacted, Schema, Stream } from "effect";
+import { Effect, Redacted, Schema } from "effect";
 
 import { sessionHeaders, goOptions } from "#src/protocol";
 
@@ -112,20 +112,7 @@ export const makeOpenCodeProvider = (
           ? responsesModel(description, client, { headers: sessionHeaders })
           : chatCompletionsModel(description, client, "max_tokens", goOptions);
 
-      return {
-        description,
-        stream: (request) =>
-          request.workload === "coding"
-            ? model.stream(request)
-            : Stream.fail(
-                new ProviderError({
-                  provider: "opencode-go",
-                  reason: "permission",
-                  message:
-                    "OpenCode Go requires coding-agent workloads. General assistant tasks are not enabled.",
-                }),
-              ),
-      } satisfies ModelOperations;
+      return model satisfies ModelOperations;
     });
 
   return { id: "opencode-go", models, resolve };

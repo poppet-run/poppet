@@ -76,9 +76,7 @@ const recorded = (action: ChatTaskAction, callId = "task", run?: Run) =>
     const active =
       run ??
       (yield* Effect.gen(function* () {
-        const session = yield* store.createSession("test-provider", "test-model", {
-          workload: "coding",
-        });
+        const session = yield* store.createSession("test-provider", "test-model", {});
 
         const queued = yield* store.queueRun(session.id, [
           { role: "user", text: "Manage this task" },
@@ -345,7 +343,6 @@ describe("ChatTasks", () => {
           expect(task).toMatchObject({
             provider: "test-provider",
             model: "test-model",
-            workload: "coding",
             skill: { name: "weekly", content: "Original procedure" },
             schedule: { type: "once", at: Date.parse("2026-10-18T08:00:00Z") },
           });
@@ -576,7 +573,6 @@ describe("ChatTasks", () => {
             prompt: "🙂".repeat(4000),
             provider: "test-provider",
             model: "test-model",
-            workload: "assistant" as const,
             schedule: { type: "once" as const, at: now + 60000 },
           };
 

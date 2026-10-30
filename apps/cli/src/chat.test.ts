@@ -483,7 +483,6 @@ describe.concurrent("chat.ts", () => {
           prompt: "Summarize recent conversations",
           provider: description.provider,
           model: description.id,
-          workload: "assistant",
           destination: null,
         });
         chat.state.taskId = task.id;
@@ -644,7 +643,6 @@ describe.concurrent("chat.ts", () => {
             text: "Hello",
             provider: description.provider,
             model: description.id,
-            workload: "assistant",
           },
           streamReasoning: true,
         },
@@ -909,15 +907,7 @@ describe.concurrent("chat.ts", () => {
         if (remote) worker = await chat.startWorker();
         expect(await inspect(["skills", "list"])).toEqual(["weekly-review"]);
 
-        await chat.invoke([
-          "chat",
-          "new",
-          "--skill",
-          "weekly-review",
-          "--coding",
-          "Review",
-          "--literal",
-        ]);
+        await chat.invoke(["chat", "new", "--skill", "weekly-review", "Review", "--literal"]);
         const id = chat.errors.find((line) => line.startsWith("Session: "))!.slice(9);
         expect(chat.requests[0]?.instructions).toContain("Original weekly procedure");
         expect(chat.requests[0]?.messages.at(-1)).toEqual({
@@ -928,7 +918,6 @@ describe.concurrent("chat.ts", () => {
         expect(await inspect(["chat", "show", id])).toMatchObject({
           session: {
             skill: { name: "weekly-review", content: "Original weekly procedure" },
-            workload: "coding",
           },
         });
 
@@ -947,7 +936,7 @@ describe.concurrent("chat.ts", () => {
         await writeFile(file, "Edited weekly procedure");
         await chat.invoke(["chat", "send", id, "Continue"]);
         expect(chat.requests.at(-1)?.instructions).toContain("Original weekly procedure");
-        await chat.invoke(["chat", "new", "--coding", "--skill=weekly-review", "A fresh review"]);
+        await chat.invoke(["chat", "new", "--skill=weekly-review", "A fresh review"]);
         expect(chat.requests.at(-1)?.instructions).toContain("Edited weekly procedure");
         await rm(join(chat.directory, "skills"), { recursive: true });
         await chat.invoke(["chat", "send", id, "Continue without the file"]);
@@ -1014,7 +1003,7 @@ describe.concurrent("chat.ts", () => {
         const input = ["   ", "  First message  ", "Second --help", "/exit"];
         await Effect.runPromise(
           chat.program(
-            ["chat", "interactive", "--coding", "--skill", "review"],
+            ["chat", "interactive", "--skill", "review"],
             Effect.sync(() => input.shift() ?? null),
           ),
         );
@@ -1050,7 +1039,6 @@ describe.concurrent("chat.ts", () => {
         expect(saved.session).toMatchObject({
           provider: "chat-provider",
           model: "chat-model",
-          workload: "coding",
           skill: { name: "review" },
         });
         expect(saved.runs.map((run: { status: string }) => run.status)).toEqual([
@@ -1542,7 +1530,6 @@ describe.concurrent("chat.ts", () => {
               text: "Hello",
               provider: "chat-provider",
               model: "",
-              workload: "assistant",
             },
           },
           { kind: "chat", command: { action: "search", query: " " } },
@@ -1569,12 +1556,12 @@ describe.concurrent("chat.ts", () => {
       });
       expect(chat.state.built).toBe(built);
       chat.state.useTools = true;
-      expect(await readOutput(["chat", "new", "--coding", "Save a summary"])).toBe("Answer\n");
+      expect(await readOutput(["chat", "new", "Save a summary"])).toBe("Answer\n");
       const session = chat.errors.find((line) => line.startsWith("Session: "))!.slice(9);
       expect(chat.requests[0]?.instructions).toContain("Acorn");
 
       expect(JSON.parse(await readOutput(["chat", "show", session]))).toMatchObject({
-        runs: [{ status: "completed", workload: "coding" }],
+        runs: [{ status: "completed" }],
         toolCalls: [{ status: "completed", name: "memory" }],
       });
       expect(chat.chunks.join("")).not.toContain("secretOpaqueState");
@@ -1828,11 +1815,11 @@ describe.concurrent("chat.ts", () => {
     }
   });
 
-  test("when a coding session reopens, uses its saved selection and hides continuation from inspection", async () => {
+  test("when a session reopens, uses its saved selection and hides continuation from inspection", async () => {
     const chat = await fixture();
 
     try {
-      await chat.invoke(["chat", "new", "--coding", "First", "question", "--help", "--coding"]);
+      await chat.invoke(["chat", "new", "First", "question", "--help", "--coding"]);
       expect(chat.state.open).toBe(false);
       expect(chat.chunks.join("")).toBe("Answer\n");
       expect(chat.errors[0]).toStartWith("Session: ");
@@ -1842,7 +1829,6 @@ describe.concurrent("chat.ts", () => {
       expect(session).toMatchObject({
         provider: "chat-provider",
         model: "chat-model",
-        workload: "coding",
       });
       const built = chat.state.built;
       await chat.configure({ provider: "unused-provider" });
@@ -1852,7 +1838,7 @@ describe.concurrent("chat.ts", () => {
       expect(chat.lines.at(-1)).not.toContain("secretOpaqueState");
       expect(chat.lines.at(-1)).not.toContain("continuation");
       expect(JSON.parse(chat.lines.at(-1) ?? "")).toMatchObject({
-        runs: [expect.objectContaining({ status: "completed", workload: "coding" })],
+        runs: [expect.objectContaining({ status: "completed" })],
       });
       expect(chat.state.built).toBe(built);
 
@@ -1860,7 +1846,6 @@ describe.concurrent("chat.ts", () => {
       await chat.invoke(["chat", "send", session.id, "--unknown", "Second", "question"]);
       expect(chat.state.open).toBe(false);
       expect(chat.requests[1]).toMatchObject({
-        workload: "coding",
         messages: [
           { role: "user", text: "First question --help --coding" },
           { role: "assistant", continuation: { data: { secretOpaqueState: "retain privately" } } },

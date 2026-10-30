@@ -5,7 +5,7 @@ import { Effect, Option, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
-import { codingFlag, skillFlag, textArgument } from "#src/commands/flags";
+import { skillFlag, textArgument } from "#src/commands/flags";
 import {
   parseRelativeTime,
   parseTaskDestination,
@@ -123,7 +123,6 @@ export const tasksCommand = (context: CLIContext) => {
             Flag.atMost(1),
             Flag.map(([value]) => Option.fromUndefinedOr(value)),
           ),
-          coding: codingFlag,
           skill: skillFlag,
           to: Flag.String("to").pipe(
             Flag.withDescription("Deliver to <gateway> or <gateway>:<conversation-id>"),
@@ -132,13 +131,13 @@ export const tasksCommand = (context: CLIContext) => {
           ),
           prompt: textArgument("prompt"),
         },
-        ({ name, at, cron, tz, delay, coding, prompt, skill, to }) =>
+        ({ name, at, cron, tz, delay, prompt, skill, to }) =>
           Effect.gen(function* () {
             const schedule = yield* taskOperation(() => parseTaskSchedule(at, cron, tz, delay));
 
             const delivery = yield* taskOperation(() => parseTaskDestination(to));
 
-            const command = yield* prepareTask(name, schedule, coding, prompt, skill, delivery);
+            const command = yield* prepareTask(name, schedule, prompt, skill, delivery);
 
             yield* runTaskCommand(runtime, command);
           }).pipe(Effect.provide(runtime.config)),

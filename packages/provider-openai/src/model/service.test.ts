@@ -283,7 +283,6 @@ describe("makeChatGPTProvider", () => {
 
           return yield* completeModel(model, {
             sessionId: "subscription-test",
-            workload: "assistant",
             instructions: "",
             messages: [{ role: "user", text: "Test" }],
             tools: [],

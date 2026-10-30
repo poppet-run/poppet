@@ -21,7 +21,6 @@ const recurring: NewTask = {
   prompt: "Summarize recent conversations",
   provider: "test-provider",
   model: "test-model",
-  workload: "assistant",
   schedule: { type: "cron", expression: "* * * * *", timezone: "UTC" },
 };
 
@@ -32,7 +31,7 @@ const morning: NewTask = {
   schedule: { type: "cron", expression: "0 9 * * *", timezone: "UTC" },
 };
 
-const fixture = async (catchUpMs = 0) => {
+const fixture = async (catchUpMs = 0, schema = taskSchema) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-tasks-"));
 
   const config = Layer.succeed(AppConfig, {
@@ -56,7 +55,7 @@ const fixture = async (catchUpMs = 0) => {
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const store = yield* Store;
-          yield* migrate(taskSchema);
+          yield* migrate(schema);
           yield* migrate(memorySchema);
 
           return yield* body(makeTaskStore(sql, catchUpMs), store, sql);
@@ -67,6 +66,53 @@ const fixture = async (catchUpMs = 0) => {
 };
 
 describe.concurrent("TaskRepository", () => {
+  test.each(["assistant", "coding"])(
+    "when upgrading a %s task, preserves and claims its queued occurrence",
+    async (workload) => {
+      const state = await fixture(0, {
+        ...taskSchema,
+        version: 1,
+        loader: taskSchema.loader.pipe(Effect.map((entries) => entries.filter(([id]) => id === 1))),
+      });
+
+      try {
+        await state.run((repo, _store, sql) =>
+          Effect.gen(function* () {
+            yield* sql`INSERT INTO jobs ${sql.insert({
+              id: "saved-job",
+              name: once.name,
+              prompt: once.prompt,
+              provider: once.provider,
+              model: once.model,
+              workload,
+              schedule: JSON.stringify(once.schedule),
+              next_at: start,
+              created_at: start,
+            })}`;
+            yield* repo.reconcile(start);
+            yield* sql`UPDATE job_occurrences SET definition = json_set(definition, '$.workload', ${workload})`;
+            const before = yield* repo.task("saved-job");
+            yield* migrate(taskSchema).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+            yield* migrate(taskSchema).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+            expect(yield* repo.task("saved-job")).toEqual(before);
+            const claimed = (yield* repo.claim(start))!;
+            expect(claimed).toMatchObject({ jobId: "saved-job", definition: once });
+            expect(claimed.definition).not.toHaveProperty("workload");
+            expect(
+              yield* sql`SELECT name FROM pragma_table_info('jobs') WHERE name = 'workload'`,
+            ).toEqual([]);
+            expect(
+              yield* sql`SELECT id FROM job_occurrences WHERE json_type(definition, '$.workload') IS NOT NULL`,
+            ).toEqual([]);
+            expect(yield* repo.add(once, start)).toMatchObject(once);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test("when controlling occurrences by task, selects current work and never retries an older failure implicitly", async () => {
     const state = await fixture();
 

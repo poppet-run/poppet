@@ -32,7 +32,7 @@ export const latestTime = (schedule: Schedule, atOrBefore: number) =>
   Effect.try({ try: () => latestOccurrence(schedule, atOrBefore), catch: taskFailure });
 
 export const taskRecords = (sql: SqlClient.SqlClient) => {
-  const tasks = sql`SELECT id, name, prompt, provider, model, workload, schedule, revision, skill,
+  const tasks = sql`SELECT id, name, prompt, provider, model, schedule, revision, skill,
     destination, next_at, paused, created_at FROM jobs`;
 
   const occurrences = sql`SELECT id, job_id, scheduled_at, status, revision, definition,

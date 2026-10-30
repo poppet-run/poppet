@@ -48,8 +48,8 @@ The store refuses databases from newer versions, from other applications, and
 from development builds before the baseline. Those need a fresh data directory;
 databases are never reset automatically.
 
-Sessions retain their selected provider, model, and workload. Sessions and runs
-default to the `assistant` workload. Messages preserve order, tool call IDs, tool
+Sessions retain their selected provider and model. Messages preserve order,
+tool call IDs, tool
 results, and versioned provider continuation. Runs persist pending
 inputs before execution, then transition through running to completed, failed,
 or interrupted. Successful completion writes its assistant message and result

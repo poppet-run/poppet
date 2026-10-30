@@ -59,7 +59,7 @@ poppet chat interactive $session_id
 ```
 
 Enter one message at each `You>` prompt and wait for the answer before entering
-the next. Each turn uses the same saved session, provider, model, workload, and
+the next. Each turn uses the same saved session, provider, model, and
 skill. Blank lines are ignored. `/exit`, Ctrl-D at an empty prompt, or Ctrl-C
 leaves the prompt. Ctrl-C during inference cancels the active request and exits;
 the interrupted run remains inspectable. Earlier completed answers remain saved.
@@ -81,9 +81,8 @@ The background worker still writes its structured reasoning log entries.
 Providers may return no readable reasoning for a turn; in that case no heading
 is printed.
 
-For a new session, `--coding` and `--skill <name>` work as
-they do with `chat new`.
-Omit them when supplying a session ID, which retains its original selection.
+For a new session, `--skill <name>` works as it does with `chat new`.
+Omit it when supplying a session ID, which retains its original selection.
 A session is created only when you submit its first nonblank message. Failed turns
 keep the acknowledged session so a fresh message can continue it. If the first
 worker response is lost before its session identity arrives, the prompt stops
@@ -129,8 +128,8 @@ Ask a tool-capable model to create, inspect, edit, delete, pause, resume, skip, 
 or run a task now through
 `poppet_tasks.manage_tasks`.
 
-New tasks keep this session's provider, model, and
-workload. Supply a clear prompt and time with an explicit offset or timezone;
+New tasks keep this session's provider and model. Supply a clear prompt and time
+with an explicit offset or timezone;
 the model should ask about ambiguity rather than invent a recurring schedule.
 In messaging, scheduled results default to the home channel. Request delivery
 here to use the current thread, or local delivery to keep results on the machine.
@@ -155,7 +154,7 @@ management tool.
 New sessions save a title from their initial prompt before inference. Poppet
 normalizes whitespace and controls and limits titles to 80 Unicode characters.
 After the first successful answer is printed, it attempts one optional title
-request through the saved provider, model, and workload. The request uses only a
+request through the saved provider and model. The request uses only a
 bounded excerpt of the original prompt, with no tools, memory, or conversation
 continuation. It has a ten-second deadline and can extend CLI exit time and use
 additional provider quota. Failure or cancellation leaves the answer completed
@@ -336,9 +335,8 @@ providers. Search uses the existing model-turn, tool-call, and context budgets.
 
 New sessions use the configured `provider` and required `model`, with
 both read from `config.json`. Existing
-sessions keep their saved provider, model, and workload when configuration
-changes. Start a new session to change that selection. OpenCode Go requires a
-coding session:
+sessions keep their saved provider and model when configuration
+changes. Start a new session to change that selection.
 
 Save the provider and model in `config.json`:
 
@@ -350,7 +348,7 @@ Save the provider and model in `config.json`:
 ```
 
 ```sh
-poppet chat new --coding "Explain how to structure a TypeScript CLI"
+poppet chat new "Explain how to structure a TypeScript CLI"
 ```
 
 ## Failures and cancellation

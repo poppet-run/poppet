@@ -79,7 +79,7 @@ Edits change only supplied name, prompt, or schedule fields. A cron replacement
 requires both expression and timezone; a one-off replacement requires a future
 offset-qualified timestamp. Empty patches, unknown fields, conflicting schedules,
 and timezone-only changes are rejected. Identical values are a no-op. Provider,
-model, workload, skill, and destination remain unchanged.
+model, skill, and destination remain unchanged.
 Paused tasks may be edited without resuming them. Cancel a running occurrence
 explicitly before using any of these controls on that task.
 
@@ -125,7 +125,7 @@ Resume task <task-id>.
 ```
 
 The `poppet_tasks.manage_tasks` tool uses the existing scheduler. New tasks retain
-the current session's provider, model, and workload, with a self-contained prompt
+the current session's provider and model, with a self-contained prompt
 and an optional explicitly selected skill snapshot. They start fresh occurrence
 sessions. The agent receives the current UTC time for relative dates and should
 ask when the intended time, timezone, prompt, or task is unclear. One-off times
@@ -238,7 +238,6 @@ times as UTC milliseconds. `show` includes final answers, run/session IDs, failu
 and skipped intervals. Each occurrence has a fresh session, current profile and
 facts, conversation search/recall, page reading, and web search when
 configured. Returned memory calls are rejected.
-Use `--coding` before the prompt only for coding work that the chosen provider accepts.
 
 Scheduled runs can use `poppet_history.read_session` after a conversation search
 to read saved context around a match, or page forward with stable message IDs.

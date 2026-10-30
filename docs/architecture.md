@@ -282,7 +282,7 @@ appear in printable application settings.
 The CLI builds only the selected provider's live dependencies. Resolve the
 selection at run start and record it with the run. Keep it fixed through every
 tool round trip. Configuration changes affect new sessions. Resumed sessions
-retain their saved provider/model/workload because continuation data may not be portable.
+retain their saved provider/model because continuation data may not be portable.
 Do not silently fall back to another provider or model.
 
 ### Adapter requirements
@@ -298,16 +298,14 @@ OpenCode Go uses an API key and documents Responses, Chat Completions, and
 Anthropic Messages endpoints depending on the model. Its adapter selects the
 protocol per model and sends a Poppet user agent and a stable
 `x-opencode-session` conversation ID. Start with an explicit supported
-model/protocol set and expand it as each protocol passes validation. OpenCode Go
-specifies coding-agent traffic; the adapter rejects assistant workloads before
-reading credentials or sending inference requests.
+model/protocol set and expand it as each protocol passes validation. See the
+provider documentation for usage requirements.
 [OpenCode Go requirements](https://opencode.ai/v2/docs/console/go/)
 
 The first Go model set is `gpt-6-luna` using Responses and `glm-5.3` using
 Chat Completions. Only these models are listed from the remote public catalog;
 unrecognized models and Messages protocol models are rejected. The key is read
-from `POPPET_OPENCODE_GO_API_KEY` or protected API-key storage only when inference begins. Go requests require
-`workload: "coding"`; general assistant tasks fail before credentials are read.
+from `POPPET_OPENCODE_GO_API_KEY` or protected API-key storage only when inference begins.
 
 The reusable protocol adapters in `@poppet/provider/protocol` bind a model
 description and a supplied client Effect. Both providers reuse Responses parsing;
@@ -352,7 +350,7 @@ also refuses databases it did not create.
 `schema.ts` defines session, message, run, and terminal-outcome records with
 Effect Schema. `service.ts` validates caller input, checks continuation identity
 before saving messages, and decodes rows on read. Table checks enforce valid run
-and tool-call states, runs take their provider, model, and workload from their
+and tool-call states, runs take their provider and model from their
 session when read, and a partial unique index permits only one pending or
 running run per session. Services rely on these rules instead of repeating them.
 
@@ -570,8 +568,7 @@ Provider packages and channel transports remain unchanged.
 Only interactive runs advertise the tool. All model calls, including task
 preparation, pass whole-batch validation before any tool executes. Preparation
 checks action-specific fields, existing IDs, schedules, future one-off times,
-selected skill files, and delivery authorization. The current run supplies provider,
-model, and workload. Gateway code rechecks the accepted owner and resolves the
+selected skill files, and delivery authorization. The current run supplies the provider and model. Gateway code rechecks the accepted owner and resolves the
 current conversation, home channel, or an explicitly selected channel or thread ID
 through the same destination and access checks. Model arguments cannot select
 another gateway or supply account identities or permission flags. The host
@@ -842,9 +839,8 @@ The neutral host's protected socket accepts interactive requests.
 `WorkerRequests` lets the CLI supply `/v1/commands` without importing CLI command
 schemas or memory behavior into the task package. The host validates chat,
 memory, and store-status payloads and uses the same command functions as direct
-local execution. New chat payloads include the client's provider, model, and
-workload; continued chats resolve their saved session. Chat
-budgets come from the worker's existing layers.
+local execution. New chat payloads include the client's provider and model; continued chats
+resolve their saved session. Chat budgets come from the worker's existing layers.
 
 The listener owns the full request, including JSON body decoding, in a scoped
 fiber. Body reads have a 10-second deadline. The Unix-socket listener disables
@@ -904,7 +900,7 @@ message and conversation IDs, sender ID, text, and reply destination. Keep
 platform IDs as opaque strings. Adapters expose scoped incoming events and text
 delivery, typing, and message-status operations; add other capabilities only when implemented. Messaging is
 independent of inference providers, so a channel can use any configured provider
-that supports the session's workload. Call the typed agent interface directly
+that supports the selected model. Call the typed agent interface directly
 and consume completed runs rather than parsing CLI stdout or stderr.
 
 `ChannelRegistration` in `@poppet/gateway` defines identity, setup help, setup,
@@ -959,7 +955,7 @@ for proactive messages. The flow is:
    explicitly starts a fresh session with `/new`. Follow-ups in an attached thread
    do not require a mention.
 4. Replies remain in the thread. A different thread starts a separate session;
-   an existing binding retains its saved provider, model, and workload.
+   an existing binding retains its saved provider and model.
 
 Persist a unique binding from adapter, bot account, guild, and thread IDs to the
 Poppet session ID. Keep the initiating message ID for thread-creation recovery.

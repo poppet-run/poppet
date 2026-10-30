@@ -53,8 +53,8 @@ export const storeRecords = (sql: SqlClient.SqlClient) => {
         : Effect.succeed(session),
     );
 
-  // A run's provider, model, and workload are its session's.
-  const runs = sql`SELECT runs.*, sessions.provider, sessions.model, sessions.workload
+  // A run's provider and model are its session's.
+  const runs = sql`SELECT runs.*, sessions.provider, sessions.model
       FROM runs JOIN sessions ON sessions.id = runs.session_id`;
 
   const findRun = (id: string) => sql`${runs} WHERE runs.id = ${id}`.pipe(decodeRow(RunRow));

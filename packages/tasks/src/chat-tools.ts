@@ -144,7 +144,6 @@ export const ChatTasksLive = Layer.effect(
               schedule,
               provider: run.provider,
               model: run.model,
-              workload: run.workload,
             });
           },
           catch: invalid,

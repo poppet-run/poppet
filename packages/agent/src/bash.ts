@@ -78,7 +78,6 @@ export const reviewCommand = (
       model,
       {
         sessionId: run.sessionId,
-        workload: run.workload,
         instructions: commandReviewInstructions,
         messages: [
           {
