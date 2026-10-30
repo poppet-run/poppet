@@ -1,11 +1,12 @@
 import { StringDecoder } from "node:string_decoder";
-import { stripVTControlCharacters } from "node:util";
+import { formatWithOptions, stripVTControlCharacters } from "node:util";
 
 import { AgentError } from "@poppet/agent";
-import { Deferred, Effect } from "effect";
+import { Console, Deferred, Effect } from "effect";
 
 import type { ChatReasoningWriter, ChatWriter } from "#src/commands/chat/chat";
 import type { ChatHistoryMessage } from "#src/commands/chat/history";
+import { ChatMarkdown } from "#src/commands/chat/markdown";
 import { thinkingIndicator } from "#src/commands/chat/prompt";
 
 const escape = "\u001b[";
@@ -77,6 +78,7 @@ type Output = Pick<NodeJS.WriteStream, "write" | "columns" | "rows"> &
 /** Owns the screen and input for the entire session, including inference. */
 export class ChatTerminal {
   private messages: Message[] = [];
+  private readonly markdown: ChatMarkdown;
   private draft: string[] = [];
   private cursor = 0;
   private history: string[] = [];
@@ -101,7 +103,9 @@ export class ChatTerminal {
     private readonly exit: () => void,
     private readonly color = !process.env.NO_COLOR,
     private readonly failure: () => void = exit,
-  ) {}
+  ) {
+    this.markdown = new ChatMarkdown(color);
+  }
 
   private style(text: string, code: string) {
     return this.color ? `${escape}${code}m${text}${escape}0m` : text;
@@ -139,9 +143,17 @@ export class ChatTerminal {
   }
 
   private transcript(width: number, styled: boolean, messages = this.messages) {
-    return messages.flatMap(({ kind, text }) => {
-      const label = styled ? this.style(kind, kind === "Error" ? "31" : "2;36") : kind;
-      const rows = wrapChatText(text, width);
+    return messages.flatMap((message) => {
+      const { kind, text } = message;
+      let labelStyle = "2;36";
+
+      if (kind === "You") labelStyle = "1;33";
+      else if (kind === "Poppet") labelStyle = "1;36";
+      else if (kind === "Error") labelStyle = "31";
+      const label = styled ? this.style(kind, labelStyle) : kind;
+
+      const rows =
+        kind === "Poppet" ? this.markdown.render(message, width) : wrapChatText(text, width);
 
       return [
         ...(kind === "Welcome" || kind === "Session" ? [] : [label]),
@@ -247,6 +259,22 @@ export class ChatTerminal {
       this.reader = undefined;
     });
   });
+
+  /** Keep scoped service diagnostics away from the terminal's input cursor. */
+  console = (base: Console.Console): Console.Console => {
+    const diagnostic = (...values: readonly unknown[]) => {
+      Effect.runSync(this.info(formatWithOptions({ colors: false }, ...values)));
+    };
+
+    return {
+      ...base,
+      log: diagnostic,
+      info: diagnostic,
+      debug: diagnostic,
+      warn: diagnostic,
+      error: diagnostic,
+    };
+  };
 
   loadingHistory = Effect.sync(() => {
     this.status = "Loading history…";
