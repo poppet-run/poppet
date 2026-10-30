@@ -12,7 +12,12 @@ import {
   type ChatWriter,
 } from "#src/commands/chat/chat";
 import { readChatHistory } from "#src/commands/chat/history";
-import { readChatLine, interactiveChat, interactiveChatOutput } from "#src/commands/chat/prompt";
+import {
+  readChatLine,
+  readChatInput,
+  interactiveChat,
+  interactiveChatOutput,
+} from "#src/commands/chat/prompt";
 import { openChatTerminal, type ChatTerminal } from "#src/commands/chat/terminal";
 import type { CLIContext } from "#src/commands/context";
 import { attachFlag, skillFlag, textArgument } from "#src/commands/flags";
@@ -147,7 +152,7 @@ export const chatCommand = (context: CLIContext) => {
                 return yield* interactiveChat(
                   options,
                   (command, onSession) => runChat(command, onSession, true),
-                  readLine,
+                  readChatInput(readLine),
                   undefined,
                   (sessionId) => loadHistory(sessionId),
                 );
@@ -163,7 +168,6 @@ export const chatCommand = (context: CLIContext) => {
                   info: terminal.info,
                   error: terminal.error,
                   begin: terminal.begin,
-                  attachments: terminal.setAttachments,
                   finish: Effect.void,
                 },
                 (sessionId) => loadHistory(sessionId, terminal),

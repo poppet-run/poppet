@@ -81,11 +81,22 @@ Home/End or Ctrl-A/Ctrl-E move to the start/end of the draft. Ctrl-U clears the
 text before the cursor. Up/Down recall messages sent during this invocation and
 restore your draft when you move past the latest entry. History is not saved to disk.
 
-You can draft the next message while Poppet responds. Enter sends only when the
-current request has finished. The status line animates `Thinking...` until the
-answer starts, using the same cyan sweep as `chat new` in 256-colour terminals
+You can draft the next message while Poppet responds. Enter queues it above the
+input box and clears the composer. Queued messages run in order after the current
+request finishes, and move into the conversation when their turn starts.
+`/attach <path>` binds a file to the next message you submit, including queued
+messages. Attachment paths are captured on submission; files are read when the turn starts.
+Use `/queue remove N` to remove the numbered pending message and its attachments.
+
+If a turn fails and the session can continue, the queue pauses. `/queue retry`
+retries the failed message before the queue; `/queue resume` skips the failed
+message and continues with pending messages. Neither happens automatically.
+Queued messages exist only in this invocation and are discarded on exit.
+
+The status line animates `Thinking...` until the answer starts, then animates
+`Responding...` until the turn finishes, using the same cyan sweep as `chat new` in 256-colour terminals
 and cycling dots otherwise. It stops on errors, completion, and exit. The status
-line also shows response progress and the number of queued attachments. `/attach <path>` adds a file to the next
+line also shows response progress and the number of attachments staged for the next
 message. Page Up/Page Down scroll through this invocation's conversation. Resizing
 the terminal reflows text and preserves the draft. On exit, the normal terminal
 screen is restored and a command is printed to resume the session. The conversation
@@ -106,7 +117,7 @@ With `chat.logReasoning` enabled, provider reasoning appears under a muted
 structured reasoning log entries. Providers may return no readable reasoning for
 a turn; in that case no heading is printed.
 
-`TERM=dumb` uses a simple, single-line `You>` prompt. The plain prompt and
+`TERM=dumb` uses a simple, single-line `You>` prompt without message queuing. The plain prompt and
 `chat new` retain the streamed thinking output on stderr and answers on stdout.
 On supported terminals, their `Thinking...` indicator animates until the answer
 starts, using cyan when colour is available. It clears on completion or

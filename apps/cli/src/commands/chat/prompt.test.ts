@@ -6,7 +6,7 @@ import { WorkerRequestError } from "@poppet/worker";
 import { Console, Effect } from "effect";
 
 import type { ChatCommand } from "#src/commands/chat/chat";
-import { interactiveChat } from "#src/commands/chat/prompt";
+import { interactiveChat, readChatInput } from "#src/commands/chat/prompt";
 
 describe("readChatLine", () => {
   test.concurrent("when prompts finish, releases stdin error listeners", async () => {
@@ -86,7 +86,7 @@ const fixture = (lines: (string | null)[]) => {
 
   return {
     commands,
-    read,
+    read: readChatInput(read),
     reads: () => reads,
     errors,
     messages,
