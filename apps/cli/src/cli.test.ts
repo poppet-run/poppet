@@ -241,42 +241,12 @@ describe("makeCLI", () => {
       expect(job.schedule.type).toBe("once");
       expect(job.schedule.at).toBeGreaterThanOrEqual(before + 60_000);
       expect(job.schedule.at).toBeLessThanOrEqual(Date.now() + 60_000);
-      const snoozeStart = Date.now();
-
-      const snoozed = await invoke(
-        ["tasks", "snooze", "--json", job.id, "--for", "1h"],
-        environment,
-      );
-
-      expect(snoozed.exitCode).toBe(0);
-      const receipt = JSON.parse(snoozed.stdout);
-      expect(receipt.scheduledAt).toBe(job.schedule.at);
-      expect(receipt.availableAt).toBeGreaterThanOrEqual(snoozeStart + 3_600_000);
-      expect(receipt.availableAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
-
-      await Array.fromAsync(
-        [
-          [],
-          ["--for", "0m"],
-          ["--for", "1m"],
-          ["--for", "1h", "--until", "2099-10-22T09:00:00Z"],
-          ["--for", "1h", "--for", "2h"],
-        ],
-        async (flags) => {
-          expect(
-            (await invoke(["tasks", "snooze", "--json", job.id, ...flags], environment)).exitCode,
-          ).toBe(1);
-        },
-      );
-
-      const shown = await invoke(["tasks", "show", "--json", job.id], environment);
-      expect(JSON.parse(shown.stdout).target.availableAt).toBe(receipt.availableAt);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
 
-  test("when saved tasks are edited, skipped, snoozed, or queued offline, preserves snapshots and cadence", async () => {
+  test("when saved tasks are edited or queued offline, preserves snapshots and cadence", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-controls-cli-"));
     const environment = await configure(directory, { model: "saved-model" });
     const offline = { POPPET_DATA_DIR: directory };
@@ -298,14 +268,6 @@ describe("makeCLI", () => {
       expect(added.exitCode).toBe(0);
       const id = JSON.parse(added.stdout).id;
 
-      const snoozed = await invoke(
-        ["tasks", "snooze", "--json", id, "--until", "2099-10-23T09:00:00Z"],
-        offline,
-      );
-
-      expect(snoozed.exitCode).toBe(0);
-      const held = JSON.parse(snoozed.stdout);
-
       const edited = await invoke(
         ["tasks", "edit", "--json", id, "--name", "Renamed", "--prompt", "Read the new decisions"],
         offline,
@@ -315,8 +277,6 @@ describe("makeCLI", () => {
       const replacement = JSON.parse(edited.stdout);
       expect(replacement).toMatchObject({
         changedFields: ["name", "prompt"],
-        availableAt: held.availableAt,
-        replacedOccurrenceIds: [held.occurrenceId],
       });
       expect((await invoke(["tasks", "edit", "--json", id], offline)).exitCode).toBe(1);
       expect((await invoke(["tasks", "edit", "--json", id, "--tz", "UTC"], offline)).exitCode).toBe(
@@ -329,10 +289,7 @@ describe("makeCLI", () => {
       );
 
       expect(rescheduled.exitCode).toBe(0);
-      expect(JSON.parse(rescheduled.stdout).snoozeCleared).toBe(true);
-      const skipped = await invoke(["tasks", "skip", "--json", id], offline);
-      expect(skipped.exitCode).toBe(0);
-      const nextAt = JSON.parse(skipped.stdout).nextAt;
+      const nextAt = JSON.parse(rescheduled.stdout).nextAt;
       const immediate = await invoke(["tasks", "run", "--json", id], offline);
       expect(immediate.exitCode).toBe(0);
       const queued = JSON.parse(immediate.stdout);
@@ -575,20 +532,6 @@ describe("makeCLI", () => {
       await configure(directory, {});
       const result = await invoke(["worker", "status", "--json"], { POPPET_DATA_DIR: directory });
       expect(result.exitCode).toBe(0);
-      expect(
-        JSON.parse(
-          (
-            await invoke(["tasks", "resume-provider", "--json", "openrouter"], {
-              POPPET_DATA_DIR: directory,
-            })
-          ).stdout,
-        ),
-      ).toEqual({ provider: "openrouter", resumed: true });
-      expect(
-        JSON.parse(
-          (await invoke(["tasks", "providers", "--json"], { POPPET_DATA_DIR: directory })).stdout,
-        ),
-      ).toEqual([]);
       expect(JSON.parse(result.stdout).worker).toMatchObject({
         running: false,
         taskCount: 1,
@@ -822,15 +765,6 @@ describe("makeCLI", () => {
       expect(
         JSON.parse((await invoke(["tasks", "list", "--json"], environment)).stdout),
       ).toMatchObject([{ id: task.id }]);
-      expect(
-        JSON.parse(
-          (await invoke(["tasks", "resume-provider", "--json", "openai-chatgpt"], environment))
-            .stdout,
-        ),
-      ).toEqual({ provider: "openai-chatgpt", resumed: true });
-      expect(
-        JSON.parse((await invoke(["tasks", "providers", "--json"], environment)).stdout),
-      ).toEqual([]);
       expect((await invoke(["tasks", "pause", "--json", task.id], environment)).exitCode).toBe(0);
       expect((await invoke(["tasks", "show", "--json", "missing"], environment)).stderr).toContain(
         "does not exist",
@@ -1320,8 +1254,7 @@ describe("makeCLI", () => {
       "tasks add",
       "tasks run",
       "worker run",
-      "tasks providers",
-      "tasks resume-provider",
+      "tasks",
       "worker stop",
       "worker restart",
     ];
@@ -1394,7 +1327,7 @@ describe("makeCLI", () => {
 
     const commands = [
       ["config", "--json", "unexpected-argument"],
-      ["tasks", "resume-provider", "--json", "bad/id"],
+      ...["snooze", "skip", "providers", "resume-provider"].map((command) => ["tasks", command]),
       [
         "tasks",
         "add",

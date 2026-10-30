@@ -330,7 +330,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
           return yield* new TaskError({
             message:
               action === "cancel-task"
-                ? "The task has no pending or running occurrence. Use tasks skip to skip its next scheduled execution."
+                ? "The task has no pending or running occurrence."
                 : "The task has no occurrence to retry.",
           });
 
@@ -472,7 +472,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
           Object.assign(held, {
             action:
               held.resumeAt === null
-                ? `Run tasks resume-provider ${held.provider} when quota is available.`
+                ? `Scheduled work is paused by a quota limit.`
                 : `Future work can resume at ${new Date(held.resumeAt).toISOString()}.`,
           }),
         ),

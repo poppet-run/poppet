@@ -1112,7 +1112,7 @@ describe.concurrent("makeTaskWorker", () => {
             `occurrence=${claimed.id} failed reason=provider:quota`,
           );
           expect(state.lines.at(-1)).toContain(
-            "Provider test-provider paused reason=quota; use tasks resume-provider test-provider",
+            "Provider test-provider paused reason=quota; scheduled work is paused",
           );
           expect([...state.lines, ...state.errors].join("\n")).not.toContain(
             "private-provider-details",

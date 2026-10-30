@@ -195,14 +195,14 @@ const inspectWorker = (directory: string, identity: string | null) =>
                   Match.exhaustive,
                 );
 
-                return `${hold.provider} is paused because ${reason}. ${hold.resumeAt === null ? "Waiting for you to resume work." : `Scheduled work can retry at ${new Date(hold.resumeAt).toISOString()}.`}`;
+                return `${hold.provider} is paused because ${reason}. ${hold.resumeAt === null ? "Scheduled work remains paused." : `Scheduled work can retry at ${new Date(hold.resumeAt).toISOString()}.`}`;
               }),
               ...(snapshot.holdsOmitted > 0
                 ? [`${snapshot.holdsOmitted} more paused providers not shown.`]
                 : []),
             ].join(" "),
         snapshot.holds.length > 0
-          ? "Run poppet tasks status. Wait until the retry time, or use poppet tasks resume-provider with the provider ID once its limit is cleared."
+          ? "Run poppet worker status to inspect provider pauses. Temporary pauses clear at the retry time; quota pauses do not clear automatically."
           : null,
       ),
       finding(

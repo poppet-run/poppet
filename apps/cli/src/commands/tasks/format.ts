@@ -183,9 +183,6 @@ const providerPauses = (pauses: ReadonlyArray<ProviderPause>) =>
             String(pause.failures),
           ]),
         ),
-        ...(pauses.some((pause) => pause.resumeAt === null)
-          ? ["", "Resume a manual pause with poppet tasks resume-provider <provider>."]
-          : []),
       ].join("\n");
 
 /** Prints a task command's result; local results and worker replies share each action's shape. */
