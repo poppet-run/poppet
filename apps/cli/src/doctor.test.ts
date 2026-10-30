@@ -350,7 +350,7 @@ describe("doctor", () => {
           const sql = yield* SqlClient.SqlClient;
           yield* migrate(taskSchema);
           yield* migrate(gatewaySchema);
-          yield* sql`INSERT INTO jobs (id,name,prompt,provider,model,workload,schedule,created_at) VALUES ('job','secret-name','secret-prompt','openrouter','model','assistant','{}',0)`;
+          yield* sql`INSERT INTO jobs (id,name,prompt,provider,model,schedule,created_at) VALUES ('job','secret-name','secret-prompt','openrouter','model','{}',0)`;
           yield* sql`INSERT INTO job_occurrences (id,job_id,revision,definition,scheduled_at,available_at,status,finished_at) VALUES ('occurrence','job',0,'{}',0,0,'failed',${Date.now()})`;
           yield* sql`INSERT INTO job_provider_pauses VALUES ('openrouter','quota',NULL,1)`;
           yield* sql`INSERT INTO gateway_inbox (id,adapter,account,external_id,payload,run_id,state) VALUES (1,'discord','secret-account','external','secret-payload','run','completed')`;
