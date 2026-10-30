@@ -131,6 +131,9 @@ describe.concurrent("interactiveChat", () => {
       { action: "send", id: "saved-session", text: "New request" },
     ]);
     expect(state.errors.join("\n")).toContain("Lost response. Not retried.");
+    expect(state.messages.filter((line) => line.startsWith("Session: "))).toEqual([
+      "Session: saved-session",
+    ]);
   });
 
   test("when files are added with /attach, sends them with the next message only", async () => {

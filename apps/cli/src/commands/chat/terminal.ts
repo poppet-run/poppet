@@ -5,6 +5,7 @@ import { AgentError } from "@poppet/agent";
 import { Deferred, Effect } from "effect";
 
 import type { ChatReasoningWriter, ChatWriter } from "#src/commands/chat/chat";
+import type { ChatHistoryMessage } from "#src/commands/chat/history";
 import { thinkingIndicator } from "#src/commands/chat/prompt";
 
 const escape = "\u001b[";
@@ -65,7 +66,10 @@ export const wrapChatText = (text: string, width: number): string[] => {
   return rows;
 };
 
-type Message = { kind: "You" | "Poppet" | "Thinking" | "Info" | "Error" | "Welcome"; text: string };
+type Message = {
+  kind: "You" | "Poppet" | "Thinking" | "Info" | "Error" | "Welcome" | "Session";
+  text: string;
+};
 
 type Output = Pick<NodeJS.WriteStream, "write" | "columns" | "rows"> &
   Partial<Pick<NodeJS.WriteStream, "hasColors">>;
@@ -82,6 +86,7 @@ export class ChatTerminal {
   private paste = false;
   private busy = false;
   private status = "Ready";
+  private sessionId: string | undefined;
   private thinkingTimer: ReturnType<typeof setInterval> | undefined;
   private thinkingFrame = 0;
   private attachments: readonly string[] = [];
@@ -139,9 +144,10 @@ export class ChatTerminal {
       const rows = wrapChatText(text, width);
 
       return [
-        ...(kind === "Welcome" ? [] : [label]),
+        ...(kind === "Welcome" || kind === "Session" ? [] : [label]),
         ...rows.map((row) =>
-          styled && (kind === "Info" || kind === "Thinking" || kind === "Welcome")
+          styled &&
+          (kind === "Info" || kind === "Thinking" || kind === "Welcome" || kind === "Session")
             ? this.style(row, "2")
             : row,
         ),
@@ -241,6 +247,35 @@ export class ChatTerminal {
       this.reader = undefined;
     });
   });
+
+  loadingHistory = Effect.sync(() => {
+    this.status = "Loading history…";
+    this.schedule();
+  });
+
+  showHistory = (messages: readonly ChatHistoryMessage[]) =>
+    Effect.sync(() => {
+      this.status = "Ready";
+
+      for (const message of messages)
+        this.messages.push({
+          kind: message.role === "user" ? "You" : "Poppet",
+          text: clean(message.text),
+        });
+      this.offset = 0;
+      this.schedule();
+    });
+
+  session: ChatWriter = (id) =>
+    Effect.sync(() => {
+      this.sessionId = id;
+      const firstMessage = this.messages.findIndex(({ kind }) => kind !== "Welcome");
+      this.messages.splice(firstMessage < 0 ? this.messages.length : firstMessage, 0, {
+        kind: "Session",
+        text: `Session: ${clean(id)}`,
+      });
+      this.schedule();
+    });
 
   welcome: ChatWriter = (text) =>
     Effect.sync(() => {
@@ -446,13 +481,10 @@ export class ChatTerminal {
     clearTimeout(this.timer);
     this.reader = undefined;
     this.output.write(`${escape}<u${escape}?2004l${escape}0m${escape}?25h${escape}?1049l`);
-    // Keep completed and partial messages available in normal terminal scrollback.
     this.output.write(
-      this.transcript(
-        Math.max(1, (this.output.columns || 80) - 1),
-        false,
-        this.messages.filter(({ kind }) => kind !== "Welcome"),
-      ).join("\n") + "\n",
+      this.sessionId === undefined
+        ? "Chat closed. No session was created.\n"
+        : `Resume this session with:\n  poppet chat interactive ${this.sessionId}\n`,
     );
   }
 }

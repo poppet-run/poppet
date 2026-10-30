@@ -986,6 +986,63 @@ describe.concurrent("chat.ts", () => {
   );
 
   test.each(["local", "worker"])(
+    "when resuming through %s execution, displays history before input without another provider call",
+    async (mode) => {
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
+
+      try {
+        if (mode === "worker") worker = await chat.startWorker();
+        const path = join(chat.directory, "notes.txt");
+        await writeFile(path, "Some notes");
+        await chat.invoke(["chat", "new", "--attach", path, "First saved message"]);
+        const id = chat.requests[0]!.sessionId;
+        await chat.invoke(["chat", "send", id, "Second saved message"]);
+        chat.lines.length = 0;
+        chat.chunks.length = 0;
+        // History inspection must not depend on a currently configured model.
+        await chat.configure({ provider: "unused-provider", model: undefined });
+        await Effect.runPromise(
+          chat.program(
+            ["chat", "interactive", id],
+            Effect.sync(() => {
+              expect(chat.lines[1]).toBe(`Session: ${id}`);
+              expect(chat.lines.slice(2)).toEqual([
+                "\nYou\n\nFirst saved message\n[Attached: notes.txt]\n",
+                "\nPoppet\n\nAnswer\n",
+                "\nYou\n\nSecond saved message\n",
+                "\nPoppet\n\nAnswer\n",
+              ]);
+              expect(chat.chunks).toEqual([]);
+              expect(chat.requests).toHaveLength(2);
+
+              return null;
+            }),
+          ),
+        );
+        expect(chat.lines.join("\n")).not.toContain("secretOpaqueState");
+
+        const missing = await Effect.runPromise(
+          chat
+            .program(
+              ["chat", "interactive", "missing-session"],
+              Effect.sync(() => {
+                throw new Error("Must not prompt before history loads");
+              }),
+            )
+            .pipe(Effect.result),
+        );
+
+        expect(missing).toHaveProperty("failure.message", "The session does not exist.");
+        expect(chat.requests).toHaveLength(2);
+      } finally {
+        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
+
+  test.each(["local", "worker"])(
     "when interactive chat continues through %s execution, retains one skill and session",
     async (mode) => {
       const remote = mode === "worker";
@@ -1008,6 +1065,12 @@ describe.concurrent("chat.ts", () => {
           ),
         );
         expect(chat.requests).toHaveLength(2);
+        expect(chat.lines.filter((line) => line.startsWith("Session: "))).toEqual([
+          `Session: ${chat.requests[0]!.sessionId}`,
+        ]);
+        expect(
+          chat.errors.some((line) => line.startsWith("Session: ") || line.startsWith("Run: ")),
+        ).toBe(false);
         expect(new Set(chat.requests.map((request) => request.sessionId)).size).toBe(1);
         expect(chat.requests[1]!.messages).toEqual(
           expect.arrayContaining([
@@ -1033,6 +1096,10 @@ describe.concurrent("chat.ts", () => {
           ),
         );
         expect(chat.requests[2]!.sessionId).toBe(id);
+        expect(chat.lines.filter((line) => line.startsWith("Session: "))).toEqual([
+          `Session: ${id}`,
+          `Session: ${id}`,
+        ]);
         expect(chat.requests[2]!.instructions).toContain("Give a short project review.");
         await chat.invoke(["chat", "show", id]);
         const saved = JSON.parse(chat.lines.at(-1)!);
