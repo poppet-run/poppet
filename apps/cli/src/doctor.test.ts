@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 
 import { AppConfig, ConfigIdentity, ConfigSourceLive } from "@poppet/config";
 import { gatewaySchema } from "@poppet/gateway";
@@ -48,6 +49,49 @@ const check = (report: ReturnType<typeof doctorReport>, id: string) =>
   report.checks.find((item) => item.id === id)!;
 
 describe("doctor", () => {
+  test("human reports put actionable findings first without losing details or changing JSON", () => {
+    const report = doctorReport(
+      [
+        finding("configuration", "ok", "local", "Settings are valid."),
+        finding("browser", "skipped", "local", "Browser access is disabled."),
+        finding(
+          "authentication",
+          "warning",
+          "saved",
+          "The saved access token has expired and needs attention before the next request.",
+          "Run poppet provider login openai-chatgpt.",
+        ),
+        finding(
+          "worker.socket",
+          "error",
+          "not-checked",
+          "Worker inspection timed out.",
+          "Run poppet worker status.",
+          true,
+        ),
+      ],
+      "/tmp/example",
+    );
+
+    const before = JSON.stringify(report);
+    const plain = renderDoctor(report, false, 64);
+    const normalized = plain.replace(/\s+/gu, " ");
+
+    expect(plain).toContain("1 passed, 1 warning, 1 error, 1 skipped");
+    expect(plain.indexOf("Needs attention")).toBeLessThan(plain.indexOf("Passed"));
+    expect(plain.indexOf("Authentication")).toBeLessThan(plain.indexOf("Configuration"));
+
+    for (const entry of report.checks) {
+      expect(normalized).toContain(entry.message);
+
+      if (entry.nextStep !== null) expect(normalized).toContain(`Next: ${entry.nextStep}`);
+    }
+
+    expect(plain.split("\n").every((line) => line.length <= 64)).toBe(true);
+    expect(stripVTControlCharacters(renderDoctor(report, true, 64))).toBe(plain);
+    expect(JSON.stringify(report)).toBe(before);
+  });
+
   test("expired ChatGPT credentials are reported without refresh or rewriting", async () => {
     const directory = await fixture();
 
