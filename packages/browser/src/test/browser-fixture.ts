@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import * as Schema from "effect/Schema";
 
+import versions from "../../test-versions.json";
+
 const [executable, ...args] = Bun.argv.slice(2);
 
 const directory = process.cwd();
@@ -89,10 +91,12 @@ if (process.env.AGENT_BROWSER_DAEMON === "1") {
 } else if (args[0] === "--version") {
   console.log(
     executable === "chromium"
-      ? "Google Chrome for Testing 156.0.8078.47"
+      ? `Google Chrome for Testing ${mode === "chrome-untested" ? "157.0.0.0" : versions.chromium}`
       : mode === "version"
         ? "agent-browser 0.0.0"
-        : "agent-browser 0.39.4",
+        : mode === "untested"
+          ? "agent-browser 0.42.0"
+          : `agent-browser ${versions.agentBrowser}`,
   );
 } else if (mode === "stall") {
   await Bun.sleep(60000);

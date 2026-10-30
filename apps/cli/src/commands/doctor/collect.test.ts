@@ -132,6 +132,56 @@ describe("doctor", () => {
   });
 
   test.each([
+    ["0.41.0", "156.0.8078.80", "ok", "Browser programs were found"],
+    ["0.39.3", "156.0.8078.80", "error", "older than the minimum"],
+    ["0.42.0", "156.0.8078.80", "warning", "has not been validated"],
+    ["0.41.0", "157.0.0.0", "warning", "has not been validated"],
+    ["private-invalid-version", "156.0.8078.80", "warning", "agent-browser version is unknown"],
+  ] as const)(
+    "reports installed browser compatibility for %s and Chrome %s without running programs",
+    async (agentVersion, chromeVersion, status, message) => {
+      const directory = await fixture();
+
+      try {
+        const bin = join(directory, "package", "bin");
+        const chrome = join(directory, `chrome-${chromeVersion}`, "chrome");
+        await mkdir(bin, { recursive: true });
+        await mkdir(join(directory, `chrome-${chromeVersion}`));
+        const command = join(bin, "agent-browser");
+        const script = '#!/bin/sh\ntouch "$0.ran"\n';
+        await writeFile(command, script, { mode: 0o700 });
+        await writeFile(chrome, script, { mode: 0o700 });
+        await writeFile(
+          join(directory, "package", "package.json"),
+          JSON.stringify({ name: "agent-browser", version: agentVersion }),
+        );
+        await writeFile(
+          join(directory, "config.json"),
+          JSON.stringify({
+            browser: {
+              enabled: true,
+              command,
+              chromiumExecutable: chrome,
+              allowedDomains: ["example.com"],
+            },
+          }),
+        );
+        const report = await Effect.runPromise(collect(directory));
+        const browser = check(report, "browser");
+        expect(browser.status).toBe(status);
+        expect(browser.incomplete).toBe(false);
+        expect(browser.message).toContain(message);
+        expect(browser.message).toContain("Doctor has not run either program");
+        expect(JSON.stringify(report)).not.toContain("private-invalid-version");
+        expect(await readdir(bin)).toEqual(["agent-browser"]);
+        expect(await readdir(join(directory, `chrome-${chromeVersion}`))).toEqual(["chrome"]);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.each([
     ["agent-browser", "/missing/doctor-browser", process.execPath, "browser.command"],
     ["Chrome for Testing", process.execPath, "/missing/chromium", "browser.chromiumExecutable"],
   ])(

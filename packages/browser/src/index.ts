@@ -2,4 +2,6 @@ export { browserTools, browserInstructions, type BrowserTool } from "#src/browse
 
 export { BrowserError } from "#src/errors";
 
-export { browserExecutables } from "#src/executables";
+export { browserExecutables, browserInstallationVersions } from "#src/executables";
+
+export { agentBrowserCompatibility, chromiumCompatibility } from "#src/compatibility";

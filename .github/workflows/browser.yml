@@ -1,0 +1,38 @@
+name: Browser
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: bun install --frozen-lockfile
+      - name: Install the exact browser test versions
+        shell: bash
+        run: |
+          agent_version=$(jq -r .agentBrowser packages/browser/test-versions.json)
+          chrome_version=$(jq -r .chromium packages/browser/test-versions.json)
+          npm install --prefix "$RUNNER_TEMP/browser-tools" "agent-browser@$agent_version"
+          curl --fail --location --retry 3 \
+            "https://storage.googleapis.com/chrome-for-testing-public/$chrome_version/linux64/chrome-linux64.zip" \
+            --output "$RUNNER_TEMP/chrome.zip"
+          unzip -q "$RUNNER_TEMP/chrome.zip" -d "$RUNNER_TEMP/browser-tools"
+      - name: Check browser behavior against a local site
+        shell: bash
+        run: |
+          bun packages/browser/src/test/browser-check.ts \
+            "$RUNNER_TEMP/browser-tools/node_modules/agent-browser/bin/agent-browser-linux-x64" \
+            "$RUNNER_TEMP/browser-tools/chrome-linux64/chrome"
