@@ -1,9 +1,11 @@
 import { Skills } from "@poppet/agent";
 import { SkillName } from "@poppet/store";
-import { Console, Effect } from "effect";
+import { Effect } from "effect";
 import { Argument, Command } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
+import { jsonFlag } from "#src/commands/flags";
+import { printWith } from "#src/output";
 
 export const skillsCommand = (context: CLIContext) => {
   const { runtime } = context;
@@ -11,18 +13,18 @@ export const skillsCommand = (context: CLIContext) => {
   return Command.make("skills").pipe(
     Command.withDescription("Inspect local Markdown skills"),
     Command.withSubcommands([
-      Command.make("list", {}, () =>
+      Command.make("list", { json: jsonFlag }, ({ json }) =>
         Skills.use((skills) => skills.list).pipe(
-          Effect.flatMap((names) => Console.log(JSON.stringify(names, null, 2))),
+          printWith(json, (names) => (names.length === 0 ? "No local skills." : names.join("\n"))),
           Effect.provide(runtime.skills),
         ),
       ).pipe(Command.withDescription("List local skills")),
       Command.make(
         "show",
-        { name: Argument.String("name").pipe(Argument.withSchema(SkillName)) },
-        ({ name }) =>
+        { name: Argument.String("name").pipe(Argument.withSchema(SkillName)), json: jsonFlag },
+        ({ name, json }) =>
           Skills.use((skills) => skills.load(name)).pipe(
-            Effect.flatMap((skill) => Console.log(skill.content)),
+            printWith(json, (skill) => skill.content),
             Effect.provide(runtime.skills),
           ),
       ).pipe(Command.withDescription("Show a skill's Markdown instructions")),

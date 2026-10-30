@@ -107,7 +107,7 @@ describe("makeCLI", () => {
             );
           }),
         );
-        const result = await invoke(["worker", "status"], { POPPET_DATA_DIR: directory });
+        const result = await invoke(["worker", "status", "--json"], { POPPET_DATA_DIR: directory });
 
         expect(result.exitCode).toBe(0);
         expect(JSON.parse(result.stdout).worker.messaging).toMatchObject({
@@ -144,7 +144,7 @@ describe("makeCLI", () => {
       const results = await Promise.all(
         selections.map(async ({ name, provider }) =>
           invoke(
-            ["config"],
+            ["config", "--json"],
             await configure(join(directory, name), { applicationName: name, provider }),
           ),
         ),
@@ -184,7 +184,7 @@ describe("makeCLI", () => {
             );
 
             const reply = yield* Effect.promise(() =>
-              invoke(["tasks", "edit", "saved-task", "--name", "Changed"], {
+              invoke(["tasks", "edit", "--json", "saved-task", "--name", "Changed"], {
                 POPPET_DATA_DIR: directory,
               }),
             );
@@ -221,7 +221,8 @@ describe("makeCLI", () => {
         ],
         async (flags) => {
           expect(
-            (await invoke(["tasks", "add", "Invalid", ...flags, "Summary"], environment)).exitCode,
+            (await invoke(["tasks", "add", "--json", "Invalid", ...flags, "Summary"], environment))
+              .exitCode,
           ).toBe(1);
         },
       );
@@ -230,7 +231,7 @@ describe("makeCLI", () => {
       const before = Date.now();
 
       const added = await invoke(
-        ["tasks", "add", "Soon", "--in=1m", "Summary --literal"],
+        ["tasks", "add", "--json", "Soon", "--in=1m", "Summary --literal"],
         environment,
       );
 
@@ -241,7 +242,12 @@ describe("makeCLI", () => {
       expect(job.schedule.at).toBeGreaterThanOrEqual(before + 60_000);
       expect(job.schedule.at).toBeLessThanOrEqual(Date.now() + 60_000);
       const snoozeStart = Date.now();
-      const snoozed = await invoke(["tasks", "snooze", job.id, "--for", "1h"], environment);
+
+      const snoozed = await invoke(
+        ["tasks", "snooze", "--json", job.id, "--for", "1h"],
+        environment,
+      );
+
       expect(snoozed.exitCode).toBe(0);
       const receipt = JSON.parse(snoozed.stdout);
       expect(receipt.scheduledAt).toBe(job.schedule.at);
@@ -257,13 +263,13 @@ describe("makeCLI", () => {
           ["--for", "1h", "--for", "2h"],
         ],
         async (flags) => {
-          expect((await invoke(["tasks", "snooze", job.id, ...flags], environment)).exitCode).toBe(
-            1,
-          );
+          expect(
+            (await invoke(["tasks", "snooze", "--json", job.id, ...flags], environment)).exitCode,
+          ).toBe(1);
         },
       );
 
-      const shown = await invoke(["tasks", "show", job.id], environment);
+      const shown = await invoke(["tasks", "show", "--json", job.id], environment);
       expect(JSON.parse(shown.stdout).target.availableAt).toBe(receipt.availableAt);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -277,7 +283,15 @@ describe("makeCLI", () => {
 
     try {
       const added = await invoke(
-        ["tasks", "add", "Original", "--at", "2099-10-22T09:00:00Z", "Read recent conversations"],
+        [
+          "tasks",
+          "add",
+          "--json",
+          "Original",
+          "--at",
+          "2099-10-22T09:00:00Z",
+          "Read recent conversations",
+        ],
         environment,
       );
 
@@ -285,7 +299,7 @@ describe("makeCLI", () => {
       const id = JSON.parse(added.stdout).id;
 
       const snoozed = await invoke(
-        ["tasks", "snooze", id, "--until", "2099-10-23T09:00:00Z"],
+        ["tasks", "snooze", "--json", id, "--until", "2099-10-23T09:00:00Z"],
         offline,
       );
 
@@ -293,7 +307,7 @@ describe("makeCLI", () => {
       const held = JSON.parse(snoozed.stdout);
 
       const edited = await invoke(
-        ["tasks", "edit", id, "--name", "Renamed", "--prompt", "Read the new decisions"],
+        ["tasks", "edit", "--json", id, "--name", "Renamed", "--prompt", "Read the new decisions"],
         offline,
       );
 
@@ -304,30 +318,32 @@ describe("makeCLI", () => {
         availableAt: held.availableAt,
         replacedOccurrenceIds: [held.occurrenceId],
       });
-      expect((await invoke(["tasks", "edit", id], offline)).exitCode).toBe(1);
-      expect((await invoke(["tasks", "edit", id, "--tz", "UTC"], offline)).exitCode).toBe(1);
+      expect((await invoke(["tasks", "edit", "--json", id], offline)).exitCode).toBe(1);
+      expect((await invoke(["tasks", "edit", "--json", id, "--tz", "UTC"], offline)).exitCode).toBe(
+        1,
+      );
 
       const rescheduled = await invoke(
-        ["tasks", "edit", id, "--cron", "0 9 * * *", "--tz", "Europe/London"],
+        ["tasks", "edit", "--json", id, "--cron", "0 9 * * *", "--tz", "Europe/London"],
         offline,
       );
 
       expect(rescheduled.exitCode).toBe(0);
       expect(JSON.parse(rescheduled.stdout).snoozeCleared).toBe(true);
-      const skipped = await invoke(["tasks", "skip", id], offline);
+      const skipped = await invoke(["tasks", "skip", "--json", id], offline);
       expect(skipped.exitCode).toBe(0);
       const nextAt = JSON.parse(skipped.stdout).nextAt;
-      const immediate = await invoke(["tasks", "run", id], offline);
+      const immediate = await invoke(["tasks", "run", "--json", id], offline);
       expect(immediate.exitCode).toBe(0);
       const queued = JSON.parse(immediate.stdout);
       expect(queued.nextAt).toBe(nextAt);
-      const repeated = await invoke(["tasks", "run", id], offline);
+      const repeated = await invoke(["tasks", "run", "--json", id], offline);
       expect(repeated.exitCode).toBe(0);
       expect(JSON.parse(repeated.stdout).occurrenceId).toBe(queued.occurrenceId);
-      expect((await invoke(["tasks", "cancel", id], offline)).exitCode).toBe(0);
+      expect((await invoke(["tasks", "cancel", "--json", id], offline)).exitCode).toBe(0);
 
       const retried = await invoke(
-        ["tasks", "retry", id, "--occurrence", queued.occurrenceId],
+        ["tasks", "retry", "--json", id, "--occurrence", queued.occurrenceId],
         offline,
       );
 
@@ -336,7 +352,7 @@ describe("makeCLI", () => {
         id: queued.occurrenceId,
         status: "pending",
       });
-      const shown = await invoke(["tasks", "show", id], offline);
+      const shown = await invoke(["tasks", "show", "--json", id], offline);
       expect(shown.exitCode).toBe(0);
       expect(JSON.parse(shown.stdout)).toMatchObject({
         task: {
@@ -384,7 +400,7 @@ describe("makeCLI", () => {
         (await invoke(["web", "login", "--api-key", "brave-only-key"], environment)).exitCode,
       ).toBe(0);
       await configure(directory, { webSearchProvider: "kagi" });
-      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+      expect(JSON.parse((await invoke(["web", "status", "--json"], environment)).stdout)).toEqual({
         provider: "kagi",
         enabled: false,
         configured: false,
@@ -396,14 +412,14 @@ describe("makeCLI", () => {
       expect(login.exitCode).toBe(0);
       expect(login.stdout).toContain("Kagi Search key saved");
       expect(login.stdout).not.toContain("kagi-only-key");
-      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+      expect(JSON.parse((await invoke(["web", "status", "--json"], environment)).stdout)).toEqual({
         provider: "kagi",
         enabled: false,
         configured: true,
         source: "stored",
       });
 
-      const overridden = await invoke(["web", "status"], {
+      const overridden = await invoke(["web", "status", "--json"], {
         ...environment,
         POPPET_KAGI_SEARCH_API_KEY: "kagi-override-key",
       });
@@ -411,14 +427,14 @@ describe("makeCLI", () => {
       expect(JSON.parse(overridden.stdout).source).toBe("stored");
       expect(overridden.stdout).not.toContain("kagi-override-key");
 
-      const invalid = await invoke(["web", "status"], {
+      const invalid = await invoke(["web", "status", "--json"], {
         ...environment,
         POPPET_KAGI_SEARCH_API_KEY: "",
       });
 
       expect(invalid.exitCode).toBe(0);
 
-      const config = await invoke(["config"], {
+      const config = await invoke(["config", "--json"], {
         ...environment,
         POPPET_KAGI_SEARCH_API_KEY: "kagi-only-key",
       });
@@ -426,12 +442,14 @@ describe("makeCLI", () => {
       expect(JSON.parse(config.stdout).webSearchProvider).toBe("kagi");
       expect(config.stdout).not.toContain("kagi-only-key");
       expect((await invoke(["web", "logout"], environment)).exitCode).toBe(0);
-      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout).configured).toBe(
-        false,
-      );
+      expect(
+        JSON.parse((await invoke(["web", "status", "--json"], environment)).stdout).configured,
+      ).toBe(false);
       await configure(directory, { webSearchProvider: "brave" });
       expect(
-        JSON.parse((await invoke(["web", "status"], { POPPET_DATA_DIR: directory })).stdout),
+        JSON.parse(
+          (await invoke(["web", "status", "--json"], { POPPET_DATA_DIR: directory })).stdout,
+        ),
       ).toMatchObject({
         provider: "brave",
         configured: true,
@@ -447,14 +465,14 @@ describe("makeCLI", () => {
     const environment = { POPPET_DATA_DIR: directory };
 
     try {
-      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+      expect(JSON.parse((await invoke(["web", "status", "--json"], environment)).stdout)).toEqual({
         provider: "brave",
         enabled: false,
         configured: false,
         source: null,
       });
       await writeFile(join(directory, "config.json"), '{"webSearch":true}');
-      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+      expect(JSON.parse((await invoke(["web", "status", "--json"], environment)).stdout)).toEqual({
         provider: "brave",
         enabled: true,
         configured: false,
@@ -465,14 +483,14 @@ describe("makeCLI", () => {
 
       expect(login.exitCode).toBe(0);
       expect(login.stdout).not.toContain("search-only-key");
-      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toEqual({
+      expect(JSON.parse((await invoke(["web", "status", "--json"], environment)).stdout)).toEqual({
         provider: "brave",
         enabled: true,
         configured: true,
         source: "stored",
       });
 
-      const status = await invoke(["web", "status"], {
+      const status = await invoke(["web", "status", "--json"], {
         ...environment,
         POPPET_BRAVE_SEARCH_API_KEY: "override-key",
       });
@@ -480,7 +498,7 @@ describe("makeCLI", () => {
       expect(JSON.parse(status.stdout)).toMatchObject({ source: "stored" });
       expect(status.stdout).not.toContain("override-key");
 
-      const config = await invoke(["config"], {
+      const config = await invoke(["config", "--json"], {
         ...environment,
         POPPET_BRAVE_SEARCH_API_KEY: "override-key",
       });
@@ -491,11 +509,13 @@ describe("makeCLI", () => {
         (await readdir(join(directory, "auth"))).filter((name) => name.endsWith(".json")),
       ).toEqual(["brave-search.json"]);
       expect((await invoke(["web", "logout"], environment)).exitCode).toBe(0);
-      expect(JSON.parse((await invoke(["web", "status"], environment)).stdout)).toMatchObject({
+      expect(
+        JSON.parse((await invoke(["web", "status", "--json"], environment)).stdout),
+      ).toMatchObject({
         configured: false,
       });
 
-      const invalid = await invoke(["web", "status"], {
+      const invalid = await invoke(["web", "status", "--json"], {
         ...environment,
         POPPET_BRAVE_SEARCH_API_KEY: "invalid key",
       });
@@ -515,14 +535,14 @@ describe("makeCLI", () => {
       const environment = await configure(directory, { model: "test-model" });
 
       const missing = await invoke(
-        ["tasks", "add", "Missing prompt", "--at", "2099-10-14T09:00:00Z"],
+        ["tasks", "add", "--json", "Missing prompt", "--at", "2099-10-14T09:00:00Z"],
         environment,
       );
 
       expect(missing.exitCode).toBe(1);
       expect(missing.stderr).toContain("prompt");
       expect(missing.stderr).not.toContain("Could not read or update");
-      const invalid = await invoke(["tasks", "show", "bad/id"], environment);
+      const invalid = await invoke(["tasks", "show", "--json", "bad/id"], environment);
       expect(invalid.exitCode).toBe(1);
       expect(invalid.stderr).toContain("argument <task>");
       const removedFlag = await invoke(["worker", "run", "--tasks-only"], environment);
@@ -542,6 +562,7 @@ describe("makeCLI", () => {
         [
           "tasks",
           "add",
+          "--json",
           "Router task",
           "--at",
           "2099-10-14T09:00:00Z",
@@ -552,19 +573,21 @@ describe("makeCLI", () => {
 
       expect(added.exitCode).toBe(0);
       await configure(directory, {});
-      const result = await invoke(["worker", "status"], { POPPET_DATA_DIR: directory });
+      const result = await invoke(["worker", "status", "--json"], { POPPET_DATA_DIR: directory });
       expect(result.exitCode).toBe(0);
       expect(
         JSON.parse(
           (
-            await invoke(["tasks", "resume-provider", "openrouter"], {
+            await invoke(["tasks", "resume-provider", "--json", "openrouter"], {
               POPPET_DATA_DIR: directory,
             })
           ).stdout,
         ),
       ).toEqual({ provider: "openrouter", resumed: true });
       expect(
-        JSON.parse((await invoke(["tasks", "providers"], { POPPET_DATA_DIR: directory })).stdout),
+        JSON.parse(
+          (await invoke(["tasks", "providers", "--json"], { POPPET_DATA_DIR: directory })).stdout,
+        ),
       ).toEqual([]);
       expect(JSON.parse(result.stdout).worker).toMatchObject({
         running: false,
@@ -606,7 +629,7 @@ describe("makeCLI", () => {
       expect(
         (
           await invoke(
-            ["tasks", "add", "Later", "--at", "2099-10-14T09:00:00Z", "Hello"],
+            ["tasks", "add", "--json", "Later", "--at", "2099-10-14T09:00:00Z", "Hello"],
             environment,
           )
         ).exitCode,
@@ -614,13 +637,15 @@ describe("makeCLI", () => {
       worker.kill("SIGKILL");
       await worker.exited;
       expect(await readdir(join(directory, "store"))).toContain("tasks.sock");
-      const list = await invoke(["tasks", "list"], environment);
+      const list = await invoke(["tasks", "list", "--json"], environment);
       expect(list.exitCode).toBe(0);
       expect(JSON.parse(list.stdout)).toMatchObject([{ name: "Later" }]);
-      const clear = await invoke(["tasks", "clear"], environment);
+      const clear = await invoke(["tasks", "clear", "--json"], environment);
       expect(clear.exitCode).toBe(0);
       expect(JSON.parse(clear.stdout)).toEqual({ cleared: 1 });
-      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
+      expect(JSON.parse((await invoke(["tasks", "list", "--json"], environment)).stdout)).toEqual(
+        [],
+      );
     } finally {
       worker.kill("SIGKILL");
       await worker.exited;
@@ -638,6 +663,7 @@ describe("makeCLI", () => {
         [
           "tasks",
           "add",
+          "--json",
           "Summary",
           "--cron",
           "* * * * *",
@@ -656,6 +682,7 @@ describe("makeCLI", () => {
         [
           "tasks",
           "add",
+          "--json",
           "Summary",
           "--cron",
           "0 9 * * *",
@@ -675,36 +702,40 @@ describe("makeCLI", () => {
         schedule: { expression: "0 9 * * *", timezone: "Europe/London" },
       });
       const offline = { POPPET_DATA_DIR: directory };
-      expect(JSON.parse((await invoke(["tasks"], offline)).stdout)).toEqual(
-        JSON.parse((await invoke(["tasks", "list"], offline)).stdout),
+      expect(JSON.parse((await invoke(["tasks", "--json"], offline)).stdout)).toEqual(
+        JSON.parse((await invoke(["tasks", "list", "--json"], offline)).stdout),
       );
-      expect(JSON.parse((await invoke(["tasks", "pause", task.id], offline)).stdout).paused).toBe(
-        1,
-      );
-      expect(JSON.parse((await invoke(["tasks", "resume", task.id], offline)).stdout).paused).toBe(
-        0,
-      );
-      expect(JSON.parse((await invoke(["tasks", "show", task.id], offline)).stdout)).toMatchObject({
+      expect(
+        JSON.parse((await invoke(["tasks", "pause", "--json", task.id], offline)).stdout).paused,
+      ).toBe(1);
+      expect(
+        JSON.parse((await invoke(["tasks", "resume", "--json", task.id], offline)).stdout).paused,
+      ).toBe(0);
+      expect(
+        JSON.parse((await invoke(["tasks", "show", "--json", task.id], offline)).stdout),
+      ).toMatchObject({
         occurrences: [],
         skipped: [],
       });
-      expect((await invoke(["tasks", "show", "missing"], offline)).stderr).toContain(
+      expect((await invoke(["tasks", "show", "--json", "missing"], offline)).stderr).toContain(
         "does not exist",
       );
-      expect((await invoke(["tasks", "remove"], offline)).exitCode).toBe(1);
-      expect((await invoke(["tasks", "remove", task.id, "extra"], offline)).exitCode).toBe(1);
-      const removed = await invoke(["tasks", "remove", task.id], offline);
+      expect((await invoke(["tasks", "remove", "--json"], offline)).exitCode).toBe(1);
+      expect(
+        (await invoke(["tasks", "remove", "--json", task.id, "extra"], offline)).exitCode,
+      ).toBe(1);
+      const removed = await invoke(["tasks", "remove", "--json", task.id], offline);
       expect(removed.exitCode).toBe(0);
       expect(JSON.parse(removed.stdout)).toMatchObject({ taskId: task.id, deleted: true });
-      const missing = await invoke(["tasks", "remove", task.id], offline);
+      const missing = await invoke(["tasks", "remove", "--json", task.id], offline);
       expect(missing.exitCode).toBe(1);
       expect(missing.stderr).toContain("does not exist");
-      expect((await invoke(["tasks", "clear", "extra"], offline)).exitCode).toBe(1);
-      expect(JSON.parse((await invoke(["tasks", "clear"], offline)).stdout)).toEqual({
+      expect((await invoke(["tasks", "clear", "--json", "extra"], offline)).exitCode).toBe(1);
+      expect(JSON.parse((await invoke(["tasks", "clear", "--json"], offline)).stdout)).toEqual({
         cleared: 0,
       });
-      expect(JSON.parse((await invoke(["tasks", "list"], offline)).stdout)).toEqual([]);
-      expect(JSON.parse((await invoke(["tasks", "clear"], offline)).stdout)).toEqual({
+      expect(JSON.parse((await invoke(["tasks", "list", "--json"], offline)).stdout)).toEqual([]);
+      expect(JSON.parse((await invoke(["tasks", "clear", "--json"], offline)).stdout)).toEqual({
         cleared: 0,
       });
     } finally {
@@ -737,6 +768,7 @@ describe("makeCLI", () => {
         [
           "tasks",
           "add",
+          "--json",
           "Later",
           "--cron",
           "0 9 * * *",
@@ -750,21 +782,25 @@ describe("makeCLI", () => {
       expect(added.exitCode).toBe(0);
       const task = JSON.parse(added.stdout);
       expect(task.model).toBe("saved-model");
-      const remembered = await invoke(["memory", "set", "project", "Acorn"], environment);
+      const remembered = await invoke(["memory", "set", "--json", "project", "Acorn"], environment);
       expect(remembered.exitCode).toBe(0);
       expect(JSON.parse(remembered.stdout)).toMatchObject({ key: "project", value: "Acorn" });
-      expect(JSON.parse((await invoke(["memory", "list"], environment)).stdout)).toMatchObject([
-        { key: "project", value: "Acorn" },
-      ]);
-      expect(JSON.parse((await invoke(["chat", "sessions"], environment)).stdout)).toEqual([]);
-      const search = await invoke(["chat", "search", "Acorn"], environment);
+      expect(
+        JSON.parse((await invoke(["memory", "list", "--json"], environment)).stdout),
+      ).toMatchObject([{ key: "project", value: "Acorn" }]);
+      expect(
+        JSON.parse((await invoke(["chat", "sessions", "--json"], environment)).stdout),
+      ).toEqual([]);
+      const search = await invoke(["chat", "search", "--json", "Acorn"], environment);
       expect(search.exitCode).toBe(0);
       expect(JSON.parse(search.stdout)).toEqual({ matches: [], truncated: false });
-      expect(JSON.parse((await invoke(["store", "status"], environment)).stdout)).toMatchObject({
+      expect(
+        JSON.parse((await invoke(["store", "status", "--json"], environment)).stdout),
+      ).toMatchObject({
         sessions: 0,
       });
       expect(
-        JSON.parse((await invoke(["worker", "status"], environment)).stdout).worker,
+        JSON.parse((await invoke(["worker", "status", "--json"], environment)).stdout).worker,
       ).toMatchObject({
         running: true,
         pid: worker.pid,
@@ -783,23 +819,28 @@ describe("makeCLI", () => {
           },
         ],
       });
-      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toMatchObject([
-        { id: task.id },
-      ]);
+      expect(
+        JSON.parse((await invoke(["tasks", "list", "--json"], environment)).stdout),
+      ).toMatchObject([{ id: task.id }]);
       expect(
         JSON.parse(
-          (await invoke(["tasks", "resume-provider", "openai-chatgpt"], environment)).stdout,
+          (await invoke(["tasks", "resume-provider", "--json", "openai-chatgpt"], environment))
+            .stdout,
         ),
       ).toEqual({ provider: "openai-chatgpt", resumed: true });
-      expect(JSON.parse((await invoke(["tasks", "providers"], environment)).stdout)).toEqual([]);
-      expect((await invoke(["tasks", "pause", task.id], environment)).exitCode).toBe(0);
-      expect((await invoke(["tasks", "show", "missing"], environment)).stderr).toContain(
+      expect(
+        JSON.parse((await invoke(["tasks", "providers", "--json"], environment)).stdout),
+      ).toEqual([]);
+      expect((await invoke(["tasks", "pause", "--json", task.id], environment)).exitCode).toBe(0);
+      expect((await invoke(["tasks", "show", "--json", "missing"], environment)).stderr).toContain(
         "does not exist",
       );
-      expect(JSON.parse((await invoke(["tasks", "clear"], environment)).stdout)).toEqual({
+      expect(JSON.parse((await invoke(["tasks", "clear", "--json"], environment)).stdout)).toEqual({
         cleared: 1,
       });
-      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
+      expect(JSON.parse((await invoke(["tasks", "list", "--json"], environment)).stdout)).toEqual(
+        [],
+      );
     } finally {
       worker.kill("SIGTERM");
       await worker.exited;
@@ -815,10 +856,10 @@ describe("makeCLI", () => {
     const environment = { POPPET_DATA_DIR: directory };
 
     try {
-      expect((await invoke(["memory", "list"], environment)).stdout.trim()).toBe("[]");
+      expect((await invoke(["memory", "list", "--json"], environment)).stdout.trim()).toBe("[]");
 
       const remembered = await invoke(
-        ["memory", "set", "answer.style", "Keep answers concise"],
+        ["memory", "set", "--json", "answer.style", "Keep answers concise"],
         environment,
       );
 
@@ -830,31 +871,39 @@ describe("makeCLI", () => {
       });
 
       const replaced = await invoke(
-        ["memory", "set", "answer.style", "Explain", "the reasoning"],
+        ["memory", "set", "--json", "answer.style", "Explain", "the reasoning"],
         environment,
       );
 
       expect(replaced.exitCode).toBe(0);
-      expect(JSON.parse((await invoke(["memory", "list"], environment)).stdout)[0]?.value).toBe(
-        "Explain the reasoning",
-      );
-      expect((await invoke(["memory", "forget", "answer.style"], environment)).exitCode).toBe(0);
-      expect((await invoke(["memory", "list"], environment)).stdout.trim()).toBe("[]");
+      expect(
+        JSON.parse((await invoke(["memory", "list", "--json"], environment)).stdout)[0]?.value,
+      ).toBe("Explain the reasoning");
+      expect(
+        (await invoke(["memory", "forget", "--json", "answer.style"], environment)).exitCode,
+      ).toBe(0);
+      expect((await invoke(["memory", "list", "--json"], environment)).stdout.trim()).toBe("[]");
 
-      const history = await invoke(["memory", "history", "answer.style"], environment);
+      const history = await invoke(["memory", "history", "--json", "answer.style"], environment);
       expect(
         JSON.parse(history.stdout).map(
           (entry: { action: string; origin: string }) => `${entry.action}:${entry.origin}`,
         ),
       ).toEqual(["remember:cli", "replace:cli", "forget:cli"]);
 
-      const reverted = await invoke(["memory", "revert", "answer.style", "1"], environment);
+      const reverted = await invoke(
+        ["memory", "revert", "--json", "answer.style", "1"],
+        environment,
+      );
+
       expect(reverted.exitCode).toBe(0);
       expect(JSON.parse(reverted.stdout)).toMatchObject({ value: "Keep answers concise" });
-      expect(
-        (await invoke(["memory", "revert", "answer.style", "3"], environment)).stdout,
-      ).toContain("Forgot answer.style.");
-      expect((await invoke(["memory", "history", "missing"], environment)).exitCode).toBe(1);
+      expect((await invoke(["memory", "revert", "answer.style", "3"], environment)).stdout).toBe(
+        "Forgot answer.style.\n",
+      );
+      expect((await invoke(["memory", "history", "--json", "missing"], environment)).exitCode).toBe(
+        1,
+      );
       expect(await readdir(directory)).toEqual(["store"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -891,7 +940,7 @@ describe("makeCLI", () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-task-destination-"));
     const environment = await configure(directory, { model: "test-model" });
 
-    const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z", "--to"];
+    const command = ["tasks", "add", "--json", "Summary", "--at", "2099-10-15T09:00:00Z", "--to"];
 
     try {
       await Array.fromAsync(
@@ -902,7 +951,16 @@ describe("makeCLI", () => {
         ],
         async (flags) => {
           const incomplete = await invoke(
-            ["tasks", "add", "Incomplete", "--at", "2099-10-15T09:00:00Z", ...flags, "Summary"],
+            [
+              "tasks",
+              "add",
+              "--json",
+              "Incomplete",
+              "--at",
+              "2099-10-15T09:00:00Z",
+              ...flags,
+              "Summary",
+            ],
             environment,
           );
 
@@ -919,10 +977,20 @@ describe("makeCLI", () => {
 
       expect(rejected.exitCode).toBe(1);
       expect(rejected.stderr).toContain("Start worker run");
-      expect(JSON.parse((await invoke(["tasks", "list"], environment)).stdout)).toEqual([]);
+      expect(JSON.parse((await invoke(["tasks", "list", "--json"], environment)).stdout)).toEqual(
+        [],
+      );
 
       const local = await invoke(
-        ["tasks", "add", "Local", "--at", "2099-10-15T09:00:00Z", "Summarize recent conversations"],
+        [
+          "tasks",
+          "add",
+          "--json",
+          "Local",
+          "--at",
+          "2099-10-15T09:00:00Z",
+          "Summarize recent conversations",
+        ],
         environment,
       );
 
@@ -944,11 +1012,11 @@ describe("makeCLI", () => {
     };
 
     try {
-      const before = await invoke(["config"], environment);
+      const before = await invoke(["config", "--json"], environment);
       expect(before.exitCode).toBe(0);
       expect(await readdir(directory)).toEqual(["config.json"]);
-      const first = await invoke(["store", "status"], environment);
-      const reopened = await invoke(["store", "status"], environment);
+      const first = await invoke(["store", "status", "--json"], environment);
+      const reopened = await invoke(["store", "status", "--json"], environment);
       expect(first.exitCode).toBe(0);
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
@@ -996,7 +1064,7 @@ describe("makeCLI", () => {
         expect(logout.exitCode).toBe(0);
         expect(logout.stdout).toContain("All local ChatGPT connection details were deleted");
         expect(await Bun.file(path).exists()).toBe(false);
-        const status = await invoke(["provider", "status"], environment);
+        const status = await invoke(["provider", "status", "--json"], environment);
         expect(status.exitCode).toBe(0);
         expect(JSON.parse(status.stdout)).toMatchObject({
           connected: false,
@@ -1037,11 +1105,11 @@ describe("makeCLI", () => {
       expect(router.stdout).toContain("openrouter");
 
       const routerStatus = await invoke(
-        ["provider", "status", "--provider", "openrouter"],
+        ["provider", "status", "--json", "--provider", "openrouter"],
         environment,
       );
 
-      const goStatus = await invoke(["provider", "status"], environment);
+      const goStatus = await invoke(["provider", "status", "--json"], environment);
       expect(JSON.parse(routerStatus.stdout)).toEqual({
         provider: "openrouter",
         connected: true,
@@ -1067,13 +1135,14 @@ describe("makeCLI", () => {
       const logout = await invoke(["provider", "logout", "openrouter"], environment);
       expect(logout.exitCode).toBe(0);
       expect(
-        JSON.parse((await invoke(["provider", "status", "openrouter"], environment)).stdout)
-          .connected,
+        JSON.parse(
+          (await invoke(["provider", "status", "--json", "openrouter"], environment)).stdout,
+        ).connected,
       ).toBe(false);
-      expect(JSON.parse((await invoke(["provider", "status"], environment)).stdout).connected).toBe(
-        true,
-      );
-      const chatGPT = await invoke(["provider", "status", "openai-chatgpt"], environment);
+      expect(
+        JSON.parse((await invoke(["provider", "status", "--json"], environment)).stdout).connected,
+      ).toBe(true);
+      const chatGPT = await invoke(["provider", "status", "--json", "openai-chatgpt"], environment);
       expect(chatGPT.exitCode).toBe(0);
       expect(JSON.parse(chatGPT.stdout)).toMatchObject({ connected: false, planUsage: false });
     } finally {
@@ -1092,7 +1161,7 @@ describe("makeCLI", () => {
     };
 
     try {
-      const status = await invoke(["provider", "status"], environment);
+      const status = await invoke(["provider", "status", "--json"], environment);
       expect(JSON.parse(status.stdout)).toEqual({
         provider: "openrouter",
         connected: true,
@@ -1105,7 +1174,7 @@ describe("makeCLI", () => {
       expect(
         JSON.parse(
           (
-            await invoke(["provider", "status"], {
+            await invoke(["provider", "status", "--json"], {
               POPPET_DATA_DIR: directory,
               POPPET_PROVIDER: "openrouter",
             })
@@ -1113,7 +1182,7 @@ describe("makeCLI", () => {
         ).source,
       ).toBe("stored");
 
-      const invalid = await invoke(["provider", "status"], {
+      const invalid = await invoke(["provider", "status", "--json"], {
         ...environment,
         POPPET_OPENROUTER_API_KEY: "",
       });
@@ -1145,7 +1214,10 @@ describe("makeCLI", () => {
           args: ["provider", "login", "openai-chatgpt", "--key-stdin"],
           message: "ChatGPT does not support --key-stdin",
         },
-        { args: ["provider", "status", "--key-stdin"], message: "Unrecognized flag: --key-stdin" },
+        {
+          args: ["provider", "status", "--json", "--key-stdin"],
+          message: "Unrecognized flag: --key-stdin",
+        },
         {
           args: ["provider", "login", "openrouter", "--no-browser"],
           message: "OpenRouter does not use browser sign-in",
@@ -1284,7 +1356,7 @@ describe("makeCLI", () => {
       for (const action of ["login", "logout", "status", "models"])
         expect(providerHelp.stdout).toContain(`  ${action} `);
 
-      const taskHelp = await invoke(["tasks", "add", "--help"], environment);
+      const taskHelp = await invoke(["tasks", "add", "--json", "--help"], environment);
       expect(taskHelp.stdout).toContain("--cron");
       expect(taskHelp.stdout).toContain("--tz");
       expect(taskHelp.stdout).toContain("EXAMPLES");
@@ -1305,7 +1377,7 @@ describe("makeCLI", () => {
         expect(result.exitCode).toBe(0);
         expect(result.stderr).toBe("");
 
-        for (const word of ["tasks", "add", "--cron", "provider", "login"])
+        for (const word of ["tasks", "add", "--json", "--cron", "provider", "login"])
           expect(result.stdout).toContain(word);
 
         expect(await readdir(directory)).toEqual(["config.json"]);
@@ -1321,15 +1393,27 @@ describe("makeCLI", () => {
     const at = "2099-10-15T09:00:00Z";
 
     const commands = [
-      ["config", "unexpected-argument"],
-      ["tasks", "resume-provider", "bad/id"],
-      ["tasks", "add", "Later", "--at", at, "--cron", "0 9 * * *", "--tz", "UTC", "Hello"],
-      ["tasks", "add", "Later", "--cron", "0 9 * * *", "Hello"],
-      ["tasks", "add", "Later", "--at", at, "--tz", "UTC", "Hello"],
-      ["tasks", "add", "Later", "--at", at, "--at", at, "Hello"],
-      ["tasks", "add", "Later", "--at", at, "--discord-thread", "400", "Hello"],
-      ["tasks", "add", "Later", "--at", at, "--to=a", "--to=b:400", "Hello"],
-      ["provider", "status", "--provider", "openrouter", "--provider", "opencode-go"],
+      ["config", "--json", "unexpected-argument"],
+      ["tasks", "resume-provider", "--json", "bad/id"],
+      [
+        "tasks",
+        "add",
+        "--json",
+        "Later",
+        "--at",
+        at,
+        "--cron",
+        "0 9 * * *",
+        "--tz",
+        "UTC",
+        "Hello",
+      ],
+      ["tasks", "add", "--json", "Later", "--cron", "0 9 * * *", "Hello"],
+      ["tasks", "add", "--json", "Later", "--at", at, "--tz", "UTC", "Hello"],
+      ["tasks", "add", "--json", "Later", "--at", at, "--at", at, "Hello"],
+      ["tasks", "add", "--json", "Later", "--at", at, "--discord-thread", "400", "Hello"],
+      ["tasks", "add", "--json", "Later", "--at", at, "--to=a", "--to=b:400", "Hello"],
+      ["provider", "status", "--json", "--provider", "openrouter", "--provider", "opencode-go"],
       ["provider", "login", "--key-stdin", "--key-stdin"],
       ["worker", "start", "extra"],
       ["worker", "install", "--unknown"],
@@ -1349,13 +1433,48 @@ describe("makeCLI", () => {
     }
   });
 
+  test("when --json is omitted, prints messages and tables instead of JSON", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-cli-human-"));
+    const environment = await configure(directory, { model: "test-model" });
+
+    try {
+      const added = await invoke(
+        ["tasks", "add", "Weekly", "--cron", "0 9 * * 1", "--tz", "UTC", "Review notes"],
+        environment,
+      );
+
+      expect(added.exitCode).toBe(0);
+      expect(added.stdout).toStartWith("Added task Weekly.\n");
+      expect(added.stdout).toContain("Schedule:  0 9 * * 1 (UTC)");
+
+      const listed = (await invoke(["tasks", "list"], environment)).stdout.split("\n");
+
+      expect(listed[0]).toMatch(/^ID +NAME +SCHEDULE +NEXT RUN +STATE +DELIVERY$/);
+      expect(listed[1]).toMatch(/^\S+ +Weekly +0 9 \* \* 1 \(UTC\) +\S+ \S+ +active +local$/);
+      // Columns line up under their headers.
+      expect(listed[1]!.indexOf("Weekly")).toBe(listed[0]!.indexOf("NAME"));
+
+      expect((await invoke(["memory", "list"], environment)).stdout).toBe(
+        "No saved facts. Save one with poppet memory set.\n",
+      );
+      expect((await invoke(["memory", "set", "style", "Plain"], environment)).stdout).toStartWith(
+        "Saved style.\n",
+      );
+      expect((await invoke(["memory", "forget", "style"], environment)).stdout).toBe(
+        "Forgot style.\n",
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("when memory values or task prompts contain flag-like text, preserves that text", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-text-"));
     const environment = await configure(directory, { model: "test-model" });
 
     try {
       const remembered = await invoke(
-        ["memory", "set", "flags", "--verbose", "--help", "--", "-h"],
+        ["memory", "set", "--json", "flags", "--verbose", "--help", "--", "-h"],
         environment,
       );
 
@@ -1363,17 +1482,18 @@ describe("makeCLI", () => {
       expect(JSON.parse(remembered.stdout).value).toBe("--verbose --help -- -h");
 
       const replaced = await invoke(
-        ["memory", "set", "flags", "Use", "--coding", "literally"],
+        ["memory", "set", "flags", "--json", "Use", "--json", "literally"],
         environment,
       );
 
       expect(replaced.exitCode).toBe(0);
-      expect(JSON.parse(replaced.stdout).value).toBe("Use --coding literally");
+      expect(JSON.parse(replaced.stdout).value).toBe("Use --json literally");
 
       const added = await invoke(
         [
           "tasks",
           "add",
+          "--json",
           "Later",
           "--at",
           "2099-10-15T09:00:00Z",
@@ -1399,7 +1519,7 @@ describe("makeCLI", () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-env-cli-"));
 
     try {
-      const result = await invoke(["config"], {
+      const result = await invoke(["config", "--json"], {
         POPPET_APP_NAME: "Test Poppet",
         POPPET_DATA_DIR: directory,
       });
@@ -1427,7 +1547,7 @@ describe("makeCLI", () => {
         chat: { outputTokens: 4096, logReasoning: true, maxConcurrentRequests: 2 },
       });
 
-      const result = await invoke(["config"], {
+      const result = await invoke(["config", "--json"], {
         POPPET_DATA_DIR: directory,
         POPPET_MODEL: "ignored",
         POPPET_OUTPUT_TOKENS: "",
@@ -1450,8 +1570,12 @@ describe("makeCLI", () => {
       expect(result.stdout).not.toContain("must-not-appear");
       expect(await readdir(directory)).toEqual(["config.json"]);
       await configure(directory, { chat: { outputTokens: 0 } });
-      expect((await invoke(["config"], { POPPET_DATA_DIR: directory })).exitCode).toBe(1);
-      const inspection = await invoke(["chat", "sessions"], { POPPET_DATA_DIR: directory });
+      expect((await invoke(["config", "--json"], { POPPET_DATA_DIR: directory })).exitCode).toBe(1);
+
+      const inspection = await invoke(["chat", "sessions", "--json"], {
+        POPPET_DATA_DIR: directory,
+      });
+
       expect(inspection.exitCode).toBe(0);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -1472,7 +1596,7 @@ describe("makeCLI", () => {
           POPPET_OPENROUTER_API_KEY: "test-secret",
         };
 
-        const settings = await invoke(["config"], environment);
+        const settings = await invoke(["config", "--json"], environment);
         const missingModel = await invoke(["chat", "new", "Hello"], environment);
 
         expect(settings.exitCode).toBe(0);
@@ -1492,7 +1616,7 @@ describe("makeCLI", () => {
 
     try {
       const environment = { POPPET_DATA_DIR: directory };
-      const status = await invoke(["provider", "status"], environment);
+      const status = await invoke(["provider", "status", "--json"], environment);
       expect(status.exitCode).toBe(0);
       expect(JSON.parse(status.stdout)).toMatchObject({
         connected: false,

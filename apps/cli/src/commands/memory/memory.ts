@@ -26,11 +26,12 @@ export const MemoryCommand = Schema.Union([
 
 export type MemoryCommand = typeof MemoryCommand.Type;
 
+/** Runs a fact command; forgetting reports the key, since no fact remains. */
 export const manageMemory = (command: MemoryCommand) =>
   Effect.gen(function* () {
     const memory = yield* Memory;
 
-    if (command.action === "list") return JSON.stringify(yield* memory.list, null, 2);
+    if (command.action === "list") return yield* memory.list;
 
     if (command.action === "history") {
       const history = yield* memory.history(command.key);
@@ -40,22 +41,19 @@ export const manageMemory = (command: MemoryCommand) =>
           new MemoryError({ reason: "not-found", message: "The fact has no saved history." }),
         );
 
-      return JSON.stringify(history, null, 2);
+      return history;
     }
 
-    if (command.action === "revert") {
-      const fact = yield* memory.revert(command.key, command.revision);
-
-      return fact === null ? `Forgot ${command.key}.` : JSON.stringify(fact, null, 2);
-    }
+    if (command.action === "revert")
+      return (yield* memory.revert(command.key, command.revision)) ?? forgotten(command.key);
 
     if (command.action === "forget") {
       yield* memory.forget(command.key);
 
-      return `Forgot ${command.key}.`;
+      return forgotten(command.key);
     }
 
-    const fact = yield* memory.set(command.key, command.value);
-
-    return JSON.stringify(fact, null, 2);
+    return yield* memory.set(command.key, command.value);
   });
+
+const forgotten = (key: string) => ({ key, forgotten: true as const });

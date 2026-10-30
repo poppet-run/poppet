@@ -3,21 +3,24 @@ import { AttachmentReference, Output } from "@poppet/provider";
 import { Session } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
+/** Saved messages as session inspection reports them, with tool exchanges left opaque. */
+export const HistoryMessages = Schema.Array(
+  Schema.Struct({
+    message: Schema.Union([
+      Schema.Struct({
+        role: Schema.Literal("user"),
+        text: Schema.String,
+        attachments: Schema.optionalKey(Schema.Array(AttachmentReference)),
+      }),
+      Schema.Struct({ role: Schema.Literal("assistant"), output: Schema.Array(Output) }),
+      Schema.Struct({ role: Schema.Literal("tool") }),
+    ]),
+  }),
+);
+
 const Inspection = Schema.Struct({
   session: Schema.Struct({ id: Session.fields.id }),
-  messages: Schema.Array(
-    Schema.Struct({
-      message: Schema.Union([
-        Schema.Struct({
-          role: Schema.Literal("user"),
-          text: Schema.String,
-          attachments: Schema.optionalKey(Schema.Array(AttachmentReference)),
-        }),
-        Schema.Struct({ role: Schema.Literal("assistant"), output: Schema.Array(Output) }),
-        Schema.Struct({ role: Schema.Literal("tool") }),
-      ]),
-    }),
-  ),
+  messages: HistoryMessages,
 });
 
 export interface ChatHistoryMessage {
@@ -26,11 +29,36 @@ export interface ChatHistoryMessage {
 }
 
 /** Display saved text and attachment names, without replaying tool calls or provider state. */
-export const readChatHistory = (json: string, sessionId: string) =>
+export const chatHistory = (messages: typeof HistoryMessages.Type) => {
+  const history: ChatHistoryMessage[] = [];
+
+  for (const { message } of messages) {
+    if (message.role === "tool") continue;
+
+    if (message.role === "user") {
+      const attachments = message.attachments?.map(({ name }) => name) ?? [];
+      history.push({
+        role: "user",
+        text: message.text + (attachments.length ? `\n[Attached: ${attachments.join(", ")}]` : ""),
+      });
+      continue;
+    }
+
+    const text = message.output
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("");
+
+    if (text) history.push({ role: "assistant", text });
+  }
+
+  return history;
+};
+
+/** Reads a session inspection, which may come from the worker, into displayable history. */
+export const readChatHistory = <A>(value: A, sessionId: string) =>
   Effect.gen(function* () {
-    const inspection = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Inspection))(
-      json,
-    ).pipe(
+    const inspection = yield* Schema.decodeUnknownEffect(Inspection)(value).pipe(
       Effect.mapError(
         () =>
           new AgentError({
@@ -48,28 +76,5 @@ export const readChatHistory = (json: string, sessionId: string) =>
         }),
       );
 
-    const history: ChatHistoryMessage[] = [];
-
-    for (const { message } of inspection.messages) {
-      if (message.role === "tool") continue;
-
-      if (message.role === "user") {
-        const attachments = message.attachments?.map(({ name }) => name) ?? [];
-        history.push({
-          role: "user",
-          text:
-            message.text + (attachments.length ? `\n[Attached: ${attachments.join(", ")}]` : ""),
-        });
-        continue;
-      }
-
-      const text = message.output
-        .filter((part) => part.type === "text")
-        .map((part) => part.text)
-        .join("");
-
-      if (text) history.push({ role: "assistant", text });
-    }
-
-    return history;
+    return chatHistory(inspection.messages);
   });

@@ -11,11 +11,16 @@ import {
   type Schedule,
 } from "@poppet/tasks";
 import { workerSocketPath } from "@poppet/worker";
-import { Console, Effect, Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import type { CLIContext } from "#src/commands/context";
+import { printTaskResult } from "#src/commands/tasks/format";
 
-export const runTaskCommand = (runtime: CLIContext["runtime"], command: TaskCommand) =>
+export const runTaskCommand = (
+  runtime: CLIContext["runtime"],
+  command: TaskCommand,
+  json = false,
+) =>
   Effect.gen(function* () {
     const config = yield* AppConfig;
     const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), command);
@@ -25,7 +30,7 @@ export const runTaskCommand = (runtime: CLIContext["runtime"], command: TaskComm
         ? reply.value
         : yield* executeLocalTaskCommand(command).pipe(Effect.provide(runtime.tasks));
 
-    yield* Console.log(JSON.stringify(result, null, 2));
+    yield* printTaskResult(json, command, result);
   }).pipe(Effect.provide(runtime.config));
 
 export const parseTaskSchedule = (

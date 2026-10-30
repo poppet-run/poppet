@@ -42,9 +42,10 @@ poppet chat show $session_id
 ```
 
 `chat new` and `chat send` each submit one message. `chat sessions` lists saved sessions;
-`chat show` prints the session, ordered messages, run states, failures, output,
-and usage as JSON. Opaque provider continuation is retained privately in SQLite
-and omitted from this display. Inspection needs no selected model or login.
+`chat show` prints the session, its conversation, and a table of runs with their
+states, token usage, tool calls, and failures. Add `--json` for every saved message,
+tool call, run output, and usage record. Opaque provider continuation is retained
+privately in SQLite and omitted from both forms. Inspection needs no selected model or login.
 
 With `chat.logReasoning` enabled, `chat new` streams thinking to stderr using the
 [interactive prompt's formatting](#interactive-prompt). Stdout contains only the answer.
@@ -227,9 +228,9 @@ poppet chat search "project TypeScript"
 poppet chat show <session-id-from-search>
 ```
 
-Search returns JSON with `matches` and `truncated`. Each match includes session
-and message IDs, the saved session title, a timestamp in Unix milliseconds, role,
-and a bounded excerpt around matching text. Results are ranked by relevance, with
+Search prints a table of matches; `--json` returns `matches` and `truncated`.
+Each match includes session and message IDs, the saved session title, a
+timestamp, role, and a bounded excerpt around matching text. Results are ranked by relevance, with
 a stable message-ID tie-breaker, and limited to ten matches within the 16 KiB tool-output limit.
 
 Use nonempty plain text of at most 256 characters, without leading or trailing

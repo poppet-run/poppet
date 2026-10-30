@@ -1,8 +1,8 @@
 import { AppConfig } from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
 import type { ProviderRegistration } from "@poppet/provider";
-import { workerSocketPath } from "@poppet/worker";
-import { Effect, Layer } from "effect";
+import { WorkerRequestError, workerSocketPath } from "@poppet/worker";
+import { Effect, Layer, Schema } from "effect";
 
 import type { ChatWriter, ChatReasoningWriter } from "#src/commands/chat/chat";
 import { readChatLine } from "#src/commands/chat/prompt";
@@ -62,6 +62,37 @@ export const createCLIContext = (
       if (!handled) yield* local;
     }).pipe(Effect.provide(runtime.config));
 
+  /**
+   * Reads a running worker's JSON reply, or computes the same value locally. Callers parse the
+   * fields they format, since the worker may run different code.
+   */
+  const queryWorker = <A, E>(command: WorkerCommand, local: Effect.Effect<A, E>) =>
+    Effect.gen(function* () {
+      const config = yield* AppConfig;
+      let text = "";
+
+      const handled = yield* remoteWorkerCommand(
+        workerSocketPath(config.dataDirectory),
+        command,
+        (chunk) =>
+          Effect.sync(() => {
+            text += chunk;
+          }),
+      );
+
+      if (!handled) return yield* local.pipe(Effect.map((value): A | Schema.Json => value));
+
+      return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(text).pipe(
+        Effect.mapError(
+          () =>
+            new WorkerRequestError({
+              message:
+                "Could not read the worker's reply. If the worker is outdated, restart it to load the current code.",
+            }),
+        ),
+      );
+    }).pipe(Effect.provide(runtime.config));
+
   return {
     registered,
     channels: registeredChannels,
@@ -72,6 +103,7 @@ export const createCLIContext = (
     worker,
     startWorker,
     throughWorker,
+    queryWorker,
   };
 };
 

@@ -11,6 +11,7 @@ import {
   sendChat,
   type ChatWriter,
 } from "#src/commands/chat/chat";
+import { printChatInspection } from "#src/commands/chat/format";
 import { readChatHistory } from "#src/commands/chat/history";
 import {
   readChatLine,
@@ -20,37 +21,37 @@ import {
 } from "#src/commands/chat/prompt";
 import { openChatTerminal, type ChatTerminal } from "#src/commands/chat/terminal";
 import type { CLIContext } from "#src/commands/context";
-import { attachFlag, skillFlag, textArgument } from "#src/commands/flags";
+import { attachFlag, jsonFlag, skillFlag, textArgument } from "#src/commands/flags";
 
 export const chatCommand = (context: CLIContext) => {
-  const { runtime, throughWorker, write, writeThinking, readLine } = context;
+  const { runtime, throughWorker, queryWorker, write, writeThinking, readLine } = context;
+
+  const inspect = (
+    command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,
+  ) =>
+    queryWorker(
+      { kind: "chat", command },
+      (command.action === "search"
+        ? ChatSettings.pipe(
+            Effect.flatMap(({ toolBytes }) => inspectChat(command, toolBytes)),
+            Effect.provide(runtime.chatSettings),
+          )
+        : inspectChat(command)
+      ).pipe(Effect.provide(runtime.store)),
+    );
+
+  const runInspection = (
+    command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,
+    json: boolean,
+  ) =>
+    inspect(command).pipe(Effect.flatMap((result) => printChatInspection(json, command, result)));
 
   const runChat = (
-    command: ChatCommand,
+    command: Extract<ChatCommand, { action: "new" | "send" }>,
     onSession: ChatWriter = () => Effect.void,
     interactive = false,
     terminal?: ChatTerminal,
   ) => {
-    if (
-      command.action === "show" ||
-      command.action === "sessions" ||
-      command.action === "rename" ||
-      command.action === "search"
-    ) {
-      const inspection =
-        command.action === "search"
-          ? ChatSettings.pipe(
-              Effect.flatMap(({ toolBytes }) => inspectChat(command, toolBytes)),
-              Effect.provide(runtime.chatSettings),
-            )
-          : inspectChat(command);
-
-      return throughWorker(
-        { kind: "chat", command },
-        inspection.pipe(Effect.provide(runtime.store), Effect.flatMap(Console.log)),
-      );
-    }
-
     return Effect.scoped(
       Effect.gen(function* () {
         const baseOutput =
@@ -98,22 +99,8 @@ export const chatCommand = (context: CLIContext) => {
   const loadHistory = (id: string, terminal?: ChatTerminal) =>
     Effect.gen(function* () {
       yield* terminal?.loadingHistory ?? Effect.void;
-      let json = "";
-
-      const collect: ChatWriter = (text) =>
-        Effect.sync(() => {
-          json += text;
-        });
-
-      const command = { action: "show" as const, id };
-
-      yield* throughWorker(
-        { kind: "chat", command },
-        inspectChat(command).pipe(Effect.provide(runtime.store), Effect.flatMap(collect)),
-        () => Effect.void,
-        { answer: collect, reasoning: () => Effect.void, announce: terminal?.info ?? Console.log },
-      );
-      const messages = yield* readChatHistory(json, id);
+      const inspection = yield* inspect({ action: "show", id });
+      const messages = yield* readChatHistory(inspection, id);
 
       if (terminal) yield* terminal.showHistory(messages);
       else
@@ -207,24 +194,29 @@ export const chatCommand = (context: CLIContext) => {
         "rename",
         {
           id: Argument.String("session").pipe(Argument.withSchema(Session.fields.id)),
+          json: jsonFlag,
           text: textArgument("title").pipe(Argument.withSchema(MessageText)),
         },
-        ({ id, text }) => runChat({ action: "rename", id, text }),
+        ({ id, text, json }) => runInspection({ action: "rename", id, text }, json),
       ).pipe(Command.withDescription("Rename a saved session")),
-      Command.make("sessions", {}, () => runChat({ action: "sessions" })).pipe(
-        Command.withDescription("List sessions"),
-      ),
+      Command.make("sessions", { json: jsonFlag }, ({ json }) =>
+        runInspection({ action: "sessions" }, json),
+      ).pipe(Command.withDescription("List sessions")),
       Command.make(
         "search",
-        { query: textArgument("query").pipe(Argument.withSchema(SessionSearchQuery)) },
-        ({ query }) => runChat({ action: "search", query }),
+        {
+          json: jsonFlag,
+          query: textArgument("query").pipe(Argument.withSchema(SessionSearchQuery)),
+        },
+        ({ query, json }) => runInspection({ action: "search", query }, json),
       ).pipe(Command.withDescription("Search completed conversations")),
       Command.make(
         "show",
         {
           id: Argument.String("session").pipe(Argument.withSchema(Session.fields.id)),
+          json: jsonFlag,
         },
-        ({ id }) => runChat({ action: "show", id }),
+        ({ id, json }) => runInspection({ action: "show", id }, json),
       ).pipe(Command.withDescription("Show messages and run outcomes")),
     ]),
   );

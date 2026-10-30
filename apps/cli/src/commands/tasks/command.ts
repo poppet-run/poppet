@@ -5,7 +5,7 @@ import { Effect, Option, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
-import { skillFlag, textArgument } from "#src/commands/flags";
+import { jsonFlag, skillFlag, textArgument } from "#src/commands/flags";
 import {
   parseRelativeTime,
   parseTaskDestination,
@@ -17,7 +17,9 @@ import {
 export const tasksCommand = (context: CLIContext) => {
   const { runtime } = context;
 
-  return Command.make("tasks", {}, () => runTaskCommand(runtime, { action: "list" })).pipe(
+  return Command.make("tasks", { json: jsonFlag }, ({ json }) =>
+    runTaskCommand(runtime, { action: "list" }, json),
+  ).pipe(
     Command.withDescription("Schedule and manage requests"),
     Command.withSubcommands([
       Command.make(
@@ -32,8 +34,9 @@ export const tasksCommand = (context: CLIContext) => {
           at: Flag.String("at").pipe(Flag.atMost(1)),
           cron: Flag.String("cron").pipe(Flag.atMost(1)),
           tz: Flag.String("tz").pipe(Flag.atMost(1)),
+          json: jsonFlag,
         },
-        ({ id, name, prompt, at, cron, tz }) =>
+        ({ id, name, prompt, at, cron, tz, json }) =>
           Effect.gen(function* () {
             const patch = yield* taskOperation(() => {
               const fields: Record<string, Schema.Json> = {};
@@ -57,14 +60,17 @@ export const tasksCommand = (context: CLIContext) => {
               return Schema.decodeUnknownSync(TaskPatch)(fields);
             });
 
-            yield* runTaskCommand(runtime, { action: "edit", id, patch });
+            yield* runTaskCommand(runtime, { action: "edit", id, patch }, json);
           }),
       ).pipe(Command.withDescription("Edit a task's name, prompt or complete schedule")),
       ...(["skip-next", "run-now"] as const).map((action) =>
         Command.make(
           action === "run-now" ? "run" : "skip",
-          { id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)) },
-          ({ id }) => runTaskCommand(runtime, { action, id }),
+          {
+            id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)),
+            json: jsonFlag,
+          },
+          ({ id, json }) => runTaskCommand(runtime, { action, id }, json),
         ).pipe(
           Command.withDescription(
             action === "skip-next"
@@ -82,8 +88,9 @@ export const tasksCommand = (context: CLIContext) => {
             Flag.withDescription("Delay until this duration from now, such as 1h"),
             Flag.atMost(1),
           ),
+          json: jsonFlag,
         },
-        ({ id, until, duration }) =>
+        ({ id, until, duration, json }) =>
           Effect.gen(function* () {
             const at = yield* taskOperation(() => {
               if (until.length + duration.length !== 1)
@@ -96,7 +103,7 @@ export const tasksCommand = (context: CLIContext) => {
                 : parseTimestamp(until[0]!);
             });
 
-            yield* runTaskCommand(runtime, { action: "snooze", id, until: at });
+            yield* runTaskCommand(runtime, { action: "snooze", id, until: at }, json);
           }),
       ).pipe(Command.withDescription("Delay the next execution")),
       Command.make(
@@ -129,9 +136,10 @@ export const tasksCommand = (context: CLIContext) => {
             Flag.atMost(1),
             Flag.map(([value]) => value),
           ),
+          json: jsonFlag,
           prompt: textArgument("prompt"),
         },
-        ({ name, at, cron, tz, delay, prompt, skill, to }) =>
+        ({ name, at, cron, tz, delay, prompt, skill, to, json }) =>
           Effect.gen(function* () {
             const schedule = yield* taskOperation(() => parseTaskSchedule(at, cron, tz, delay));
 
@@ -139,7 +147,7 @@ export const tasksCommand = (context: CLIContext) => {
 
             const command = yield* prepareTask(name, schedule, prompt, skill, delivery);
 
-            yield* runTaskCommand(runtime, command);
+            yield* runTaskCommand(runtime, command, json);
           }).pipe(Effect.provide(runtime.config)),
       ).pipe(
         Command.withDescription("Schedule a request"),
@@ -154,18 +162,22 @@ export const tasksCommand = (context: CLIContext) => {
           },
         ]),
       ),
-      Command.make("providers", {}, () => runTaskCommand(runtime, { action: "providers" })).pipe(
-        Command.withDescription("Show provider quota pauses and temporary backoff"),
-      ),
+      Command.make("providers", { json: jsonFlag }, ({ json }) =>
+        runTaskCommand(runtime, { action: "providers" }, json),
+      ).pipe(Command.withDescription("Show provider quota pauses and temporary backoff")),
       Command.make(
         "resume-provider",
         {
           provider: Argument.String("provider").pipe(Argument.withSchema(ProviderId)),
+          json: jsonFlag,
         },
-        ({ provider }) => runTaskCommand(runtime, { action: "resume-provider", provider }),
+        ({ provider, json }) =>
+          runTaskCommand(runtime, { action: "resume-provider", provider }, json),
       ).pipe(Command.withDescription("Allow scheduled requests for a provider again")),
       ...(["list", "clear"] as const).map((action) =>
-        Command.make(action, {}, () => runTaskCommand(runtime, { action })).pipe(
+        Command.make(action, { json: jsonFlag }, ({ json }) =>
+          runTaskCommand(runtime, { action }, json),
+        ).pipe(
           Command.withDescription(
             {
               list: "List saved tasks",
@@ -183,8 +195,9 @@ export const tasksCommand = (context: CLIContext) => {
               Flag.withSchema(Session.fields.id),
               Flag.atMost(1),
             ),
+            json: jsonFlag,
           },
-          ({ id, occurrence }) => {
+          ({ id, occurrence, json }) => {
             const command = {
               action: action === "cancel" ? ("cancel-task" as const) : ("retry-task" as const),
               id,
@@ -193,6 +206,7 @@ export const tasksCommand = (context: CLIContext) => {
             return runTaskCommand(
               runtime,
               occurrence[0] === undefined ? command : { ...command, occurrenceId: occurrence[0] },
+              json,
             );
           },
         ).pipe(
@@ -208,8 +222,9 @@ export const tasksCommand = (context: CLIContext) => {
           action === "delete" ? "remove" : action,
           {
             id: Argument.String("task").pipe(Argument.withSchema(Session.fields.id)),
+            json: jsonFlag,
           },
-          ({ id }) => runTaskCommand(runtime, { action, id }),
+          ({ id, json }) => runTaskCommand(runtime, { action, id }, json),
         ).pipe(
           Command.withDescription(
             {

@@ -438,7 +438,7 @@ describe.concurrent("chat.ts", () => {
     try {
       await chat.invoke(["gateway", "example-channel", "setup"]);
       worker = await chat.startWorker();
-      const command = ["tasks", "add", "Summary", "--at", "2099-10-15T09:00:00Z"];
+      const command = ["tasks", "add", "--json", "Summary", "--at", "2099-10-15T09:00:00Z"];
 
       await expect(
         chat.invoke([...command, "--to=unknown:thread", "Summary"]),
@@ -446,7 +446,7 @@ describe.concurrent("chat.ts", () => {
       await expect(
         chat.invoke([...command, "--to=example-channel:denied", "Summary"]),
       ).rejects.toMatchObject({ message: expect.stringContaining("Unknown thread") });
-      await chat.invoke(["tasks", "list"]);
+      await chat.invoke(["tasks", "list", "--json"]);
       expect(JSON.parse(chat.lines.at(-1)!)).toEqual([]);
 
       await chat.invoke([...command, "--to=example-channel:thread", "Summary --literal"]);
@@ -476,7 +476,7 @@ describe.concurrent("chat.ts", () => {
       try {
         if (mode === "worker") worker = await chat.startWorker();
         await chat.invoke(["chat", "new", "Create a local summary task"]);
-        await chat.invoke(["tasks", "list"]);
+        await chat.invoke(["tasks", "list", "--json"]);
         const task = JSON.parse(chat.lines.at(-1)!)[0];
         expect(task).toMatchObject({
           name: "Chat summary",
@@ -509,7 +509,7 @@ describe.concurrent("chat.ts", () => {
                 : { task: { id: task.id, name: task.name, paused } },
             );
 
-            await chat.invoke(["tasks", "show", task.id]);
+            await chat.invoke(["tasks", "show", "--json", task.id]);
             expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ task: { id: task.id, paused } });
           },
         );
@@ -793,7 +793,7 @@ describe.concurrent("chat.ts", () => {
           expect(saved.at(-1)).toBe(diagnostics[0]);
         }
 
-        await chat.invoke(["chat", "show", chat.requests[0]!.sessionId]);
+        await chat.invoke(["chat", "show", "--json", chat.requests[0]!.sessionId]);
         expect(chat.chunks.join("")).not.toContain(chat.state.reasoning);
       } finally {
         if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
@@ -872,10 +872,10 @@ describe.concurrent("chat.ts", () => {
       expect(chat.thinkingChunks.join("")).toContain("Private thinking");
       expect(chat.errors.some((line) => line.includes("Timing session="))).toBe(true);
       await chat.configure({ chat: { logReasoning: "invalid" } });
-      await expect(chat.invoke(["config"])).rejects.toHaveProperty("_tag", "ConfigError");
+      await expect(chat.invoke(["config", "--json"])).rejects.toHaveProperty("_tag", "ConfigError");
       await chat.configure({ chat: { logReasoning: false } });
       await chat.configure({ chat: { logTimings: "invalid" } });
-      await expect(chat.invoke(["config"])).rejects.toHaveProperty("_tag", "ConfigError");
+      await expect(chat.invoke(["config", "--json"])).rejects.toHaveProperty("_tag", "ConfigError");
     } finally {
       await chat.close();
     }
@@ -905,7 +905,7 @@ describe.concurrent("chat.ts", () => {
         expect(chat.state.built).toBe(0);
 
         if (remote) worker = await chat.startWorker();
-        expect(await inspect(["skills", "list"])).toEqual(["weekly-review"]);
+        expect(await inspect(["skills", "list", "--json"])).toEqual(["weekly-review"]);
 
         await chat.invoke(["chat", "new", "--skill", "weekly-review", "Review", "--literal"]);
         const id = chat.errors.find((line) => line.startsWith("Session: "))!.slice(9);
@@ -915,7 +915,7 @@ describe.concurrent("chat.ts", () => {
           text: "Review --literal",
         });
         expect(chat.titleRequests[0]?.instructions).not.toContain("Original weekly procedure");
-        expect(await inspect(["chat", "show", id])).toMatchObject({
+        expect(await inspect(["chat", "show", "--json", id])).toMatchObject({
           session: {
             skill: { name: "weekly-review", content: "Original weekly procedure" },
           },
@@ -924,6 +924,7 @@ describe.concurrent("chat.ts", () => {
         const job = await inspect([
           "tasks",
           "add",
+          "--json",
           "Review",
           "--skill=weekly-review",
           "--at",
@@ -941,7 +942,7 @@ describe.concurrent("chat.ts", () => {
         await rm(join(chat.directory, "skills"), { recursive: true });
         await chat.invoke(["chat", "send", id, "Continue without the file"]);
         expect(chat.requests.at(-1)?.instructions).toContain("Original weekly procedure");
-        expect(await inspect(["tasks", "show", job.id])).toMatchObject({
+        expect(await inspect(["tasks", "show", "--json", job.id])).toMatchObject({
           task: { skill: job.skill },
         });
 
@@ -953,6 +954,7 @@ describe.concurrent("chat.ts", () => {
           chat.invoke([
             "tasks",
             "add",
+            "--json",
             "Bad",
             "--skill",
             "missing",
@@ -962,8 +964,8 @@ describe.concurrent("chat.ts", () => {
           ]),
         ).rejects.toMatchObject({ message: expect.stringContaining("Skills must") });
         expect(chat.requests).toHaveLength(count);
-        expect(await inspect(["tasks", "list"])).toHaveLength(1);
-        expect(await inspect(["chat", "sessions"])).toHaveLength(2);
+        expect(await inspect(["tasks", "list", "--json"])).toHaveLength(1);
+        expect(await inspect(["chat", "sessions", "--json"])).toHaveLength(2);
         await chat.invoke(["chat", "new", "Ordinary session"]);
         expect(chat.requests.at(-1)?.instructions).not.toContain("weekly procedure");
 
@@ -972,10 +974,10 @@ describe.concurrent("chat.ts", () => {
           worker = null;
         }
 
-        expect(await inspect(["chat", "show", id])).toMatchObject({
+        expect(await inspect(["chat", "show", "--json", id])).toMatchObject({
           session: { skill: { content: "Original weekly procedure" } },
         });
-        expect(await inspect(["tasks", "show", job.id])).toMatchObject({
+        expect(await inspect(["tasks", "show", "--json", job.id])).toMatchObject({
           task: { skill: job.skill },
         });
       } finally {
@@ -1101,7 +1103,7 @@ describe.concurrent("chat.ts", () => {
           `Session: ${id}`,
         ]);
         expect(chat.requests[2]!.instructions).toContain("Give a short project review.");
-        await chat.invoke(["chat", "show", id]);
+        await chat.invoke(["chat", "show", "--json", id]);
         const saved = JSON.parse(chat.lines.at(-1)!);
         expect(saved.session).toMatchObject({
           provider: "chat-provider",
@@ -1149,7 +1151,7 @@ describe.concurrent("chat.ts", () => {
           worker = undefined;
         }
 
-        await chat.invoke(["chat", "show", chat.requests[0]!.sessionId]);
+        await chat.invoke(["chat", "show", "--json", chat.requests[0]!.sessionId]);
         // The worker test clock can give both runs the same timestamp.
         expect(
           JSON.parse(chat.lines.at(-1)!)
@@ -1206,7 +1208,7 @@ describe.concurrent("chat.ts", () => {
           worker = undefined;
         }
 
-        await chat.invoke(["chat", "show", chat.requests[0]!.sessionId]);
+        await chat.invoke(["chat", "show", "--json", chat.requests[0]!.sessionId]);
         expect(JSON.parse(chat.lines.at(-1)!).runs).toMatchObject([{ status: "interrupted" }]);
       } finally {
         if (prompt !== undefined) await Effect.runPromise(Fiber.interrupt(prompt));
@@ -1261,7 +1263,7 @@ describe.concurrent("chat.ts", () => {
       await expect(chat.invoke(["gateway", "missing-channel", "setup"])).rejects.toMatchObject({
         message: expect.stringContaining('Unknown subcommand "missing-channel"'),
       });
-      await chat.invoke(["worker", "status"]);
+      await chat.invoke(["worker", "status", "--json"]);
       expect(JSON.parse(chat.lines.at(-1)!).worker.messaging).toMatchObject({
         running: false,
         enabled: true,
@@ -1272,7 +1274,7 @@ describe.concurrent("chat.ts", () => {
           chat.invoke(["gateway", channel.registration.id, "setup"]),
         ),
       );
-      await chat.invoke(["worker", "status"]);
+      await chat.invoke(["worker", "status", "--json"]);
       expect(JSON.parse(chat.lines.at(-1)!).worker.messaging).toMatchObject({
         running: false,
         enabled: true,
@@ -1313,7 +1315,7 @@ describe.concurrent("chat.ts", () => {
       );
       expect(new Set(chat.requests.map((request) => request.sessionId)).size).toBe(2);
       expect(chat.state.peak).toBe(1);
-      await chat.invoke(["worker", "status"]);
+      await chat.invoke(["worker", "status", "--json"]);
       expect(JSON.parse(chat.lines.at(-1)!).worker.messaging).toMatchObject({
         running: true,
         enabled: true,
@@ -1358,13 +1360,14 @@ describe.concurrent("chat.ts", () => {
       await chat.invoke([
         "tasks",
         "add",
+        "--json",
         "Due",
         "--at",
         new Date(Date.now() + 60_000).toISOString(),
         "Summarize",
       ]);
       worker = await chat.startWorker();
-      await chat.invoke(["worker", "status"]);
+      await chat.invoke(["worker", "status", "--json"]);
       const status = JSON.parse(chat.lines.at(-1)!).worker;
       expect(status).toMatchObject({
         running: true,
@@ -1401,7 +1404,7 @@ describe.concurrent("chat.ts", () => {
       await Effect.runPromise(Fiber.interrupt(worker));
       worker = undefined;
       expect(await Bun.file(workerSocketPath(chat.directory)).exists()).toBe(false);
-      await chat.invoke(["store", "status"]);
+      await chat.invoke(["store", "status", "--json"]);
     } finally {
       if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
       await chat.close();
@@ -1506,7 +1509,7 @@ describe.concurrent("chat.ts", () => {
 
       expect(stopped).toBe(true);
       expect(chat.requests).toHaveLength(0);
-      await chat.invoke(["memory", "set", "project", "Acorn"]);
+      await chat.invoke(["memory", "set", "--json", "project", "Acorn"]);
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({ key: "project", value: "Acorn" });
     } finally {
       socket.destroy();
@@ -1545,17 +1548,16 @@ describe.concurrent("chat.ts", () => {
         async (response) => {
           reply = response;
           // Each response is selected before issuing the next request.
-          await expect(chat.invoke(["memory", "set", "project", "Acorn"])).rejects.toHaveProperty(
-            "_tag",
-            "WorkerRequestError",
-          );
+          await expect(
+            chat.invoke(["memory", "set", "--json", "project", "Acorn"]),
+          ).rejects.toHaveProperty("_tag", "WorkerRequestError");
         },
       );
 
       expect(delivered).toBe(4);
       expect(await readdir(directory)).toEqual(["tasks.sock"]);
       await chmod(path, 0o666);
-      await expect(chat.invoke(["memory", "list"])).rejects.toThrow("not protected");
+      await expect(chat.invoke(["memory", "list", "--json"])).rejects.toThrow("not protected");
       expect(delivered).toBe(4);
     } finally {
       await server.stop(true);
@@ -1568,11 +1570,16 @@ describe.concurrent("chat.ts", () => {
     const worker = await chat.startWorker();
     const built = chat.state.built;
 
+    // Answers stream through the chat writer; inspections print whole lines.
     const readOutput = async (args: ReadonlyArray<string>) => {
       chat.chunks.length = 0;
+      const start = chat.lines.length;
       await chat.invoke(args);
 
-      return chat.chunks.join("");
+      // Take the printed lines, so later checks see only the worker's own logs.
+      const printed = chat.lines.splice(start);
+
+      return chat.chunks.join("") + printed.map((line) => `${line}\n`).join("");
     };
 
     try {
@@ -1616,25 +1623,34 @@ describe.concurrent("chat.ts", () => {
       );
 
       expect(invalid.map((response) => response.status)).toEqual([400, 400, 400, 400, 400, 400]);
-      expect(JSON.parse(await readOutput(["memory", "list"]))).toEqual([]);
-      expect(JSON.parse(await readOutput(["memory", "set", "project", "Acorn"]))).toMatchObject({
+      expect(JSON.parse(await readOutput(["memory", "list", "--json"]))).toEqual([]);
+      expect(
+        JSON.parse(await readOutput(["memory", "set", "--json", "project", "Acorn"])),
+      ).toMatchObject({
         key: "project",
         value: "Acorn",
       });
+
+      // Worker replies are parsed and formatted like local results.
+      expect((await readOutput(["memory", "list"])).split("\n")).toEqual([
+        expect.stringMatching(/^KEY +ORIGIN +UPDATED +VALUE$/),
+        expect.stringMatching(/^project +cli +\S+ \S+ +Acorn$/),
+        "",
+      ]);
       expect(chat.state.built).toBe(built);
       chat.state.useTools = true;
       expect(await readOutput(["chat", "new", "Save a summary"])).toBe("Answer\n");
       const session = chat.errors.find((line) => line.startsWith("Session: "))!.slice(9);
       expect(chat.requests[0]?.instructions).toContain("Acorn");
 
-      expect(JSON.parse(await readOutput(["chat", "show", session]))).toMatchObject({
+      expect(JSON.parse(await readOutput(["chat", "show", "--json", session]))).toMatchObject({
         runs: [{ status: "completed" }],
         toolCalls: [{ status: "completed", name: "memory" }],
       });
       expect(chat.chunks.join("")).not.toContain("secretOpaqueState");
-      expect(JSON.parse(await readOutput(["chat", "sessions"]))).toHaveLength(1);
+      expect(JSON.parse(await readOutput(["chat", "sessions", "--json"]))).toHaveLength(1);
       const inferenceCount = chat.requests.length;
-      const search = JSON.parse(await readOutput(["chat", "search", "summary"]));
+      const search = JSON.parse(await readOutput(["chat", "search", "--json", "summary"]));
       expect(search).toMatchObject({
         matches: [
           expect.objectContaining({ sessionId: session, role: "user", excerpt: "Save a summary" }),
@@ -1642,32 +1658,36 @@ describe.concurrent("chat.ts", () => {
         truncated: false,
       });
       expect(chat.requests).toHaveLength(inferenceCount);
-      expect(JSON.parse(await readOutput(["chat", "search", "secretOpaqueState"]))).toEqual({
+      expect(
+        JSON.parse(await readOutput(["chat", "search", "--json", "secretOpaqueState"])),
+      ).toEqual({
         matches: [],
         truncated: false,
       });
-      expect(JSON.parse(await readOutput(["store", "status"]))).toMatchObject({ sessions: 1 });
+      expect(JSON.parse(await readOutput(["store", "status", "--json"]))).toMatchObject({
+        sessions: 1,
+      });
 
-      await readOutput(["memory", "set", "project", "Birch"]);
+      await readOutput(["memory", "set", "--json", "project", "Birch"]);
       chat.state.useTools = false;
       await chat.configure({ provider: "unused-provider" });
       await chat.configure({ model: undefined });
       expect(await readOutput(["chat", "send", session, "Continue"])).toBe("Answer\n");
       expect(chat.requests.at(-1)?.instructions).toContain("Birch");
-      await readOutput(["memory", "forget", "project"]);
-      await readOutput(["memory", "forget", "answer.style"]);
-      expect(await readOutput(["memory", "list"])).toBe("[]\n");
+      await readOutput(["memory", "forget", "--json", "project"]);
+      await readOutput(["memory", "forget", "--json", "answer.style"]);
+      expect(await readOutput(["memory", "list", "--json"])).toBe("[]\n");
       expect(chat.lines.join("\n")).not.toContain("Save a summary");
       expect(chat.lines.join("\n")).not.toContain("Answer");
 
       await Effect.runPromise(Fiber.interrupt(worker));
-      await chat.invoke(["chat", "show", session]);
+      await chat.invoke(["chat", "show", "--json", session]);
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
         runs: [{ status: "completed" }, { status: "completed" }],
       });
-      await chat.invoke(["chat", "search", "summary"]);
+      await chat.invoke(["chat", "search", "--json", "summary"]);
       expect(JSON.parse(chat.lines.at(-1)!)).toEqual(search);
-      await chat.invoke(["memory", "list"]);
+      await chat.invoke(["memory", "list", "--json"]);
       expect(chat.lines.at(-1)).toBe("[]");
     } finally {
       await Effect.runPromise(Fiber.interrupt(worker));
@@ -1704,7 +1724,7 @@ describe.concurrent("chat.ts", () => {
       await expect(Effect.runPromise(Fiber.join(queued))).rejects.toThrow("not retried");
       expect(chat.requests).toHaveLength(1);
       expect(chat.state.active).toBe(0);
-      await chat.invoke(["chat", "show", chat.errors[0]!.slice(9)]);
+      await chat.invoke(["chat", "show", "--json", chat.errors[0]!.slice(9)]);
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
         runs: [{ status: "interrupted", output: null }],
         messages: [{ message: { role: "user", text: "Stop this run" } }],
@@ -1735,6 +1755,7 @@ describe.concurrent("chat.ts", () => {
       await chat.invoke([
         "tasks",
         "add",
+        "--json",
         "Scheduled",
         "--at",
         new Date(Date.now()).toISOString(),
@@ -1763,15 +1784,16 @@ describe.concurrent("chat.ts", () => {
       );
       expect(chat.state.peak).toBe(1);
       chat.chunks.length = 0;
-      await chat.invoke(["chat", "sessions"]);
-      const sessions = JSON.parse(chat.chunks.join(""));
+      await chat.invoke(["chat", "sessions", "--json"]);
+      const sessions = JSON.parse(chat.lines.at(-1)!);
       chat.chunks.length = 0;
       await chat.invoke([
         "chat",
         "show",
+        "--json",
         sessions.find((item: { id: string }) => item.id === chat.errors[0]!.slice(9)).id,
       ]);
-      expect(JSON.parse(chat.chunks.join(""))).toMatchObject({
+      expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
         runs: [{ status: "interrupted", output: null }],
         messages: [{ message: { role: "user", text: "Interrupted" } }],
       });
@@ -1788,20 +1810,20 @@ describe.concurrent("chat.ts", () => {
 
     try {
       await writeFile(join(saved.directory, "profile.md"), "My name is Tom.");
-      await saved.invoke(["memory", "set", "answer.style", "Keep answers concise"]);
+      await saved.invoke(["memory", "set", "--json", "answer.style", "Keep answers concise"]);
       expect(saved.state.built).toBe(0);
       await saved.invoke(["chat", "new", "How should you answer?"]);
       expect(saved.requests[0]?.instructions).toContain("Keep answers concise");
       expect(saved.requests[0]?.instructions).toContain("My name is Tom.");
       const session = saved.errors.find((line) => line.startsWith("Session: "))?.slice(9) ?? "";
-      await saved.invoke(["memory", "set", "answer.style", "Explain the reasoning"]);
+      await saved.invoke(["memory", "set", "--json", "answer.style", "Explain the reasoning"]);
       await saved.invoke(["chat", "send", session, "What about now?"]);
       expect(saved.requests[1]?.instructions).toContain("Explain the reasoning");
       expect(saved.requests[1]?.instructions).not.toContain("Keep answers concise");
-      await saved.invoke(["memory", "forget", "answer.style"]);
+      await saved.invoke(["memory", "forget", "--json", "answer.style"]);
       await saved.invoke(["chat", "new", "What about now?"]);
       expect(saved.requests[2]?.instructions).not.toContain("answer.style");
-      await saved.invoke(["memory", "list"]);
+      await saved.invoke(["memory", "list", "--json"]);
       expect(saved.lines.at(-1)).toBe("[]");
     } finally {
       await saved.close();
@@ -1819,7 +1841,7 @@ describe.concurrent("chat.ts", () => {
         chat.chunks.length = 0;
         await chat.invoke(args);
 
-        return JSON.parse(remote ? chat.chunks.join("") : chat.lines.at(-1)!);
+        return JSON.parse(chat.lines.at(-1)!);
       };
 
       try {
@@ -1832,11 +1854,11 @@ describe.concurrent("chat.ts", () => {
           .find((line) => line.startsWith("Session: "))!
           .slice("Session: ".length);
 
-        const saved = await inspect(["chat", "show", session]);
+        const saved = await inspect(["chat", "show", "--json", session]);
         expect(saved.toolCalls).toMatchObject([
           { name: "memory", namespace: "poppet_memory", status: "completed" },
         ]);
-        expect(await inspect(["memory", "list"])).toEqual([
+        expect(await inspect(["memory", "list", "--json"])).toEqual([
           expect.objectContaining({
             key: "answer.style",
             value: "Keep answers concise",
@@ -1864,7 +1886,12 @@ describe.concurrent("chat.ts", () => {
       expect(chat.state.open).toBe(false);
       expect(chat.chunks.join("")).toBe("Answer\n");
 
-      await chat.invoke(["chat", "show", chat.errors[0]?.slice("Session: ".length) ?? ""]);
+      await chat.invoke([
+        "chat",
+        "show",
+        "--json",
+        chat.errors[0]?.slice("Session: ".length) ?? "",
+      ]);
       const saved = JSON.parse(chat.lines.at(-1) ?? "");
       expect(saved.toolCalls).toEqual([
         expect.objectContaining({
@@ -1891,7 +1918,7 @@ describe.concurrent("chat.ts", () => {
       expect(chat.chunks.join("")).toBe("Answer\n");
       expect(chat.errors[0]).toStartWith("Session: ");
       expect(chat.errors[1]).toStartWith("Run: ");
-      await chat.invoke(["chat", "sessions"]);
+      await chat.invoke(["chat", "sessions", "--json"]);
       const session = JSON.parse(chat.lines.at(-1) ?? "")[0];
       expect(session).toMatchObject({
         provider: "chat-provider",
@@ -1901,7 +1928,7 @@ describe.concurrent("chat.ts", () => {
       await chat.configure({ provider: "unused-provider" });
       await chat.configure({ model: undefined });
       await chat.configure({ chat: { outputTokens: 0 } });
-      await chat.invoke(["chat", "show", session.id]);
+      await chat.invoke(["chat", "show", "--json", session.id]);
       expect(chat.lines.at(-1)).not.toContain("secretOpaqueState");
       expect(chat.lines.at(-1)).not.toContain("continuation");
       expect(JSON.parse(chat.lines.at(-1) ?? "")).toMatchObject({
@@ -1920,7 +1947,7 @@ describe.concurrent("chat.ts", () => {
         ],
         settings: {},
       });
-      await chat.invoke(["chat", "show", session.id]);
+      await chat.invoke(["chat", "show", "--json", session.id]);
       expect(JSON.parse(chat.lines.at(-1) ?? "").runs).toHaveLength(2);
     } finally {
       await chat.close();
@@ -1935,8 +1962,8 @@ describe.concurrent("chat.ts", () => {
         [
           ["chat", "new"],
           ["chat", "send", "../bad", "Hello"],
-          ["chat", "show", "session", "extra"],
-          ["chat", "sessions", "extra"],
+          ["chat", "show", "--json", "session", "extra"],
+          ["chat", "sessions", "--json", "extra"],
         ].map((args) => expect(chat.invoke(args)).rejects.toHaveProperty("_tag", "UsageError")),
       );
 
@@ -1968,7 +1995,7 @@ describe.concurrent("chat.ts", () => {
       const id = chat.errors[0]!.slice("Session: ".length);
       expect(chat.chunks.join("")).toBe("Answer\n");
       expect(chat.titleRequests).toHaveLength(1);
-      await chat.invoke(["chat", "show", id]);
+      await chat.invoke(["chat", "show", "--json", id]);
       const saved = JSON.parse(chat.lines.at(-1)!);
       expect(saved.session).toMatchObject({
         title: "A saved conversation title",
@@ -1979,13 +2006,13 @@ describe.concurrent("chat.ts", () => {
       expect(saved.runs).toHaveLength(1);
       expect(saved.messages).toHaveLength(2);
       const built = chat.state.built;
-      await chat.invoke(["chat", "rename", id, "Local", "--literal", "title"]);
+      await chat.invoke(["chat", "rename", "--json", id, "Local", "--literal", "title"]);
       expect(JSON.parse(chat.lines.at(-1)!).title).toBe("Local --literal title");
       worker = await chat.startWorker();
-      await chat.invoke(["chat", "rename", id, "My worker title"]);
+      await chat.invoke(["chat", "rename", "--json", id, "My worker title"]);
       await chat.invoke(["chat", "send", id, "Continue"]);
-      await chat.invoke(["chat", "show", id]);
-      expect(chat.chunks.join("")).toContain('"title": "My worker title"');
+      await chat.invoke(["chat", "show", "--json", id]);
+      expect(chat.lines.at(-1)).toContain('"title": "My worker title"');
       expect(chat.titleRequests).toHaveLength(1);
       expect(chat.state.built).toBe(built + 1);
     } finally {
@@ -2004,7 +2031,7 @@ describe.concurrent("chat.ts", () => {
       });
       expect(chat.state.open).toBe(false);
       const id = chat.errors[0]?.slice("Session: ".length) ?? "";
-      await chat.invoke(["chat", "show", id]);
+      await chat.invoke(["chat", "show", "--json", id]);
       const saved = JSON.parse(chat.lines.at(-1) ?? "");
       expect(saved.runs[0]).toMatchObject({
         status: "interrupted",

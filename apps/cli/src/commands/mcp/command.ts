@@ -1,11 +1,11 @@
 import { inspectMCP, type MCPCommand } from "@poppet/mcp";
 import { CredentialInput } from "@poppet/provider";
-import { Console, Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 
 import { readHiddenKey, terminalKeyInput } from "#src/api-key-input";
 import type { CLIContext } from "#src/commands/context";
-import { booleanFlag } from "#src/commands/flags";
+import { booleanFlag, jsonFlag } from "#src/commands/flags";
 import {
   addMCPServer,
   loginMCPServer,
@@ -13,14 +13,94 @@ import {
   removeMCPServer,
   changeMCPPermissions,
 } from "#src/commands/mcp/setup";
+import { printParsed, sections, table, tableOr, time, yesNo } from "#src/output";
+
+const MCPServers = Schema.Array(
+  Schema.Struct({
+    id: Schema.String,
+    enabled: Schema.Boolean,
+    state: Schema.String,
+    transport: Schema.String,
+    origin: Schema.NullOr(Schema.String),
+    pid: Schema.NullOr(Schema.Number),
+    diagnostic: Schema.NullOr(Schema.String),
+    retryAt: Schema.NullOr(Schema.Number),
+    tools: Schema.Array(Schema.String),
+    scheduledTools: Schema.Array(Schema.String),
+    availableTools: Schema.Array(Schema.String),
+    signIn: Schema.NullOr(Schema.Struct({ signedIn: Schema.Boolean })),
+  }),
+);
+
+const MCPTools = Schema.Array(
+  Schema.Struct({
+    toolName: Schema.String,
+    allowed: Schema.Boolean,
+    scheduled: Schema.Boolean,
+    definition: Schema.NullOr(Schema.Struct({ description: Schema.String })),
+  }),
+);
+
+const toolCount = (server: (typeof MCPServers.Type)[number]) => {
+  const count = `${server.tools.length}/${server.availableTools.length}`;
+
+  return server.scheduledTools.length === 0
+    ? count
+    : `${count} (${server.scheduledTools.length} scheduled)`;
+};
+
+const renderServers = (servers: typeof MCPServers.Type) => {
+  if (servers.length === 0) return "No MCP servers. Add one with poppet mcp add.";
+
+  const notes = servers.flatMap((server) => [
+    ...(server.diagnostic === null ? [] : [`${server.id}: ${server.diagnostic}`]),
+    ...(server.retryAt === null ? [] : [`${server.id}: retries after ${time(server.retryAt)}`]),
+  ]);
+
+  return sections([
+    [
+      null,
+      table(
+        ["SERVER", "STATE", "TRANSPORT", "ENDPOINT", "TOOLS ALLOWED", "SIGNED IN"],
+        servers.map((server) => [
+          server.id,
+          server.enabled ? server.state : "disabled",
+          server.transport,
+          server.origin ?? (server.pid === null ? "-" : `pid ${server.pid}`),
+          toolCount(server),
+          server.signIn === null ? "-" : yesNo(server.signIn.signedIn),
+        ]),
+      ),
+    ],
+    notes.length === 0 ? null : ["Notes", notes.join("\n")],
+  ]);
+};
+
+const renderTools = (tools: typeof MCPTools.Type) =>
+  tableOr(
+    "The server offers no tools.",
+    ["TOOL", "ALLOWED", "SCHEDULED", "DESCRIPTION"],
+    tools.map((tool) => [
+      tool.toolName,
+      yesNo(tool.allowed),
+      yesNo(tool.scheduled),
+      tool.definition?.description ?? "-",
+    ]),
+  );
 
 export const mcpCommand = (context: CLIContext) => {
-  const { runtime, throughWorker } = context;
+  const { runtime, queryWorker } = context;
 
-  const runMCP = (command: MCPCommand) =>
-    throughWorker(
+  const runMCP = (command: MCPCommand, json: boolean) =>
+    queryWorker(
       { kind: "mcp", command },
-      inspectMCP(command).pipe(Effect.provide(runtime.mcp), Effect.flatMap(Console.log)),
+      inspectMCP(command).pipe(Effect.provide(runtime.mcp)),
+    ).pipe(
+      Effect.flatMap((result) =>
+        command.action === "tools"
+          ? printParsed(json, result, MCPTools, renderTools)
+          : printParsed(json, result, MCPServers, renderServers),
+      ),
     );
 
   // Setup edits config.json and protected credentials locally; a running worker keeps its
@@ -49,11 +129,15 @@ export const mcpCommand = (context: CLIContext) => {
   return Command.make("mcp").pipe(
     Command.withDescription("Add, remove and inspect MCP servers"),
     Command.withSubcommands([
-      Command.make("servers", {}, () => runMCP({ action: "servers" })).pipe(
+      Command.make("servers", { json: jsonFlag }, ({ json }) =>
+        runMCP({ action: "servers" }, json),
+      ).pipe(
         Command.withDescription("Show permissions and connection state without starting servers"),
       ),
-      Command.make("tools", { server: Argument.String("server") }, ({ server }) =>
-        runMCP({ action: "tools", server }),
+      Command.make(
+        "tools",
+        { server: Argument.String("server"), json: jsonFlag },
+        ({ server, json }) => runMCP({ action: "tools", server }, json),
       ).pipe(
         Command.withDescription(
           "Discover all tools and their permissions using the worker or local connections",

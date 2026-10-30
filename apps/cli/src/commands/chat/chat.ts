@@ -133,7 +133,7 @@ const messageForInspection = (entry: StoredMessage) => ({
   createdAt: entry.createdAt,
   message:
     entry.message.role === "assistant"
-      ? { role: "assistant", output: entry.message.output }
+      ? { role: "assistant" as const, output: entry.message.output }
       : entry.message,
 });
 
@@ -152,6 +152,7 @@ const runForInspection = (run: Run) => ({
   finishReason: run.result?.finishReason ?? null,
 });
 
+/** Saved session data, as plain values for the caller to format. */
 export const inspectChat = (
   command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,
   toolBytes = defaultPolicy.toolBytes,
@@ -159,18 +160,20 @@ export const inspectChat = (
   Effect.gen(function* () {
     const store = yield* Store;
 
-    if (command.action === "search")
-      return JSON.stringify(yield* store.searchSessions(command.query, toolBytes));
+    if (command.action === "search") return yield* store.searchSessions(command.query, toolBytes);
 
     if (command.action === "rename")
-      return JSON.stringify(
-        yield* store.renameSession(command.id, sessionTitle(command.text)),
-        null,
-        2,
-      );
+      return yield* store.renameSession(command.id, sessionTitle(command.text));
 
-    if (command.action === "sessions") return JSON.stringify(yield* store.sessions, null, 2);
-    const session = yield* store.session(command.id);
+    if (command.action === "sessions") return yield* store.sessions;
+
+    return yield* showSession(command.id);
+  });
+
+const showSession = (id: string) =>
+  Effect.gen(function* () {
+    const store = yield* Store;
+    const session = yield* store.session(id);
 
     if (session === null)
       return yield* Effect.fail(
@@ -180,16 +183,12 @@ export const inspectChat = (
     const runs = yield* store.runs(session.id);
     const toolCalls = (yield* Effect.forEach(runs, (run) => store.toolCalls(run.id))).flat();
 
-    return JSON.stringify(
-      {
-        session,
-        toolCalls,
-        messages: messages.map(messageForInspection),
-        runs: runs.map(runForInspection),
-      },
-      null,
-      2,
-    );
+    return {
+      session,
+      toolCalls,
+      messages: messages.map(messageForInspection),
+      runs: runs.map(runForInspection),
+    };
   });
 
 const attachmentLimit = Math.max(defaultPolicy.imageBytes, defaultPolicy.textFileBytes);

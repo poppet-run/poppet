@@ -5,6 +5,7 @@ import { WebSearch, searchProviders } from "@poppet/web-search";
 import { Console, Effect, Layer } from "effect";
 
 import { decodeKey, readHiddenKey } from "#src/api-key-input";
+import { fields, printResult, yesNo } from "#src/output";
 
 const searchProvider = Effect.map(webSearchProvider, (id) => ({ id, ...searchProviders[id] }));
 
@@ -31,7 +32,11 @@ export const WebSearchLive = Layer.effect(
   }),
 );
 
-export const manageWebSearch = (action: "login" | "status" | "logout", apiKey?: string) =>
+export const manageWebSearch = (
+  action: "login" | "status" | "logout",
+  apiKey?: string,
+  json = false,
+) =>
   Effect.gen(function* () {
     const store = yield* ApiKeyStore;
     const provider = yield* searchProvider;
@@ -57,13 +62,21 @@ export const manageWebSearch = (action: "login" | "status" | "logout", apiKey?: 
       );
     } else {
       const key = yield* store.read(credentialId);
-      yield* Console.log(
-        JSON.stringify({
+
+      yield* printResult(
+        json,
+        {
           provider: provider.id,
           enabled: yield* webSearchEnabled,
           configured: key !== null,
           source: key === null ? null : "stored",
-        }),
+        },
+        (status) =>
+          fields([
+            ["Provider", provider.name],
+            ["Enabled", yesNo(status.enabled)],
+            ["API key", status.configured ? "saved" : "not set"],
+          ]),
       );
     }
   });

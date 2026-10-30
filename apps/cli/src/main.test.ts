@@ -80,7 +80,7 @@ describe("main.ts", () => {
   });
 
   test.concurrent("when configuration is invalid, exits unsuccessfully", async () => {
-    const invalidConfig = await invokeProcess(["config"], { POPPET_DATA_DIR: "" });
+    const invalidConfig = await invokeProcess(["config", "--json"], { POPPET_DATA_DIR: "" });
 
     expect(invalidConfig.exitCode).toBe(1);
     expect(invalidConfig.stdout).toBe("");
