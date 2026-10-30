@@ -7,7 +7,6 @@ import { completeModel, validateRequest, type ModelOperations } from "#src/servi
 
 const request: ModelRequest = {
   sessionId: "test",
-  workload: "assistant",
   instructions: "",
   messages: [],
   tools: [],

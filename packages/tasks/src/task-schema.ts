@@ -88,7 +88,6 @@ export const NewTask = Schema.Struct({
   prompt: boundedText(16_384),
   provider: ProviderId,
   model: boundedText(1024),
-  workload: Session.fields.workload,
   schedule: Schedule,
 });
 

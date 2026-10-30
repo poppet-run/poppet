@@ -8,7 +8,6 @@ import { makeOpenCodeProvider, type HttpFetch } from "#src/service";
 
 const request: ModelRequest = {
   sessionId: "go-session",
-  workload: "coding",
   instructions: "Test",
   messages: [{ role: "user", text: "Hello" }],
   tools: [],
@@ -238,13 +237,10 @@ describe("makeOpenCodeProvider", () => {
     },
   );
 
-  test("when workloads or settings are unsupported, rejects them before reading credentials", async () => {
+  test("when settings are unsupported, rejects them before reading credentials", async () => {
     const harness = fixture();
     const model = await Effect.runPromise(harness.provider.resolve("gpt-6-luna"));
 
-    await expect(
-      Effect.runPromise(completeModel(model, { ...request, workload: "assistant" })),
-    ).rejects.toMatchObject({ reason: "permission" });
     await expect(
       Effect.runPromise(completeModel(model, { ...request, settings: { temperature: 1 } })),
     ).rejects.toMatchObject({ reason: "invalid-request" });

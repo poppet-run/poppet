@@ -8,7 +8,6 @@ import { makeOpenRouterProvider, type HttpFetch } from "#src/service";
 
 const request: ModelRequest = {
   sessionId: "router-session",
-  workload: "assistant",
   instructions: "Test",
   messages: [{ role: "user", text: "Hello" }],
   tools: [],

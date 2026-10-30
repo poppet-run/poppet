@@ -79,7 +79,6 @@ export const readChatLine = Effect.suspend(() => {
 
 export interface InteractiveChatOptions {
   readonly sessionId?: string | undefined;
-  readonly coding: boolean;
   readonly skill?: string | undefined;
 }
 
@@ -216,12 +215,11 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
   read: Effect.Effect<string | null, AgentError> = readChatLine,
 ) =>
   Effect.gen(function* () {
-    if (options.sessionId !== undefined && (options.coding || options.skill !== undefined))
+    if (options.sessionId !== undefined && options.skill !== undefined)
       return yield* Effect.fail(
         new AgentError({
           reason: "invalid-request",
-          message:
-            "A resumed session keeps its saved workload and skill. Omit --coding and --skill.",
+          message: "A resumed session keeps its saved skill. Omit --skill.",
         }),
       );
 
@@ -267,8 +265,8 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
         sessionId !== undefined
           ? { action: "send" as const, id: sessionId, text }
           : options.skill === undefined
-            ? { action: "new" as const, coding: options.coding, text }
-            : { action: "new" as const, coding: options.coding, skill: options.skill, text };
+            ? { action: "new" as const, text }
+            : { action: "new" as const, skill: options.skill, text };
 
       const command = attachments.length === 0 ? base : { ...base, attachments };
       attachments = [];

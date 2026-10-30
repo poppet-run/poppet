@@ -97,7 +97,6 @@ const fixture = async (
     prompt: "Summarize project.md",
     provider: "test-provider",
     model: "test-model",
-    workload: "assistant",
     schedule: { type: "once", at: 0 },
   };
 

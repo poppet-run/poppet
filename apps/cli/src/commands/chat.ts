@@ -13,7 +13,7 @@ import {
 } from "#src/chat";
 import { interactiveChat, interactiveChatOutput } from "#src/chat-prompt";
 import type { CLIContext } from "#src/commands/context";
-import { attachFlag, codingFlag, skillFlag, textArgument } from "#src/commands/flags";
+import { attachFlag, skillFlag, textArgument } from "#src/commands/flags";
 
 export const chatCommand = (context: CLIContext) => {
   const { runtime, throughWorker, write, writeThinking, readLine } = context;
@@ -84,12 +84,11 @@ export const chatCommand = (context: CLIContext) => {
             Argument.withSchema(Session.fields.id),
             Argument.optional,
           ),
-          coding: codingFlag,
           skill: skillFlag,
         },
-        ({ id, coding, skill }) =>
+        ({ id, skill }) =>
           interactiveChat(
-            { sessionId: Option.getOrUndefined(id), coding, skill },
+            { sessionId: Option.getOrUndefined(id), skill },
             (command, onSession) => runChat(command, onSession, true),
             readLine,
           ),
@@ -97,13 +96,12 @@ export const chatCommand = (context: CLIContext) => {
       Command.make(
         "new",
         {
-          coding: codingFlag,
           skill: skillFlag,
           attach: attachFlag,
           text: textArgument("message").pipe(Argument.withSchema(MessageText)),
         },
-        ({ coding, text, skill, attach }) => {
-          const command: ChatCommand = { action: "new", coding, text, attachments: attach };
+        ({ text, skill, attach }) => {
+          const command: ChatCommand = { action: "new", text, attachments: attach };
 
           const selected = skill === undefined ? command : { ...command, skill };
 

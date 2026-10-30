@@ -55,7 +55,6 @@ export const parseTaskSchedule = (
 export const prepareTask = (
   name: string,
   schedule: Schedule,
-  coding: boolean,
   prompt: string,
   skill?: string,
   delivery?: { readonly adapter: string; readonly conversationId: string | null },
@@ -81,7 +80,6 @@ export const prepareTask = (
         prompt,
         provider: config.provider,
         model: config.model,
-        workload: coding ? "coding" : "assistant",
       },
     };
 

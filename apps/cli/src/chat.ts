@@ -47,7 +47,6 @@ export const ChatRequest = Schema.Union([
     text: MessageText,
     provider: Session.fields.provider,
     model: Session.fields.model,
-    workload: Session.fields.workload,
     skill: Schema.optionalKey(SkillName),
     attachments: ChatAttachments,
   }),
@@ -80,7 +79,6 @@ export type ChatCommand =
   | {
       readonly action: "new";
       readonly text: string;
-      readonly coding: boolean;
       readonly skill?: string;
       readonly attachments?: ReadonlyArray<string>;
     };
@@ -144,7 +142,6 @@ const runForInspection = (run: Run) => ({
   sessionId: run.sessionId,
   provider: run.provider,
   model: run.model,
-  workload: run.workload,
   status: run.status,
   createdAt: run.createdAt,
   startedAt: run.startedAt,
@@ -265,7 +262,6 @@ export const prepareChat = (
       text: command.text,
       provider: config.provider,
       model,
-      workload: command.coding ? "coding" : "assistant",
       ...attached,
     };
 
@@ -285,7 +281,6 @@ const resolveChatSession = (command: ChatSubmission) =>
 
     return command.action === "new"
       ? (yield* store.createSession(command.provider, command.model, {
-          workload: command.workload,
           skill,
         })).id
       : command.id;

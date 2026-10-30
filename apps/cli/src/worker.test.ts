@@ -102,7 +102,6 @@ describe("runWorker", () => {
                 prompt: "Summarize recent conversations",
                 provider: "test-provider",
                 model: "test-model",
-                workload: "assistant",
                 schedule: { type: "once", at: Date.parse("2099-10-15T09:00:00Z") },
               },
               delivery: { adapter: "discord", conversationId: "thread" },

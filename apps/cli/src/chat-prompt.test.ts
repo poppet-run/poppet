@@ -107,7 +107,7 @@ describe.concurrent("interactiveChat", () => {
     const state = fixture(["", "Fail first", "New request", "/exit"]);
     await state.run(
       interactiveChat(
-        { coding: false },
+        {},
         (command, acknowledge) =>
           Effect.gen(function* () {
             state.commands.push(command);
@@ -122,7 +122,7 @@ describe.concurrent("interactiveChat", () => {
       ),
     );
     expect(state.commands).toEqual([
-      { action: "new", coding: false, text: "Fail first" },
+      { action: "new", text: "Fail first" },
       { action: "send", id: "saved-session", text: "New request" },
     ]);
     expect(state.errors.join("\n")).toContain("Lost response. Not retried.");
@@ -139,7 +139,7 @@ describe.concurrent("interactiveChat", () => {
 
     await state.run(
       interactiveChat(
-        { coding: false },
+        {},
         (command, acknowledge) =>
           Effect.sync(() => {
             state.commands.push(command);
@@ -151,7 +151,6 @@ describe.concurrent("interactiveChat", () => {
     expect(state.commands).toEqual([
       {
         action: "new",
-        coding: false,
         text: "Look",
         attachments: ["./screen one.png", "notes.md"],
       },
@@ -164,7 +163,7 @@ describe.concurrent("interactiveChat", () => {
 
     const result = await state.run(
       interactiveChat(
-        { coding: false },
+        {},
         (command) => {
           state.commands.push(command);
 
@@ -184,7 +183,7 @@ describe.concurrent("interactiveChat", () => {
 
     const result = await state.run(
       interactiveChat(
-        { sessionId: "saved-session", coding: false },
+        { sessionId: "saved-session" },
         (_command, acknowledge) =>
           failure === "output"
             ? Effect.fail(new AgentError({ reason: "interrupted", message: "Output closed" }))
@@ -199,13 +198,11 @@ describe.concurrent("interactiveChat", () => {
 
   test.each([null, "/exit"])("when input is %j, exits without a request", async (line) => {
     const state = fixture([line]);
-    await state.run(
-      interactiveChat({ coding: false }, () => Effect.die("Must not submit"), state.read),
-    );
+    await state.run(interactiveChat({}, () => Effect.die("Must not submit"), state.read));
     expect(state.reads()).toBe(1);
   });
 
-  test.each([{ coding: true }, { coding: false, skill: "review" }])(
+  test.each([{ skill: "review" }])(
     "when resuming with selection changes, rejects them before reading input",
     async (selection) => {
       const state = fixture([]);
@@ -218,10 +215,7 @@ describe.concurrent("interactiveChat", () => {
         ).pipe(Effect.result),
       );
 
-      expect(result).toHaveProperty(
-        "failure.message",
-        expect.stringContaining("saved workload and skill"),
-      );
+      expect(result).toHaveProperty("failure.message", expect.stringContaining("saved skill"));
       expect(state.reads()).toBe(0);
     },
   );

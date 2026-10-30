@@ -365,7 +365,6 @@ describe("definition", () => {
         model
           .stream({
             sessionId: "fixture",
-            workload: "assistant",
             instructions: "Fixture",
             messages: [{ role: "user", text: "Use MCP" }],
             tools: [tool],

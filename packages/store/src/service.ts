@@ -30,12 +30,11 @@ import { toolCallOperations } from "#src/tool-calls";
 
 export interface StoreOperations {
   readonly status: Effect.Effect<StoreStatus, StoreError>;
-  /** Creates a session with a fixed provider, model, and workload; optionally uses a supplied ID. */
+  /** Creates a session with a fixed provider and model; optionally uses a supplied ID. */
   readonly createSession: (
     provider: ProviderId,
     model: string,
     options?: {
-      readonly workload?: Session["workload"];
       readonly id?: string;
       readonly taskTitle?: string;
       readonly skill?: SkillSnapshot | null;

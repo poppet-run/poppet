@@ -953,7 +953,7 @@ describe("makeCLI", () => {
       expect(reopened.exitCode).toBe(0);
       expect(JSON.parse(first.stdout)).toEqual({
         path: join(directory, "store/poppet.sqlite"),
-        schemaVersion: 3,
+        schemaVersion: 4,
         sessions: 0,
         messages: 0,
         runs: 0,
@@ -1377,7 +1377,6 @@ describe("makeCLI", () => {
           "Later",
           "--at",
           "2099-10-15T09:00:00Z",
-          "--coding",
           "Explain",
           "--coding",
           "--help",
@@ -1389,7 +1388,6 @@ describe("makeCLI", () => {
 
       expect(added.exitCode).toBe(0);
       expect(JSON.parse(added.stdout)).toMatchObject({
-        workload: "coding",
         prompt: "Explain --coding --help -- -h",
       });
     } finally {

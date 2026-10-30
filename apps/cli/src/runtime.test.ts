@@ -109,7 +109,6 @@ describe("runtimeLayers", () => {
 
               const response = yield* completeModel(model, {
                 sessionId: "fake-session",
-                workload: "assistant",
                 instructions: "",
                 messages: [{ role: "user", text: "Hello" }],
                 tools: [],

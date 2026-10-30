@@ -28,7 +28,6 @@ const cases: ReadonlyArray<AdapterCase> = [
 
 const request: ModelRequest = {
   sessionId: "test-session",
-  workload: "coding",
   instructions: "Test instructions",
   messages: [{ role: "user", text: "Hello" }],
   tools: [],

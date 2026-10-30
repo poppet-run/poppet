@@ -1,11 +1,4 @@
-import {
-  AttachmentReference,
-  Completion,
-  Message,
-  ModelRequest,
-  ProviderId,
-  Tool,
-} from "@poppet/provider";
+import { AttachmentReference, Completion, Message, ProviderId, Tool } from "@poppet/provider";
 import { Schema } from "effect";
 
 /** A bounded identifier shared by persisted sessions, runs, and task records. */
@@ -100,12 +93,11 @@ export const SkillSnapshot = Schema.Struct({
 
 export type SkillSnapshot = typeof SkillSnapshot.Type;
 
-/** A saved conversation whose provider, model, and workload stay fixed across runs. */
+/** A saved conversation whose provider and model stay fixed across runs. */
 export const Session = Schema.Struct({
   id: Id,
   provider: ProviderId,
   model: ModelId,
-  workload: ModelRequest.fields.workload,
   createdAt: Schema.Natural,
   updatedAt: Schema.Natural,
   title: Schema.NullOr(SessionTitle),
@@ -155,7 +147,6 @@ export const Run = Schema.Struct({
   sessionId: Id,
   provider: ProviderId,
   model: ModelId,
-  workload: ModelRequest.fields.workload,
   status: RunStatus,
   createdAt: Schema.Natural,
   startedAt: Schema.NullOr(Schema.Natural),

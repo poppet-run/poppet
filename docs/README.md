@@ -30,7 +30,7 @@ for persistent settings.
 ## Providers
 
 - [ChatGPT](providers/openai-chatgpt.md): browser sign-in, subscription access, consent, and logout.
-- [OpenCode Go](providers/opencode-go.md): API-key setup, supported models, and coding workloads.
+- [OpenCode Go](providers/opencode-go.md): API-key setup and supported models.
 - [OpenRouter](providers/openrouter.md): API-key setup, model discovery, and routing constraints.
 
 ## Development

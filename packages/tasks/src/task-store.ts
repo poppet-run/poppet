@@ -185,7 +185,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
           prompt: valid.prompt,
           provider: valid.provider,
           model: valid.model,
-          workload: valid.workload,
           schedule: JSON.stringify(valid.schedule),
           nextAt:
             valid.schedule.type === "once"

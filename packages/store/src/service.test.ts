@@ -669,16 +669,13 @@ describe("Store", () => {
         Effect.gen(function* () {
           const store = yield* Store;
 
-          const session = yield* store.createSession(provider, "selected-model", {
-            workload: "coding",
-          });
+          const session = yield* store.createSession(provider, "selected-model", {});
 
           const pending = yield* store.queueRun(session.id, [user]);
           expect(pending).toMatchObject({
             status: "pending",
             provider,
             model: "selected-model",
-            workload: "coding",
             startedAt: null,
             result: null,
           });
@@ -702,7 +699,6 @@ describe("Store", () => {
           expect(yield* store.session(saved.session.id)).toMatchObject({
             provider,
             model: "selected-model",
-            workload: "coding",
           });
           expect(yield* store.run(saved.completed.id)).toEqual(saved.completed);
           expect(yield* store.runs(saved.session.id)).toEqual([saved.completed]);
@@ -715,7 +711,7 @@ describe("Store", () => {
             { role: "assistant", output: response.output, continuation: response.continuation },
           ]);
           expect(yield* store.status).toMatchObject({
-            schemaVersion: 3,
+            schemaVersion: 4,
             sessions: 1,
             messages: 4,
             runs: 1,
@@ -1065,7 +1061,7 @@ describe("Store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 3,
+        schemaVersion: 4,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));

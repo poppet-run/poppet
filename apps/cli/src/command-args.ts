@@ -19,7 +19,7 @@ export const commandArgs = (
       const token = args[offset]!;
 
       if (token === "--skill" || token === "--attach") offset += 2;
-      else if (token === "--coding" || /^--(?:skill|attach)=/.test(token)) offset++;
+      else if (/^--(?:skill|attach)=/.test(token)) offset++;
       else break;
     }
   } else if (args[0] === "chat" && args[1] === "send") {
@@ -43,7 +43,7 @@ export const commandArgs = (
       const token = args[offset]!;
 
       if (["--in", "--at", "--cron", "--tz", "--skill", "--to"].includes(token)) offset += 2;
-      else if (token === "--coding" || /^--(?:in|at|cron|tz|skill|to)=/.test(token)) offset++;
+      else if (/^--(?:in|at|cron|tz|skill|to)=/.test(token)) offset++;
       // Unknown options must fail, rather than silently becoming a local task's prompt.
       else if (token.startsWith("-") && token !== "--") return args;
       else break;
