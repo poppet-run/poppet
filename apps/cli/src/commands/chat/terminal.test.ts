@@ -2,8 +2,11 @@ import { describe, expect, jest, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
+import { WorkerRequestError } from "@poppet/worker";
 import { Console, Effect } from "effect";
 
+import type { ChatCommand } from "#src/commands/chat/chat";
+import { interactiveChat } from "#src/commands/chat/prompt";
 import { ChatTerminal } from "#src/commands/chat/terminal";
 
 const fixture = (color = false) => {
@@ -45,8 +48,8 @@ const fixture = (color = false) => {
 
 describe("ChatTerminal", () => {
   test.each([false, true])(
-    "animates quiet thinking with colour=%j and stops on answers, errors, and exit",
-    (color) => {
+    "animates thinking and responding with colour=%j and stops on completion, errors, and exit",
+    async (color) => {
       jest.useFakeTimers();
       const { terminal, frame, screen } = fixture(color);
 
@@ -67,9 +70,22 @@ describe("ChatTerminal", () => {
         jest.advanceTimersByTime(20);
         const answered = frame();
         jest.advanceTimersByTime(400);
-        expect(frame()).toBe(answered);
+        expect(frame()).not.toBe(answered);
         expect(stripVTControlCharacters(frame())).toContain("Responding");
+        expect(stripVTControlCharacters(frame())).not.toContain("Thinking");
+        expect(stripVTControlCharacters(frame())).toContain("next draft");
+        expect(frame().includes("\u001b[38;5;")).toBe(color);
+        const read = Effect.runPromise(terminal.read);
+        jest.advanceTimersByTime(20);
+        const completed = frame();
+        jest.advanceTimersByTime(400);
+        expect(frame()).toBe(completed);
+        expect(stripVTControlCharacters(frame())).toContain("Ready");
+        terminal.input("\r");
+        await read;
         Effect.runSync(terminal.begin("Again"));
+        expect(screen()).toContain("Thinking");
+        Effect.runSync(terminal.answer("Partial answer"));
         Effect.runSync(terminal.error("Unavailable"));
         jest.advanceTimersByTime(20);
         const failed = frame();
@@ -77,6 +93,7 @@ describe("ChatTerminal", () => {
         expect(frame()).toBe(failed);
         expect(stripVTControlCharacters(frame())).toContain("Request failed");
         Effect.runSync(terminal.begin("Last try"));
+        Effect.runSync(terminal.answer("Another answer"));
         terminal.close();
         const closed = frame();
         jest.advanceTimersByTime(400);
@@ -119,28 +136,129 @@ describe("ChatTerminal", () => {
     }
   });
 
-  test("streams answers while retaining an edited draft and blocks concurrent submission", async () => {
-    const { terminal, screen } = fixture();
+  test("queues edited messages in order while streaming and preserves a separate draft through resize", async () => {
+    const { terminal, output, screen } = fixture();
 
     try {
       const first = Effect.runPromise(terminal.read);
       terminal.input("Hello\r");
-      expect(await first).toBe("Hello");
+      expect(await first).toEqual({ text: "Hello", attachments: [] });
       Effect.runSync(terminal.begin("Hello"));
       terminal.input("next\u001b[D\u007fX");
       Effect.runSync(terminal.answer("First part"));
       terminal.input("\r");
+      terminal.input("third\runfinished draft");
       Effect.runSync(terminal.answer(" and second part"));
       expect(screen()).toContain("First part and second part");
-      expect(screen()).toContain("neXt");
+      expect(screen()).toContain("1. neXt");
+      expect(screen()).toContain("2. third");
+      expect(screen()).toContain("unfinished draft");
+      expect(screen()).not.toContain("Draft below");
+      output.columns = 24;
+      output.rows = 12;
+      const lines = screen().split("\r\n");
+      expect(lines).toHaveLength(12);
+      expect(lines.every((line) => Bun.stringWidth(line) <= 23)).toBe(true);
 
       const second = Effect.runPromise(terminal.read);
+      expect(await second).toEqual({ text: "neXt", attachments: [] });
+      expect(await Effect.runPromise(terminal.read)).toEqual({ text: "third", attachments: [] });
+      const fourth = Effect.runPromise(terminal.read);
       terminal.input("\r");
-      expect(await second).toBe("neXt");
+      expect(await fourth).toEqual({ text: "unfinished draft", attachments: [] });
     } finally {
       terminal.close();
     }
   });
+
+  test.each(["retry", "resume"])(
+    "pauses queued turns after failure and %s keeps session, order, and attachments",
+    async (action) => {
+      const { terminal, output, screen } = fixture();
+      output.rows = 30;
+      const started = Array.from({ length: 4 }, () => Promise.withResolvers<void>());
+      const release = Array.from({ length: 4 }, () => Promise.withResolvers<void>());
+      const failed = Promise.withResolvers<void>();
+      const commands: ChatCommand[] = [];
+      const total = action === "retry" ? 4 : 3;
+
+      const program = interactiveChat(
+        {},
+        (command, acknowledge) =>
+          Effect.gen(function* () {
+            const index = commands.length;
+            commands.push(command);
+            yield* acknowledge("saved-session");
+            started[index]!.resolve();
+            yield* Effect.promise(() => release[index]!.promise);
+
+            if (index === 0)
+              return yield* Effect.fail(new WorkerRequestError({ message: "Try again later" }));
+            yield* terminal.answer(`Answer ${index}`);
+          }),
+        Effect.suspend(() => (commands.length === total ? Effect.succeed(null) : terminal.read)),
+        {
+          welcome: terminal.welcome,
+          session: terminal.session,
+          begin: terminal.begin,
+          info: terminal.info,
+          error: (text) =>
+            terminal.error(text).pipe(Effect.andThen(Effect.sync(() => failed.resolve()))),
+          finish: Effect.void,
+        },
+      );
+
+      const done = Effect.runPromise(program.pipe(Effect.timeout("2 seconds")));
+
+      try {
+        terminal.input("/attach first.md\rFirst\r");
+        await started[0]!.promise;
+        terminal.input("/attach removed.md\rRemove me\r/attach second.md\rSecond\rThird\r");
+        terminal.input("/queue remove 1\r/attach draft.md\rstill drafting");
+        expect(commands).toHaveLength(1);
+        expect(screen()).toContain("1. [1 attached] Second");
+        expect(screen()).not.toContain("Remove me");
+        release[0]!.resolve();
+        await failed.promise;
+        // Let the prompt reach its next read. It must wait for an explicit queue action.
+        await Effect.runPromise(Effect.yieldNow);
+        expect(commands).toHaveLength(1);
+        expect(screen()).toContain("Queue paused");
+        terminal.input(`\u0015/queue ${action}\r`);
+
+        for (let index = 1; index < total; index++) {
+          // Each turn must finish before the next one starts.
+          // oxlint-disable-next-line no-await-in-loop
+          await started[index]!.promise;
+          expect(commands).toHaveLength(index + 1);
+          release[index]!.resolve();
+        }
+
+        await done;
+        expect(commands).toEqual([
+          { action: "new", text: "First", attachments: ["first.md"] },
+          ...(action === "retry"
+            ? [
+                {
+                  action: "send" as const,
+                  id: "saved-session",
+                  text: "First",
+                  attachments: ["first.md"],
+                },
+              ]
+            : []),
+          { action: "send", id: "saved-session", text: "Second", attachments: ["second.md"] },
+          { action: "send", id: "saved-session", text: "Third" },
+        ]);
+        expect(screen()).not.toContain("Queued");
+        expect(screen()).toContain("1 attached");
+      } finally {
+        release.forEach((gate) => gate.resolve());
+        terminal.close();
+        await done.catch(() => {});
+      }
+    },
+  );
 
   test.each(["\u001b[13;2u", "\u001b[27;2;13~", "\u001b[13;66u"])(
     "Shift+Enter %j inserts a newline without submitting, including split reports",
@@ -153,7 +271,7 @@ describe("ChatTerminal", () => {
         terminal.input(key.slice(4) + "second");
         // Ctrl-A and Ctrl-E still edit; neither encoding of Ctrl-J inserts a newline.
         terminal.input("\u001b[97;5u!\u001b[101;5u\n\u001b[106;5uend\r");
-        expect(await read).toBe("!first\nsecondend");
+        expect(await read).toEqual({ text: "!first\nsecondend", attachments: [] });
       } finally {
         terminal.close();
       }
@@ -170,13 +288,13 @@ describe("ChatTerminal", () => {
       terminal.input("1~");
       expect(screen()).toContain("second");
       terminal.input("\u001b[13;2ulast\r");
-      expect(await read).toBe("first\nsecond\n/exit\nlast");
+      expect(await read).toEqual({ text: "first\nsecond\n/exit\nlast", attachments: [] });
 
       const next = Effect.runPromise(terminal.read);
       terminal.input("draft\u001b[A");
       expect(screen()).toContain("second");
       terminal.input("\u001b[B\r");
-      expect(await next).toBe("draft");
+      expect(await next).toEqual({ text: "draft", attachments: [] });
     } finally {
       terminal.close();
     }
@@ -272,7 +390,7 @@ describe("ChatTerminal", () => {
 
     try {
       Effect.runSync(terminal.info("Attached notes.md"));
-      Effect.runSync(terminal.setAttachments(["notes.md"]));
+      terminal.input("/attach notes.md\r");
       Effect.runSync(terminal.answer("Safe\u001b[2J text\u001b]0;bad title\u0007"));
       expect(screen()).toContain("Safe text");
       expect(screen()).toContain("1 attached");
@@ -295,7 +413,7 @@ describe("ChatTerminal", () => {
       expect(exits()).toBe(0);
       const read = Effect.runPromise(terminal.read);
       terminal.input("\r\u0004");
-      expect(await read).toBe("draft");
+      expect(await read).toEqual({ text: "draft", attachments: [] });
       expect(exits()).toBe(0);
       terminal.input("\u0003");
       expect(exits()).toBe(1);
@@ -328,8 +446,8 @@ test.each(["cancel", "exit", "eof", "empty"])(
         yield* terminal.welcome("/attach <path> adds a file to the next message.");
         if (${JSON.stringify(mode)} !== "empty") yield* terminal.session("saved-session");
         const text = yield* terminal.read;
-        if (text === "/exit") return;
-        yield* terminal.begin(text);
+        if (text === null) return;
+        yield* terminal.begin(text.text);
         yield* terminal.answer("STREAMING");
         yield* Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(() => { interrupted = true; })));
       });
@@ -357,7 +475,7 @@ test.each(["cancel", "exit", "eof", "empty"])(
             if (!cancelled && transcript.includes("STREAMING")) {
               cancelled = true;
               terminal.resize(40, 12);
-              terminal.write("next draft\u001b[99;5u");
+              terminal.write("queued message\rnext draft\u001b[99;5u");
             }
           },
           exit: () => finished.resolve(),
@@ -389,6 +507,7 @@ test.each(["cancel", "exit", "eof", "empty"])(
 
       expect(scrollback).not.toContain("STREAMING");
       expect(scrollback).not.toContain("Hello");
+      expect(scrollback).not.toContain("queued message");
 
       if (mode === "empty") {
         expect(scrollback).toContain("No session was created.");

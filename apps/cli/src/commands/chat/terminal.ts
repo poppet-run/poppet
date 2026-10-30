@@ -7,7 +7,7 @@ import { Console, Deferred, Effect } from "effect";
 import type { ChatReasoningWriter, ChatWriter } from "#src/commands/chat/chat";
 import type { ChatHistoryMessage } from "#src/commands/chat/history";
 import { ChatMarkdown } from "#src/commands/chat/markdown";
-import { thinkingIndicator } from "#src/commands/chat/prompt";
+import { activityIndicator, type ChatInput } from "#src/commands/chat/prompt";
 
 const escape = "\u001b[";
 const segments = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -72,6 +72,8 @@ type Message = {
   text: string;
 };
 
+type QueuedMessage = { text: string; attachments: readonly string[] };
+
 type Output = Pick<NodeJS.WriteStream, "write" | "columns" | "rows"> &
   Partial<Pick<NodeJS.WriteStream, "hasColors">>;
 
@@ -89,13 +91,16 @@ export class ChatTerminal {
   private busy = false;
   private status = "Ready";
   private sessionId: string | undefined;
-  private thinkingTimer: ReturnType<typeof setInterval> | undefined;
-  private thinkingFrame = 0;
+  private activityTimer: ReturnType<typeof setInterval> | undefined;
+  private activityFrame = 0;
   private attachments: readonly string[] = [];
+  private queue: QueuedMessage[] = [];
+  private active: QueuedMessage | undefined;
+  private paused = false;
   private offset = 0;
   private renderedRows = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
-  private reader: ((text: string | null) => void) | undefined;
+  private reader: ((input: ChatInput | null) => void) | undefined;
   private closed = false;
 
   constructor(
@@ -119,25 +124,26 @@ export class ChatTerminal {
     }, 16);
   }
 
-  private stopThinking() {
-    clearInterval(this.thinkingTimer);
-    this.thinkingTimer = undefined;
+  private stopActivity() {
+    clearInterval(this.activityTimer);
+    this.activityTimer = undefined;
   }
 
   private statusLine(width: number) {
     const details = `${this.attachments.length ? ` · ${this.attachments.length} attached` : ""}${this.offset ? " · History" : ""}`;
 
-    if (this.thinkingTimer === undefined)
+    if (this.activityTimer === undefined)
       return this.style(wrapChatText(this.status + details, width)[0]!, "2");
 
-    const label = thinkingIndicator(
-      this.thinkingFrame,
+    const label = activityIndicator(
+      this.status === "Responding…" ? "Responding" : "Thinking",
+      this.activityFrame,
       this.color && (this.output.hasColors?.(256) ?? false),
       width,
     );
 
     const remaining = width - Bun.stringWidth(stripVTControlCharacters(label));
-    const suffix = remaining > 0 ? wrapChatText(" · Draft below" + details, remaining)[0]! : "";
+    const suffix = remaining > 0 ? wrapChatText(details, remaining)[0]! : "";
 
     return label + this.style(suffix, "2");
   }
@@ -199,7 +205,9 @@ export class ChatTerminal {
     const composerHeight = Math.min(inputRows.length, Math.floor(height / 3), height - 6);
     const start = Math.max(0, before.length - composerHeight);
     const visibleInput = inputRows.slice(start, start + composerHeight);
-    const room = Math.max(0, height - visibleInput.length - 6);
+    const available = Math.max(0, height - visibleInput.length - 6);
+    const queueRows = this.queueRows(width, Math.min(Math.floor(height / 3), available));
+    const room = available - queueRows.length;
     const transcript = this.transcript(width, true);
 
     if (this.offset > 0) this.offset += Math.max(0, transcript.length - this.renderedRows);
@@ -215,6 +223,7 @@ export class ChatTerminal {
 
     while (lines.length < room + 2) lines.push("");
     lines.push(this.statusLine(width));
+    lines.push(...queueRows);
     lines.push(this.style("╭" + "─".repeat(Math.max(0, width - 2)) + "╮", "2;36"));
     const inputTop = lines.length + 1;
 
@@ -231,7 +240,7 @@ export class ChatTerminal {
     lines.push(
       this.style(
         wrapChatText(
-          "Enter send · Shift+Enter newline · ↑↓ history · PgUp/PgDn scroll · Ctrl-C exit",
+          "Enter send/queue · Shift+Enter newline · ↑↓ history · PgUp/PgDn scroll · Ctrl-C exit",
           width,
         )[0]!,
         "2",
@@ -248,11 +257,45 @@ export class ChatTerminal {
     this.output.write(`${escape}?25l${escape}H${screen}${escape}${row};${column}H${escape}?25h`);
   };
 
-  read = Effect.callback<string | null, AgentError>((resume) => {
+  private queueRows(width: number, limit: number) {
+    if ((!this.queue.length && !this.paused) || limit === 0) return [];
+    const heading = `${this.paused ? "Queue paused" : "Queued"} · ${this.queue.length}`;
+    const rows = [heading];
+    const controls = this.paused ? "/queue retry · /queue resume" : "/queue remove N";
+    const slots = Math.max(0, limit - 2);
+    const shown = this.queue.length > slots ? Math.max(0, slots - 1) : slots;
+
+    for (const [index, message] of this.queue.slice(0, shown).entries()) {
+      const files = message.attachments.length ? ` [${message.attachments.length} attached]` : "";
+      rows.push(`${index + 1}.${files} ${message.text.replace(/\s+/g, " ")}`);
+    }
+
+    if (this.queue.length > shown && slots > 0)
+      rows.push(`+${this.queue.length - shown} more · /queue remove N`);
+
+    if (limit > 1) rows.push(controls);
+
+    return rows.map((row) => this.style(wrapChatText(row, width)[0]!, "2;36"));
+  }
+
+  /** Only the prompt's next read releases another turn, after the previous send completes. */
+  private dispatch() {
+    if (this.closed || this.busy || this.paused || !this.reader || !this.queue.length) return;
+    const message = this.queue.shift()!;
+    const reader = this.reader;
+    this.reader = undefined;
+    this.busy = true;
+    this.active = message;
+    reader(message);
+    this.schedule();
+  }
+
+  read = Effect.callback<ChatInput | null, AgentError>((resume) => {
     this.busy = false;
-    this.stopThinking();
-    this.status = "Ready";
+    this.stopActivity();
+    this.status = this.paused ? "Request failed · Queue paused" : "Ready";
     this.reader = (text) => resume(Effect.succeed(text));
+    this.dispatch();
     this.schedule();
 
     return Effect.sync(() => {
@@ -319,25 +362,21 @@ export class ChatTerminal {
 
   error: ChatWriter = (text) =>
     Effect.sync(() => {
-      this.stopThinking();
+      this.stopActivity();
       this.status = "Request failed";
+      this.paused = true;
       this.messages.push({ kind: "Error", text: clean(text) });
-      this.schedule();
-    });
-
-  setAttachments = (paths: readonly string[]) =>
-    Effect.sync(() => {
-      this.attachments = [...paths];
       this.schedule();
     });
 
   begin = (text: string) =>
     Effect.sync(() => {
       this.messages.push({ kind: "You", text: clean(text) });
-      this.stopThinking();
-      this.thinkingFrame = 0;
-      this.thinkingTimer = setInterval(() => {
-        this.thinkingFrame++;
+      this.stopActivity();
+      this.activityFrame = 0;
+      this.status = "Thinking…";
+      this.activityTimer = setInterval(() => {
+        this.activityFrame++;
         this.schedule();
       }, 100);
       this.offset = 0;
@@ -355,8 +394,7 @@ export class ChatTerminal {
   answer: ChatWriter = (text) =>
     Effect.sync(() => {
       if (!text) return;
-      this.stopThinking();
-      this.status = "Responding… · Draft below";
+      this.status = "Responding…";
       this.append("Poppet", text);
     });
 
@@ -380,8 +418,60 @@ export class ChatTerminal {
     this.cursor = this.draft.length;
   }
 
+  private submit() {
+    const text = this.draft.join("");
+    const command = text.trim();
+
+    if (!command) return true;
+    this.history.push(text);
+    this.historyIndex = this.history.length;
+    this.savedDraft = "";
+    this.draft = [];
+    this.cursor = 0;
+
+    if (command === "/exit") {
+      this.exit();
+
+      return false;
+    }
+
+    const attach = /^\/attach\s+(.+)$/.exec(command);
+
+    if (attach) {
+      this.attachments = [...this.attachments, attach[1]!];
+
+      return true;
+    }
+
+    if (/^\/queue(?:\s|$)/.test(command)) {
+      const remove = /^\/queue remove ([1-9]\d*)$/.exec(command);
+
+      if (remove && Number(remove[1]) <= this.queue.length)
+        this.queue.splice(Number(remove[1]) - 1, 1);
+      else if (this.paused && (command === "/queue resume" || command === "/queue retry")) {
+        if (command === "/queue retry" && this.active) this.queue.unshift(this.active);
+        this.paused = false;
+        this.status = "Ready";
+        this.dispatch();
+      } else
+        this.messages.push({
+          kind: "Info",
+          text: "Use /queue remove N for a queued message. After a failed turn, use /queue retry or /queue resume.",
+        });
+
+      return true;
+    }
+
+    this.queue.push({ text, attachments: this.attachments });
+    this.attachments = [];
+    this.dispatch();
+
+    return true;
+  }
+
   /** Buffers escape sequences and bracketed paste across input chunks. */
   input = (text: string) => {
+    if (this.closed) return;
     this.pending += text;
 
     while (this.pending) {
@@ -436,17 +526,7 @@ export class ChatTerminal {
 
           break;
         case "\r": {
-          if (this.busy || !this.reader || !this.draft.join("").trim()) break;
-          const value = this.draft.join("");
-          const reader = this.reader;
-          this.reader = undefined;
-          this.busy = true;
-          this.history.push(value);
-          this.historyIndex = this.history.length;
-          this.savedDraft = "";
-          this.draft = [];
-          this.cursor = 0;
-          reader(value);
+          if (!this.submit()) return;
           break;
         }
 
@@ -505,9 +585,12 @@ export class ChatTerminal {
 
   close() {
     this.closed = true;
-    this.stopThinking();
+    this.stopActivity();
     clearTimeout(this.timer);
     this.reader = undefined;
+    this.queue = [];
+    this.active = undefined;
+    this.attachments = [];
     this.output.write(`${escape}<u${escape}?2004l${escape}0m${escape}?25h${escape}?1049l`);
     this.output.write(
       this.sessionId === undefined

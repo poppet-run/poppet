@@ -15,19 +15,24 @@ const inputFailure = () =>
 
 const terminalColumns = () => Math.max(1, process.stderr.columns ?? 80);
 
-const thinkingPalette = [66, 73, 80, 116, 152, 159, 195, 231];
+const activityPalette = [66, 73, 80, 116, 152, 159, 195, 231];
 
 /** Sweeps a cyan highlight across a fixed label, resetting styling after each frame. */
-export const thinkingIndicator = (frame: number, glow: boolean, columns = terminalColumns()) => {
-  if (!glow) return `Thinking${".".repeat((Math.floor(frame / 3) % 3) + 1)}`.slice(0, columns);
-  const label = "Thinking...".slice(0, columns);
+export const activityIndicator = (
+  activity: "Thinking" | "Responding",
+  frame: number,
+  glow: boolean,
+  columns = terminalColumns(),
+) => {
+  if (!glow) return `${activity}${".".repeat((Math.floor(frame / 3) % 3) + 1)}`.slice(0, columns);
+  const label = `${activity}...`.slice(0, columns);
   const center = ((frame / 2) % (label.length + 6)) - 3;
 
   return (
     "\u001b[0m" +
     Array.from(label, (character, index) => {
       const strength = Math.max(0, 1 - Math.abs(index - center) / 3);
-      const color = thinkingPalette[Math.round(strength * (thinkingPalette.length - 1))];
+      const color = activityPalette[Math.round(strength * (activityPalette.length - 1))];
 
       return `\u001b[38;5;${color}m${character}`;
     }).join("") +
@@ -81,6 +86,15 @@ export interface InteractiveChatOptions {
   readonly sessionId?: string | undefined;
   readonly skill?: string | undefined;
 }
+
+/** Terminal queues capture attachment paths when the message is submitted. */
+export interface ChatInput {
+  readonly text: string;
+  readonly attachments?: readonly string[];
+}
+
+export const readChatInput = (read = readChatLine): Effect.Effect<ChatInput | null, AgentError> =>
+  read.pipe(Effect.map((text) => (text === null ? null : { text })));
 
 /** Keeps streamed thinking readable while answer text stays on its existing output. */
 export const interactiveChatOutput = (
@@ -149,7 +163,7 @@ export const interactiveChatOutput = (
       if (!animate || !waiting) return Effect.void;
       const prefix = !visible && open ? "\r\n" : "\r\u001b[2K";
       visible = true;
-      const label = thinkingIndicator(frame++, glow);
+      const label = activityIndicator("Thinking", frame++, glow);
 
       return thinking(prefix + label);
     });
@@ -231,7 +245,7 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
     command: Extract<ChatCommand, { action: "new" | "send" }>,
     onSession: ChatWriter,
   ) => Effect.Effect<void, E, R>,
-  read: Effect.Effect<string | null, AgentError> = readChatLine,
+  read: Effect.Effect<ChatInput | null, AgentError> = readChatInput(),
   presentation: ChatPresentation = plainPresentation,
   loadHistory: (id: string) => Effect.Effect<void, E, R> = () => Effect.void,
 ) =>
@@ -274,9 +288,12 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
     let attachments: string[] = [];
 
     for (;;) {
-      const text = yield* read;
+      const input = yield* read;
 
-      if (text === null || text.trim() === "/exit") return;
+      if (input === null) return;
+      const { text } = input;
+
+      if (text.trim() === "/exit") return;
 
       if (text.trim().length === 0) continue;
 
@@ -296,7 +313,8 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
             ? { action: "new" as const, text }
             : { action: "new" as const, skill: options.skill, text };
 
-      const command = attachments.length === 0 ? base : { ...base, attachments };
+      const files = input.attachments === undefined ? attachments : [...input.attachments];
+      const command = files.length === 0 ? base : { ...base, attachments: files };
       attachments = [];
       yield* presentation.attachments?.(attachments) ?? Effect.void;
 
