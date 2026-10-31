@@ -181,10 +181,9 @@ variables cannot supply or override search keys. Switching providers preserves
 both keys. Logout removes only the selected saved key without revoking remote
 access. Restart the worker after changing settings or credentials.
 
-Legacy configurations still load: `webSearch: true` without a provider selects
-Brave, and `webSearch: false` disables search even when a provider is present.
-Remove the legacy flag when editing the provider setting. Config-writing commands
-save the equivalent provider-only configuration; reads do not rewrite the file.
+The removed `webSearch` flag is rejected as an unknown field. Remove it from
+existing configuration. Set `webSearchProvider` to enable search, or remove both
+fields to keep search disabled.
 
 Queries go to the selected provider and can contain private information chosen
 by the model. Keys are never sent to fetched pages. Search uses a 15-second
