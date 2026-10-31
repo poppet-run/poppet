@@ -268,7 +268,11 @@ describe("apiKeyProvider", () => {
 
       expect(await Effect.runPromise(connection.status)).toMatchObject({ connected: false });
       await Effect.runPromise(
-        connection.login({ keyStdin: true, openBrowser: true, callbackPort: null }).pipe(
+        connection.login({ openBrowser: true, callbackPort: null }).pipe(
+          Effect.provideService(
+            ConfigProvider.ConfigProvider,
+            ConfigProvider.fromEnv({ env: { TEST_PROVIDER_KEY: "invalid environment key" } }),
+          ),
           Effect.provideService(CredentialInput, {
             readKey: () => Effect.succeed(Redacted.make("saved-key")),
             readLine: () => Effect.never,

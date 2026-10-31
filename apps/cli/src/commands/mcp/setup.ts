@@ -82,7 +82,7 @@ export const addMCPServer = (options: AddServer) =>
               () => new UsageError({ message: "Enter a nonempty API key without whitespace." }),
             ),
           )
-        : CredentialInput.use((input) => input.readKey(credential, false));
+        : CredentialInput.use((input) => input.readKey(credential));
 
       yield* ApiKeyStore.use((store) => store.write(credential, key));
     }

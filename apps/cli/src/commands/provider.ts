@@ -13,7 +13,7 @@ import { Argument, Command, Flag } from "effect/cli";
 import { terminalKeyInput } from "#src/api-key-input";
 import type { CLIContext } from "#src/commands/context";
 import { UsageError } from "#src/commands/errors";
-import { booleanFlag, jsonFlag } from "#src/commands/flags";
+import { jsonFlag } from "#src/commands/flags";
 import { printResult, tableOr, tree, yesNo } from "#src/output";
 import { findProvider } from "#src/runtime";
 
@@ -23,7 +23,6 @@ const actions = ["login", "status", "models", "logout"] as const;
 interface ProviderCommand {
   readonly action: (typeof actions)[number];
   readonly provider: ProviderId | null;
-  readonly keyStdin: boolean;
   readonly openBrowser: boolean;
   readonly callbackPort: number | null;
   readonly json: boolean;
@@ -33,7 +32,6 @@ interface ProviderCommand {
 interface ProviderInput {
   readonly target: Option.Option<string>;
   readonly provider: Option.Option<ProviderId>;
-  readonly keyStdin?: boolean;
   readonly browser?: boolean;
   readonly callbackPort?: number | null;
   readonly json?: boolean;
@@ -74,13 +72,6 @@ export const providerCommand = (context: CLIContext) => {
       const config = yield* AppConfig;
       const selected = command.provider ?? config.provider;
       const entry = yield* findProvider(selected, registered);
-
-      if (command.keyStdin && !entry.authentication.apiKey)
-        return yield* Effect.fail(
-          new UsageError({
-            message: `${entry.name} does not support --key-stdin. ${entry.authentication.help}`,
-          }),
-        );
 
       if ((!command.openBrowser || command.callbackPort !== null) && entry.authentication.apiKey)
         return yield* Effect.fail(
@@ -146,7 +137,6 @@ export const providerCommand = (context: CLIContext) => {
       yield* runProvider({
         action,
         provider: selected,
-        keyStdin: input.keyStdin ?? false,
         openBrowser: input.browser ?? true,
         callbackPort,
         json: input.json ?? false,
@@ -159,7 +149,6 @@ export const providerCommand = (context: CLIContext) => {
       {
         target: targetArgument,
         provider: providerFlag,
-        keyStdin: booleanFlag("key-stdin", "Read an API key from stdin"),
         browser: Flag.Boolean("browser").pipe(
           Flag.withDescription(
             "Open the system browser; --no-browser prints the link and accepts a pasted callback address",

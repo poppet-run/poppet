@@ -98,7 +98,7 @@ const fixture = async () => {
         login: () =>
           Effect.gen(function* () {
             if (state.failLogin) return yield* Effect.fail(invalidRequest(id, "Login failed."));
-            yield* (yield* CredentialInput).readKey(id, false);
+            yield* (yield* CredentialInput).readKey(id);
             state.connected = true;
             state.logins++;
 
@@ -337,7 +337,7 @@ describe("setup", () => {
     expect(f.actions).toEqual([]);
   });
 
-  test("environment credentials are saved through login before worker setup", async () => {
+  test("environment credentials still require login before worker setup", async () => {
     const f = await fixture();
     f.state.connected = true;
     f.state.source = "environment";

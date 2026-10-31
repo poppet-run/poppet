@@ -85,8 +85,8 @@ for an existing provider, and lists models from that provider. Discord is option
 skipping it leaves its policy and token unchanged. Discord token input displays
 asterisks. Other settings in `config.json` are preserved.
 
-If the selected provider uses an API key from the shell environment, setup saves
-it through the existing login command so the background worker can use it too.
+If the selected provider uses an API key from the shell environment, setup still
+asks for a key with hidden input and saves it for the background worker.
 
 Authentication saves immediately. Provider and model choices save after the
 prompts, followed by Discord if selected. Cancellation or a later failure keeps
@@ -129,7 +129,7 @@ through `provider login openai-chatgpt`.
 | `provider models [provider]`          | List available models.                  |
 | `provider logout [provider]`          | Clear that provider's saved connection. |
 
-`--key-stdin` applies to API-key providers. `--no-browser` and
+API-key login always prompts with hidden input, even when an environment key is set. `--no-browser` and
 `--callback-port <port>` apply to browser sign-in; see
 [headless and remote machines](providers/openai-chatgpt.md#headless-and-remote-machines).
 See [ChatGPT](providers/openai-chatgpt.md), [OpenCode Go](providers/opencode-go.md),

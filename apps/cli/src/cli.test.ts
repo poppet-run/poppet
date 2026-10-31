@@ -1019,24 +1019,22 @@ describe("makeCLI", () => {
     },
   );
 
-  test("when logging into API-key providers, honors explicit selection and keeps logout independent", async () => {
+  test("with saved API keys, honors explicit provider selection and keeps logout independent", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-login-"));
     const environment = await configure(directory, { provider: "opencode-go" });
 
     try {
-      const router = await invoke(["provider", "login", "openrouter"], {
-        ...environment,
-        POPPET_OPENROUTER_API_KEY: "router-test-secret",
-      });
-
-      const go = await invoke(["provider", "login"], {
-        ...environment,
-        POPPET_OPENCODE_GO_API_KEY: "go-test-secret",
-      });
-
-      expect(router.exitCode).toBe(0);
-      expect(go.exitCode).toBe(0);
-      expect(router.stdout).toContain("openrouter");
+      await mkdir(join(directory, "auth"), { mode: 0o700 });
+      await writeFile(
+        join(directory, "auth/openrouter.json"),
+        JSON.stringify({ version: 1, provider: "openrouter", key: "router-test-secret" }),
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(directory, "auth/opencode-go.json"),
+        JSON.stringify({ version: 1, provider: "opencode-go", key: "go-test-secret" }),
+        { mode: 0o600 },
+      );
 
       const routerStatus = await invoke(
         ["provider", "status", "--json", "--provider", "openrouter"],
@@ -1055,17 +1053,11 @@ describe("makeCLI", () => {
         source: "stored",
       });
 
-      for (const result of [router, go, routerStatus, goStatus]) {
+      for (const result of [routerStatus, goStatus]) {
         expect(result.stdout + result.stderr).not.toContain("router-test-secret");
         expect(result.stdout + result.stderr).not.toContain("go-test-secret");
       }
 
-      expect((await readdir(join(directory, "auth"))).toSorted()).toEqual([
-        "opencode-go.json",
-        "opencode-go.lock.sqlite",
-        "openrouter.json",
-        "openrouter.lock.sqlite",
-      ]);
       const logout = await invoke(["provider", "logout", "openrouter"], environment);
       expect(logout.exitCode).toBe(0);
       expect(
@@ -1084,7 +1076,7 @@ describe("makeCLI", () => {
     }
   });
 
-  test("when environment credentials are supplied, uses them without saving until login and rejects invalid overrides", async () => {
+  test("when environment credentials are supplied, uses them for status but login still requires hidden input", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-key-env-"));
 
     await configure(directory, { provider: "openrouter" });
@@ -1103,18 +1095,10 @@ describe("makeCLI", () => {
       });
       expect(await readdir(directory)).toEqual(["config.json"]);
       const login = await invoke(["provider", "login"], environment);
-      expect(login.exitCode).toBe(0);
+      expect(login.exitCode).toBe(1);
+      expect(login.stderr).toContain("API-key login needs an interactive terminal");
       expect(login.stdout + login.stderr).not.toContain("env-test-secret");
-      expect(
-        JSON.parse(
-          (
-            await invoke(["provider", "status", "--json"], {
-              POPPET_DATA_DIR: directory,
-              POPPET_PROVIDER: "openrouter",
-            })
-          ).stdout,
-        ).source,
-      ).toBe("stored");
+      expect(await readdir(directory)).toEqual(["config.json"]);
 
       const invalid = await invoke(["provider", "status", "--json"], {
         ...environment,
@@ -1146,7 +1130,7 @@ describe("makeCLI", () => {
         },
         {
           args: ["provider", "login", "openai-chatgpt", "--key-stdin"],
-          message: "ChatGPT does not support --key-stdin",
+          message: "Unrecognized flag: --key-stdin",
         },
         {
           args: ["provider", "status", "--json", "--key-stdin"],
@@ -1347,7 +1331,7 @@ describe("makeCLI", () => {
       ["tasks", "add", "--json", "Later", "--at", at, "--discord-thread", "400", "Hello"],
       ["tasks", "add", "--json", "Later", "--at", at, "--to=a", "--to=b:400", "Hello"],
       ["provider", "status", "--json", "--provider", "openrouter", "--provider", "opencode-go"],
-      ["provider", "login", "--key-stdin", "--key-stdin"],
+      ["provider", "login", "--key-stdin"],
       ["worker", "start", "extra"],
       ["worker", "install", "--unknown"],
       ["worker", "unknown"],

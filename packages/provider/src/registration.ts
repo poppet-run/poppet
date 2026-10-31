@@ -18,7 +18,6 @@ export class CredentialInput extends Context.Service<
   {
     readonly readKey: (
       provider: ProviderId,
-      stdin: boolean,
     ) => Effect.Effect<Redacted.Redacted<string>, ProviderError>;
     /** Reads one visible line; without an interactive terminal it never completes. */
     readonly readLine: (
@@ -30,7 +29,6 @@ export class CredentialInput extends Context.Service<
 
 /** Sign-in choices supplied by the host's login command. */
 export interface LoginOptions {
-  readonly keyStdin: boolean;
   /** False prints the sign-in link instead of opening the system browser. */
   readonly openBrowser: boolean;
   /** A fixed browser-callback port, such as one forwarded over SSH; null picks any free port. */
