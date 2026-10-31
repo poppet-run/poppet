@@ -53,6 +53,46 @@ describe("webSearchResult", () => {
     expect(result.truncated).toBe(true);
   });
 
+  test("when passages exceed the budget, retains every source and shares space across long passages", () => {
+    const candidates = Array.from({ length: 5 }, (_, i) => ({
+      title: `Source ${i}`,
+      url: `https://example.com/${i}`,
+      snippet: i === 1 ? "Short passage" : '界🙂\n"'.repeat(2000),
+    }));
+
+    const result = webSearchResult(candidates, 1024);
+
+    expect(result.results.map(({ title, url }) => ({ title, url }))).toEqual(
+      candidates.map(({ title, url }) => ({ title, url })),
+    );
+    expect(result.results[1]!.snippet).toBe("Short passage");
+
+    for (const [index, source] of result.results.entries()) {
+      expect(source.snippet.length).toBeGreaterThan(0);
+      expect(candidates[index]!.snippet.startsWith(source.snippet)).toBe(true);
+      expect(source.snippet.isWellFormed()).toBe(true);
+    }
+
+    const longSizes = result.results
+      .filter((_, index) => index !== 1)
+      .map(({ snippet }) => Buffer.byteLength(JSON.stringify(snippet)));
+
+    expect(Math.max(...longSizes) - Math.min(...longSizes)).toBeLessThanOrEqual(12);
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(1024);
+    expect(result.truncated).toBe(true);
+  });
+
+  test("when the complete result exactly fits, preserves it without truncation", () => {
+    const candidates = [{ title: "Source", url: "https://example.com/", snippet: "Passage" }];
+    const expected = { results: candidates, truncated: false };
+    const limit = Buffer.byteLength(JSON.stringify(expected));
+
+    expect(webSearchResult(candidates, limit)).toEqual(expected);
+    const shortened = webSearchResult(candidates, limit - 1);
+    expect(shortened.truncated).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(shortened))).toBeLessThanOrEqual(limit - 1);
+  });
+
   test("when Unicode results exceed the budget, truncates safely and omits URLs that cannot fit", () => {
     const title = "界🙂".repeat(2000);
 
@@ -89,9 +129,11 @@ describe.each([
     provider === "Kagi Search"
       ? { data: { search: results } }
       : {
-          type: "search",
-          web: {
-            results: results.map(({ snippet, ...rest }) => ({ ...rest, description: snippet })),
+          grounding: {
+            generic: results.map(({ snippet, ...rest }) => ({
+              ...rest,
+              snippets: snippet === undefined ? [] : [snippet],
+            })),
           },
         };
 
@@ -104,13 +146,12 @@ describe.each([
 
           if (provider === "Brave Search") {
             expect(url.origin + url.pathname).toBe(
-              "https://api.search.brave.com/res/v1/web/search",
+              "https://api.search.brave.com/res/v1/llm/context",
             );
             expect(Object.fromEntries(url.searchParams)).toEqual({
               q: "current topic",
-              count: "5",
-              result_filter: "web",
-              text_decorations: "false",
+              maximum_number_of_urls: "5",
+              maximum_number_of_tokens: "2048",
             });
             expect(init?.headers).toEqual({
               Accept: "application/json",
@@ -203,7 +244,7 @@ describe.each([
       Response.json(
         provider === "Kagi Search"
           ? { data: { search: [{ title: 1, url: "https://example.com/" }] } }
-          : { type: "search", web: { results: [{ title: 1, url: "https://example.com/" }] } },
+          : { grounding: { generic: [{ title: 1, url: "https://example.com/", snippets: [] }] } },
       ),
     () => new Response(new Uint8Array([0xff]), { headers: { "Content-Type": "application/json" } }),
     () => new Response("<html>error</html>", { headers: { "Content-Type": "text/html" } }),
@@ -274,6 +315,50 @@ describe.each([
           expect(aborted).toBe(true);
         }).pipe(Effect.provide(TestClock.layer())),
       );
+    },
+  );
+});
+
+const searchBrave = (response: Response) =>
+  Effect.runPromise(
+    makeBraveSearch(
+      Redacted.make("test-key"),
+      16384,
+      http(async () => response),
+    ).search("topic"),
+  );
+
+describe("Brave LLM Context", () => {
+  test("when sources contain multiple passages, preserves text and structured content with passage boundaries", async () => {
+    const snippets = [
+      "First passage",
+      '{"table":[["name","value"],["test",42]]}',
+      "```ts\nconst x = 1;\n```",
+    ];
+
+    expect(
+      await searchBrave(
+        Response.json({
+          grounding: { generic: [{ title: "Source", url: "https://example.com/", snippets }] },
+          sources: { "https://other.example/": { title: "Metadata only" } },
+        }),
+      ),
+    ).toEqual({
+      results: [{ title: "Source", url: "https://example.com/", snippet: snippets.join("\n\n") }],
+      truncated: false,
+    });
+  });
+
+  test.each([undefined, null, "passage", [42]])(
+    "when the passage array is malformed (%j), rejects the response",
+    async (snippets) => {
+      await expect(
+        searchBrave(
+          Response.json({
+            grounding: { generic: [{ title: "Source", url: "https://example.com/", snippets }] },
+          }),
+        ),
+      ).rejects.toMatchObject({ reason: "tool-network" });
     },
   );
 });

@@ -3,20 +3,15 @@ import { Redacted, Schema } from "effect";
 import { searchRequest } from "#src/web-search";
 
 const BraveSearchResponse = Schema.Struct({
-  type: Schema.Literal("search"),
-  web: Schema.optionalKey(
-    Schema.NullOr(
+  grounding: Schema.Struct({
+    generic: Schema.Array(
       Schema.Struct({
-        results: Schema.Array(
-          Schema.Struct({
-            title: Schema.NonEmptyString,
-            url: Schema.String,
-            description: Schema.optionalKey(Schema.NullOr(Schema.String)),
-          }),
-        ),
+        title: Schema.NonEmptyString,
+        url: Schema.String,
+        snippets: Schema.Array(Schema.String),
       }),
     ),
-  ),
+  }),
 });
 
 /** Fixed endpoint and explicit redirect rejection keep the search key at Brave. */
@@ -28,12 +23,11 @@ export const makeBraveSearch = (
   search: searchRequest(
     "Brave Search",
     (query, signal) => {
-      const url = new URL("https://api.search.brave.com/res/v1/web/search");
+      const url = new URL("https://api.search.brave.com/res/v1/llm/context");
       url.search = new URLSearchParams({
         q: query,
-        count: "5",
-        result_filter: "web",
-        text_decorations: "false",
+        maximum_number_of_urls: "5",
+        maximum_number_of_tokens: "2048",
       }).toString();
 
       return httpFetch(url, {
@@ -45,10 +39,10 @@ export const makeBraveSearch = (
     (text) => {
       const response = Schema.decodeUnknownSync(Schema.fromJsonString(BraveSearchResponse))(text);
 
-      return (response.web?.results ?? []).map(({ title, url, description }) => ({
+      return response.grounding.generic.map(({ title, url, snippets }) => ({
         title,
         url,
-        snippet: description ?? "",
+        snippet: snippets.join("\n\n"),
       }));
     },
     toolBytes,

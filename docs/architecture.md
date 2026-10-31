@@ -520,7 +520,10 @@ failure without replay, and unchanged restrictions on built-in writes and MCP to
 ## Web search
 
 `@poppet/web-search` owns the `WebSearch` service contract, Brave and Kagi v1 HTTP clients,
-response schemas, URL filtering, and Unicode-safe result budgeting. It depends on
+response schemas, URL filtering, and Unicode-safe result budgeting.
+Brave uses `/res/v1/llm/context`, requesting at most five URLs and 2,048 context
+tokens. It maps `grounding.generic` titles, URLs, and extracted passages into the
+shared result format, joining passages with blank lines. It depends on
 `@poppet/io` and Effect, with no dependency on the agent or credential storage.
 `agent/web-search.ts` defines `poppet_web.search_web` and validates model arguments.
 The conversation maps `WebSearchError` into `AgentError` while preserving its
@@ -544,7 +547,9 @@ aborts fetch. Authentication and rate-limit failures have tool-specific reason
 codes and never enter inference-provider pause handling.
 
 Results keep at most five source titles, canonical URLs, and snippets in backend
-order, within the serialized tool budget. Invalid URLs, private literal addresses,
+order, within the serialized tool budget. URLs are reserved first, then remaining
+space is shared across titles and finally snippets. Short fields release their
+unused allocation to longer ones. Invalid URLs, private literal addresses,
 and URLs that cannot fit are omitted and mark the result truncated. Hostname
 address validation remains mandatory when a page is fetched. Only returned
 sources gain a run-local page grant after the tool result is durably completed.
