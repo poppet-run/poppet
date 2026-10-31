@@ -26,7 +26,6 @@ const FileSettings = Schema.Struct({
   applicationName: Schema.optionalKey(ConfigText),
   provider: Schema.optionalKey(ConfigText),
   model: Schema.optionalKey(ConfigText),
-  webSearch: Schema.optionalKey(Schema.Boolean),
   webSearchProvider: Schema.optionalKey(Schema.Literals(["brave", "kagi"])),
   mcpServers: Schema.optionalKey(MCPServers),
   gatewayPackages: Schema.optionalKey(Schema.Array(ConfigText)),
@@ -40,6 +39,11 @@ const FileSettings = Schema.Struct({
       maxConcurrentRequests: Schema.optionalKey(Schema.Int),
     }),
   ),
+});
+
+const LegacyFileSettings = Schema.Struct({
+  ...FileSettings.fields,
+  webSearch: Schema.optionalKey(Schema.Boolean),
 });
 
 /** Fingerprint of the file and data directory captured while loading this configuration. */
@@ -81,10 +85,23 @@ export const readConfigFile = (directory: string) =>
             Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
           )(contents).pipe(Effect.mapError(() => fileError(path, "Expected valid JSON.")));
 
-    const file = yield* Schema.decodeUnknownEffect(FileSettings, { onExcessProperty: "error" })(
+    const legacy = yield* Schema.decodeUnknownEffect(LegacyFileSettings, {
+      onExcessProperty: "error",
+    })(
       // Ignore the retired browser setting without relaxing validation of other keys.
       Object.fromEntries(Object.entries(json).filter(([key]) => key !== "browser")),
     ).pipe(Effect.mapError((error) => fileError(path, error.message)));
+
+    // Preserve legacy opt-in and explicit opt-out without retaining the retired flag.
+    const { webSearch, webSearchProvider, ...settings } = legacy;
+
+    const provider =
+      webSearch === false
+        ? undefined
+        : (webSearchProvider ?? (webSearch === true ? "brave" : undefined));
+
+    const file: typeof FileSettings.Type =
+      provider === undefined ? settings : { ...settings, webSearchProvider: provider };
 
     return { file, path, exists: contents !== null };
   });
@@ -99,7 +116,6 @@ export const loadConfigSource = Effect.gen(function* () {
     applicationName: file.applicationName,
     provider: file.provider,
     model: file.model,
-    webSearch: file.webSearch,
     webSearchProvider: file.webSearchProvider,
     mcpServers: mcpFileValue(file.mcpServers, directory),
     gatewayPackages:

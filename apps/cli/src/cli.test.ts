@@ -353,13 +353,14 @@ describe("makeCLI", () => {
     const environment = { POPPET_DATA_DIR: directory };
 
     try {
+      await configure(directory, { webSearchProvider: "brave" });
       expect(
         (await invoke(["web", "login", "--api-key", "brave-only-key"], environment)).exitCode,
       ).toBe(0);
       await configure(directory, { webSearchProvider: "kagi" });
       expect(JSON.parse((await invoke(["web", "status", "--json"], environment)).stdout)).toEqual({
         provider: "kagi",
-        enabled: false,
+        enabled: true,
         configured: false,
         source: null,
       });
@@ -371,7 +372,7 @@ describe("makeCLI", () => {
       expect(login.stdout).not.toContain("kagi-only-key");
       expect(JSON.parse((await invoke(["web", "status", "--json"], environment)).stdout)).toEqual({
         provider: "kagi",
-        enabled: false,
+        enabled: true,
         configured: true,
         source: "stored",
       });
@@ -423,7 +424,7 @@ describe("makeCLI", () => {
 
     try {
       expect(JSON.parse((await invoke(["web", "status", "--json"], environment)).stdout)).toEqual({
-        provider: "brave",
+        provider: null,
         enabled: false,
         configured: false,
         source: null,
@@ -460,7 +461,8 @@ describe("makeCLI", () => {
         POPPET_BRAVE_SEARCH_API_KEY: "override-key",
       });
 
-      expect(JSON.parse(config.stdout).webSearch).toBe(true);
+      expect(JSON.parse(config.stdout).webSearchProvider).toBe("brave");
+      expect(JSON.parse(config.stdout)).not.toHaveProperty("webSearch");
       expect(config.stdout).not.toContain("override-key");
       expect(
         (await readdir(join(directory, "auth"))).filter((name) => name.endsWith(".json")),

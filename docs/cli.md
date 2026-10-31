@@ -173,9 +173,9 @@ request. See [MCP tools](mcp.md) for configuration and permissions.
 | `web status`                  | Show whether search is enabled and a key is configured, without a remote request. |
 | `web logout`                  | Remove the saved search key.                                                      |
 
-These commands use `webSearchProvider`, which defaults to `brave` and also accepts
-`kagi`. They do not change inference credentials or require a selected model.
-Enable `webSearch` separately and restart any running worker. See
+These commands use `webSearchProvider`, which must be set to `brave` or `kagi`
+for login and logout. With no provider, status reports search as disabled. They do not change inference credentials or require a selected model.
+Selecting a provider enables search once its key is saved. Restart any running worker. See
 [configuration](configuration.md#web-search) for credentials and query handling.
 
 ## Chat

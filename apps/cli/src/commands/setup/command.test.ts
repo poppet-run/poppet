@@ -234,7 +234,7 @@ describe("setup", () => {
     const saved = {
       provider: "saved-provider",
       model: "saved-model",
-      webSearch: true,
+      webSearchProvider: "brave",
       chat: { outputTokens: 1000 },
       discord: { ownerId: "200", guildId: "300", homeChannelId: "400" },
     };
@@ -300,7 +300,10 @@ describe("setup", () => {
     "%s stops setup without changing existing configuration",
     async (failure) => {
       const f = await fixture();
-      const saved = '{"provider":"saved-provider","model":"saved-model","webSearch":true}\n';
+
+      const saved =
+        '{"provider":"saved-provider","model":"saved-model","webSearchProvider":"brave"}\n';
+
       await writeFile(f.path, saved);
       f.state.failLogin = failure === "login";
       f.state.failModels = failure === "catalog";

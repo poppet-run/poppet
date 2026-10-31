@@ -1,5 +1,5 @@
 import { AgentError, ChatSettings } from "@poppet/agent";
-import { webSearchEnabled, webSearchProvider } from "@poppet/config";
+import { webSearchProvider } from "@poppet/config";
 import { ApiKeyStore } from "@poppet/credentials";
 import { WebSearch, searchProviders } from "@poppet/web-search";
 import { Console, Effect, Layer } from "effect";
@@ -7,14 +7,16 @@ import { Console, Effect, Layer } from "effect";
 import { decodeKey, readHiddenKey } from "#src/api-key-input";
 import { fields, printResult, yesNo } from "#src/output";
 
-const searchProvider = Effect.map(webSearchProvider, (id) => ({ id, ...searchProviders[id] }));
+const searchProvider = Effect.map(webSearchProvider, (id) =>
+  id === null ? null : { id, ...searchProviders[id] },
+);
 
 export const WebSearchLive = Layer.effect(
   WebSearch,
   Effect.gen(function* () {
     const provider = yield* searchProvider;
 
-    if (!(yield* webSearchEnabled)) return { search: null };
+    if (provider === null) return { search: null };
 
     const key = yield* ApiKeyStore.use((store) => store.read(provider.credentialId)).pipe(
       Effect.mapError(
@@ -40,6 +42,29 @@ export const manageWebSearch = (
   Effect.gen(function* () {
     const store = yield* ApiKeyStore;
     const provider = yield* searchProvider;
+
+    if (provider === null) {
+      if (action === "status") {
+        return yield* printResult(
+          json,
+          { provider: null, enabled: false, configured: false, source: null },
+          () =>
+            fields([
+              ["Provider", "not set"],
+              ["Enabled", "no"],
+              ["API key", "not set"],
+            ]),
+        );
+      }
+
+      return yield* Effect.fail(
+        new AgentError({
+          reason: "tool-authentication",
+          message: 'Set webSearchProvider to "brave" or "kagi" in config.json first.',
+        }),
+      );
+    }
+
     const { credentialId } = provider;
 
     if (action === "login") {
@@ -52,9 +77,7 @@ export const manageWebSearch = (
 
       yield* store.write(credentialId, key);
 
-      yield* Console.log(
-        `${provider.name} key saved. Enable webSearch in config.json and restart the worker.`,
-      );
+      yield* Console.log(`${provider.name} key saved. Restart the worker to use web search.`);
     } else if (action === "logout") {
       yield* store.remove(credentialId);
       yield* Console.log(
@@ -67,7 +90,7 @@ export const manageWebSearch = (
         json,
         {
           provider: provider.id,
-          enabled: yield* webSearchEnabled,
+          enabled: true,
           configured: key !== null,
           source: key === null ? null : "stored",
         },
