@@ -429,7 +429,7 @@ describe("makeCLI", () => {
         configured: false,
         source: null,
       });
-      await writeFile(join(directory, "config.json"), '{"webSearch":true}');
+      await configure(directory, { webSearchProvider: "brave" });
       expect(JSON.parse((await invoke(["web", "status", "--json"], environment)).stdout)).toEqual({
         provider: "brave",
         enabled: true,

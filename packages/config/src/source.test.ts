@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,7 +7,7 @@ import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
 import { loadConfig, taskCatchUpMinutes, webSearchProvider } from "#src/config";
-import { ConfigSource, loadConfigSource, updateConfigFile } from "#src/source";
+import { ConfigSource, loadConfigSource } from "#src/source";
 
 const load = (environment: Record<string, string>) =>
   Effect.gen(function* () {
@@ -39,7 +39,6 @@ describe("loadConfigSource", () => {
       const file = {
         provider: "other-provider",
         model: "file-model",
-        webSearch: true,
         webSearchProvider: "kagi",
         tasks: { catchUpMinutes: 15 },
         chat: { outputTokens: 4096 },
@@ -108,40 +107,21 @@ describe("loadConfigSource", () => {
     [{}, null],
     [{ webSearchProvider: "brave" }, "brave"],
     [{ webSearchProvider: "kagi" }, "kagi"],
-    [{ webSearch: true }, "brave"],
-    [{ webSearch: true, webSearchProvider: "kagi" }, "kagi"],
-    [{ webSearch: false }, null],
-    [{ webSearch: false, webSearchProvider: "brave" }, null],
-    [{ webSearch: false, webSearchProvider: "kagi" }, null],
-  ] as const)(
-    "search config %j resolves to %j and saves without the legacy flag",
-    async (search, expected) => {
-      const directory = await mkdtemp(join(tmpdir(), "poppet-search-config-"));
-      const path = join(directory, "config.json");
-      const contents = JSON.stringify({ model: "saved-model", ...search });
+  ] as const)("search config %j resolves to %j", async (search, expected) => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-search-config-"));
+    const path = join(directory, "config.json");
+    const contents = JSON.stringify({ model: "saved-model", ...search });
 
-      try {
-        await writeFile(path, contents);
-        const loaded = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-        expect(
-          await Effect.runPromise(webSearchProvider.pipe(Effect.provide(loaded.context))),
-        ).toBe(expected);
-        expect(await readFile(path, "utf8")).toBe(contents);
-
-        await Effect.runPromise(
-          updateConfigFile(directory, (file) => ({ ...file, applicationName: "Updated" })),
-        );
-        const saved = JSON.parse(await readFile(path, "utf8"));
-        expect(saved).toEqual(
-          expected === null
-            ? { model: "saved-model", applicationName: "Updated" }
-            : { model: "saved-model", applicationName: "Updated", webSearchProvider: expected },
-        );
-      } finally {
-        await rm(directory, { recursive: true, force: true });
-      }
-    },
-  );
+    try {
+      await writeFile(path, contents);
+      const loaded = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+      expect(await Effect.runPromise(webSearchProvider.pipe(Effect.provide(loaded.context)))).toBe(
+        expected,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 
   test.each([
     ["malformed JSON", '{"token":"must-not-appear",'],
@@ -159,7 +139,9 @@ describe("loadConfigSource", () => {
     ["unknown search provider", '{"webSearchProvider":"unknown"}'],
     ["empty search provider", '{"webSearchProvider":""}'],
     ["null search provider", '{"webSearchProvider":null}'],
-    ["wrong search flag type", '{"webSearch":"true"}'],
+    ["removed search flag enabled", '{"webSearch":true}'],
+    ["removed search flag disabled", '{"webSearch":false}'],
+    ["removed search flag with a provider", '{"webSearch":false,"webSearchProvider":"kagi"}'],
     ["search credential in file", '{"braveSearchApiKey":"must-not-appear"}'],
     ["empty setting", '{"model":""}'],
     ["null setting", '{"model":null}'],

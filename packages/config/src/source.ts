@@ -41,11 +41,6 @@ const FileSettings = Schema.Struct({
   ),
 });
 
-const LegacyFileSettings = Schema.Struct({
-  ...FileSettings.fields,
-  webSearch: Schema.optionalKey(Schema.Boolean),
-});
-
 /** Fingerprint of the file and data directory captured while loading this configuration. */
 export class ConfigIdentity extends Context.Service<ConfigIdentity, string>()(
   "poppet/ConfigIdentity",
@@ -85,23 +80,10 @@ export const readConfigFile = (directory: string) =>
             Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
           )(contents).pipe(Effect.mapError(() => fileError(path, "Expected valid JSON.")));
 
-    const legacy = yield* Schema.decodeUnknownEffect(LegacyFileSettings, {
-      onExcessProperty: "error",
-    })(
+    const file = yield* Schema.decodeUnknownEffect(FileSettings, { onExcessProperty: "error" })(
       // Ignore the retired browser setting without relaxing validation of other keys.
       Object.fromEntries(Object.entries(json).filter(([key]) => key !== "browser")),
     ).pipe(Effect.mapError((error) => fileError(path, error.message)));
-
-    // Preserve legacy opt-in and explicit opt-out without retaining the retired flag.
-    const { webSearch, webSearchProvider, ...settings } = legacy;
-
-    const provider =
-      webSearch === false
-        ? undefined
-        : (webSearchProvider ?? (webSearch === true ? "brave" : undefined));
-
-    const file: typeof FileSettings.Type =
-      provider === undefined ? settings : { ...settings, webSearchProvider: provider };
 
     return { file, path, exists: contents !== null };
   });
