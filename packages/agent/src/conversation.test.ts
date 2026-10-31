@@ -740,13 +740,13 @@ describe.concurrent("conversation", () => {
       const omitted = budget ? `https://example.com/${"x".repeat(2000)}` : "https://example.com/5";
 
       const searchResponse = {
-        type: "search",
-        web: {
-          results: budget
-            ? [{ title: "Too long", url: omitted }]
+        grounding: {
+          generic: budget
+            ? [{ title: "Too long", url: omitted, snippets: [] }]
             : Array.from({ length: 6 }, (_, i) => ({
                 title: "Source",
                 url: `https://example.com/${i}`,
+                snippets: [],
               })),
         },
       };

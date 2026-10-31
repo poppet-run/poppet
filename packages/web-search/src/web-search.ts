@@ -27,8 +27,11 @@ export const webSearchResult = (
   candidates: WebSearchResult["results"],
   limit: number,
 ): WebSearchResult => {
-  const results: Array<WebSearchResult["results"][number]> = [];
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+  const sources: Array<WebSearchResult["results"][number]> = [];
   let truncated = candidates.length > 5;
+  // Reserve the longer boolean representation so an untruncated result also fits.
+  const size = () => Buffer.byteLength(JSON.stringify({ results, truncated: false }));
 
   for (const candidate of candidates.slice(0, 5)) {
     let url: URL;
@@ -43,26 +46,37 @@ export const webSearchResult = (
       continue;
     }
 
-    const result = (title: string, snippet: string) => ({ title, url: url.href, snippet });
+    // Reserve source URLs before spending any space on titles or passages.
+    results.push({ title: "", url: url.href, snippet: "" });
 
-    const fits = (title: string, snippet: string) =>
-      Buffer.byteLength(
-        JSON.stringify({ results: [...results, result(title, snippet)], truncated: true }),
-      ) <= limit;
-
-    // Shorten the snippet first; a title is shortened only once the snippet is gone.
-    const snippet = fitPrefix(candidate.snippet, (prefix) => fits(candidate.title, prefix));
-
-    const title =
-      snippet === null ? fitPrefix(candidate.title, (prefix) => fits(prefix, "")) : candidate.title;
-
-    if (title === null || (snippet === null && title === "")) {
+    if (size() > limit) {
+      results.pop();
       truncated = true;
       continue;
     }
 
-    if (title !== candidate.title || snippet !== candidate.snippet) truncated = true;
-    results.push(result(title, snippet ?? ""));
+    sources.push(candidate);
+  }
+
+  for (const field of ["title", "snippet"] as const) {
+    // Fill short fields first, sharing their unused allocation among longer ones.
+    const pending = sources
+      .map((source, index) => ({ text: source[field], index }))
+      .toSorted(
+        (a, b) =>
+          Buffer.byteLength(JSON.stringify(a.text)) - Buffer.byteLength(JSON.stringify(b.text)),
+      );
+
+    for (const [position, { text, index }] of pending.entries()) {
+      const allowance = Math.floor((limit - size()) / (pending.length - position));
+
+      const prefix =
+        fitPrefix(text, (value) => Buffer.byteLength(JSON.stringify(value)) - 2 <= allowance) ?? "";
+
+      results[index]![field] = prefix;
+
+      if (prefix !== text) truncated = true;
+    }
   }
 
   return { results, truncated };
