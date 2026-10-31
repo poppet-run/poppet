@@ -42,8 +42,7 @@ after editing settings: `poppet worker restart`.
 | `model`                      | Unset            | Required model ID for new chats and tasks                                             |
 | `applicationName`            | `Poppet`         | Name used during initial ChatGPT registration                                         |
 | `discord`                    | Unconfigured     | Owner ID, guild ID, and home channel ID                                               |
-| `webSearch`                  | `false`          | Enable search when the selected search provider has credentials                       |
-| `webSearchProvider`          | `brave`          | `brave` or `kagi`                                                                     |
+| `webSearchProvider`          | Unset            | Enable search with `brave` or `kagi`                                                  |
 | `mcpServers`                 | `[]`             | [MCP servers, sign-in, and tool permissions](mcp.md)                                  |
 | `gatewayPackages`            | `[]`             | Explicitly installed [external gateway packages](development.md#adding-a-channel)     |
 | `tasks.catchUpMinutes`       | `60`             | Missed recurring-job window, from 0 to 1440 minutes                                   |
@@ -159,7 +158,15 @@ See [OpenCode Go](providers/opencode-go.md) and [OpenRouter](providers/openroute
 
 ## Web search
 
-Set `webSearch` to `true` and choose `webSearchProvider`, either `brave` or `kagi`.
+Set `webSearchProvider` to either `brave` or `kagi` to enable search.
+Omit the field to disable search while keeping saved credentials.
+Search is available only when the selected provider has a saved key.
+For example:
+
+```json
+{ "webSearchProvider": "kagi" }
+```
+
 Then save the selected provider's key:
 
 ```sh
@@ -173,6 +180,11 @@ login uses a hidden prompt. Credentials stay in `auth/brave-search.json` or
 variables cannot supply or override search keys. Switching providers preserves
 both keys. Logout removes only the selected saved key without revoking remote
 access. Restart the worker after changing settings or credentials.
+
+Legacy configurations still load: `webSearch: true` without a provider selects
+Brave, and `webSearch: false` disables search even when a provider is present.
+Remove the legacy flag when editing the provider setting. Config-writing commands
+save the equivalent provider-only configuration; reads do not rewrite the file.
 
 Queries go to the selected provider and can contain private information chosen
 by the model. Keys are never sent to fetched pages. Search uses a 15-second

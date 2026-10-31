@@ -9,7 +9,6 @@ import {
   dataDirectory,
   gatewayPackages,
   taskCatchUpMinutes,
-  webSearchEnabled,
   webSearchProvider,
 } from "@poppet/config";
 import { readBoundedText } from "@poppet/io";
@@ -258,7 +257,7 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
       const config = yield* AppConfig;
       const source = yield* ConfigSource;
       yield* ChatSettings;
-      yield* Effect.all([taskCatchUpMinutes, webSearchEnabled, webSearchProvider, gatewayPackages]);
+      yield* Effect.all([taskCatchUpMinutes, webSearchProvider, gatewayPackages]);
 
       return {
         config,

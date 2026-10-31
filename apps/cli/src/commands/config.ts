@@ -3,7 +3,6 @@ import {
   AppConfig,
   ConfigSource,
   taskCatchUpMinutes,
-  webSearchEnabled,
   webSearchProvider,
   gatewayPackages,
 } from "@poppet/config";
@@ -24,7 +23,6 @@ const showConfig = (json: boolean) =>
       json,
       {
         ...(yield* AppConfig),
-        webSearch: yield* webSearchEnabled,
         webSearchProvider: yield* webSearchProvider,
         mcpServers: yield* mcpServers,
         gatewayPackages: yield* gatewayPackages,

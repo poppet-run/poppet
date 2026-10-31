@@ -29,13 +29,11 @@ export const taskCatchUpMinutes = Config.schema(
   "catchUpMinutes",
 ).pipe(Config.withDefault(60));
 
-/** Search stays opt-in independently of the selected inference provider. */
-export const webSearchEnabled = Config.Boolean("webSearch").pipe(Config.withDefault(false));
-
+/** Selecting a search provider opts in to web search. */
 export const webSearchProvider = Config.schema(
   Schema.Literals(["brave", "kagi"]),
   "webSearchProvider",
-).pipe(Config.withDefault("brave"));
+).pipe(Config.option, Config.map(Option.getOrNull));
 
 /** Resolved host paths and default model selection for new sessions. */
 export interface Settings {

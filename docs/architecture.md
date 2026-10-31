@@ -531,9 +531,8 @@ reason and message. A null search operation means disabled or missing credential
 so the tool is not advertised.
 
 `cli/web-search.ts` loads credentials and provides the service, and owns the web
-setup commands for the selected provider. Configuration layers provide the opt-in flag
-and provider selection with
-environment-over-file precedence; keys stay outside normal configuration and
+setup commands for the selected provider. The optional `webSearchProvider` setting in `config.json` enables search;
+omitting it disables search. Search settings do not use environment overrides; keys stay outside normal configuration and
 inference-provider packages. CLI setup and the local/worker runtime share these
 layers. Search and page fetching share URL validation and public-address policy
 from `@poppet/io`. No database migration is needed.

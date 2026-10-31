@@ -110,6 +110,7 @@ describe("main.ts", () => {
 
   test.concurrent("when web login receives an API key, uses it instead of an invalid environment key", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-web-api-key-"));
+    await writeFile(join(directory, "config.json"), JSON.stringify({ webSearchProvider: "brave" }));
 
     try {
       const saved = await invokeProcess(["web", "login", "--api-key", "argument-search-secret"], {
@@ -130,6 +131,7 @@ describe("main.ts", () => {
 
   test.concurrent("web login ignores environment keys and requires explicit input", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-web-environment-"));
+    await writeFile(join(directory, "config.json"), JSON.stringify({ webSearchProvider: "brave" }));
 
     try {
       const result = await invokeProcess(["web", "login"], {
@@ -140,7 +142,7 @@ describe("main.ts", () => {
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain("--api-key <key>");
       expect(result.stdout + result.stderr).not.toContain("unused-environment-key");
-      expect(await readdir(directory)).toEqual([]);
+      expect(await readdir(directory)).toEqual(["config.json"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
