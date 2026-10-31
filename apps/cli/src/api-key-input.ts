@@ -1,7 +1,8 @@
-import { BunTerminal } from "@effect/platform-bun";
+import { BunServices, BunTerminal } from "@effect/platform-bun";
 import { ApiKey } from "@poppet/credentials";
+import { promptSecret } from "@poppet/credentials/input";
 import { CredentialInput, ProviderError, type ProviderId } from "@poppet/provider";
-import { Console, Effect, Option, Queue, Schema, Terminal } from "effect";
+import { Effect, Option, Queue, Schema, Terminal } from "effect";
 
 const inputError = (provider: ProviderId, message: string) =>
   new ProviderError({ provider, reason: "authentication", message });
@@ -11,45 +12,15 @@ export const decodeKey = (provider: ProviderId, value: string) =>
     Effect.mapError(() => inputError(provider, "Enter a nonempty API key without whitespace.")),
   );
 
-export const readKeyStdin = (provider: ProviderId) =>
-  Effect.tryPromise({
-    try: () => Bun.stdin.text(),
-    catch: () => inputError(provider, "Could not read the API key from stdin."),
-  }).pipe(Effect.flatMap((value) => decodeKey(provider, value.replace(/\r?\n$/, ""))));
-
 export const readHiddenKey = (
   provider: ProviderId,
-  unattendedMessage = "API-key login needs an interactive terminal. Supply the key through its environment variable or use --key-stdin.",
+  unattendedMessage = "API-key login needs an interactive terminal to enter the key with hidden input.",
 ) => {
   if (!process.stdin.isTTY) return Effect.fail(inputError(provider, unattendedMessage));
 
-  return Effect.scoped(
-    Effect.gen(function* () {
-      const terminal = yield* Terminal.Terminal;
-      const input = yield* terminal.readInput;
-      yield* Console.error(`${provider} API key (input hidden):`);
-      let value = "";
-
-      while (true) {
-        const event = yield* Queue.take(input).pipe(
-          Effect.mapError(() => inputError(provider, "API-key login cancelled.")),
-        );
-
-        if (event.key.name === "escape" || (event.key.ctrl && ["c", "d"].includes(event.key.name)))
-          return yield* Effect.fail(inputError(provider, "API-key login cancelled."));
-
-        if (event.key.name === "return" || event.key.name === "enter")
-          return yield* decodeKey(provider, value);
-
-        if (event.key.name === "backspace") value = value.slice(0, -1);
-        else if (event.key.ctrl && event.key.name === "u") value = "";
-        else if (!event.key.ctrl && !event.key.meta && Option.isSome(event.input))
-          value += event.input.value;
-
-        if (value.length > 8192)
-          return yield* Effect.fail(inputError(provider, "The API key is too long."));
-      }
-    }).pipe(Effect.provide(BunTerminal.layer)),
+  return promptSecret(`${provider} API key (input masked)`).pipe(
+    Effect.mapError(() => inputError(provider, "API-key login cancelled.")),
+    Effect.provide(BunServices.layer),
   );
 };
 
@@ -98,8 +69,8 @@ export const readVisibleLine = (provider: ProviderId, prompt: string) => {
   );
 };
 
-/** Reads keys from stdin when asked, otherwise from hidden terminal input. */
+/** Reads API keys from hidden terminal input. */
 export const terminalKeyInput: CredentialInput["Service"] = {
-  readKey: (provider, stdin) => (stdin ? readKeyStdin(provider) : readHiddenKey(provider)),
+  readKey: (provider) => readHiddenKey(provider),
   readLine: readVisibleLine,
 };

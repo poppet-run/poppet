@@ -170,16 +170,12 @@ export const findApiKey = (provider: ProviderId, environment: string) =>
     return { key: saved, source: saved === null ? null : ("stored" as const) };
   });
 
-/** Saves a key from stdin when asked, otherwise from the environment or hidden input. */
-export const saveApiKey = (provider: ProviderId, environment: string, keyStdin: boolean) =>
+/** Saves a key from hidden input. */
+export const saveApiKey = (provider: ProviderId) =>
   Effect.gen(function* () {
     const input = yield* CredentialInput;
 
-    const supplied = keyStdin
-      ? yield* input.readKey(provider, true)
-      : Option.getOrNull(yield* environmentApiKey(provider, environment));
-
-    const key = supplied ?? (yield* input.readKey(provider, false));
+    const key = yield* input.readKey(provider);
 
     yield* ApiKeyStore.use((store) => store.write(provider, key));
   });
@@ -210,8 +206,8 @@ export const makeApiKeyConnection = (provider: ProviderOperations, environment: 
     const id = provider.id;
 
     return {
-      login: (options) =>
-        saveApiKey(id, environment, options.keyStdin).pipe(
+      login: () =>
+        saveApiKey(id).pipe(
           Effect.provideService(ApiKeyStore, store),
           Effect.as(`API key saved for ${id}.`),
         ),
@@ -278,7 +274,7 @@ export const apiKeyProvider = (options: {
       name: options.name,
       authentication: {
         apiKey: true,
-        help: `API key from hidden input, --key-stdin, or ${options.environment}.`,
+        help: `Login prompts for an API key with hidden input. ${options.environment} overrides saved keys for inference.`,
       },
       inspectSaved: (directory) =>
         Effect.gen(function* () {

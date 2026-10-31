@@ -6,7 +6,7 @@ import { workerSocketPath } from "@poppet/worker";
 import { Console, Effect, Schema } from "effect";
 import { Command, Prompt } from "effect/cli";
 
-import { readHiddenKey, readVisibleLine } from "#src/api-key-input";
+import { terminalKeyInput } from "#src/api-key-input";
 import type { CLIContext } from "#src/commands/context";
 import { UsageError } from "#src/commands/errors";
 import { findProvider } from "#src/runtime";
@@ -88,9 +88,7 @@ export const runSetup = (context: CLIContext) =>
         status.planUsage === false ||
         (yield* Prompt.Confirm({ message: `Reconnect ${entry.name}?`, initial: false }))
       ) {
-        yield* Console.log(
-          yield* connection.login({ keyStdin: false, openBrowser: true, callbackPort: null }),
-        );
+        yield* Console.log(yield* connection.login({ openBrowser: true, callbackPort: null }));
         yield* Console.log(`${entry.name} authentication saved.`);
       }
 
@@ -142,16 +140,11 @@ export const setupCommand = (context: CLIContext) =>
   Command.make("setup", {}, () =>
     Effect.suspend(() =>
       process.stdin.isTTY && process.stdout.isTTY
-        ? runSetup(context).pipe(
-            Effect.provideService(CredentialInput, {
-              readKey: (provider) => readHiddenKey(provider),
-              readLine: readVisibleLine,
-            }),
-          )
+        ? runSetup(context).pipe(Effect.provideService(CredentialInput, terminalKeyInput))
         : Effect.fail(
             new UsageError({
               message:
-                "Setup needs an interactive terminal. For scripts, use provider login, gateway discord setup, and config.json.",
+                "Setup needs an interactive terminal. Use provider login in a terminal for credentials; use gateway discord setup and config.json for scripted configuration.",
             }),
           ),
     ),

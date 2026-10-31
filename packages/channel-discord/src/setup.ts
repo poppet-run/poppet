@@ -1,4 +1,5 @@
 import { DiscordConfiguration, readConfigFile } from "@poppet/config";
+import { promptSecret } from "@poppet/credentials/input";
 import { ChannelEnvironment, ChannelError } from "@poppet/gateway";
 import { Console, Effect, Schema } from "effect";
 import { Prompt } from "effect/cli";
@@ -50,13 +51,10 @@ export const promptDiscordSetup = Effect.gen(function* () {
     (yield* Prompt.Confirm({ message: "Replace the saved bot token?", initial: false }));
 
   const token = replaceToken
-    ? yield* Prompt.Password({
-        message: "Discord bot token",
-        validate: (input) =>
-          /^\S{1,8192}$/.test(input)
-            ? Effect.succeed(input)
-            : Effect.fail("Enter a nonempty bot token without whitespace, up to 8192 characters."),
-      })
+    ? yield* promptSecret(
+        "Discord bot token",
+        "Enter a nonempty bot token without whitespace, up to 8192 characters.",
+      )
     : saved.token;
 
   return saveDiscordSettings(dataDirectory, {

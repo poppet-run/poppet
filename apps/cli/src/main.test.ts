@@ -87,33 +87,26 @@ describe("main.ts", () => {
     expect(invalidConfig.stderr).toContain("POPPET_DATA_DIR");
   });
 
-  // Two sequential CLI startups need headroom when CI runs process tests concurrently.
-  test.concurrent("when API-key login reads stdin, saves a nonempty key without printing it and rejects empty input", async () => {
+  test.concurrent("when API-key login has no terminal or environment key, rejects piped input without saving it", async () => {
     const provider = "openrouter";
-    const directory = await mkdtemp(join(tmpdir(), "poppet-stdin-"));
+    const directory = await mkdtemp(join(tmpdir(), "poppet-hidden-key-"));
     await writeFile(join(directory, "config.json"), JSON.stringify({ provider }));
-    const environment = { POPPET_DATA_DIR: directory };
 
     try {
-      const empty = await invokeProcess(["provider", "login", "--key-stdin"], environment, "\n");
-      expect(empty.exitCode).toBe(1);
+      const result = await invokeProcess(
+        ["provider", "login"],
+        { POPPET_DATA_DIR: directory },
+        "piped-test-secret\n",
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("API-key login needs an interactive terminal");
+      expect(result.stdout + result.stderr).not.toContain("piped-test-secret");
       expect(await readdir(directory)).toEqual(["config.json"]);
-
-      const saved = await invokeProcess(
-        ["provider", "login", "--key-stdin"],
-        environment,
-        "stdin-test-secret\n",
-      );
-
-      expect(saved.exitCode).toBe(0);
-      expect(saved.stdout + saved.stderr).not.toContain("stdin-test-secret");
-      expect(JSON.parse(await Bun.file(join(directory, `auth/${provider}.json`)).text()).key).toBe(
-        "stdin-test-secret",
-      );
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  }, 15000);
+  });
 
   test.concurrent("when web login receives an API key, uses it instead of an invalid environment key", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-web-api-key-"));
