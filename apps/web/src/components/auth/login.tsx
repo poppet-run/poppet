@@ -1,4 +1,6 @@
 /** @jsxImportSource preact */
+import { Wordmark } from "../shared/wordmark";
+
 interface LoginProps {
   readonly accessKey: string;
   readonly sending: boolean;
@@ -16,9 +18,7 @@ export const Login = ({ accessKey, sending, error, onAccessKeyChange, onSignIn }
         onSignIn();
       }}
     >
-      <div class="px-[0.4rem] text-[1.375rem] font-[750] tracking-[-0.05rem]">
-        poppet<span class="text-accent">.</span>
-      </div>
+      <Wordmark />
       <h1 class="mt-4 text-[1.375rem] leading-[1.3]">Your conversations, wherever you are.</h1>
       <p class="text-muted">Enter the access key configured on your Poppet host.</p>
       <label class="text-[0.85rem]" for="key">

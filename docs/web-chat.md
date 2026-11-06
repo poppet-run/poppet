@@ -162,7 +162,9 @@ submissions.
 
 Web source is grouped under `apps/web/src`: `app/` contains the app and its DOM
 tests, `api/` contains the HTTP client and shared protocol, `components/` contains
-the UI components, `stores/` contains chat state, and `styles/` contains the
+the UI components grouped into `auth/`, `chat/`, and `shared/`. Chat components
+are further grouped into `sidebar/`, `transcript/`, and `composer/`, with one
+component per file. `stores/` contains chat state, and `styles/` contains the
 Tailwind theme and Markdown styles. `main.tsx` is the browser entry point.
 
 If recovery keeps failing, **Forget recovery** checks the saved receipt first.

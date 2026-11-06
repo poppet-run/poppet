@@ -2,11 +2,12 @@
 import { useStore } from "@nanostores/preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
-import { ChatHeader } from "../components/chat-header";
-import { Composer } from "../components/composer";
-import { Login } from "../components/login";
-import { Sidebar } from "../components/sidebar";
-import { Transcript } from "../components/transcript";
+import { Connecting } from "../components/auth/connecting";
+import { Login } from "../components/auth/login";
+import { ChatHeader } from "../components/chat/chat-header";
+import { Composer } from "../components/chat/composer/composer";
+import { Sidebar } from "../components/chat/sidebar/sidebar";
+import { Transcript } from "../components/chat/transcript/transcript";
 import { createChatStore } from "../stores/chat-store";
 
 export const App = () => {
@@ -41,20 +42,7 @@ export const App = () => {
     composer.current?.focus();
   };
 
-  if (authenticated === null)
-    return (
-      <main class="grid min-h-dvh place-items-center p-6">
-        <p>Connecting to Poppet…</p>
-        {error && (
-          <>
-            <p class="text-[0.85rem] text-error" role="alert">
-              {error}
-            </p>
-            <button onClick={() => store.refresh()}>Try connecting again</button>
-          </>
-        )}
-      </main>
-    );
+  if (authenticated === null) return <Connecting error={error} onRetry={store.refresh} />;
 
   if (!authenticated)
     return (

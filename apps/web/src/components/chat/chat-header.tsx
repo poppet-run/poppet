@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import type { ChatSession } from "../api/protocol";
+import type { ChatSession } from "../../api/protocol";
 
 interface ChatHeaderProps {
   readonly session: ChatSession | null;

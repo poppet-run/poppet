@@ -1,5 +1,7 @@
 /** @jsxImportSource preact */
-import type { ChatSession } from "../api/protocol";
+import type { ChatSession } from "../../../api/protocol";
+import { Wordmark } from "../../shared/wordmark";
+import { ConversationLink } from "./conversation-link";
 
 interface SidebarProps {
   readonly open: boolean;
@@ -30,9 +32,7 @@ export const Sidebar = ({
       class={`flex w-[232px] shrink-0 flex-col gap-3 border-r border-line bg-surface-recessed px-3 py-4 mobile:fixed mobile:inset-y-0 mobile:left-0 mobile:z-3 mobile:w-[min(85vw,300px)] ${open ? "mobile:translate-x-0" : "mobile:-translate-x-full"}`}
       aria-label="Conversations"
     >
-      <div class="px-[0.4rem] text-[1.375rem] font-[750] tracking-[-0.05rem]">
-        poppet<span class="text-accent">.</span>
-      </div>
+      <Wordmark />
       <button
         class="bg-transparent text-left hover:bg-surface-hover"
         onClick={() => onNavigate(null)}
@@ -41,20 +41,12 @@ export const Sidebar = ({
       </button>
       <nav class="min-h-0 flex-1 overflow-y-auto">
         {sessions.map((session) => (
-          <a
-            class="mb-1 block rounded-md px-[0.6rem] py-2 text-inherit no-underline hover:bg-surface-hover aria-[current=page]:bg-surface-hover mobile:min-h-11"
+          <ConversationLink
             key={session.id}
-            href={`/chat/${session.id}`}
-            aria-current={session.id === sessionId ? "page" : undefined}
-            onClick={(event) => {
-              event.preventDefault();
-              onNavigate(session.id);
-            }}
-          >
-            <span class="block truncate text-[0.8125rem]">
-              {session.title ?? "Untitled conversation"}
-            </span>
-          </a>
+            session={session}
+            active={session.id === sessionId}
+            onNavigate={onNavigate}
+          />
         ))}
       </nav>
       <button
