@@ -13,6 +13,10 @@ Run scheduling and configured messaging adapters in one foreground worker:
 poppet worker run
 ```
 
+When `web.json` is configured, the worker also serves [web chat](web-chat.md).
+Web replies continue when a browser disconnects and stop only on explicit cancellation
+or worker shutdown.
+
 The worker owns enabled [MCP connections](mcp.md), started lazily on discovery
 or an eligible agent run and closed on shutdown. CLI discovery uses these same
 connections. `mcp servers` inspects them without starting a process. Restart the
