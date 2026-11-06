@@ -15,6 +15,7 @@ for persistent settings.
 - [Command line](cli.md): commands, provider selection, and verification.
 - [Doctor](doctor.md): read-only setup checks, worker observations, and actionable findings.
 - [Chat](chat.md): saved sessions, streaming answers, context, and cancellation.
+- [Web chat](web-chat.md): Preact UI, authenticated remote access, and reconnect recovery.
 - [MCP tools](mcp.md): trusted local and HTTP servers, allowlists, inspection, and scheduled reads.
 - [Skills](skills.md): explicitly selected local procedures saved with chats and tasks.
 - [Memory](memory.md): an editable profile and explicitly saved facts shared across sessions.
