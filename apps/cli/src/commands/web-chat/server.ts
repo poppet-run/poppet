@@ -58,7 +58,7 @@ const run = async <A, E>(effect: Effect.Effect<A, E>) => {
   throw new WebChatError({
     status: 500,
     message:
-      "Poppet could not complete this request. Inspect the worker logs and saved conversation before retrying.",
+      "Poppet could not complete this request. Check the worker logs and conversation before retrying.",
   });
 };
 
@@ -201,8 +201,8 @@ export const webHandler = (
         return Response.json(await run(chat.snapshot(id)));
 
       if (request.method === "GET" && session[2] === "/events") {
-        // Pull-based snapshots bound buffering even when a device reads slowly. Reconnection
-        // receives a full current snapshot, so no delta replay or browser acknowledgement is needed.
+        // Send snapshots as the client reads them to limit buffering on slow connections.
+        // A reconnect gets the full current snapshot without replaying earlier updates.
         let marker = await run(chat.marker(id));
         let previous = JSON.stringify(await run(chat.snapshot(id)));
         let first = true;
@@ -222,7 +222,7 @@ export const webHandler = (
             }
 
             try {
-              // A cheap change marker avoids rebuilding unchanged snapshots.
+              // Rebuild the snapshot only when its change marker changes.
               const latest = first ? marker : await run(chat.marker(id));
 
               const current =

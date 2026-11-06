@@ -14,8 +14,8 @@ poppet worker run
 ```
 
 When `web.json` is configured, the worker also serves [web chat](web-chat.md).
-Web replies continue when a browser disconnects and stop only on explicit cancellation
-or worker shutdown.
+Web replies continue when a browser disconnects. Use Stop to cancel a reply.
+Shutting down the worker also stops unfinished replies.
 
 The worker owns enabled [MCP connections](mcp.md), started lazily on discovery
 or an eligible agent run and closed on shutdown. CLI discovery uses these same

@@ -19,8 +19,8 @@ export const Login = ({ accessKey, sending, error, onAccessKeyChange, onSignIn }
       }}
     >
       <Wordmark />
-      <h1 class="mt-4 text-[1.375rem] leading-[1.3]">Your conversations, wherever you are.</h1>
-      <p class="text-muted">Enter the access key configured on your Poppet host.</p>
+      <h1 class="mt-4 text-[1.375rem] leading-[1.3]">Sign in to Poppet</h1>
+      <p class="text-muted">Enter the access key you set up on your Poppet host.</p>
       <label class="text-[0.85rem]" for="key">
         Access key
       </label>

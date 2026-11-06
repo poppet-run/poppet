@@ -25,7 +25,7 @@ type ChatState = {
   atBottom: boolean;
 };
 
-// Each mounted chat owns its cache and state. Authentication never shares cached history.
+// Each mounted app has its own state and cache. Sign-in changes the session query key.
 export const createChatStore = () => {
   const $state = map<ChatState>({
     authenticated: null,
@@ -107,7 +107,7 @@ export const createChatStore = () => {
     const requestGeneration = generation;
 
     try {
-      // If this write fails, do not send: a refresh must not lose the recovery identifier.
+      // Save the recovery ID before sending so it survives a page refresh.
       sessionStorage.setItem("poppet-submission", JSON.stringify(submission));
       set("pending", submission);
       const receipt = await api.submit(submission);
@@ -219,7 +219,7 @@ export const createChatStore = () => {
         set("pending", null);
         set(
           "error",
-          "Recovery cleared. Delivery was not confirmed; check conversation history before sending again.",
+          "Recovery cleared. The message may still arrive. Check history before sending it again.",
         );
       } else {
         if (cause instanceof ApiError && cause.status === 401) unauthenticate();
@@ -309,7 +309,7 @@ export const createChatStore = () => {
           set("pending", value);
       }
     } catch {
-      set("error", "Could not restore this tab's pending submission.");
+      set("error", "Could not restore this tab's unsent or unconfirmed message.");
     }
 
     let closeStream: (() => void) | undefined;

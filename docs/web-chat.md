@@ -2,9 +2,9 @@
 
 [Documentation index](README.md)
 
-The initial Preact web app uses Tailwind CSS and supports text chat, saved conversations, streamed Markdown,
-mobile layouts, explicit Stop, and recovery after a lost connection. The worker owns
-runs and storage. Closing a page or signing out does not cancel a reply.
+Web chat lets you send messages, reopen saved conversations, and read replies as
+they arrive. It works on desktop and mobile browsers. The worker runs the chats and
+saves their history, so closing a page or signing out does not cancel a reply.
 
 ## Build and enable
 
@@ -16,11 +16,11 @@ bun run build:web
 ```
 
 Configure and sign in to a provider using the CLI first. New web conversations use
-`provider` and `model` from `config.json`. Existing conversations retain their saved
-selection. Provider credentials never enter the browser.
+`provider` and `model` from `config.json`. Existing conversations keep their saved
+provider and model. Provider credentials stay on the host.
 
-The listener is disabled unless `<data directory>/web.json` exists. The default data
-directory is `~/.config/poppet`; `POPPET_DATA_DIR` can select another directory.
+The worker serves web chat only when `<data directory>/web.json` exists. The default
+data directory is `~/.config/poppet`; set `POPPET_DATA_DIR` to use another directory.
 Create `web.json` with these fields:
 
 ```json
@@ -51,8 +51,8 @@ chmod 600 ~/.config/poppet/web.json
 
 The browser accepts keys between 32 and 256 characters. The server stores only the
 configured hash and compares it in constant time. Keep `web.json` owned by your user
-and not writable by other users. The example hash placeholder intentionally fails
-validation until replaced.
+and prevent other users from writing to it. Replace the example hash before
+starting the worker.
 
 Start or restart the worker from this checkout:
 
@@ -60,16 +60,16 @@ Start or restart the worker from this checkout:
 bun apps/cli/src/main.ts worker run
 ```
 
-If an installed worker already owns this data directory, stop it first. Ensure its
-launch command points at this checkout before using it to serve this implementation.
-The worker prints the public web address after successfully opening the listener.
-Rebuild the app and restart the worker after frontend changes. Assets are loaded
-into memory at startup.
+If an installed worker already owns this data directory, stop it first. Make sure its
+launch command points at this checkout.
+The worker prints the public web address when the listener starts.
+Rebuild the app and restart the worker after frontend changes. The worker loads
+assets into memory at startup.
 
 `build:web` runs the [Tailwind CLI](https://tailwindcss.com/docs/installation/tailwind-cli)
 before bundling the page with Bun. Edit utility classes in `apps/web/src/components`
-and the brand theme in `apps/web/src/styles/style.css`. Generated CSS lives in
-`apps/web/.generated` and is not committed. Markdown styles stay scoped in the
+and the brand theme in `apps/web/src/styles/style.css`. The build writes generated CSS to
+`apps/web/.generated` and Git ignores it. Markdown styles stay scoped in the
 stylesheet because provider-generated HTML does not contain utility classes.
 
 ## Access from other devices
@@ -86,64 +86,66 @@ chat.example.com {
 }
 ```
 
-See [Caddy’s reverse proxy reference](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
-for its streaming and header behavior. Configure DNS and certificate issuance for your chosen hostname. Your devices must
-be able to reach that proxy. The proxy must preserve the public `Host` header and
-must not buffer server-sent events. TLS terminates at the proxy; keep the HTTP backend
-on loopback. Poppet does not provision DNS, certificates, a tunnel, or the proxy. If the
+See [Caddy's reverse proxy reference](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
+for streaming and header settings. Configure DNS and certificates for your hostname.
+Your devices must be able to reach the proxy. The proxy must preserve the public
+`Host` header and must not buffer server-sent events. The proxy handles HTTPS; keep the HTTP backend
+on loopback. You must set up DNS, certificates, and the proxy yourself. If the
 listener cannot start, the worker logs why and keeps running tasks and messaging.
 
-For same-machine development, `origin` may be `http://127.0.0.1:8080`. HTTP origins
-for LAN addresses or public hostnames are rejected. Remote access requires HTTPS,
+For same-machine development, `origin` may be `http://127.0.0.1:8080`. Poppet rejects
+HTTP origins for LAN addresses or public hostnames. Remote access requires HTTPS,
 which also provides the browser secure context used to create submission IDs.
 
 Enter the original access key at the sign-in screen. Sessions use HttpOnly,
-SameSite=Strict cookies, with Secure cookies for HTTPS. They expire after 12 hours,
-are revoked on sign-out, and are cleared when the worker restarts. A shared key gives
-owner access to all conversations; this is a single-user application. Login attempts
-are limited to ten per minute per client address. Behind a loopback proxy, the last
-`X-Forwarded-For` address identifies the client. At most 32 logins are retained; a new
-login replaces the oldest one.
-Changing the key hash and restarting revokes all existing logins.
+SameSite=Strict cookies, with Secure cookies for HTTPS. They expire after 12 hours
+and end on sign-out or when the worker restarts. Anyone with the access key can read
+and use all conversations. Changing the key hash and restarting revokes all logins.
+
+Poppet allows ten login attempts per minute per client address. Behind a loopback
+proxy, the last `X-Forwarded-For` address identifies the client. Poppet keeps at most
+32 logins. Once that limit is reached, a new login replaces the oldest one.
 
 ## Conversation behavior
 
-- Enter sends; Shift+Enter inserts a newline. IME composition does not submit.
+- Enter sends; Shift+Enter inserts a newline. Enter does not send while you are composing text with an IME.
 - You can draft the next message while a reply runs. Send becomes available when it
-  finishes. The initial version does not queue messages.
+  finishes. There is no message queue yet.
 - Stop cancels a web-started run. Partial text is not saved as a completed answer.
-- Each submission receives an ID before sending. The browser keeps an unacknowledged
-  submission in this tab's session storage. After a lost response, **Recover submission**
+- The browser assigns each message an ID and keeps it in this tab's session storage
+  until the worker confirms receipt. After a lost response, Recover submission
   uses the same ID. The worker returns its saved receipt instead of starting it again.
 - Refresh or reopen a conversation URL to receive its current history and active
   reply. Reconnection never resubmits a message. Two devices can observe the same reply.
-- After a worker restart, unfinished requests are interrupted and never replayed.
+- After a worker restart, unfinished requests stay interrupted and do not run again.
   Completed answers remain saved, including when the receipt update was interrupted.
 - Drafts remain in memory while navigating within the page. Refresh discards drafts
   that were never submitted. Signing out clears drafts; an unacknowledged submission
   remains in this tab for recovery after signing in again.
-- Existing tool policies apply. Commands requiring human approval cannot be approved
-  in this UI. Use the existing Discord approval path where supported.
+- Tool permissions still apply. This UI cannot approve commands that need human
+  approval. Use Discord approval where supported.
 
-The API exposes chat operations only. Provider continuation, credentials, and the
-worker's general command endpoint are not exposed. Markdown is sanitized and remote
-inline images are omitted. Web submission receipts live in the existing SQLite
-store, under a separate migration ledger. SSE checks a cheap change marker twice per second and
-sends a full conversation snapshot only when it changes, allowing a reconnect without
-replaying text deltas. The page reopens the stream itself after a proxy error.
+The web API exposes chat operations. It does not expose provider credentials,
+provider continuation data, or the worker's general command endpoint. The browser
+sanitizes Markdown and removes inline images. The worker saves submission receipts
+in SQLite and tracks their schema migrations separately.
+
+The event stream checks for changes twice per second. When something changes, it
+sends the full conversation snapshot. Reconnecting therefore needs no replay of
+earlier text updates. The page reopens the stream after a proxy error.
 
 ## Current scope and verification
 
-Attachments, message queues, search, renaming, model/skill selection, readable reasoning,
-copy controls, and a run-details panel remain follow-up work. Use `poppet chat show`
-for saved run diagnostics. Automatic title generation is not invoked by web chat;
-the existing fallback title is derived from the first message.
+Attachments, message queues, search, renaming, model and skill selection, reasoning
+display, copy buttons, and run details are not available yet. Use `poppet chat show`
+to inspect saved runs. Web chat uses the first message as the conversation title.
 
 `bun run check` includes the production web build, typechecking, lint,
 formatting, backend lifecycle tests, and DOM tests for submission recovery and
-Markdown sanitization. These tests use a controlled provider, not a live account.
+Markdown sanitization. These tests use a controlled test provider. They do not
+contact a live account.
 
-Manual acceptance path:
+Manual checks:
 
 1. Sign in over HTTPS from a desktop and a phone. Send a message and compare the reply.
 2. Refresh or close a page mid-reply, then reopen the same conversation on either device.
@@ -155,8 +157,8 @@ Manual acceptance path:
 
 The frontend keeps chat state in Nanostores and uses `@nanostores/preact` for UI
 subscriptions. `@nanostores/query` handles session-list polling and chat mutations.
-Each mounted app has its own stores and cache; authentication changes use a new
-query key so late responses cannot restore a signed-out session. SSE snapshots
+Each mounted app has its own stores and cache; each sign-in uses a new
+query key so a late response cannot restore a signed-out session. SSE snapshots
 remain separate from the query cache, and mutations never automatically retry
 submissions.
 
@@ -167,8 +169,8 @@ are further grouped into `sidebar/`, `transcript/`, and `composer/`, with one
 component per file. `stores/` contains chat state, and `styles/` contains the
 Tailwind theme and Markdown styles. `main.tsx` is the browser entry point.
 
-If recovery keeps failing, **Forget recovery** checks the saved receipt first.
+If recovery keeps failing, use Forget recovery. It checks for a saved receipt first.
 An existing receipt opens its conversation. A missing receipt clears this tab's
 pending submission, but does not prove delivery failed or cancel a running reply.
-Check history before sending the message again. If the receipt check itself fails,
-the recovery identifier is retained.
+Check history before sending the message again. If the receipt check fails,
+the browser keeps the recovery ID.

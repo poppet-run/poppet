@@ -113,8 +113,8 @@ const makeWebChat = Effect.gen(function* () {
             ];
 
           if (entry.message.role === "assistant") {
-            // Tool requests are also assistant messages. During a run the live reply
-            // owns its text; persisted intermediate messages must not hide that reply.
+            // Tool requests also create assistant messages. Show the live reply until
+            // the run finishes, then show its saved messages.
             if (entry.runId === running?.id) return [];
 
             const text = entry.message.output
@@ -206,7 +206,7 @@ const makeWebChat = Effect.gen(function* () {
           if (runs.some((run) => run.status === "pending" || run.status === "running"))
             return yield* new WebChatError({
               status: 409,
-              message: "This conversation already has an active run.",
+              message: "This conversation already has a reply in progress.",
             });
           yield* sql`INSERT INTO web_chat_submissions (id, session_id, fingerprint, status) VALUES (${input.id}, ${session.id}, ${fingerprint}, 'accepted')`;
 
@@ -238,10 +238,10 @@ const makeWebChat = Effect.gen(function* () {
 
             let error: string | null = null;
 
-            if (status === "interrupted") error = "Reply stopped. No automatic retry.";
+            if (status === "interrupted")
+              error = "Reply stopped. It will not restart automatically.";
 
-            if (status === "failed")
-              error = "The reply failed. Inspect the saved run with poppet chat show for details.";
+            if (status === "failed") error = "The reply failed. Run poppet chat show for details.";
             yield* sql`UPDATE web_chat_submissions SET status = ${status}, error = ${error} WHERE id = ${input.id}`;
           }).pipe(Effect.ensuring(Effect.sync(() => active.delete(accepted.sessionId)))),
         ),
