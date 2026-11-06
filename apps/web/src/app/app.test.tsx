@@ -47,7 +47,7 @@ const flush = () =>
   });
 
 test("renders Markdown without executable HTML, tracking images or script URLs", async () => {
-  const { Markdown } = await import("../components/markdown");
+  const { Markdown } = await import("../components/chat/transcript/markdown");
   const root = document.createElement("div");
   document.body.append(root);
 
@@ -154,7 +154,7 @@ test("preserves ambiguous submissions and recovers with the same identifier with
 });
 
 test("streaming preserves the reading position and settles into one saved answer", async () => {
-  const { Transcript } = await import("../components/transcript");
+  const { Transcript } = await import("../components/chat/transcript/transcript");
   const root = document.createElement("div");
   document.body.append(root);
 

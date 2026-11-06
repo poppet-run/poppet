@@ -1,8 +1,8 @@
 /** @jsxImportSource preact */
 import { useLayoutEffect, useRef } from "preact/hooks";
 
-import type { ChatSnapshot } from "../api/protocol";
-import { Markdown } from "./markdown";
+import type { ChatSnapshot } from "../../../api/protocol";
+import { Message } from "./message";
 
 interface TranscriptProps {
   readonly snapshot: ChatSnapshot | null;
@@ -43,40 +43,14 @@ export const Transcript = ({
           </div>
         )}
         {snapshot?.messages.map((message) => (
-          <article key={message.id} class={`message group mb-7 wrap-anywhere ${message.role}`}>
-            <div class="message-label mb-1.5 text-xs font-medium text-accent group-[.user]:text-cream">
-              {message.role === "user" ? "You" : "Poppet"}
-            </div>
-            {message.role === "assistant" ? (
-              <Markdown text={message.text} />
-            ) : (
-              <div class="whitespace-pre-wrap">{message.text}</div>
-            )}
-          </article>
+          <Message key={message.id} role={message.role} text={message.text} />
         ))}
         {active && (
           <>
             {!snapshot?.messages.some(
               (message) => message.runId === active.id && message.role === "user",
-            ) && (
-              <article class="message user group mb-7 wrap-anywhere">
-                <div class="message-label mb-1.5 text-xs font-medium text-accent group-[.user]:text-cream">
-                  You
-                </div>
-                <div class="whitespace-pre-wrap">{active.input}</div>
-              </article>
-            )}
-            <article class="message assistant group mb-7 wrap-anywhere">
-              <div class="message-label mb-1.5 text-xs font-medium text-accent group-[.user]:text-cream">
-                Poppet{" "}
-                <span
-                  class={`pl-2 font-normal text-muted ${active.text ? "" : "motion-safe:animate-thinking"}`}
-                >
-                  {active.text ? "Responding…" : "Thinking…"}
-                </span>
-              </div>
-              <Markdown text={active.text} />
-            </article>
+            ) && <Message role="user" text={active.input} />}
+            <Message role="assistant" text={active.text} streaming />
           </>
         )}
         {!active && latest?.error && (
