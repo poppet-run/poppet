@@ -1,0 +1,140 @@
+@import "tailwindcss" source(none);
+@source "../app/app.tsx";
+@source "../components";
+
+@custom-variant mobile (@media (max-width: 720px));
+
+@theme {
+  /* Canonical palette: poppet-run/brand README.md, Colours. */
+  --color-navy: #19243a;
+  --color-apricot: #ffb48a;
+  --color-cream: #fff1dd;
+  --color-muted: #c8c5c3;
+  --color-accent: var(--color-apricot);
+  --color-line: #536078;
+  --color-surface: color-mix(in srgb, var(--color-navy), var(--color-cream) 5%);
+  --color-surface-raised: color-mix(in srgb, var(--color-navy), var(--color-cream) 9%);
+  --color-surface-hover: color-mix(in srgb, var(--color-navy), var(--color-cream) 14%);
+  --color-surface-recessed: color-mix(in srgb, var(--color-navy), black 12%);
+  --color-control-border: color-mix(in srgb, var(--color-navy), var(--color-cream) 45%);
+  --color-accent-hover: color-mix(in srgb, var(--color-apricot), var(--color-cream) 25%);
+  --color-error: #ffb5b5;
+  --animate-thinking: thinking-pulse 1.8s ease-in-out infinite;
+
+  @keyframes thinking-pulse {
+    0%,
+    100% {
+      color: var(--color-muted);
+    }
+    50% {
+      color: var(--color-accent);
+    }
+  }
+}
+
+@layer base {
+  :root {
+    @apply bg-navy font-sans text-cream scheme-dark;
+    font-synthesis: none;
+    line-height: 1.55;
+  }
+  body {
+    @apply text-sm;
+    line-height: inherit;
+  }
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+  button,
+  a,
+  input,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button {
+    @apply cursor-pointer rounded-md border border-line bg-surface-raised px-[0.65rem] py-[0.4rem] text-inherit hover:bg-surface-hover disabled:cursor-default disabled:opacity-45 mobile:min-h-11;
+  }
+  a {
+    @apply text-accent;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-3 outline-accent;
+  }
+}
+
+/* Provider Markdown has no utility classes. Keep its document styles scoped here. */
+@layer components {
+  .markdown {
+    h1,
+    h2,
+    h3 {
+      @apply mt-5 mb-2 font-semibold leading-[1.4];
+    }
+    h1 {
+      @apply text-xl;
+    }
+    h2 {
+      @apply text-lg;
+    }
+    h3 {
+      @apply text-base;
+    }
+    h4,
+    h5,
+    h6 {
+      @apply my-4 font-semibold;
+    }
+    p {
+      @apply my-3.5;
+    }
+    a {
+      @apply underline;
+    }
+    ul {
+      @apply my-3.5 list-disc pl-10;
+    }
+    ol {
+      @apply my-3.5 list-decimal pl-10;
+    }
+    ul ul,
+    ol ul {
+      @apply list-[circle];
+    }
+    ul ul,
+    ul ol,
+    ol ul,
+    ol ol {
+      @apply my-0;
+    }
+    hr {
+      @apply my-2 border-line;
+    }
+    pre {
+      @apply my-3.5 overflow-x-auto rounded-md border border-line bg-surface-recessed p-4;
+    }
+    code {
+      @apply font-mono text-[0.9em];
+    }
+    :not(pre) > code {
+      @apply rounded bg-surface-hover px-[0.3em] py-[0.1em];
+    }
+    blockquote {
+      @apply my-3.5 mr-10 border-l-[3px] border-line pl-4 text-muted;
+    }
+    table {
+      @apply block max-w-full border-collapse overflow-x-auto;
+    }
+    th,
+    td {
+      @apply border border-line p-2;
+    }
+    > :first-child {
+      @apply mt-0;
+    }
+    > :last-child {
+      @apply mb-0;
+    }
+  }
+}

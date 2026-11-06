@@ -6,3 +6,4 @@ coverage/
 .env.*
 !.env.example
 .poppet/
+apps/web/.generated/
