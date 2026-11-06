@@ -413,7 +413,7 @@ test("submission rejection and explicit recovery forgetting unlock the composer 
     await store.$forget.mutate();
     expect(store.$state.get().pending).toBeNull();
     expect(store.$state.get().drafts.new).toBe(submission.text);
-    expect(store.$state.get().error).toContain("Delivery was not confirmed");
+    expect(store.$state.get().error).toContain("The message may still arrive");
     expect(sessionStorage.getItem("poppet-submission")).toBeNull();
   } finally {
     dispose();
