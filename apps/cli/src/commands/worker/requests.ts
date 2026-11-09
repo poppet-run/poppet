@@ -3,33 +3,41 @@ import { AppConfig } from "@poppet/config";
 import { MCP, MCPCommand, inspectMCP } from "@poppet/mcp";
 import { Memory } from "@poppet/memory";
 import { Session, Store } from "@poppet/store";
-import { WorkerRequests, WorkerRequestError, requestWorker } from "@poppet/worker";
+import {
+  WorkerRequests,
+  WorkerRequestError,
+  requestWorker,
+  requestWorkerReply,
+  workerReply,
+} from "@poppet/worker";
 import { Cause, Effect, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
 
 import {
-  ChatRequest,
+  ChatInspection,
+  ChatSubmission,
   inspectChat,
   sendChat,
   type ChatWriter,
-  type ChatAnnouncer,
   type ChatReasoning,
   type ChatReasoningWriter,
 } from "#src/commands/chat/chat";
 import { MemoryCommand, manageMemory } from "#src/commands/memory/memory";
 
-const WorkerCommand = Schema.Union([
-  Schema.Struct({
-    kind: Schema.Literal("chat"),
-    command: ChatRequest,
-    streamReasoning: Schema.optionalKey(Schema.Boolean),
-  }),
+const WorkerChat = Schema.Struct({
+  kind: Schema.Literal("chat"),
+  command: ChatSubmission,
+  streamReasoning: Schema.optionalKey(Schema.Boolean),
+});
+
+const WorkerQuery = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("chat"), command: ChatInspection }),
   Schema.Struct({ kind: Schema.Literal("memory"), command: MemoryCommand }),
   Schema.Struct({ kind: Schema.Literal("store") }),
   Schema.Struct({ kind: Schema.Literal("mcp"), command: MCPCommand }),
 ]);
 
-/** Chat, memory, and inspection requests sent to the process that owns local storage. */
-export type WorkerCommand = typeof WorkerCommand.Type;
+/** Memory and inspection requests that reply with one JSON value, which the command line formats. */
+export type WorkerQuery = typeof WorkerQuery.Type;
 
 const Frame = Schema.Union([
   Schema.Struct({
@@ -45,39 +53,15 @@ const Frame = Schema.Union([
 
 type Frame = typeof Frame.Type;
 
-const execute = (
-  request: WorkerCommand,
-  write: ChatWriter,
-  announce: ChatAnnouncer,
-  reasoning: ChatReasoning,
-  timingLog: (line: string) => Effect.Effect<void>,
-) =>
+const answer = (request: WorkerQuery) =>
   Effect.gen(function* () {
-    const writeJson = <A>(value: A) => write(`${JSON.stringify(value)}\n`);
+    if (request.kind === "mcp") return yield* inspectMCP(request.command);
 
-    // Inspections reply with one JSON value, which the command line formats.
-    if (request.kind === "mcp")
-      return yield* inspectMCP(request.command).pipe(Effect.flatMap(writeJson));
+    if (request.kind === "memory") return yield* manageMemory(request.command);
 
-    if (request.kind === "memory")
-      return yield* manageMemory(request.command).pipe(Effect.flatMap(writeJson));
+    if (request.kind === "store") return yield* Store.use((store) => store.status);
 
-    if (request.kind === "store")
-      return yield* Store.use((store) => store.status).pipe(Effect.flatMap(writeJson));
-
-    const command = request.command;
-
-    if (
-      command.action === "show" ||
-      command.action === "sessions" ||
-      command.action === "rename" ||
-      command.action === "search"
-    )
-      return yield* inspectChat(command, (yield* ChatSettings).toolBytes).pipe(
-        Effect.flatMap(writeJson),
-      );
-
-    return yield* sendChat(command, write, announce, reasoning, timingLog);
+    return yield* inspectChat(request.command, (yield* ChatSettings).toolBytes);
   });
 
 export const WorkerRequestsLive = Layer.effect(
@@ -90,10 +74,21 @@ export const WorkerRequestsLive = Layer.effect(
     return {
       handle: (request, payload): Effect.Effect<Response, never, Scope.Scope> =>
         Effect.gen(function* () {
-          if (request.method !== "POST" || new URL(request.url).pathname !== "/v1/commands")
-            return new Response("Not found", { status: 404 });
+          const route = new URL(request.url).pathname;
 
-          const command = Schema.decodeUnknownOption(WorkerCommand, { onExcessProperty: "error" })(
+          if (route === "/v1/queries")
+            return yield* workerReply(
+              Schema.decodeUnknownEffect(WorkerQuery, { onExcessProperty: "error" })(payload).pipe(
+                Effect.mapError(() => ({ message: "Invalid worker command." })),
+                Effect.flatMap(answer),
+                Effect.provide(services),
+              ),
+              "The worker command failed.",
+            );
+
+          if (route !== "/v1/commands") return new Response("Not found", { status: 404 });
+
+          const command = Schema.decodeUnknownOption(WorkerChat, { onExcessProperty: "error" })(
             payload,
           );
 
@@ -106,20 +101,19 @@ export const WorkerRequestsLive = Layer.effect(
           const owned = yield* Scope.fork(yield* Effect.scope);
           const frames = yield* Queue.make<Frame, Cause.Done>({ capacity: 16 });
           const emitFrame = (frame: Frame) => Queue.offer(frames, frame).pipe(Effect.asVoid);
-          const streamReasoning = command.value.kind === "chat" && command.value.streamReasoning;
 
           const logDiagnostic = (text: string) =>
             logChatDiagnostic(text).pipe(Effect.andThen(emitFrame({ type: "stderr", text })));
 
-          const reasoning: ChatReasoning = streamReasoning
+          const reasoning: ChatReasoning = command.value.streamReasoning
             ? {
                 log: logChatDiagnostic,
                 write: emitFrame,
               }
             : { log: logDiagnostic };
 
-          yield* execute(
-            command.value,
+          yield* sendChat(
+            command.value.command,
             (text) => emitFrame({ type: "stdout", text }),
             (text, sessionId) =>
               emitFrame(
@@ -172,16 +166,19 @@ export const WorkerRequestsLive = Layer.effect(
   }),
 );
 
-const lostResponse = () =>
-  new WorkerRequestError({
-    message:
-      "Lost the worker response. The command was not retried; inspect the saved session or memory before trying again.",
-  });
+const lost =
+  "Lost the worker response. The command was not retried; inspect the saved session or memory before trying again.";
+
+const lostResponse = () => new WorkerRequestError({ message: lost });
+
+/** Reads a running worker's one-value reply, or null when no worker is reachable. */
+export const remoteWorkerQuery = (path: string, query: WorkerQuery) =>
+  requestWorkerReply(path, "/v1/queries", query, lost);
 
 /** Streams worker output; only a terminal frame confirms completion, and lost replies are not replayed. */
 export const remoteWorkerCommand = (
   path: string,
-  command: WorkerCommand,
+  command: ChatSubmission,
   write: ChatWriter,
   onSession: ChatWriter = () => Effect.void,
   writeReasoning?: ChatReasoningWriter,
@@ -196,9 +193,7 @@ export const remoteWorkerCommand = (
           requestWorker(
             path,
             "/v1/commands",
-            command.kind === "chat" && writeReasoning !== undefined
-              ? { ...command, streamReasoning: true }
-              : command,
+            { kind: "chat", command, streamReasoning: writeReasoning !== undefined },
             AbortSignal.any([signal, scopedSignal]),
           ),
         catch: (cause) => (cause instanceof WorkerRequestError ? cause : lostResponse()),

@@ -831,17 +831,19 @@ Unconfigured adapters remain disabled. Status includes services and messaging st
 Fatal service failures stop the host and its siblings before storage is released.
 
 `@poppet/worker` owns request protection, body limits, deadlines, disconnect and
-shutdown handling. The host exposes `/v1/tasks` and `/v1/commands` through
-`store/tasks.sock`. Both routes reject unknown request fields; unsupported routes
-return 404. The task package owns task RPC validation and response formatting.
+shutdown handling. The host exposes `/v1/tasks`, `/v1/queries`, and
+`/v1/commands` through `store/tasks.sock`. All routes reject unknown request fields;
+unsupported routes return 404. Tasks and queries share one JSON reply,
+`{ok: true, value}` or `{ok: false, message}`; the task package owns task RPC validation.
 macOS installations launch `worker run`.
 
 ## Interactive worker commands
 
 The neutral host's protected socket accepts interactive requests.
-`WorkerRequests` lets the CLI supply `/v1/commands` without importing CLI command
-schemas or memory behavior into the task package. The host validates chat,
-memory, and store-status payloads and uses the same command functions as direct
+`WorkerRequests` lets the CLI supply `/v1/commands` (chat) and `/v1/queries` (memory,
+store status, MCP and chat inspection) without importing CLI command
+schemas or memory behavior into the task package. The host validates these
+payloads and uses the same command functions as direct
 local execution. New chat payloads include the client's provider and model; continued chats
 resolve their saved session. Chat budgets come from the worker's existing layers.
 
@@ -852,7 +854,7 @@ timeout changes are ineffective on this transport. The transport accepts up to 3
 for four 5 MiB attachments as base64, the chat context, and command metadata. Oversized
 requests return a clear size error without local fallback.
 
-Each streaming response owns a worker-scoped fiber and a bounded output queue. Responses
+Each chat response owns a worker-scoped fiber and a bounded output queue. Responses
 stream validated stdout/stderr frames and end with an explicit success or failure
 frame. Disconnecting a client interrupts its fiber, finalizes the run, and releases
 the shared agent permit. Worker shutdown also cancels queued and active requests
@@ -861,7 +863,7 @@ not the worker log. Memory edits affect subsequent run snapshots.
 
 Clients check the same socket ownership and permissions as task commands. Only
 absence or connection refusal permits direct local execution. Once delivered,
-commands are never replayed after a transport error, malformed frame, or missing
+commands are never replayed after a transport error, malformed reply, or missing
 completion. Restart the worker after updating code so the client and host use
 the same protocol. Saved record migrations are independent of the wire protocol.
 

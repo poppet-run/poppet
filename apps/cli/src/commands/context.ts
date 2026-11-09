@@ -1,17 +1,18 @@
 import { AppConfig } from "@poppet/config";
 import type { ChannelRegistration } from "@poppet/gateway";
 import type { ProviderRegistration } from "@poppet/provider";
-import { WorkerRequestError, workerSocketPath } from "@poppet/worker";
-import { Effect, Layer, Schema } from "effect";
+import { workerSocketPath } from "@poppet/worker";
+import { Effect, Layer } from "effect";
 
-import type { ChatWriter, ChatReasoningWriter } from "#src/commands/chat/chat";
+import type { ChatSubmission, ChatWriter, ChatReasoningWriter } from "#src/commands/chat/chat";
 import { readChatLine } from "#src/commands/chat/prompt";
 import { MessagingWorkerLive, validateChannels } from "#src/commands/gateway/channels";
 import { runWorker } from "#src/commands/worker/host";
 import {
   remoteWorkerCommand,
+  remoteWorkerQuery,
   WorkerRequestsLive,
-  type WorkerCommand,
+  type WorkerQuery,
 } from "#src/commands/worker/requests";
 import { manageWorker } from "#src/commands/worker/service";
 import { runtimeLayers } from "#src/runtime";
@@ -38,7 +39,7 @@ export const createCLIContext = (
   };
 
   const throughWorker = <E>(
-    command: WorkerCommand,
+    command: ChatSubmission,
     local: Effect.Effect<void, E>,
     onSession: ChatWriter = () => Effect.void,
     output?: {
@@ -66,31 +67,12 @@ export const createCLIContext = (
    * Reads a running worker's JSON reply, or computes the same value locally. Callers parse the
    * fields they format, since the worker may run different code.
    */
-  const queryWorker = <A, E>(command: WorkerCommand, local: Effect.Effect<A, E>) =>
+  const queryWorker = <A, E>(query: WorkerQuery, local: Effect.Effect<A, E>) =>
     Effect.gen(function* () {
       const config = yield* AppConfig;
-      let text = "";
+      const reply = yield* remoteWorkerQuery(workerSocketPath(config.dataDirectory), query);
 
-      const handled = yield* remoteWorkerCommand(
-        workerSocketPath(config.dataDirectory),
-        command,
-        (chunk) =>
-          Effect.sync(() => {
-            text += chunk;
-          }),
-      );
-
-      if (!handled) return yield* local.pipe(Effect.map((value): A | Schema.Json => value));
-
-      return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(text).pipe(
-        Effect.mapError(
-          () =>
-            new WorkerRequestError({
-              message:
-                "Could not read the worker's reply. If the worker is outdated, restart it to load the current code.",
-            }),
-        ),
-      );
+      return reply === null ? yield* local : reply.value;
     }).pipe(Effect.provide(runtime.config));
 
   return {
