@@ -2,9 +2,7 @@
 
 [Documentation index](README.md)
 
-Phases 30–34 and 36 are planned only. Plans do not authorize implementation. Phase
-25's text attachments were removed because no messaging adapter supplied
-attachments; image and text-file attachments replaced them.
+Phases 30–34 are planned only. Plans do not authorize implementation.
 
 Implemented work has no phase page. Use the linked guides for current behavior,
 setup, and validation. Git history retains delivery plans and validation records.
@@ -20,23 +18,21 @@ matching skills from an index; it cannot write skills or curate facts automatica
 Updated: 2026-10-30
 
 Storage history: the unreleased base schema was consolidated into version 1.
-Migrations 2–5 add monitoring, task controls, attachments, and projects while
-retaining earlier data. Migrations 6–8 retain archived learning data and active
-fact history. Store migration 2 allows one active run per session instead of one
-across the store.
+Store migration 2 allows one active run per session instead of one across the
+store, migration 3 adds attachments, and migration 4 removes the session
+workload column. Task migration 2 removes the workload from tasks and their
+occurrences.
 See [storage](storage.md#schema-and-saved-records),
 [development](development.md#store-migrations), and
 [architecture](architecture.md) for current contracts and dependency boundaries.
 
 ## Phases
 
-- [Phase 25: Text attachments (removed)](phases/25.md)
 - [Phase 30: Calendar briefings and weekly reviews](phases/30.md)
 - [Phase 31: Summaries of trimmed conversation history](phases/31.md)
 - [Phase 32: Host commands in an isolated container](phases/32.md)
 - [Phase 33: Trusted time for scheduled runs](phases/33.md)
 - [Phase 34: Model and reasoning selection for new sessions](phases/34.md)
-- [Phase 36: MCP server setup and OAuth sign-in](phases/36.md)
 
 ## Validation
 
