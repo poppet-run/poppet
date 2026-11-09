@@ -5,8 +5,8 @@ import { type WorkerAction, WorkerError, type WorkerLaunch } from "@poppet/platf
 import {
   manageWorker as manageLinuxWorker,
   userConfigHome as linuxConfigHome,
-} from "@poppet/platform-linux";
-import { manageWorker as manageMacOSWorker } from "@poppet/platform-macos";
+} from "@poppet/platform/linux";
+import { manageWorker as manageMacOSWorker } from "@poppet/platform/macos";
 import { Effect } from "effect";
 
 export const workerLaunch = (dataDirectory: string): WorkerLaunch => ({

@@ -8,7 +8,9 @@
     "#src/*": "./src/*.ts"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./linux": "./src/linux.ts",
+    "./macos": "./src/macos.ts"
   },
   "scripts": {
     "typecheck": "bun --check",

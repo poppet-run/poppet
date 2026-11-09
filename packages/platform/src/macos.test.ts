@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { Effect, Fiber } from "effect";
 
-import { manageWorker, workerPaths } from "#src/worker";
+import { manageWorker, workerPaths } from "#src/macos";
 
 describe("manageWorker", () => {
   test("restart requires installation, reloads running or stopped services, and stops on failure", async () => {

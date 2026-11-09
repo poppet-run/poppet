@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdir, open, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
+import { Effect } from "effect";
+
 import {
   prepareWorkerLog,
   readWorkerLogs,
@@ -10,8 +12,7 @@ import {
   type WorkerAction,
   type WorkerLaunch,
   type WorkerStatus,
-} from "@poppet/platform";
-import { Effect } from "effect";
+} from "#src/index";
 
 export const workerPaths = (launch: WorkerLaunch, home: string) => {
   const id = createHash("sha256").update(launch.dataDirectory).digest("hex").slice(0, 12);

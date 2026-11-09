@@ -3,6 +3,8 @@ import { mkdir, open, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
 import { readBoundedText } from "@poppet/io";
+import { Effect } from "effect";
+
 import {
   prepareWorkerLog,
   readWorkerLogs,
@@ -11,8 +13,7 @@ import {
   type WorkerAction,
   type WorkerLaunch,
   type WorkerStatus,
-} from "@poppet/platform";
-import { Effect } from "effect";
+} from "#src/index";
 
 /** The completed `systemctl --user` invocation; stderr explains failures such as a missing user bus. */
 export interface SystemctlRun {
