@@ -57,7 +57,7 @@ export const WorkerStatusReport = Schema.Struct({
             id: Schema.String,
             name: Schema.String,
             enabled: Schema.Boolean,
-            error: Schema.optionalKey(Schema.String),
+            error: Schema.optionalKey(Schema.NullOr(Schema.String)),
             lastError: Schema.optionalKey(Schema.NullOr(Schema.String)),
           }),
         ),
