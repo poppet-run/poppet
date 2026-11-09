@@ -11,6 +11,7 @@ import {
   ProviderError,
   invalidRequest,
   interrupted,
+  outputText,
   type ModelDescription,
   type ModelEvent,
   type ModelOperations,
@@ -158,9 +159,7 @@ const chatMessages = (
 
       let assistant: ChatCompletionAssistantMessageParam = {
         role: "assistant",
-        content: message.output
-          .flatMap((part) => (part.type === "text" ? [part.text] : []))
-          .join(""),
+        content: outputText(message.output),
         tool_calls: toolCalls,
       };
 

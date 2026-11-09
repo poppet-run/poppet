@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { Agent } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
+import { outputText } from "@poppet/provider";
 import { Store, decodeRow, decodeRows, migrate, packageSchema } from "@poppet/store";
 import type { ChatSession, ChatSnapshot, Receipt, Submission } from "@poppet/web/protocol";
 import {
@@ -117,9 +118,7 @@ const makeWebChat = Effect.gen(function* () {
             // the run finishes, then show its saved messages.
             if (entry.runId === running?.id) return [];
 
-            const text = entry.message.output
-              .flatMap((part) => (part.type === "text" ? [part.text] : []))
-              .join("");
+            const text = outputText(entry.message.output);
 
             if (!text.trim()) return [];
 

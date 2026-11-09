@@ -1,5 +1,6 @@
 import {
   ModelEvent,
+  outputText,
   type Completion,
   type ModelOperations,
   type ModelRequest,
@@ -43,9 +44,7 @@ const validateCompletion = (
   if (response.continuation.provider !== run.provider || response.continuation.model !== run.model)
     throw protocolFailure();
 
-  const finalText = response.output
-    .flatMap((part) => (part.type === "text" ? [part.text] : []))
-    .join("");
+  const finalText = outputText(response.output);
 
   if (!finalText.startsWith(streamed)) throw protocolFailure();
 

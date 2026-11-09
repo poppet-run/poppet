@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 
 import { Effect, Schema } from "effect";
 
-import type { ModelRequest, Tool } from "#src/schema";
+import { outputText, type ModelRequest, type Tool } from "#src/schema";
 import { completeModel, invalidRequest, type ModelOperations } from "#src/service";
 
 const Arguments = Schema.fromJsonString(Schema.Struct({ challenge: Schema.NonEmptyString }));
@@ -74,9 +74,7 @@ export const verifyModel = (model: ModelOperations) =>
       settings: { toolChoice: "none" },
     });
 
-    const text = second.output
-      .flatMap((item) => (item.type === "text" ? [item.text] : []))
-      .join("");
+    const text = outputText(second.output);
 
     if (text.trim() !== proof || second.output.some((item) => item.type === "tool-call"))
       return yield* Effect.fail(

@@ -1,5 +1,5 @@
 import { AgentError } from "@poppet/agent";
-import { AttachmentReference, Output } from "@poppet/provider";
+import { AttachmentReference, Output, outputText } from "@poppet/provider";
 import { Session } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
@@ -44,10 +44,7 @@ export const chatHistory = (messages: typeof HistoryMessages.Type) => {
       continue;
     }
 
-    const text = message.output
-      .filter((part) => part.type === "text")
-      .map((part) => part.text)
-      .join("");
+    const text = outputText(message.output);
 
     if (text) history.push({ role: "assistant", text });
   }
