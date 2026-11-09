@@ -14,25 +14,14 @@ export const messagingRequest = (text: string, attached = false) =>
     let prompt = text.slice(4).trim();
     let skill: string | null = null;
 
-    while (/^--skill(?:\s|$)/.test(prompt)) {
-      const selected = /^--(skill)\s+(\S+)\s+([\s\S]+)$/.exec(prompt);
+    const selected = /^--skill\s+(\S+)\s+([\s\S]+)$/.exec(prompt);
 
-      if (!selected || !Schema.is(SkillName)(selected[2]) || skill !== null) {
-        prompt = "";
-        attached = false;
-        break;
-      }
-
-      skill = selected[2]!;
-      prompt = selected[3]!.trim();
+    if (selected && Schema.is(SkillName)(selected[1])) {
+      skill = selected[1];
+      prompt = selected[2]!.trim();
     }
 
-    if (prompt.startsWith("--")) {
-      prompt = "";
-      attached = false;
-    }
-
-    if (!prompt && !attached)
+    if (prompt.startsWith("--") || (!prompt && !attached))
       return yield* Effect.fail(
         new ChannelError({
           reason: "configuration",
