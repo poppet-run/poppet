@@ -119,11 +119,7 @@ export const makeOpenRouterProvider = (
   };
 };
 
-export const {
-  loadApiKey,
-  layer: OpenRouterLive,
-  registration: openRouter,
-} = apiKeyProvider({
+export const { registration: openRouter } = apiKeyProvider({
   id: "openrouter",
   name: "OpenRouter",
   environment: "POPPET_OPENROUTER_API_KEY",

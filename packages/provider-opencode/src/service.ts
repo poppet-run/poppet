@@ -118,11 +118,7 @@ export const makeOpenCodeProvider = (
   return { id: "opencode-go", models, resolve };
 };
 
-export const {
-  loadApiKey,
-  layer: OpenCodeGoLive,
-  registration: openCodeGo,
-} = apiKeyProvider({
+export const { registration: openCodeGo } = apiKeyProvider({
   id: "opencode-go",
   name: "OpenCode Go",
   environment: "POPPET_OPENCODE_GO_API_KEY",
