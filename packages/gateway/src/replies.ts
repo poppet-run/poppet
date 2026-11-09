@@ -1,3 +1,4 @@
+import { outputText } from "@poppet/provider";
 import type { Run } from "@poppet/store";
 
 // Prefer paragraph, line, then word breaks in the second half of a chunk, so replies stay
@@ -34,6 +35,5 @@ export const chunks = (text: string, limit: number) => {
 /** The reply text for a saved run's final outcome. */
 export const answer = (run: Run) =>
   run.status === "completed" && run.result !== null
-    ? run.result.output.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") ||
-      "The request completed without a text answer."
+    ? outputText(run.result.output) || "The request completed without a text answer."
     : "The request failed or was interrupted. Inspect its saved run before sending a new request.";

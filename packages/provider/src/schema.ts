@@ -143,6 +143,10 @@ export type Tool = typeof Tool.Type;
 
 export type Output = typeof Output.Type;
 
+/** Joins the text parts of an assistant response, leaving out tool calls. */
+export const outputText = (output: ReadonlyArray<Output>) =>
+  output.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+
 export type Continuation = typeof Continuation.Type;
 
 export type AttachmentType = typeof AttachmentType.Type;

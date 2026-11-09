@@ -1,4 +1,4 @@
-import { Output } from "@poppet/provider";
+import { Output, outputText } from "@poppet/provider";
 import { ProviderPause, Schedule, type TaskCommand } from "@poppet/tasks";
 import { Schema } from "effect";
 
@@ -79,12 +79,6 @@ const deliveries = (rows: ReadonlyArray<{ readonly state: string }>) => {
   return [...counts].map(([name, count]) => `${count} ${name}`).join(", ");
 };
 
-const outputText = (output: ReadonlyArray<Output> | null) =>
-  (output ?? [])
-    .flatMap((part) => (part.type === "text" ? [part.text] : []))
-    .join("")
-    .trim();
-
 const listTasks = (tasks: ReadonlyArray<TaskRow>) =>
   tableOr(
     "No tasks. Add one with poppet tasks add.",
@@ -112,7 +106,9 @@ const taskFields = (task: TaskRow) =>
   ]);
 
 const showTask = ({ task, target, occurrences, skipped }: typeof TaskDetails.Type) => {
-  const latest = occurrences.map((item) => outputText(item.output)).find((output) => output !== "");
+  const latest = occurrences
+    .map((item) => outputText(item.output ?? []).trim())
+    .find((output) => output !== "");
 
   return sections([
     [null, taskFields(task)],

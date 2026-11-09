@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 
-import { toolParameters, type ModelOperations } from "@poppet/provider";
+import { outputText, toolParameters, type ModelOperations } from "@poppet/provider";
 import type { Run } from "@poppet/store";
 import { Context, Effect, Option, Schema, Stream } from "effect";
 
@@ -138,9 +138,7 @@ export const reviewCommand = (
         }),
       );
 
-    const text = last.value.response.output
-      .flatMap((part) => (part.type === "text" ? [part.text] : []))
-      .join("");
+    const text = outputText(last.value.response.output);
 
     return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Review), {
       onExcessProperty: "error",

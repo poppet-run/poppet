@@ -5,6 +5,7 @@ export {
   toolParameters,
   decodeToolArguments,
   Output,
+  outputText,
   Continuation,
   AttachmentType,
   AttachmentReference,

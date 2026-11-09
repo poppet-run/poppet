@@ -1,4 +1,4 @@
-import type { ModelOperations } from "@poppet/provider";
+import { outputText, type ModelOperations } from "@poppet/provider";
 import type { Session } from "@poppet/store";
 import { Effect, Option, Stream } from "effect";
 
@@ -73,9 +73,7 @@ export const generateTitle = (model: ModelOperations, session: Session, prompt: 
     if (Option.isNone(last) || last.value.type !== "completed") return { title: null, usage: null };
     const result = last.value.response;
 
-    const text = result.output
-      .flatMap((part) => (part.type === "text" ? [part.text] : []))
-      .join("");
+    const text = outputText(result.output);
 
     const valid =
       result.finishReason === "stop" &&
