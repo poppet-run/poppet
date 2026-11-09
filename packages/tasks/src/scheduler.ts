@@ -252,15 +252,10 @@ export const makeTaskWorker = Effect.gen(function* () {
         );
       }
 
-      if (
-        command.action === "retry" ||
-        command.action === "cancel" ||
-        command.action === "retry-task" ||
-        command.action === "cancel-task"
-      ) {
+      if (command.action === "retry-task" || command.action === "cancel-task") {
         const { id } = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String }))(result);
         const item = yield* repo.occurrence(id);
-        const cancelling = command.action === "cancel" || command.action === "cancel-task";
+        const cancelling = command.action === "cancel-task";
 
         if (cancelling && active?.id === item.id) yield* Fiber.interrupt(active.fiber);
         const job = yield* repo.task(item.jobId);
