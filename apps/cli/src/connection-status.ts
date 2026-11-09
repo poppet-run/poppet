@@ -1,4 +1,4 @@
-import { invalidRequest, ProviderError, type ProviderId } from "@poppet/provider";
+import { invalidRequest, type ProviderError, type ProviderId } from "@poppet/provider";
 import { Effect, Schema } from "effect";
 
 const ConnectionMetadata = Schema.Struct({
@@ -41,11 +41,7 @@ export const createConnectionStatus = () => {
   const fallback = (id: ProviderId, error: ProviderError): Effect.Effect<Schema.JsonObject> => {
     const cached = observed.get(id);
 
-    if (
-      error instanceof ProviderError &&
-      error.code === "credential_store_busy" &&
-      cached !== undefined
-    )
+    if (error.code === "credential_store_busy" && cached !== undefined)
       return Effect.succeed({ ...cached, cached: true });
 
     return Effect.succeed({
@@ -54,7 +50,7 @@ export const createConnectionStatus = () => {
       account: null,
       planUsage: null,
       action:
-        error instanceof ProviderError && error.code === "credential_store_busy"
+        error.code === "credential_store_busy"
           ? "Authentication is busy. Check again after the active run finishes."
           : `Run provider status ${id} to inspect the connection.`,
     } satisfies Schema.JsonObject);
