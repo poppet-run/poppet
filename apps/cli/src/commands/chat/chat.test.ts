@@ -1538,27 +1538,36 @@ describe.concurrent("chat.ts", () => {
     await chmod(path, 0o600);
 
     try {
+      const frames = [
+        '{"type":"failed","message":"Already saved."}\n',
+        '{"type":"stdout","text":"Possibly saved"}\n',
+        '{"type":"stdout"}\n',
+        '{"type":"done"}\n{"type":"stdout","text":"Too late"}\n',
+      ].map((response) => ({ response, args: ["chat", "new", "Hello"] }));
+
+      const values = ['{"ok":false,"message":"Already saved."}', '{"ok":true', frames[3]!.response];
+
       await Array.fromAsync(
         [
-          '{"type":"failed","message":"Already saved."}\n',
-          '{"type":"stdout","text":"Possibly saved"}\n',
-          '{"type":"stdout"}\n',
-          '{"type":"done"}\n{"type":"stdout","text":"Too late"}\n',
+          ...frames,
+          ...values.map((response) => ({
+            response,
+            args: ["memory", "set", "--json", "project", "Acorn"],
+          })),
         ],
-        async (response) => {
+        async ({ response, args }) => {
           reply = response;
           // Each response is selected before issuing the next request.
-          await expect(
-            chat.invoke(["memory", "set", "--json", "project", "Acorn"]),
-          ).rejects.toHaveProperty("_tag", "WorkerRequestError");
+          await expect(chat.invoke(args)).rejects.toHaveProperty("_tag", "WorkerRequestError");
         },
       );
 
-      expect(delivered).toBe(4);
+      expect(chat.requests).toHaveLength(0);
+      expect(delivered).toBe(7);
       expect(await readdir(directory)).toEqual(["tasks.sock"]);
       await chmod(path, 0o666);
       await expect(chat.invoke(["memory", "list", "--json"])).rejects.toThrow("not protected");
-      expect(delivered).toBe(4);
+      expect(delivered).toBe(7);
     } finally {
       await server.stop(true);
       await chat.close();
@@ -1613,16 +1622,18 @@ describe.concurrent("chat.ts", () => {
             command: { action: "set", key: "extra", value: "bad", ignored: true },
           },
           { kind: "store", ignored: true },
-        ].map((command) =>
-          fetch("http://localhost/v1/commands", {
-            unix: workerSocketPath(chat.directory),
-            method: "POST",
-            body: JSON.stringify(command),
-          }),
+        ].flatMap((command) =>
+          ["commands", "queries"].map((route) =>
+            fetch(`http://localhost/v1/${route}`, {
+              unix: workerSocketPath(chat.directory),
+              method: "POST",
+              body: JSON.stringify(command),
+            }),
+          ),
         ),
       );
 
-      expect(invalid.map((response) => response.status)).toEqual([400, 400, 400, 400, 400, 400]);
+      expect(invalid.map((response) => response.status)).toEqual(Array(12).fill(400));
       expect(JSON.parse(await readOutput(["memory", "list", "--json"]))).toEqual([]);
       expect(
         JSON.parse(await readOutput(["memory", "set", "--json", "project", "Acorn"])),

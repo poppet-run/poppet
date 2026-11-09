@@ -40,8 +40,8 @@ const ChatAttachments = Schema.optionalKey(
   Schema.Array(ChatAttachment).check(Schema.isMaxLength(defaultPolicy.attachmentsPerMessage)),
 );
 
-/** Validated local or worker chat requests; new sessions carry an explicit model selection. */
-export const ChatRequest = Schema.Union([
+/** Validated chat submissions; new sessions carry an explicit model selection. */
+export const ChatSubmission = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("new"),
     text: MessageText,
@@ -56,20 +56,24 @@ export const ChatRequest = Schema.Union([
     text: MessageText,
     attachments: ChatAttachments,
   }),
+]);
+
+/** Validated chat requests that reply with one value. */
+export const ChatInspection = Schema.Union([
   Schema.Struct({ action: Schema.Literal("rename"), id: Session.fields.id, text: MessageText }),
   Schema.Struct({ action: Schema.Literal("show"), id: Session.fields.id }),
   Schema.Struct({ action: Schema.Literal("sessions") }),
   Schema.Struct({ action: Schema.Literal("search"), query: SessionSearchQuery }),
 ]);
 
-export type ChatRequest = typeof ChatRequest.Type;
+export type ChatSubmission = typeof ChatSubmission.Type;
 
 /**
  * Parsed chat actions; a new session still needs its provider and model resolved, and attached
  * files are paths until they are read.
  */
 export type ChatCommand =
-  | Exclude<ChatRequest, { readonly action: "new" | "send" }>
+  | typeof ChatInspection.Type
   | {
       readonly action: "send";
       readonly id: string;
@@ -82,8 +86,6 @@ export type ChatCommand =
       readonly skill?: string;
       readonly attachments?: ReadonlyArray<string>;
     };
-
-type ChatSubmission = Extract<ChatRequest, { action: "new" | "send" }>;
 
 /** A streamed text sink that can report write failures to the active request. */
 export type ChatWriter = (text: string) => Effect.Effect<void, AgentError>;

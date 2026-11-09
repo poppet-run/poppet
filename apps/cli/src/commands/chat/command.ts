@@ -75,7 +75,7 @@ export const chatCommand = (context: CLIContext) => {
         const submission = yield* prepareChat(command);
 
         yield* throughWorker(
-          { kind: "chat", command: submission },
+          submission,
           sendChat(
             submission,
             output?.answer ?? write,

@@ -216,7 +216,8 @@ command metadata. Oversized requests report a size error without being retried.
 Only an absent socket or refused connection permits local fallback. A lost,
 incomplete, or incompatible response fails without replaying the command. Restart
 the worker with `worker restart` after updating code.
-The current protocol uses `/v1/commands` and `/v1/tasks`; other routes are rejected.
+The current protocol uses `/v1/commands` for chat, `/v1/queries` for memory and
+inspection, and `/v1/tasks`; other routes are rejected.
 
 ## Sleep and missed schedules
 

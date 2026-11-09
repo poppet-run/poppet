@@ -2,7 +2,7 @@ import { chmod, lstat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { isMissingFile } from "@poppet/io";
-import { Context, Data, Effect, Exit, Fiber, Option, Schema, Scope } from "effect";
+import { Cause, Context, Data, Effect, Exit, Fiber, Option, Schema, Scope } from "effect";
 
 /** A rejected local request or a failure to use the protected worker endpoint. */
 export class WorkerRequestError extends Data.TaggedError("WorkerRequestError")<{
@@ -74,6 +74,64 @@ export const requestWorker = async (
 
   return response;
 };
+
+const Reply = Schema.Union([
+  Schema.Struct({ ok: Schema.Literal(true), value: Schema.Json }),
+  Schema.Struct({ ok: Schema.Literal(false), message: Schema.String }),
+]);
+
+/** Sends a single-reply command; an unreadable reply fails with `lost` and is never replayed. */
+export const requestWorkerReply = (
+  path: string,
+  route: string,
+  command: Schema.Json,
+  lost: string,
+  timeout?: number,
+) =>
+  Effect.tryPromise({
+    try: async (signal) => {
+      const response = await requestWorker(
+        path,
+        route,
+        command,
+        timeout === undefined ? signal : AbortSignal.any([signal, AbortSignal.timeout(timeout)]),
+      );
+
+      if (response === null) return null;
+
+      if (response.status === 404)
+        throw new WorkerRequestError({
+          message:
+            "The worker rejected this command. Restart the worker to load the current protocol. The command was not retried.",
+        });
+      const reply = Schema.decodeUnknownSync(Reply)(await response.json());
+
+      if (!reply.ok) throw new WorkerRequestError({ message: reply.message });
+
+      return { value: reply.value };
+    },
+    catch: (cause) =>
+      cause instanceof WorkerRequestError ? cause : new WorkerRequestError({ message: lost }),
+  });
+
+/** Runs a single-reply command and encodes the reply `requestWorkerReply` decodes. */
+export const workerReply = <R>(
+  operation: Effect.Effect<unknown, { readonly message: string }, R>,
+  failed: string,
+) =>
+  Effect.exit(operation).pipe(
+    Effect.map((exit) =>
+      Exit.isSuccess(exit)
+        ? Response.json({ ok: true, value: exit.value })
+        : Response.json(
+            {
+              ok: false,
+              message: Option.getOrNull(Cause.findErrorOption(exit.cause))?.message ?? failed,
+            },
+            { status: 400 },
+          ),
+    ),
+  );
 
 const decodeRequestBody = (request: Request) =>
   Effect.tryPromise({
