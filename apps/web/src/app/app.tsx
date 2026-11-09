@@ -51,7 +51,7 @@ export const App = () => {
         sending={sending}
         error={error}
         onAccessKeyChange={(value) => store.set("key", value)}
-        onSignIn={() => store.$login.mutate(key)}
+        onSignIn={() => store.login(key)}
       />
     );
 
@@ -63,7 +63,7 @@ export const App = () => {
         sessionId={sessionId}
         onClose={() => store.set("sidebar", false)}
         onNavigate={navigate}
-        onSignOut={() => store.$logout.mutate()}
+        onSignOut={store.logout}
       />
       <main class="flex min-w-0 flex-1 flex-col">
         <ChatHeader
@@ -90,11 +90,11 @@ export const App = () => {
             store.set("drafts", { ...store.$state.get().drafts, [draftKey]: value })
           }
           onSend={store.send}
-          onStop={() => store.$stop.mutate()}
+          onStop={store.stop}
           onRecover={() => {
-            if (pending) void store.$delivery.mutate(pending);
+            if (pending) void store.deliver(pending);
           }}
-          onForget={() => store.$forget.mutate()}
+          onForget={store.forget}
           onLatest={() => store.set("atBottom", true)}
         />
       </main>

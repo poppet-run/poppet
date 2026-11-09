@@ -1,8 +1,7 @@
-import { nanoquery } from "@nanostores/query";
-import { map, atom } from "nanostores";
+import { map } from "nanostores";
 
 import { api, ApiError } from "../api/client";
-import type { ChatSession, ChatSnapshot, Submission } from "../api/protocol";
+import type { ChatSession, ChatSnapshot, Receipt, Submission } from "../api/protocol";
 
 const sessionFromUrl = () => /^\/chat\/([A-Za-z0-9_-]+)$/.exec(location.pathname)?.[1] ?? null;
 
@@ -25,7 +24,7 @@ type ChatState = {
   atBottom: boolean;
 };
 
-// Each mounted app has its own state and cache. Sign-in changes the session query key.
+// Each mounted app has its own state. Sign-in and sign-out change the generation, so late replies are ignored.
 export const createChatStore = () => {
   const $state = map<ChatState>({
     authenticated: null,
@@ -49,43 +48,32 @@ export const createChatStore = () => {
 
   let generation = 0;
   let deliveryLock = false;
-  const $queryGeneration = atom<number | null>(0);
 
   const unauthenticate = () => {
     generation++;
-    $queryGeneration.set(null);
     set("refreshError", "");
     set("authenticated", false);
     set("sessions", []);
     set("snapshot", null);
   };
 
-  const [createFetcherStore, createMutatorStore] = nanoquery({ onErrorRetry: null });
+  const refresh = async () => {
+    const requestGeneration = generation;
 
-  const $sessions = createFetcherStore<{
-    generation: number;
-    sessions: ReadonlyArray<ChatSession>;
-  }>(["sessions", $queryGeneration], {
-    revalidateInterval: 5000,
-    fetcher: async (_key, requestGeneration) => {
-      try {
-        const sessions = await api.sessions();
+    try {
+      const sessions = await api.sessions();
 
-        if (requestGeneration === generation) set("refreshError", "");
+      if (requestGeneration !== generation) return;
+      set("refreshError", "");
+      set("sessions", sessions);
+      set("authenticated", true);
+    } catch (cause) {
+      if (requestGeneration !== generation) return;
 
-        return { generation: Number(requestGeneration), sessions };
-      } catch (cause) {
-        if (requestGeneration === generation && $queryGeneration.get() !== null) {
-          if (cause instanceof ApiError && cause.status === 401) unauthenticate();
-          else set("refreshError", errorMessage(cause));
-        }
-
-        throw cause;
-      }
-    },
-  });
-
-  const refresh = () => $sessions.revalidate();
+      if (cause instanceof ApiError && cause.status === 401) unauthenticate();
+      else set("refreshError", errorMessage(cause));
+    }
+  };
 
   const navigate = (id: string | null) => {
     if (id !== $state.get().sessionId) {
@@ -99,7 +87,20 @@ export const createChatStore = () => {
     set("error", "");
   };
 
-  const $delivery = createMutatorStore<Submission, void>(async ({ data: submission }) => {
+  const settle = (submission: Submission, receipt: Receipt) => {
+    sessionStorage.removeItem("poppet-submission");
+    set("pending", null);
+    const submittedKey = submission.sessionId ?? "new";
+    const drafts = $state.get().drafts;
+
+    if (drafts[submittedKey] === submission.text) set("drafts", { ...drafts, [submittedKey]: "" });
+    navigate(receipt.sessionId);
+
+    if (receipt.error) set("error", receipt.error);
+    void refresh();
+  };
+
+  const deliver = async (submission: Submission) => {
     if (deliveryLock) return;
     deliveryLock = true;
     set("sending", true);
@@ -113,17 +114,7 @@ export const createChatStore = () => {
       const receipt = await api.submit(submission);
 
       if (requestGeneration !== generation) return;
-      sessionStorage.removeItem("poppet-submission");
-      set("pending", null);
-      const submittedKey = submission.sessionId ?? "new";
-      const drafts = $state.get().drafts;
-
-      if (drafts[submittedKey] === submission.text)
-        set("drafts", { ...drafts, [submittedKey]: "" });
-      navigate(receipt.sessionId);
-
-      if (receipt.error) set("error", receipt.error);
-      refresh();
+      settle(submission, receipt);
       set("atBottom", true);
     } catch (cause) {
       if (requestGeneration !== generation) return;
@@ -139,7 +130,7 @@ export const createChatStore = () => {
       deliveryLock = false;
       set("sending", false);
     }
-  });
+  };
 
   const send = () => {
     const draft = $state.get().drafts[$state.get().sessionId ?? "new"] ?? "";
@@ -152,14 +143,10 @@ export const createChatStore = () => {
       ($state.get().sessionId && !$state.get().connected)
     )
       return;
-    void $delivery.mutate({
-      id: crypto.randomUUID(),
-      sessionId: $state.get().sessionId,
-      text: draft,
-    });
+    void deliver({ id: crypto.randomUUID(), sessionId: $state.get().sessionId, text: draft });
   };
 
-  const $login = createMutatorStore<string, void>(async ({ data: accessKey }) => {
+  const login = async (accessKey: string) => {
     set("sending", true);
     set("error", "");
 
@@ -167,15 +154,15 @@ export const createChatStore = () => {
       await api.login(accessKey);
       set("key", "");
       generation++;
-      $queryGeneration.set(generation);
+      void refresh();
     } catch (cause) {
       set("error", errorMessage(cause));
     } finally {
       set("sending", false);
     }
-  });
+  };
 
-  const $logout = createMutatorStore(async () => {
+  const logout = async () => {
     try {
       await api.logout();
       unauthenticate();
@@ -186,10 +173,10 @@ export const createChatStore = () => {
         set("drafts", {});
       } else set("error", errorMessage(cause));
     }
-  });
+  };
 
   // Check the receipt before forgetting local recovery. This never cancels a worker run.
-  const $forget = createMutatorStore(async () => {
+  const forget = async () => {
     const submission = $state.get().pending;
 
     if (!submission || $state.get().sending) return;
@@ -200,17 +187,7 @@ export const createChatStore = () => {
       const receipt = await api.receipt(submission.id);
 
       if (requestGeneration !== generation) return;
-      sessionStorage.removeItem("poppet-submission");
-      set("pending", null);
-      const submittedKey = submission.sessionId ?? "new";
-      const drafts = $state.get().drafts;
-
-      if (drafts[submittedKey] === submission.text)
-        set("drafts", { ...drafts, [submittedKey]: "" });
-      navigate(receipt.sessionId);
-
-      if (receipt.error) set("error", receipt.error);
-      refresh();
+      settle(submission, receipt);
     } catch (cause) {
       if (requestGeneration !== generation) return;
 
@@ -228,15 +205,15 @@ export const createChatStore = () => {
     } finally {
       set("sending", false);
     }
-  });
+  };
 
-  const $stop = createMutatorStore(async () => {
+  const stop = async () => {
     try {
       await api.stop($state.get().sessionId!);
     } catch (cause) {
       set("error", errorMessage(cause));
     }
-  });
+  };
 
   const stream = (sessionId: string) => {
     let listening = true;
@@ -329,23 +306,17 @@ export const createChatStore = () => {
       if (authenticated && sessionId) closeStream = stream(sessionId);
     });
 
-    const unsubscribeSessions = $sessions.subscribe(({ data }) => {
-      if ($queryGeneration.get() !== null && data?.generation === generation) {
-        set("sessions", data.sessions);
-        set("authenticated", true);
-      }
-    });
+    void refresh();
 
-    // Keep mutation stores mounted so their loading flags settle between calls.
-    const mutations = [$delivery, $login, $logout, $forget, $stop].map((store) =>
-      store.listen(() => {}),
-    );
+    // Poll only while signed in or still connecting, and never from a hidden tab.
+    const polling = setInterval(() => {
+      if ($state.get().authenticated !== false && !document.hidden) void refresh();
+    }, 5000);
 
     addEventListener("popstate", pop);
 
     return () => {
-      mutations.forEach((unsubscribe) => unsubscribe());
-      unsubscribeSessions();
+      clearInterval(polling);
       unsubscribeState();
       closeStream?.();
       removeEventListener("popstate", pop);
@@ -354,12 +325,11 @@ export const createChatStore = () => {
 
   return {
     $state,
-    $sessions,
-    $delivery,
-    $login,
-    $logout,
-    $forget,
-    $stop,
+    deliver,
+    login,
+    logout,
+    forget,
+    stop,
     set,
     start,
     refresh,
