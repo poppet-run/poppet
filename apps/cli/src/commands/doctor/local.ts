@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { isMissingFile, runBounded } from "@poppet/io";
 import { readContextFile } from "@poppet/memory";
-import { workerPaths as linuxPaths, userConfigHome } from "@poppet/platform-linux";
-import { workerPaths as macPaths } from "@poppet/platform-macos";
+import { workerPaths as linuxPaths, userConfigHome } from "@poppet/platform/linux";
+import { workerPaths as macPaths } from "@poppet/platform/macos";
 import type { ProviderRegistration } from "@poppet/provider";
 import { Effect } from "effect";
 

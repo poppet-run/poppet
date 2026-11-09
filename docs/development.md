@@ -19,7 +19,7 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider-openrouter`, `@poppet/credentials`,
 `@poppet/store`, `@poppet/agent`, `@poppet/io`, `@poppet/mcp`,
 `@poppet/memory`, `@poppet/skills`, `@poppet/tasks`, `@poppet/web-search`,
-`@poppet/platform`, `@poppet/platform-macos`, `@poppet/platform-linux`, `@poppet/worker`, `@poppet/gateway`,
+`@poppet/platform`, `@poppet/worker`, `@poppet/gateway`,
 `@poppet/channel-discord`.
 `bun run format` formats files with Oxfmt.
 `bun run lint:fix` applies safe Oxlint fixes. `bun run check` checks formatting,
@@ -171,10 +171,8 @@ packages/
   platform/               @poppet/platform
     src/contract.ts       Worker actions, errors, status, and launch description
     src/logs.ts           Protected log creation and bounded log reading
-  platform-macos/         @poppet/platform-macos
-    src/worker.ts         LaunchAgent control and plist generation
-  platform-linux/         @poppet/platform-linux
-    src/worker.ts         systemd user unit control and unit file generation
+    src/macos.ts          LaunchAgent control and plist generation
+    src/linux.ts          systemd user unit control and unit file generation
   sign-in/                @poppet/sign-in
     src/callback.ts       Scoped loopback callback with state and paste checks
     src/authorize.ts      Browser launch or printed link, pasted callbacks, deadline
