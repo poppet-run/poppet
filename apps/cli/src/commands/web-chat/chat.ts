@@ -42,6 +42,14 @@ const ReceiptRow = Schema.Struct({
   error: Schema.NullOr(Schema.String),
 });
 
+// The fingerprint stays on the server.
+const toReceipt = ({ id, sessionId, status, error }: typeof ReceiptRow.Type): Receipt => ({
+  id,
+  sessionId,
+  status,
+  error,
+});
+
 const webSchema = packageSchema("web_chat_migrations", {
   "1_submissions": [
     `CREATE TABLE web_chat_submissions (
@@ -127,12 +135,7 @@ const makeWebChat = Effect.gen(function* () {
 
           return [];
         }),
-        receipts: receipts.map((entry) => ({
-          id: entry.id,
-          sessionId: entry.sessionId,
-          status: entry.status,
-          error: entry.error,
-        })),
+        receipts: receipts.map(toReceipt),
         active: running ? { id: running.id, input: running.input, text: running.text } : null,
       } satisfies ChatSnapshot;
     });
@@ -166,12 +169,7 @@ const makeWebChat = Effect.gen(function* () {
             message: "This submission ID already belongs to another message.",
           });
 
-        return {
-          id: existing.id,
-          sessionId: existing.sessionId,
-          status: existing.status,
-          error: existing.error,
-        } satisfies Receipt;
+        return toReceipt(existing);
       }
 
       if (input.sessionId && active.has(input.sessionId))
@@ -269,13 +267,7 @@ const makeWebChat = Effect.gen(function* () {
     submit,
     stop,
     receipt: (id: string) =>
-      receipt(id).pipe(
-        Effect.map((value) =>
-          value
-            ? { id: value.id, sessionId: value.sessionId, status: value.status, error: value.error }
-            : null,
-        ),
-      ),
+      receipt(id).pipe(Effect.map((value) => (value ? toReceipt(value) : null))),
   };
 });
 
