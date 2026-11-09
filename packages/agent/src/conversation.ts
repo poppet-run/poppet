@@ -124,13 +124,10 @@ export const conversation = Effect.gen(function* () {
     { prompt, origin, selectedSkill }: RunContext,
     skillsIndex: SkillIndex | null,
   ) => {
-    const skillPrompt =
-      skillsIndex === null
-        ? []
-        : [`${skillIndexGuidance(selectedSkill)}\n${JSON.stringify(skillsIndex)}`];
-
     const indexedPrompt =
-      skillPrompt.length === 0 ? prompt : `${prompt}\n\n${skillPrompt.join("\n\n")}`;
+      skillsIndex === null
+        ? prompt
+        : `${prompt}\n\n${skillIndexGuidance(selectedSkill)}\n${JSON.stringify(skillsIndex)}`;
 
     const baseInstructions =
       external?.instructions === undefined
