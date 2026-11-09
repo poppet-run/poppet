@@ -267,8 +267,6 @@ export const apiKeyProvider = (options: {
   ).pipe(Layer.provideMerge([inference, ApiKeyStoreLive]));
 
   return {
-    loadApiKey: key,
-    layer,
     registration: {
       id: options.id,
       name: options.name,
