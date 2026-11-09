@@ -241,17 +241,17 @@ test("sign-out ignores a late session query and sign-in fetches fresh history", 
   const dispose = store.start();
 
   try {
-    await store.$logout.mutate();
+    await store.logout();
     resolveSessions(Response.json([{ id: "private", title: "Old history" }]));
     await flush();
     expect(store.$state.get().authenticated).toBe(false);
     expect(store.$state.get().sessions).toEqual([]);
-    await store.$login.mutate("test-key");
+    await store.login("test-key");
     await flush();
     expect(store.$state.get().authenticated).toBe(true);
     expect(store.$state.get().sessions.map((session) => session.id)).toEqual(["fresh"]);
     // A second mutation must work after the first completes.
-    await store.$logout.mutate();
+    await store.logout();
     expect(store.$state.get().authenticated).toBe(false);
   } finally {
     dispose();
@@ -346,7 +346,7 @@ test("duplicate sends are throttled and navigation closes streams without stoppi
       sessionId: "second",
       text: "Already accepted",
     });
-    await store.$forget.mutate();
+    await store.forget();
     expect(store.$state.get().pending).toBeNull();
     expect(store.$state.get().sessionId).toBe("second");
     expect(requests.filter((path) => path === "/api/submissions")).toHaveLength(1);
@@ -401,16 +401,16 @@ test("submission rejection and explicit recovery forgetting unlock the composer 
   try {
     await flush();
     store.set("drafts", { new: submission.text });
-    await store.$delivery.mutate(submission);
+    await store.deliver(submission);
     expect(store.$state.get().pending).toBeNull();
     expect(sessionStorage.getItem("poppet-submission")).toBeNull();
     status = 500;
-    await store.$delivery.mutate(submission);
+    await store.deliver(submission);
     expect(store.$state.get().pending).toEqual(submission);
-    await store.$forget.mutate();
+    await store.forget();
     expect(store.$state.get().pending).toEqual(submission);
     receiptStatus = 404;
-    await store.$forget.mutate();
+    await store.forget();
     expect(store.$state.get().pending).toBeNull();
     expect(store.$state.get().drafts.new).toBe(submission.text);
     expect(store.$state.get().error).toContain("The message may still arrive");
@@ -450,7 +450,7 @@ test("successful polling clears only refresh errors and expired sign-out clears 
     expect(store.$state.get().error).toBe("A submission failed");
     expect(store.$state.get().authenticated).toBe(true);
     store.set("drafts", { new: "Private draft" });
-    await store.$logout.mutate();
+    await store.logout();
     expect(store.$state.get().authenticated).toBe(false);
     expect(store.$state.get().drafts).toEqual({});
     expect(store.$state.get().sessions).toEqual([]);

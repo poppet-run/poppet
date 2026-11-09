@@ -156,11 +156,10 @@ Manual checks:
 6. Check the mobile keyboard, multiline input, sidebar, long code blocks, and sign-out.
 
 The frontend keeps chat state in Nanostores and uses `@nanostores/preact` for UI
-subscriptions. `@nanostores/query` handles session-list polling and chat mutations.
-Each mounted app has its own stores and cache; each sign-in uses a new
-query key so a late response cannot restore a signed-out session. SSE snapshots
-remain separate from the query cache, and mutations never automatically retry
-submissions.
+subscriptions. The store polls the session list every five seconds while signed in.
+Each mounted app has its own store; each sign-in and sign-out starts a new
+generation so a late response cannot restore a signed-out session. SSE snapshots
+update the store directly, and submissions are never retried automatically.
 
 Web source is grouped under `apps/web/src`: `app/` contains the app and its DOM
 tests, `api/` contains the HTTP client and shared protocol, `components/` contains
