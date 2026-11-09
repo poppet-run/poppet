@@ -23,8 +23,5 @@
     "@poppet/store": "workspace:*",
     "@poppet/tasks": "workspace:*",
     "effect": "4.0.4"
-  },
-  "devDependencies": {
-    "@poppet/memory": "workspace:*"
   }
 }
