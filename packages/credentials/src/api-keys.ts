@@ -1,12 +1,6 @@
 import { join } from "node:path";
 
 import {
-  ensurePrivateDirectory,
-  readProtectedFile,
-  unlinkIfPresent,
-  writeFileAtomic,
-} from "@poppet/io";
-import {
   CredentialInput,
   Provider,
   ProviderConnection,
@@ -25,7 +19,7 @@ import { readCredentialFile } from "#src/inspection";
 
 export { readCredentialFile } from "#src/inspection";
 
-import { acquireOwnerLock } from "#src/lock";
+import { protectedFiles } from "#src/records";
 
 /** A nonempty key without whitespace, redacted in diagnostic output. */
 export const ApiKey = Schema.RedactedFromValue(
@@ -79,37 +73,26 @@ export const ApiKeyStoreLive = Layer.effect(
   ApiKeyStore,
   Effect.gen(function* () {
     const config = yield* ProviderEnvironment;
-    const directory = join(config.dataDirectory, "auth");
-    const path = (provider: ProviderId) => join(directory, `${provider}.json`);
+    const files = protectedFiles(join(config.dataDirectory, "auth"), storageError);
 
-    const prepare = (provider: ProviderId, create: boolean) =>
-      Effect.tryPromise({
-        try: () => ensurePrivateDirectory(directory, { create }),
-        catch: () => storageError(provider),
-      });
+    const checked = (provider: ProviderId) =>
+      Schema.decodeUnknownEffect(ProviderId)(provider).pipe(
+        Effect.mapError(() => storageError(provider)),
+      );
 
-    const locked = (provider: ProviderId, operation: Effect.Effect<void, ProviderError>) =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          yield* prepare(provider, true);
-          const lock = join(directory, `${provider}.lock`);
-          yield* acquireOwnerLock(lock).pipe(Effect.mapError(() => storageError(provider)));
-          yield* operation;
-        }),
+    const replace = (provider: ProviderId, contents: string | null) =>
+      checked(provider).pipe(
+        Effect.andThen(files.lock(provider)),
+        Effect.mapError(() => storageError(provider)),
+        Effect.andThen(files.write(provider, contents)),
+        Effect.scoped,
+        Effect.uninterruptible,
       );
 
     const read = (provider: ProviderId) =>
       Effect.gen(function* () {
-        yield* Schema.decodeUnknownEffect(ProviderId)(provider).pipe(
-          Effect.mapError(() => storageError(provider)),
-        );
-
-        if (!(yield* prepare(provider, false))) return null;
-
-        const contents = yield* Effect.tryPromise({
-          try: () => readProtectedFile(path(provider), { makePrivate: true }),
-          catch: () => storageError(provider),
-        });
+        yield* checked(provider);
+        const contents = yield* files.read(provider);
 
         if (contents === null) return null;
 
@@ -123,36 +106,12 @@ export const ApiKeyStoreLive = Layer.effect(
       });
 
     const write = (provider: ProviderId, key: Redacted.Redacted<string>) =>
-      Effect.gen(function* () {
-        yield* Schema.decodeUnknownEffect(ProviderId)(provider).pipe(
-          Effect.mapError(() => storageError(provider)),
-        );
-        yield* locked(
-          provider,
-          Effect.tryPromise({
-            try: () =>
-              writeFileAtomic(
-                path(provider),
-                Schema.encodeSync(SavedKey)({ version: 1, provider, key }),
-              ),
-            catch: () => storageError(provider),
-          }),
-        );
-      }).pipe(Effect.uninterruptible);
+      Schema.encodeEffect(SavedKey)({ version: 1, provider, key }).pipe(
+        Effect.mapError(() => storageError(provider)),
+        Effect.flatMap((contents) => replace(provider, contents)),
+      );
 
-    const remove = (provider: ProviderId) =>
-      Effect.gen(function* () {
-        yield* Schema.decodeUnknownEffect(ProviderId)(provider).pipe(
-          Effect.mapError(() => storageError(provider)),
-        );
-        yield* locked(
-          provider,
-          Effect.tryPromise({
-            try: () => unlinkIfPresent(path(provider)),
-            catch: () => storageError(provider),
-          }),
-        );
-      }).pipe(Effect.uninterruptible);
+    const remove = (provider: ProviderId) => replace(provider, null);
 
     return { read, write, remove } satisfies StoreOperations;
   }),

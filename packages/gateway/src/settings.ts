@@ -1,7 +1,6 @@
 import { join } from "node:path";
 
-import { acquireOwnerLock } from "@poppet/credentials/lock";
-import { ensurePrivateDirectory, readProtectedFile, writeFileAtomic } from "@poppet/io";
+import { protectedFiles } from "@poppet/credentials/records";
 import { Effect, Layer, Schema } from "effect";
 
 import { ChannelError, type MessagingChannel } from "#src/channel";
@@ -13,49 +12,26 @@ const settingsError = () =>
     message: "Cannot read or write protected channel settings.",
   });
 
-const directoryFor = (dataDirectory: string, adapter: string, create: boolean) =>
-  Effect.tryPromise({
-    try: async () => {
-      if (!/^[a-z][a-z0-9-]{0,63}$/.test(adapter)) throw new Error("Invalid channel ID");
-      const directory = join(dataDirectory, "channels");
+const filesFor = (dataDirectory: string, adapter: string) =>
+  Effect.gen(function* () {
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(adapter)) return yield* Effect.fail(settingsError());
 
-      return (await ensurePrivateDirectory(directory, { create })) ? directory : null;
-    },
-    catch: settingsError,
+    return protectedFiles(join(dataDirectory, "channels"), settingsError, 16384);
   });
 
 /** Reads bounded protected text; each adapter decodes its own settings schema. */
 export const loadChannelSettings = (dataDirectory: string, adapter: string) =>
-  Effect.gen(function* () {
-    const directory = yield* directoryFor(dataDirectory, adapter, false);
-
-    if (directory === null) return null;
-
-    return yield* Effect.tryPromise({
-      try: () =>
-        readProtectedFile(join(directory, `${adapter}.json`), {
-          maxBytes: 16384,
-          makePrivate: true,
-        }),
-      catch: settingsError,
-    });
-  });
+  filesFor(dataDirectory, adapter).pipe(Effect.flatMap((files) => files.read(adapter)));
 
 /** Atomically replaces one adapter file under its existing owner lock. */
 export const saveChannelSettings = (dataDirectory: string, adapter: string, contents: string) =>
   Effect.scoped(
     Effect.gen(function* () {
       if (Buffer.byteLength(contents) > 16384) return yield* Effect.fail(settingsError());
-      const directory = yield* directoryFor(dataDirectory, adapter, true);
+      const files = yield* filesFor(dataDirectory, adapter);
 
-      if (directory === null) return yield* Effect.fail(settingsError());
-      yield* acquireOwnerLock(join(directory, `${adapter}.lock`)).pipe(
-        Effect.mapError(settingsError),
-      );
-      yield* Effect.tryPromise({
-        try: () => writeFileAtomic(join(directory, `${adapter}.json`), contents),
-        catch: settingsError,
-      });
+      yield* files.lock(adapter).pipe(Effect.mapError(settingsError));
+      yield* files.write(adapter, contents);
     }),
   ).pipe(Effect.uninterruptible);
 
