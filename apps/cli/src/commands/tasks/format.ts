@@ -218,7 +218,6 @@ export const printTaskResult = <A>(json: boolean, command: TaskCommand, value: A
         TaskRow,
         (task) => `Resumed task ${task.name}. Next run: ${nextRun(task.nextAt, 0)}.`,
       );
-    case "cancel":
     case "cancel-task":
       return printParsed(
         json,
@@ -226,7 +225,6 @@ export const printTaskResult = <A>(json: boolean, command: TaskCommand, value: A
         OccurrenceRow,
         (item) => `Cancelled occurrence ${item.id} of task ${item.jobId}.`,
       );
-    case "retry":
     case "retry-task":
       return printParsed(
         json,

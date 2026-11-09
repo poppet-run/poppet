@@ -137,10 +137,6 @@ export const executeTaskCommand = (
       case "cancel-task":
       case "retry-task":
         return yield* repo.controlOccurrence(command.action, command.id, now, command.occurrenceId);
-      case "cancel":
-        return yield* repo.cancel(command.id, now);
-      case "retry":
-        return yield* repo.retry(command.id, now);
       case "resume-provider":
         yield* repo.resumeProvider(command.provider, now);
 
