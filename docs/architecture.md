@@ -459,9 +459,9 @@ controls resolve them outside the inference queue and only in the originating
 conversation, with access rechecked before execution. Restart expires pending
 requests. Scheduled runs never wait for approval; a blocked command fails the
 occurrence. Failed occurrences log a reason code and retain details in task history
-without posting to their destination or changing their recurring schedule.
-Only completed results enter the durable delivery queue. Pending failure notices
-from older versions are stopped before delivery. Delivery is unique per
+without changing their recurring schedule. Completed results and fixed failure
+notices enter the durable delivery queue. Pending failure text queued under a
+failed run by older versions is stopped before delivery. Delivery is unique per
 occurrence and run, so a successful retry can deliver its result to the task's
 saved destination.
 
@@ -884,7 +884,14 @@ gateways. Each task and occurrence saves a `DeliveryDestination` containing the
 adapter, account, owner, scope, parent, and conversation identity. The gateway
 reconciles completed occurrences into completed inbox entries without creating
 bindings or model requests. A unique occurrence/run index makes this idempotent;
-queue insertion and chunk creation commit together. The normal delivery loop
+queue insertion and chunk creation commit together. A failed occurrence with a
+destination is reconciled the same way into a fixed notice naming the task and
+the run's reason code, never model output or error text. Its inbox entry uses the
+synthetic run ID `notice:<occurrence-id>:<finished-at>`, since a failure may have
+no run, a retry reuses the occurrence ID, and queued results of unfinished runs
+are rejected. A failure directly after another failure of the same task is
+recorded with no chunks, and failures that finished over 24 hours ago are
+ignored, so each streak posts once and an upgrade posts no history. The normal delivery loop
 rechecks current policy and adapter permissions and preserves bounded retries
 and uncertain-send handling. Delivery status never changes execution status.
 

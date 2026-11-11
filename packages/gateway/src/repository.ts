@@ -123,6 +123,7 @@ const repository = Effect.gen(function* () {
 
   return {
     // Scheduled results stay deliverable only to the current account and only for completed runs.
+    // Failure notices carry a synthetic run ID, so only the account check applies to them.
     rejectScheduledDeliveries: operation((adapter: string, account: string) =>
       sql`UPDATE gateway_deliveries SET state = 'failed' WHERE state = 'pending' AND inbox_id IN (
         SELECT id FROM gateway_inbox WHERE adapter = ${adapter} AND occurrence_id IS NOT NULL
@@ -143,6 +144,36 @@ const repository = Effect.gen(function* () {
             id: Schema.String,
             runId: Schema.String,
             destination: Schema.fromJsonString(DeliveryDestination),
+          }),
+        ),
+      ),
+    ),
+    // Failed occurrences with no notice row yet for this failure. A retry reuses the occurrence ID,
+    // so the finish time is part of the key. repeated marks a failure directly after another.
+    failedScheduled: operation((adapter: string, since: number) =>
+      sql`SELECT o.id, o.job_id, o.destination, json_extract(o.definition, '$.name') AS name,
+          'notice:' || o.id || ':' || o.finished_at AS notice_id,
+          CASE WHEN o.run_id IS NULL THEN 'before-start' ELSE COALESCE(
+            (SELECT r.failure_reason FROM runs r WHERE r.id = o.run_id), 'unknown') END AS reason,
+          COALESCE((SELECT p.status = 'failed' FROM job_occurrences p
+            WHERE p.job_id = o.job_id AND p.finished_at IS NOT NULL
+              AND (p.finished_at, p.rowid) < (o.finished_at, o.rowid)
+            ORDER BY p.finished_at DESC, p.rowid DESC LIMIT 1), 0) AS repeated
+        FROM job_occurrences o
+        WHERE o.status = 'failed' AND o.finished_at >= ${since}
+          AND json_extract(o.destination, '$.adapter') = ${adapter}
+          AND NOT EXISTS (SELECT 1 FROM gateway_inbox i WHERE i.occurrence_id = o.id
+            AND i.run_id = 'notice:' || o.id || ':' || o.finished_at)
+        ORDER BY o.finished_at, o.rowid LIMIT 64`.pipe(
+        decodeRows(
+          Schema.Struct({
+            id: Schema.String,
+            jobId: Schema.String,
+            destination: Schema.fromJsonString(DeliveryDestination),
+            name: Schema.String,
+            noticeId: Schema.String,
+            reason: Schema.String,
+            repeated: Schema.BooleanFromBit,
           }),
         ),
       ),

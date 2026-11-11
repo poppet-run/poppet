@@ -16,8 +16,9 @@ fails that occurrence immediately, without trying another command or waiting for
 a person. The recurring schedule stays intact. Earlier completed commands are
 not rolled back.
 
-Failed runs only log their failure reason code and retain details in `tasks show`;
-they do not post to a messaging destination. Approval failures retain the blocked
+Failed runs log their failure reason code and retain details in `tasks show`.
+A task with a messaging destination also posts a short
+[failure notice](#failure-notices) there. Approval failures retain the blocked
 invocation and reason. Inspect them before retrying; later occurrences still run
 on their normal schedule. Successful results go to the task's configured destination.
 
@@ -185,8 +186,8 @@ worker rechecks the saved bot account, owner, server, parent relationship, and c
 channel or thread permissions before sending. It never chooses the last active
 conversation or redirects a result when its destination becomes inaccessible.
 
-Only completed results enter the gateway delivery queue, using the task's saved
-destination. `tasks show`
+Completed results and failure notices enter the gateway delivery queue, using the
+task's saved destination. `tasks show`
 includes the destination and a `delivery` array of run IDs, chunk states, message
 IDs, and attempt counts. Each delivered run has its own receipt. An empty array
 means no reply has been queued. Temporary delivery failures
@@ -195,7 +196,26 @@ uncertain sends are not resent automatically. Inspect the saved output before
 manually reposting it. Delivery failures never change a completed occurrence or
 repeat inference, and `tasks retry` rejects completed occurrences.
 
-Results are standalone posts. They do not change the destination's conversation
+### Failure notices
+
+A failed occurrence with a messaging destination posts one fixed message:
+
+```text
+Scheduled task "<name>" failed (<reason code>). Inspect it with: poppet tasks show <task-id>
+```
+
+The reason code is the failed run's saved reason, or `before-start` when the
+occurrence failed before a run existed. The notice never includes model output or
+error text. Interrupted, cancelled, and expired occurrences post nothing.
+
+Each failure streak posts once. If the task's previous finished occurrence also
+failed, the new failure is recorded without a post; a failure after a success
+posts again. Failures that finished more than 24 hours ago post nothing, so
+upgrading does not announce old failures. Notices use the same destination checks,
+retries, and uncertain-send handling as results. In the `delivery` array a notice
+appears with the run ID `notice:<occurrence-id>:<finished-at>`.
+
+Results and notices are standalone posts. They do not change the destination's conversation
 history, session binding, or name. A stopped gateway resumes queued delivery when
 it starts again. Already queued replies remain queued if task history is cleared.
 

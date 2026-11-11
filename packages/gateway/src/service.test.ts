@@ -238,6 +238,39 @@ const scheduled = (destination: DeliveryDestination | null) =>
     return yield* repo.occurrence(claimed.id);
   });
 
+// Runs the next occurrence of one recurring task per call, a minute apart.
+const recurring = (destination: DeliveryDestination) =>
+  Effect.gen(function* () {
+    const repo = yield* TaskRepository;
+
+    const task = yield* repo.add(
+      {
+        name: "Summary",
+        prompt: "Summarize recent conversations",
+        provider: "test-provider",
+        model: "test-model",
+        schedule: { type: "cron", expression: "* * * * *", timezone: "UTC" },
+      },
+      0,
+      null,
+      destination,
+    );
+
+    let minute = 0;
+
+    return {
+      id: task.id,
+      next: Effect.gen(function* () {
+        const now = ++minute * 60_000;
+        yield* repo.reconcile(now);
+        const claimed = (yield* repo.claim(now))!;
+        yield* executeOccurrence(repo, claimed);
+
+        return yield* repo.occurrence(claimed.id);
+      }),
+    };
+  });
+
 describe.concurrent("Gateway", () => {
   test("when an old approval button arrives through the channel, replies privately without inference", async () => {
     const actions = Effect.runSync(Queue.make<ApprovalAction>());
@@ -465,7 +498,7 @@ describe.concurrent("Gateway", () => {
   );
 
   test.each([false, true])(
-    "when cron needs approval with an old queued notice=%j, logs the failure and delivers only a successful retry",
+    "when cron needs approval with an old queued notice=%j, posts one fixed notice and delivers a successful retry",
     async (queuedNotice) => {
       let executed = 0;
       let allow = false;
@@ -562,7 +595,11 @@ describe.concurrent("Gateway", () => {
         );
 
         await state.run(Gateway.use((gateway) => gateway.deliverNext));
-        expect(state.sent).toEqual([]);
+        expect(state.sent.map((part) => part.text)).toEqual([
+          expect.stringContaining(
+            'Scheduled task "Summary" failed (agent:command-approval-required).',
+          ),
+        ]);
         await state.run(
           Effect.gen(function* () {
             const tasks = yield* TaskRepository;
@@ -570,7 +607,7 @@ describe.concurrent("Gateway", () => {
             expect((yield* tasks.occurrence(id)).reason).toContain("restart-service");
             expect(
               (yield* (yield* TaskDeliveries).forOccurrence(id)).map((part) => part.state),
-            ).toEqual(queuedNotice ? ["failed"] : []);
+            ).toEqual(queuedNotice ? ["failed", "sent"] : ["sent"]);
             expect(yield* tasks.list()).toHaveLength(1);
             allow = true;
             yield* tasks.retry(id, 0);
@@ -580,20 +617,20 @@ describe.concurrent("Gateway", () => {
             yield* (yield* Gateway).deliverNext;
             expect(
               (yield* (yield* TaskDeliveries).forOccurrence(id)).map((part) => part.state),
-            ).toEqual(queuedNotice ? ["failed", "sent"] : ["sent"]);
+            ).toEqual(queuedNotice ? ["failed", "sent", "sent"] : ["sent", "sent"]);
             expect((yield* (yield* TaskDeliveries).forOccurrence(id)).at(-1)!.runId).toBe(
               (yield* tasks.occurrence(id)).runId!,
             );
           }),
         );
         expect(executed).toBe(1);
-        expect(state.sent).toHaveLength(1);
-        expect(state.sent[0]).toMatchObject({
+        expect(state.sent).toHaveLength(2);
+        expect(state.sent[1]).toMatchObject({
           destination: "scheduled-thread",
           text: "Service restarted",
         });
         await state.run(Gateway.use((gateway) => gateway.deliverNext));
-        expect(state.sent).toHaveLength(1);
+        expect(state.sent).toHaveLength(2);
       } finally {
         await state.close();
       }
@@ -1138,6 +1175,105 @@ describe.concurrent("Gateway", () => {
         );
         expect(state.sent).toEqual([]);
         expect(state.requests).toHaveLength(1);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when a recurring task fails, posts one fixed notice per failure streak", async () => {
+    let failing = true;
+
+    const state = await fixture({}, () =>
+      failing
+        ? Stream.fail(
+            new ProviderError({
+              provider: "test-provider",
+              reason: "invalid-request",
+              message: "Private provider detail",
+            }),
+          )
+        : response(),
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const task = yield* recurring(yield* gateway.resolveDestination("saved-thread"));
+
+          const deliver = Effect.gen(function* () {
+            while (yield* gateway.deliverNext);
+
+            return state.sent.map((part) => part.text);
+          });
+
+          const failed = yield* task.next;
+          expect(failed.status).toBe("failed");
+          const run = yield* (yield* Store).run(failed.runId!);
+
+          const notice = `Scheduled task "Summary" failed (${run!.failureReason}). Inspect it with: poppet tasks show ${task.id}`;
+
+          expect(notice).not.toContain("Private provider detail");
+          expect(yield* deliver).toEqual([notice]);
+          expect(yield* (yield* TaskDeliveries).forOccurrence(failed.id)).toMatchObject([
+            { runId: `notice:${failed.id}:${failed.finishedAt}`, state: "sent" },
+          ]);
+
+          const repeated = yield* task.next;
+          expect(yield* deliver).toEqual([notice]);
+          expect(yield* (yield* TaskDeliveries).forOccurrence(repeated.id)).toEqual([]);
+
+          failing = false;
+          yield* task.next;
+          expect(yield* deliver).toEqual([notice, "Answer"]);
+
+          failing = true;
+          yield* task.next;
+          expect(yield* deliver).toEqual([notice, "Answer", notice]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each(["older than a day", "interrupted", "for another account"] as const)(
+    "when a scheduled failure is %s, posts no notice",
+    async (condition) => {
+      const state = await fixture({}, () =>
+        Stream.fail(
+          new ProviderError({
+            provider: "test-provider",
+            reason: condition === "interrupted" ? "interrupted" : "invalid-request",
+            message: "Private provider detail",
+          }),
+        ),
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            const destination = yield* gateway.resolveDestination("saved-thread");
+
+            const item = yield* scheduled(
+              condition === "for another account"
+                ? { ...destination, account: "other" }
+                : destination,
+            );
+
+            expect(item.status).toBe(condition === "interrupted" ? "interrupted" : "failed");
+
+            if (condition === "older than a day") yield* TestClock.adjust("25 hours");
+
+            expect(yield* gateway.deliverNext).toBe(false);
+            expect(
+              (yield* (yield* TaskDeliveries).forOccurrence(item.id)).map((part) => part.state),
+            ).toEqual(condition === "for another account" ? ["failed"] : []);
+          }),
+        );
+        expect(state.sent).toEqual([]);
       } finally {
         await state.close();
       }

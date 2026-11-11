@@ -31,12 +31,43 @@ const scheduleResults = (context: GatewayContext) =>
     }
   });
 
+const noticeWindow = 24 * 60 * 60 * 1000;
+
+// A failed occurrence posts one fixed notice. Old failures and repeats in a streak post nothing.
+const scheduleFailureNotices = (context: GatewayContext) =>
+  Effect.gen(function* () {
+    const { channel, repo, clock } = context;
+    const account = yield* channel.accountId;
+    const since = clock.currentTimeMillisUnsafe() - noticeWindow;
+
+    for (const item of yield* repo.failedScheduled(channel.id, since)) {
+      const destination = item.destination;
+
+      const enabled =
+        destination.account === account &&
+        destination.ownerId === channel.policy.ownerId &&
+        destination.scopeId === channel.policy.scopeId;
+
+      // The text carries only the task name and a reason code, never model output or error text.
+      const text = `Scheduled task "${item.name}" failed (${item.reason}). Inspect it with: poppet tasks show ${item.jobId}`;
+
+      yield* repo.scheduleResult(
+        item.id,
+        item.noticeId,
+        destination,
+        item.repeated ? [] : chunks(text, channel.textLimit),
+        enabled,
+      );
+    }
+  });
+
 /** Sends the next saved reply chunk without automatically retrying an uncertain delivery. */
 export const deliverNext = (context: GatewayContext) =>
   Effect.gen(function* () {
     const { channel, repo, clock } = context;
     const account = yield* channel.accountId;
     yield* scheduleResults(context);
+    yield* scheduleFailureNotices(context);
 
     const delivery = yield* repo.nextDelivery(channel.id, account, clock.currentTimeMillisUnsafe());
 
