@@ -1,5 +1,6 @@
-import { Skills } from "@poppet/agent";
-import { DeliveryDestination, Store } from "@poppet/store";
+import { Skills, isNoReply } from "@poppet/agent";
+import { outputText } from "@poppet/provider";
+import { DeliveryDestination, Store, type Run } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
 import { TaskCommand, TaskError, isTaskControl } from "#src/task-schema";
@@ -40,6 +41,10 @@ export class TaskDeliveries extends Context.Service<
   }
 >()("poppet/TaskDeliveries") {}
 
+/** True when a completed run answered with the no-reply sentinel, so nothing is posted. */
+export const noAction = (run: Run | null) =>
+  run?.status === "completed" && run.result !== null && isNoReply(outputText(run.result.output));
+
 export const taskOperation = <A>(operation: () => A): Effect.Effect<A, TaskError> =>
   Effect.try({
     try: operation,
@@ -69,6 +74,7 @@ export const executeTaskCommand = (
           return {
             ...item,
             delivery,
+            noAction: noAction(run),
             output: run?.result?.output ?? null,
             failureReason: run?.failureReason ?? null,
           };

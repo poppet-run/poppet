@@ -1033,6 +1033,40 @@ describe.concurrent("makeTaskWorker", () => {
     }
   });
 
+  test("when a scheduled answer is exactly NO_REPLY, logs completed no-action and flags the occurrence", async () => {
+    let turns = 0;
+
+    const state = await fixture(() =>
+      ++turns === 1 ? response([{ type: "text", text: "NO_REPLY" }]) : final(),
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const store = yield* Store;
+          const shown: unknown[] = [];
+
+          for (const _ of [1, 2]) {
+            const job = yield* repo.add(state.task, 0);
+            yield* repo.reconcile(0);
+            yield* executeOccurrence(repo, (yield* repo.claim(0))!);
+            shown.push(yield* executeTaskCommand(repo, store, { action: "show", id: job.id }, 0));
+          }
+
+          expect(shown).toMatchObject([
+            { occurrences: [{ status: "completed", noAction: true }] },
+            { occurrences: [{ status: "completed", noAction: false }] },
+          ]);
+          expect(state.lines[1]).toMatch(/ completed no-action$/);
+          expect(state.lines[3]).toMatch(/ completed$/);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when scheduled runs attempt memory writes, rejects them without changing saved state", async () => {
     const state = await fixture(() =>
       response([

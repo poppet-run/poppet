@@ -1,3 +1,4 @@
+import { isNoReply } from "@poppet/agent";
 import { Effect } from "effect";
 
 import { authorized, wake, type GatewayContext } from "#src/context";
@@ -21,11 +22,14 @@ const scheduleResults = (context: GatewayContext) =>
         destination.ownerId === channel.policy.ownerId &&
         destination.scopeId === channel.policy.scopeId;
 
+      const text = answer(run);
+
+      // A no-reply still saves the inbox row, so the occurrence is reconciled only once.
       yield* repo.scheduleResult(
         item.id,
         item.runId,
         destination,
-        chunks(answer(run), channel.textLimit),
+        isNoReply(text) ? [] : chunks(text, channel.textLimit),
         enabled,
       );
     }

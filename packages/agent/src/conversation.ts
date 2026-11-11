@@ -21,6 +21,7 @@ import {
 import { AgentError } from "#src/errors";
 import { ExternalTools, externalAgentTool } from "#src/external-tools";
 import { memoryTool } from "#src/memory-tools";
+import { noReply } from "#src/no-reply";
 import { fetchPageTool, suppliedPageURLs } from "#src/pages";
 import { maxTextBytes, streamReply } from "#src/reply";
 import { sessionReadTool, sessionSearchTool } from "#src/search";
@@ -134,7 +135,11 @@ export const conversation = Effect.gen(function* () {
         ? indexedPrompt
         : `${indexedPrompt}\n\n${external.instructions}`;
 
-    return task !== null && origin === "interactive"
+    // Scheduled runs may finish silently, so conditional tasks post only when there is news.
+    if (origin === "scheduled")
+      return `${baseInstructions}\nThis is a scheduled run. If the task prompt makes reporting conditional and the condition is not met, reply with exactly ${noReply} and nothing else. Otherwise answer normally.`;
+
+    return task !== null
       ? `${baseInstructions}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
       : baseInstructions;
   };

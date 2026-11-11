@@ -1280,6 +1280,49 @@ describe.concurrent("Gateway", () => {
     },
   );
 
+  test("when a scheduled answer is exactly NO_REPLY, sends nothing and reconciles the occurrence once", async () => {
+    const state = await fixture({}, () => response(" NO_REPLY\n"));
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const sql = yield* SqlClient.SqlClient;
+          const item = yield* scheduled(yield* gateway.resolveDestination("saved-thread"));
+          expect(yield* gateway.deliverNext).toBe(false);
+          expect(yield* gateway.deliverNext).toBe(false);
+          expect(yield* (yield* TaskDeliveries).forOccurrence(item.id)).toEqual([]);
+          expect(yield* (yield* GatewayRepository).scheduled("discord")).toEqual([]);
+          expect(
+            yield* sql`SELECT 1 FROM gateway_inbox WHERE occurrence_id = ${item.id}`,
+          ).toHaveLength(1);
+        }),
+      );
+      expect(state.sent).toEqual([]);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a scheduled answer mentions NO_REPLY among other text, delivers it", async () => {
+    const state = await fixture({}, () => response("Nothing changed, so NO_REPLY applies."));
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* scheduled(yield* gateway.resolveDestination("saved-thread"));
+          expect(yield* gateway.deliverNext).toBe(true);
+        }),
+      );
+      expect(state.sent).toMatchObject([
+        { destination: "saved-thread", text: "Nothing changed, so NO_REPLY applies." },
+      ]);
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when threads are deleted or revoked, rechecks access before delivery and keeps destination-free tasks local", async () => {
     let allowed = true;
 
