@@ -37,7 +37,14 @@ Scheduled delivery uses `--channel slack`. An explicit destination is a channel
 ID such as `C123`, or `C123:1730000000.000001` for a thread. Replies are saved
 before delivery; an uncertain send is not automatically repeated.
 
+A failed scheduled occurrence posts a short [failure notice](../tasks.md#failure-notices)
+to its configured channel or thread, naming the task and its reason code without
+model output or error text. Notices post once per failure streak and skip failures
+older than 24 hours. They use the same access checks and delivery queue as successful
+results, without changing the thread session. Cancelled, interrupted, and expired
+occurrences post nothing.
+
 Manual validation requires a real Slack app: check mention and thread replies,
-owner rejection, attachments, cancellation, command approval, scheduled delivery,
+owner rejection, attachments, cancellation, command approval, scheduled results and failure notices,
 and worker restart/reconnection. Automated checks do not establish live Slack
 permissions or connectivity.
