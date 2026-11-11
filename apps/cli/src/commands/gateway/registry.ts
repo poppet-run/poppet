@@ -2,13 +2,14 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { discord } from "@poppet/channel-discord/registration";
+import { slack } from "@poppet/channel-slack/registration";
 import { ConfigSourceLive, dataDirectory, gatewayPackages } from "@poppet/config";
 import { ChannelError, type ChannelRegistration } from "@poppet/gateway";
 import { Effect, Predicate, Schema } from "effect";
 
 import { validateChannels } from "#src/commands/gateway/channels";
 
-export const channels: ReadonlyArray<ChannelRegistration> = [discord];
+export const channels: ReadonlyArray<ChannelRegistration> = [discord, slack];
 
 const Registration = Schema.Struct({
   id: Schema.NonEmptyString,

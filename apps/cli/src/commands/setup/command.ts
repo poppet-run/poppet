@@ -107,14 +107,17 @@ export const runSetup = (context: CLIContext) =>
       });
     }).pipe(Effect.provide(context.runtime.selectedProvider(selected)));
 
-    const prompt = context.channels.find((channel) => channel.id === "discord")?.promptSetup;
+    const saves = [];
 
-    const saveDiscord =
-      prompt === undefined
-        ? null
-        : yield* prompt.pipe(
-            Effect.provideService(ChannelEnvironment, { dataDirectory: config.dataDirectory }),
-          );
+    for (const channel of context.channels) {
+      if (channel.promptSetup === undefined) continue;
+
+      const save = yield* channel.promptSetup.pipe(
+        Effect.provideService(ChannelEnvironment, { dataDirectory: config.dataDirectory }),
+      );
+
+      saves.push({ name: channel.name, save });
+    }
 
     yield* updateConfigFile(config.dataDirectory, (current) => ({
       ...current,
@@ -123,10 +126,12 @@ export const runSetup = (context: CLIContext) =>
     }));
     yield* Console.log(`Saved provider ${selected} and model ${model} to ${path}.`);
 
-    if (saveDiscord !== null) yield* Console.log(yield* saveDiscord);
-    else yield* Console.log("Discord configuration left unchanged.");
+    for (const { name, save } of saves) {
+      if (save !== null) yield* Console.log(yield* save);
+      else yield* Console.log(`${name} configuration left unchanged.`);
+    }
 
-    yield* Console.log("Setup has not tested live inference or the Discord connection.");
+    yield* Console.log("Setup has not tested live inference or messaging connections.");
     yield* setupWorker(context, config.dataDirectory);
   }).pipe(
     Effect.catchTag("QuitError", () =>
