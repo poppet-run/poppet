@@ -17,3 +17,9 @@ export { gatewaySchema } from "#src/migrations";
 export { Gateway, GatewayLive } from "#src/service";
 
 export { channelSettings, loadChannelSettings, saveChannelSettings } from "#src/settings";
+
+export { boundedAttachment } from "#src/attachments";
+
+export { configuredChannelSettings } from "#src/settings";
+
+export { parseSetupFlags } from "#src/setup";

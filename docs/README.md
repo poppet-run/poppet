@@ -27,6 +27,7 @@ for persistent settings.
 
 - [Host commands](commands.md): reviewed Bash execution, Discord approval, and cron behavior.
 - [Discord](gateways/discord.md): bot setup, thread sessions, permissions, and delivery.
+- [Slack](gateways/slack.md): Socket Mode setup, thread sessions, permissions, and delivery.
 
 ## Providers
 
@@ -39,5 +40,3 @@ for persistent settings.
 - [Development](development.md): workspace layout, checks, tests, and adding providers or channels.
 - [Architecture](architecture.md): service boundaries, Effect conventions, storage, and execution contracts.
 - [Implementation plan](implementation-plan.md): planned work.
-
-- [Slack messaging](gateways/slack.md)
