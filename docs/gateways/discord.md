@@ -106,6 +106,8 @@ channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#delive
 channel with `--channel discord`. Add `--conversation <channel-or-thread-id>` to
 select another destination. Use the worker to execute and deliver
 them. Scheduled results use the same queue and do not alter thread sessions.
+A scheduled run that answers with exactly `NO_REPLY` posts nothing; its saved
+output stays inspectable in `tasks show`.
 Discord is the only bundled adapter. Additional adapters can use the
 [external package contract](../development.md#adding-a-channel).
 

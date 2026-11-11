@@ -196,6 +196,14 @@ uncertain sends are not resent automatically. Inspect the saved output before
 manually reposting it. Delivery failures never change a completed occurrence or
 repeat inference, and `tasks retry` rejects completed occurrences.
 
+A task can stay quiet when it has nothing to report. Make the prompt conditional,
+for example "Tell me only if the page changed." When the condition is not met, the
+run answers with exactly `NO_REPLY` and nothing is posted. The occurrence still
+completes, the worker logs `completed no-action`, and `tasks show` marks it with
+`noAction: true` and keeps the saved output. An answer that mentions `NO_REPLY`
+among other text is delivered as usual. This applies to every scheduled run,
+including tasks without a messaging destination.
+
 ### Failure notices
 
 A failed occurrence with a messaging destination posts one fixed message:

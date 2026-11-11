@@ -646,6 +646,29 @@ describe.concurrent("conversation", () => {
     });
   });
 
+  test("when a run is scheduled, adds the no-reply rule that interactive runs never receive", async () => {
+    const state = await fixture(final);
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const agent = yield* Agent;
+          const session = yield* store.createSession("test-provider", "test-model");
+          yield* Stream.runDrain(agent.send(session.id, "Report only if it changed"));
+          yield* Stream.runDrain(
+            agent.send(session.id, "Report only if it changed", { origin: "scheduled" }),
+          );
+        }),
+      );
+      expect(state.requests).toHaveLength(2);
+      expect(state.requests[0]!.instructions).not.toContain("NO_REPLY");
+      expect(state.requests[1]!.instructions).toContain("reply with exactly NO_REPLY");
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each(["collision", "unknown"])(
     "when external tools have a %s error, reports it before dispatch",
     async (mode) => {

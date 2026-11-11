@@ -463,7 +463,11 @@ without changing their recurring schedule. Completed results and fixed failure
 notices enter the durable delivery queue. Pending failure text queued under a
 failed run by older versions is stopped before delivery. Delivery is unique per
 occurrence and run, so a successful retry can deliver its result to the task's
-saved destination.
+saved destination. Scheduled instructions let a run with a conditional prompt
+answer with exactly `NO_REPLY` when its condition is not met. `isNoReply` from
+`@poppet/agent` matches only a whole trimmed answer. Such a run completes with a
+`completed no-action` log line and `noAction` in `tasks show`, where its saved
+output stays inspectable.
 
 ## Supplied page reading
 
@@ -891,7 +895,8 @@ synthetic run ID `notice:<occurrence-id>:<finished-at>`, since a failure may hav
 no run, a retry reuses the occurrence ID, and queued results of unfinished runs
 are rejected. A failure directly after another failure of the same task is
 recorded with no chunks, and failures that finished over 24 hours ago are
-ignored, so each streak posts once and an upgrade posts no history. The normal delivery loop
+ignored, so each streak posts once and an upgrade posts no history. A no-reply answer saves its
+inbox entry with no chunks, so it is reconciled once and nothing is sent. The normal delivery loop
 rechecks current policy and adapter permissions and preserves bounded retries
 and uncertain-send handling. Delivery status never changes execution status.
 

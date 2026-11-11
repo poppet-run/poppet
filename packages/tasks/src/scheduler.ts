@@ -16,7 +16,7 @@ import {
   Stream,
 } from "effect";
 
-import { executeTaskCommand } from "#src/commands";
+import { executeTaskCommand, noAction } from "#src/commands";
 import {
   isTaskControl,
   type Occurrence,
@@ -152,11 +152,16 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
             };
           });
 
+          const { status, runId } = outcome.occurrence;
+
+          const quiet =
+            status === "completed" && runId !== null && noAction(yield* store.run(runId));
+
           // Active cancellations are logged by the command after interruption finishes.
-          if (outcome.occurrence.status !== "cancelled")
+          if (status !== "cancelled")
             yield* workerLog(
               now,
-              `${occurrenceLabel(job.name, item.id)} ${outcome.occurrence.status}${outcome.occurrence.status === "failed" ? ` reason=${outcome.reason}` : ""}`,
+              `${occurrenceLabel(job.name, item.id)} ${status}${quiet ? " no-action" : ""}${status === "failed" ? ` reason=${outcome.reason}` : ""}`,
               outcome.occurrence.status === "failed",
             );
 
