@@ -113,16 +113,19 @@ describe("makeCLI", () => {
         expect(JSON.parse(result.stdout).worker.messaging).toMatchObject({
           running: false,
           enabled: !unreadable,
-          channels: channels.map(({ id }) =>
-            unreadable
-              ? {
-                  id,
-                  enabled: false,
-                  error:
-                    "Cannot load Discord configuration or credentials. Check config.json and run gateway discord setup again.",
-                }
-              : { id, enabled: true },
-          ),
+          channels: [
+            ...channels.map(({ id }) =>
+              unreadable
+                ? {
+                    id,
+                    enabled: false,
+                    error:
+                      "Cannot load Discord configuration or credentials. Check config.json and run gateway discord setup again.",
+                  }
+                : { id, enabled: true },
+            ),
+            { id: "slack", enabled: false },
+          ],
         });
         expect(result.stdout + result.stderr).not.toContain("secret");
       } finally {
@@ -754,7 +757,10 @@ describe("makeCLI", () => {
         messaging: {
           running: true,
           enabled: false,
-          channels: [{ id: "discord", enabled: false }],
+          channels: [
+            { id: "discord", enabled: false },
+            { id: "slack", enabled: false },
+          ],
         },
         connections: [
           {

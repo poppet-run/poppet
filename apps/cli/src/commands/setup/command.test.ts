@@ -131,7 +131,7 @@ const fixture = async () => {
     [registration("first-provider"), registration("saved-provider")],
     () => Effect.void,
     worker,
-    channels,
+    channels.filter((channel) => channel.id === "discord"),
     readChatLine,
     () => Effect.void,
   );

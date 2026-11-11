@@ -1,0 +1,25 @@
+{
+  "name": "@poppet/channel-slack",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*.ts"
+  },
+  "exports": {
+    "./registration": "./src/registration.ts"
+  },
+  "scripts": {
+    "typecheck": "bun --check",
+    "test": "bun --no-env-file ../../tools/testing/run.ts"
+  },
+  "dependencies": {
+    "@poppet/config": "workspace:*",
+    "@poppet/credentials": "workspace:*",
+    "@poppet/gateway": "workspace:*",
+    "@slack/socket-mode": "2.0.7",
+    "@slack/web-api": "7.19.0",
+    "effect": "4.0.4"
+  }
+}

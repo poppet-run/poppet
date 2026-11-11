@@ -13,6 +13,7 @@ export {
   ConfigSourceLive,
   dataDirectory,
   DiscordConfiguration,
+  SlackConfiguration,
   readConfigFile,
   updateConfigFile,
 } from "#src/source";

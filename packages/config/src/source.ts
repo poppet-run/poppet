@@ -21,8 +21,15 @@ export const DiscordConfiguration = Schema.Struct({
   homeChannelId: Schema.String.check(Schema.isPattern(/^\d{1,20}$/)),
 });
 
+export const SlackConfiguration = Schema.Struct({
+  ownerId: Schema.String.check(Schema.isPattern(/^[UW][A-Z0-9]+$/)),
+  teamId: Schema.String.check(Schema.isPattern(/^T[A-Z0-9]+$/)),
+  homeChannelId: Schema.String.check(Schema.isPattern(/^[CG][A-Z0-9]+$/)),
+});
+
 const FileSettings = Schema.Struct({
   discord: Schema.optionalKey(DiscordConfiguration),
+  slack: Schema.optionalKey(SlackConfiguration),
   applicationName: Schema.optionalKey(ConfigText),
   provider: Schema.optionalKey(ConfigText),
   model: Schema.optionalKey(ConfigText),
