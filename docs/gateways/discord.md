@@ -120,7 +120,9 @@ minutes, cancellation, or worker restart. `/cancel` also cancels the pending run
 
 Approval controls bypass the model queue. Unknown, expired, and reused IDs never
 start commands. Cron jobs do not create approval prompts; their occurrence fails,
-logs a reason code, and retains the details in `tasks show` without posting.
+logs a reason code, and retains the details in `tasks show`. A failed occurrence
+posts one short [failure notice](../tasks.md#failure-notices) to the task's
+configured destination, without model output or error text.
 Successful cron results go to each task's configured destination.
 
 ## Validation
