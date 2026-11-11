@@ -1,5 +1,8 @@
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
+import { readConfigFile, updateConfigFile } from "@poppet/config";
+import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { protectedFiles } from "@poppet/credentials/records";
 import { Effect, Layer, Schema } from "effect";
 
@@ -82,5 +85,56 @@ export const channelSettings = <S extends Schema.Top>(
         Effect.flatMap((contents) => saveChannelSettings(dataDirectory, adapter, contents)),
         Effect.mapError(failure),
       ),
+  };
+};
+
+/** Saves adapter policy and secrets under one outer lock, preserving the existing file layout. */
+export const configuredChannelSettings = <
+  K extends "discord" | "slack",
+  P extends Schema.Top & { readonly Type: object },
+  C extends Schema.Top & { readonly Type: object },
+>(
+  adapter: K,
+  label: string,
+  policySchema: P,
+  credentialSchema: C,
+) => {
+  const credentials = channelSettings(adapter, label, credentialSchema);
+
+  const failure = () =>
+    new ChannelError({
+      reason: "configuration",
+      message: `Cannot load ${label} configuration or credentials. Check config.json and run gateway ${adapter} setup again.`,
+    });
+
+  return {
+    save: (directory: string, settings: P["Type"] & C["Type"]) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* Effect.tryPromise({
+            try: () => mkdir(directory, { recursive: true, mode: 0o700 }),
+            catch: failure,
+          });
+          // Serialize policy and secret writes; a crash between writes can still leave them apart.
+          yield* acquireOwnerLock(join(directory, `${adapter}-config.lock`));
+          const policy = yield* Schema.decodeUnknownEffect(policySchema)(settings);
+          // Refuse invalid configuration before replacing credentials.
+          yield* readConfigFile(directory);
+          yield* credentials.save(directory, settings);
+          yield* updateConfigFile(directory, (file) => ({ ...file, [adapter]: policy }));
+        }),
+      ).pipe(Effect.mapError(failure), Effect.uninterruptible),
+    load: (directory: string) =>
+      Effect.gen(function* () {
+        const saved = yield* credentials.load(directory);
+
+        if (saved === null) return null;
+        const { file } = yield* readConfigFile(directory);
+
+        if (file[adapter] === undefined) return null;
+        const policy = yield* Schema.decodeUnknownEffect(policySchema)(file[adapter]);
+
+        return { ...policy, ...saved };
+      }).pipe(Effect.mapError(failure)),
   };
 };

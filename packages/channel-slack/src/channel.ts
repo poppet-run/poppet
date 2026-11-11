@@ -1,9 +1,17 @@
-import { ChannelError, MessagingChannel, type IncomingMessage } from "@poppet/gateway";
+import {
+  boundedAttachment,
+  ChannelError,
+  MessagingChannel,
+  type IncomingMessage,
+} from "@poppet/gateway";
 import { SocketModeClient } from "@slack/socket-mode";
-import { WebClient } from "@slack/web-api";
+import { ErrorCode, WebClient, type ChatPostMessageArguments } from "@slack/web-api";
 import { Deferred, Effect, Exit, Layer, Queue, Redacted, Schema, Stream } from "effect";
 
 import type { SlackSettings } from "#src/settings";
+
+export const escapeSlackText = (text: string) =>
+  text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 export const parseConversation = (id: string) => {
   const match = /^([CG][A-Z0-9]+)(?::(\d+\.\d+))?$/.exec(id);
@@ -20,7 +28,7 @@ export const parseConversation = (id: string) => {
 export const EventBody = Schema.Struct({
   team_id: Schema.String,
   event: Schema.Struct({
-    type: Schema.Literals(["message", "app_mention"]),
+    type: Schema.Literal("message"),
     user: Schema.String,
     channel: Schema.String.check(Schema.isPattern(/^[CG][A-Z0-9]+$/)),
     ts: Schema.String.check(Schema.isPattern(/^\d+\.\d+$/)),
@@ -56,10 +64,19 @@ export const incomingMessage = (
   )
     return null;
   const content = event.text ?? "";
-  const text = content.replaceAll(`<@${botId}>`, "").trim();
-  const attachments = (event.files ?? []).map((file) => Object.assign({ ref: file.id }, file));
 
-  if ((!text && !attachments.length) || text.length > 8192 || attachments.length > 10) return null;
+  const text = content
+    .replaceAll(`<@${botId}>`, "")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&")
+    .trim();
+
+  const attachments = (event.files ?? [])
+    .slice(0, 10)
+    .map((file) => Object.assign({}, file, { ref: file.id, name: file.name.slice(0, 1024) }));
+
+  if ((!text && !attachments.length) || text.length > 8192) return null;
 
   return {
     messageId: `${event.channel}:${event.ts}`,
@@ -87,9 +104,9 @@ const failure = (cause: unknown, sending = false) => {
 
   return new ChannelError({
     reason:
-      error.code === "slack_webapi_rate_limited_error"
+      error.code === ErrorCode.RateLimitedError
         ? "unavailable"
-        : error.code === "slack_webapi_platform_error"
+        : error.code === ErrorCode.PlatformError
           ? "permission"
           : sending
             ? "uncertain"
@@ -117,7 +134,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
         (owned) =>
           Effect.promise(async () => {
             await owned.disconnect();
-          }),
+          }).pipe(Effect.timeout("5 seconds"), Effect.ignore),
       );
 
       let connected = false;
@@ -137,7 +154,14 @@ export const slackChannelLayer = (settings: SlackSettings) =>
       socket.on(
         "slack_event",
         async ({ body, ack }: { body: unknown; ack: () => Promise<void> }) => {
-          await ack();
+          try {
+            await ack();
+          } catch {
+            error = "Slack event acknowledgement failed.";
+
+            return;
+          }
+
           const decoded = Schema.decodeUnknownExit(EventBody)(body);
 
           if (Exit.isFailure(decoded)) return;
@@ -242,7 +266,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
             try: async () => {
               const args = {
                 channel: message.parentId,
-                timestamp: message.messageId.slice(message.parentId.length + 1),
+                timestamp: parseConversation(message.messageId).ts!,
               };
 
               if (state === "working") await web.reactions.add({ ...args, name: "eyes" });
@@ -259,17 +283,20 @@ export const slackChannelLayer = (settings: SlackSettings) =>
             try: async () => {
               const target = parseConversation(id);
 
-              // Slack's SDK uses the same method name as browser window messaging.
-              /* oxlint-disable unicorn/require-post-message-target-origin */
-              const reply = await web.chat.postMessage({
+              const args: ChatPostMessageArguments = {
                 channel: target.channel,
-                thread_ts: target.ts ?? "",
-                text,
+                text: escapeSlackText(text),
                 mrkdwn: false,
                 parse: "none",
                 unfurl_links: false,
                 unfurl_media: false,
-              });
+              };
+
+              if (target.ts) args.thread_ts = target.ts;
+
+              // Slack's SDK uses the same method name as browser window messaging.
+              /* oxlint-disable unicorn/require-post-message-target-origin */
+              const reply = await web.chat.postMessage(args);
 
               /* oxlint-enable unicorn/require-post-message-target-origin */
 
@@ -281,53 +308,21 @@ export const slackChannelLayer = (settings: SlackSettings) =>
           }),
         download: (attachment, maxBytes) =>
           Effect.tryPromise({
-            try: async () => {
-              const info = await web.files.info({ file: attachment.ref });
-              const url = info.file?.url_private_download ?? info.file?.url_private;
-
-              if (
-                !url ||
-                new URL(url).hostname !== "files.slack.com" ||
-                new URL(url).protocol !== "https:"
-              )
-                throw new ChannelError({
-                  reason: "permission",
-                  message: "Slack file URL is unavailable or unsupported.",
-                });
-
-              const response = await fetch(url, {
-                headers: { Authorization: `Bearer ${Redacted.value(settings.token)}` },
-                redirect: "error",
-                signal: AbortSignal.timeout(30000),
-              });
-
-              if (!response.ok || !response.body) throw new Error("Slack file download failed");
-              const chunks: Uint8Array[] = [];
-              let length = 0;
-
-              for await (const chunk of response.body) {
-                length += chunk.length;
-
-                if (length > maxBytes)
-                  throw new ChannelError({
-                    reason: "permission",
-                    message: "Slack file exceeds the attachment limit.",
-                  });
-                chunks.push(chunk);
-              }
-
-              const bytes = new Uint8Array(length);
-              let offset = 0;
-
-              for (const chunk of chunks) {
-                bytes.set(chunk, offset);
-                offset += chunk.length;
-              }
-
-              return bytes;
-            },
+            try: () => web.files.info({ file: attachment.ref }),
             catch: failure,
-          }),
+          }).pipe(
+            Effect.flatMap((info) =>
+              boundedAttachment(fetch, new Set(["files.slack.com"]), "Slack", {
+                Authorization: `Bearer ${Redacted.value(settings.token)}`,
+              })(
+                {
+                  ...attachment,
+                  ref: info.file?.url_private_download ?? info.file?.url_private ?? "",
+                },
+                maxBytes,
+              ),
+            ),
+          ),
         naming: {
           sanitize: (title) => title,
           conversation: (message) =>

@@ -239,7 +239,7 @@ Existing credential files and conversation records keep their formats.
 
 ## Adding a channel
 
-Discord is the only bundled channel. External packages implement `ChannelRegistration`
+Discord and Slack are bundled channels. External packages implement `ChannelRegistration`
 from `@poppet/gateway` and export it as the default export of a lightweight entry point.
 Install the package in `<POPPET_DATA_DIR>/gateways`, then list its entry point in
 `config.json`, for example:
@@ -253,7 +253,7 @@ Install the package in `<POPPET_DATA_DIR>/gateways`, then list its entry point i
 The example is a placeholder, not a published adapter. Poppet resolves packages
 from that directory, independently of the working directory. Package names and
 package subpaths are accepted; file paths and URLs are rejected. Nothing is
-automatically discovered or installed. Discord is always registered; duplicate
+automatically discovered or installed. Discord and Slack are always registered; duplicate
 or reserved IDs and malformed registrations stop gateway startup with an error.
 Restart the worker after changing the list or installed packages.
 
@@ -271,8 +271,8 @@ Lint restricts concrete channel imports to registration modules.
 
 The optional `promptSetup` operation collects interactive choices and returns a
 save effect, or `null` when skipped. The host runs that effect after collecting
-the remaining choices. `poppet setup` currently uses only the bundled Discord
-registration and does not load external adapters.
+the remaining choices. `poppet setup` uses the bundled Discord and Slack
+registrations and does not load external adapters.
 
 The host supplies `ChannelEnvironment` with the data directory and `ChannelInput`
 with bounded, redacted secret input. The package owns argument validation,

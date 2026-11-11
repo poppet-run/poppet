@@ -48,7 +48,7 @@ afterEach(async () => {
   );
 });
 
-const fixture = async () => {
+const fixture = async (includeSlack = false) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-setup-"));
   directories.push(directory);
   const path = join(directory, "config.json");
@@ -131,7 +131,7 @@ const fixture = async () => {
     [registration("first-provider"), registration("saved-provider")],
     () => Effect.void,
     worker,
-    channels.filter((channel) => channel.id === "discord"),
+    includeSlack ? channels : channels.filter((channel) => channel.id === "discord"),
     readChatLine,
     () => Effect.void,
   );
@@ -410,4 +410,11 @@ describe("setup", () => {
       if (mode === "foreground") expect(f.output.join("\n")).toContain("poppet worker run");
     },
   );
+});
+
+test("setup prompts for both bundled channels and preserves skipped configuration", async () => {
+  const f = await fixture(true);
+  expect(await f.run([answer(), answer(), answer(), answer(), answer()])).toBeNull();
+  expect(f.output.join("\n")).toContain("Discord configuration left unchanged.");
+  expect(f.output.join("\n")).toContain("Slack configuration left unchanged.");
 });

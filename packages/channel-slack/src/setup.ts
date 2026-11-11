@@ -1,17 +1,21 @@
-import { readConfigFile } from "@poppet/config";
+import { SlackConfiguration, readConfigFile } from "@poppet/config";
 import { promptSecret } from "@poppet/credentials/input";
 import { ChannelEnvironment, ChannelError } from "@poppet/gateway";
-import { Console, Effect } from "effect";
+import { Console, Effect, Schema } from "effect";
 import { Prompt } from "effect/cli";
 
 import { loadSlackSettings, saveSlackSettings } from "#src/settings";
 
-const id = (message: string, value: string | undefined) =>
+const id = (
+  message: string,
+  value: string | undefined,
+  schema: typeof SlackConfiguration.fields.ownerId,
+  hint: string,
+) =>
   Prompt.String({
     message,
     default: value ?? "",
-    validate: (input) =>
-      /^[A-Z][A-Z0-9]+$/.test(input) ? Effect.succeed(input) : Effect.fail("Enter a Slack ID."),
+    validate: (input) => (Schema.is(schema)(input) ? Effect.succeed(input) : Effect.fail(hint)),
   });
 
 export const promptSlackSetup = Effect.gen(function* () {
@@ -36,17 +40,30 @@ export const promptSlackSetup = Effect.gen(function* () {
     "Copy IDs from your Slack workspace. Only the configured owner can invoke Poppet; channel members can read its replies.",
   );
 
-  const ownerId = yield* id("Your Slack user ID", defaults?.ownerId);
-  const teamId = yield* id("Workspace ID", defaults?.teamId);
+  const ownerId = yield* id(
+    "Your Slack user ID",
+    defaults?.ownerId,
+    SlackConfiguration.fields.ownerId,
+    "Enter a Slack user ID starting with U or W.",
+  );
+
+  const teamId = yield* id(
+    "Workspace ID",
+    defaults?.teamId,
+    SlackConfiguration.fields.teamId,
+    "Enter a Slack workspace ID starting with T.",
+  );
 
   const homeChannelId = yield* id(
     "Home channel ID (default destination for scheduled results and notifications)",
     defaults?.homeChannelId,
+    SlackConfiguration.fields.homeChannelId,
+    "Enter a Slack channel ID starting with C or G.",
   );
 
   const replaceToken =
     saved === null ||
-    (yield* Prompt.Confirm({ message: "Replace the saved bot token?", initial: false }));
+    (yield* Prompt.Confirm({ message: "Replace the saved Slack tokens?", initial: false }));
 
   const token = replaceToken
     ? yield* promptSecret(
@@ -56,7 +73,10 @@ export const promptSlackSetup = Effect.gen(function* () {
     : saved.token;
 
   const appToken = replaceToken
-    ? yield* promptSecret("Slack app token", "Enter an app token without whitespace.")
+    ? yield* promptSecret(
+        "Slack app token",
+        "Enter a nonempty app token without whitespace, up to 8192 characters.",
+      )
     : saved.appToken;
 
   return saveSlackSettings(dataDirectory, {

@@ -4,9 +4,9 @@
 
 Create a Slack app for your workspace and enable Socket Mode. Generate an
 app-level token with `connections:write`, and install the app with bot scopes
-`app_mentions:read`, `chat:write`, `channels:read`, `channels:history`,
+`chat:write`, `channels:read`, `channels:history`,
 `groups:read`, `groups:history`, `reactions:write`, and `files:read`.
-Subscribe to `app_mention`, `message.channels`, and `message.groups` bot events.
+Subscribe to `message.channels` and `message.groups` bot events.
 Invite the bot to an unshared channel. Shared channels and DMs are unsupported.
 
 Run `poppet setup` for masked entry of both tokens, or configure directly:

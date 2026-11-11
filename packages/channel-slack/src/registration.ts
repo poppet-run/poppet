@@ -1,6 +1,9 @@
-import { parseArgs } from "node:util";
-
-import { ChannelEnvironment, ChannelError, type ChannelRegistration } from "@poppet/gateway";
+import {
+  ChannelEnvironment,
+  ChannelError,
+  parseSetupFlags,
+  type ChannelRegistration,
+} from "@poppet/gateway";
 import { Effect, Layer, Schema } from "effect";
 
 import { SlackSettings, loadSlackSettings, saveSlackSettings } from "#src/settings";
@@ -8,36 +11,6 @@ import { promptSlackSetup } from "#src/setup";
 
 const setupHelp =
   "setup --owner-id <id> --team-id <id> --home-channel-id <id> --bot-token <token> --app-token <token>";
-
-const parseSetup = (args: ReadonlyArray<string>) =>
-  Effect.try({
-    try: () => {
-      if (args[0] !== "setup") throw new Error("Expected setup");
-
-      const { values, tokens } = parseArgs({
-        args: args.slice(1),
-        options: {
-          "owner-id": { type: "string" },
-          "team-id": { type: "string" },
-          "home-channel-id": { type: "string" },
-          "bot-token": { type: "string" },
-          "app-token": { type: "string" },
-        },
-        strict: true,
-        allowPositionals: false,
-        tokens: true,
-      });
-
-      const names = tokens.filter((token) => token.kind === "option").map((token) => token.name);
-
-      if (names.length !== 5 || new Set(names).size !== 5)
-        throw new Error("Expected each setup flag exactly once");
-
-      return values;
-    },
-    catch: () =>
-      new ChannelError({ reason: "configuration", message: `Use gateway slack ${setupHelp}.` }),
-  });
 
 export const slack = {
   id: "slack",
@@ -47,7 +20,14 @@ export const slack = {
   setupHelp,
   setup: (args) =>
     Effect.gen(function* () {
-      const values = yield* parseSetup(args);
+      const values = yield* parseSetupFlags(args, "slack", setupHelp, [
+        "owner-id",
+        "team-id",
+        "home-channel-id",
+        "bot-token",
+        "app-token",
+      ]);
+
       const environment = yield* ChannelEnvironment;
 
       const settings = yield* Schema.decodeUnknownEffect(SlackSettings)({
