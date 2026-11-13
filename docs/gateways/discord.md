@@ -52,6 +52,8 @@ Use `@Poppet /new --skill weekly-review Review Acorn` to start a fresh session
 with a saved [local skill](../skills.md#messaging-sessions), in a new thread or an
 existing one. `/new <message>` starts without a skill.
 Previous session history is retained; ordinary follow-ups keep the skill snapshot.
+Any message can also [name a skill](../skills.md#name-a-skill-in-a-message) with
+`$name` to load it for that message.
 Options precede the prompt; selection errors leave the active session unchanged.
 
 ## Progress and controls

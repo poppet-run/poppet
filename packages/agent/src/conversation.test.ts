@@ -118,6 +118,9 @@ const externalTool = (name: string, availableAfterUntrusted: boolean): ExternalT
 
 const toolNames = (request: ModelRequest) => request.tools.map((entry) => entry.name);
 
+const userTexts = (request: ModelRequest) =>
+  request.messages.flatMap((message) => (message.role === "user" ? [message.text] : []));
+
 const skillLibrary = new Map([
   ["weekly-review", "# Weekly review\n\nSummarize progress and next actions.\n\nStep details."],
   ["broken", ""],
@@ -682,6 +685,167 @@ describe.concurrent("conversation", () => {
           }),
         );
         expect(toolNames(state.requests[1]!)).toContain("view_skill");
+      } finally {
+        await state.close();
+      }
+    });
+  });
+
+  describe("withMentionedSkills", () => {
+    test("when a message names a skill, supplies it and replays the saved text after the file changes", async () => {
+      const library = new Map(skillLibrary);
+
+      const state = await fixture(() => final(), {
+        skills: {
+          list: Effect.sync(() => [...library.keys()]),
+          load: (name) => Effect.succeed({ name, content: library.get(name)! }),
+        },
+      });
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            const text = "Run $weekly-review for Acorn";
+            expect(yield* reportedFailures(session.id, text)).toEqual([]);
+            library.set("weekly-review", "Edited procedure");
+            expect(yield* reportedFailures(session.id, "Continue")).toEqual([]);
+            library.delete("weekly-review");
+            expect(yield* reportedFailures(session.id, "And again")).toEqual([]);
+
+            expect((yield* store.messages(session.id))[0]?.message).toEqual({
+              role: "user",
+              text,
+              skills: [{ name: "weekly-review", content: skillLibrary.get("weekly-review")! }],
+            });
+          }),
+        );
+
+        for (const request of state.requests) {
+          expect(userTexts(request)[0]).toStartWith("Run $weekly-review for Acorn\n\n");
+          expect(userTexts(request)[0]).toContain("Summarize progress and next actions.");
+          expect(JSON.stringify(request.messages)).not.toContain("Edited procedure");
+        }
+
+        expect(userTexts(state.requests[2]!).slice(1)).toEqual(["Continue", "And again"]);
+      } finally {
+        await state.close();
+      }
+    });
+
+    test("when a message names a manual-only skill, supplies it", async () => {
+      const state = await skilled(() => final());
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            expect(yield* reportedFailures(session.id, "Now $deploy please")).toEqual([]);
+          }),
+        );
+        expect(userTexts(state.requests[0]!)[0]).toContain("release script");
+        expect(state.requests[0]!.instructions).not.toContain("release script");
+      } finally {
+        await state.close();
+      }
+    });
+
+    test.each([
+      ["no skill has that name", "Print $HOME and $weekly-review/notes", {}],
+      ["the skill is already selected for the session", "Run $weekly-review", {}],
+      ["the run is scheduled", "Run $weekly-review", { origin: "scheduled" as const }],
+    ])("when %s, sends the message as written", async (_, text, options) => {
+      const state = await skilled(() => final());
+      const content = skillLibrary.get("weekly-review")!;
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+
+            const session = yield* store.createSession("test-provider", "test-model", {
+              skill: { name: "weekly-review", content },
+            });
+
+            expect(yield* reportedFailures(session.id, text, options)).toEqual([]);
+            expect((yield* store.messages(session.id))[0]?.message).toEqual({ role: "user", text });
+          }),
+        );
+        expect(userTexts(state.requests[0]!)).toEqual([text]);
+      } finally {
+        await state.close();
+      }
+    });
+
+    test.each([
+      ["names an invalid skill", "Run $broken now", "broken"],
+      ["names more than four skills", "$s1 $s2 $s3 $s4 $s5", "at most 4"],
+    ])("when a message %s, fails before saving a run", async (_, text, detail) => {
+      const state = await fixture(() => final(), {
+        skills: {
+          list: Effect.succeed(["broken", "s1", "s2", "s3", "s4", "s5"]),
+          load: librarySkills.load,
+        },
+      });
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+
+            const error = yield* failure(Stream.runDrain((yield* Agent).send(session.id, text)));
+
+            expect(error).toMatchObject({ reason: "invalid-request" });
+            expect(error?.message).toContain(detail);
+            expect(yield* store.runs(session.id)).toEqual([]);
+          }),
+        );
+        expect(state.requests).toEqual([]);
+      } finally {
+        await state.close();
+      }
+    });
+
+    test("when a named skill contains a URL, grants no page access", async () => {
+      const fetched: string[] = [];
+      let turns = 0;
+
+      const state = await fixture(
+        () =>
+          ++turns === 1
+            ? completed([
+                tool("fetch_page", '{"url":"https://example.com/runbook"}', "page", "poppet_web"),
+              ])
+            : final(),
+        {
+          pages: {
+            fetch: (url) => {
+              fetched.push(url);
+
+              return Effect.succeed("Page text");
+            },
+          },
+          skills: {
+            list: Effect.succeed(["reader"]),
+            load: (name) => Effect.succeed({ name, content: "Read https://example.com/runbook" }),
+          },
+        },
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            expect(yield* reportedFailures(session.id, "Follow $reader")).toEqual([
+              "agent:tool-permission",
+            ]);
+          }),
+        );
+        expect(fetched).toEqual([]);
       } finally {
         await state.close();
       }

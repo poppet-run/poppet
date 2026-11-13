@@ -3,7 +3,7 @@
 [Documentation index](README.md)
 
 A skill is an owner-reviewed procedure selected when creating a chat or scheduled
-task. It uses Poppet's existing tools and permissions. Create one file at
+task, or [named in a message](#name-a-skill-in-a-message) for one turn. It uses Poppet's existing tools and permissions. Create one file at
 `<POPPET_DATA_DIR>/skills/<name>/SKILL.md`, using UTF-8 Markdown of at most 8192
 bytes. Names contain 1–128 letters, digits, underscores, or hyphens.
 
@@ -91,6 +91,46 @@ a misspelt marker, leaves the skill visible to the model. Check with
 `poppet skills list`, which prints `manual-only` after each marked skill.
 `skills list --json` still prints names only; `skills show <name> --json` includes
 `manualOnly`.
+
+## Name a skill in a message
+
+Write `$` followed by a skill's name to load that skill for one message:
+
+```text
+Run $weekly-review for the Acorn project
+```
+
+This works in `chat new`, `chat send`, `chat interactive`, web chat, and messaging,
+including on models without tool support. Poppet reads the file when it accepts
+the message and saves the name and full text with that message. Later turns replay
+the saved text, so editing or deleting the file does not change what the session
+already saw. Naming the skill again in a later message reads the current file.
+`chat show` lists the skills under the message that named them.
+
+A name is recognized only when all of these hold:
+
+- It stands alone as a word. `${name}`, `\$name`, `a$name`, `$name/path`,
+  `$name=1`, and `$name.sh` are not names. Sentence punctuation after it is fine.
+- It is outside inline code and fenced code blocks.
+- A skill directory has exactly that name, matching case.
+
+Anything else stays ordinary text, so pasted shell variables such as `$HOME` are
+left alone unless you have a skill with that exact name. Quote such text as code
+to be certain.
+
+- A named skill whose file is invalid fails the message with an error, before
+  any run is saved. Fix the file, or write the name without `$`.
+- One message can name at most four skills.
+- The skill a session was created with is not loaded again; its saved snapshot
+  still applies.
+- [Manual-only skills](#manual-only-skills) can be named, because you named them.
+- Scheduled task prompts are not expanded. Each occurrence would read the file
+  again, which would break the task's snapshot. Use `tasks add --skill`.
+- Text inside attachments is not scanned.
+
+Named skills count toward the context budget as part of their message, at most
+8192 bytes each. They follow the same rules as a selected skill: below the base
+rules, with no extra permissions, and URLs inside them cannot be fetched.
 
 ## Draft a skill from a completed procedure
 

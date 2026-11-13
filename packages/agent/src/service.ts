@@ -30,6 +30,8 @@ import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
 import { memoryPrompt } from "#src/memory";
 import { ChatSettings } from "#src/settings";
+import { loadMentionedSkills } from "#src/skill-mentions";
+import { Skills } from "#src/skills";
 import { generateTitle, sessionTitle } from "#src/title";
 
 /** Resolves registered models through the host while the request's resource scope stays open. */
@@ -116,6 +118,7 @@ export const AgentLive = Layer.effect(
     const converse = yield* conversation;
     const readMemoryPrompt = yield* memoryPrompt;
     const policy = yield* ChatSettings;
+    const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
     const requests = yield* Semaphore.make(policy.maxConcurrentRequests);
     // One permit per session keeps history reads and saves in order; unused entries are removed.
     const sessions = new Map<string, { readonly permit: Semaphore.Semaphore; users: number }>();
@@ -194,15 +197,24 @@ export const AgentLive = Layer.effect(
                 }),
               );
 
+            // Scheduled prompts are never expanded: each occurrence would reread the file.
+            const mentionedSkills =
+              skills === null || options.origin === "scheduled"
+                ? []
+                : yield* loadMentionedSkills(skills, text, session.skill?.name ?? null);
+
             // Track the saved run before allowing cancellation, so finalization can always settle it.
             const run = yield* Effect.uninterruptible(
               Effect.gen(function* () {
                 const pending = yield* store.queueRun(
                   sessionId,
                   [
-                    files.references.length === 0
-                      ? { role: "user", text }
-                      : { role: "user", text, attachments: files.references },
+                    {
+                      role: "user",
+                      text,
+                      ...(files.references.length > 0 && { attachments: files.references }),
+                      ...(mentionedSkills.length > 0 && { skills: mentionedSkills }),
+                    },
                   ],
                   options.runId,
                   sessionTitle(text.trim() || files.references[0]!.name),
@@ -289,6 +301,7 @@ export const AgentLive = Layer.effect(
                   prompt,
                   origin: options.origin ?? "interactive",
                   selectedSkill: session.skill?.name ?? null,
+                  mentionedSkills,
                   approveCommand: options.approveCommand ?? null,
                   here: options.here ?? null,
                   home: options.home ?? null,

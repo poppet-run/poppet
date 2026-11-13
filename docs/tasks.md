@@ -244,7 +244,8 @@ with a new task. Each occurrence copies the task's saved name and text into its
 fresh session. File edits and deletion do not change existing tasks, including
 explicit retries. Create a replacement task to use updated instructions.
 `tasks show` includes the snapshot. Scheduled runs can use reviewed Bash commands. Memory writes and task management
-remain unavailable, including when a selected skill requests them.
+remain unavailable, including when a selected skill requests them. A `$name` in a
+task prompt is ordinary text; scheduled runs do not load skills from it.
 
 ## Recurring schedules
 

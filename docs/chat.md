@@ -161,6 +161,11 @@ use that snapshot even if the file changes or disappears. `chat show` includes
 the saved `skill`; ordinary sessions have `null`. Skill instructions count toward
 the context budget and keep the existing tool permissions. See [skills](skills.md).
 
+To load a skill for one message in any session, write `$` and its name, for example
+`poppet chat send <session> 'Run $weekly-review for Acorn'`. Quote the message so
+the shell does not expand it. See
+[name a skill in a message](skills.md#name-a-skill-in-a-message).
+
 ## Change saved memory
 
 Tool-capable models can remember, replace, or forget a saved fact when explicitly

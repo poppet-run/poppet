@@ -1,5 +1,11 @@
 import type { AttachmentReference, ModelOperations, Output, Tool } from "@poppet/provider";
-import type { DeliveryDestination, Run, StoredMessage, StoreError } from "@poppet/store";
+import type {
+  DeliveryDestination,
+  Run,
+  SkillSnapshot,
+  StoredMessage,
+  StoreError,
+} from "@poppet/store";
 import type { Effect } from "effect";
 
 import type { ApproveCommand } from "#src/bash";
@@ -21,6 +27,8 @@ export interface RunContext {
   /** Scheduled runs use the host's scheduled tool policy and cannot ask for command approval. */
   readonly origin: "interactive" | "scheduled";
   readonly selectedSkill: string | null;
+  /** Skills the owner named with `$name` in this request, saved with its message. */
+  readonly mentionedSkills: ReadonlyArray<SkillSnapshot>;
   readonly approveCommand: ApproveCommand | null;
   /** Host-only validation of this run's authorized messaging conversation. */
   readonly here: Effect.Effect<DeliveryDestination, AgentError> | null;

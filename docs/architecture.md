@@ -135,6 +135,16 @@ context budget accounts for its serialized bytes. The conversation loop owns bat
 `tool-execution.ts` owns tool dispatch, outcome classification, and journal writes. Provider packages need
 no skill-specific behavior. See [skills](skills.md).
 
+`Agent.send` is the one place a `$name` in a message is resolved, so every chat
+surface behaves alike. `skill-mentions.ts` finds standalone `$name` words outside
+code, keeps those matching a listed skill directory, and loads them before the run
+is queued. The snapshots are saved in the user message's optional `skills` field.
+The conversation loop renders that field into the message text for the current
+turn and for replayed history before context assembly, so the estimate counts the
+bytes sent, adapters never see the field, and later turns reuse the saved text.
+Page URL grants still read only the owner's original text. Scheduled runs skip
+resolution because an occurrence must not read skill files.
+
 ## Provider interface
 
 The shared interface defines normalized messages and provider continuation
@@ -238,7 +248,8 @@ Shared protocol helpers accept extensions rather than importing providers.
 - `ModelRequest` contains a stable session ID, instructions, ordered conversation
   history, tool definitions, and validated generation settings.
 - Conversation history supports user text, assistant text, tool calls, and tool
-  results. Preserve call IDs and output order. Tool definitions carry names,
+  results. A user message may carry saved `skills`, which the agent renders into
+  its text before a request. Preserve call IDs and output order. Tool definitions carry names,
   descriptions, and argument schemas; adapters translate their wire format.
 - `ModelEvent` supports answer and readable reasoning deltas, and a completed response containing
   authoritative ordered output, tool calls, finish reason, and optional usage.
