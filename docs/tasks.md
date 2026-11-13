@@ -161,7 +161,8 @@ survives a later model failure or interrupted answer. Inspect `tasks list`,
 `tasks show`, or the run's tool records in `chat show` before requesting a new
 creation after an unclear result. Completed calls are not replayed. Scheduled
 runs cannot use this tool, including its read actions. Historical conversations,
-skills, pages, and tool results cannot authorize task changes.
+skills, pages, and tool results cannot authorize task changes. Chat cannot select
+a [manual-only skill](skills.md#manual-only-skills) for a task; use `tasks add --skill`.
 
 ## Deliver results to Discord
 

@@ -4,7 +4,7 @@ import { Effect, Option, Schema } from "effect";
 
 import { contextTool, type ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
-import { Skills } from "#src/skills";
+import { isManualOnly, Skills } from "#src/skills";
 import { toolArguments } from "#src/tool-schema";
 
 const ViewArguments = Schema.Struct({ name: SkillName });
@@ -29,10 +29,21 @@ const missingSkill = (name: string) =>
     message: `The skill ${JSON.stringify(name)} is missing or invalid.`,
   });
 
+/** Shared by every model-driven selection, so a manual-only skill stays with the owner. */
+export const ownerOnlySkill = (name: string) =>
+  new AgentError({
+    reason: "tool-arguments",
+    message: `The skill ${JSON.stringify(name)} is manual-only. Only the owner can select it.`,
+  });
+
 export const executeSkillView = (skills: Skills["Service"], name: string) =>
   skills.load(name).pipe(
-    Effect.map((skill) => JSON.stringify(skill)),
     Effect.mapError(() => missingSkill(name)),
+    Effect.flatMap((skill) =>
+      isManualOnly(skill.content)
+        ? Effect.fail(ownerOnlySkill(name))
+        : Effect.succeed(JSON.stringify(skill)),
+    ),
   );
 
 /** Loads a skill named in the run's index; absent when the host has no skills. */

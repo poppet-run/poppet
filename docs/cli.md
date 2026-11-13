@@ -195,10 +195,10 @@ attachments, and the tools available during a run.
 
 ## Skills
 
-| Command              | Action                        |
-| -------------------- | ----------------------------- |
-| `skills list`        | List owner skill directories. |
-| `skills show <name>` | Show an owner SKILL.md file.  |
+| Command              | Action                                                  |
+| -------------------- | ------------------------------------------------------- |
+| `skills list`        | List owner skill directories, marking manual-only ones. |
+| `skills show <name>` | Show an owner SKILL.md file.                            |
 
 Use `--skill <name>` before a new chat message or task prompt to save the current
 procedure with that session or task. See [skills](skills.md) for examples and limits.

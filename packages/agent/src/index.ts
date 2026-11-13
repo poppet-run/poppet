@@ -14,7 +14,9 @@ export { identifyAttachment, type AttachmentInput } from "#src/attachments";
 
 export { ExternalTools, type ExternalTool, type PreparedExternalCall } from "#src/external-tools";
 
-export { Skills, SkillsLive } from "#src/skills";
+export { Skills, SkillsLive, isManualOnly } from "#src/skills";
+
+export { ownerOnlySkill } from "#src/skill-tools";
 
 export { ChatSettings, ChatSettingsLive, defaultPolicy, type ChatPolicy } from "#src/settings";
 

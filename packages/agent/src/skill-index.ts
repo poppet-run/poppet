@@ -3,7 +3,7 @@ import { Effect } from "effect";
 
 import { byteSize } from "#src/context";
 import type { AgentError } from "#src/errors";
-import { type Skills } from "#src/skills";
+import { isManualOnly, type Skills } from "#src/skills";
 
 const maxIndexSkills = 64;
 
@@ -14,7 +14,11 @@ const truncate = (text: string, bytes: number) =>
 
 /** The first heading and the start of the first paragraph; skills need no metadata format. */
 export const skillDescription = (content: string) => {
-  const lines = content.split(/\r?\n/u).map((line) => line.trim());
+  const lines = content
+    .split(/\r?\n/u)
+    .slice(isManualOnly(content) ? 1 : 0)
+    .map((line) => line.trim());
+
   const heading = lines.find((line) => line.startsWith("#"))?.replace(/^#+\s*/u, "") ?? "";
   const start = lines.findIndex((line) => line.length > 0 && !line.startsWith("#"));
   const paragraph: string[] = [];
@@ -50,10 +54,11 @@ export const skillIndex = (
 
     const loaded = yield* Effect.forEach(names.slice(0, maxIndexSkills), (name) =>
       skills.load(name).pipe(
-        Effect.map((skill): SkillIndexEntry => ({
-          name,
-          description: skillDescription(skill.content),
-        })),
+        Effect.map((skill): SkillIndexEntry | null =>
+          isManualOnly(skill.content)
+            ? null
+            : { name, description: skillDescription(skill.content) },
+        ),
         Effect.catch(() => Effect.succeed(null)),
       ),
     );

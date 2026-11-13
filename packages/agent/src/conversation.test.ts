@@ -121,6 +121,7 @@ const toolNames = (request: ModelRequest) => request.tools.map((entry) => entry.
 const skillLibrary = new Map([
   ["weekly-review", "# Weekly review\n\nSummarize progress and next actions.\n\nStep details."],
   ["broken", ""],
+  ["deploy", "<!-- manual-only -->\n# Deploy\n\nRun the release script on the host."],
 ]);
 
 const librarySkills: Skills["Service"] = {
@@ -580,6 +581,47 @@ describe.concurrent("conversation", () => {
             ]);
           }),
         );
+      } finally {
+        await state.close();
+      }
+    });
+
+    test("when a skill is manual-only, hides it from the index and refuses to show it to the model", async () => {
+      const state = await skilled(viewing("deploy"));
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            expect(yield* reportedFailures(session.id, "Deploy the site")).toEqual([
+              "agent:tool-arguments",
+            ]);
+          }),
+        );
+        expect(state.requests[0]!.instructions).not.toContain('"deploy"');
+        expect(JSON.stringify(state.requests)).not.toContain("release script");
+      } finally {
+        await state.close();
+      }
+    });
+
+    test("when the owner selects a manual-only skill for a session, supplies it to the model", async () => {
+      const state = await skilled(() => final());
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+
+            const session = yield* store.createSession("test-provider", "test-model", {
+              skill: { name: "deploy", content: skillLibrary.get("deploy")! },
+            });
+
+            expect(yield* reportedFailures(session.id, "Deploy the site")).toEqual([]);
+          }),
+        );
+        expect(state.requests[0]!.instructions).toContain("release script");
       } finally {
         await state.close();
       }

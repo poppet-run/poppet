@@ -1044,6 +1044,28 @@ describe.concurrent("chat.ts", () => {
     },
   );
 
+  test("when a skill is manual-only, marks it in inspection and still lets the owner select it", async () => {
+    const chat = await fixture();
+    const content = "<!-- manual-only -->\n# Deploy\n\nRun the release script.";
+
+    try {
+      await mkdir(join(chat.directory, "skills", "deploy"), { recursive: true });
+      await writeFile(join(chat.directory, "skills", "deploy", "SKILL.md"), content);
+      await mkdir(join(chat.directory, "skills", "weekly-review"));
+      await writeFile(join(chat.directory, "skills", "weekly-review", "SKILL.md"), "# Weekly");
+
+      await chat.invoke(["skills", "list"]);
+      expect(chat.lines.at(-1)).toBe("deploy  manual-only\nweekly-review");
+      await chat.invoke(["skills", "show", "deploy", "--json"]);
+      expect(JSON.parse(chat.lines.at(-1)!)).toEqual({ name: "deploy", content, manualOnly: true });
+
+      await chat.invoke(["chat", "new", "--skill", "deploy", "Ship it"]);
+      expect(chat.requests[0]?.instructions).toContain("Run the release script.");
+    } finally {
+      await chat.close();
+    }
+  });
+
   test.each(["local", "worker"])(
     "when interactive chat continues through %s execution, retains one skill and session",
     async (mode) => {
