@@ -26,7 +26,8 @@ poppet tasks add weekly-review --cron "0 9 * * 1" --tz Europe/London --skill wee
 ```
 
 Put `--skill` and other options before the message or prompt. Select at most one
-skill. `skills list` lists named directories; `skills show` reads and validates the selected
+skill. `skills list` lists named directories and marks [manual-only](#manual-only-skills)
+ones; `skills show` reads and validates the selected
 file. A missing skills root lists as empty. Inspection needs no selected model
 or credentials and does not open the database. Symlinks, hard links, non-regular files,
 invalid UTF-8, and oversized content are rejected. Names cannot be paths.
@@ -58,13 +59,38 @@ matching skill. The result is saved in the tool journal, so continuing the
 session uses the text the model saw even if the file later changes.
 
 The index is read once per run, considers at most 64 skills, omits invalid
-files, and is bounded by the 8 KiB skill-index limit. When it does
+files and [manual-only skills](#manual-only-skills), and is bounded by the 8 KiB skill-index limit. When it does
 not fit, it lists names only, then fewer names, and says it was truncated. A skill selected with
 `--skill` stays in the instructions as before and is marked as already supplied.
 
 Viewing is read-only and remains available in scheduled runs and after untrusted
 content enters a run. A viewed skill grants no permissions and cannot authorize
 memory or task changes.
+
+## Manual-only skills
+
+To keep a skill for yourself, make its first line exactly this comment:
+
+```markdown
+<!-- manual-only -->
+
+# Deploy site
+
+Run the release script on the host and verify the health check.
+```
+
+The model then cannot find or start it. The skill is left out of the index,
+`view_skill` refuses it, and chat task creation refuses to select it. Use this for
+procedures with side effects, such as ones that run host commands.
+
+You can still select it with `--skill` for a chat or `tasks add`, and with
+`/new --skill` in messaging. The saved snapshot includes the marker line.
+
+The marker must be the whole first line. The same text elsewhere in the file, or
+a misspelt marker, leaves the skill visible to the model. Check with
+`poppet skills list`, which prints `manual-only` after each marked skill.
+`skills list --json` still prints names only; `skills show <name> --json` includes
+`manualOnly`.
 
 ## Draft a skill from a completed procedure
 

@@ -5,6 +5,8 @@ import {
   ChatSettings,
   ChatTasks,
   Skills,
+  isManualOnly,
+  ownerOnlySkill,
   type ChatTaskAction,
   type ChatTaskContext,
 } from "@poppet/agent";
@@ -150,6 +152,10 @@ export const ChatTasksLive = Layer.effect(
         });
 
         const skill = action.skill === null ? null : yield* skills.load(action.skill);
+
+        // The model fills this field, so it cannot attach a skill kept for the owner.
+        if (skill !== null && isManualOnly(skill.content))
+          return yield* Effect.fail(ownerOnlySkill(skill.name));
         const destination = yield* resolveDelivery(action.delivery, context);
 
         return Effect.gen(function* () {

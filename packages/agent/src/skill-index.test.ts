@@ -17,6 +17,17 @@ const service = (names: ReadonlyArray<string>): Skills["Service"] => ({
 const index = (names: ReadonlyArray<string>, bytes: number) =>
   Effect.runPromise(skillIndex(service(names), bytes));
 
+const indexedNames = async (contents: Record<string, string>) => {
+  const skills: Skills["Service"] = {
+    list: Effect.succeed(Object.keys(contents)),
+    load: (name) => Effect.succeed({ name, content: contents[name]! }),
+  };
+
+  const result = await Effect.runPromise(skillIndex(skills, 8192));
+
+  return result?.skills.map((skill) => skill.name) ?? null;
+};
+
 describe("skill-index.ts", () => {
   test.each([
     [
@@ -46,6 +57,19 @@ describe("skill-index.ts", () => {
     });
     expect(await index(["bad"], 8192)).toBeNull();
     expect(await index([], 8192)).toBeNull();
+  });
+
+  test("when a skill starts with the manual-only marker, omits it from the index", async () => {
+    expect(
+      await indexedNames({
+        hidden: "<!-- manual-only -->\n# Hidden",
+        crlf: "<!-- manual-only -->\r\n# Hidden",
+        late: "# Late\n<!-- manual-only -->",
+        inexact: "<!-- manual only -->\n# Inexact",
+        indented: " <!-- manual-only -->\n# Indented",
+      }),
+    ).toEqual(["late", "inexact", "indented"]);
+    expect(await indexedNames({ hidden: "<!-- manual-only -->\n# Hidden" })).toBeNull();
   });
 
   test("when descriptions exceed the index budget, falls back to names and then fewer names", async () => {

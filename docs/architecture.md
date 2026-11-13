@@ -108,7 +108,10 @@ directories. The CLI composes `SkillsLive` with host configuration. When a host
 supplies `Skills` and the 8 KiB skill-index limit is nonzero, the conversation
 workflow builds a bounded index at run start and adds the read-only
 `poppet_skills.view_skill` tool, a context-only tool journalled like recall. It
-grants no additional tool permissions. Creation requests carry only the selected
+grants no additional tool permissions. `isManualOnly` recognizes a first line of
+`<!-- manual-only -->` without parsing metadata. The index, `view_skill`, and chat
+task creation refuse such a skill; owner selection through `Skills.load` is
+unaffected. Creation requests carry only the selected
 name; the process owning the store resolves it, including worker chat and task
 commands. Missing or invalid selections fail before creating a session or task.
 

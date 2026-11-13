@@ -426,6 +426,27 @@ describe("ChatTasks", () => {
     },
   );
 
+  test("when the model selects a manual-only skill for a task, rejects it before mutation", async () => {
+    const state = await fixture();
+    await mkdir(join(state.directory, "skills/deploy"), { recursive: true });
+    await writeFile(join(state.directory, "skills/deploy/SKILL.md"), "<!-- manual-only -->\nRun");
+    const action: ChatTaskAction = { ...create, skill: "deploy" };
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const { context } = yield* recorded(action);
+          expect(
+            yield* (yield* ChatTasks).prepare(action, context).pipe(Effect.flip),
+          ).toMatchObject({ reason: "tool-arguments" });
+          expect(yield* (yield* TaskRepository).list()).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when a prepared one-off task expires, rejects it before saving", async () => {
     const state = await fixture();
 
