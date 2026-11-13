@@ -1,5 +1,5 @@
 import { Session } from "@poppet/store";
-import { TaskPatch, NewTask, TaskError, taskOperation } from "@poppet/tasks";
+import { TaskPatch, NewTask, TaskError, parseTimestamp, taskOperation } from "@poppet/tasks";
 import { Effect, Option, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 
@@ -7,6 +7,7 @@ import type { CLIContext } from "#src/commands/context";
 import { jsonFlag, skillFlag, textArgument } from "#src/commands/flags";
 import {
   parseTaskDestination,
+  parseTaskEnd,
   parseTaskSchedule,
   prepareTask,
   runTaskCommand,
@@ -32,9 +33,13 @@ export const tasksCommand = (context: CLIContext) => {
           at: Flag.String("at").pipe(Flag.atMost(1)),
           cron: Flag.String("cron").pipe(Flag.atMost(1)),
           tz: Flag.String("tz").pipe(Flag.atMost(1)),
+          until: Flag.String("until").pipe(
+            Flag.withDescription("End time for a recurring task, or none to clear it"),
+            Flag.atMost(1),
+          ),
           json: jsonFlag,
         },
-        ({ id, name, prompt, at, cron, tz, json }) =>
+        ({ id, name, prompt, at, cron, tz, until, json }) =>
           Effect.gen(function* () {
             const patch = yield* taskOperation(() => {
               const fields: Record<string, Schema.Json> = {};
@@ -50,9 +55,12 @@ export const tasksCommand = (context: CLIContext) => {
                   Option.fromUndefinedOr(tz[0]),
                 );
 
+              if (until[0] !== undefined)
+                fields.endAt = until[0] === "none" ? null : parseTimestamp(until[0]);
+
               if (Object.keys(fields).length === 0)
                 throw new TaskError({
-                  message: "Supply --name, --prompt, --at, or --cron with --tz.",
+                  message: "Supply --name, --prompt, --at, --cron with --tz, or --until.",
                 });
 
               return Schema.decodeUnknownSync(TaskPatch)(fields);
@@ -60,7 +68,7 @@ export const tasksCommand = (context: CLIContext) => {
 
             yield* runTaskCommand(runtime, { action: "edit", id, patch }, json);
           }),
-      ).pipe(Command.withDescription("Edit a task's name, prompt or complete schedule")),
+      ).pipe(Command.withDescription("Edit a task's name, prompt, complete schedule or end time")),
       Command.make(
         "run",
         {
@@ -93,6 +101,11 @@ export const tasksCommand = (context: CLIContext) => {
             Flag.atMost(1),
             Flag.map(([value]) => Option.fromUndefinedOr(value)),
           ),
+          until: Flag.String("until").pipe(
+            Flag.withDescription("End time for --cron; no slot later than this timestamp runs"),
+            Flag.atMost(1),
+            Flag.map(([value]) => Option.fromUndefinedOr(value)),
+          ),
           skill: skillFlag,
           to: Flag.String("to").pipe(
             Flag.withDescription("Deliver to <gateway> or <gateway>:<conversation-id>"),
@@ -102,13 +115,15 @@ export const tasksCommand = (context: CLIContext) => {
           json: jsonFlag,
           prompt: textArgument("prompt"),
         },
-        ({ name, at, cron, tz, delay, prompt, skill, to, json }) =>
+        ({ name, at, cron, tz, delay, until, prompt, skill, to, json }) =>
           Effect.gen(function* () {
             const schedule = yield* taskOperation(() => parseTaskSchedule(at, cron, tz, delay));
 
             const delivery = yield* taskOperation(() => parseTaskDestination(to));
 
-            const command = yield* prepareTask(name, schedule, prompt, skill, delivery);
+            const endAt = yield* taskOperation(() => parseTaskEnd(until, schedule));
+
+            const command = yield* prepareTask(name, schedule, prompt, skill, delivery, endAt);
 
             yield* runTaskCommand(runtime, command, json);
           }).pipe(Effect.provide(runtime.config)),
@@ -122,6 +137,10 @@ export const tasksCommand = (context: CLIContext) => {
           {
             command:
               'poppet tasks add Daily --cron "0 9 * * *" --tz Europe/London "Review recent conversations"',
+          },
+          {
+            command:
+              'poppet tasks add Watch --cron "0 9 * * *" --tz Europe/London --until 2099-10-29T09:00:00+00:00 "Check the release page"',
           },
         ]),
       ),

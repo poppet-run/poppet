@@ -30,6 +30,7 @@ const create: ChatTaskAction = {
   schedule: { type: "once", at: "2026-10-18T09:00:00+01:00" },
   delivery: "local",
   skill: null,
+  endAt: null,
 };
 
 const fixture = async (toolBytes = 16384) => {
@@ -248,6 +249,7 @@ describe("ChatTasks", () => {
             name: "Edited",
             prompt: null,
             schedule: null,
+            endAt: null,
           };
 
           const second = yield* recorded(edit, "edit", first.run);
@@ -310,6 +312,7 @@ describe("ChatTasks", () => {
             name: null,
             prompt: null,
             schedule: { type: "once", at: new Date(now + 1000).toISOString() },
+            endAt: null,
           };
 
           const call = yield* recorded(edit, "edit", first.run);
@@ -631,6 +634,71 @@ describe("ChatTasks", () => {
           expect(result.task.prompt.length).toBeGreaterThan(0);
           expect(input.prompt.startsWith(result.task.prompt)).toBe(true);
           expect(result.task.prompt.isWellFormed()).toBe(true);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when the owner sets an end time through chat, reports it in receipts and inspection and rejects invalid or scheduled requests", async () => {
+    const state = await fixture();
+    const endAt = "2026-10-20T09:00:00.000Z";
+
+    const daily: ChatTaskAction = {
+      ...create,
+      schedule: { type: "cron", expression: "0 9 * * *", timezone: "UTC" },
+      endAt,
+    };
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const tasks = yield* ChatTasks;
+          const first = yield* recorded(daily);
+          const created = JSON.parse(yield* execute(daily, first.context));
+          expect(created.task).toMatchObject({ nextAt: "2026-10-18T09:00:00.000Z", endAt });
+          const id = created.task.id;
+
+          const show: ChatTaskAction = { action: "show", id };
+          const second = yield* recorded(show, "show", first.run);
+          expect(JSON.parse(yield* execute(show, second.context)).task.endAt).toBe(endAt);
+
+          const clear: ChatTaskAction = {
+            action: "edit",
+            id,
+            name: null,
+            prompt: null,
+            schedule: null,
+            endAt: "none",
+          };
+
+          const third = yield* recorded(clear, "clear", first.run);
+          expect(JSON.parse(yield* execute(clear, third.context))).toMatchObject({
+            changedFields: ["endAt"],
+            endAt: null,
+            task: { endAt: null },
+          });
+
+          const rejected: ReadonlyArray<[string, ChatTaskAction]> = [
+            ["no-offset", { ...daily, endAt: "2026-10-20T09:00:00" }],
+            ["past", { ...daily, endAt: "2026-10-17T09:00:00Z" }],
+            ["one-off", { ...create, endAt }],
+            ["edit-past", { ...clear, endAt: "2026-10-17T09:00:00Z" }],
+          ];
+
+          for (const [callId, action] of rejected) {
+            const call = yield* recorded(action, callId, first.run);
+            expect(yield* Effect.flip(tasks.prepare(action, call.context))).toMatchObject({
+              reason: "tool-arguments",
+            });
+          }
+
+          const fourth = yield* recorded(daily, "scheduled", first.run);
+          expect(
+            yield* Effect.flip(tasks.prepare(daily, { ...fourth.context, origin: "scheduled" })),
+          ).toMatchObject({ reason: "tool-permission" });
+          expect(yield* (yield* TaskRepository).list()).toHaveLength(1);
         }),
       );
     } finally {

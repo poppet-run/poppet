@@ -116,7 +116,7 @@ export const executeTaskCommand = (
         );
       }
 
-      return yield* repo.add(command.task, now, skill, destination);
+      return yield* repo.add(command.task, now, skill, destination, command.endAt ?? null);
     }
 
     if (isTaskControl(command)) return yield* repo.control(command, now);

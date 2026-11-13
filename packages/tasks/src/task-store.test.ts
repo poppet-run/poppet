@@ -86,15 +86,27 @@ describe.concurrent("TaskRepository", () => {
               model: once.model,
               workload,
               schedule: JSON.stringify(once.schedule),
-              next_at: start,
               created_at: start,
             })}`;
-            yield* repo.reconcile(start);
-            yield* sql`UPDATE job_occurrences SET definition = json_set(definition, '$.workload', ${workload})`;
-            const before = yield* repo.task("saved-job");
+
+            // The current repository reads columns this old schema lacks, so queue the row directly.
+            yield* sql`INSERT INTO job_occurrences ${sql.insert({
+              id: "saved-occurrence",
+              job_id: "saved-job",
+              revision: 0,
+              definition: JSON.stringify({ ...once, skill: null, workload }),
+              scheduled_at: start,
+              available_at: start,
+              status: "pending",
+            })}`;
             yield* migrate(taskSchema).pipe(Effect.provideService(SqlClient.SqlClient, sql));
             yield* migrate(taskSchema).pipe(Effect.provideService(SqlClient.SqlClient, sql));
-            expect(yield* repo.task("saved-job")).toEqual(before);
+            expect(yield* repo.task("saved-job")).toMatchObject({
+              ...once,
+              nextAt: null,
+              endAt: null,
+              revision: 0,
+            });
             const claimed = (yield* repo.claim(start))!;
             expect(claimed).toMatchObject({ jobId: "saved-job", definition: once });
             expect(claimed.definition).not.toHaveProperty("workload");
@@ -1179,6 +1191,232 @@ describe.concurrent("TaskRepository", () => {
           for (let attempt = 0; attempt < 10; attempt++)
             yield* repo.blockProvider("test-provider", "rate-limit", start);
           expect((yield* repo.providers())[0]?.resumeAt).toBe(start + 300_000);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a recurring task has an end time, runs the slot on the boundary, schedules none after it, and keeps its last occurrence", async () => {
+    const state = await fixture();
+    const end = start + 120_000;
+
+    try {
+      await state.run((repo) =>
+        Effect.gen(function* () {
+          const job = yield* repo.add(recurring, start, null, null, end);
+          expect(job).toMatchObject({ nextAt: start + 60_000, endAt: end });
+          expect((yield* repo.reconcile(start + 60_000)).ended).toEqual([]);
+          const first = (yield* repo.claim(start + 60_000))!;
+          yield* repo.finish(first.id, "completed", null, start + 60_000);
+
+          // The slot exactly at the end time is the last one.
+          expect((yield* repo.reconcile(end)).ended).toEqual([
+            { jobId: job.id, name: job.name, endAt: end },
+          ]);
+          expect((yield* repo.task(job.id)).nextAt).toBeNull();
+
+          // Later reconciliation neither reports the ending again nor queues another slot.
+          expect(yield* repo.reconcile(end + 180_000)).toEqual({ skipped: [], ended: [] });
+          const last = (yield* repo.claim(end + 180_000))!;
+          expect(last.scheduledAt).toBe(end);
+          yield* repo.finish(last.id, "failed", "test", end + 180_000);
+
+          // A retry reruns a slot that fell within the end time.
+          expect((yield* repo.controlOccurrence("retry-task", job.id, end + 200_000)).id).toBe(
+            last.id,
+          );
+          yield* repo.claim(end + 200_000);
+          expect(
+            (yield* repo.finish(last.id, "completed", null, end + 240_000)).occurrence.status,
+          ).toBe("completed");
+          expect(yield* repo.occurrences(job.id)).toHaveLength(2);
+          expect(yield* repo.skips(job.id)).toEqual([]);
+          expect((yield* repo.status()).nextScheduledAt).toBeNull();
+
+          for (const action of ["run-now", "skip-next"] as const)
+            expect(
+              (yield* Effect.flip(repo.control({ action, id: job.id }, end + 240_000))).message,
+            ).toContain("ended at 2026-10-14T09:02:00.000Z");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when an ended task's end time is extended or cleared, resumes future slots without a backlog", async () => {
+    const state = await fixture();
+    const later = start + 600_000;
+
+    try {
+      await state.run((repo) =>
+        Effect.gen(function* () {
+          const job = yield* repo.add(recurring, start, null, null, start + 90_000);
+          expect((yield* repo.reconcile(start + 60_000)).ended).toHaveLength(1);
+          const first = (yield* repo.claim(start + 60_000))!;
+          yield* repo.finish(first.id, "completed", null, start + 60_000);
+
+          // Resuming a paused task does not outlive its end time.
+          yield* repo.pause(job.id, start + 120_000);
+          expect((yield* repo.resume(job.id, start + 300_000)).nextAt).toBeNull();
+
+          const edit = (endAt: number | null, now: number) =>
+            repo.control({ action: "edit", id: job.id, patch: { endAt } }, now);
+
+          expect((yield* Effect.flip(edit(later, later))).message).toContain("future end time");
+          expect(yield* edit(later + 120_000, later)).toMatchObject({
+            changedFields: ["endAt"],
+            nextAt: later + 60_000,
+            endAt: later + 120_000,
+            replacedOccurrenceIds: [],
+          });
+          expect((yield* repo.task(job.id)).revision).toBe(0);
+
+          for (const at of [later + 60_000, later + 120_000]) {
+            yield* repo.reconcile(at);
+            const claimed = (yield* repo.claim(at))!;
+            yield* repo.finish(claimed.id, "completed", null, at);
+          }
+
+          expect((yield* repo.task(job.id)).nextAt).toBeNull();
+          expect(yield* edit(null, later + 600_000)).toMatchObject({
+            changedFields: ["endAt"],
+            nextAt: later + 660_000,
+            endAt: null,
+          });
+          expect((yield* repo.occurrences(job.id)).map((item) => item.scheduledAt)).toEqual([
+            later + 120_000,
+            later + 60_000,
+            start + 60_000,
+          ]);
+          expect(yield* repo.skips(job.id)).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when an end time is invalid or precedes a held slot, rejects it or cancels that slot, and a one-off carries none", async () => {
+    const state = await fixture();
+    const day = 86_400_000;
+
+    try {
+      await state.run((repo) =>
+        Effect.gen(function* () {
+          for (const [task, endAt, message] of [
+            [once, start + day, "only to recurring"],
+            [recurring, start, "future end time"],
+            [morning, start + 3_600_000, "before the first occurrence"],
+          ] as const)
+            expect(
+              (yield* Effect.flip(repo.add(task, start, null, null, endAt))).message,
+            ).toContain(message);
+
+          const job = yield* repo.add(morning, start, null, null, start + 3 * day);
+
+          const held = yield* repo.control(
+            { action: "snooze", id: job.id, until: start + day + 3_600_000 },
+            start,
+          );
+
+          // The held occurrence belongs to tomorrow's slot, which the new end time excludes.
+          expect(
+            yield* repo.control(
+              { action: "edit", id: job.id, patch: { endAt: start + 3_600_000 } },
+              start,
+            ),
+          ).toMatchObject({
+            changedFields: ["endAt"],
+            nextAt: null,
+            replacedOccurrenceIds: [held.occurrenceId],
+            snoozeCleared: true,
+          });
+          expect(yield* repo.occurrence(held.occurrenceId!)).toMatchObject({
+            status: "cancelled",
+            reason: "task-ended",
+          });
+
+          const single = { type: "once", at: start + day } as const;
+
+          expect(
+            yield* repo.control({ action: "edit", id: job.id, patch: { schedule: single } }, start),
+          ).toMatchObject({ changedFields: ["schedule", "endAt"], nextAt: single.at, endAt: null });
+          expect(
+            (yield* Effect.flip(
+              repo.control({ action: "edit", id: job.id, patch: { endAt: start + day } }, start),
+            )).message,
+          ).toContain("only to recurring");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when the worker was down across an end time, catches up only a slot within it", async () => {
+    const state = await fixture(60 * 60_000);
+
+    try {
+      await state.run((repo) =>
+        Effect.gen(function* () {
+          const job = yield* repo.add(recurring, start, null, null, start + 150_000);
+
+          expect(yield* repo.reconcile(start + 600_000, true)).toEqual({
+            skipped: [
+              {
+                jobId: job.id,
+                name: job.name,
+                firstAt: start + 60_000,
+                lastAt: start + 119_999,
+                reason: "downtime",
+              },
+            ],
+            ended: [{ jobId: job.id, name: job.name, endAt: start + 150_000 }],
+          });
+          expect((yield* repo.occurrences(job.id)).map((item) => item.scheduledAt)).toEqual([
+            start + 120_000,
+          ]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a database predates end times, opens it and keeps its tasks' cadence", async () => {
+    const state = await fixture(0, {
+      ...taskSchema,
+      version: 2,
+      loader: taskSchema.loader.pipe(Effect.map((entries) => entries.filter(([id]) => id <= 2))),
+    });
+
+    try {
+      await state.run((repo, _store, sql) =>
+        Effect.gen(function* () {
+          yield* sql`INSERT INTO jobs ${sql.insert({
+            id: "saved-job",
+            name: recurring.name,
+            prompt: recurring.prompt,
+            provider: recurring.provider,
+            model: recurring.model,
+            schedule: JSON.stringify(recurring.schedule),
+            next_at: start + 60_000,
+            created_at: start,
+          })}`;
+          yield* migrate(taskSchema).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+          expect(yield* repo.task("saved-job")).toMatchObject({
+            endAt: null,
+            nextAt: start + 60_000,
+          });
+          expect(yield* repo.reconcile(start + 60_000)).toEqual({ skipped: [], ended: [] });
+          expect((yield* repo.task("saved-job")).nextAt).toBe(start + 120_000);
+          expect(yield* repo.claim(start + 60_000)).toMatchObject({
+            jobId: "saved-job",
+            scheduledAt: start + 60_000,
+          });
         }),
       );
     } finally {

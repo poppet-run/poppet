@@ -1358,6 +1358,61 @@ describe("makeCLI", () => {
     }
   });
 
+  test("when --until is supplied, saves, shows, and clears a recurring end time and rejects invalid ones", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-task-until-cli-"));
+    const environment = await configure(directory, { model: "saved-model" });
+    const until = "2099-10-22T09:00:00+01:00";
+    const cron = ["--cron", "0 9 * * *", "--tz", "Europe/London"];
+
+    try {
+      const added = await invoke(
+        ["tasks", "add", "--json", "Watch", ...cron, "--until", until, "Check the page"],
+        environment,
+      );
+
+      expect(added.exitCode).toBe(0);
+      const task = JSON.parse(added.stdout);
+      expect(task.endAt).toBe(Date.parse(until));
+      expect((await invoke(["tasks", "show", task.id], environment)).stdout).toMatch(
+        /Until: +2099-/,
+      );
+
+      await Promise.all(
+        [
+          ["--at", "2099-10-15T09:00:00Z", "--until", until],
+          ["--in", "1m", "--until", until],
+          [...cron, "--until", "2020-10-22T09:00:00Z"],
+          [...cron, "--until", "2099-10-22T09:00:00"],
+        ].map(async (flags) => {
+          expect(
+            (await invoke(["tasks", "add", "--json", "Invalid", ...flags, "Check"], environment))
+              .exitCode,
+          ).toBe(1);
+        }),
+      );
+
+      const edit = (...flags: string[]) =>
+        invoke(["tasks", "edit", "--json", task.id, ...flags], environment);
+
+      expect((await edit("--until", "2020-10-22T09:00:00Z")).exitCode).toBe(1);
+      expect((await edit("--at", "2099-10-15T09:00:00Z", "--until", until)).exitCode).toBe(1);
+
+      const cleared = await edit("--until", "none");
+
+      expect(cleared.exitCode).toBe(0);
+      expect(JSON.parse(cleared.stdout)).toMatchObject({
+        changedFields: ["endAt"],
+        endAt: null,
+        nextAt: task.nextAt,
+      });
+      expect((await invoke(["tasks", "list", "--json"], environment)).stdout).toContain(
+        '"endAt": null',
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("when --json is omitted, prints messages and tables instead of JSON", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-cli-human-"));
     const environment = await configure(directory, { model: "test-model" });

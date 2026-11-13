@@ -741,6 +741,7 @@ describe.concurrent("Gateway", () => {
                   skill: null,
                   after: null,
                   until: null,
+                  endAt: null,
                 }),
               },
             ],

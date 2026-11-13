@@ -9,6 +9,7 @@ export {
   TaskPatch,
   ProviderPause,
   nextOccurrence,
+  checkEndTime,
   parseTimestamp,
 } from "#src/task-schema";
 

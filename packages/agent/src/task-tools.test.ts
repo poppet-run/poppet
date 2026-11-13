@@ -14,6 +14,7 @@ const fields = {
   skill: null,
   after: null,
   until: null,
+  endAt: null,
 } as const;
 
 const decode = (args: Schema.JsonObject) =>
@@ -47,6 +48,25 @@ describe("decodeTaskCall", () => {
       name: null,
       prompt: fields.prompt,
       schedule: null,
+      endAt: null,
+    });
+    expect(
+      await decode({
+        ...fields,
+        action: "edit",
+        id: "job",
+        name: null,
+        prompt: null,
+        schedule: null,
+        endAt: "none",
+      }),
+    ).toEqual({
+      action: "edit",
+      id: "job",
+      name: null,
+      prompt: null,
+      schedule: null,
+      endAt: "none",
     });
     expect(await decode(stray)).toEqual({
       action: "create",
@@ -55,6 +75,7 @@ describe("decodeTaskCall", () => {
       schedule: fields.schedule,
       delivery: "local",
       skill: "review",
+      endAt: null,
     });
   });
 
@@ -73,7 +94,7 @@ describe("decodeTaskCall", () => {
     [{ ...fields, action: "snooze", id: "job" }, "The snooze action needs until."],
     [
       { ...fields, action: "edit", id: "job", name: null, prompt: null, schedule: null },
-      "The edit action needs at least one of name, prompt, or schedule.",
+      "The edit action needs at least one of name, prompt, schedule, or endAt.",
     ],
   ])("when a required field is missing in case %#, names it", async (args, message) => {
     await expect(decode(args)).rejects.toMatchObject({ reason: "tool-arguments", message });

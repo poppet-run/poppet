@@ -53,10 +53,16 @@ const logProviderPause = (at: number, pause: ProviderPause) =>
     }`,
   );
 
-/** Reconciles due work and logs only skips committed by the repository. */
+const logTaskEnd = (at: number, task: { name: string; jobId: string; endAt: number }) =>
+  workerLog(
+    at,
+    `Task ${JSON.stringify(task.name)} task=${task.jobId} ended until=${new Date(task.endAt).toISOString()}; no later occurrences`,
+  );
+
+/** Reconciles due work and logs only the skips and endings committed by the repository. */
 export const reconcileTasks = (repo: TaskStore, now: number, startup = false) =>
   Effect.gen(function* () {
-    const skipped = yield* repo.reconcile(now, startup);
+    const { skipped, ended } = yield* repo.reconcile(now, startup);
 
     yield* Effect.forEach(skipped, (item) =>
       workerLog(
@@ -64,6 +70,7 @@ export const reconcileTasks = (repo: TaskStore, now: number, startup = false) =>
         `Task ${JSON.stringify(item.name)} task=${item.jobId} skipped ${new Date(item.firstAt).toISOString()} to ${new Date(item.lastAt).toISOString()} reason=${item.reason}`,
       ),
     );
+    yield* Effect.forEach(ended, (item) => logTaskEnd(now, item));
   });
 
 /** Runs an occurrence in a fresh session with scheduled tool restrictions, then saves its outcome. */
@@ -241,6 +248,12 @@ export const makeTaskWorker = Effect.gen(function* () {
           ? (yield* repo.occurrences(command.id)).filter((item) => item.status === "pending")
           : [];
 
+      // A control or resume can use up the last slot before the task's end time.
+      const before =
+        isTaskControl(command) || command.action === "resume"
+          ? Option.getOrNull(yield* Effect.option(repo.task(command.id)))
+          : null;
+
       const result = yield* executeTaskCommand(repo, store, command, now);
 
       if (isTaskControl(command) || command.action === "delete")
@@ -255,6 +268,13 @@ export const makeTaskWorker = Effect.gen(function* () {
         yield* Effect.forEach(pending, (item) =>
           workerLog(now, `${occurrenceLabel(job.name, item.id)} cancelled reason=task-paused`),
         );
+      }
+
+      if (before !== null && before.nextAt !== null) {
+        const job = yield* repo.task(before.id);
+
+        if (job.nextAt === null && job.endAt !== null)
+          yield* logTaskEnd(now, { name: job.name, jobId: job.id, endAt: job.endAt });
       }
 
       if (command.action === "retry-task" || command.action === "cancel-task") {

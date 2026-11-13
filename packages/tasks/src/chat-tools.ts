@@ -16,7 +16,9 @@ import { Clock, Effect, Layer, Match, Schema } from "effect";
 import { bounded, detailsOutput, listOutput, summary } from "#src/task-output";
 import {
   NewTask,
+  checkEndTime,
   nextOccurrence,
+  nextSlot,
   parseTimestamp,
   TaskError,
   TaskPatch,
@@ -140,13 +142,20 @@ export const ChatTasksLive = Layer.effect(
               });
             nextOccurrence(schedule, now);
 
-            return Schema.decodeUnknownSync(NewTask)({
-              name: action.name,
-              prompt: action.prompt,
-              schedule,
-              provider: run.provider,
-              model: run.model,
-            });
+            const endAt = action.endAt === null ? null : parseTimestamp(action.endAt);
+
+            if (endAt !== null) checkEndTime(schedule, endAt, now, true);
+
+            return {
+              endAt,
+              task: Schema.decodeUnknownSync(NewTask)({
+                name: action.name,
+                prompt: action.prompt,
+                schedule,
+                provider: run.provider,
+                model: run.model,
+              }),
+            };
           },
           catch: invalid,
         });
@@ -161,13 +170,23 @@ export const ChatTasksLive = Layer.effect(
         return Effect.gen(function* () {
           const now = clock.currentTimeMillisUnsafe();
 
-          if (input.schedule.type === "once" && input.schedule.at <= now)
+          if (input.task.schedule.type === "once" && input.task.schedule.at <= now)
             return yield* new StoreError({
               reason: "invalid-request",
               message: "The requested one-off time has passed. Choose a future time.",
             });
 
-          return yield* taskOutput(action.action, yield* repo.add(input, now, skill, destination));
+          // The end time may pass, or its only slot go by, between preparation and commit.
+          if (input.endAt !== null && nextSlot(input.task.schedule, now, input.endAt) === null)
+            return yield* new StoreError({
+              reason: "invalid-request",
+              message: "The requested end time leaves no occurrence. Choose a later end time.",
+            });
+
+          return yield* taskOutput(
+            action.action,
+            yield* repo.add(input.task, now, skill, destination, input.endAt),
+          );
         });
       });
 
@@ -189,12 +208,19 @@ export const ChatTasksLive = Layer.effect(
                   ? { type: "once", at: parseTimestamp(action.schedule.at) }
                   : action.schedule;
 
+            if (action.endAt !== null)
+              fields.endAt = action.endAt === "none" ? null : parseTimestamp(action.endAt);
+
             const decoded = Schema.decodeUnknownSync(TaskPatch, { onExcessProperty: "error" })(
               fields,
             );
 
             const schedule = decoded.schedule;
             const now = clock.currentTimeMillisUnsafe();
+
+            // An unchanged end time is allowed after it has passed; a new one must be valid.
+            if (decoded.endAt != null && decoded.endAt !== current.endAt)
+              checkEndTime(schedule ?? current.schedule, decoded.endAt, now);
 
             if (schedule !== undefined) {
               nextOccurrence(schedule, now);

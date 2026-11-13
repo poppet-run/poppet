@@ -58,6 +58,41 @@ export const nextOccurrence = (schedule: Schedule, after: number): number | null
   }
 };
 
+/**
+ * Finds the next cron time after the given Unix milliseconds that is not later than the end
+ * time. A slot exactly at the end time still runs; null means the task has ended.
+ */
+export const nextSlot = (
+  schedule: Schedule,
+  after: number,
+  endAt: number | null,
+): number | null => {
+  const next = nextOccurrence(schedule, after);
+
+  return next !== null && endAt !== null && next > endAt ? null : next;
+};
+
+/** Rejects an end time on a one-off, in the past, or, for a new task, before its first slot. */
+export const checkEndTime = (
+  schedule: Schedule,
+  endAt: number,
+  now: number,
+  needsSlot = false,
+): void => {
+  if (schedule.type === "once")
+    throw new TaskError({
+      message: "An end time applies only to recurring tasks. Use it with a cron schedule.",
+    });
+
+  if (endAt <= now)
+    throw new TaskError({ message: "Choose a future end time with an explicit UTC offset." });
+
+  if (needsSlot && nextSlot(schedule, now, endAt) === null)
+    throw new TaskError({
+      message: "The end time is before the first occurrence. Choose a later end time.",
+    });
+};
+
 /** Parses an ISO timestamp with an explicit offset, rejecting invalid dates and pre-epoch times. */
 export const parseTimestamp = (text: string): number => {
   const parts =
@@ -97,6 +132,8 @@ export const TaskPatch = Schema.Struct({
   name: Schema.optionalKey(NewTask.fields.name),
   prompt: Schema.optionalKey(NewTask.fields.prompt),
   schedule: Schema.optionalKey(Schedule),
+  // Null clears the end time.
+  endAt: Schema.optionalKey(Schema.NullOr(Schema.Natural)),
 }).check(Schema.makeFilter((patch) => Object.keys(patch).length > 0));
 
 /** The next execution: the pending occurrence, or the unqueued next slot. */
@@ -128,6 +165,7 @@ export const TaskCommand = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("add"),
     task: NewTask,
+    endAt: Schema.optionalKey(Schema.Natural),
     skill: Schema.optionalKey(SkillName),
     delivery: Schema.optionalKey(
       Schema.Struct({
@@ -160,13 +198,18 @@ export const Task = Schema.Struct({
   schedule: Schema.fromJsonString(Schedule),
   id: Session.fields.id,
   nextAt: Schema.NullOr(Schema.Natural),
+  // The last instant a cron slot may fall on; a one-off never has one.
+  endAt: Schema.NullOr(Schema.Natural),
   paused: Schema.Literals([0, 1]),
   createdAt: Schema.Natural,
 });
 
 export type Task = typeof Task.Type;
 
-/** Immutable execution fields, independent of later edits and host defaults. */
+/**
+ * Immutable execution fields, independent of later edits and host defaults. The end time is
+ * left out: it decides which slots exist, not how an existing occurrence runs.
+ */
 export const TaskDefinition = Schema.Struct({
   ...NewTask.fields,
   skill: Schema.NullOr(SkillSnapshot),

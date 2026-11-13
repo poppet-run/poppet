@@ -12,6 +12,7 @@ export interface ControlReceipt {
   readonly taskId: string;
   readonly changedFields: ReadonlyArray<string>;
   readonly nextAt: number | null;
+  readonly endAt: number | null;
   readonly paused: 0 | 1;
   readonly occurrenceId: string | null;
   readonly replacedOccurrenceIds: ReadonlyArray<string>;
@@ -46,37 +47,68 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
 
         if (command.action === "edit") {
           const patch = command.patch;
+          const schedule = patch.schedule ?? job.schedule;
+
+          if (patch.endAt != null && schedule.type === "once")
+            return yield* reject(
+              "An end time applies only to recurring tasks. Use it with a cron schedule.",
+            );
+
+          // A one-off has no end time, so changing a recurring task into one clears it.
+          const endAt =
+            patch.endAt !== undefined ? patch.endAt : schedule.type === "once" ? null : job.endAt;
 
           const fields = (["name", "prompt", "schedule"] as const).filter(
             (field) => patch[field] !== undefined && !isDeepStrictEqual(patch[field], job[field]),
           );
 
-          changedFields = fields;
+          const endChanged = endAt !== job.endAt;
+
+          changedFields = endChanged ? [...fields, "endAt"] : fields;
 
           if (changedFields.length > 0) {
-            const scheduleChanged = changedFields.includes("schedule");
-            const schedule = patch.schedule ?? job.schedule;
+            // The end time is not part of an occurrence's definition, so it keeps the revision.
+            const revised = fields.length > 0;
+            const scheduleChanged = fields.includes("schedule");
 
             if (scheduleChanged && schedule.type === "once" && schedule.at <= now)
               return yield* reject("Choose a future one-off time with an explicit UTC offset.");
 
+            if (endChanged && endAt !== null && endAt <= now)
+              return yield* reject("Choose a future end time with an explicit UTC offset.");
+
+            // An ended task restarts from now, without a backlog; a live one keeps its next slot
+            // unless the new end time precedes it.
             const nextAt = scheduleChanged
               ? schedule.type === "once"
                 ? schedule.at
-                : yield* nextTime(schedule, now)
-              : job.nextAt;
+                : yield* nextTime(schedule, now, endAt)
+              : !endChanged
+                ? job.nextAt
+                : job.nextAt === null
+                  ? yield* nextTime(schedule, now, endAt)
+                  : endAt !== null && job.nextAt > endAt
+                    ? null
+                    : job.nextAt;
 
             yield* sql`UPDATE jobs SET name = ${patch.name ?? job.name},
               prompt = ${patch.prompt ?? job.prompt}, schedule = ${JSON.stringify(schedule)},
-              next_at = ${nextAt}, revision = revision + 1 WHERE id = ${job.id}`;
+              end_at = ${endAt}, next_at = ${nextAt}, revision = revision + ${revised ? 1 : 0}
+              WHERE id = ${job.id}`;
 
-            if (pending !== null) {
+            // Only a snoozed future slot can be pending beyond a new end time.
+            const pastEnd = pending !== null && endAt !== null && pending.scheduledAt > endAt;
+
+            if (pending !== null && (revised || pastEnd)) {
               yield* sql`UPDATE job_occurrences SET status = 'cancelled', finished_at = ${now},
-                reason = 'task-edited' WHERE id = ${pending.id}`;
+                reason = ${pastEnd && !scheduleChanged ? "task-ended" : "task-edited"}
+                WHERE id = ${pending.id}`;
               replacedOccurrenceIds = [pending.id];
-              snoozeCleared = scheduleChanged && pending.availableAt > pending.scheduledAt;
 
-              if (!scheduleChanged) {
+              snoozeCleared =
+                (scheduleChanged || pastEnd) && pending.availableAt > pending.scheduledAt;
+
+              if (!scheduleChanged && !pastEnd) {
                 const id = yield* insertOccurrence(yield* task(job.id), pending.scheduledAt, {
                   availableAt: pending.availableAt,
                   origin: pending.origin,
@@ -95,12 +127,14 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
 
           if (target === null)
             return yield* reject(
-              "This task has no upcoming execution. Edit its schedule to rearm it.",
+              job.endAt === null
+                ? "This task has no upcoming execution. Edit its schedule to rearm it."
+                : `This task ended at ${new Date(job.endAt).toISOString()}. Set a later end time or clear it to resume.`,
             );
 
           const advance = (after: number) =>
             Effect.flatMap(
-              nextTime(job.schedule, after),
+              nextTime(job.schedule, after, job.endAt),
               (nextAt) => sql`UPDATE jobs SET next_at = ${nextAt} WHERE id = ${job.id}`,
             );
 
@@ -177,7 +211,7 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
 
             if (job.schedule.type === "once" || due) {
               yield* advance(now);
-              const following = yield* nextTime(job.schedule, logical);
+              const following = yield* nextTime(job.schedule, logical, job.endAt);
 
               if (following !== null && following <= now)
                 yield* sql`INSERT INTO job_skips (job_id, first_at, last_at, reason)
@@ -195,6 +229,7 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
           taskId: job.id,
           changedFields,
           nextAt: updated.nextAt,
+          endAt: updated.endAt,
           paused: updated.paused,
           replacedOccurrenceIds,
           snoozeCleared,

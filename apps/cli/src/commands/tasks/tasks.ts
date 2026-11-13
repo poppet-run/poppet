@@ -5,6 +5,7 @@ import {
   executeLocalTaskCommand,
   TaskCommand,
   TaskError,
+  checkEndTime,
   nextOccurrence,
   parseTimestamp,
   taskOperation,
@@ -57,12 +58,23 @@ export const parseTaskSchedule = (
   });
 };
 
+/** An end time takes the same offset-qualified form as --at and suits only a cron schedule. */
+export const parseTaskEnd = (until: Option.Option<string>, schedule: Schedule) => {
+  if (Option.isNone(until)) return undefined;
+  const endAt = parseTimestamp(until.value);
+
+  checkEndTime(schedule, endAt, Date.now(), true);
+
+  return endAt;
+};
+
 export const prepareTask = (
   name: string,
   schedule: Schedule,
   prompt: string,
   skill?: string,
   delivery?: { readonly adapter: string; readonly conversationId: string | null },
+  endAt?: number,
 ) =>
   Effect.gen(function* () {
     yield* taskOperation(() => {
@@ -88,7 +100,8 @@ export const prepareTask = (
       },
     };
 
-    const selected = delivery === undefined ? command : { ...command, delivery };
+    const bounded = endAt === undefined ? command : { ...command, endAt };
+    const selected = delivery === undefined ? bounded : { ...bounded, delivery };
 
     return yield* Schema.decodeUnknownEffect(TaskCommand)(
       skill === undefined ? selected : { ...selected, skill },

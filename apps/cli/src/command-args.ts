@@ -21,7 +21,7 @@ const textCommands = new Map<string, TextCommand>([
     "tasks add",
     {
       positionals: 1,
-      values: ["in", "at", "cron", "tz", "skill", "to"],
+      values: ["in", "at", "cron", "tz", "until", "skill", "to"],
       flags: ["json"],
       strict: true,
     },

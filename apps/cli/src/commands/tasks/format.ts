@@ -16,6 +16,7 @@ const TaskRow = Schema.Struct({
   schedule: Schedule,
   paused: Schema.Literals([0, 1]),
   nextAt: Time,
+  endAt: Schema.optionalKey(Time),
   skill: Schema.NullOr(Schema.Struct({ name: Schema.String })),
   destination: Schema.NullOr(
     Schema.Struct({ adapter: Schema.String, conversationId: Schema.String }),
@@ -53,6 +54,7 @@ const ControlReceipt = Schema.Struct({
   taskId: Schema.String,
   changedFields: Schema.Array(Schema.String),
   nextAt: Time,
+  endAt: Schema.optionalKey(Time),
   paused: Schema.Literals([0, 1]),
   availableAt: Time,
 });
@@ -60,11 +62,22 @@ const ControlReceipt = Schema.Struct({
 const schedule = (value: Schedule) =>
   value.type === "once" ? `once at ${time(value.at)}` : `${value.expression} (${value.timezone})`;
 
-const nextRun = (nextAt: number | null, paused: 0 | 1) =>
-  paused ? "paused" : nextAt === null ? "none" : time(nextAt);
+type Timing = Pick<TaskRow, "nextAt" | "endAt" | "paused">;
+
+// Only an end time leaves a recurring task without a next slot; a one-off never has one.
+const ended = (task: Timing) => task.nextAt === null && task.endAt != null;
+
+const nextRun = (task: Timing) =>
+  task.paused
+    ? "paused"
+    : ended(task)
+      ? "ended"
+      : task.nextAt === null
+        ? "none"
+        : time(task.nextAt);
 
 const state = (task: TaskRow) =>
-  task.paused ? "paused" : task.nextAt === null ? "done" : "active";
+  task.paused ? "paused" : ended(task) ? "ended" : task.nextAt === null ? "done" : "active";
 
 const destination = (task: TaskRow) =>
   task.destination === null
@@ -88,7 +101,7 @@ const listTasks = (tasks: ReadonlyArray<TaskRow>) =>
       task.id,
       task.name,
       schedule(task.schedule),
-      nextRun(task.nextAt, task.paused),
+      nextRun(task),
       state(task),
       destination(task),
     ]),
@@ -100,7 +113,8 @@ const taskFields = (task: TaskRow) =>
     ["Name", task.name],
     ["Schedule", schedule(task.schedule)],
     ["State", state(task)],
-    ["Next run", nextRun(task.nextAt, task.paused)],
+    ["Next run", nextRun(task)],
+    task.endAt == null ? null : ["Until", time(task.endAt)],
     ["Model", `${task.provider} ${task.model}`],
     task.skill === null ? null : ["Skill", task.skill.name],
     ["Delivery", destination(task)],
@@ -153,11 +167,11 @@ const showTask = ({ task, target, occurrences, skipped }: typeof TaskDetails.Typ
 };
 
 const control = (receipt: typeof ControlReceipt.Type) => {
-  const next = `Next run: ${nextRun(receipt.nextAt, receipt.paused)}.`;
+  const next = `Next run: ${nextRun(receipt)}.`;
 
   switch (receipt.action) {
     case "edit":
-      return `Updated ${receipt.changedFields.join(", ") || "nothing"} for task ${receipt.taskId}. ${next}`;
+      return `Updated ${receipt.changedFields.map((field) => (field === "endAt" ? "end time" : field)).join(", ") || "nothing"} for task ${receipt.taskId}. ${next}`;
     case "skip-next":
       return `Skipped the next execution of task ${receipt.taskId}. ${next}`;
     case "run-now":
@@ -213,7 +227,7 @@ export const printTaskResult = <A>(json: boolean, command: TaskCommand, value: A
         json,
         value,
         TaskRow,
-        (task) => `Resumed task ${task.name}. Next run: ${nextRun(task.nextAt, 0)}.`,
+        (task) => `Resumed task ${task.name}. Next run: ${nextRun({ ...task, paused: 0 })}.`,
       );
     case "cancel-task":
       return printParsed(

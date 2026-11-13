@@ -13,6 +13,7 @@ export const summary = (task: Task) => ({
       : task.schedule,
   paused: task.paused,
   nextAt: task.nextAt === null ? null : new Date(task.nextAt).toISOString(),
+  endAt: task.endAt === null ? null : new Date(task.endAt).toISOString(),
   destination:
     task.destination === null
       ? null
