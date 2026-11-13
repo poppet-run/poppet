@@ -118,6 +118,7 @@ packages/
     src/skills.ts         Owner skill-file access
     src/skill-index.ts    Bounded skill descriptions and indexing
     src/skill-tools.ts    Skill view and management tools
+    src/skill-mentions.ts Skills named with $name in a message
     src/reply.ts          Validated model stream completion
     src/memory.ts         Memory snapshots formatted into model instructions
     src/context-files.ts  Shared bounded skill/project file access

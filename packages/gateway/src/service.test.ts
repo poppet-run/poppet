@@ -128,6 +128,7 @@ const fixture = async (
       return Effect.succeed(model);
     },
     ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
+    skills,
     Layer.succeed(Pages, pages),
     optionalService(Bash, bash),
   );
@@ -804,6 +805,8 @@ describe.concurrent("Gateway", () => {
     const path = join(state.directory, "skills/review/SKILL.md");
     await mkdir(join(state.directory, "skills/review"), { recursive: true });
     await writeFile(path, "Summarize progress using the saved review procedure.");
+    await mkdir(join(state.directory, "skills/audit"));
+    await writeFile(join(state.directory, "skills/audit/SKILL.md"), "Audit procedure");
 
     try {
       const ids = await state.run(
@@ -855,6 +858,14 @@ describe.concurrent("Gateway", () => {
           );
           expect(state.requests.at(-1)?.instructions).toContain("saved review procedure");
           expect(state.requests.at(-1)?.instructions).not.toContain("Edited procedure");
+
+          // A follow-up naming another skill loads it for that turn within the same session.
+          yield* gateway.accept(message("named", "chat", "Now run $audit on it"));
+          yield* gateway.processNext;
+          expect(yield* (yield* GatewayRepository).binding(adapter, "bot", "guild", "chat")).toBe(
+            ids.skilled,
+          );
+          expect(JSON.stringify(state.requests.at(-1)?.messages)).toContain("Audit procedure");
         }),
       );
       await rm(path);
@@ -880,10 +891,10 @@ describe.concurrent("Gateway", () => {
           expect(state.requests.at(-1)?.instructions).not.toContain("saved review procedure");
           expect(yield* store.sessions).toHaveLength(3);
           expect(yield* store.messages(ids.original)).toHaveLength(2);
-          expect(yield* store.messages(ids.skilled)).toHaveLength(6);
+          expect(yield* store.messages(ids.skilled)).toHaveLength(8);
         }),
       );
-      expect(state.requests).toHaveLength(5);
+      expect(state.requests).toHaveLength(6);
     } finally {
       await state.close();
     }

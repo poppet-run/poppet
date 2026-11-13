@@ -11,6 +11,7 @@ export const HistoryMessages = Schema.Array(
         role: Schema.Literal("user"),
         text: Schema.String,
         attachments: Schema.optionalKey(Schema.Array(AttachmentReference)),
+        skills: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String }))),
       }),
       Schema.Struct({ role: Schema.Literal("assistant"), output: Schema.Array(Output) }),
       Schema.Struct({ role: Schema.Literal("tool") }),
@@ -37,9 +38,13 @@ export const chatHistory = (messages: typeof HistoryMessages.Type) => {
 
     if (message.role === "user") {
       const attachments = message.attachments?.map(({ name }) => name) ?? [];
+      const skills = message.skills?.map(({ name }) => name) ?? [];
       history.push({
         role: "user",
-        text: message.text + (attachments.length ? `\n[Attached: ${attachments.join(", ")}]` : ""),
+        text:
+          message.text +
+          (attachments.length ? `\n[Attached: ${attachments.join(", ")}]` : "") +
+          (skills.length ? `\n[Skills: ${skills.join(", ")}]` : ""),
       });
       continue;
     }

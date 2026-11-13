@@ -138,7 +138,8 @@ earlier text updates. The page reopens the stream after a proxy error.
 
 Attachments, message queues, search, renaming, model and skill selection, reasoning
 display, copy buttons, and run details are not available yet. Use `poppet chat show`
-to inspect saved runs. Web chat uses the first message as the conversation title.
+to inspect saved runs. A message can still
+[name a skill](skills.md#name-a-skill-in-a-message) with `$name`. Web chat uses the first message as the conversation title.
 
 `bun run check` includes the production web build, typechecking, lint,
 formatting, backend lifecycle tests, and DOM tests for submission recovery and

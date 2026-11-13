@@ -27,6 +27,7 @@ import { maxTextBytes, streamReply } from "#src/reply";
 import { sessionReadTool, sessionSearchTool } from "#src/search";
 import { ChatSettings } from "#src/settings";
 import { skillIndex, skillIndexGuidance, type SkillIndex } from "#src/skill-index";
+import { withMentionedSkills } from "#src/skill-mentions";
 import { skillViewTool } from "#src/skill-tools";
 import { Skills } from "#src/skills";
 import { taskTool } from "#src/task-tools";
@@ -147,7 +148,14 @@ export const conversation = Effect.gen(function* () {
   return (runContext: RunContext) =>
     Stream.unwrap(
       Effect.gen(function* () {
-        const { run, model, text, attachments, history, runs } = runContext;
+        const { run, model, text, attachments, runs, mentionedSkills } = runContext;
+
+        // Earlier turns replay the skills saved with their messages, never the current files.
+        const history = runContext.history.map((entry) => ({
+          ...entry,
+          message: withMentionedSkills(entry.message),
+        }));
+
         const { tools, skillsIndex } = yield* chooseTools(runContext);
         const instructions = buildInstructions(runContext, skillsIndex);
         const allowedURLs = suppliedPageURLs(text);
@@ -196,7 +204,12 @@ export const conversation = Effect.gen(function* () {
           });
 
         const current: Message[] = [
-          attachments.length === 0 ? { role: "user", text } : { role: "user", text, attachments },
+          withMentionedSkills({
+            role: "user",
+            text,
+            ...(attachments.length > 0 && { attachments }),
+            ...(mentionedSkills.length > 0 && { skills: mentionedSkills }),
+          }),
         ];
 
         // Saved attachment contents, read once per run as the assembled context first needs them.

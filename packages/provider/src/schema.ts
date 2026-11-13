@@ -75,6 +75,13 @@ export const Message = Schema.Union([
     role: Schema.Literal("user"),
     text: Schema.String,
     attachments: Schema.optionalKey(Schema.Array(AttachmentReference)),
+    /**
+     * Skills the owner named in this message, saved as read. The host renders them into `text`
+     * before a model request, so providers never translate this field.
+     */
+    skills: Schema.optionalKey(
+      Schema.Array(Schema.Struct({ name: Schema.String, content: Schema.String })),
+    ),
   }),
   Schema.Struct({
     role: Schema.Literal("assistant"),
