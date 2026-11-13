@@ -186,6 +186,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                                   skill: null,
                                   after: null,
                                   until: null,
+                                  endAt: null,
                                 }),
                               };
 

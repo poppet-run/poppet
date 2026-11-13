@@ -74,6 +74,11 @@ eligibility and recurring expiration, while `scheduled_at` identifies the logica
 slot. `origin` distinguishes scheduled and manual work. Legacy rows are backfilled
 from the previously immutable job definition and their own destination snapshot.
 
+Task migration 3 adds the nullable `jobs.end_at`, the last instant a cron slot
+may fall on, in UTC milliseconds. Existing tasks have none and behave as before.
+It stays on the job and out of the occurrence definition, so changing it does not
+raise the revision.
+
 Definition edits, occurrence replacement, and timing changes commit together.
 Task changes keep no separate history: occurrences and skipped intervals record
 what ran and what did not. Clearing tasks cascades to their occurrences, preserving

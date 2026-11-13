@@ -933,6 +933,7 @@ describe.concurrent("conversation", () => {
               skill: null,
               after: null,
               until: null,
+              endAt: null,
             }),
             "task",
             "poppet_tasks",

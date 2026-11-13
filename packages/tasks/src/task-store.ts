@@ -15,7 +15,15 @@ import { SqlClient } from "effect/sql";
 import { taskSchema } from "#src/migrations";
 import { taskControls } from "#src/task-controls";
 import { latestTime, nextTime, taskFailure, taskRecords, recurringExpiry } from "#src/task-records";
-import { NewTask, Occurrence, ProviderPause, Skipped, Task, TaskError } from "#src/task-schema";
+import {
+  NewTask,
+  Occurrence,
+  ProviderPause,
+  Skipped,
+  Task,
+  TaskError,
+  checkEndTime,
+} from "#src/task-schema";
 
 interface TaskSkip {
   readonly jobId: string;
@@ -23,6 +31,12 @@ interface TaskSkip {
   readonly firstAt: number;
   readonly lastAt: number;
   readonly reason: "downtime" | "previous-occurrence-active" | "worker-delayed";
+}
+
+interface TaskEnd {
+  readonly jobId: string;
+  readonly name: string;
+  readonly endAt: number;
 }
 
 const Count = Schema.Struct({ count: Schema.Natural });
@@ -104,14 +118,21 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       WHERE status = 'pending' AND available_at <= ${now - recurringExpiry}
         AND json_extract(definition, '$.schedule.type') = 'cron'`;
 
-  /** Queues due work and advances schedules together, recording missed recurring work as skips. */
+  /**
+   * Queues due work and advances schedules together, recording missed recurring work as skips.
+   * A task whose end time leaves no later slot is reported once, when its schedule runs out.
+   */
   const reconcile = (now: number, startup = false) =>
     sql.withTransaction(
       Effect.gen(function* () {
         const skipped: TaskSkip[] = [];
+        const ended: TaskEnd[] = [];
 
-        const recordSkip = (job: Task, firstAt: number, reason: TaskSkip["reason"], lastAt = now) =>
+        const recordSkip = (job: Task, firstAt: number, reason: TaskSkip["reason"], until = now) =>
           Effect.gen(function* () {
+            // Slots after the end time never existed, so a skipped interval stops there.
+            const lastAt = job.endAt === null ? until : Math.min(until, job.endAt);
+
             yield* sql`INSERT INTO job_skips (job_id, first_at, last_at, reason)
               VALUES (${job.id}, ${firstAt}, ${lastAt}, ${reason})`;
             skipped.push({ jobId: job.id, name: job.name, firstAt, lastAt, reason });
@@ -123,7 +144,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
         for (const job of yield* list()) {
           if (job.paused || job.nextAt === null || job.nextAt > now) continue;
-          const nextAt = yield* nextTime(job.schedule, now);
+          const nextAt = yield* nextTime(job.schedule, now, job.endAt);
 
           const busy = yield* hasActive(job.id);
 
@@ -137,7 +158,10 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
             // Run only the most recent missed time, and only while it is still recent.
             const latest = Math.max(
               job.nextAt,
-              (yield* latestTime(job.schedule, now)) ?? job.nextAt,
+              (yield* latestTime(
+                job.schedule,
+                job.endAt === null ? now : Math.min(now, job.endAt),
+              )) ?? job.nextAt,
             );
 
             if (now - latest > catchUpMs) yield* recordSkip(job, job.nextAt, missed);
@@ -152,17 +176,20 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
             yield* queue(job, job.nextAt);
 
             // A delayed timer enqueues the earliest due occurrence and skips the rest.
-            const following = yield* nextTime(job.schedule, job.nextAt);
+            const following = yield* nextTime(job.schedule, job.nextAt, job.endAt);
 
             if (following !== null && following <= now)
               yield* recordSkip(job, following, "worker-delayed");
           }
 
           yield* sql`UPDATE jobs SET next_at = ${nextAt} WHERE id = ${job.id}`;
+
+          if (nextAt === null && job.endAt !== null)
+            ended.push({ jobId: job.id, name: job.name, endAt: job.endAt });
         }
 
-        // Return only committed transitions, so the worker never logs rolled-back skips.
-        return skipped;
+        // Return only committed transitions, so the worker never logs rolled-back changes.
+        return { skipped, ended };
       }),
     );
 
@@ -171,6 +198,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
     now: number,
     skill: SkillSnapshot | null = null,
     destination: DeliveryDestination | null = null,
+    endAt: number | null = null,
   ) =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -178,6 +206,12 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
           yield* Schema.decodeUnknownEffect(DeliveryDestination)(destination);
         const valid = yield* Schema.decodeUnknownEffect(NewTask)(input);
         const id = randomUUID();
+
+        if (endAt !== null)
+          yield* Effect.try({
+            try: () => checkEndTime(valid.schedule, endAt, now, true),
+            catch: taskFailure,
+          });
 
         yield* sql`INSERT INTO jobs ${sql.insert({
           id,
@@ -189,7 +223,8 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
           nextAt:
             valid.schedule.type === "once"
               ? valid.schedule.at
-              : yield* nextTime(valid.schedule, now),
+              : yield* nextTime(valid.schedule, now, endAt),
+          endAt,
           createdAt: now,
           skill: skill === null ? null : JSON.stringify(skill),
           destination: destination === null ? null : JSON.stringify(destination),
@@ -250,7 +285,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         if (!job.paused) return job;
 
         const nextAt =
-          job.schedule.type === "once" ? job.nextAt : yield* nextTime(job.schedule, now);
+          job.schedule.type === "once" ? job.nextAt : yield* nextTime(job.schedule, now, job.endAt);
 
         yield* sql`UPDATE jobs SET paused = 0, next_at = ${nextAt} WHERE id = ${id}`;
 
@@ -291,6 +326,13 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
         if (yield* hasActive(job.id))
           return yield* new TaskError({ message: "The task already has an active occurrence." });
+
+        // A retry reruns its own slot, so the slot must still fall within the end time.
+        if (job.endAt !== null && item.scheduledAt > job.endAt)
+          return yield* new TaskError({
+            message:
+              "This occurrence is later than the task's end time. Extend or clear the end time first.",
+          });
 
         if (item.definition.schedule.type === "cron" && item.availableAt <= now - recurringExpiry)
           return yield* new TaskError({

@@ -39,11 +39,12 @@ poppet worker run
 For example, `30s`, `10m`, `2h`, or `1d`. A day is exactly 24 elapsed hours.
 The CLI resolves the duration once and saves an absolute time. Use `--at` for
 an exact timestamp, or `--cron` with `--tz` for recurring work. These schedule
-forms cannot be combined.
+forms cannot be combined. A recurring task can also carry an
+[end time](#end-a-recurring-task) with `--until`.
 
 The worker prints timestamped lifecycle messages for starts, completed or failed
-runs, interruptions, cancellation, skipped intervals, and task/provider pauses and
-resumes. Occurrence messages include the task name and occurrence ID. Failures use
+runs, interruptions, cancellation, skipped intervals, task/provider pauses and
+resumes, and a task reaching its end time. Occurrence messages include the task name and occurrence ID. Failures use
 reason codes; prompts and model answers stay in saved results.
 An idle worker does not print polling messages.
 
@@ -67,12 +68,15 @@ poppet tasks edit <task-id> --name "Morning review"
 poppet tasks edit <task-id> --prompt "Summarize open decisions from recent conversations."
 poppet tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
 poppet tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
+poppet tasks edit <task-id> --until 2099-11-30T18:00:00+00:00
+poppet tasks edit <task-id> --until none
 poppet tasks run <task-id>
 ```
 
-Edits change only supplied name, prompt, or schedule fields. A cron replacement
+Edits change only supplied name, prompt, schedule, or end time fields. A cron replacement
 requires both expression and timezone; a one-off replacement requires a future
-offset-qualified timestamp. Empty patches, unknown fields, conflicting schedules,
+offset-qualified timestamp. `--until` sets or changes a recurring task's
+[end time](#end-a-recurring-task), and `--until none` clears it. Empty patches, unknown fields, conflicting schedules,
 and timezone-only changes are rejected. Identical values are a no-op. Provider,
 model, skill, and destination remain unchanged.
 Paused tasks may be edited without resuming them. Cancel a running occurrence
@@ -83,7 +87,9 @@ edit replaces an unstarted occurrence with a new snapshot while retaining its
 logical slot, ready time, and destination. The original stays cancelled in history.
 A schedule change cancels pending work, clears its snooze, and computes the next
 future slot. Editing a completed one-off's name/prompt does not rerun it; supply
-a different future schedule to rearm it.
+a different future schedule to rearm it. An end time change alone keeps the
+revision and the pending occurrence, because the end time is not part of what an
+occurrence executes.
 
 | Control              | Behavior                                                                                                                                                                                                                            |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -93,7 +99,8 @@ a different future schedule to rearm it.
 
 Chat skip and snooze actions and the run command act on the task's next execution when the command
 commits: its pending occurrence if one exists, otherwise its next scheduled time.
-A task with no upcoming execution needs a schedule edit first. Receipts include
+A task with no upcoming execution needs a schedule edit first; a task past its
+end time needs a later or cleared end time. Receipts include
 changed fields, affected occurrence IDs, next time, and snooze changes. Lost responses never trigger local
 fallback or replay. Inspect `tasks show` before issuing another command after an
 unclear result.
@@ -104,6 +111,58 @@ and does not restore the snooze. Recurring expiration and retry freshness use
 expire. Retries use the historical occurrence definition.
 Unsupported actions fail explicitly. No additional login or model is required
 to manage saved tasks.
+
+## End a recurring task
+
+A recurring task can carry an optional end time. After it, the task stops
+producing occurrences without being paused or removed. There is no default end
+time and no maximum duration.
+
+```sh
+poppet tasks add release-watch --cron "0 9 * * *" --tz Europe/London --until 2099-10-29T09:00:00+00:00 "Tell me only if the release page changed"
+```
+
+`--until` takes an absolute timestamp with `Z` or a UTC offset, the same form as
+`--at`, and must be in the future when set. It applies only to cron tasks:
+`tasks add` and `tasks edit` reject it on a one-off. `tasks add` also rejects an
+end time earlier than the first occurrence.
+
+The boundary is the cron slot, not the time work happens to run. A slot at or
+before the end time runs; a slot later than it is never scheduled. In the example,
+the 09:00 slot on 29 October still runs, and none follows. An occurrence already
+pending, snoozed, or running when the end time passes still runs to completion,
+including when a snooze holds it beyond the end time.
+
+Once no slot remains the task has no next execution. `tasks` and `tasks show`
+report its state and next run as `ended`, as distinct from `paused` and from a
+finished one-off's `done`, and `tasks show` prints the end time as `Until`. JSON
+output carries `endAt` in Unix milliseconds with a null `nextAt`. The worker
+logs the ending once, when the last slot is used up, which can be before the end
+time itself:
+
+```text
+[2099-10-29T09:00:00.000Z] Task "release-watch" task=<task-id> ended until=2099-10-29T09:00:00.000Z; no later occurrences
+```
+
+The task and its history are kept. To revive it, set a later end time or clear it
+with `tasks edit <task-id> --until none`. It then resumes its ordinary future
+cadence from that moment, with no backlog of slots missed while it was ended.
+
+The other controls follow the same rule:
+
+| Control            | With an end time                                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pause` / `resume` | Resume computes the next slot as usual; if none is left before the end time the task is ended, not active.                                             |
+| `skip_next`        | Skipping the last slot ends the task. An ended task with nothing pending rejects the control.                                                          |
+| `snooze`           | A slot within the end time may be held past it and still runs. An ended task with nothing pending rejects the control.                                 |
+| `run`              | Reuses a pending occurrence, or queues work while a slot remains. An ended task with nothing pending rejects it; extend or clear the end time first.   |
+| `retry`            | Reruns an unsuccessful occurrence whose slot is at or before the end time, within the usual 24-hour window, even after the task has ended.             |
+| Schedule edit      | A new cron schedule keeps the end time and takes its next slot within it. Changing to a one-off clears the end time and reports `endAt` as changed.    |
+| End time edit      | Keeps the next slot if it is still within the end time. An earlier end time cancels a snoozed occurrence whose slot is now beyond it, as `task-ended`. |
+
+A running occurrence must finish or be cancelled before an edit, as for every
+control. Skipped intervals stop at the end time; later slots are not recorded as
+missed.
 
 ## Manage tasks through chat
 
@@ -126,7 +185,13 @@ sessions. The agent receives the current UTC time for relative dates and should
 ask when the intended time, timezone, prompt, or task is unclear. One-off times
 must be in the future and include a UTC offset; recurring schedules require an
 explicit timezone. A receipt reports the saved ID, schedule, state, next time,
-and destination.
+end time, and destination.
+
+Ask for an end date to set one, for example "Every weekday at 09:00 Europe/London
+until 30 November, check the release page." The tool passes it as `endAt`, an
+absolute timestamp with an offset, on create or edit; `endAt: "none"` on edit
+clears it. The agent sets an end time only on your explicit request and should
+ask when its timezone is unclear. Receipts and `show` include `endAt`.
 
 Messaging tasks default to "home", the configured home channel. "Here" selects
 the current conversation instead; "local" keeps results on the machine. To select
@@ -148,7 +213,7 @@ earlier `show` is needed. A snooze uses an absolute `until` timestamp with an
 offset; ask about an unclear timezone. Each action reads only the fields it uses
 and ignores the rest. Create needs a name, prompt, schedule, and delivery; every
 action except create and list needs an ID; snooze needs `until`; and edit needs
-at least one of name, prompt, or schedule. A missing field fails with a message
+at least one of name, prompt, schedule, or `endAt`. A missing field fails with a message
 naming it. Ask "Delete my daily summary task" in Discord or CLI chat to use
 `delete`. Deletion permanently removes the selected task and its occurrence
 history, including pending work, while retaining conversations and runs.

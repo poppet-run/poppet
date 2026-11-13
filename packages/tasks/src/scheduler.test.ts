@@ -254,6 +254,7 @@ describe.concurrent("makeTaskWorker", () => {
               skill: null,
               after: null,
               until: null,
+              endAt: null,
             }),
           })),
         );
@@ -357,6 +358,7 @@ describe.concurrent("makeTaskWorker", () => {
                 skill: null,
                 after: null,
                 until: null,
+                endAt: null,
               }),
             },
           ]),
@@ -418,6 +420,7 @@ describe.concurrent("makeTaskWorker", () => {
             skill: null,
             after: null,
             until: null,
+            endAt: null,
           }),
         },
       ]);
@@ -1338,6 +1341,38 @@ describe.concurrent("makeTaskWorker", () => {
           expect(state.requests).toHaveLength(1);
           yield* Fiber.interrupt(worker);
         }).pipe(Effect.provide(TestClock.layer())),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a task's end time leaves no later slot, logs the ending once and still runs the queued occurrence", async () => {
+    const state = await fixture(final);
+    const start = Date.parse("2026-10-14T09:00:00Z");
+    const schedule = { type: "cron", expression: "* * * * *", timezone: "UTC" } as const;
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const end = start + 90_000;
+          const job = yield* repo.add({ ...state.task, schedule }, start, null, null, end);
+          yield* reconcileTasks(repo, start + 60_000);
+          yield* reconcileTasks(repo, start + 300_000);
+          expect(state.lines).toEqual([
+            `[2026-10-14T09:01:00.000Z] Task "Summary" task=${job.id} ended until=2026-10-14T09:01:30.000Z; no later occurrences`,
+          ]);
+
+          // The occurrence queued before the end time still runs after it.
+          const claimed = (yield* repo.claim(start + 300_000))!;
+          yield* executeOccurrence(repo, claimed);
+          expect(yield* repo.occurrence(claimed.id)).toMatchObject({
+            status: "completed",
+            scheduledAt: start + 60_000,
+          });
+          expect((yield* repo.task(job.id)).nextAt).toBeNull();
+        }),
       );
     } finally {
       await state.close();

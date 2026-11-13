@@ -615,6 +615,16 @@ history. Snooze changes persisted `available_at`, not the cron schedule or
 logical slot, and run-now queues through normal permissions/provider holds.
 See [task controls](tasks.md#edit-and-control-the-next-execution).
 
+A recurring task's optional end time is the nullable `jobs.end_at`. `nextSlot` in
+`task-schema.ts` is the single rule: a cron slot later than the end time does not
+exist, and one exactly at it does. Every place that advances `next_at` goes
+through it (creation, reconciliation, resume, the controls, and schedule edits),
+so `next_at` is never later than `end_at` and a null `next_at` on a cron task
+means it has ended. The end time is not part of an occurrence's definition:
+changing it keeps the revision, and occurrences already queued run regardless.
+Reconciliation returns the tasks that just ran out of slots so the worker logs
+each ending once. See [end a recurring task](tasks.md#end-a-recurring-task).
+
 `Store.commitToolCall` runs the synchronous task operation and completion of its
 tool journal/message in one SQLite transaction. A tool result failure rolls back
 the mutation. Completed calls, keyed by run and call ID, return their saved result

@@ -10,7 +10,7 @@ import {
   TaskError,
   TaskDefinition,
   latestOccurrence,
-  nextOccurrence,
+  nextSlot,
   type Schedule,
   type TaskTarget,
 } from "#src/task-schema";
@@ -25,15 +25,16 @@ export const taskFailure = (cause: unknown) =>
     : new TaskError({ message: "Could not read or update scheduled tasks." });
 
 // The schedule helpers throw TaskError; these keep that a typed failure inside transactions.
-export const nextTime = (schedule: Schedule, after: number) =>
-  Effect.try({ try: () => nextOccurrence(schedule, after), catch: taskFailure });
+// A cron slot later than the task's end time does not exist, so the result is null.
+export const nextTime = (schedule: Schedule, after: number, endAt: number | null) =>
+  Effect.try({ try: () => nextSlot(schedule, after, endAt), catch: taskFailure });
 
 export const latestTime = (schedule: Schedule, atOrBefore: number) =>
   Effect.try({ try: () => latestOccurrence(schedule, atOrBefore), catch: taskFailure });
 
 export const taskRecords = (sql: SqlClient.SqlClient) => {
   const tasks = sql`SELECT id, name, prompt, provider, model, schedule, revision, skill,
-    destination, next_at, paused, created_at FROM jobs`;
+    destination, next_at, end_at, paused, created_at FROM jobs`;
 
   const occurrences = sql`SELECT id, job_id, scheduled_at, status, revision, definition,
     available_at, origin, destination, session_id, run_id, finished_at, reason

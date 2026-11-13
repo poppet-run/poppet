@@ -218,20 +218,20 @@ See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
 
 ## Scheduled tasks
 
-| Command                                                                                                                 | Action                                                             |
-| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `tasks add <name> (--at <timestamp> \| --in <duration>) [--skill <name>] [--to <gateway>[:<conversation-id>]] <prompt>` | Schedule a one-off request.                                        |
-| `tasks add <name> --cron <expression> --tz <timezone> [--skill <name>] [--to <gateway>[:<conversation-id>]] <prompt>`   | Schedule recurring work.                                           |
-| `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> --tz <timezone>]`       | Edit definition fields while retaining task identity and history.  |
-| `tasks run <task>`                                                                                                      | Queue normal scheduled work without shifting recurring cadence.    |
-| `tasks` / `tasks list`                                                                                                  | List saved tasks.                                                  |
-| `tasks show <task>`                                                                                                     | Show occurrences, results, delivery states, and skipped intervals. |
-| `tasks pause <task>`                                                                                                    | Pause scheduling and cancel pending work.                          |
-| `tasks resume <task>`                                                                                                   | Resume future occurrences.                                         |
-| `tasks cancel <task> [--occurrence <id>]`                                                                               | Cancel pending or active work.                                     |
-| `tasks retry <task> [--occurrence <id>]`                                                                                | Explicitly retry an unsuccessful occurrence.                       |
-| `tasks remove <task>`                                                                                                   | Remove one task and its history; rejects running tasks.            |
-| `tasks clear`                                                                                                           | Interrupt active work and remove all tasks and task history.       |
+| Command                                                                                                                                                 | Action                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `tasks add <name> (--at <timestamp> \| --in <duration>) [--skill <name>] [--to <gateway>[:<conversation-id>]] <prompt>`                                 | Schedule a one-off request.                                                       |
+| `tasks add <name> --cron <expression> --tz <timezone> [--until <timestamp>] [--skill <name>] [--to <gateway>[:<conversation-id>]] <prompt>`             | Schedule recurring work, optionally with an end time.                             |
+| `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> --tz <timezone>] [--until <timestamp> \| --until none]` | Edit definition fields or the end time while retaining task identity and history. |
+| `tasks run <task>`                                                                                                                                      | Queue normal scheduled work without shifting recurring cadence.                   |
+| `tasks` / `tasks list`                                                                                                                                  | List saved tasks.                                                                 |
+| `tasks show <task>`                                                                                                                                     | Show occurrences, results, delivery states, and skipped intervals.                |
+| `tasks pause <task>`                                                                                                                                    | Pause scheduling and cancel pending work.                                         |
+| `tasks resume <task>`                                                                                                                                   | Resume future occurrences.                                                        |
+| `tasks cancel <task> [--occurrence <id>]`                                                                                                               | Cancel pending or active work.                                                    |
+| `tasks retry <task> [--occurrence <id>]`                                                                                                                | Explicitly retry an unsuccessful occurrence.                                      |
+| `tasks remove <task>`                                                                                                                                   | Remove one task and its history; rejects running tasks.                           |
+| `tasks clear`                                                                                                                                           | Interrupt active work and remove all tasks and task history.                      |
 
 See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what
 `clear` deletes or retains. Tasks execute while a worker with scheduling enabled
