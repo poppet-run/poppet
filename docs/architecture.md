@@ -3,8 +3,9 @@
 [Documentation index](README.md)
 
 The CLI runs chat locally when no worker owns the data directory. A running
-worker handles CLI requests, scheduled tasks, and messaging through one store
-connection and serialized agent. Background installation is available on macOS.
+worker handles CLI requests, scheduled tasks, messaging, and optional web chat
+through one store connection and shared agent request slots. Requests within one
+session stay ordered. Background installation supports macOS and Linux with systemd.
 
 ## Effect conventions
 
@@ -33,29 +34,31 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 The Bun monorepo uses private workspaces:
 
-| Workspace                     | Responsibility                                                                                                         | Workspace dependencies                                                      |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                                                     | Config, agent, MCP, memory, skills, tasks, store, platform, provider layers |
-| `@poppet/mcp`                 | Scoped stdio/HTTP clients, OAuth sign-in, bounded discovery, schema validation                                         | Credentials, sign-in, provider contract                                     |
-| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                                                        | Config, I/O helpers, memory, skills, store, web search, provider contract   |
-| `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation                                       | None                                                                        |
-| `@poppet/web-search`          | Brave/Kagi search adapters, validation, and bounded source results                                                     | I/O helpers, Effect                                                         |
-| `@poppet/config`              | Validated settings and the `AppConfig` service                                                                         | Provider contract, credential locks, MCP configuration schemas              |
-| `@poppet/credentials`         | Protected API-key and record storage, locks, and environment overrides                                                 | Provider contract                                                           |
-| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle                                                  | Config, credentials, provider contract                                      |
-| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                                                       | Config and store for the local implementation                               |
-| `@poppet/platform`            | Worker actions, errors, status, launch description, bounded log reading, and LaunchAgent and systemd user unit control | I/O helpers                                                                 |
-| `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                                                              | Config, agent, store, worker transport, provider contract                   |
-| `@poppet/worker`              | Protected local command transport and request lifecycle                                                                | Effect                                                                      |
-| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery                                               | Agent, config, credentials, store, provider contract                        |
-| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings                                            | Gateway contract                                                            |
-| `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export                                      | None                                                                        |
-| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                                                        | Provider contract, credentials, protocol adapters                           |
-| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                                                       | Provider contract, credentials, protocol adapters                           |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference                                            | Credentials, sign-in, provider contract, protocol adapters                  |
-| `@poppet/sign-in`             | Browser authorization: loopback callback, pasted callbacks, deadline                                                   | Effect                                                                      |
+| Workspace                     | Responsibility                                                                                                         | Workspace dependencies                                                                               |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                                                     | Config, agent, MCP, memory, tasks, store, platform, gateway, channels, web protocol, provider layers |
+| `@poppet/web`                 | Preact browser chat, Nanostores state, and shared web API types                                                        | None                                                                                                 |
+| `@poppet/mcp`                 | Scoped stdio/HTTP clients, OAuth sign-in, bounded discovery, schema validation                                         | Credentials, I/O helpers, sign-in, provider contract                                                 |
+| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                                                        | Config, I/O helpers, memory, store, web search, provider contract                                    |
+| `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation                                       | None                                                                                                 |
+| `@poppet/web-search`          | Brave/Kagi search adapters, validation, and bounded source results                                                     | I/O helpers, Effect                                                                                  |
+| `@poppet/config`              | Validated settings and the `AppConfig` service                                                                         | Provider contract, credential locks, MCP configuration schemas                                       |
+| `@poppet/credentials`         | Protected API-key and record storage, locks, and environment overrides                                                 | Provider contract                                                                                    |
+| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle                                                  | Config, credentials, provider contract                                                               |
+| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                                                       | Config and store for the local implementation                                                        |
+| `@poppet/platform`            | Worker actions, errors, status, launch description, bounded log reading, and LaunchAgent and systemd user unit control | I/O helpers                                                                                          |
+| `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                                                              | Config, agent, store, worker transport, provider contract                                            |
+| `@poppet/worker`              | Protected local command transport and request lifecycle                                                                | Effect                                                                                               |
+| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery                                               | Agent, config, credentials, I/O helpers, store, tasks, provider contract                             |
+| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings                                            | Config, credentials, gateway contract                                                                |
+| `@poppet/channel-slack`       | Slack Socket Mode, thread messages, attachments, permissions, and protected settings                                   | Config, credentials, gateway contract                                                                |
+| `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export                                      | None                                                                                                 |
+| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                                                        | Provider contract, credentials, protocol adapters                                                    |
+| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                                                       | Provider contract, credentials, protocol adapters                                                    |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference                                            | Credentials, sign-in, provider contract, protocol adapters                                           |
+| `@poppet/sign-in`             | Browser authorization: loopback callback, pasted callbacks, deadline                                                   | Effect                                                                                               |
 
-The CLI lives in `apps/cli`; libraries live in `packages/`.
+The CLI lives in `apps/cli`, browser chat in `apps/web`, and libraries in `packages/`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
 between workspaces use those exports. Internal imports use `#src/*` aliases,
 defined in each workspace's `package.json` and mapped to `./src/*.ts`.
@@ -172,7 +175,7 @@ Auth commands accept an explicit provider or default to the provider in `config.
 ChatGPT uses its existing OAuth services. API-key providers use the shared
 credentials workspace, which stores versioned provider-specific files under
 `<data directory>/auth` and returns redacted keys. Environment overrides take
-precedence. Login supports hidden terminal input and explicit stdin input;
+precedence. API-key login requires masked terminal input;
 status and logout operate on only the chosen provider. Key persistence does not
 claim remote access, which verification checks separately.
 
@@ -279,7 +282,8 @@ interprets this payload. Validate its version and provider/model identity; keep
 credentials out of transcripts and continuation data.
 
 The optional `<data directory>/config.json` supplies ordinary settings, including
-Discord authorization and the four editable chat controls. `POPPET_DATA_DIR`
+Discord and Slack authorization, task catch-up policy, MCP and gateway settings,
+and the five editable chat controls. `POPPET_DATA_DIR`
 selects the data directory and file. Other environment settings are limited to
 credentials. Internal context/tool/memory limits use fixed defaults. Provider
 selection uses the file's `provider` and `model` fields.
@@ -468,11 +472,12 @@ records invocation and outcome; fatal review failures also save their reason in
 the transcript and end the run. Command output is untrusted, but Bash stays
 available for subsequent independently reviewed commands.
 
-The gateway holds pending approval IDs in memory for at most two minutes. Owner
-controls resolve them outside the inference queue and only in the originating
-conversation, with access rechecked before execution. Restart expires pending
-requests. Scheduled runs never wait for approval; a blocked command fails the
-occurrence. Failed occurrences log a reason code and retain details in task history
+The gateway holds pending approval IDs in memory for at most two minutes. Discord
+buttons and Discord or Slack text controls resolve them outside the inference queue
+and only in the originating conversation, with access rechecked before execution.
+Restart expires pending requests. CLI and web chat supply no approval callback,
+so commands needing a person stop without execution. Scheduled runs never wait for
+approval; a blocked command fails the occurrence. Failed occurrences log a reason code and retain details in task history
 without changing their recurring schedule. Completed results and fixed failure
 notices enter the durable delivery queue. Pending failure text queued under a
 failed run by older versions is stopped before delivery. Delivery is unique per
@@ -837,17 +842,19 @@ live account verification. Running and stopped status derive their provider set
 from the configured provider and saved tasks. Task results and tool permissions use the existing
 store and agent behavior. No second runner or service implementation is added.
 
-Scheduling uses wall-clock UTC times and a one-second wake timer. A timer delayed
-by sleep enqueues one due occurrence and records the skipped interval; it does
-not replay every missed recurrence. Expiry, quota pauses, and explicit retry rules
-remain in the task package. Native startup and physical sleep/wake need manual
+Scheduling uses wall-clock UTC times and a one-second wake timer. With the default
+60-minute catch-up window, a delayed timer or restart queues the most recent missed cron
+slot once if it is still within the window, and records earlier slots as skipped.
+Setting `tasks.catchUpMinutes` to zero makes startup skip missed cron work and
+a delayed timer queue the earliest due slot. Overdue one-offs run once. Expiry,
+quota pauses, and explicit retry rules remain in the task package. Native startup and physical sleep/wake need manual
 validation in addition to injected lifecycle and clock tests.
 
 ## Worker host
 
 `apps/cli/src/commands/worker/host.ts` owns one scoped runtime and protected listener.
-`worker run` starts scheduling and configured messaging adapters together, sharing the store,
-agent, memory, provider resolver, and command functions. The store lock prevents
+`worker run` starts scheduling, configured messaging adapters, and optional web chat.
+They share the store, agent, memory, provider resolver, and command functions. The store lock prevents
 starting another worker against that data directory. No separate processes or
 cross-process model coordination are introduced.
 
@@ -857,11 +864,11 @@ Unconfigured adapters remain disabled. Status includes services and messaging st
 Fatal service failures stop the host and its siblings before storage is released.
 
 `@poppet/worker` owns request protection, body limits, deadlines, disconnect and
-shutdown handling. The host exposes `/v1/tasks`, `/v1/queries`, and
-`/v1/commands` through `store/tasks.sock`. All routes reject unknown request fields;
-unsupported routes return 404. Tasks and queries share one JSON reply,
+shutdown handling. The host exposes `/v1/tasks`, `/v1/queries`, `/v1/commands`,
+and `/v1/doctor` through `store/tasks.sock`. Command payloads reject unknown fields;
+the doctor route returns a bounded diagnostic snapshot. Unsupported routes return 404. Tasks and queries share one JSON reply,
 `{ok: true, value}` or `{ok: false, message}`; the task package owns task RPC validation.
-macOS installations launch `worker run`.
+macOS and Linux installations launch `worker run` through the background log launcher.
 
 ## Interactive worker commands
 
@@ -893,15 +900,35 @@ commands are never replayed after a transport error, malformed reply, or missing
 completion. Restart the worker after updating code so the client and host use
 the same protocol. Saved record migrations are independent of the wire protocol.
 
+## Web chat
+
+`apps/web` builds the Preact UI and shared API types. Nanostores owns browser state;
+DOMPurify sanitizes rendered Markdown. The worker's `commands/web-chat/server.ts`
+serves built assets and a separate chat-only HTTP API when protected `web.json`
+exists. HTTPS remote access uses an owner-configured reverse proxy. Startup failures
+disable web chat while scheduling and messaging continue. See [web chat](web-chat.md).
+
+The listener checks Host and Origin, authenticates an access-key hash, and keeps
+bounded, expiring cookie logins in memory. `chat.ts` owns submission receipts in
+SQLite with a separate migration ledger. Reusing a submission ID returns its
+receipt; using it with different input fails. Accepted replies run in worker-scoped
+fibers and survive browser disconnects and sign-out. Restart leaves unfinished work
+interrupted, with no automatic replay. Stop interrupts only a web-started reply.
+
+SSE sends a complete current snapshot when its change marker changes. Reconnection
+reads state without resubmitting input. Web requests use the shared agent and its
+normal permissions, but have no attachments, task destination context, or command
+approval callback. Provider credentials and continuation data stay on the host.
+
 ## Messaging gateway
 
 `conversation-naming.ts` owns rename reconciliation and owner-override handling.
 
-Discord thread chat is bundled. Additional adapters can be loaded from explicitly
+Discord and Slack thread chat are bundled. Additional adapters can be loaded from explicitly
 configured installed packages.
 The gateway runs
 inside the neutral worker host, with scheduling optional, and shares its store, memory, model
-resolver, and serialized `Agent` instance with CLI and scheduled requests. The
+resolver, and `Agent` request slots with CLI, web chat, and scheduled requests. The
 CLI composes these scoped services and preserves existing worker commands and
 local IPC. No second process acquires SQLite, and messaging connections do not
 expose the local command socket to the network.
@@ -932,7 +959,8 @@ reply delivery. `@poppet/channel-discord` owns Discord credentials, Gateway
 connections, event decoding, mentions, thread operations, formatting, and rate
 limits. External adapters implement the same small contract. The CLI owns
 adapter registration and live layer composition; neither the agent nor task
-scheduling imports concrete messaging adapters.
+scheduling imports concrete messaging adapters. `@poppet/channel-slack` owns Slack
+Socket Mode, Web API calls, file downloads, reactions, setup, and credentials.
 
 The shared contract carries the adapter and bot account identity, external
 message and conversation IDs, sender ID, text, and reply destination. Keep
@@ -951,9 +979,9 @@ layer per registration keeps message streams, authorization, and sessions isolat
 
 The host provides only `ChannelEnvironment.dataDirectory` and bounded secret input
 through `ChannelInput`. Adapters own argument schemas, credential handling,
-setup messages, and platform loading. Configuration inspection returns either no
-configured layer or a layer that connects only when built. Discord exposes a
-lightweight `@poppet/channel-discord/registration` entry and loads its SDK lazily.
+setup messages, optional interactive `promptSetup`, and platform loading. Configuration
+inspection returns either no configured layer or a layer that connects only when built. Discord and Slack expose
+lightweight registration entries and load their SDKs lazily.
 Existing setup commands and settings files are unchanged.
 
 `worker status` reports messaging connection state and configuration errors in a `channels`
@@ -961,7 +989,7 @@ array, with enabled state and persisted queue/delivery totals at the top level.
 Totals are read once from the shared repository. Configuration failures remain
 isolated to their registration, and stopped status does not build connections.
 Tests append fake registrations and exercise setup, help, simultaneous message
-handling, separate sessions, shared serialization, status, and resource cleanup.
+handling, separate sessions, shared request limits, status, and resource cleanup.
 
 Channel packages own protected credential storage, separate from model-provider
 credentials and memory. Reuse compatible protection and locking helpers
@@ -971,13 +999,29 @@ Persist non-secret channel settings so the installed worker can load them.
 
 Discord authorization lives in `config.json`; the protected `channels/discord.json`
 contains only the token. Discord supplies the bot identity after authentication.
-Setup reads the token through stdin and
+Interactive setup masks token input; direct setup accepts explicit flags. Setup
 merges ordinary settings atomically under ownership locks. Loading settings does
 not rewrite either file.
 The worker reads both files at startup. discord.js 14.27.0 owns Gateway
 heartbeats, reconnect/resume, and Discord API encoding. Ambiguous REST failures
 are not automatically retried by the SDK. Adapter failures stay in connection
 status, leaving the local CLI and scheduler available.
+
+### Slack threads
+
+Slack uses an outbound Socket Mode connection and the Web API, with no public
+webhook. Ordinary policy lives under `slack` in `config.json`; the protected
+`channels/slack.json` stores bot and app tokens. One owner and workspace are
+allowed. Accessible unshared channels are supported; shared channels and DMs are
+rejected. Mentions start thread sessions and attached threads accept follow-ups
+without a mention. See [Slack setup](gateways/slack.md).
+
+The adapter supplies authenticated, bounded downloads from Slack's file host and
+progress reactions. `/new`, `/status`, `/cancel`, `/approve`, and `/deny` use the
+shared gateway text-control path. Slack supplies no approval buttons, typing
+indicator, or remote thread naming. Scheduled destinations use a channel ID or
+`<channel-id>:<thread-timestamp>` and the same durable result and failure-notice
+queue as Discord.
 
 ### Discord threads as sessions
 
@@ -1015,8 +1059,9 @@ cancellation, and keep indicator failures separate from request execution.
 Mark the original message with 👀 while processing and replace it with ✅ after
 a successful run. Failures and cancellation clear the bot's 👀 without marking
 success. Reactions are best effort and do not change durable execution or delivery;
-crashes and network errors may leave stale markers. Progressive edits,
-attachments, voice, DMs, and forum-specific behavior are deferred.
+crashes and network errors may leave stale markers. Image and text-file attachments
+use bounded adapter downloads and the shared agent validation and storage path.
+Progressive edits, voice, DMs, and forum-specific behavior are deferred.
 See Discord's [thread permissions](https://docs.discord.com/developers/topics/threads#permissions)
 and [message content rules](https://docs.discord.com/developers/events/gateway#message-content-intent).
 
@@ -1085,13 +1130,13 @@ slash commands. Live Discord checks remain manual.
 ### External adapters
 
 The CLI loads default `ChannelRegistration` exports listed in `gatewayPackages`
-from `<POPPET_DATA_DIR>/gateways`. Discord remains bundled. See
+from `<POPPET_DATA_DIR>/gateways`. Discord and Slack remain bundled. See
 [adding a channel](development.md#adding-a-channel) for setup and compatibility.
 
 ## Dependencies
 
 The foundation uses Effect 4.0.4, its Bun platform adapter, TypeScript 7.0.2,
-Oxfmt 0.73.0, Oxlint 1.88.0, and Bun 1.4.4 with Bun 1.4.3 types. Bun checks types;
+Oxfmt 0.75.0, Oxlint 1.90.0, and Bun 1.4.4 with Bun 1.4.4 types. Bun checks types;
 TypeScript provides editor support. Versions are pinned and the lockfile is
 checked in. Effect provides Config and Schema, so a separate schema
 library is unnecessary.
@@ -1124,8 +1169,9 @@ limits the excerpt to 2048 Unicode characters, bounds title output to 1024 UTF-8
 bytes, and applies a ten-second deadline. The request has no shared prompt data,
 conversation continuation, tools, transcript writes, or automatic retries. A
 persisted claim precedes model resolution. The host prints or delivers the saved
-answer before asking the agent to name the session. Both paths use the existing
-model-access permit and owning process scope.
+answer before asking the agent to name the session. Both paths use a separate
+shared naming permit, allowing one naming request at a time independently of
+chat request slots, within the owning process scope.
 
 The gateway's channel naming capability returns creation ownership,
 reads current names, and conditionally renames managed conversations. Bindings

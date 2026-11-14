@@ -11,7 +11,7 @@ Keep ordinary settings in `~/.config/poppet/config.json`. The file and every
 field are optional. To use another data directory, set `POPPET_DATA_DIR` before
 running any Poppet command. Credentials stay in protected files outside this file.
 
-Run `poppet setup` to choose a provider and model, optionally configure Discord,
+Run `poppet setup` to choose a provider and model, optionally configure Discord and Slack,
 and offer worker startup. It preserves settings outside those choices. See
 [getting started](getting-started.md#run-setup) for the interactive flow.
 
@@ -36,23 +36,24 @@ after editing settings: `poppet worker restart`.
 
 ## Settings
 
-| Field                        | Default          | Purpose                                                                               |
-| ---------------------------- | ---------------- | ------------------------------------------------------------------------------------- |
-| `provider`                   | `openai-chatgpt` | Default provider for new chats and tasks                                              |
-| `model`                      | Unset            | Required model ID for new chats and tasks                                             |
-| `applicationName`            | `Poppet`         | Name used during initial ChatGPT registration                                         |
-| `discord`                    | Unconfigured     | Owner ID, guild ID, and home channel ID                                               |
-| `webSearchProvider`          | Unset            | Enable search with `brave` or `kagi`                                                  |
-| `mcpServers`                 | `[]`             | [MCP servers, sign-in, and tool permissions](mcp.md)                                  |
-| `gatewayPackages`            | `[]`             | Explicitly installed [external gateway packages](development.md#adding-a-channel)     |
-| `tasks.catchUpMinutes`       | `60`             | Missed recurring-job window, from 0 to 1440 minutes                                   |
-| `chat.outputTokens`          | `2048`           | Requested output limit, from 1 to 32768, capped by model metadata                     |
-| `chat.runDeadlineSeconds`    | `300`            | Overall run deadline, from 30 to 3600 seconds                                         |
-| `chat.logReasoning`          | `false`          | Show readable reasoning in CLI diagnostics and worker logs                            |
-| `chat.logTimings`            | `false`          | Log request-stage durations                                                           |
-| `chat.maxConcurrentRequests` | `3`              | Chat requests that run at once across messaging, CLI, and scheduled runs, from 1 to 8 |
+| Field                        | Default          | Purpose                                                                                         |
+| ---------------------------- | ---------------- | ----------------------------------------------------------------------------------------------- |
+| `provider`                   | `openai-chatgpt` | Default provider for new chats and tasks                                                        |
+| `model`                      | Unset            | Required model ID for new chats and tasks                                                       |
+| `applicationName`            | `Poppet`         | Name used during initial ChatGPT registration                                                   |
+| `discord`                    | Unconfigured     | Owner ID, guild ID, and home channel ID                                                         |
+| `slack`                      | Unconfigured     | Owner ID, team ID, and home channel ID                                                          |
+| `webSearchProvider`          | Unset            | Enable search with `brave` or `kagi`                                                            |
+| `mcpServers`                 | `[]`             | [MCP servers, sign-in, and tool permissions](mcp.md)                                            |
+| `gatewayPackages`            | `[]`             | Explicitly installed [external gateway packages](development.md#adding-a-channel)               |
+| `tasks.catchUpMinutes`       | `60`             | Missed recurring-job window, from 0 to 1440 minutes                                             |
+| `chat.outputTokens`          | `2048`           | Requested output limit, from 1 to 32768, capped by model metadata                               |
+| `chat.runDeadlineSeconds`    | `300`            | Overall run deadline, from 30 to 3600 seconds                                                   |
+| `chat.logReasoning`          | `false`          | Show readable reasoning in CLI diagnostics and worker logs                                      |
+| `chat.logTimings`            | `false`          | Log request-stage durations                                                                     |
+| `chat.maxConcurrentRequests` | `3`              | Chat requests that run at once across messaging, CLI, web chat, and scheduled runs, from 1 to 8 |
 
-`chat.maxConcurrentRequests` above 1 lets different Discord conversations and
+`chat.maxConcurrentRequests` above 1 lets different Discord and Slack conversations and
 sessions run at the same time; requests to one session or one conversation stay
 in order. Set it to 1 to answer one request at a time. Simultaneous
 `openai-chatgpt` requests in the worker share one credential lock and refresh an
@@ -94,6 +95,26 @@ its saved token. The bot identity comes from Discord after token authentication.
 Setup serializes writes. A malformed configuration prevents connection instead
 of broadening access. Credentials contain only the bot token; loading settings
 does not rewrite either file.
+
+## Slack
+
+`poppet setup` or `poppet gateway slack setup` saves both tokens in
+`channels/slack.json` and merges ordinary settings into `config.json`:
+
+```json
+{
+  "slack": {
+    "ownerId": "U123",
+    "teamId": "T123",
+    "homeChannelId": "C123"
+  }
+}
+```
+
+Use your own IDs. Only the configured owner can invoke Poppet in accessible,
+unshared channels in that workspace. Removing `slack` disables the adapter and
+retains the saved tokens. See [Slack setup](gateways/slack.md) for app scopes,
+Socket Mode, and masked token entry. Restart the worker after changing settings.
 
 ## Environment
 

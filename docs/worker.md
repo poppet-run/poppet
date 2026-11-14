@@ -29,9 +29,9 @@ is stopped. Inspecting saved data needs no model or provider credentials.
 Unconfigured messaging adapters remain disabled. `worker status`
 reports the host's services, and its `worker.messaging` field reports
 whether messaging is running. Only one worker can own a data directory at a time.
-Interactive, scheduled, and messaging model requests share
+CLI, web chat, scheduled, and messaging model requests share
 [`chat.maxConcurrentRequests`](configuration.md) slots, 3 by default. Requests to one
-session always run one at a time, so a CLI chat sent to a session that a Discord
+session always run one at a time, so a CLI chat sent to a session that a messaging
 thread is using waits for the thread's request. Chat streams to the
 invoking terminal; Ctrl-C cancels that request and leaves the worker running.
 Stopping the worker interrupts active requests and releases the socket and owner lock. After a crash,
@@ -142,7 +142,9 @@ poppet tasks show <task-id>
 ```
 
 Lifecycle logs go to `<data directory>/logs/worker.log`, with `0700` directory and
-`0600` file permissions. They exclude prompts, model output, and tokens.
+`0600` file permissions. Default lifecycle logs exclude prompts, model output, and tokens. Enabling
+[`chat.logReasoning`](configuration.md#reasoning-logs) also records readable reasoning,
+which can contain private prompt or tool content.
 The background launcher limits each new log file to 5 MiB and retains three
 archives, `worker.log.1` through `worker.log.3`, newest first. It appends after
 restart and rotates between writes, including when a single output chunk exceeds
@@ -217,7 +219,9 @@ Only an absent socket or refused connection permits local fallback. A lost,
 incomplete, or incompatible response fails without replaying the command. Restart
 the worker with `worker restart` after updating code.
 The current protocol uses `/v1/commands` for chat, `/v1/queries` for memory and
-inspection, and `/v1/tasks`; other routes are rejected.
+inspection, `/v1/tasks` for task commands, and `/v1/doctor` for bounded diagnostic
+snapshots; other routes are rejected. Optional [web chat](web-chat.md) uses a
+separate authenticated HTTP listener.
 
 ## Sleep and missed schedules
 
@@ -284,8 +288,8 @@ interactive clients can retain the session after a failed turn.
 
 After printing an interactive answer, the worker finishes the optional bounded
 title request before completing that command response. The gateway starts naming
-only after the answer's delivery chunks are confirmed sent. Naming shares the
-agent's serialized model access with chat and scheduled runs. Shutdown can cancel
+only after the answer's delivery chunks are confirmed sent. A separate agent naming
+permit allows one title request at a time, independently of the chat request slots. Shutdown can cancel
 naming without changing the completed chat run, delivery state, or provider pause
 state. Durable attempt claims prevent a restart from repeating title inference.
 Managed thread synchronization considers each title once, with a one-time fetch
