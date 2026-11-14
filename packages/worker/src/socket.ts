@@ -4,15 +4,12 @@ import { dirname, join } from "node:path";
 import { isMissingFile } from "@poppet/io";
 import { Cause, Context, Data, Effect, Exit, Fiber, Option, Schema, Scope } from "effect";
 
-/** A rejected local request or a failure to use the protected worker endpoint. */
 export class WorkerRequestError extends Data.TaggedError("WorkerRequestError")<{
   readonly message: string;
 }> {}
 
-// All worker clients share this endpoint for the single store owner.
 export const workerSocketPath = (directory: string) => join(directory, "store", "tasks.sock");
 
-/** Host routing for decoded worker requests, using the listener's resource scope. */
 export class WorkerRequests extends Context.Service<
   WorkerRequests,
   {
@@ -23,12 +20,10 @@ export class WorkerRequests extends Context.Service<
   }
 >()("poppet/WorkerRequests") {}
 
-// Bun uses FailedToOpenSocket for a refused Unix-socket connection.
 const UnavailableSocket = Schema.Struct({
   code: Schema.Literals(["ECONNREFUSED", "FailedToOpenSocket"]),
 });
 
-/** Returns null only when no worker is reachable; a lost response must not trigger local replay. */
 export const requestWorker = async (
   path: string,
   route: string,
@@ -80,7 +75,6 @@ const Reply = Schema.Union([
   Schema.Struct({ ok: Schema.Literal(false), message: Schema.String }),
 ]);
 
-/** Sends a single-reply command; an unreadable reply fails with `lost` and is never replayed. */
 export const requestWorkerReply = (
   path: string,
   route: string,
@@ -114,7 +108,6 @@ export const requestWorkerReply = (
       cause instanceof WorkerRequestError ? cause : new WorkerRequestError({ message: lost }),
   });
 
-/** Runs a single-reply command and encodes the reply `requestWorkerReply` decodes. */
 export const workerReply = <R>(
   operation: Effect.Effect<unknown, { readonly message: string }, R>,
   failed: string,
@@ -139,7 +132,6 @@ const decodeRequestBody = (request: Request) =>
     catch: () => new WorkerRequestError({ message: "Invalid request body." }),
   }).pipe(Effect.timeout("10 seconds"), Effect.option);
 
-/** Opens a protected Unix socket in scope; the caller must already own the store. */
 export const serveWorker = (path: string, handle: WorkerRequests["Service"]["handle"]) =>
   Effect.acquireRelease(
     Effect.gen(function* () {
@@ -152,7 +144,6 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
             throw cause;
           });
 
-          // The caller already owns SQLite. A leftover socket can belong only to its previous owner.
           if (info) {
             if (!info.isSocket())
               throw new WorkerRequestError({
@@ -163,7 +154,6 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
 
           const options: Bun.Serve.Options<undefined> = {
             unix: path,
-            // Four 5 MiB attachments arrive as base64; leave room for the message and metadata.
             maxRequestBodySize: 32 * 1024 * 1024,
             fetch(request, listener) {
               listener.timeout(request, 10);
@@ -181,14 +171,12 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
 
                 const response = yield* handle(request, body.value);
 
-                // A decoded chat can wait quietly for the shared runner.
                 if (response.headers.get("content-type") === "application/x-ndjson")
                   listener.timeout(request, 0);
 
                 return response;
               });
 
-              // Own decoding as well as execution, so shutdown can interrupt an unfinished upload.
               return Effect.runPromise(
                 reply.pipe(
                   Effect.provideService(Scope.Scope, scope),
@@ -206,7 +194,6 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
             },
           };
 
-          // Bun honors this on Unix sockets despite its types; per-request timeout is inert (#43816).
           Object.assign(options, { idleTimeout: 0 });
           const server = Bun.serve(options);
 
@@ -228,7 +215,6 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
     }),
     (server) =>
       Effect.promise(async () => {
-        // Request scopes have already interrupted their streams. Drain responses before releasing SQLite.
         await server.stop();
         await unlink(path).catch((cause: unknown) => {
           if (!isMissingFile(cause)) throw cause;

@@ -70,13 +70,11 @@ export type ChatTaskAction =
       readonly name: string | null;
       readonly prompt: string | null;
       readonly schedule: typeof TaskSchedule.Type | null;
-      /** A timestamp sets the end time, "none" clears it, and null leaves it unchanged. */
       readonly endAt: string | null;
     }
   | { readonly action: "skip_next" | "run_now"; readonly id: string }
   | { readonly action: "snooze"; readonly id: string; readonly until: string };
 
-/** The host supplies origin and the current destination; model arguments cannot grant either. */
 export interface ChatTaskContext {
   readonly origin: "interactive" | "scheduled";
   readonly runId: string;
@@ -90,7 +88,6 @@ export interface ChatTaskContext {
 
 export type PreparedTaskCall = PreparedCall;
 
-/** Validates before batch execution, then commits task operations and their receipts together. */
 export class ChatTasks extends Context.Service<
   ChatTasks,
   {
@@ -109,7 +106,6 @@ export const taskDefinition: Tool = {
   parameters: toolParameters(Arguments),
 };
 
-// Each action reads only the fields it uses and ignores the rest, so a stray value is not a failed call.
 export const decodeTaskCall = (call: ToolCall): Effect.Effect<ChatTaskAction, AgentError> =>
   Effect.gen(function* () {
     const args = yield* toolArguments(taskDefinition, Arguments)(call.arguments);
@@ -159,7 +155,6 @@ export const decodeTaskCall = (call: ToolCall): Effect.Effect<ChatTaskAction, Ag
     return { action: args.action, id };
   });
 
-/** Store failures from task operations are outcomes the model can act on, unless storage failed. */
 export const taskFailures: FailurePolicy = {
   reported: new Set([
     ...builtinFailures.reported,
@@ -169,7 +164,6 @@ export const taskFailures: FailurePolicy = {
   otherwise: "fatal",
 };
 
-/** Manages scheduled tasks through the host; scheduled runs cannot call it. */
 export const taskTool = Effect.gen(function* () {
   const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
 

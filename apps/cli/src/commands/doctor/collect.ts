@@ -31,7 +31,6 @@ import {
   type DoctorCheck,
 } from "#src/commands/doctor/report";
 
-/** Keep errors opaque: config parse failures and auth causes can contain secrets. */
 export const inspectCheck = <E, R>(
   id: string,
   next: string,

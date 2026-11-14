@@ -85,8 +85,6 @@ export const renderDoctor = (
   const style = (format: "green" | "yellow" | "red" | "gray" | "bold", text: string) =>
     color ? styleText(format, text, { validateStream: false }) : text;
 
-  // Wrap plain text before styling so ANSI sequences do not consume visible columns.
-  // Keep long paths, IDs and URLs intact rather than inserting characters into them.
   const wrap = (text: string, indent = 0) => {
     const prefix = " ".repeat(indent);
     const lines: string[] = [];

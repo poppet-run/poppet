@@ -121,7 +121,6 @@ describe("context.ts", () => {
   });
 
   test("when model capacity constrains context, converts tokens to bytes and rejects oversized new messages", () => {
-    // Leaves 512 bytes beyond the instructions after output and overhead tokens, at 3 bytes per token.
     const smallModel: ModelDescription = {
       ...model,
       capabilities: {

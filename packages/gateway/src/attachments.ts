@@ -19,10 +19,6 @@ const tooLarge = (maxBytes: number) =>
       : `the file is larger than ${Math.round(maxBytes / 1024)} KiB.`,
   );
 
-/**
- * Downloads an attachment from an adapter host within a deadline and a byte limit, counting the
- * bytes received rather than trusting the declared or reported size.
- */
 export const boundedAttachment =
   (
     fetch: AttachmentFetch,

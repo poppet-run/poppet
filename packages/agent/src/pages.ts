@@ -27,7 +27,6 @@ export const fetchPageDefinition: Tool = {
   parameters: toolParameters(FetchArguments),
 };
 
-/** Seeds page access from the request text; completed searches can grant additional URLs during the run. */
 export const suppliedPageURLs = (text: string) => {
   const urls = new Set<string>();
 
@@ -55,15 +54,12 @@ export const suppliedPageURLs = (text: string) => {
 
     try {
       urls.add(pageURL(value).href);
-    } catch {
-      /* Invalid URLs grant no access. */
-    }
+    } catch {}
   }
 
   return urls;
 };
 
-/** Resolves to the normalized URL, which must already be granted to this run. */
 export const decodeFetchPageCall = (call: ToolCall, allowed: ReadonlySet<string>) =>
   toolArguments(
     fetchPageDefinition,
@@ -91,7 +87,6 @@ export const decodeFetchPageCall = (call: ToolCall, allowed: ReadonlySet<string>
     ),
   );
 
-/** Retrieves one authorized page with bounded redirects, network I/O, extraction, and output. */
 export class Pages extends Context.Service<
   Pages,
   {
@@ -157,7 +152,6 @@ export const PagesLive = Layer.effect(
   }),
 );
 
-/** Reads one granted public page; its text is untrusted. */
 export const fetchPageTool = Effect.gen(function* () {
   const pages = yield* Pages;
 

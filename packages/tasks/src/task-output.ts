@@ -92,7 +92,6 @@ export const detailsOutput = (
 
   if (fits(whole)) return Effect.succeed(whole);
 
-  // Shorten the prompt first, then drop occurrences from the end of the list.
   const prompt = fitPrefix(task.prompt, (prefix) => fits(output(prefix, occurrences, true)));
 
   if (prompt !== null) return Effect.succeed(output(prompt, occurrences, true));

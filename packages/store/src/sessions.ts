@@ -65,7 +65,6 @@ export const sessionOperations = (sql: SqlClient.SqlClient, records: StoreRecord
           return claimed.length === 1 ? yield* requireSession(id) : null;
         }),
       ),
-    // A generated title replaces only the fallback; manual names always win.
     finishTitle: (id, title, usage) =>
       transaction(
         Effect.gen(function* () {

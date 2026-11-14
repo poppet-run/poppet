@@ -182,7 +182,6 @@ describe("ApiKeyStore", () => {
       });
       expect(await readFile(target, "utf8")).toBe("leave this alone");
       expect((await stat(target)).mode & 0o777).toBe(0o644);
-      // A competing writer holds the exclusive lock for the whole write.
       await Effect.runPromise(
         Effect.scoped(
           acquireOwnerLock(join(auth, "test-provider.lock")).pipe(

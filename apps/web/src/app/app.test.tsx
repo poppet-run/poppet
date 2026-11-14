@@ -250,7 +250,6 @@ test("sign-out ignores a late session query and sign-in fetches fresh history", 
     await flush();
     expect(store.$state.get().authenticated).toBe(true);
     expect(store.$state.get().sessions.map((session) => session.id)).toEqual(["fresh"]);
-    // A second mutation must work after the first completes.
     await store.logout();
     expect(store.$state.get().authenticated).toBe(false);
   } finally {
@@ -326,7 +325,6 @@ test("duplicate sends are throttled and navigation closes streams without stoppi
     store.send();
     store.send();
     expect(requests.filter((path) => path === "/api/submissions")).toHaveLength(1);
-    // A draft edited while delivery is pending must survive acknowledgement.
     store.set("drafts", { new: "Next message" });
     resolveSubmission(Response.json({ sessionId: "first" }));
     await flush();

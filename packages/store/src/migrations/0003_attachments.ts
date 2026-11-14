@@ -1,4 +1,3 @@
-// Attachment bytes live in the database so backup, recovery, and file permissions cover them.
 export const attachments: ReadonlyArray<string> = [
   `CREATE TABLE attachments (
     id TEXT PRIMARY KEY,

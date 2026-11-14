@@ -3,10 +3,6 @@ import { Effect, Schema } from "effect";
 
 import { ChannelError } from "#src/channel";
 
-/**
- * Selects a fresh session explicitly; ordinary messages keep their existing snapshot. A fresh
- * request needs a prompt unless the message carries attachments.
- */
 export const messagingRequest = (text: string, attached = false) =>
   Effect.gen(function* () {
     if (!/^\/new(?:\s|$)/.test(text)) return { fresh: false, prompt: text, skill: null };
@@ -32,9 +28,7 @@ export const messagingRequest = (text: string, attached = false) =>
     return { fresh: true, prompt, skill };
   });
 
-/** Approval replies are owner controls, never prompts for the model. */
 export const isCommandApproval = (text: string) => /^\/(?:approve|deny)(?:\s|$)/.test(text);
 
-/** Owner controls answered by the gateway without invoking the model. */
 export const isControl = (text: string) =>
   text === "/status" || text === "/cancel" || isCommandApproval(text);

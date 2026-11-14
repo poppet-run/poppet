@@ -19,7 +19,6 @@ export const publicHttpURL = (value: string, forbidden: () => Error) => {
 
 const privateV4 = new BlockList();
 
-// IANA special-purpose ranges, plus multicast. Conservatively exclude special-purpose exceptions.
 for (const [address, prefix] of [
   ["0.0.0.0", 8],
   ["10.0.0.0", 8],
@@ -56,7 +55,6 @@ export const publicAddress = (address: string) => {
   switch (isIP(address)) {
     case 4:
       return !privateV4.check(address, "ipv4");
-    // Only ordinary global unicast is allowed; mapped IPv4 and translation prefixes are excluded.
     case 6:
       return globalV6.check(address, "ipv6") && !specialV6.check(address, "ipv6");
     default:

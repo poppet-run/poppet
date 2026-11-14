@@ -26,7 +26,6 @@ import {
 } from "#src/task-schema";
 import { TaskRepository, type TaskStore } from "#src/task-store";
 
-/** Host-supplied provider status that keeps scheduling independent of concrete adapters. */
 export class WorkerConnections extends Context.Service<
   WorkerConnections,
   {
@@ -59,7 +58,6 @@ const logTaskEnd = (at: number, task: { name: string; jobId: string; endAt: numb
     `Task ${JSON.stringify(task.name)} task=${task.jobId} ended until=${new Date(task.endAt).toISOString()}; no later occurrences`,
   );
 
-/** Reconciles due work and logs only the skips and endings committed by the repository. */
 export const reconcileTasks = (repo: TaskStore, now: number, startup = false) =>
   Effect.gen(function* () {
     const { skipped, ended } = yield* repo.reconcile(now, startup);
@@ -73,7 +71,6 @@ export const reconcileTasks = (repo: TaskStore, now: number, startup = false) =>
     yield* Effect.forEach(ended, (item) => logTaskEnd(now, item));
   });
 
-/** Runs an occurrence in a fresh session with scheduled tool restrictions, then saves its outcome. */
 export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
   Effect.gen(function* () {
     const job = item.definition;
@@ -93,7 +90,6 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
         `${occurrenceLabel(job.name, item.id)} started provider=${job.provider}`,
       );
 
-      // Link the fresh session before requests begin, so crash recovery can inspect it.
       const session = yield* store.createSession(job.provider, job.model, {
         taskTitle: sessionTitle(job.name),
         skill: job.skill,
@@ -106,7 +102,6 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
           event.type === "started" ? repo.link(item.id, session.id, event.run.id) : Effect.void,
       );
     }).pipe(
-      // Catch model failures before finalization so a failed database write still stops the worker.
       Effect.catchTags({ AgentError: saveFailure, ProviderError: saveFailure }),
       Effect.onExit((exit) =>
         Effect.gen(function* () {
@@ -164,7 +159,6 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
           const quiet =
             status === "completed" && runId !== null && noAction(yield* store.run(runId));
 
-          // Active cancellations are logged by the command after interruption finishes.
           if (status !== "cancelled")
             yield* workerLog(
               now,
@@ -185,7 +179,6 @@ interface ActiveOccurrence {
   readonly fiber: Fiber.Fiber<void, TaskError | StoreError>;
 }
 
-/** Recovers task state and builds serialized command handling plus the scheduling loop. */
 export const makeTaskWorker = Effect.gen(function* () {
   const config = yield* AppConfig;
   const skills = yield* Skills;
@@ -248,7 +241,6 @@ export const makeTaskWorker = Effect.gen(function* () {
           ? (yield* repo.occurrences(command.id)).filter((item) => item.status === "pending")
           : [];
 
-      // A control or resume can use up the last slot before the task's end time.
       const before =
         isTaskControl(command) || command.action === "resume"
           ? Option.getOrNull(yield* Effect.option(repo.task(command.id)))
@@ -318,8 +310,6 @@ export const makeTaskWorker = Effect.gen(function* () {
       const worker = Effect.gen(function* () {
         yield* Queue.take(wake);
 
-        // Claim and fork without an interruption gap that could strand a running occurrence.
-        // Share command ownership while claiming so clear cannot race a new active run.
         const current = yield* commands.withPermit(
           Effect.uninterruptibleMask((restore) =>
             Effect.gen(function* () {
@@ -347,12 +337,10 @@ export const makeTaskWorker = Effect.gen(function* () {
           ),
         );
 
-        // Explicitly cancelling a child occurrence should leave the worker available.
         if (Exit.isFailure(exit) && !Cause.hasInterrupts(exit.cause)) yield* exit;
         yield* Queue.offer(wake, undefined);
       }).pipe(Effect.forever);
 
-      // Failure in either loop stops its sibling; the host owns the listener.
       yield* Effect.all([timer, worker], { concurrency: 2, discard: true });
     }),
   ).pipe(

@@ -68,7 +68,6 @@ const temporaryCodes = new Set([
   "subscription_sharing_user_unavailable",
 ]);
 
-/** ChatGPT subscription codes, checked at the same precedence as the shared status rules. */
 export const chatGPTReason: RemoteReason = (status, code = "") => {
   if (status === 401 || authenticationCodes.has(code)) return "authentication";
 
@@ -76,7 +75,6 @@ export const chatGPTReason: RemoteReason = (status, code = "") => {
 
   if (code === "subscription_sharing_usage_limit_exceeded") return "quota";
 
-  // A rate limit outranks an unavailable subscription, as it does in the shared rules.
   if (temporaryCodes.has(code) && status !== 429) return "temporary";
 
   return undefined;

@@ -46,7 +46,6 @@ const openFile = (file: string, flags: number) => {
   }
 };
 
-/** One background launcher owns this writer and rotates only between completed writes. */
 export const openWorkerLog = (directory: string) => {
   prepareWorkerLogDirectory(directory);
   const path = join(directory, "worker.log");

@@ -41,18 +41,11 @@ interface TaskEnd {
 
 const Count = Schema.Struct({ count: Schema.Natural });
 
-// Each public operation reports TaskError; internal steps may also fail with SQL or schema errors.
 const operation =
   <Args extends ReadonlyArray<unknown>, A, E, R>(run: (...args: Args) => Effect.Effect<A, E, R>) =>
   (...args: Args) =>
     run(...args).pipe(reportAs(taskFailure));
 
-/**
- * Builds task operations on the shared database connection.
- * catchUpMs is how late a missed recurring occurrence may still run once; older ones are
- * skipped. Zero skips missed recurring work at startup; while running, it queues the earliest
- * due occurrence if the task is idle.
- */
 export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
   const commandLock = Semaphore.makeUnsafe(1);
 
@@ -68,7 +61,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       decodeRows(Occurrence),
     );
 
-  // Scheduled occurrences are idempotent per task revision and time.
   const queue = (job: Task, scheduledAt: number) =>
     insertOccurrence(job, scheduledAt, { ignoreDuplicate: true });
 
@@ -84,7 +76,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
   const recover = (now: number) =>
     sql.withTransaction(
       Effect.gen(function* () {
-        // The run may have saved a quota failure before the occurrence was finalized.
         yield* sql`INSERT INTO job_provider_pauses (provider, reason, resume_at, failures)
           SELECT DISTINCT json_extract(occurrences.definition, '$.provider'), 'quota', NULL, 1
           FROM job_occurrences AS occurrences
@@ -118,10 +109,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       WHERE status = 'pending' AND available_at <= ${now - recurringExpiry}
         AND json_extract(definition, '$.schedule.type') = 'cron'`;
 
-  /**
-   * Queues due work and advances schedules together, recording missed recurring work as skips.
-   * A task whose end time leaves no later slot is reported once, when its schedule runs out.
-   */
   const reconcile = (now: number, startup = false) =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -130,7 +117,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
         const recordSkip = (job: Task, firstAt: number, reason: TaskSkip["reason"], until = now) =>
           Effect.gen(function* () {
-            // Slots after the end time never existed, so a skipped interval stops there.
             const lastAt = job.endAt === null ? until : Math.min(until, job.endAt);
 
             yield* sql`INSERT INTO job_skips (job_id, first_at, last_at, reason)
@@ -148,14 +134,12 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
           const busy = yield* hasActive(job.id);
 
-          // A historical retry may hold a rearmed one-off; keep its slot until that work finishes.
           if (busy && job.schedule.type === "once") continue;
 
           const skip = job.schedule.type === "cron" && (startup || busy);
           const missed = startup ? "downtime" : "worker-delayed";
 
           if (job.schedule.type === "cron" && !busy && catchUpMs > 0) {
-            // Run only the most recent missed time, and only while it is still recent.
             const latest = Math.max(
               job.nextAt,
               (yield* latestTime(
@@ -175,7 +159,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
           } else {
             yield* queue(job, job.nextAt);
 
-            // A delayed timer enqueues the earliest due occurrence and skips the rest.
             const following = yield* nextTime(job.schedule, job.nextAt, job.endAt);
 
             if (following !== null && following <= now)
@@ -188,7 +171,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
             ended.push({ jobId: job.id, name: job.name, endAt: job.endAt });
         }
 
-        // Return only committed transitions, so the worker never logs rolled-back changes.
         return { skipped, ended };
       }),
     );
@@ -257,7 +239,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
               "Wait for the running occurrence to finish or cancel it via CLI before deleting this task.",
           });
 
-        // History cascades with the task; referenced conversations and runs stay.
         yield* sql`DELETE FROM jobs WHERE id = ${id}`;
 
         return job;
@@ -272,7 +253,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         if (running.length > 0)
           return yield* new TaskError({ message: "Interrupt active work before clearing tasks." });
 
-        // History cascades with each task; the conversations it references stay.
         return (yield* sql`DELETE FROM jobs RETURNING id`).length;
       }),
     );
@@ -327,7 +307,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         if (yield* hasActive(job.id))
           return yield* new TaskError({ message: "The task already has an active occurrence." });
 
-        // A retry reruns its own slot, so the slot must still fall within the end time.
         if (job.endAt !== null && item.scheduledAt > job.endAt)
           return yield* new TaskError({
             message:
@@ -346,7 +325,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       }),
     );
 
-  // Select and change the occurrence in one transaction, including ownership checks.
   const controlOccurrence = (
     action: "cancel-task" | "retry-task",
     id: string,
@@ -383,7 +361,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       }),
     );
 
-  /** Atomically starts the oldest eligible occurrence, respecting task and provider pauses. */
   const claim = (now: number) =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -415,7 +392,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
   ) =>
     sql.withTransaction(
       Effect.gen(function* () {
-        // Explicit cancellation wins over the run's cleanup callback.
         yield* sql`UPDATE job_occurrences SET status = ${status}, reason = ${reason},
           finished_at = ${now} WHERE id = ${id} AND status = 'running'`;
 
@@ -431,7 +407,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       }),
     );
 
-  // Quota failures need manual resumption; transient failures delay future work with capped backoff.
   const blockProvider = (
     provider: string,
     reason: "quota" | "temporary" | "rate-limit",
@@ -574,7 +549,6 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
 export type TaskStore = ReturnType<typeof makeTaskStore>;
 
-/** Task definitions, occurrence state, and provider pauses stored alongside conversation history. */
 export class TaskRepository extends Context.Service<TaskRepository, TaskStore>()(
   "poppet/TaskRepository",
 ) {}

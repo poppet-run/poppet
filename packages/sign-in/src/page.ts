@@ -1,4 +1,3 @@
-/** The page a browser shows after its callback; `received` tells the owner what happens next. */
 export const callbackResponse = (accepted: boolean, received: string) => {
   const title = accepted ? "Authorization received" : "Sign-in could not be completed";
 

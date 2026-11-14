@@ -8,16 +8,10 @@ import { decodeInput } from "#src/errors";
 import { SessionSearchMatch, SessionSearchQuery, type SessionSearchResult } from "#src/schema";
 import { decodeRows } from "#src/sql";
 
-/** Bounds a caller-supplied JSON byte budget. */
 export const MaxBytes = Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 }));
 
-// Approximate JSON bytes a result spends on IDs, title, and field names.
 const overhead = 250;
 
-/**
- * Searches completed exchanges. The budget sets how many matches return and how long
- * each excerpt is; results stay close to it but are not fitted exactly.
- */
 export const searchSessions = Effect.fn(function* (
   sql: SqlClient.SqlClient,
   query: string,
@@ -36,7 +30,6 @@ export const searchSessions = Effect.fn(function* (
   const limit = Math.min(10, Math.max(1, Math.floor(maxBytes / 400)));
   const excerptBytes = Math.min(4000, Math.floor(maxBytes / limit) - overhead);
 
-  // snippet() centres each excerpt on its match; a fresh marker locates the match safely.
   const marker = randomUUID();
 
   const rows = yield* sql`SELECT m.session_id, m.id AS message_id, s.title, m.created_at,
@@ -56,7 +49,6 @@ export const searchSessions = Effect.fn(function* (
     .slice(0, limit)
     .map(({ sessionId, messageId, title, createdAt, role, excerpt: snippet, textLength }) => {
       const [before = "", hit = "", after = ""] = snippet.split(marker);
-      // Keep the match and spend the remaining bytes evenly on either side of it.
       const side = Math.max(0, Math.floor((excerptBytes - Buffer.byteLength(hit)) / 2));
       const lead = [...clip([...before].toReversed().join(""), side)].toReversed().join("");
       const excerpt = `${lead}${hit}${clip(after, side)}`;

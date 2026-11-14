@@ -13,18 +13,15 @@ import { AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
 import { WebSearch } from "#src/web-search";
 
-/** Provides a service only when a test supplies one. */
 export const optionalService = <I, S>(tag: Context.Key<I, S>, value: S | undefined) =>
   value === undefined ? Layer.empty : Layer.succeed(tag, value);
 
-/** The request ends with a tool error, which a model would answer rather than call again. */
 export const reportedError = (request: ModelRequest) => {
   const last = request.messages.at(-1);
 
   return last?.role === "tool" && last.output.startsWith('{"error":');
 };
 
-/** The configured test model; it records requests and answers reported tool errors with `answer`. */
 export const testModel = (options: {
   readonly stream: ModelOperations["stream"];
   readonly answer: ModelOperations["stream"];
@@ -51,10 +48,6 @@ export const testModel = (options: {
   },
 });
 
-/**
- * A model stream whose answer to each prompt waits until the test releases that prompt's gate.
- * `entered` completes when the model receives the prompt.
- */
 export const gatedStream = (answer: (prompt: string) => Stream.Stream<ModelEvent>) => {
   const gates = new Map<
     string,
@@ -84,7 +77,6 @@ export const gatedStream = (answer: (prompt: string) => Stream.Stream<ModelEvent
   return { gate, stream };
 };
 
-/** A temporary data directory configured for the test model, with a store over it. */
 export const agentHarness = async (policy: Partial<ChatPolicy> = {}) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-agent-test-"));
 
@@ -103,7 +95,6 @@ export const agentHarness = async (policy: Partial<ChatPolicy> = {}) => {
     config,
     store,
     settings,
-    /** The agent over this store, without web search or pages; later `services` replace defaults. */
     agent: <const S extends ReadonlyArray<Layer.Layer<never, any, any>>>(
       resolve: ModelResolver["Service"]["resolve"],
       ...services: S

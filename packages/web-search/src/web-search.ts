@@ -14,7 +14,6 @@ export interface WebSearchResult {
   readonly truncated: boolean;
 }
 
-/** Null search means disabled or missing credentials; no tool is advertised. */
 export class WebSearch extends Context.Service<
   WebSearch,
   {
@@ -22,7 +21,6 @@ export class WebSearch extends Context.Service<
   }
 >()("poppet/WebSearch") {}
 
-/** Keep source URLs intact; only results visible in this budget can grant page access. */
 export const webSearchResult = (
   candidates: WebSearchResult["results"],
   limit: number,
@@ -30,7 +28,6 @@ export const webSearchResult = (
   const results: Array<{ title: string; url: string; snippet: string }> = [];
   const sources: Array<WebSearchResult["results"][number]> = [];
   let truncated = candidates.length > 5;
-  // Reserve the longer boolean representation so an untruncated result also fits.
   const size = () => Buffer.byteLength(JSON.stringify({ results, truncated: false }));
 
   for (const candidate of candidates.slice(0, 5)) {
@@ -46,7 +43,6 @@ export const webSearchResult = (
       continue;
     }
 
-    // Reserve source URLs before spending any space on titles or passages.
     results.push({ title: "", url: url.href, snippet: "" });
 
     if (size() > limit) {
@@ -59,7 +55,6 @@ export const webSearchResult = (
   }
 
   for (const field of ["title", "snippet"] as const) {
-    // Fill short fields first, sharing their unused allocation among longer ones.
     const pending = sources
       .map((source, index) => ({ text: source[field], index }))
       .toSorted(
@@ -82,7 +77,6 @@ export const webSearchResult = (
   return { results, truncated };
 };
 
-/** Providers supply fixed endpoints and map validated responses into common source results. */
 export const searchRequest = (
   provider: string,
   request: (query: string, signal: AbortSignal) => Promise<Response>,

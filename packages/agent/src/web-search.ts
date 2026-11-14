@@ -26,7 +26,6 @@ export const decodeWebSearchCall = (call: ToolCall) =>
     SearchArguments,
   )(call.arguments).pipe(Effect.map(({ query }) => query));
 
-/** Searches the configured provider; returned URLs become readable by fetch_page. */
 export const webSearchTool = Effect.gen(function* () {
   const { search } = yield* WebSearch;
 

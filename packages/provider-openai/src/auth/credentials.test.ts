@@ -19,7 +19,6 @@ describe("CredentialStore", () => {
       await writeFile(path, "invalid-json");
       await expect(harness.run(status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readFile(path, "utf8")).toBe("invalid-json");
-      // A competing owner holds the exclusive lock while status runs.
       await Effect.runPromise(
         Effect.scoped(
           acquireOwnerLock(join(harness.directory, "auth/owner.lock")).pipe(

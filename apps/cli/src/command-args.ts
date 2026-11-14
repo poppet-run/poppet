@@ -1,13 +1,9 @@
 import type { ChannelRegistration } from "@poppet/gateway";
 
 interface TextCommand {
-  /** Positional arguments before the literal text. */
   readonly positionals: number;
-  /** Options that take a value. */
   readonly values: ReadonlyArray<string>;
-  /** Options that take no value. */
   readonly flags: ReadonlyArray<string>;
-  /** Fail on unknown options instead of treating them as the start of the text. */
   readonly strict?: boolean;
 }
 
@@ -16,7 +12,6 @@ const textCommands = new Map<string, TextCommand>([
   ["chat send", { positionals: 1, values: ["attach"], flags: [] }],
   ["chat rename", { positionals: 1, values: [], flags: ["json"] }],
   ["memory set", { positionals: 1, values: [], flags: ["json"] }],
-  // Unknown options must fail, rather than silently becoming a local task's prompt.
   [
     "tasks add",
     {
@@ -28,7 +23,6 @@ const textCommands = new Map<string, TextCommand>([
   ],
 ]);
 
-// Insert `--` so prompts, values, and adapter setup arguments reach their handlers as literal text.
 export const commandArgs = (
   args: ReadonlyArray<string>,
   channels: ReadonlyArray<ChannelRegistration>,

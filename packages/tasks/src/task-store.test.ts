@@ -89,7 +89,6 @@ describe.concurrent("TaskRepository", () => {
               created_at: start,
             })}`;
 
-            // The current repository reads columns this old schema lacks, so queue the row directly.
             yield* sql`INSERT INTO job_occurrences ${sql.insert({
               id: "saved-occurrence",
               job_id: "saved-job",
@@ -990,7 +989,6 @@ describe.concurrent("TaskRepository", () => {
         Effect.gen(function* () {
           const job = yield* repo.add(morning, start - 60_000);
 
-          // A worker that starts shortly after 09:00 still runs that morning's occurrence.
           yield* repo.reconcile(start + 5 * 60_000, true);
           yield* repo.reconcile(start + 5 * 60_000, true);
           expect((yield* repo.occurrences(job.id)).map((item) => item.scheduledAt)).toEqual([
@@ -1211,19 +1209,16 @@ describe.concurrent("TaskRepository", () => {
           const first = (yield* repo.claim(start + 60_000))!;
           yield* repo.finish(first.id, "completed", null, start + 60_000);
 
-          // The slot exactly at the end time is the last one.
           expect((yield* repo.reconcile(end)).ended).toEqual([
             { jobId: job.id, name: job.name, endAt: end },
           ]);
           expect((yield* repo.task(job.id)).nextAt).toBeNull();
 
-          // Later reconciliation neither reports the ending again nor queues another slot.
           expect(yield* repo.reconcile(end + 180_000)).toEqual({ skipped: [], ended: [] });
           const last = (yield* repo.claim(end + 180_000))!;
           expect(last.scheduledAt).toBe(end);
           yield* repo.finish(last.id, "failed", "test", end + 180_000);
 
-          // A retry reruns a slot that fell within the end time.
           expect((yield* repo.controlOccurrence("retry-task", job.id, end + 200_000)).id).toBe(
             last.id,
           );
@@ -1258,7 +1253,6 @@ describe.concurrent("TaskRepository", () => {
           const first = (yield* repo.claim(start + 60_000))!;
           yield* repo.finish(first.id, "completed", null, start + 60_000);
 
-          // Resuming a paused task does not outlive its end time.
           yield* repo.pause(job.id, start + 120_000);
           expect((yield* repo.resume(job.id, start + 300_000)).nextAt).toBeNull();
 
@@ -1322,7 +1316,6 @@ describe.concurrent("TaskRepository", () => {
             start,
           );
 
-          // The held occurrence belongs to tomorrow's slot, which the new end time excludes.
           expect(
             yield* repo.control(
               { action: "edit", id: job.id, patch: { endAt: start + 3_600_000 } },

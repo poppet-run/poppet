@@ -48,8 +48,6 @@ describe("runLoggedWorker", () => {
   test("when the launcher receives shutdown, forwards it, drains logs, and releases ownership", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-background-shutdown-"));
 
-    // Stands in for the worker, which takes seconds to load on CI runners. Its shutdown
-    // line shows the forwarded signal reached its handler instead of killing it.
     const worker = `
       const timer = setInterval(() => undefined, 1000);
       console.log("Worker running.");
@@ -59,7 +57,6 @@ describe("runLoggedWorker", () => {
       });
     `;
 
-    // The launcher runs in its own process because it installs signal handlers.
     const launcher = `
       import { runLoggedWorker } from ${JSON.stringify(fileURLToPath(new URL("../../worker-background.ts", import.meta.url)))};
       process.exitCode = await runLoggedWorker(
@@ -98,7 +95,6 @@ describe("runLoggedWorker", () => {
       );
 
       expect(ready).toBe(true);
-      // A second launcher must fail before it can start another child or rotate these logs.
       const before = await readFile(path, "utf8");
       await expect(
         runLoggedWorker([process.execPath, "--eval", 'console.log("unwanted child")'], directory),
@@ -110,7 +106,6 @@ describe("runLoggedWorker", () => {
       expect(await stderr).toBe("");
       expect(await Bun.file(join(directory, "logs/worker.lock")).exists()).toBe(false);
       expect(await readFile(path, "utf8")).toBe("Worker running.\nWorker stopped.\n");
-      // Restart can acquire logging ownership again.
       expect(
         await runLoggedWorker([process.execPath, "--eval", 'console.log("restarted")'], directory),
       ).toBe(0);

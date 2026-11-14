@@ -1,4 +1,3 @@
-/** Public browser records deliberately omit provider continuation and tool credentials. */
 export interface ChatSession {
   readonly id: string;
   readonly title: string | null;

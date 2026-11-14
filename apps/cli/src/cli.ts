@@ -71,7 +71,6 @@ export const makeCLI = (
           Effect.fail(new UsageError({ message: formatter.formatErrors(error.errors) })),
         ),
       ),
-      // Parsing and help need platform services, but no application resources.
       Effect.provideService(
         CliConfig.CliConfig,
         CliConfig.make({ builtIns: [GlobalFlag.Help, GlobalFlag.Completions] }),
@@ -82,7 +81,6 @@ export const makeCLI = (
 
 export const run = (args: ReadonlyArray<string>, worker: typeof manageWorker = manageWorker) =>
   Effect.gen(function* () {
-    // Only gateway setup, messaging workers, and worker status need external adapter code.
     const registeredChannels =
       args[0] === "gateway" ||
       (args[0] === "worker" &&

@@ -63,10 +63,6 @@ export const createCLIContext = (
       if (!handled) yield* local;
     }).pipe(Effect.provide(runtime.config));
 
-  /**
-   * Reads a running worker's JSON reply, or computes the same value locally. Callers parse the
-   * fields they format, since the worker may run different code.
-   */
   const queryWorker = <A, E>(query: WorkerQuery, local: Effect.Effect<A, E>) =>
     Effect.gen(function* () {
       const config = yield* AppConfig;

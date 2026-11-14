@@ -39,7 +39,6 @@ export interface BashResult {
   readonly truncated: boolean;
 }
 
-/** The host supplies execution; the agent always reviews before calling it. */
 export class Bash extends Context.Service<
   Bash,
   {
@@ -212,7 +211,6 @@ const prepareBash = (
     } satisfies PreparedCall;
   });
 
-/** A command may have run before failing, so only an uncertain outcome is not fatal. */
 export const bashFailures: FailurePolicy = {
   reported: new Set(),
   uncertain: new Set(["agent:tool-uncertain"]),
@@ -220,7 +218,6 @@ export const bashFailures: FailurePolicy = {
   journalFatalReply: true,
 };
 
-/** Runs reviewed host commands; absent when the host supplies no Bash. */
 export const bashTool = Effect.gen(function* () {
   const runner = Option.getOrNull(yield* Effect.serviceOption(Bash));
   const { toolBytes } = yield* ChatSettings;

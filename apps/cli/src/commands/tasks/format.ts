@@ -6,7 +6,6 @@ import { fields, plural, printParsed, sections, table, tableOr, time, tree } fro
 
 const Time = Schema.NullOr(Schema.Number);
 
-/** The task fields that text output shows. */
 const TaskRow = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -64,7 +63,6 @@ const schedule = (value: Schedule) =>
 
 type Timing = Pick<TaskRow, "nextAt" | "endAt" | "paused">;
 
-// Only an end time leaves a recurring task without a next slot; a one-off never has one.
 const ended = (task: Timing) => task.nextAt === null && task.endAt != null;
 
 const nextRun = (task: Timing) =>
@@ -196,7 +194,6 @@ const providerPauses = (pauses: ReadonlyArray<ProviderPause>) =>
         ),
       ].join("\n");
 
-/** Prints a task command's result; local results and worker replies share each action's shape. */
 export const printTaskResult = <A>(json: boolean, command: TaskCommand, value: A) => {
   switch (command.action) {
     case "list":

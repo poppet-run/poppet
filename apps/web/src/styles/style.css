@@ -5,7 +5,6 @@
 @custom-variant mobile (@media (max-width: 720px));
 
 @theme {
-  /* Canonical palette: poppet-run/brand README.md, Colours. */
   --color-navy: #19243a;
   --color-apricot: #ffb48a;
   --color-cream: #fff1dd;
@@ -64,7 +63,6 @@
   }
 }
 
-/* Provider Markdown has no utility classes. Keep its document styles scoped here. */
 @layer components {
   .markdown {
     h1,

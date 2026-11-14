@@ -95,7 +95,6 @@ const toolReply = (...calls: ReadonlyArray<Output>) =>
 const send = (id: string) =>
   Agent.use((agent) => Stream.runDrain(agent.send(id, "How should you answer?")));
 
-/** Sends a request that must complete, returning the failures its tools reported to the model. */
 const reportedFailures = (id: string) =>
   Effect.gen(function* () {
     const store = yield* Store;

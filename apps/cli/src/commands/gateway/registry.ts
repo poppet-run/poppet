@@ -21,7 +21,6 @@ const Registration = Schema.Struct({
   load: Schema.declare((value): value is ChannelRegistration["load"] => Effect.isEffect(value)),
 });
 
-// Accept package entry points only, never relative paths, URLs, or parent traversal.
 const packageEntry =
   /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*$/;
 

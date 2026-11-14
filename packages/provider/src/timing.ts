@@ -1,6 +1,5 @@
 import { Cause, Clock, Context, Effect, Exit, Option } from "effect";
 
-/** Request-scoped diagnostics contain durations and fixed labels, never prompt or credential data. */
 export class RequestTiming extends Context.Service<
   RequestTiming,
   {
@@ -32,7 +31,6 @@ export const recordTiming = (
       });
   });
 
-/** Measures success, failure, and cancellation without changing the operation's result. */
 export const measureTiming = <A, E, R>(
   stage: string,
   operation: Effect.Effect<A, E, R>,

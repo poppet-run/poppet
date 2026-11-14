@@ -105,7 +105,6 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
 
                     if (after && !answered && followup !== "done") {
                       const mutations = {
-                        // The first request's identity, since withdrawal removes it from later ones.
                         mcp: {
                           name: requests[0]!.tools.find((tool) => tool.namespace === "poppet_mcp")!
                             .name,

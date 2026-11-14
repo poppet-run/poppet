@@ -61,7 +61,6 @@ export const decodeSessionSearchCall = (call: ToolCall): Effect.Effect<string, A
     SearchArguments,
   )(call.arguments).pipe(Effect.map(({ query }) => query));
 
-// History tools read through the store with this run's result budget.
 const historyTool = <Q>(
   definition: Tool,
   decode: (call: ToolCall) => Effect.Effect<Q, AgentError>,
@@ -89,14 +88,12 @@ const historyTool = <Q>(
     });
   });
 
-/** Searches the owner's completed conversations. */
 export const sessionSearchTool = historyTool(
   sessionSearchDefinition,
   decodeSessionSearchCall,
   (store, query, toolBytes) => store.searchSessions(query, toolBytes),
 );
 
-/** Reads one completed conversation around or after a message. */
 export const sessionReadTool = historyTool(
   sessionReadDefinition,
   decodeSessionReadCall,

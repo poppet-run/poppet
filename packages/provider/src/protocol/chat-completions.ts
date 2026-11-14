@@ -63,21 +63,17 @@ const Continuation = Schema.Struct({
   protocol: Schema.Literal("chat-completions"),
 });
 
-/** Decoded Chat Completions frame exposed to provider-specific accounting checks. */
 export type ChatChunk = typeof Chunk.Type;
 
-/** Preserves adapter-specific assistant state across tool replies and later requests. */
 export interface ChatContinuation {
   readonly restore: (
     data: Schema.JsonObject,
     message: ChatCompletionAssistantMessageParam,
   ) => ChatCompletionAssistantMessageParam;
-  /** Retains continuation state and optionally returns its readable reasoning delta. */
   readonly append: (delta: Schema.JsonObject) => string | void;
   readonly save: () => Schema.JsonObject;
 }
 
-/** Provider hooks for request translation, continuation state, and terminal accounting frames. */
 export interface ChatOptions extends InferenceOptions {
   readonly isAccountingFrame?: (chunk: ChatChunk, finishReason: string) => boolean;
   readonly prepareRequest?: (
@@ -276,8 +272,6 @@ export const chatCompletionsModel = (
                     );
 
                   if (finish !== null) {
-                    // A provider may recognize one content-free accounting frame
-                    // after its terminal choice. No inference output is appended.
                     if (!accountingFrameSeen && options.isAccountingFrame?.(chunk, finish)) {
                       accountingFrameSeen = true;
                       continue;

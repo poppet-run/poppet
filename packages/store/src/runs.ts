@@ -56,7 +56,6 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
           createdAt,
         })}`;
 
-        // The first message names a session until a generated or manual title replaces it.
         if (fallbackTitle !== undefined) {
           const title = yield* decodeInput(SessionTitle, fallbackTitle);
 
@@ -73,7 +72,6 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
           message.role === "user" ? (message.attachments ?? []) : [],
         );
 
-        // Every reference names exactly one attachment saved with it, and nothing else is saved.
         if (
           references.length !== attachments.length ||
           references.some((reference, index) => {
@@ -154,7 +152,6 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
 
         const replied = yield* repliedCalls(id);
 
-        // A failed call may still complete its run when the model received the failure as a reply.
         if (
           (yield* toolCallsFor(id)).some(
             (call) =>

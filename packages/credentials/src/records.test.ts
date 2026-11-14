@@ -15,7 +15,6 @@ describe("makeRecordStore", () => {
     const records = makeRecordStore(directory);
 
     try {
-      // Each change yields while holding the lock, so an unlocked store would lose increments.
       const increment = records.update("mcp-oauth-remote", (current) =>
         Effect.sleep("5 millis").pipe(
           Effect.as({

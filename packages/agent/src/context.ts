@@ -4,7 +4,6 @@ import type { Run, StoredMessage } from "@poppet/store";
 import { AgentError } from "#src/errors";
 import type { ChatPolicy } from "#src/settings";
 
-// Default memory rules: facts change only on the owner's explicit request.
 const explicitMemory = [
   "Use poppet_memory.memory only when the current user explicitly asks you to remember, replace, or forget a fact.",
   "Never infer or automatically save facts.",
@@ -39,7 +38,6 @@ const invalidHistory = () =>
     message: "Stored history contains an incomplete or invalid exchange. Start a new session.",
   });
 
-// Replay whole exchanges only; every tool call needs one matching reply before the next answer.
 const validateExchange = (messages: ReadonlyArray<Message>) => {
   if (messages[0]?.role !== "user" || messages.at(-1)?.role !== "assistant") throw invalidHistory();
   const pending = new Set<string>();
@@ -67,7 +65,6 @@ const validateExchange = (messages: ReadonlyArray<Message>) => {
 export const outputBudget = (model: ModelDescription, policy: ChatPolicy) =>
   Math.min(policy.outputTokens, model.capabilities.maxOutputTokens ?? policy.outputTokens);
 
-/** What referenced attachments add: each image at a fixed estimate, each text file at its size. */
 const attachmentSize = (messages: ReadonlyArray<Message>, imageBytes: number) =>
   messages.reduce(
     (total, message) =>
@@ -81,7 +78,6 @@ const attachmentSize = (messages: ReadonlyArray<Message>, imageBytes: number) =>
     0,
   );
 
-/** Serialized request size, used as a conservative stand-in for provider token counts. */
 export const contextSize = (
   messages: ReadonlyArray<Message>,
   tools: ReadonlyArray<Tool>,
@@ -91,7 +87,6 @@ export const contextSize = (
   byteSize(JSON.stringify({ instructions: prompt, messages, tools })) +
   attachmentSize(messages, imageBytes);
 
-/** Keeps the newest images; older ones become a note naming the attachment for the model. */
 const limitImages = (messages: ReadonlyArray<Message>, maximum: number) => {
   let kept = 0;
 
@@ -123,11 +118,8 @@ const limitImages = (messages: ReadonlyArray<Message>, maximum: number) => {
     .toReversed();
 };
 
-// Context windows are reported in tokens. Dense text such as CJK or JSON can approach three
-// UTF-8 bytes per token, so this keeps the byte estimate within the model's capacity.
 const bytesPerToken = 3;
 
-/** The request byte budget, leaving room for the answer and wire-format overhead when known. */
 export const contextAvailable = (model: ModelDescription, policy: ChatPolicy) =>
   model.capabilities.contextWindow === null
     ? policy.contextBytes
@@ -139,7 +131,6 @@ export const contextAvailable = (model: ModelDescription, policy: ChatPolicy) =>
         ),
       );
 
-/** Selects recent complete exchanges within budget, keeping the current exchange intact. */
 export const assembleContext = (
   history: ReadonlyArray<StoredMessage>,
   runs: ReadonlyArray<Run>,

@@ -9,7 +9,6 @@ const ConnectionMetadata = Schema.Struct({
   source: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 
-/** Shares validated snapshots between model resolution and status queries in one runtime. */
 export const createConnectionStatus = () => {
   const observed = new Map<ProviderId, Schema.JsonObject>();
 

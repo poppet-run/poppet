@@ -1,7 +1,6 @@
 import { StreamableHTTPClientTransport, type FetchLike } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 
-/** Share teardown when SDK handshake failure and owner cleanup close the same child concurrently. */
 export class ScopedStdioTransport extends StdioClientTransport {
   private closing: Promise<void> | null = null;
 
@@ -25,7 +24,6 @@ export class ScopedStdioTransport extends StdioClientTransport {
         return;
       }
 
-      // Wait for the SDK's final SIGKILL to reach process exit and reap its handle.
       // eslint-disable-next-line no-await-in-loop
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
@@ -37,10 +35,6 @@ export class ScopedStdioTransport extends StdioClientTransport {
 const LF = 0x0a;
 const CR = 0x0d;
 
-/**
- * Caps a JSON body as a whole and an event stream per event, so one oversized message fails its
- * stream before the SDK buffers or parses it. Bare-CR line endings never reset the event count.
- */
 const bounded = (body: ReadableStream<Uint8Array>, limit: number, events: boolean) => {
   let size = 0;
   let previous = 0;
@@ -85,7 +79,6 @@ export const boundedFetch =
     });
   };
 
-/** Ends the server session within a deadline before the SDK aborts outstanding requests. */
 export class ScopedHTTPTransport extends StreamableHTTPClientTransport {
   private closing: Promise<void> | null = null;
 
@@ -96,7 +89,6 @@ export class ScopedHTTPTransport extends StreamableHTTPClientTransport {
   }
 
   private async closeSession() {
-    // A refused or failed DELETE during shutdown is not a protocol failure of a live connection.
     delete this.onerror;
 
     let timer: ReturnType<typeof setTimeout> | undefined;

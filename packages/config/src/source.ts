@@ -48,12 +48,10 @@ const FileSettings = Schema.Struct({
   ),
 });
 
-/** Fingerprint of the file and data directory captured while loading this configuration. */
 export class ConfigIdentity extends Context.Service<ConfigIdentity, string>()(
   "poppet/ConfigIdentity",
 ) {}
 
-/** Describes the non-secret sources used by the current process. */
 export class ConfigSource extends Context.Service<
   ConfigSource,
   {
@@ -66,7 +64,6 @@ export class ConfigSource extends Context.Service<
 const fileError = (path: string, message: string) =>
   new Config.ConfigError(new ConfigProvider.SourceError({ message: `${path}: ${message}` }));
 
-/** Reads one optional file without creating directories or loading credentials. */
 export const readConfigFile = (directory: string) =>
   Effect.gen(function* () {
     const path = join(directory, "config.json");
@@ -88,7 +85,6 @@ export const readConfigFile = (directory: string) =>
           )(contents).pipe(Effect.mapError(() => fileError(path, "Expected valid JSON.")));
 
     const file = yield* Schema.decodeUnknownEffect(FileSettings, { onExcessProperty: "error" })(
-      // Ignore the retired browser setting without relaxing validation of other keys.
       Object.fromEntries(Object.entries(json).filter(([key]) => key !== "browser")),
     ).pipe(Effect.mapError((error) => fileError(path, error.message)));
 
@@ -148,7 +144,6 @@ export const loadConfigSource = Effect.gen(function* () {
 
 export const ConfigSourceLive = Layer.effectContext(loadConfigSource);
 
-/** Merge under a lock and replace atomically; never put credentials in this file. */
 export const updateConfigFile = (
   directory: string,
   update: (file: typeof FileSettings.Type) => typeof FileSettings.Type,

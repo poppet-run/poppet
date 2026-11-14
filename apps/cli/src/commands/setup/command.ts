@@ -83,7 +83,6 @@ export const runSetup = (context: CLIContext) =>
 
       if (
         status.connected !== true ||
-        // The login worker does not inherit API keys from this shell.
         status.source === "environment" ||
         status.planUsage === false ||
         (yield* Prompt.Confirm({ message: `Reconnect ${entry.name}?`, initial: false }))

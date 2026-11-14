@@ -34,7 +34,6 @@ import { loadMentionedSkills } from "#src/skill-mentions";
 import { Skills } from "#src/skills";
 import { generateTitle, sessionTitle } from "#src/title";
 
-/** Resolves registered models through the host while the request's resource scope stays open. */
 export class ModelResolver extends Context.Service<
   ModelResolver,
   {
@@ -45,7 +44,6 @@ export class ModelResolver extends Context.Service<
   }
 >()("poppet/ModelResolver") {}
 
-/** Run lifecycle events, streamed answer text, and readable reasoning. */
 export type ChatEvent =
   | { readonly type: "started"; readonly run: Run }
   | { readonly type: "text-delta"; readonly text: string }
@@ -53,11 +51,9 @@ export type ChatEvent =
   | { readonly type: "reasoning-end" }
   | { readonly type: "completed"; readonly run: Run };
 
-/** Failures from orchestration, model inference, or persistence of a chat request. */
 export type ChatFailure = AgentError | ProviderError | StoreError;
 
 export interface SendOptions {
-  /** Selects scheduled tool restrictions when the request comes from the task worker. */
   readonly origin?: RunContext["origin"];
   readonly approveCommand?: ApproveCommand;
   readonly runId?: string;
@@ -66,20 +62,16 @@ export interface SendOptions {
   readonly here?: RunContext["here"];
   readonly home?: RunContext["home"];
   readonly destination?: RunContext["destination"];
-  /** Files sent with the message; saved with the run once they pass validation. */
   readonly attachments?: ReadonlyArray<AttachmentInput>;
 }
 
-/** Coordinates model requests, tool execution, and saved conversation history. */
 export class Agent extends Context.Service<
   Agent,
   {
-    /** Best-effort optional naming after the answer has been delivered. */
     readonly nameSession: (
       sessionId: string,
       timingLog?: (line: string) => Effect.Effect<void>,
     ) => Effect.Effect<void>;
-    /** Streams a reply to one message. */
     readonly send: (
       sessionId: string,
       text: string,
@@ -88,7 +80,6 @@ export class Agent extends Context.Service<
   }
 >()("poppet/Agent") {}
 
-// A clean consumer exit can still mean it stopped reading before the answer completed.
 const failureOutcome = (exit: Exit.Exit<unknown, ChatFailure>): RunOutcome => {
   if (Exit.isSuccess(exit)) return { status: "interrupted", reason: "consumer-stopped" };
 
@@ -120,7 +111,6 @@ export const AgentLive = Layer.effect(
     const policy = yield* ChatSettings;
     const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
     const requests = yield* Semaphore.make(policy.maxConcurrentRequests);
-    // One permit per session keeps history reads and saves in order; unused entries are removed.
     const sessions = new Map<string, { readonly permit: Semaphore.Semaphore; users: number }>();
 
     const sessionPermit = (sessionId: string) =>
@@ -144,7 +134,6 @@ export const AgentLive = Layer.effect(
         ),
       );
 
-    // Naming is optional and short, so it does not wait behind a running request.
     const naming = yield* Semaphore.make(1);
 
     const send = (
@@ -197,13 +186,11 @@ export const AgentLive = Layer.effect(
                 }),
               );
 
-            // Scheduled prompts are never expanded: each occurrence would reread the file.
             const mentionedSkills =
               skills === null || options.origin === "scheduled"
                 ? []
                 : yield* loadMentionedSkills(skills, text, session.skill?.name ?? null);
 
-            // Track the saved run before allowing cancellation, so finalization can always settle it.
             const run = yield* Effect.uninterruptible(
               Effect.gen(function* () {
                 const pending = yield* store.queueRun(
@@ -361,7 +348,6 @@ export const AgentLive = Layer.effect(
           ),
         );
 
-        // Failure or early stream closure must leave a terminal run instead of stranded work.
         const settledStream = stream.pipe(
           Stream.onExit((exit) =>
             active === null || settled
@@ -381,8 +367,6 @@ export const AgentLive = Layer.effect(
           ),
         );
 
-        // Both permits last for the full stream. The session permit comes first, so a request
-        // waiting for its session does not hold one of the slots shared by every request.
         return Stream.unwrap(
           sessionPermit(sessionId).pipe(
             Effect.andThen(

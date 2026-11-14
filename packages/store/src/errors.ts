@@ -1,7 +1,6 @@
 import { Data, Effect, Schema } from "effect";
 import { SqlError } from "effect/sql";
 
-/** Distinguishes storage failures from invalid requests, missing records, and state conflicts. */
 export class StoreError extends Data.TaggedError("StoreError")<{
   readonly reason:
     | "storage"
@@ -22,10 +21,6 @@ export const storageFailure = (cause: unknown) =>
         message: "Poppet could not read or write its conversation store.",
       });
 
-/**
- * Converts failures at the service boundary. Callers validate their input first,
- * so a schema failure here means a saved row no longer matches its schema.
- */
 export const storeFailure = (cause: unknown) =>
   cause instanceof Schema.SchemaError
     ? new StoreError({
@@ -34,7 +29,6 @@ export const storeFailure = (cause: unknown) =>
       })
     : storageFailure(cause);
 
-/** Validates caller input, reporting a mismatch as an invalid request. */
 export const decodeInput = <S extends Schema.Top>(
   schema: S,
   value: S["Encoded"],
@@ -53,10 +47,6 @@ export const decodeInput = <S extends Schema.Top>(
     ),
   );
 
-/**
- * Logs why storage failed, to stderr, so generic errors stay debuggable.
- * Only the SQLite message or a schema mismatch is logged, never saved content.
- */
 export const logStorageCause = (cause: unknown) =>
   cause instanceof SqlError.SqlError
     ? Effect.logError(
@@ -67,7 +57,6 @@ export const logStorageCause = (cause: unknown) =>
       ? Effect.logError("A saved record does not match its schema")
       : Effect.void;
 
-/** Logs an unexpected storage cause, then reports it with the caller's error type. */
 export const reportAs =
   <B>(convert: (cause: unknown) => B) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>) =>

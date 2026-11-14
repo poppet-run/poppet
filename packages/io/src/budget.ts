@@ -1,4 +1,3 @@
-/** Cuts text to at most `bytes` UTF-8 bytes without splitting a character. */
 export const clip = (text: string, bytes: number) => {
   let used = 0;
   let end = 0;
@@ -13,7 +12,6 @@ export const clip = (text: string, bytes: number) => {
   return text.slice(0, end);
 };
 
-/** The largest count up to `max` that fits, or -1 when even zero does not; `fits` must not fit again after it stops. */
 export const longestFit = (max: number, fits: (count: number) => boolean) => {
   if (!fits(0)) return -1;
   let low = 0;
@@ -29,7 +27,6 @@ export const longestFit = (max: number, fits: (count: number) => boolean) => {
   return low;
 };
 
-/** The longest prefix that fits without splitting a surrogate pair; null when even "" does not fit. */
 export const fitPrefix = (text: string, fits: (prefix: string) => boolean) => {
   const prefix = (length: number) => text.slice(0, length).replace(/[\uD800-\uDBFF]$/, "");
   const length = longestFit(text.length, (count) => fits(prefix(count)));
@@ -37,10 +34,6 @@ export const fitPrefix = (text: string, fits: (prefix: string) => boolean) => {
   return length < 0 ? null : prefix(length);
 };
 
-/**
- * Renders the whole text when it fits in `limit` bytes, otherwise its longest fitting prefix
- * marked truncated; null when even an empty prefix does not fit.
- */
 export const fitText = (
   text: string,
   limit: number,

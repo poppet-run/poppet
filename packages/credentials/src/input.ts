@@ -3,7 +3,6 @@ import { Prompt } from "effect/cli";
 
 import { ApiKey } from "#src/api-keys";
 
-/** Masks credentials and keeps invalid input in the prompt for correction. */
 export const promptSecret = (
   message: string,
   invalidMessage = "Enter a nonempty API key without whitespace, up to 8192 characters.",

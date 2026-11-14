@@ -2,13 +2,11 @@ import { APIError, APIConnectionError, APIConnectionTimeoutError, APIUserAbortEr
 
 import { ProviderError, type ProviderId, type ModelRequest } from "#src/index";
 
-/** Adapter-specific reason for a remote failure, checked first; undefined keeps the shared rules. */
 export type RemoteReason = (
   status: number | undefined,
   code: string | undefined,
 ) => ProviderError["reason"] | undefined;
 
-/** Adapter hooks for request headers and provider-specific inference error classification. */
 export interface InferenceOptions {
   readonly failure?: (cause: unknown) => ProviderError;
   readonly classify?: RemoteReason;

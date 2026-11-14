@@ -14,7 +14,6 @@ const BraveSearchResponse = Schema.Struct({
   }),
 });
 
-/** Fixed endpoint and explicit redirect rejection keep the search key at Brave. */
 export const makeBraveSearch = (
   key: Redacted.Redacted<string>,
   toolBytes: number,
@@ -49,7 +48,6 @@ export const makeBraveSearch = (
   ),
 });
 
-/** Brave's credential and environment key, alongside its constructor. */
 export const braveSearch = {
   name: "Brave Search",
   credentialId: "brave-search",

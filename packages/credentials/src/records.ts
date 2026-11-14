@@ -10,15 +10,10 @@ import { Data, Effect, Schedule, Schema } from "effect";
 
 import { acquireOwnerLock, OwnerLockError } from "#src/lock";
 
-/** A protected record could not be read, locked, or replaced. */
 export class RecordStoreError extends Data.TaggedError("RecordStoreError")<{
   readonly message: string;
 }> {}
 
-/**
- * JSON text files in one private directory: `<name>.json`, guarded by `<name>.lock`. Callers
- * validate names, own the file format, and choose the error and the size limit.
- */
 export const protectedFiles = <E>(
   directory: string,
   failure: (name: string) => E,
@@ -30,19 +25,16 @@ export const protectedFiles = <E>(
     Effect.tryPromise({ try: run, catch: () => failure(name) });
 
   return {
-    /** Narrows the file to its owner and returns its text; null when it or the directory is missing. */
     read: (name: string) =>
       attempt(name, async () =>
         (await ensurePrivateDirectory(directory, { create: false }))
           ? readProtectedFile(path(name), { maxBytes, makePrivate: true })
           : null,
       ),
-    /** Creates the directory and holds the file's owner lock until the scope closes. */
     lock: (name: string) =>
       attempt(name, () => ensurePrivateDirectory(directory)).pipe(
         Effect.andThen(acquireOwnerLock(join(directory, `${name}.lock`))),
       ),
-    /** Atomically replaces the file; null removes it. */
     write: (name: string, contents: string | null) =>
       attempt(name, () =>
         contents === null ? unlinkIfPresent(path(name)) : writeFileAtomic(path(name), contents),
@@ -55,11 +47,6 @@ const failure = (name: string) =>
 
 const RecordName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,79}$/));
 
-/**
- * Versioned JSON records beside API keys in `<data directory>/auth`, with the same private
- * directory, regular-file and owner-lock protections. Each record names itself, so a copied or
- * renamed file is rejected rather than read as another record. Callers decode the JSON data.
- */
 export const makeRecordStore = (dataDirectory: string) => {
   const files = protectedFiles(join(dataDirectory, "auth"), failure, 65536);
 
@@ -87,11 +74,6 @@ export const makeRecordStore = (dataDirectory: string) => {
 
   const read = (name: string) => checked(name).pipe(Effect.andThen(load(name)));
 
-  /**
-   * Holds the record's lock while `change` reads the current value and returns its replacement;
-   * null removes the record. Another process holding the lock is waited for briefly, so two
-   * refreshes never both spend a single-use token.
-   */
   const update = <E, R>(
     name: string,
     change: (current: Schema.Json | null) => Effect.Effect<Schema.Json | null, E, R>,

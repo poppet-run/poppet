@@ -9,7 +9,6 @@ export const MCPCommand = Schema.Union([
 
 export type MCPCommand = typeof MCPCommand.Type;
 
-/** Server status or one server's tools, as plain data for the caller to format. */
 export const inspectMCP = (command: MCPCommand) =>
   Effect.gen(function* () {
     const service = yield* MCP;

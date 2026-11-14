@@ -4,7 +4,6 @@ import { Context, type Effect, Layer } from "effect";
 import { contextFiles } from "#src/context-files";
 import type { AgentError } from "#src/errors";
 
-/** Owner-written procedures; viewing one grants no additional capabilities. */
 export class Skills extends Context.Service<
   Skills,
   {
@@ -15,7 +14,6 @@ export class Skills extends Context.Service<
 
 const manualOnlyMarker = "<!-- manual-only -->";
 
-/** A first line of exactly this marker keeps a skill for the owner; the model cannot list or view it. */
 export const isManualOnly = (content: string) =>
   content.split("\n", 1)[0]!.trimEnd() === manualOnlyMarker;
 

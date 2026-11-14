@@ -17,7 +17,6 @@ const Reference = Schema.Union([
 
 export type MCPReference = typeof Reference.Type;
 
-// The transport sets these itself; a configured value would break or spoof the protocol.
 const managedHeaders = new Set([
   "accept",
   "content-length",
@@ -44,7 +43,6 @@ const HeaderReference = Schema.Union([
 
 const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-/** HTTPS endpoints, or plain HTTP to this machine. Secrets belong in headers, not the URL. */
 const Endpoint = Schema.String.check(
   Schema.isMaxLength(2048),
   Schema.makeFilter((value) => {
@@ -66,11 +64,9 @@ const shared = {
   enabled: Schema.Boolean,
   tools: Names,
   scheduledTools: Schema.optionalKey(Names),
-  /** Owner opt-in: keep this server's tools after untrusted content enters a run. */
   availableAfterUntrusted: Schema.optionalKey(Schema.Boolean),
 };
 
-/** References contain names only. Credential values stay in protected auth storage. */
 export const MCPStdioServer = Schema.Struct({
   ...shared,
   command: Text,
@@ -81,7 +77,6 @@ export const MCPStdioServer = Schema.Struct({
 
 const Scope = Schema.String.check(Schema.isPattern(/^[!#-[\]-~]{1,256}$/));
 
-/** OAuth sign-in through `mcp login`; client secrets are protected credential references. */
 const OAuth = Schema.Struct({
   clientId: Schema.optionalKey(Text),
   clientSecret: Schema.optionalKey(Schema.Struct({ credential: Id })),
@@ -142,7 +137,6 @@ export const MCPServers = Schema.Array(MCPServer).check(
   }),
 );
 
-/** Server entries supplied by the host configuration file. */
 export const mcpServers = Config.String("mcpServers").pipe(
   Config.withDefault("[]"),
   Effect.flatMap((json) =>
@@ -161,7 +155,6 @@ export const mcpServers = Config.String("mcpServers").pipe(
   ),
 );
 
-/** Working-directory paths resolve beside config.json. */
 export const mcpFileValue = (servers: ReadonlyArray<MCPServer> | undefined, directory: string) =>
   servers === undefined
     ? undefined

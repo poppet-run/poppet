@@ -30,7 +30,6 @@ const directoryInfo = async (path: string) => {
 
 export const contextFiles = Effect.gen(function* () {
   const { dataDirectory } = yield* AppConfig;
-  // Canonicalize the configured parent, but never follow a link at the context root or below it.
   const rootPath = async () => join(await realpath(dataDirectory), "skills");
 
   const read = (name: string) =>

@@ -37,7 +37,6 @@ const close = (server: ReturnType<typeof createServer>) =>
     server.close(() => resolve());
   });
 
-// These cases span the non-public IANA ranges and both sides of subnet boundaries.
 describe.concurrent("page-network.ts", () => {
   test.each([
     "0.1.2.3",
@@ -136,7 +135,6 @@ describe.concurrent("requestPage", () => {
     const port = await listen(server);
 
     try {
-      // This hostname cannot resolve. A second lookup would fail instead of reaching the local listener.
       const url = new URL(`http://unresolvable.invalid:${port}/article?q=one`);
       const page = await requestPage(url, "127.0.0.1", new AbortController().signal);
       expect(page.status).toBe(302);
@@ -174,7 +172,6 @@ describe.concurrent("requestPage", () => {
         response.writeHead(200, { "Content-Type": "text/plain", "Content-Encoding": encoding });
         const size = request.url === "/large" ? maxPageBytes + 1 : 128;
         const data = compress(Buffer.alloc(size, "x"));
-        // No Content-Length: the client must enforce the actual streamed size.
         response.write(data.subarray(0, 10));
         response.end(data.subarray(10));
       });
@@ -311,7 +308,6 @@ describe.concurrent("requestPage", () => {
       expect({ code, stderr }).toMatchObject({ code: 0 });
       expect(stdout).toContain("hostname rejected");
       expect(seen).toEqual([`page.test:${port}`]);
-      // A rejected handshake may never emit secureConnection on the server.
       expect(sni).toContain("page.test");
       expect(
         await failedRequest(

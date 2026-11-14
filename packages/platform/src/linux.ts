@@ -15,7 +15,6 @@ import {
   type WorkerStatus,
 } from "#src/index";
 
-/** The completed `systemctl --user` invocation; stderr explains failures such as a missing user bus. */
 export interface SystemctlRun {
   readonly code: number;
   readonly stdout: string;
@@ -24,7 +23,6 @@ export interface SystemctlRun {
 
 export type Systemctl = (args: ReadonlyArray<string>) => Promise<SystemctlRun>;
 
-/** Follows the XDG rule that relative `XDG_CONFIG_HOME` values are ignored. */
 export const userConfigHome = (home: string, configured: string | undefined) =>
   configured !== undefined && isAbsolute(configured) ? configured : join(home, ".config");
 
@@ -42,7 +40,6 @@ export const workerPaths = (launch: WorkerLaunch, configHome: string) => {
 };
 
 const plainText = (value: string) => {
-  // Unit files are line-based; a control character could end a setting early.
   // eslint-disable-next-line no-control-regex -- The check targets control characters.
   if (/[\u0000-\u001f\u007f]/.test(value))
     throw new WorkerError({ message: "Worker settings cannot contain control characters." });
@@ -50,16 +47,13 @@ const plainText = (value: string) => {
   return value;
 };
 
-/** Escapes specifiers, which systemd expands in every setting this unit writes. */
 const specifierText = (value: string) => plainText(value).replaceAll("%", "%%");
 
-/** Quotes a value for settings that apply C-style unescaping to double-quoted words. */
 const quotedText = (value: string) =>
   `"${specifierText(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 
 export const workerUnit = (launch: WorkerLaunch) => {
   const command = [launch.executable, ...launch.arguments]
-    // ExecStart also expands $NAME and ${NAME}; $$ is a literal dollar sign.
     .map((argument) => quotedText(argument).replaceAll("$", () => "$$"))
     .join(" ");
 
@@ -143,7 +137,6 @@ export const manageWorker = (
       const inspectArgs = ["show", "--property=LoadState,ActiveState", paths.unit];
       const inspection = await systemctl(inspectArgs);
 
-      // A missing unit reports LoadState=not-found with exit 0; other failures leave its state unknown.
       if (inspection.code !== 0)
         throw failure(
           inspectArgs,
@@ -173,7 +166,6 @@ export const manageWorker = (
           );
       };
 
-      // A unit file written while the manager was running is unknown until it reloads.
       if (
         installed &&
         !loaded &&
@@ -219,7 +211,6 @@ export const manageWorker = (
       } else if (!installed) {
         throw new WorkerError({ message: "Install the worker first with worker install." });
       } else {
-        // Only an explicit restart interrupts an active unit.
         await command([action === "restart" ? "restart" : "start", paths.unit]);
       }
 
@@ -236,7 +227,6 @@ export const manageWorker = (
           }),
   });
 
-  // Let lifecycle mutations finish before interruption can report the command as stopped.
   return action === "status" || action === "logs"
     ? operation
     : operation.pipe(Effect.uninterruptible);

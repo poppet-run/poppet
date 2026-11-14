@@ -55,7 +55,6 @@ const responseFor = (provider: ProviderId, text = "Complete"): Completion => ({
 
 const user: Message = { role: "user", text: "Hello" };
 
-// Search and recall size results from their budget but may run slightly over it.
 const expectNearBudget = (result: SessionReadResult | SessionSearchResult, maxBytes: number) =>
   expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(maxBytes * 1.25);
 
@@ -78,7 +77,6 @@ const reject = <A>(operation: Effect.Effect<A, StoreError>, reason: StoreError["
     }),
   );
 
-// Durable SQLite writes run sequentially to avoid disk contention on CI runners.
 describe("Store", () => {
   test("when runs complete and storage restarts, indexes user text and final answers and retains titles and results", async () => {
     const saved = await fixture();
@@ -171,7 +169,6 @@ describe("Store", () => {
 
           yield* store.finishRun(interrupted.id, { status: "interrupted", reason: "test" });
           const sql = yield* SqlClient.SqlClient;
-          // Saved history can contain messages created before run ownership was recorded.
           yield* sql`INSERT INTO messages (session_id, run_id, position, created_at, payload)
             SELECT ${session.id}, NULL, COALESCE(MAX(position), -1) + 1, ${session.createdAt},
               ${JSON.stringify({ role: "user", text: "unownedonly" })}
@@ -1080,7 +1077,6 @@ describe("Store", () => {
         );
 
         using tampered = new Database(fixtureStore.path);
-        // Simulate corruption that table checks would otherwise reject.
         tampered.run("PRAGMA ignore_check_constraints = ON");
         tampered
           .query(

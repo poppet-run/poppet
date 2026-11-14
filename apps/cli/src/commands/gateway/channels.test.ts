@@ -66,7 +66,6 @@ describe("superviseAdapter", () => {
         const adapter = Effect.gen(function* () {
           started.push(yield* Clock.currentTimeMillis);
 
-          // The eleventh attempt stays up for ten minutes before failing again.
           if (started.length === 11) yield* Effect.sleep("10 minutes");
 
           return yield* Effect.fail(
@@ -82,7 +81,6 @@ describe("superviseAdapter", () => {
         expect(delays.slice(0, 10)).toEqual([
           1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 300000,
         ]);
-        // Ten healthy minutes plus a fresh one-second backoff.
         expect(delays[10]).toBe(601_000);
         yield* Fiber.interrupt(fiber);
       }),

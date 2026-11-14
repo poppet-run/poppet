@@ -36,7 +36,6 @@ const WorkerQuery = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("mcp"), command: MCPCommand }),
 ]);
 
-/** Memory and inspection requests that reply with one JSON value, which the command line formats. */
 export type WorkerQuery = typeof WorkerQuery.Type;
 
 const Frame = Schema.Union([
@@ -133,7 +132,6 @@ export const WorkerRequestsLive = Layer.effect(
             Effect.forkIn(owned),
           );
 
-          // Close the queue before producer cleanup can try to forward its last diagnostic.
           yield* Effect.addFinalizer(() => Queue.end(frames)).pipe(
             Effect.provideService(Scope.Scope, owned),
           );
@@ -147,7 +145,6 @@ export const WorkerRequestsLive = Layer.effect(
             return Effect.sync(() => request.signal.removeEventListener("abort", abort));
           });
 
-          // Own the body as well as its producer, so shutdown also ends idle HTTP responses.
           const signal = yield* Effect.abortSignal.pipe(Effect.provideService(Scope.Scope, owned));
 
           const context = yield* Effect.context<never>();
@@ -171,11 +168,9 @@ const lost =
 
 const lostResponse = () => new WorkerRequestError({ message: lost });
 
-/** Reads a running worker's one-value reply, or null when no worker is reachable. */
 export const remoteWorkerQuery = (path: string, query: WorkerQuery) =>
   requestWorkerReply(path, "/v1/queries", query, lost);
 
-/** Streams worker output; only a terminal frame confirms completion, and lost replies are not replayed. */
 export const remoteWorkerCommand = (
   path: string,
   command: ChatSubmission,

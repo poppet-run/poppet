@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import { AgentError, Bash, type BashArguments, type BashResult } from "@poppet/agent";
 import { Effect, Layer } from "effect";
 
-/** One process group per invocation; timeout, cancellation, and exit reap its children. */
 export const executeBash = (
   request: BashArguments,
   maxBytes: number,
@@ -22,7 +21,6 @@ export const executeBash = (
     }
 
     const environment = { ...process.env };
-    // Noninteractive startup files must not execute commands outside the reviewed script.
     delete environment.BASH_ENV;
     delete environment.ENV;
 
@@ -41,7 +39,6 @@ export const executeBash = (
     let stderr = Buffer.alloc(0);
     let truncated = false;
     let expired = false;
-    // JSON escaping can expand each retained byte sixfold; keep both pipes within the result budget.
     const limit = Math.max(1, Math.floor((maxBytes - 128) / 12));
 
     const stop = () => {
@@ -74,7 +71,6 @@ export const executeBash = (
       stop();
     }, request.timeoutSeconds * 1000);
 
-    // A shell can exit while a background child still holds its output pipes.
     child.once("exit", stop);
 
     const cleanup = () => {

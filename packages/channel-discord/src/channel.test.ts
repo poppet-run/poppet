@@ -66,7 +66,6 @@ describe("discordChannelLayer", () => {
             writes.push(`${options.method} ${decodeURIComponent(path.split("/").at(-2)!)}`);
 
             if (options.method === "DELETE" && ++removals <= 2) {
-              // Let the SDK install its retry timer before advancing the clock.
               setImmediate(() => jest.advanceTimersToNextTimer());
 
               return Response.json(
@@ -137,7 +136,6 @@ describe("discordChannelLayer", () => {
 
     const destroyed = spyOn(client, "destroy").mockResolvedValue();
     const ready = spyOn(client, "isReady").mockReturnValue(true);
-    // The adapter only reads identity here; actual guild members below use SDK objects.
     Object.defineProperty(client, "user", { value: user, writable: true });
 
     const parent = {
@@ -296,7 +294,6 @@ describe("discordChannelLayer", () => {
           const naming = channel.naming;
 
           if (!naming) throw new Error("Missing naming capability");
-          // A recovered thread owned by another user is never managed.
           expect(yield* naming.conversation(incoming, "Hello")).toEqual({
             id: "400",
             managedName: null,
@@ -307,7 +304,6 @@ describe("discordChannelLayer", () => {
             id: "400",
             managedName: "Hello",
           });
-          // Recovering creation retains the intended original name, not a later user edit.
           expect(yield* naming.current(incoming, "400")).toBe("Renamed thread");
           expect(yield* naming.rename(incoming, "400", "Hello", "Generated")).toBeNull();
           expect(patch).not.toHaveBeenCalled();
@@ -405,7 +401,6 @@ describe("discordChannelLayer", () => {
           expect(remove).toHaveBeenLastCalledWith(
             `/channels/400/messages/401/reactions/${encodeURIComponent("👀")}/@me`,
           );
-          // Another user's eyes reaction remains after the bot removes its own.
           yield* channel.mark(threadMessage, "stopped");
           expect(remove).toHaveBeenCalledTimes(3);
           sourceAuthor = { ...owner, id: "999" };
@@ -499,7 +494,6 @@ describe("discordChannelLayer", () => {
       await Effect.runPromise(
         Effect.gen(function* () {
           const channel = yield* MessagingChannel;
-          // A rejected login stays inside the adapter; the worker can still inspect status.
           yield* Effect.yieldNow;
           const status = yield* channel.status;
           expect(status).toMatchObject({ connected: false, account: null });

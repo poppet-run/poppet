@@ -83,7 +83,6 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
   // SAFETY: these mutable fixture controls accept only the declared action literals and string IDs.
   const state = {
     open: false,
-    // Chat runs and optional session naming can hold provider scopes at the same time.
     openScopes: 0,
     built: 0,
     writeFails: false,
@@ -1003,7 +1002,6 @@ describe.concurrent("chat.ts", () => {
         await chat.invoke(["chat", "send", id, "Second saved message"]);
         chat.lines.length = 0;
         chat.chunks.length = 0;
-        // History inspection must not depend on a currently configured model.
         await chat.configure({ provider: "unused-provider", model: undefined });
         await Effect.runPromise(
           chat.program(
@@ -1175,7 +1173,6 @@ describe.concurrent("chat.ts", () => {
         }
 
         await chat.invoke(["chat", "show", "--json", chat.requests[0]!.sessionId]);
-        // The worker test clock can give both runs the same timestamp.
         expect(
           JSON.parse(chat.lines.at(-1)!)
             .runs.map((run: { status: string }) => run.status)
@@ -1218,7 +1215,6 @@ describe.concurrent("chat.ts", () => {
         await Effect.runPromise(Fiber.interrupt(prompt));
         prompt = undefined;
         chat.state.hold = false;
-        // A remote disconnect closes the request scope asynchronously; wait for runner cleanup.
         await Effect.runPromise(
           Effect.gen(function* () {
             while (chat.state.active > 0) yield* Effect.sleep("5 millis");
@@ -1458,7 +1454,6 @@ describe.concurrent("chat.ts", () => {
           notes,
           "Summarize this",
         ]);
-        // The earlier exchange's file is resent from history beside the new one.
         expect(contents()).toEqual([
           ["# Shopping\n- milk"],
           ["# Shopping\n- milk", "# Shopping\n- milk"],
@@ -1581,7 +1576,6 @@ describe.concurrent("chat.ts", () => {
         ],
         async ({ response, args }) => {
           reply = response;
-          // Each response is selected before issuing the next request.
           await expect(chat.invoke(args)).rejects.toHaveProperty("_tag", "WorkerRequestError");
         },
       );
@@ -1603,13 +1597,11 @@ describe.concurrent("chat.ts", () => {
     const worker = await chat.startWorker();
     const built = chat.state.built;
 
-    // Answers stream through the chat writer; inspections print whole lines.
     const readOutput = async (args: ReadonlyArray<string>) => {
       chat.chunks.length = 0;
       const start = chat.lines.length;
       await chat.invoke(args);
 
-      // Take the printed lines, so later checks see only the worker's own logs.
       const printed = chat.lines.splice(start);
 
       return chat.chunks.join("") + printed.map((line) => `${line}\n`).join("");
@@ -1666,7 +1658,6 @@ describe.concurrent("chat.ts", () => {
         value: "Acorn",
       });
 
-      // Worker replies are parsed and formatted like local results.
       expect((await readOutput(["memory", "list"])).split("\n")).toEqual([
         expect.stringMatching(/^KEY +ORIGIN +UPDATED +VALUE$/),
         expect.stringMatching(/^project +cli +\S+ \S+ +Acorn$/),

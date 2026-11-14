@@ -1,8 +1,6 @@
 import { outputText } from "@poppet/provider";
 import type { Run } from "@poppet/store";
 
-// Prefer paragraph, line, then word breaks in the second half of a chunk, so replies stay
-// readable without producing tiny fragments.
 const breakAt = (window: string) => {
   for (const separator of ["\n\n", "\n", " "]) {
     const index = window.lastIndexOf(separator);
@@ -13,7 +11,6 @@ const breakAt = (window: string) => {
   return window.length;
 };
 
-/** Splits text into chunks of at most limit UTF-16 units without splitting a code point. */
 export const chunks = (text: string, limit: number) => {
   const result: string[] = [];
   let rest = text;
@@ -21,7 +18,6 @@ export const chunks = (text: string, limit: number) => {
   while (rest.length > limit) {
     let end = breakAt(rest.slice(0, limit));
 
-    // Keep a surrogate pair together when the chunk ends mid-character.
     if (end === limit && /[\uD800-\uDBFF]/.test(rest[end - 1] ?? "")) end--;
     result.push(rest.slice(0, end));
     rest = rest.slice(end);
@@ -32,7 +28,6 @@ export const chunks = (text: string, limit: number) => {
   return result;
 };
 
-/** The reply text for a saved run's final outcome. */
 export const answer = (run: Run) =>
   run.status === "completed" && run.result !== null
     ? outputText(run.result.output) || "The request completed without a text answer."

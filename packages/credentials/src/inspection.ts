@@ -9,7 +9,6 @@ const fileInfo = (path: string) =>
     throw cause;
   });
 
-/** Validate permissions without the chmod performed by normal credential readers. */
 export const readCredentialFile = async (directory: string, name: string) => {
   if (!/^[a-z][a-z0-9-]*\.json$/.test(name)) throw new Error("Invalid credential name");
   const parent = await fileInfo(join(directory, "auth"));

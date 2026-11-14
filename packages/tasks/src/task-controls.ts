@@ -6,7 +6,6 @@ import type { SqlClient } from "effect/sql";
 import { nextTime, taskRecords, recurringExpiry } from "#src/task-records";
 import { TaskControl, TaskError, type Occurrence } from "#src/task-schema";
 
-/** What a control changed, and the execution it selected; times are Unix milliseconds. */
 export interface ControlReceipt {
   readonly action: TaskControl["action"];
   readonly taskId: string;
@@ -26,7 +25,6 @@ const reject = (message: string) => Effect.fail(new TaskError({ message }));
 export const taskControls = (sql: SqlClient.SqlClient) => {
   const { task, occurrence, insertOccurrence, activeOccurrence, nextTarget } = taskRecords(sql);
 
-  /** Acts on the task's current state and next execution, checked and changed in one transaction. */
   return (input: TaskControl, now: number) =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -54,7 +52,6 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
               "An end time applies only to recurring tasks. Use it with a cron schedule.",
             );
 
-          // A one-off has no end time, so changing a recurring task into one clears it.
           const endAt =
             patch.endAt !== undefined ? patch.endAt : schedule.type === "once" ? null : job.endAt;
 
@@ -67,7 +64,6 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
           changedFields = endChanged ? [...fields, "endAt"] : fields;
 
           if (changedFields.length > 0) {
-            // The end time is not part of an occurrence's definition, so it keeps the revision.
             const revised = fields.length > 0;
             const scheduleChanged = fields.includes("schedule");
 
@@ -77,8 +73,6 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
             if (endChanged && endAt !== null && endAt <= now)
               return yield* reject("Choose a future end time with an explicit UTC offset.");
 
-            // An ended task restarts from now, without a backlog; a live one keeps its next slot
-            // unless the new end time precedes it.
             const nextAt = scheduleChanged
               ? schedule.type === "once"
                 ? schedule.at
@@ -96,7 +90,6 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
               end_at = ${endAt}, next_at = ${nextAt}, revision = revision + ${revised ? 1 : 0}
               WHERE id = ${job.id}`;
 
-            // Only a snoozed future slot can be pending beyond a new end time.
             const pastEnd = pending !== null && endAt !== null && pending.scheduledAt > endAt;
 
             if (pending !== null && (revised || pastEnd)) {

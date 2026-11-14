@@ -25,7 +25,6 @@ export const taskResponse = <E extends { readonly message: string }>(
       return Response.json({ ok: false, message: "Invalid task command." }, { status: 400 });
     const operation = handle(command);
 
-    // Leave time to report failure before the ten-second transport deadline.
     return yield* workerReply(
       command.action === "add" || isTaskControl(command)
         ? operation.pipe(Effect.timeout("8 seconds"))

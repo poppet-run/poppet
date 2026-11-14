@@ -1,12 +1,10 @@
 import { boundedAttachment, type IncomingAttachment } from "@poppet/gateway";
 import type { Attachment } from "discord.js";
 
-// Discord serves uploads from these hosts; any other URL in an event is refused.
 const hosts = new Set(["cdn.discordapp.com", "media.discordapp.net"]);
 
 type Fetch = (input: URL, init: RequestInit) => Promise<Response>;
 
-/** The adapter-neutral form of a message's files, at most the gateway's ten. */
 export const incomingAttachments = (
   attachments: Iterable<Pick<Attachment, "id" | "name" | "size" | "url">>,
 ): ReadonlyArray<IncomingAttachment> =>

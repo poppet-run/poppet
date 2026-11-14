@@ -239,7 +239,6 @@ const scheduled = (destination: DeliveryDestination | null) =>
     return yield* repo.occurrence(claimed.id);
   });
 
-// Runs the next occurrence of one recurring task per call, a minute apart.
 const recurring = (destination: DeliveryDestination) =>
   Effect.gen(function* () {
     const repo = yield* TaskRepository;
@@ -417,7 +416,6 @@ describe.concurrent("Gateway", () => {
             yield* gateway.accept(message("start", "thread", "Restart the service"));
             const running = yield* gateway.processNext.pipe(Effect.forkChild);
             const id = yield* Deferred.await(requested);
-            // The send fixture signals before returning its remote ID. Finish delivery first.
             yield* TestClock.adjust(0);
 
             const click = (
@@ -838,9 +836,7 @@ describe.concurrent("Gateway", () => {
           expect(yield* store.session(original)).toMatchObject({ skill: null });
           yield* gateway.accept(message("status", "chat", "/status"));
 
-          while (yield* gateway.deliverNext) {
-            /* Drain the saved replies and status. */
-          }
+          while (yield* gateway.deliverNext) {}
 
           return { original, skilled };
         }),
@@ -860,7 +856,6 @@ describe.concurrent("Gateway", () => {
           expect(state.requests.at(-1)?.instructions).toContain("saved review procedure");
           expect(state.requests.at(-1)?.instructions).not.toContain("Edited procedure");
 
-          // A follow-up naming another skill loads it for that turn within the same session.
           yield* gateway.accept(message("named", "chat", "Now run $audit on it"));
           yield* gateway.processNext;
           expect(yield* (yield* GatewayRepository).binding(adapter, "bot", "guild", "chat")).toBe(
@@ -932,9 +927,7 @@ describe.concurrent("Gateway", () => {
           expect(yield* store.sessions).toHaveLength(1);
           expect(state.requests).toHaveLength(1);
 
-          while (yield* gateway.deliverNext) {
-            /* Drain validation replies. */
-          }
+          while (yield* gateway.deliverNext) {}
         }),
       );
       expect(state.sent).toHaveLength(7);
@@ -972,7 +965,6 @@ describe.concurrent("Gateway", () => {
           const sessions = yield* (yield* Store).sessions;
           expect(sessions).toHaveLength(2);
           expect(yield* repo.binding("discord", "bot", "guild", "chat")).toBe(original);
-          // An abrupt process crash here leaves the input queued instead of running failure cleanup.
           yield* sql.unsafe(
             "UPDATE gateway_inbox SET state = 'queued' WHERE external_id = 'selected'",
           );
@@ -1019,7 +1011,6 @@ describe.concurrent("Gateway", () => {
 
             const item = yield* scheduled(destination);
             const sql = yield* SqlClient.SqlClient;
-            // Later configuration and task edits cannot redirect this occurrence.
             yield* sql.unsafe("UPDATE jobs SET destination = ?", [
               JSON.stringify({ ...destination, conversationId: "different-thread" }),
             ]);
@@ -1643,7 +1634,6 @@ describe.concurrent("Gateway", () => {
         Effect.gen(function* () {
           const gateway = yield* Gateway;
           const worker = yield* gateway.run.pipe(Effect.forkChild);
-          // Let every loop reach its idle wait; the test clock never advances after this.
           yield* TestClock.adjust("0 millis");
           yield* Queue.offer(incoming, message("prompt"));
           yield* Deferred.await(delivered);
@@ -1803,7 +1793,6 @@ describe.concurrent("Gateway", () => {
           yield* gateway.recover;
           yield* gateway.processNext;
           const sql = yield* SqlClient.SqlClient;
-          // Simulate a crash after committing the answer but before recording delivery.
           yield* sql.unsafe("DELETE FROM gateway_deliveries");
           yield* sql.unsafe("UPDATE gateway_inbox SET state = 'executing'");
         }),
@@ -1938,7 +1927,6 @@ describe.concurrent("Gateway", () => {
     ]);
     expect(chunks("one two\nthree four", 12)).toEqual(["one two\n", "three four"]);
     expect(chunks("alpha beta gamma", 12)).toEqual(["alpha beta ", "gamma"]);
-    // A break in the first half would leave a tiny chunk, so the hard limit is used instead.
     expect(chunks(`a ${"b".repeat(20)}`, 10)).toEqual(["a bbbbbbbb", "bbbbbbbbbb", "bb"]);
     expect(chunks(`${"x".repeat(9)}😀y`, 10)).toEqual(["x".repeat(9), "😀y"]);
     expect(chunks("", 10)).toEqual([]);
@@ -2243,7 +2231,6 @@ describe("conversationNaming", () => {
           }),
         );
 
-        // Reopen the store and gateway. Neither naming nor uncertain renames repeat.
         await state.run(
           Effect.gen(function* () {
             yield* (yield* Gateway).nameNext;
@@ -2322,7 +2309,6 @@ describe("conversationNaming", () => {
   });
 });
 
-// Real time, since the gateway fixture runs on the test clock.
 const pause = (millis: number) =>
   Effect.promise(() => new Promise((resolve) => setTimeout(resolve, millis)));
 
@@ -2377,7 +2363,6 @@ describe.concurrent("Gateway concurrent requests", () => {
           yield* pause(50);
           expect([yield* entered("C1"), yield* entered("A2")]).toEqual([false, false]);
 
-          // A freed slot goes to another conversation, not to the follow-up behind A1.
           yield* release("B1");
           yield* Deferred.await(model.gate("C1").entered);
           yield* pause(50);
@@ -2603,7 +2588,6 @@ describe.concurrent("Gateway concurrent requests", () => {
           yield* gateway.accept(message("b1", "thread-b", "b"));
           yield* until(Effect.sync(() => prompts.size === 2));
 
-          // Thread A's reply cannot settle thread B's approval, and /cancel stops only A.
           yield* gateway.accept(
             message("wrong", "thread-a", `/approve ${prompts.get("thread-b")}`),
           );

@@ -1,10 +1,8 @@
 import { AttachmentReference, Completion, Message, ProviderId, Tool } from "@poppet/provider";
 import { Schema } from "effect";
 
-/** A bounded identifier shared by persisted sessions, runs, and task records. */
 export const Id = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/));
 
-/** Explicit messaging identity saved with a task and copied to each occurrence. */
 export const DeliveryDestination = Schema.Struct({
   adapter: Id,
   account: Id,
@@ -16,16 +14,13 @@ export const DeliveryDestination = Schema.Struct({
 
 export type DeliveryDestination = typeof DeliveryDestination.Type;
 
-/** A provider's model identifier without leading or trailing whitespace. */
 export const ModelId = Schema.NonEmptyString.check(Schema.isTrimmed());
 
-/** Plain text, never raw FTS syntax; punctuation-only queries return no matches. */
 export const SessionSearchQuery = Schema.NonEmptyString.check(
   Schema.isTrimmed(),
   Schema.isMaxLength(256),
 );
 
-/** A bounded excerpt from an eligible message, with stable IDs for inspecting its session. */
 export const SessionSearchMatch = Schema.Struct({
   sessionId: Id,
   messageId: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -40,7 +35,6 @@ export interface SessionSearchResult {
   readonly truncated: boolean;
 }
 
-/** Stable anchors refer only to eligible messages in the requested session. */
 export const SessionReadQuery = Schema.Struct({
   sessionId: Id,
   aroundMessageId: Schema.NullOr(SessionSearchMatch.fields.messageId),
@@ -51,7 +45,6 @@ export const SessionReadQuery = Schema.Struct({
 
 export type SessionReadQuery = typeof SessionReadQuery.Type;
 
-/** Only saved user/final-answer text is recalled; truncation never implies a complete transcript. */
 export const SessionReadMessage = Schema.Struct({
   messageId: SessionSearchMatch.fields.messageId,
   role: SessionSearchMatch.fields.role,
@@ -70,7 +63,6 @@ export const SessionReadResult = Schema.Struct({
 
 export type SessionReadResult = typeof SessionReadResult.Type;
 
-/** A sanitized single-line title of at most 80 Unicode code points. */
 export const SessionTitle = Schema.NonEmptyString.check(
   Schema.makeFilter(
     (value) =>
@@ -80,10 +72,8 @@ export const SessionTitle = Schema.NonEmptyString.check(
   ),
 );
 
-/** An explicit directory identifier, never a filesystem path. */
 export const SkillName = Id;
 
-/** Owner-written procedure saved at creation, independent of later filesystem edits. */
 export const SkillSnapshot = Schema.Struct({
   name: SkillName,
   content: Schema.String.check(
@@ -93,7 +83,6 @@ export const SkillSnapshot = Schema.Struct({
 
 export type SkillSnapshot = typeof SkillSnapshot.Type;
 
-/** A saved conversation whose provider and model stay fixed across runs. */
 export const Session = Schema.Struct({
   id: Id,
   provider: ProviderId,
@@ -107,7 +96,6 @@ export const Session = Schema.Struct({
   skill: Schema.NullOr(SkillSnapshot),
 });
 
-/** A message ordered within a session; runId is null for history saved outside a run. */
 export const StoredMessage = Schema.Struct({
   id: Schema.Int.check(Schema.isGreaterThan(0)),
   sessionId: Id,
@@ -117,7 +105,6 @@ export const StoredMessage = Schema.Struct({
   message: Message,
 });
 
-/** An attachment's bytes, saved with the run whose user message references it. */
 export const NewAttachment = Schema.Struct({
   id: AttachmentReference.fields.id,
   name: AttachmentReference.fields.name,
@@ -125,14 +112,12 @@ export const NewAttachment = Schema.Struct({
   body: Schema.Uint8Array,
 });
 
-/** A saved attachment's bytes, read back for a model request. */
 export const SavedAttachment = Schema.Struct({
   id: AttachmentReference.fields.id,
   mediaType: AttachmentReference.fields.mediaType,
   body: Schema.Uint8Array,
 });
 
-/** A run starts pending, becomes running, then ends completed, failed, or interrupted. */
 export const RunStatus = Schema.Literals([
   "pending",
   "running",
@@ -141,7 +126,6 @@ export const RunStatus = Schema.Literals([
   "interrupted",
 ]);
 
-/** Durable execution state for one user request, with timestamps in Unix milliseconds. */
 export const Run = Schema.Struct({
   id: Id,
   sessionId: Id,
@@ -155,7 +139,6 @@ export const Run = Schema.Struct({
   failureReason: Schema.NullOr(Schema.NonEmptyString),
 });
 
-/** The terminal result used to finish an active run. */
 export const RunOutcome = Schema.Union([
   Schema.Struct({ status: Schema.Literal("completed"), response: Completion }),
   Schema.Struct({
@@ -164,7 +147,6 @@ export const RunOutcome = Schema.Union([
   }),
 ]);
 
-/** A saved tool invocation; uncertain means its effects could not be confirmed. */
 export const ToolCall = Schema.Struct({
   runId: Id,
   callId: Schema.NonEmptyString,
@@ -189,10 +171,6 @@ export const ToolCall = Schema.Struct({
   failureReason: Schema.NullOr(Schema.NonEmptyString),
 });
 
-/**
- * A tool's confirmed output or the reason execution failed, stopped, or became uncertain.
- * A failure with output is returned to the model as the call's reply, so its run can continue.
- */
 export const ToolOutcome = Schema.Union([
   Schema.Struct({ status: Schema.Literal("completed"), output: Schema.String }),
   Schema.Struct({
@@ -222,7 +200,6 @@ export type Run = typeof Run.Type;
 
 export type RunOutcome = typeof RunOutcome.Type;
 
-/** Database location, migration version, and saved record counts for status commands. */
 export interface StoreStatus {
   readonly path: string;
   readonly schemaVersion: number;

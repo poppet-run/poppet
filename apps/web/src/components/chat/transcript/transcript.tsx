@@ -19,7 +19,6 @@ export const Transcript = ({
 }: TranscriptProps) => {
   const transcript = useRef<HTMLDivElement>(null);
   const active = snapshot?.active ?? null;
-  // Only the latest submission's outcome is current; older errors are superseded.
   const latest = snapshot?.receipts.at(-1);
 
   useLayoutEffect(() => {

@@ -5,7 +5,6 @@ import { open, unlink } from "node:fs/promises";
 import { openNoFollow, writeFileAtomic } from "@poppet/io";
 import { Data, Effect, Schema } from "effect";
 
-/** Reports an existing storage owner or a failure to protect the ownership files. */
 export class OwnerLockError extends Data.TaggedError("OwnerLockError")<{
   readonly reason: "busy" | "storage";
   readonly message: string;
@@ -13,8 +12,6 @@ export class OwnerLockError extends Data.TaggedError("OwnerLockError")<{
 
 const BusyDatabase = Schema.Struct({ code: Schema.Literal("SQLITE_BUSY") });
 
-// SQLite keeps an exclusive lock until close, and the OS releases it after a crash.
-// The PID marker only records the current owner for diagnostics.
 export const acquireOwnerLock = (path: string) =>
   Effect.acquireRelease(
     Effect.tryPromise({
@@ -39,8 +36,6 @@ export const acquireOwnerLock = (path: string) =>
           database.run("BEGIN EXCLUSIVE");
           database.run("COMMIT");
 
-          // The exclusive SQLite lock proves no current owner is running. A marker left by a
-          // crashed owner is replaced even if its PID now belongs to an unrelated process.
           const previous = await openNoFollow(path);
 
           if (previous !== null) {
@@ -53,7 +48,6 @@ export const acquireOwnerLock = (path: string) =>
             }
           }
 
-          // Replace the marker atomically, so a crash cannot leave an empty PID file.
           await writeFileAtomic(path, JSON.stringify({ pid: process.pid }));
 
           return database;

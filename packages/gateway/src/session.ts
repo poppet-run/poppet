@@ -10,15 +10,12 @@ import { failureDecision } from "#src/failure";
 import type { Inbox } from "#src/repository";
 import { messagingRequest } from "#src/request";
 
-/** What starting a new session needs: the configured model and the skill library. */
 export interface SessionSetup {
   readonly config: AppConfig["Service"];
   readonly skills: Skills["Service"];
-  /** The largest attachment the agent accepts; larger downloads are refused. */
   readonly attachmentBytes: number;
 }
 
-/** Resolves and binds a session before inference, reusing saved IDs and skill snapshots on recovery. */
 export const prepareSession = (context: GatewayContext, setup: SessionSetup, entry: Inbox) =>
   Effect.gen(function* () {
     const { channel, repo, store } = context;
@@ -53,7 +50,6 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
     if (Result.isFailure(parsed)) return yield* reject(parsed.failure.message);
     const request = parsed.success;
 
-    // Every file is needed; answering without one the owner sent would mislead them.
     const attachments: AttachmentInput[] = [];
 
     for (const attachment of incoming) {
@@ -71,7 +67,6 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
 
       const { message } = downloaded.failure;
 
-      // Once retries are exhausted, save the destination and reply with the file's error.
       if (failureDecision(downloaded.failure, entry.attempts).retryAfterMs !== null)
         return yield* Effect.fail(downloaded.failure);
 
@@ -80,7 +75,6 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
 
     const existing = yield* repo.binding(channel.id, account, entry.message.scopeId, conversation);
 
-    // Fresh requests include their reserved run ID so recovery reuses the same skill snapshot.
     const id =
       entry.sessionId ??
       (request.fresh ? null : existing) ??

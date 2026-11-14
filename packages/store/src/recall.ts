@@ -15,7 +15,6 @@ const RecallRow = Schema.Struct({
   textBytes: Schema.Natural,
 });
 
-/** Reads bounded windows from the same eligibility projection used to build search. */
 export const readSession = Effect.fn(function* (
   sql: SqlClient.SqlClient,
   query: SessionReadQuery,
@@ -56,7 +55,6 @@ export const readSession = Effect.fn(function* (
       message: "The recall anchor is not an eligible message in this session.",
     });
 
-  // Indexed IDs gate projection reads, avoiding evaluation of excluded tool payloads as assistant text.
   const window = (before: boolean, position: number, limit: number) => {
     const comparison = sql.literal(before ? "<=" : ">");
     const direction = sql.literal(before ? "DESC" : "ASC");
@@ -71,12 +69,9 @@ export const readSession = Effect.fn(function* (
         ) ORDER BY position ${direction}`.pipe(decodeRows(RecallRow));
   };
 
-  // The budget sets the page size and each message's text length; results stay close to it.
   const pageSize = Math.min(10, Math.max(1, Math.floor(maxBytes / 400)));
   const textBytes = Math.floor(maxBytes / pageSize) - 150;
 
-  // An around-read spends about half the page on the anchor and the messages before it,
-  // always including at least one earlier message when the page has room.
   const leading =
     aroundMessageId === null ? 0 : Math.min(pageSize, Math.max(2, Math.ceil(pageSize / 2)));
 

@@ -13,7 +13,6 @@ import {
 import type { Inbox } from "#src/repository";
 import { isCommandApproval, isControl } from "#src/request";
 
-/** What control commands act on: pending approvals and the running request. */
 export interface Controls {
   readonly approvals: CommandApprovals;
   readonly running: RunningRequest;
@@ -61,7 +60,6 @@ const controlReply = (
     return `Session: ${session}\nTitle: ${savedSession?.title ?? session}\nSkill: ${savedSession?.skill?.name ?? "none"}\nLatest run: ${latest?.status ?? "none"}`;
   });
 
-/** Answers /status, /cancel, or an approval reply in a bound conversation without the model. */
 const handleControl = (
   context: GatewayContext,
   controls: Controls,
@@ -77,7 +75,6 @@ const handleControl = (
     yield* mark(context, message, "completed");
   });
 
-/** Validates and deduplicates authorized input; status and cancellation bypass inference. */
 export const accept = (context: GatewayContext, controls: Controls, input: IncomingMessage) =>
   Effect.gen(function* () {
     const { channel, repo } = context;
@@ -109,7 +106,6 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
     yield* wake(context.wakes.inbox);
 
     if (!isControl(message.text)) return;
-    // Controls never create sessions or wait behind the model they may need to cancel.
     yield* repo.state(entry.id, "cancelled");
 
     if (conversation === null || session === null) return;

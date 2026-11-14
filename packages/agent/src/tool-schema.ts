@@ -3,7 +3,6 @@ import { Effect, Schema } from "effect";
 
 import { AgentError } from "#src/errors";
 
-/** Strict tool arguments with the agent's user-facing error. */
 export const toolArguments =
   <S extends Schema.Constraint>(tool: Tool, schema: S) =>
   (json: string) =>
@@ -17,7 +16,6 @@ export const toolArguments =
       ),
     );
 
-/** Nonempty, trimmed text bounded by its UTF-8 byte length. */
 export const BoundedText = (bytes: number) =>
   Schema.NonEmptyString.check(
     Schema.isTrimmed(),

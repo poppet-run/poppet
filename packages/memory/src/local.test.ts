@@ -116,7 +116,6 @@ describe.concurrent("LocalMemoryLive", () => {
           yield* reject(memory.remember("large", "😀".repeat(1025)), "invalid-request");
           yield* reject(memory.remember("unknown", "value", "missing-run"), "not-found");
           const sql = yield* SqlClient.SqlClient;
-          // Seed directly, then exercise real writes at the capacity boundary.
           yield* sql`INSERT INTO memory_revisions ${sql.insert(
             Array.from({ length: 127 }, (_, index) => ({
               key: `fact-${index}`,

@@ -23,7 +23,6 @@ export type { HttpFetch } from "@poppet/provider";
 
 const Catalog = Schema.Struct({ data: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString })) });
 
-// Expand this list only after the model's protocol and continuation are tested.
 const supportedModels: ReadonlyArray<
   ModelDescription & { readonly protocol: "responses" | "chat-completions" }
 > = [

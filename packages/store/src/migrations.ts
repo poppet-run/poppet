@@ -9,16 +9,12 @@ import { attachments } from "#src/migrations/0003_attachments";
 import { removeWorkload } from "#src/migrations/0004_remove_workload";
 import { decodeRow } from "#src/sql";
 
-/** One package's migrations and the ledger table that records them. */
 export interface PackageSchema {
   readonly table: string;
-  /** The highest migration ID this build knows. */
   readonly version: number;
-  /** Entries keyed `<id>_<name>`; append new ones and never edit an applied one. */
   readonly loader: Migrator.Loader;
 }
 
-/** A migration that runs each SQL statement in order; SQLite prepares one at a time. */
 export const migrationStatements = (statements: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -26,10 +22,6 @@ export const migrationStatements = (statements: ReadonlyArray<string>) =>
     for (const statement of statements) yield* sql.unsafe(statement);
   });
 
-/**
- * A package's ledger and migrations, each keyed `<id>_<name>` and listed as SQL statements;
- * the build's version is the highest ID. Append new entries and never edit an applied one.
- */
 export const packageSchema = (
   table: string,
   migrations: Record<string, ReadonlyArray<string>>,
@@ -52,10 +44,6 @@ export const storeSchema = packageSchema("effect_sql_migrations", {
 
 const migrationFailure = (message: string) => new StoreError({ reason: "migration", message });
 
-/**
- * Applies a package's pending migrations in one transaction. A ledger newer than this
- * build is refused, so an older Poppet never writes to a schema it does not understand.
- */
 export const migrate = (schema: PackageSchema) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -75,7 +63,6 @@ export const migrate = (schema: PackageSchema) =>
 
     yield* SqliteMigrator.run({ loader: schema.loader, table: schema.table });
   }).pipe(
-    // A failed migration is reported as a defect after its transaction rolls back.
     Effect.catchDefect((defect) => Effect.fail(defect)),
     Effect.mapError((error) =>
       error instanceof StoreError

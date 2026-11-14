@@ -27,7 +27,6 @@ import {
 } from "#src/task-schema";
 import { TaskRepository } from "#src/task-store";
 
-// Task failures inside a committed operation surface as storage failures, as before.
 const committedFailure = (cause: StoreError | TaskError) =>
   cause instanceof StoreError
     ? cause
@@ -77,7 +76,6 @@ const resolveDelivery = (
   );
 };
 
-/** The shared repository lock serializes chat mutations with worker commands, without entering the agent again. */
 export const ChatTasksLive = Layer.effect(
   ChatTasks,
   Effect.gen(function* () {
@@ -87,7 +85,6 @@ export const ChatTasksLive = Layer.effect(
     const clock = yield* Clock.Clock;
     const { toolBytes } = yield* ChatSettings;
 
-    // The host builds this layer under the new store owner, before starting agent or scheduler work.
     yield* repo.recover(clock.currentTimeMillisUnsafe()).pipe(
       Effect.mapError(
         () =>
@@ -162,7 +159,6 @@ export const ChatTasksLive = Layer.effect(
 
         const skill = action.skill === null ? null : yield* skills.load(action.skill);
 
-        // The model fills this field, so it cannot attach a skill kept for the owner.
         if (skill !== null && isManualOnly(skill.content))
           return yield* Effect.fail(ownerOnlySkill(skill.name));
         const destination = yield* resolveDelivery(action.delivery, context);
@@ -176,7 +172,6 @@ export const ChatTasksLive = Layer.effect(
               message: "The requested one-off time has passed. Choose a future time.",
             });
 
-          // The end time may pass, or its only slot go by, between preparation and commit.
           if (input.endAt !== null && nextSlot(input.task.schedule, now, input.endAt) === null)
             return yield* new StoreError({
               reason: "invalid-request",
@@ -218,14 +213,12 @@ export const ChatTasksLive = Layer.effect(
             const schedule = decoded.schedule;
             const now = clock.currentTimeMillisUnsafe();
 
-            // An unchanged end time is allowed after it has passed; a new one must be valid.
             if (decoded.endAt != null && decoded.endAt !== current.endAt)
               checkEndTime(schedule ?? current.schedule, decoded.endAt, now);
 
             if (schedule !== undefined) {
               nextOccurrence(schedule, now);
 
-              // An unchanged past one-off is allowed; choosing a new past time is not.
               if (
                 schedule.type === "once" &&
                 schedule.at <= now &&
@@ -244,7 +237,6 @@ export const ChatTasksLive = Layer.effect(
         return control({ action: "edit", id: action.id, patch });
       });
 
-    // Each branch validates now and returns the operation to execute under the commit lock.
     const prepareAction = (
       action: ChatTaskAction,
       run: Run,

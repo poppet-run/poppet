@@ -1,6 +1,3 @@
-// The conversation schema. Each statement runs separately because SQLite prepares one at a time.
-// Checks guard only state combinations that row decoding cannot see; typed code and row schemas cover values.
-// Memory, tasks, and gateway define their own tables in their packages.
 export const baseline: ReadonlyArray<string> = [
   `CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
@@ -16,7 +13,6 @@ export const baseline: ReadonlyArray<string> = [
     skill TEXT
   ) STRICT`,
 
-  // A run uses its session's fixed provider, model, and workload; reads join them in.
   `CREATE TABLE runs (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions (id),
@@ -42,7 +38,6 @@ export const baseline: ReadonlyArray<string> = [
 
   `CREATE INDEX runs_by_session ON runs (session_id, created_at, id)`,
 
-  // run_id is null for history saved outside a run.
   `CREATE TABLE messages (
     id INTEGER PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions (id),
@@ -56,7 +51,6 @@ export const baseline: ReadonlyArray<string> = [
 
   `CREATE INDEX messages_by_run ON messages (run_id)`,
 
-  // Uncertain means a call was running when its run stopped, so its effects are unknown.
   `CREATE TABLE tool_calls (
     run_id TEXT NOT NULL REFERENCES runs (id),
     call_id TEXT NOT NULL,
@@ -85,7 +79,6 @@ export const baseline: ReadonlyArray<string> = [
     END)
   ) STRICT`,
 
-  // Search covers user messages and each completed run's final answer.
   `CREATE VIEW searchable_messages AS
   SELECT
     m.id,

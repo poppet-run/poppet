@@ -6,7 +6,6 @@ import { Context, Effect, Option, Schema } from "effect";
 import { TaskCommand, TaskError, isTaskControl } from "#src/task-schema";
 import { TaskRepository, type TaskStore } from "#src/task-store";
 
-/** Host resolves an explicit remote conversation without coupling tasks to an adapter. */
 export class TaskDestinations extends Context.Service<
   TaskDestinations,
   {
@@ -17,12 +16,10 @@ export class TaskDestinations extends Context.Service<
   }
 >()("poppet/TaskDestinations") {}
 
-/** Where one reply chunk is in delivery; "uncertain" means a send began but was not confirmed. */
 export const DeliveryState = Schema.Literals(["pending", "sending", "sent", "failed", "uncertain"]);
 
 export type DeliveryState = typeof DeliveryState.Type;
 
-/** One reply chunk sent for an occurrence; delivery is owned by the messaging gateway. */
 export interface TaskDelivery {
   readonly runId: string;
   readonly position: number;
@@ -31,7 +28,6 @@ export interface TaskDelivery {
   readonly attempts: number;
 }
 
-/** Host-supplied delivery history, so tasks never read messaging tables directly. */
 export class TaskDeliveries extends Context.Service<
   TaskDeliveries,
   {
@@ -41,7 +37,6 @@ export class TaskDeliveries extends Context.Service<
   }
 >()("poppet/TaskDeliveries") {}
 
-/** True when a completed run answered with the no-reply sentinel, so nothing is posted. */
 export const noAction = (run: Run | null) =>
   run?.status === "completed" && run.result !== null && isNoReply(outputText(run.result.output));
 

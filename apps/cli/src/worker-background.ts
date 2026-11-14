@@ -6,7 +6,6 @@ import { Effect } from "effect";
 
 import { openWorkerLog, prepareWorkerLogDirectory } from "#src/commands/worker/log";
 
-/** Keeps the service manager's file descriptors out of the worker so rotated files can be closed. */
 export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirectory: string) => {
   const directory = join(dataDirectory, "logs");
   prepareWorkerLogDirectory(directory);
@@ -30,7 +29,6 @@ export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirect
 
             const stop = (signal: "SIGINT" | "SIGTERM") => {
               child.kill(signal);
-              // Leave the service manager's 30-second stop window room to drain and close the log.
               timer ??= setTimeout(() => child.kill("SIGKILL"), 25_000);
             };
 

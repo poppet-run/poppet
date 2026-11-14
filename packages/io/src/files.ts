@@ -7,10 +7,6 @@ import { Schema } from "effect";
 
 export const isMissingFile = Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }));
 
-/**
- * Makes a directory private to this user: creates it unless `create` is false, rejects anything
- * but a real directory this user owns, and narrows it to 0o700. False when missing and not created.
- */
 export const ensurePrivateDirectory = async (
   path: string,
   options: { readonly create?: boolean } = {},
@@ -31,13 +27,11 @@ export const ensurePrivateDirectory = async (
   return true;
 };
 
-/** Removes a file; a missing file is already removed. */
 export const unlinkIfPresent = (path: string): Promise<void> =>
   unlink(path).catch((cause: unknown) => {
     if (!isMissingFile(cause)) throw cause;
   });
 
-/** Opens for reading without following a final symlink or blocking on a FIFO; null when missing. */
 export const openNoFollow = (path: string): Promise<FileHandle | null> =>
   open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(
     (cause: unknown) => {
@@ -46,7 +40,6 @@ export const openNoFollow = (path: string): Promise<FileHandle | null> =>
     },
   );
 
-/** Reads from the start, allowing one extra byte to detect growth beyond the limit. The caller owns the handle. */
 export const readFileBounded = async (
   handle: {
     readonly read: (
@@ -79,10 +72,6 @@ export const readFileBounded = async (
   return buffer.subarray(0, length);
 };
 
-/**
- * Reads a regular file owned by this user with exactly one link; null when missing.
- * Optionally bounds its size, rejects group/other write access, or narrows it to 0o600.
- */
 export const readProtectedFile = async (
   path: string,
   options: {
@@ -110,7 +99,6 @@ export const readProtectedFile = async (
 
     if (makePrivate) await handle.chmod(0o600);
 
-    // The file can grow between stat and read.
     const bytes =
       maxBytes === Infinity
         ? await handle.readFile()
@@ -122,7 +110,6 @@ export const readProtectedFile = async (
   }
 };
 
-/** Writes and syncs a private sibling file, then renames it over the target so readers never see partial contents. */
 export const writeFileAtomic = async (path: string, contents: string): Promise<void> => {
   const temporary = join(dirname(path), `.${basename(path)}-${randomUUID()}.tmp`);
   const handle = await open(temporary, "wx", 0o600);

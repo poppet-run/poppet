@@ -6,7 +6,6 @@ import type { AttachmentType } from "@poppet/provider";
 import { AgentError } from "#src/errors";
 import type { ChatPolicy } from "#src/settings";
 
-/** A file the owner attached, before its type is identified and limits are checked. */
 export interface AttachmentInput {
   readonly name: string;
   readonly body: Uint8Array;
@@ -59,7 +58,6 @@ const startsWith = (body: Uint8Array, bytes: ReadonlyArray<number>, offset = 0) 
 
 const ascii = (text: string) => [...text].map((character) => character.charCodeAt(0));
 
-// The bytes decide an image's type; a declared type or extension is never trusted.
 const imageType = (body: Uint8Array): AttachmentType | null => {
   if (startsWith(body, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
 
@@ -84,7 +82,6 @@ const isText = (body: Uint8Array) => {
   }
 };
 
-// Keep a readable single-line file name; a path supplied by a client is reduced to its last part.
 const displayName = (name: string) => {
   const clean = basename(name.replaceAll("\\", "/"))
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, "")
@@ -104,7 +101,6 @@ const readableSize = (bytes: number) =>
     ? `${Math.round((bytes / 1024 / 1024) * 10) / 10} MiB`
     : `${Math.round((bytes / 1024) * 10) / 10} KiB`;
 
-/** Identifies one file by its contents and checks it against the per-file limits. */
 export const identifyAttachment = (input: AttachmentInput, policy: ChatPolicy) => {
   const name = displayName(input.name);
   const image = imageType(input.body);
@@ -130,7 +126,6 @@ export const identifyAttachment = (input: AttachmentInput, policy: ChatPolicy) =
   return { name, mediaType: "text/plain" as const };
 };
 
-/** Validates a message's files and assigns each the ID its saved reference will carry. */
 export const prepareAttachments = (inputs: ReadonlyArray<AttachmentInput>, policy: ChatPolicy) => {
   if (inputs.length > policy.attachmentsPerMessage)
     throw new AgentError({

@@ -3,7 +3,6 @@ import { AttachmentReference, Output, outputText } from "@poppet/provider";
 import { Session } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
-/** Saved messages as session inspection reports them, with tool exchanges left opaque. */
 export const HistoryMessages = Schema.Array(
   Schema.Struct({
     message: Schema.Union([
@@ -29,7 +28,6 @@ export interface ChatHistoryMessage {
   readonly text: string;
 }
 
-/** Display saved text and attachment names, without replaying tool calls or provider state. */
 export const chatHistory = (messages: typeof HistoryMessages.Type) => {
   const history: ChatHistoryMessage[] = [];
 
@@ -57,7 +55,6 @@ export const chatHistory = (messages: typeof HistoryMessages.Type) => {
   return history;
 };
 
-/** Reads a session inspection, which may come from the worker, into displayable history. */
 export const readChatHistory = <A>(value: A, sessionId: string) =>
   Effect.gen(function* () {
     const inspection = yield* Schema.decodeUnknownEffect(Inspection)(value).pipe(

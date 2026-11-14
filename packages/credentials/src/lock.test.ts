@@ -41,7 +41,6 @@ describe("acquireOwnerLock", () => {
       expect(JSON.parse(await readFile(path, "utf8")).pid).toBe(owner.pid);
       await Effect.runPromise(Effect.scoped(acquireOwnerLock(path)));
       expect(await Bun.file(path).exists()).toBe(false);
-      // A persistent lock database is safe to reuse; deleting it would bypass a live owner's lock.
       await Effect.runPromise(Effect.scoped(acquireOwnerLock(path)));
     } finally {
       owner.kill("SIGKILL");
@@ -57,7 +56,6 @@ describe("acquireOwnerLock", () => {
     const target = join(directory, "untouched");
 
     try {
-      // After a crash and reboot, the saved PID can belong to an unrelated live process.
       await Effect.runPromise(
         Effect.forEach([JSON.stringify({ pid: process.pid }), "unknown old owner"], (marker) =>
           Effect.promise(() => writeFile(path, marker)).pipe(

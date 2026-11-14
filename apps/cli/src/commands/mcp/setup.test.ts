@@ -28,7 +28,6 @@ const invoke = async (directory: string, args: ReadonlyArray<string>, input: str
 
 const Request = Schema.Struct({ id: Schema.optionalKey(Schema.Json), method: Schema.String });
 
-/** A Streamable HTTP server that accepts one bearer key, or challenges for OAuth without it. */
 const serve = (key: string | null, beforeList?: () => Promise<void>) => {
   const tools = ["read", "write"];
   const authorizations: (string | null)[] = [];
@@ -395,7 +394,6 @@ describe("mcp add and remove", () => {
         },
       );
 
-      // Without a terminal nothing can be pasted, so the consenting browser reaches the listener.
       let output = "";
       let approved = false;
       const decoder = new TextDecoder();

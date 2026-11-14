@@ -112,7 +112,6 @@ const readResponse = async (response: IncomingMessage): Promise<PageResponse> =>
   }
 };
 
-/** Connect directly to the validated literal IP; retain the source hostname for HTTP and TLS. */
 export const requestPage = (
   url: URL,
   address: string,
@@ -128,7 +127,6 @@ export const requestPage = (
       port: url.port || undefined,
       path: `${url.pathname}${url.search}`,
       method: "GET",
-      // A fresh direct connection avoids both pooled sockets and ambient proxy settings.
       agent: false,
       signal,
       maxHeaderSize: 16384,
@@ -164,7 +162,6 @@ export const requestPage = (
     pending.end();
   });
 
-/** The agent's injectable DNS and bounded HTTP transport. It never carries provider credentials. */
 export class PageTransport extends Context.Service<
   PageTransport,
   {
