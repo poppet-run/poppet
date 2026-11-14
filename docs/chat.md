@@ -4,7 +4,7 @@
 
 The [Bash tool](commands.md) can inspect and manage the host machine. Every
 invocation is reviewed. CLI runs execute commands the reviewer allows; commands
-requiring a human stop with instructions to request approval in Discord.
+requiring a human stop. Request the operation in Discord or Slack for human approval.
 
 ## Start and continue a session
 

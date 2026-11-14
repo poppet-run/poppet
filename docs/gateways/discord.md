@@ -105,7 +105,7 @@ Uncertain sends are recorded without automatic resending, since Discord may
 already have posted them. Use the session ID and `chat show <session>` to inspect
 the saved answer before manually reposting it. No reply is redirected to another
 channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#deliver-results-to-discord) default to the home
-channel with `--channel discord`. Add `--conversation <channel-or-thread-id>` to
+channel with `--to discord`. Use `--to discord:<channel-or-thread-id>` to
 select another destination. Use the worker to execute and deliver
 them. Scheduled results use the same queue and do not alter thread sessions.
 A scheduled run that answers with exactly `NO_REPLY` posts nothing; its saved

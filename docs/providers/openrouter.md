@@ -22,7 +22,7 @@ poppet provider login openrouter
 ## Credentials
 
 See [API keys](../configuration.md#api-keys) for protected storage, environment
-overrides, stdin input, and logout. OpenRouter uses `POPPET_OPENROUTER_API_KEY`
+overrides, masked terminal input, and logout. OpenRouter uses `POPPET_OPENROUTER_API_KEY`
 and `<POPPET_DATA_DIR>/auth/openrouter.json`.
 
 ## Models and requests

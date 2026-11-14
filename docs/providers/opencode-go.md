@@ -35,7 +35,7 @@ See the provider documentation for usage requirements.
 ## Credentials
 
 See [API keys](../configuration.md#api-keys) for protected storage, environment
-overrides, stdin input, and logout. OpenCode Go uses `POPPET_OPENCODE_GO_API_KEY`
+overrides, masked terminal input, and logout. OpenCode Go uses `POPPET_OPENCODE_GO_API_KEY`
 and `<POPPET_DATA_DIR>/auth/opencode-go.json`.
 
 Use `chat new` to start a session; see [chat](../chat.md). Chat

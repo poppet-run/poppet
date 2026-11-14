@@ -50,7 +50,7 @@ Bun version, run `mise use -g bun@1.4.4` once. Check the installation by running
 `poppet --help` from another directory.
 
 All examples use `poppet`, which can run from any directory. Relative
-configuration paths resolve from the current working directory. The default data
+MCP working-directory paths resolve beside `config.json`. The default data
 directory is `~/.config/poppet`; see [configuration](configuration.md) to change it.
 
 ## Run setup
@@ -60,20 +60,22 @@ poppet setup
 ```
 
 Choose a provider, sign in if needed, and search its model list by typing. You can
-also configure Discord and, on macOS or Linux with systemd, install and start the combined scheduling
-and messaging worker. Have your Discord bot token, user ID, server ID, and
-home channel ID ready if you want messaging. See the [Discord guide](gateways/discord.md)
-for bot permissions and intents.
+also configure Discord and Slack and, on macOS or Linux with systemd, install and
+start the combined scheduling and messaging worker. For Discord, have your bot
+token, user ID, server ID, and home channel ID ready. For Slack, have your bot and
+app tokens, owner ID, workspace ID, and home channel ID ready. See the
+[Discord](gateways/discord.md) and [Slack](gateways/slack.md) guides for permissions.
 
 Setup saves ordinary settings in `config.json` and credentials in protected files.
-Rerunning it uses saved choices as defaults. Skipping Discord preserves its settings.
+Rerunning it uses saved choices as defaults. Skipping a channel preserves its
+settings and tokens.
 It asks before starting or restarting the worker. Other platforms use `poppet worker run`.
 
 Authentication is saved immediately. Cancelling later keeps completed steps;
-setup reports each save. Finishing setup does not verify live inference or a Discord
-connection. Check `poppet worker status`, then send a chat message to try it.
+setup reports each save. Finishing setup does not verify live inference or messaging
+connections. Check `poppet worker status`, then send a chat message to try it.
 
-Web search and MCP remain separate settings.
+Web chat, web search, and MCP remain separate settings.
 
 After setup, continue with [chat](#choose-a-model-and-chat). The manual commands
 below are also available for scripts and individual changes.

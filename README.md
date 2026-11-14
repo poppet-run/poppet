@@ -2,7 +2,7 @@
 
 A small personal AI agent for local use, built with TypeScript, Bun, and Effect.
 
-Chat in the terminal or through Discord, with support for
+Chat in the terminal, in a browser, or through Discord and Slack, with support for
 ChatGPT, OpenCode Go, and OpenRouter. Sessions are saved locally so you can pick up
 past conversations.
 

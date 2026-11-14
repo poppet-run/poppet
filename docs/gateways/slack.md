@@ -33,9 +33,9 @@ bounded, authenticated, and restricted to Slack's file host. Progress uses eyes
 and check-mark reactions. Slack typing indicators and remote thread names are
 not implemented. Session titles remain local.
 
-Scheduled delivery uses `--channel slack`. An explicit destination is a channel
-ID such as `C123`, or `C123:1730000000.000001` for a thread. Replies are saved
-before delivery; an uncertain send is not automatically repeated.
+Scheduled delivery uses `--to slack` for the home channel. Use `--to slack:C123`
+for an explicit channel or `--to slack:C123:1730000000.000001` for a thread.
+Replies are saved before delivery; an uncertain send is not automatically repeated.
 
 A failed scheduled occurrence posts a short [failure notice](../tasks.md#failure-notices)
 to its configured channel or thread, naming the task and its reason code without

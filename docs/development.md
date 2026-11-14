@@ -18,13 +18,14 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/credentials`,
 `@poppet/store`, `@poppet/agent`, `@poppet/io`, `@poppet/mcp`,
-`@poppet/memory`, `@poppet/skills`, `@poppet/tasks`, `@poppet/web-search`,
+`@poppet/memory`, `@poppet/tasks`, `@poppet/web-search`,
 `@poppet/platform`, `@poppet/worker`, `@poppet/gateway`,
-`@poppet/channel-discord`.
+`@poppet/channel-discord`, `@poppet/channel-slack`, and `@poppet/web`.
+Skills live inside `@poppet/agent`.
 `bun run format` formats files with Oxfmt.
 `bun run lint:fix` applies safe Oxlint fixes. `bun run check` checks formatting,
-linting, types, and Bun tests. GitHub Actions runs the same checks on pushes
-and pull requests. Bun's built-in type checker covers each workspace and the root
+linting, types, the production web build, and Bun tests. GitHub Actions runs the
+same checks on pushes and pull requests. Bun's built-in type checker covers each workspace and the root
 tooling configs. TypeScript stays installed for editor support. To check one
 workspace, use `bun run --filter '@poppet/config' typecheck`
 or `bun run --filter '@poppet/provider-openai' test`.
@@ -93,6 +94,7 @@ Shared CLI code stays in `src/`; shared command helpers stay in `src/commands/`.
 
 ```text
 apps/
+  web/                    @poppet/web, Preact browser chat and shared API types
   cli/                    @poppet/cli
     src/
       main.ts             Bun process entry point and Effect runtime
@@ -106,11 +108,15 @@ apps/
         setup/            Interactive setup command
         tasks/            Task command and argument parsing
         web/              Web search command and service
+        web-chat/         Authenticated web listener, submission receipts, and chat lifecycle
         worker/           Worker command, platform selection, host, transport, and logs
       runtime.ts          Generic selection and host configuration layers
       providers.ts        Provider registrations; first entry is the default
       worker-background.ts Stable installed-service entry point, output capture, and shutdown forwarding
 packages/
+  gateway/                @poppet/gateway, shared acceptance, approvals, and delivery
+  channel-discord/         @poppet/channel-discord, Discord adapter and setup
+  channel-slack/           @poppet/channel-slack, Slack Socket Mode adapter and setup
   agent/                  @poppet/agent
     src/service.ts        Persisted chat runner, deadlines, run finalization
     src/conversation.ts   Sequential model/tool loop and run budgets
@@ -283,7 +289,7 @@ loading settings must not connect to the platform. Use a lightweight registratio
 entry point and import heavy SDK code only when its layer is built.
 
 The messaging host builds a gateway per configured registration, sharing the
-existing store and serialized agent. Configuration errors appear per channel and
+existing store and agent request slots. Requests within one session stay ordered. Configuration errors appear per channel and
 do not prevent other configured channels from running. All resources close with
 the worker. Discord keeps ordinary settings in `config.json` and only its token
 in `channels/discord.json`. Its `accountId` effect resolves when Discord reports
@@ -318,10 +324,11 @@ live account access. Live ChatGPT subscription inference and a tool round trip
 passed on 2026-10-13; Go and OpenRouter inference have not been verified against live accounts.
 
 The [storage guide](storage.md#permissions-and-recovery) describes local recovery checks.
-Live chat, ChatGPT token renewal, Discord setup and reconnection, macOS and Linux login
-startup and physical sleep/wake remain separate manual checks. Follow the
-[Discord guide](gateways/discord.md) and [worker manual validation](worker.md#manual-validation)
-for those paths. The [implementation plan](implementation-plan.md) lists
+Live chat, ChatGPT token renewal, Discord and Slack setup and reconnection,
+web chat over HTTPS, macOS and Linux login startup, and physical sleep/wake
+remain separate manual checks. Follow the [Discord](gateways/discord.md),
+[Slack](gateways/slack.md), [web chat](web-chat.md#current-scope-and-verification),
+and [worker validation](worker.md#manual-validation) guides for those paths. The [implementation plan](implementation-plan.md) lists
 planned work.
 
 ### Manual live test checklist

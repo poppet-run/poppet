@@ -71,29 +71,29 @@ poppet --completions fish > ~/.config/fish/completions/poppet.fish
 
 ## Configuration and storage
 
-| Command        | Action                                                                                  |
-| -------------- | --------------------------------------------------------------------------------------- |
-| `setup`        | Interactively choose a provider and model, configure Discord, and offer worker startup. |
-| `config`       | Print validated configuration without opening storage or contacting a provider.         |
-| `store status` | Open or migrate the local database and print its path, schema version, and counts.      |
-| `--help`       | Print command help.                                                                     |
+| Command        | Action                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------- |
+| `setup`        | Interactively choose a provider and model, configure Discord and Slack, and offer worker startup. |
+| `config`       | Print validated configuration without opening storage or contacting a provider.                   |
+| `store status` | Open or migrate the local database and print its path, schema version, and counts.                |
+| `--help`       | Print command help.                                                                               |
 
 See [configuration](configuration.md) and [storage](storage.md).
 
 `setup` requires an interactive terminal. It reuses saved choices, offers reconnect
-for an existing provider, and lists models from that provider. Discord is optional;
-skipping it leaves its policy and token unchanged. Discord token input displays
+for an existing provider, and lists models from that provider. Discord and Slack are optional;
+skipping a channel leaves its policy and tokens unchanged. Token input displays
 asterisks. Other settings in `config.json` are preserved.
 
 If the selected provider uses an API key from the shell environment, setup still
 asks for a key with hidden input and saves it for the background worker.
 
 Authentication saves immediately. Provider and model choices save after the
-prompts, followed by Discord if selected. Cancellation or a later failure keeps
+prompts, followed by each selected messaging channel. Cancellation or a later failure keeps
 completed saves and reports that they remain. Invalid configuration is never
-overwritten. Setup does not run inference or test Discord access.
+overwritten. Setup does not run inference or test messaging access.
 
-On macOS, setup offers to install and start the worker, start an installed
+On macOS and Linux with systemd, setup offers to install and start the worker, start an installed
 worker, or explicitly restart a loaded worker. Restarting can interrupt active runs.
 Other platforms get the foreground command. Use the individual provider, gateway,
 and worker commands for scripts; setup has no noninteractive mode.
@@ -240,11 +240,12 @@ is running. Use `--to <gateway>` to deliver to that gateway's home channel, or
 
 ## Messaging
 
-| Command                                                                                            | Action                                   |
-| -------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `gateway discord setup --owner-id <id> --guild-id <id> --home-channel-id <id> --bot-token <token>` | Save Discord settings and the bot token. |
+| Command                                                                                                             | Action                                   |
+| ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `gateway discord setup --owner-id <id> --guild-id <id> --home-channel-id <id> --bot-token <token>`                  | Save Discord settings and the bot token. |
+| `gateway slack setup --owner-id <id> --team-id <id> --home-channel-id <id> --bot-token <token> --app-token <token>` | Save Slack settings and both tokens.     |
 
-See [Discord](gateways/discord.md) for setup, conversation behavior,
+See [Discord](gateways/discord.md) and [Slack](gateways/slack.md) for setup, conversation behavior,
 controls, and uncertain deliveries. Use `poppet setup` for masked token entry.
 
 ## Worker

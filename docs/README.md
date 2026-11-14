@@ -11,7 +11,7 @@ for persistent settings.
 
 ## Guides
 
-- [Configuration](configuration.md): one settings file, credentials, Discord migration, and run controls.
+- [Configuration](configuration.md): one settings file, credentials, Discord and Slack settings, and run controls.
 - [Command line](cli.md): commands, provider selection, and verification.
 - [Doctor](doctor.md): read-only setup checks, worker observations, and actionable findings.
 - [Chat](chat.md): saved sessions, streaming answers, context, and cancellation.
@@ -25,7 +25,7 @@ for persistent settings.
 
 ## Gateways
 
-- [Host commands](commands.md): reviewed Bash execution, Discord approval, and cron behavior.
+- [Host commands](commands.md): reviewed Bash execution, Discord and Slack approval, and cron behavior.
 - [Discord](gateways/discord.md): bot setup, thread sessions, permissions, and delivery.
 - [Slack](gateways/slack.md): Socket Mode setup, thread sessions, permissions, and delivery.
 

@@ -97,8 +97,10 @@ Jobs and occurrences have nullable JSON `destination` columns.
 Each occurrence copies the task's adapter, bot account, owner, server, parent
 channel, and thread IDs when queued. Tasks without messaging delivery have no
 destination.
-The gateway copies completed answers into its delivery queue using a unique
-`occurrence_id` on the inbox record, so recovery cannot enqueue the result twice.
+The gateway copies completed answers and fixed failure notices into its delivery
+queue. A unique `(occurrence_id, run_id)` index prevents duplicate queue entries
+while allowing a successful explicit retry to deliver a new result. Failure notices
+use `notice:<occurrence-id>:<finished-at>` as their synthetic run ID.
 Delivery chunks retain their own state independently of task execution. Queued
 replies and their saved answers survive clearing task definitions and history.
 

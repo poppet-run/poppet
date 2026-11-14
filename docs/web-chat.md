@@ -123,7 +123,7 @@ proxy, the last `X-Forwarded-For` address identifies the client. Poppet keeps at
   that were never submitted. Signing out clears drafts; an unacknowledged submission
   remains in this tab for recovery after signing in again.
 - Tool permissions still apply. This UI cannot approve commands that need human
-  approval. Use Discord approval where supported.
+  approval. Request the operation in Discord or Slack for human approval.
 
 The web API exposes chat operations. It does not expose provider credentials,
 provider continuation data, or the worker's general command endpoint. The browser
