@@ -24,7 +24,6 @@ import {
   Schema,
 } from "effect";
 
-/** Runs configured messaging gateways and combines their connection and delivery status. */
 export class MessagingWorker extends Context.Service<
   MessagingWorker,
   {
@@ -60,7 +59,6 @@ const loadChannels = (registered: ReadonlyArray<ChannelRegistration>) =>
     ),
   );
 
-/** Restart counts and the latest failure an adapter recovered from, for status output. */
 export interface AdapterHealth {
   restarts: number;
   lastError: string | null;
@@ -68,13 +66,8 @@ export interface AdapterHealth {
 
 const maxRestartDelay = 300_000;
 
-// An adapter that ran this long is considered healthy again, so its backoff starts over.
 const healthyAfter = 600_000;
 
-/**
- * Restarts one adapter after failures with exponential backoff, so it cannot stop other
- * adapters or the scheduler. Interruption and storage failures still stop the worker.
- */
 export const superviseAdapter = <E>(
   id: string,
   run: Effect.Effect<void, E>,
@@ -137,7 +130,6 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
 
           if (loaded.success === null) return disabledWorker(entry);
 
-          // Each adapter needs its own gateway; the agent and store remain shared.
           const context = yield* Layer.build(
             GatewayLive.pipe(Layer.provide(loaded.success), Layer.fresh),
           ).pipe(Effect.result);

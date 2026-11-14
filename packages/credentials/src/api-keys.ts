@@ -21,26 +21,21 @@ export { readCredentialFile } from "#src/inspection";
 
 import { protectedFiles } from "#src/records";
 
-/** A nonempty key without whitespace, redacted in diagnostic output. */
 export const ApiKey = Schema.RedactedFromValue(
   Schema.NonEmptyString.check(Schema.isPattern(/^\S{1,8192}$/)),
 );
 
 interface StoreOperations {
-  /** Reads only this provider's saved key; null means none exists. */
   readonly read: (
     provider: ProviderId,
   ) => Effect.Effect<Redacted.Redacted<string> | null, ProviderError>;
-  /** Atomically replaces this provider's saved key under its owner lock. */
   readonly write: (
     provider: ProviderId,
     key: Redacted.Redacted<string>,
   ) => Effect.Effect<void, ProviderError>;
-  /** Removes the saved key if present; environment keys and remote credentials are unaffected. */
   readonly remove: (provider: ProviderId) => Effect.Effect<void, ProviderError>;
 }
 
-/** Protected API-key files kept separately for each provider. */
 export class ApiKeyStore extends Context.Service<ApiKeyStore, StoreOperations>()(
   "poppet/ApiKeyStore",
 ) {}
@@ -117,7 +112,6 @@ export const ApiKeyStoreLive = Layer.effect(
   }),
 );
 
-/** Prefers the environment key, then protected storage; a null key means neither is set. */
 export const findApiKey = (provider: ProviderId, environment: string) =>
   Effect.gen(function* () {
     const configured = Option.getOrNull(yield* environmentApiKey(provider, environment));
@@ -129,7 +123,6 @@ export const findApiKey = (provider: ProviderId, environment: string) =>
     return { key: saved, source: saved === null ? null : ("stored" as const) };
   });
 
-/** Saves a key from hidden input. */
 export const saveApiKey = (provider: ProviderId) =>
   Effect.gen(function* () {
     const input = yield* CredentialInput;
@@ -139,7 +132,6 @@ export const saveApiKey = (provider: ProviderId) =>
     yield* ApiKeyStore.use((store) => store.write(provider, key));
   });
 
-/** Prefers the environment key, then protected storage; a present but invalid key is an error. */
 export const loadApiKey = (provider: ProviderId, environment: string) =>
   Effect.gen(function* () {
     const { key } = yield* findApiKey(provider, environment).pipe(
@@ -158,7 +150,6 @@ export const loadApiKey = (provider: ProviderId, environment: string) =>
     );
   });
 
-// Reusable API-key behavior receives all provider-specific settings from its owner.
 export const makeApiKeyConnection = (provider: ProviderOperations, environment: string) =>
   Effect.gen(function* () {
     const store = yield* ApiKeyStore;

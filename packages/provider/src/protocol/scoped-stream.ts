@@ -10,7 +10,6 @@ import {
 } from "#src/index";
 import { inferenceFailure } from "#src/protocol/errors";
 
-/** Validates inference input and aborts the request on deadline or early consumer exit. */
 export const modelStream = (
   description: ModelDescription,
   request: ModelRequest,
@@ -51,8 +50,6 @@ export const modelStream = (
           return {
             next: () => iterator.next(),
             return: async () => {
-              // Abort before awaiting return: an async generator may still be blocked
-              // reading the network, so its own finally block cannot close it yet.
               controller.abort();
 
               return iterator.return ? iterator.return() : { done: true, value: undefined };
@@ -69,7 +66,6 @@ export const modelStream = (
     }),
   );
 
-/** Values ordered by their stream index; a missing index means the stream omitted one. */
 export const inIndexOrder = <A>(entries: ReadonlyMap<number, A>, omitted: () => ProviderError) =>
   [...entries.entries()]
     .toSorted(([left], [right]) => left - right)

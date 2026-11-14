@@ -1431,7 +1431,6 @@ describe("makeCLI", () => {
 
       expect(listed[0]).toMatch(/^ID +NAME +SCHEDULE +NEXT RUN +STATE +DELIVERY$/);
       expect(listed[1]).toMatch(/^\S+ +Weekly +0 9 \* \* 1 \(UTC\) +\S+ \S+ +active +local$/);
-      // Columns line up under their headers.
       expect(listed[1]!.indexOf("Weekly")).toBe(listed[0]!.indexOf("NAME"));
 
       expect((await invoke(["memory", "list"], environment)).stdout).toBe(

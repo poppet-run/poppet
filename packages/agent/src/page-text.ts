@@ -90,7 +90,6 @@ const textPage = (body: Uint8Array, contentType: string | undefined) => {
     text = "";
   };
 
-  // Removed elements still emit text callbacks. Parse the cleaned document before collecting text.
   new HTMLRewriter()
     .on("pre", {
       element: (element) => {

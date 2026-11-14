@@ -14,7 +14,6 @@ import { AgentError } from "#src/errors";
 export const failureReason = (error: AgentError | StoreError) =>
   `${error instanceof AgentError ? "agent" : "store"}:${error.reason}`;
 
-/** Classifies an execution failure by the tool's policy; see `FailurePolicy`. */
 export const toolFailureKind = (
   failures: FailurePolicy,
   error: AgentError | StoreError,
@@ -26,7 +25,6 @@ export const toolFailureKind = (
   return failures.uncertain.has(reason) ? "uncertain" : failures.otherwise;
 };
 
-/** Preparation runs before any effect, so its failures are reportable unless storage failed. */
 export const preflightReported = (error: AgentError | StoreError) =>
   error instanceof StoreError
     ? reportedStoreReasons.has(error.reason)

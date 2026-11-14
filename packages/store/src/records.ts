@@ -37,9 +37,7 @@ export const notFound = (message: string) => new StoreError({ reason: "not-found
 export const continuationMatches = (session: Session, continuation: Continuation) =>
   continuation.provider === session.provider && continuation.model === session.model;
 
-/** Shared reads and writes used by the session, run, and tool-call operations. */
 export const storeRecords = (sql: SqlClient.SqlClient) => {
-  // Internal steps fail with SQL, schema, or store errors; public operations report StoreError.
   const transaction = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     sql.withTransaction(effect).pipe(reportAs(storeFailure));
 
@@ -53,7 +51,6 @@ export const storeRecords = (sql: SqlClient.SqlClient) => {
         : Effect.succeed(session),
     );
 
-  // A run's provider and model are its session's.
   const runs = sql`SELECT runs.*, sessions.provider, sessions.model
       FROM runs JOIN sessions ON sessions.id = runs.session_id`;
 
@@ -84,7 +81,6 @@ export const storeRecords = (sql: SqlClient.SqlClient) => {
       return { run, call };
     });
 
-  // Call IDs with a saved tool reply in this run, whether the call completed or reported failure.
   const repliedCalls = (runId: string) =>
     sql`SELECT json_extract(payload, '$.callId') AS call_id FROM messages
         WHERE run_id = ${runId} AND json_extract(payload, '$.role') = 'tool'`.pipe(
@@ -92,7 +88,6 @@ export const storeRecords = (sql: SqlClient.SqlClient) => {
       Effect.map((replies) => new Set(replies.map((reply) => reply.callId))),
     );
 
-  // Settles unfinished calls; a call that was running may have had effects, so it is uncertain.
   const interruptTools = (runId: string, at: number, reason: string) =>
     sql`UPDATE tool_calls
         SET status = CASE WHEN status = 'running' THEN 'uncertain' ELSE 'interrupted' END,

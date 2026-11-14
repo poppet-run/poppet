@@ -6,7 +6,6 @@ const Time = Schema.NullOr(Schema.Number);
 
 const Count = Schema.optionalKey(Schema.Number);
 
-/** The status fields that text output shows; JSON output keeps every field. */
 export const WorkerStatusReport = Schema.Struct({
   service: Schema.Struct({
     installed: Schema.Boolean,

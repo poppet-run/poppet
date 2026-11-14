@@ -60,16 +60,10 @@ const modernKeywords = new Set([
   "maxContains",
 ]);
 
-// AJV uses this engine for validation, including patterns nested in union branches.
 const regExp = Object.assign((pattern: string, flags: string) => new RE2(pattern, flags), {
   code: "(pattern, flags) => new (require('re2-wasm').RE2)(pattern, flags)",
 });
 
-/**
- * Reject costly or recursive schemas before compilation, without discarding validation keywords.
- * Vendor `x-` annotations, such as FastMCP's `x-fastmcp-wrap-result`, carry no validation and are
- * dropped where they are keywords; property names and literal data keep them.
- */
 export const compileSchema = (input: Schema.JsonObject) => {
   if (Buffer.byteLength(JSON.stringify(input)) > 16384) throw invalid();
   let nodes = 0;
@@ -92,7 +86,6 @@ export const compileSchema = (input: Schema.JsonObject) => {
 
       if (position === "schema" && modernKeywords.has(key)) modern = true;
 
-      // Check unused definitions too; AJV only compiles reachable patterns.
       if (position === "schema" && key === "pattern" && Schema.is(Schema.String)(item))
         regExp(item, "u");
 
@@ -112,14 +105,12 @@ export const compileSchema = (input: Schema.JsonObject) => {
       entries.push([key, visit(item, depth + 1, child)]);
     }
 
-    // fromEntries defines own properties, so a "__proto__" key stays data.
     return Object.fromEntries(entries);
   };
 
   // SAFETY: visit maps an object to an object, and input is an object.
   const schema = visit(input, 0, "schema") as Schema.JsonObject;
 
-  // Required-only branches are valid JSON Schema; disabling this lint keeps required assertions intact.
   const options = {
     strict: true,
     strictRequired: false,
@@ -138,7 +129,6 @@ export const compileSchema = (input: Schema.JsonObject) => {
   return ajv.compile(schema);
 };
 
-/** A strict wrapper preserves optional/defaulted server fields without changing their original schema. */
 export const definition = (
   server: string,
   name: string,
@@ -166,7 +156,6 @@ export const decodeArguments = (json: string) => {
   return Schema.decodeUnknownSync(Schema.fromJsonString(Schema.JsonObject))(wrapper.input);
 };
 
-/** Check JSON strings and keys, so booleans and JSON syntax cannot match credentials. */
 export const containsSecret = (value: Schema.Json, secrets: ReadonlyArray<string>): boolean => {
   if (Schema.is(Schema.String)(value)) return secrets.some((secret) => value.includes(secret));
 
@@ -270,7 +259,6 @@ export const toolResult = (
   if (kept < 0) throw new Error("MCP result budget is too small.");
   const retained = content.slice(0, kept);
 
-  // Spend the remaining bytes on the next block.
   const next = fitPrefix(content[kept] ?? "", (text) =>
     fits(text.length === 0 ? retained : [...retained, text]),
   );

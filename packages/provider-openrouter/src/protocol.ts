@@ -12,7 +12,6 @@ import type {
   ChatCompletionCreateParamsStreaming,
 } from "openai/resources/chat/completions";
 
-// Preserve each reasoning delta, including provider metadata, in its original order.
 const ReasoningDetail = Schema.StructWithRest(
   Schema.Struct({
     type: Schema.Literals(["reasoning.text", "reasoning.summary", "reasoning.encrypted"]),
@@ -47,7 +46,6 @@ const routerReason: RemoteReason = (status, code) =>
       : undefined;
 
 export const routerFailure = (cause: unknown): ProviderError => {
-  // Connection failures and aborts have no response to classify.
   if (
     !(cause instanceof APIError) ||
     cause instanceof APIConnectionError ||
@@ -55,7 +53,6 @@ export const routerFailure = (cause: unknown): ProviderError => {
   )
     return inferenceFailure("openrouter", cause);
 
-  // Stream errors may encode an HTTP status in their numeric code.
   const numeric = Option.getOrUndefined(
     Schema.decodeUnknownOption(Schema.Int.check(Schema.isBetween({ minimum: 400, maximum: 599 })))(
       cause.code,
@@ -72,8 +69,6 @@ export const routerOptions: ChatOptions = {
   isAccountingFrame: (chunk, finishReason) => {
     const choice = chunk.choices[0];
 
-    // OpenRouter's final usage frame repeats the terminal choice with an empty
-    // delta. Keep this exception local to OpenRouter and require matching finish.
     return (
       chunk.usage != null &&
       choice !== undefined &&
@@ -120,7 +115,6 @@ export const routerOptions: ChatOptions = {
         reasoning += value.reasoning ?? value.reasoning_content ?? "";
         details.push(...(value.reasoning_details ?? []));
 
-        // Structured details can duplicate the plain field in the same frame.
         const readable = (value.reasoning_details ?? [])
           .flatMap((detail) =>
             detail.type === "reasoning.encrypted" ? [] : [detail.text ?? detail.summary ?? ""],

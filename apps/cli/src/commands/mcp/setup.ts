@@ -25,14 +25,12 @@ export interface AddServer {
   readonly apiKey: Option.Option<string>;
 }
 
-/** Saved MCP keys share the protected auth directory, so the prefix keeps them apart from providers. */
 const credentialName = (id: string) => `mcp-${id}`;
 
 const restart = "Restart the worker to use this change.";
 
 const invalid = (message: string) => Effect.fail(new UsageError({ message }));
 
-/** Validates the whole server list as config.json would, before anything is saved. */
 const checkServers = (servers: ReadonlyArray<unknown>) =>
   Schema.decodeUnknownEffect(MCPServers, { onExcessProperty: "error" })(servers).pipe(
     Effect.mapError(
@@ -73,8 +71,6 @@ export const addMCPServer = (options: AddServer) =>
       return yield* invalid(`MCP server ${options.id} already exists. Remove it first.`);
     yield* checkServers([...existing, entry]);
 
-    // The key is saved first so the entry never names a missing credential; a failed
-    // configuration write removes it again.
     if (options.auth === "api-key") {
       const key = yield* Option.isSome(options.apiKey)
         ? Schema.decodeUnknownEffect(ApiKey)(options.apiKey.value).pipe(
@@ -149,7 +145,6 @@ export const changeMCPPermissions = (options: {
       const index = servers.findIndex((entry) => entry.id === options.id);
       const entry = servers[index];
 
-      // Discovery authorizes names only for the exact configuration we inspected.
       if (entry === undefined || JSON.stringify(entry) !== JSON.stringify(server)) return current;
       const scheduled = entry.scheduledTools ?? [];
 
@@ -210,7 +205,6 @@ const oauthServer = (id: string) =>
     return server;
   });
 
-/** A running worker adopts the new tokens on its next request to this server. */
 export const loginMCPServer = (id: string, browser: boolean, callbackPort: Option.Option<number>) =>
   Effect.gen(function* () {
     if (Option.isSome(callbackPort) && (callbackPort.value < 1024 || callbackPort.value > 65535))
@@ -248,8 +242,6 @@ export const removeMCPServer = (id: string) =>
       mcpServers: (current.mcpServers ?? []).filter((server) => server.id !== id),
     }));
 
-    // Only the credential named by mcp add belongs to this server; owner-provisioned
-    // references may be shared and are left in place.
     if (credentialName(id).length <= 64)
       yield* ApiKeyStore.use((store) => store.remove(credentialName(id)));
     yield* forgetSignIn(id);

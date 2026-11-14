@@ -14,7 +14,6 @@ import { doctorSnapshot, gatewayObservation } from "#src/commands/doctor/worker"
 import { MessagingWorker } from "#src/commands/gateway/channels";
 import { serveWebChat } from "#src/commands/web-chat/server";
 
-/** Serves commands and runs scheduling and messaging until shutdown closes their shared scope. */
 export const runWorker = Effect.scoped(
   Effect.gen(function* () {
     const config = yield* AppConfig;
@@ -84,7 +83,6 @@ export const runWorker = Effect.scoped(
         ),
       );
     });
-    // The web listener is optional, so its failure must not stop tasks or messaging.
     yield* serveWebChat.pipe(
       Effect.catch((error) => Console.error(`Web chat disabled. ${error.message}`)),
     );

@@ -54,7 +54,6 @@ const completed = (output: ReadonlyArray<Output>, turn = 1) =>
 
 const final = () => completed([{ type: "text", text: "Done" }]);
 
-/** Sends a request that must complete, returning the failures its tools reported to the model. */
 const reportedFailures = (
   sessionId: string,
   text: string,
@@ -291,7 +290,6 @@ describe.concurrent("conversation", () => {
 
         if (last?.role === "tool") {
           expect(approved).toBe(true);
-          // The next model turn must see a finished command, including when stdout is empty.
           expect(JSON.parse(last.output)).toEqual(receipt);
 
           return final();

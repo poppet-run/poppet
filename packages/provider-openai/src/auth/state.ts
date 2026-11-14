@@ -1,7 +1,6 @@
 import { type Connection, ConnectionError, type Credentials, planScope } from "#src/connection";
 import type { TokenReply } from "#src/oauth/tokens";
 
-/** Connection metadata safe to show in status output, excluding authentication tokens. */
 export interface ConnectionStatus {
   readonly connected: boolean;
   readonly email: string | null;
@@ -17,7 +16,6 @@ export const reconnect = () =>
     message: "Sign in first with poppet provider login.",
   });
 
-// Expose connection metadata to the CLI without including any tokens.
 export const statusFor = (connection: Connection | null): ConnectionStatus => ({
   connected: connection !== null && connection.identity !== null && connection.credentials !== null,
   email: connection?.identity?.email ?? null,
@@ -27,8 +25,6 @@ export const statusFor = (connection: Connection | null): ConnectionStatus => ({
   verification: connection?.verification ?? null,
 });
 
-// Refresh replies can omit an unchanged ID token, refresh token, or scope.
-// Keep those fields; a missing access token or expiry stays empty.
 export const credentialsFor = (
   reply: TokenReply,
   now: number,

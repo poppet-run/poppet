@@ -26,7 +26,6 @@ import { TaskError, type NewTask } from "#src/task-schema";
 import { remoteTaskCommand, taskResponse } from "#src/task-socket";
 import { TaskRepository, TaskRepositoryLive } from "#src/task-store";
 
-// Exercise scheduler controls through the same neutral transport as the host.
 const runTaskWorker = Effect.scoped(
   Effect.gen(function* () {
     const config = yield* AppConfig;
@@ -889,7 +888,6 @@ describe.concurrent("makeTaskWorker", () => {
           yield* reconcileTasks(repo, start + 10 * 60_000);
           yield* reconcileTasks(repo, start + 10 * 60_000);
 
-          // Startup queues the latest missed minute; the queued work then blocks later minutes.
           expect(state.lines).toEqual([
             `[2026-10-14T09:05:00.000Z] Task "Summary" task=${job.id} skipped 2026-10-14T09:01:00.000Z to 2026-10-14T09:04:59.999Z reason=downtime`,
             `[2026-10-14T09:06:00.000Z] Task "Summary" task=${job.id} skipped 2026-10-14T09:06:00.000Z to 2026-10-14T09:06:00.000Z reason=previous-occurrence-active`,
@@ -1301,7 +1299,6 @@ describe.concurrent("makeTaskWorker", () => {
           yield* TestClock.adjust("1 second");
           expect(yield* repo.occurrences(recurring.id)).toHaveLength(1);
           expect(yield* repo.occurrences(once.id)).toHaveLength(1);
-          // Waking within the catch-up window runs the latest missed minute, not the earliest.
           expect((yield* repo.occurrences(recurring.id))[0]?.scheduledAt).toBe(wallTime);
           expect(yield* repo.skips(recurring.id)).toEqual([
             { firstAt: 60_000, lastAt: wallTime - 1, reason: "worker-delayed" },
@@ -1364,7 +1361,6 @@ describe.concurrent("makeTaskWorker", () => {
             `[2026-10-14T09:01:00.000Z] Task "Summary" task=${job.id} ended until=2026-10-14T09:01:30.000Z; no later occurrences`,
           ]);
 
-          // The occurrence queued before the end time still runs after it.
           const claimed = (yield* repo.claim(start + 300_000))!;
           yield* executeOccurrence(repo, claimed);
           expect(yield* repo.occurrence(claimed.id)).toMatchObject({

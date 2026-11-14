@@ -29,7 +29,6 @@ import {
 } from "#src/oauth";
 import { boundedFetch, ScopedHTTPTransport, ScopedStdioTransport } from "#src/transport";
 
-/** An allowed discovered tool with validation and invocation owned by this package. */
 export interface MCPTool {
   readonly definition: Tool;
   readonly serverId: string;
@@ -57,10 +56,8 @@ type ConnectionState =
       readonly status: "unavailable";
       readonly diagnostic: string;
       readonly failedAt: number;
-      /** Failed reconnects since the last successful connection. */
       readonly retries: number;
     }
-  /** An OAuth server waits for `mcp login` rather than retrying on a backoff. */
   | { readonly status: "needs-login"; readonly diagnostic: string };
 
 interface Connection {
@@ -69,11 +66,9 @@ interface Connection {
   readonly now: () => number;
   state: ConnectionState;
   closing: Promise<void> | null;
-  /** OAuth servers report when their saved sign-in is missing or was rejected. */
   readonly signIn: { readonly required: () => boolean; readonly message: string } | null;
 }
 
-// A failed server reconnects on a later request after this delay, doubling per attempt.
 const reconnectDelay = (retries: number) => Math.min(30_000 * 2 ** retries, 600_000);
 
 const retryAt = (state: Extract<ConnectionState, { status: "unavailable" }>) =>
@@ -93,16 +88,13 @@ export class MCP extends Context.Service<
         readonly enabled: boolean;
         readonly state: ConnectionState["status"];
         readonly transport: "stdio" | "http";
-        /** The HTTP endpoint's origin; paths and queries are omitted. */
         readonly origin: string | null;
         readonly pid: number | null;
         readonly diagnostic: string | null;
-        /** When a failed server will reconnect on its next request, in epoch milliseconds. */
         readonly retryAt: number | null;
         readonly tools: ReadonlyArray<string>;
         readonly scheduledTools: ReadonlyArray<string>;
         readonly availableTools: ReadonlyArray<string>;
-        /** Saved OAuth sign-in for OAuth servers, without token values. */
         readonly signIn: {
           readonly signedIn: boolean;
           readonly expiresAt: number | null;
@@ -159,7 +151,6 @@ const requireLogin = (connection: Connection, message: string) => {
 const invalidate = (connection: Connection, message: string) => {
   const state = connection.state;
 
-  // Repeated callbacks keep the first failure and its original backoff deadline.
   if (state.status !== "unavailable" && state.status !== "needs-login") {
     if (connection.signIn?.required() === true)
       return requireLogin(connection, connection.signIn.message);
@@ -200,7 +191,6 @@ const resolveReference = (
     return value;
   });
 
-/** Child environment values for stdio servers, or request headers for HTTP servers, with their secrets. */
 const resolveReferences = (config: MCPServer, credentials: ApiKeyStore["Service"]) =>
   Effect.gen(function* () {
     const values: Record<string, string> = {};
@@ -208,7 +198,6 @@ const resolveReferences = (config: MCPServer, credentials: ApiKeyStore["Service"
 
     if (isHTTPServer(config)) {
       for (const [name, reference] of Object.entries(config.headers ?? {})) {
-        // Header values are visible ASCII and spaces; an empty secret would make the prefix the value.
         const value = yield* resolveReference(
           config,
           reference,
@@ -245,7 +234,6 @@ const listTools = async (client: Client, signal: AbortSignal) => {
   for (let page = 0; ; page++) {
     if (page === 8) throw new MCPDiagnostic({ message: "Discovery exceeds 8 pages." });
 
-    // Each cursor depends on the previous page.
     // eslint-disable-next-line no-await-in-loop
     const result = await client.request(
       { method: "tools/list", params: cursor === undefined ? {} : { cursor } },
@@ -287,7 +275,6 @@ const discoverTools = async (config: MCPServer, client: Client, signal: AbortSig
   return discovered;
 };
 
-/** Filled during startup, after the saved sign-in has been read. */
 interface AuthorizationSlot {
   current: RuntimeAuthorization | null;
 }
@@ -303,7 +290,6 @@ const delegate = (authorization: AuthorizationSlot): AuthProvider => ({
 const makeClient = () =>
   new Client({ name: "poppet", version: "0.0.0" }, { capabilities: {}, listMaxPages: 8 });
 
-/** Transports read references at start or per request, after startup resolves them. */
 const makeTransport = (
   config: MCPServer,
   references: Record<string, string>,
@@ -324,7 +310,6 @@ const makeTransport = (
     requestInit: { headers: references },
     fetch,
     redirectPolicy: "same-origin",
-    // Poppet's own backoff owns reconnection; a dropped stream fails the connection.
     reconnectionOptions: {
       initialReconnectionDelay: 1000,
       maxReconnectionDelay: 30000,
@@ -333,7 +318,6 @@ const makeTransport = (
     },
   };
 
-  // Startup supplies OAuth tokens after reading the saved sign-in, like other references.
   if (isOAuthServer(config)) options.authProvider = delegate(authorization);
 
   return new ScopedHTTPTransport(new URL(config.url), options);
@@ -353,7 +337,6 @@ const makeTool = (
   config: MCPServer,
   tool: ServerTool,
   connection: Connection,
-  /** Read per use, because OAuth refresh replaces the access token. */
   secrets: () => ReadonlyArray<string>,
   toolBytes: number,
 ): MCPTool => {
@@ -401,7 +384,6 @@ const makeTool = (
             { method: "tools/call", params: { name: tool.name, arguments: args } },
             { signal, timeout: 10000 },
           ),
-        // A rejected sign-in or missing scope is a refusal before the call ran.
         catch: (cause) => {
           if (connection.signIn?.required() === true) return failed(connection.signIn.message);
 
@@ -456,7 +438,6 @@ const makeTool = (
   };
 };
 
-/** Lazily starts owner-configured processes; the layer's scope owns every client. */
 export const makeMCPLive = (toolBytes: number) =>
   Layer.effect(
     MCP,
@@ -464,7 +445,6 @@ export const makeMCPLive = (toolBytes: number) =>
       const servers = yield* mcpServers;
       const credentials = yield* ApiKeyStore;
       const signIns = yield* MCPSignIns;
-      // Each server starts under its own lock, so one slow server never delays the others.
       const locks = new Map(servers.map((config) => [config.id, Semaphore.makeUnsafe(1)]));
       const clock = yield* Clock.Clock;
       const now = () => clock.currentTimeMillisUnsafe();
@@ -482,14 +462,11 @@ export const makeMCPLive = (toolBytes: number) =>
           if (prior !== undefined) {
             const state = prior.state;
 
-            // A server waiting for sign-in rechecks its saved sign-in, which `mcp login` may
-            // have replaced from another process, on every request without contacting it.
             if (
               state.status !== "needs-login" &&
               (state.status !== "unavailable" || clock.currentTimeMillisUnsafe() < retryAt(state))
             )
               return prior;
-            // Replace the failed client only after its process has been reaped.
             yield* Effect.promise(() => close(prior).catch(() => {}));
             connections.delete(config.id);
             retries = state.status === "unavailable" ? state.retries + 1 : 0;
@@ -521,17 +498,14 @@ export const makeMCPLive = (toolBytes: number) =>
           };
 
           const disconnected = () => {
-            // The owner finalizer awaits this same teardown and reports any cleanup failure.
             void invalidate(
               connection,
-              // Startup failures keep their configuration hint; no call has been dispatched yet.
               connection.state.status === "idle"
                 ? `${startupFailure(config, null).message} Poppet retries on a later request.`
                 : `MCP ${config.id}: disconnected or invalid protocol. Dispatched calls may have unknown effects; Poppet reconnects on a later request.`,
             ).catch(() => {});
           };
 
-          // The SDK exposes callback properties rather than EventTarget listeners.
           // eslint-disable-next-line unicorn/prefer-add-event-listener
           client.onclose = disconnected;
           // eslint-disable-next-line unicorn/prefer-add-event-listener
@@ -578,7 +552,6 @@ export const makeMCPLive = (toolBytes: number) =>
               catch: (cause) => startupFailure(config, cause),
             });
 
-            // A protocol callback can fail the connection before discovery's Promise resumes.
             if (connection.state.status === "unavailable")
               return yield* Effect.fail(failed(connection.state.diagnostic));
 
@@ -603,7 +576,6 @@ export const makeMCPLive = (toolBytes: number) =>
                   ),
                 );
 
-                // A server still waiting for sign-in reported it on its first failure.
                 if (
                   prior?.state.status !== "needs-login" ||
                   connection.state.status !== "needs-login"
@@ -713,10 +685,6 @@ export const makeMCPLive = (toolBytes: number) =>
     }),
   );
 
-/**
- * Connects once with an entry and lists every discovered tool name, ignoring its allowlist, so
- * the owner can review names before allowing them. The connection closes before returning.
- */
 export const probeServer = (config: MCPServer) =>
   Effect.gen(function* () {
     const credentials = yield* ApiKeyStore;
@@ -732,7 +700,6 @@ export const probeServer = (config: MCPServer) =>
       ).pipe(Effect.mapError((error) => authorizationFailure(config, error)));
     const base = boundedFetch(262144);
 
-    // A 401 naming protected resource metadata means the server expects OAuth.
     const observe: FetchLike = async (url, init) => {
       const response = await base(url, init);
 

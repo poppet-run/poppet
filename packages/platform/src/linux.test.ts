@@ -9,7 +9,6 @@ import { manageWorker, type SystemctlRun, userConfigHome, workerPaths } from "#s
 
 const ok = (stdout = ""): SystemctlRun => ({ code: 0, stdout, stderr: "" });
 
-/** Tracks unit state the way a user manager would for the subcommands the worker issues. */
 const fakeSystemd = () => {
   const calls: ReadonlyArray<string>[] = [];
   const state = { loaded: false, active: false };

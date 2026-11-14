@@ -220,14 +220,12 @@ describe("ChatTerminal", () => {
         expect(screen()).not.toContain("Remove me");
         release[0]!.resolve();
         await failed.promise;
-        // Let the prompt reach its next read. It must wait for an explicit queue action.
         await Effect.runPromise(Effect.yieldNow);
         expect(commands).toHaveLength(1);
         expect(screen()).toContain("Queue paused");
         terminal.input(`\u0015/queue ${action}\r`);
 
         for (let index = 1; index < total; index++) {
-          // Each turn must finish before the next one starts.
           // oxlint-disable-next-line no-await-in-loop
           await started[index]!.promise;
           expect(commands).toHaveLength(index + 1);
@@ -269,7 +267,6 @@ describe("ChatTerminal", () => {
         const read = Effect.runPromise(terminal.read);
         terminal.input("first" + key.slice(0, 4));
         terminal.input(key.slice(4) + "second");
-        // Ctrl-A and Ctrl-E still edit; neither encoding of Ctrl-J inserts a newline.
         terminal.input("\u001b[97;5u!\u001b[101;5u\n\u001b[106;5uend\r");
         expect(await read).toEqual({ text: "!first\nsecondend", attachments: [] });
       } finally {

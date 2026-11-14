@@ -17,27 +17,15 @@ const inputSchema = {
 };
 
 export interface OAuthFixtureOptions {
-  /** Metadata reports this issuer instead of the server's own address. */
   issuer?: string;
-  /** Advertise non-default metadata and issuer paths only through the challenge. */
   customDiscovery?: boolean;
-  /** Issue access tokens without refresh tokens. */
   noRefreshToken?: boolean;
-  /** Access tokens expire at the resource server after this many tool calls. */
   tokenUses?: number;
-  /** Refresh responses fail with this OAuth error code. */
   refreshError?: string;
-  /** Tool calls answer 403 insufficient_scope for this scope. */
   stepUpScope?: string;
 }
 
-/**
- * An in-process MCP resource server and authorization server on loopback addresses. It
- * publishes protected resource and authorization server metadata, registers clients, issues
- * codes from `/authorize` without a browser, and rotates refresh tokens on every use.
- */
 export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
-  // Tests may change behavior between requests.
   const options = { ...initial };
   const events: { readonly path: string; readonly authorization: string | null }[] = [];
   const clients = new Map<string, readonly string[]>();
@@ -212,7 +200,6 @@ export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
     events,
     registrations,
     url: `http://127.0.0.1:${server.port}/mcp`,
-    /** Follows the authorization redirect the way a consenting browser would. */
     approve: async (authorizationURL: URL) => {
       const response = await fetch(authorizationURL, { redirect: "manual" });
 

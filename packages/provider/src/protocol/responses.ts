@@ -316,7 +316,6 @@ export const responsesModel = (
 
                     if (delta.delta.length === 0) continue;
 
-                    // Summary parts are separate sections, even when their text has no newlines.
                     if (
                       reasoningItem !== null &&
                       (reasoningItem !== delta.item_id || reasoningSummary !== delta.summary_index)
@@ -358,7 +357,6 @@ export const responsesModel = (
                     "The stream ended without completed inference.",
                   );
 
-                // ChatGPT can omit terminal output; completed item events retain the authoritative items.
                 for (const [index, item] of terminal.output.entries()) {
                   if (!completedItems.has(index)) completedItems.set(index, item);
                 }

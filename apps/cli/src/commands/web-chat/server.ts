@@ -37,7 +37,6 @@ const Login = Schema.Struct({
   key: Schema.String.check(Schema.isMinLength(32), Schema.isMaxLength(256)),
 });
 
-// JSON-escaped text of the maximum length can need six bytes per character.
 const maxBodyBytes = 262144;
 
 const securityHeaders = {
@@ -79,7 +78,6 @@ const body = async <A>(request: Request, schema: Schema.Codec<A, string | object
   return value.value;
 };
 
-/** Authentication and routing are independent of the listener for lifecycle tests. */
 export const webHandler = (
   settings: WebSettings,
   chat: WebChat["Service"],
@@ -132,7 +130,6 @@ export const webHandler = (
     const authenticated = () => token !== undefined && (logins.get(token) ?? 0) > Date.now();
 
     if (request.method === "POST" && url.pathname === "/api/login") {
-      // Throttle each client, so one remote address cannot lock out the owner.
       for (const [address, entry] of attempts)
         if (now - entry.windowStarted >= 60000) attempts.delete(address);
 
@@ -151,7 +148,6 @@ export const webHandler = (
       if (!timingSafeEqual(digest, Buffer.from(settings.accessKeyHash, "hex")))
         return Response.json({ message: "Incorrect access key." }, { status: 401 });
 
-      // Replace the oldest login, since lost cookies cannot be signed out.
       if (logins.size >= 32) logins.delete(logins.keys().next().value!);
       const key = randomBytes(32).toString("hex");
       logins.set(key, now + 12 * 60 * 60 * 1000);
@@ -201,8 +197,6 @@ export const webHandler = (
         return Response.json(await run(chat.snapshot(id)));
 
       if (request.method === "GET" && session[2] === "/events") {
-        // Send snapshots as the client reads them to limit buffering on slow connections.
-        // A reconnect gets the full current snapshot without replaying earlier updates.
         let marker = await run(chat.marker(id));
         let previous = JSON.stringify(await run(chat.snapshot(id)));
         let first = true;
@@ -222,7 +216,6 @@ export const webHandler = (
             }
 
             try {
-              // Rebuild the snapshot only when its change marker changes.
               const latest = first ? marker : await run(chat.marker(id));
 
               const current =
@@ -274,7 +267,6 @@ export const webHandler = (
   };
 };
 
-/** web.json is opt-in. The HTTPS reverse proxy must preserve Host and disable SSE buffering. */
 export const serveWebChat = Effect.gen(function* () {
   const config = yield* AppConfig;
 
@@ -332,7 +324,6 @@ export const serveWebChat = Effect.gen(function* () {
           fetch: (request, server) => {
             const peer = server.requestIP(request)?.address ?? "unknown";
 
-            // Behind a loopback reverse proxy, the last forwarded address is the one it appended.
             const forwarded = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(peer)
               ? request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim()
               : undefined;

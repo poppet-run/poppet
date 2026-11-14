@@ -58,7 +58,6 @@ export const parseTaskSchedule = (
   });
 };
 
-/** An end time takes the same offset-qualified form as --at and suits only a cron schedule. */
 export const parseTaskEnd = (until: Option.Option<string>, schedule: Schedule) => {
   if (Option.isNone(until)) return undefined;
   const endAt = parseTimestamp(until.value);
@@ -116,7 +115,6 @@ export const prepareTask = (
     );
   });
 
-/** Split only the first colon; the rest belongs to the adapter's conversation ID. */
 export const parseTaskDestination = (text: string | undefined) => {
   if (text === undefined) return undefined;
   const separator = text.indexOf(":");
@@ -133,7 +131,6 @@ export const parseTaskDestination = (text: string | undefined) => {
   return { adapter, conversationId };
 };
 
-/** Durations are elapsed time, independent of local timezone and DST transitions. */
 export const parseRelativeTime = (text: string, now = Date.now()): number => {
   const match = /^([1-9][0-9]*)(s|m|h|d)$/.exec(text);
 

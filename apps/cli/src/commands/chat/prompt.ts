@@ -17,7 +17,6 @@ const terminalColumns = () => Math.max(1, process.stderr.columns ?? 80);
 
 const activityPalette = [66, 73, 80, 116, 152, 159, 195, 231];
 
-/** Sweeps a cyan highlight across a fixed label, resetting styling after each frame. */
 export const activityIndicator = (
   activity: "Thinking" | "Responding",
   frame: number,
@@ -40,7 +39,6 @@ export const activityIndicator = (
   );
 };
 
-/** One line owns readline only while waiting; inference keeps normal terminal signal handling. */
 export const readChatLine = Effect.suspend(() => {
   if (!process.stdin.isTTY || !process.stdout.isTTY)
     return Effect.fail(
@@ -60,7 +58,6 @@ export const readChatLine = Effect.suspend(() => {
       Effect.callback<string | null, AgentError>((resume) => {
         const close = () => resume(writeChatText("\n").pipe(Effect.as(null)));
         const fail = () => resume(Effect.fail(inputFailure()));
-        // Callback cleanup only runs on interruption, so completed reads also need cleanup.
         reader.once("close", () => process.stdin.off("error", fail));
         reader.once("close", close);
         reader.once("SIGINT", close);
@@ -87,7 +84,6 @@ export interface InteractiveChatOptions {
   readonly skill?: string | undefined;
 }
 
-/** Terminal queues capture attachment paths when the message is submitted. */
 export interface ChatInput {
   readonly text: string;
   readonly attachments?: readonly string[];
@@ -96,7 +92,6 @@ export interface ChatInput {
 export const readChatInput = (read = readChatLine): Effect.Effect<ChatInput | null, AgentError> =>
   read.pipe(Effect.map((text) => (text === null ? null : { text })));
 
-/** Keeps streamed thinking readable while answer text stays on its existing output. */
 export const interactiveChatOutput = (
   write: ChatWriter,
   thinking: ChatWriter,
@@ -112,7 +107,6 @@ export const interactiveChatOutput = (
     let line = "";
     const segments = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-    // Repaint only the last visual row, leaving earlier reasoning in scrollback.
     const rememberLine = (text: string) => {
       let row = "";
       let width = 0;
@@ -238,7 +232,6 @@ const plainPresentation: ChatPresentation = {
   finish: Console.log(""),
 };
 
-/** Reuses one saved session, including after a failed turn whose identity was already acknowledged. */
 export const interactiveChat = <E extends { readonly message: string }, R>(
   options: InteractiveChatOptions,
   send: (
@@ -284,7 +277,6 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
       yield* loadHistory(sessionId);
     }
 
-    // Files added with /attach go with the next message, whether or not it succeeds.
     let attachments: string[] = [];
 
     for (;;) {

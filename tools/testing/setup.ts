@@ -18,7 +18,6 @@ globalThis.fetch = Object.assign(
     if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))
       throw new Error(`Tests cannot contact external services: ${url.origin}`);
 
-    // Redirects must be followed explicitly so every destination passes this check.
     return network(input, { ...init, redirect: init?.redirect === "manual" ? "manual" : "error" });
   },
   {
@@ -33,7 +32,6 @@ const protectSpawn = <T extends typeof Bun.spawn | typeof Bun.spawnSync>(spawn: 
     apply(target, _receiver, [command, options]) {
       const settings = Array.isArray(command) ? { ...options, cmd: command } : command;
 
-      // Exercise the real Bash lifecycle without enabling arbitrary shell commands in tests.
       if (settings?.cmd?.[0] === "/bin/bash") {
         const cwd = relative(home, settings.cwd ?? ".");
 

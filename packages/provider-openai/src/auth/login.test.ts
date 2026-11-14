@@ -94,7 +94,6 @@ describe.concurrent("loginWorkflow", () => {
     const harness = await createHarness();
 
     try {
-      // A callback for another attempt is refused but cannot end this one, which keeps waiting.
       harness.controls.wrongState = true;
       expect(
         await harness.run(

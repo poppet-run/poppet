@@ -18,25 +18,21 @@ export {
   updateConfigFile,
 } from "#src/source";
 
-/** Extra installed gateway registration entry points, alongside bundled Discord. */
 export const gatewayPackages = Config.schema(
   Schema.fromJsonString(Schema.Array(ConfigText)),
   "gatewayPackages",
 ).pipe(Config.withDefault([]));
 
-/** Minutes after a missed recurring task time during which it still runs once. */
 export const taskCatchUpMinutes = Config.schema(
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1440 })),
   "catchUpMinutes",
 ).pipe(Config.withDefault(60));
 
-/** Selecting a search provider opts in to web search. */
 export const webSearchProvider = Config.schema(
   Schema.Literals(["brave", "kagi"]),
   "webSearchProvider",
 ).pipe(Config.option, Config.map(Option.getOrNull));
 
-/** Resolved host paths and default model selection for new sessions. */
 export interface Settings {
   readonly applicationName: string;
   readonly dataDirectory: string;
@@ -44,10 +40,8 @@ export interface Settings {
   readonly model: string | null;
 }
 
-/** Supplies host configuration without requiring consumers to read environment variables. */
 export class AppConfig extends Context.Service<AppConfig, Settings>()("poppet/AppConfig") {}
 
-/** Reads configuration, resolves directory paths, and validates configured provider selection. */
 export const loadConfig = (defaultProvider: ProviderId, providers: ReadonlyArray<ProviderId>) =>
   Effect.gen(function* () {
     const applicationName = yield* Config.schema(ConfigText, "applicationName").pipe(

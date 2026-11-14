@@ -72,7 +72,6 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
       if (decoded.status === "completed" && call.status !== "running")
         return yield* conflict("Only a started tool call can complete.");
 
-      // A reported failure keeps its reply in history only; the call row stores its reason.
       if ("output" in decoded)
         yield* append(
           yield* requireSession(run.sessionId),

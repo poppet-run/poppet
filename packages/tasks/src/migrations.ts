@@ -3,7 +3,6 @@ import { packageSchema } from "@poppet/store";
 import { removeWorkload } from "#src/migrations/0002_remove_workload";
 import { taskEnd } from "#src/migrations/0003_task_end";
 
-// Scheduled tasks. Deleting a task deletes its history. An occurrence snapshots its task definition. Each statement runs separately; append new migrations, never edit applied ones.
 const baseline: ReadonlyArray<string> = [
   `CREATE TABLE jobs (
     id TEXT PRIMARY KEY,
@@ -59,7 +58,6 @@ const baseline: ReadonlyArray<string> = [
   ) STRICT`,
 ];
 
-/** Migrations for this package's tables, recorded in their own ledger. */
 export const taskSchema = packageSchema("task_migrations", {
   "1_baseline": baseline,
   "2_remove_workload": removeWorkload,

@@ -25,12 +25,10 @@ import {
 } from "@poppet/store";
 import { Effect, Schema, Stream } from "effect";
 
-/** Nonblank user input whose original spacing is preserved. */
 export const MessageText = Schema.NonEmptyString.check(
   Schema.makeFilter((text) => text.trim().length > 0 || "Enter a nonempty message."),
 );
 
-/** A file read by the command line, carried to the worker as base64. */
 const ChatAttachment = Schema.Struct({
   name: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
   base64: Schema.String,
@@ -40,7 +38,6 @@ const ChatAttachments = Schema.optionalKey(
   Schema.Array(ChatAttachment).check(Schema.isMaxLength(defaultPolicy.attachmentsPerMessage)),
 );
 
-/** Validated chat submissions; new sessions carry an explicit model selection. */
 export const ChatSubmission = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("new"),
@@ -58,7 +55,6 @@ export const ChatSubmission = Schema.Union([
   }),
 ]);
 
-/** Validated chat requests that reply with one value. */
 export const ChatInspection = Schema.Union([
   Schema.Struct({ action: Schema.Literal("rename"), id: Session.fields.id, text: MessageText }),
   Schema.Struct({ action: Schema.Literal("show"), id: Session.fields.id }),
@@ -68,10 +64,6 @@ export const ChatInspection = Schema.Union([
 
 export type ChatSubmission = typeof ChatSubmission.Type;
 
-/**
- * Parsed chat actions; a new session still needs its provider and model resolved, and attached
- * files are paths until they are read.
- */
 export type ChatCommand =
   | typeof ChatInspection.Type
   | {
@@ -87,13 +79,10 @@ export type ChatCommand =
       readonly attachments?: ReadonlyArray<string>;
     };
 
-/** A streamed text sink that can report write failures to the active request. */
 export type ChatWriter = (text: string) => Effect.Effect<void, AgentError>;
 
-/** Session metadata accompanies its announcement without parsing terminal output. */
 export type ChatAnnouncer = (text: string, sessionId?: string) => Effect.Effect<void, AgentError>;
 
-/** Routes live reasoning separately from buffered diagnostic log entries. */
 export type ChatReasoningWriter = (
   event: Extract<ChatEvent, { type: "reasoning-delta" | "reasoning-end" }>,
 ) => Effect.Effect<void, AgentError>;
@@ -154,7 +143,6 @@ const runForInspection = (run: Run) => ({
   finishReason: run.result?.finishReason ?? null,
 });
 
-/** Saved session data, as plain values for the caller to format. */
 export const inspectChat = (
   command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,
   toolBytes = defaultPolicy.toolBytes,
@@ -195,7 +183,6 @@ const showSession = (id: string) =>
 
 const attachmentLimit = Math.max(defaultPolicy.imageBytes, defaultPolicy.textFileBytes);
 
-/** Reads one attached file within the largest size the agent accepts, without blocking on a FIFO. */
 const readAttachment = (path: string) =>
   Effect.tryPromise({
     try: async () => {

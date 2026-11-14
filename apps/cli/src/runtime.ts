@@ -41,7 +41,6 @@ export const findProvider = (
     : Effect.succeed(provider);
 };
 
-/** Wires registered providers and shared storage into the host's command and agent services. */
 export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) => {
   const first = registered[0];
 
@@ -105,7 +104,6 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     }),
   ).pipe(Layer.provide(config));
 
-  // Build inside the request scope so provider resources stay alive through streamed inference.
   const resolver = Layer.effect(
     ModelResolver,
     Effect.gen(function* () {

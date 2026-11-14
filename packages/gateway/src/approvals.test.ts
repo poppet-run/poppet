@@ -50,7 +50,6 @@ const channel = (sent: string[]): MessagingChannel["Service"] => ({
   },
 });
 
-// Starts a request and returns it once its prompt has been sent.
 const prompted = (sent: string[], approvals: CommandApprovals) =>
   Effect.gen(function* () {
     const fiber = yield* approvals.request(message, "thread", approval).pipe(Effect.forkChild);

@@ -94,7 +94,6 @@ export const manageWorker = (
       const installed = (await regularFileInfo(paths.plist)) !== null;
       const inspection = await launchctl(["print", target]);
 
-      // 113 means this service is absent. Other failures leave its state unknown.
       if (inspection !== 0 && inspection !== 113)
         throw new WorkerError({
           message: `launchctl print failed (exit ${inspection}). The worker state could not be checked; its registration was retained.`,
@@ -152,9 +151,6 @@ export const manageWorker = (
         await command(["bootout", target]);
         const deadline = performance.now() + 35_000;
 
-        // bootout returns before launchd finishes the service's SIGTERM cleanup.
-        // Bootstrapping while its registration still exists fails with exit 5.
-        // Poll sequentially because each result decides whether bootstrap is safe.
         /* eslint-disable no-await-in-loop */
         while (true) {
           const removal = await launchctl(["print", target]);
@@ -192,7 +188,6 @@ export const manageWorker = (
           }),
   });
 
-  // Let lifecycle mutations finish before interruption can report the command as stopped.
   return action === "status" || action === "logs"
     ? operation
     : operation.pipe(Effect.uninterruptible);

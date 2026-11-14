@@ -9,16 +9,13 @@ export const planScope = "chatgpt.tokens.use.direct";
 export const requestedScopes =
   "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 
-/** Hides tokens when printed; encoding still writes the raw token and needs protected storage. */
 export const Secret = Schema.RedactedFromValue(Schema.NonEmptyString);
 
-/** Verified account identity retained independently of token expiry. */
 export const Identity = Schema.Struct({
   subject: Schema.NonEmptyString,
   email: Schema.NullOr(Schema.String),
 });
 
-/** Saved tokens and granted scopes; expiresAt is the access-token expiry in Unix milliseconds. */
 export const Credentials = Schema.Struct({
   accessToken: Schema.NullOr(Secret),
   refreshToken: Schema.NullOr(Secret),
@@ -27,7 +24,6 @@ export const Credentials = Schema.Struct({
   scopes: Schema.Array(Schema.NonEmptyString),
 });
 
-/** Versioned local registration, account identity, credentials, and last model verification. */
 export const Connection = Schema.Struct({
   version: Schema.Literal(1),
   hostId: Schema.String.check(
@@ -63,7 +59,6 @@ export type ConnectionFailure =
   | "interrupted"
   | "verification";
 
-/** ChatGPT connection failures classified for authentication and inference recovery. */
 export class ConnectionError extends Data.TaggedError("ConnectionError")<{
   readonly reason: ConnectionFailure;
   readonly message: string;
@@ -72,8 +67,6 @@ export class ConnectionError extends Data.TaggedError("ConnectionError")<{
   readonly requestId?: string | undefined;
 }> {}
 
-// Translate remote status codes into reasons the auth flow can act on, such as
-// retaining credentials for a temporary failure or requiring a new sign-in.
 export const requestFailure = (
   status: number,
   code: string | null = null,

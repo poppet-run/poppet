@@ -52,7 +52,6 @@ export const approvalComponents = (id: string, state?: ApprovalState) => {
   ];
 };
 
-/** Acknowledge clicks before remote permission checks or gateway work can delay them. */
 export const approvalActions = (
   client: Client,
   settings: DiscordSettings,

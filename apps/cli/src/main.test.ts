@@ -164,7 +164,6 @@ describe("main.ts", () => {
     }
   });
 
-  // Two sequential CLI startups need headroom when CI runs process tests concurrently.
   test.concurrent("when channel setup receives flags, validates and saves the token without printing it", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-channel-input-"));
 

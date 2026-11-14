@@ -961,7 +961,6 @@ describe("Agent.nameSession", () => {
   });
 });
 
-/** A model whose answer to each prompt waits until the test releases that prompt. */
 const gatedModel = () => {
   const { gate, stream } = gatedStream((prompt) =>
     Stream.make({ type: "completed" as const, response: response(`Answer to ${prompt}`) }),
@@ -970,7 +969,6 @@ const gatedModel = () => {
   return { gate, resolve: () => Effect.succeed({ description, stream }) };
 };
 
-// Lets unrelated fibers reach the model if nothing holds them back.
 const settle = Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 50)));
 
 describe.concurrent("Agent request permits", () => {
@@ -1033,7 +1031,6 @@ describe.concurrent("Agent request permits", () => {
 
           yield* settle;
 
-          // With the session waiter holding no slot, the other session still starts.
           const unrelated = yield* Stream.runDrain(agent.send(other.id, "Other")).pipe(
             Effect.forkChild,
           );
@@ -1078,7 +1075,6 @@ describe.concurrent("Agent request permits", () => {
           const first = yield* Stream.runDrain(agent.send(busy.id, "First")).pipe(Effect.forkChild);
           yield* Deferred.await(model.gate("First").entered);
 
-          // One waits for its busy session, the other for the only shared slot.
           const sameSession = yield* Stream.runDrain(agent.send(busy.id, "Same")).pipe(
             Effect.forkChild,
           );
@@ -1096,7 +1092,6 @@ describe.concurrent("Agent request permits", () => {
           expect((yield* store.runs(busy.id)).map((run) => run.status)).toEqual(["completed"]);
           expect(yield* store.runs(other.id)).toEqual([]);
 
-          // Released permits serve later requests to both sessions.
           yield* Deferred.succeed(model.gate("Later").release, undefined);
           yield* Stream.runDrain(agent.send(busy.id, "Later"));
           yield* Stream.runDrain(agent.send(other.id, "Later"));

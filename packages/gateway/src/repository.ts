@@ -18,10 +18,8 @@ import { isControl } from "#src/request";
 
 const InboxState = Schema.Literals(["queued", "executing", "completed", "cancelled", "failed"]);
 
-/** Where an incoming request is in its lifecycle. */
 export type InboxState = typeof InboxState.Type;
 
-/** One conversation's binding; the session is required so a replaced session is never renamed. */
 export interface BindingKey {
   readonly adapter: string;
   readonly account: string;
@@ -41,7 +39,6 @@ const Inbox = Schema.Struct({
   attempts: Schema.Natural,
 });
 
-/** A durable incoming request with IDs linking its remote conversation, session, and run. */
 export type Inbox = typeof Inbox.Type;
 
 const Delivery = Schema.Struct({
@@ -51,7 +48,6 @@ const Delivery = Schema.Struct({
   attempts: Schema.Natural,
 });
 
-/** One ordered reply chunk awaiting delivery to the inbox entry's conversation. */
 export type Delivery = typeof Delivery.Type;
 
 const Binding = Schema.Struct({
@@ -63,13 +59,11 @@ const Binding = Schema.Struct({
   creationMessageId: Schema.NullOr(Schema.String),
 });
 
-// Overload rejections pass through; anything else is reported as a storage failure.
 const gatewayFailure = (cause: unknown) =>
   cause instanceof ChannelError
     ? cause
     : new StoreError({ reason: "storage", message: "Cannot read or write messaging records." });
 
-// Normalize failures once, where database operations become the public repository.
 const operation =
   <Args extends ReadonlyArray<unknown>, A, E, R>(run: (...args: Args) => Effect.Effect<A, E, R>) =>
   (...args: Args) =>
@@ -80,7 +74,6 @@ const conflictingSession = () => new Error("Conflicting messaging session");
 const repository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
-  // Scheduled delivery reads task occurrences, so the task schema must exist first.
   yield* migrate(taskSchema);
   yield* migrate(gatewaySchema);
 
@@ -122,8 +115,6 @@ const repository = Effect.gen(function* () {
         )} ${sql.literal(ignoreExisting ? "ON CONFLICT DO NOTHING" : "")}`.pipe(Effect.asVoid);
 
   return {
-    // Scheduled results stay deliverable only to the current account and only for completed runs.
-    // Failure notices carry a synthetic run ID, so only the account check applies to them.
     rejectScheduledDeliveries: operation((adapter: string, account: string) =>
       sql`UPDATE gateway_deliveries SET state = 'failed' WHERE state = 'pending' AND inbox_id IN (
         SELECT id FROM gateway_inbox WHERE adapter = ${adapter} AND occurrence_id IS NOT NULL
@@ -148,8 +139,6 @@ const repository = Effect.gen(function* () {
         ),
       ),
     ),
-    // Failed occurrences with no notice row yet for this failure. A retry reuses the occurrence ID,
-    // so the finish time is part of the key. repeated marks a failure directly after another.
     failedScheduled: operation((adapter: string, since: number) =>
       sql`SELECT o.id, o.job_id, o.destination, json_extract(o.definition, '$.name') AS name,
           'notice:' || o.id || ':' || o.finished_at AS notice_id,
@@ -224,21 +213,18 @@ const repository = Effect.gen(function* () {
         decodeRow(Inbox),
       ),
     ),
-    // synced_title records the attempted session title, even if no remote rename is confirmed.
     nameAttempted: operation(
       ({ adapter, account, conversation, session }: BindingKey, title: string | null) =>
         sql`UPDATE gateway_bindings SET synced_title = ${title} WHERE adapter = ${adapter}
         AND account = ${account} AND conversation_id = ${conversation}
         AND session_id = ${session}`.pipe(Effect.asVoid),
     ),
-    // Save the desired remote name before sending; recovery inspects it without replaying a rename.
     namePending: operation(
       ({ adapter, account, conversation, session }: BindingKey, name: string) =>
         sql`UPDATE gateway_bindings SET pending_name = ${name} WHERE adapter = ${adapter}
         AND account = ${account} AND conversation_id = ${conversation} AND naming_disabled = 0
         AND session_id = ${session} RETURNING 1`.pipe(Effect.map((rows) => rows.length === 1)),
     ),
-    // managed_name is the last confirmed remote name; a different observed name belongs to the user.
     nameConfirmed: operation(
       ({ adapter, account, conversation, session }: BindingKey, name: string) =>
         sql`UPDATE gateway_bindings SET managed_name = ${name}, pending_name = NULL
@@ -250,7 +236,6 @@ const repository = Effect.gen(function* () {
         WHERE adapter = ${adapter} AND account = ${account} AND conversation_id = ${conversation}
           AND session_id = ${session}`.pipe(Effect.asVoid),
     ),
-    // The first fully delivered exchange of each session, when its title or remote name needs work.
     namingEntries: operation((adapter: string, account: string) =>
       sql`${inbox} WHERE adapter = ${adapter} AND account = ${account}
         AND session_id IS NOT NULL AND state = 'completed'
@@ -307,7 +292,6 @@ const repository = Effect.gen(function* () {
         }),
       ),
     ),
-    // A delayed request blocks later input in the same conversation to preserve history order.
     next: operation((adapter: string, account: string, now: number) =>
       sql`${inbox} WHERE adapter = ${adapter} AND account = ${account} AND state = 'queued'
         AND retry_at <= ${now}
@@ -319,7 +303,6 @@ const repository = Effect.gen(function* () {
             AND earlier.state IN ('queued', 'executing') AND earlier.id < gateway_inbox.id)
         ORDER BY id LIMIT 1`.pipe(decodeRow(Inbox)),
     ),
-    // Only one caller can move a queued entry to executing.
     claim: operation((id: number) =>
       sql`UPDATE gateway_inbox SET state = 'executing' WHERE id = ${id} AND state = 'queued'
         RETURNING id`.pipe(Effect.map((rows) => rows.length > 0)),
@@ -354,7 +337,6 @@ const repository = Effect.gen(function* () {
               creationMessageId: managedName === null ? null : entry.message.messageId,
             })} ON CONFLICT DO NOTHING`;
 
-            // Keep thread ownership and user naming overrides when replacing its session.
             if (replace)
               yield* sql`UPDATE gateway_bindings SET session_id = ${session}, synced_title = NULL
               WHERE adapter = ${entry.adapter} AND account = ${entry.account}
@@ -396,7 +378,6 @@ const repository = Effect.gen(function* () {
       ) =>
         sql.withTransaction(
           Effect.gen(function* () {
-            // Reconciliation can observe a committed run before its delivery was recorded.
             yield* insertDeliveries(id, chunks, "pending", true);
             yield* sql`UPDATE gateway_inbox SET state = ${state} WHERE id = ${id}`;
           }),
@@ -430,7 +411,6 @@ const repository = Effect.gen(function* () {
         retry_at = ${retryAt} WHERE inbox_id = ${entry.inboxId}
           AND position = ${entry.position}`.pipe(Effect.asVoid),
     ),
-    // A crash after a send began cannot prove whether the remote service accepted it.
     recoverDelivery: operation((adapter: string, account: string) =>
       sql`UPDATE gateway_deliveries SET state = 'uncertain' WHERE state = 'sending'
         AND inbox_id IN (SELECT id FROM gateway_inbox
@@ -461,7 +441,6 @@ const repository = Effect.gen(function* () {
   };
 });
 
-/** Persists inbox deduplication, conversation bindings, and ordered reply delivery state. */
 export class GatewayRepository extends Context.Service<
   GatewayRepository,
   Effect.Success<typeof repository>
@@ -477,7 +456,6 @@ const Delivered = Schema.Struct({
   attempts: Schema.Natural,
 });
 
-/** Supplies task inspection with the replies sent for each scheduled occurrence. */
 export const TaskDeliveriesLive = Layer.effect(
   TaskDeliveries,
   Effect.gen(function* () {

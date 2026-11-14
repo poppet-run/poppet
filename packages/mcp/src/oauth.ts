@@ -23,12 +23,10 @@ import { Context, Data, Effect, Layer, Option, Redacted, Schema, type Types } fr
 import type { MCPHTTPServer, MCPOAuth } from "#src/config";
 import { boundedFetch } from "#src/transport";
 
-/** An OAuth server whose saved sign-in is missing, unusable here, or was rejected. */
 export class MCPLoginRequired extends Data.TaggedError("MCPLoginRequired")<{
   readonly message: string;
 }> {}
 
-/** Sign-in could not discover, register, authorize or exchange tokens. */
 export class MCPSignInError extends Data.TaggedError("MCPSignInError")<{
   readonly message: string;
 }> {}
@@ -38,10 +36,6 @@ export type MCPOAuthServer = MCPHTTPServer & { readonly oauth: MCPOAuth };
 export const isOAuthServer = (server: MCPHTTPServer): server is MCPOAuthServer =>
   server.oauth !== undefined;
 
-/**
- * One server's saved sign-in. Tokens apply only to the URL they were issued for. Client,
- * token and discovery objects are written by the SDK after it validates each response.
- */
 const SavedSignIn = Schema.Struct({
   url: Schema.String,
   client: Schema.optionalKey(Schema.JsonObject),
@@ -52,7 +46,6 @@ const SavedSignIn = Schema.Struct({
 
 type SavedSignIn = typeof SavedSignIn.Type;
 
-/** A working copy the SDK provider mutates; it is written back as a whole under the record lock. */
 type Working = Types.Mutable<SavedSignIn>;
 
 const recordName = (id: string) => `mcp-oauth-${id}`;
@@ -74,7 +67,6 @@ const decode = (id: string, value: Schema.Json | null) =>
         ),
       );
 
-/** Protected sign-in records under `<data directory>/auth`, one per OAuth server. */
 export class MCPSignIns extends Context.Service<
   MCPSignIns,
   {
@@ -112,10 +104,6 @@ const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const secure = (url: URL) =>
   url.protocol === "https:" || (url.protocol === "http:" && loopback.has(url.hostname));
 
-/**
- * Discovery, registration and token requests share the MCP size cap and never use plain HTTP
- * beyond this machine. Configured MCP headers are not sent to authorization servers.
- */
 export const oauthFetch =
   (base: FetchLike = boundedFetch(262144)): FetchLike =>
   (url, init) =>
@@ -125,12 +113,10 @@ export const oauthFetch =
 
 const JSONObject = Schema.fromJsonString(Schema.JsonObject);
 
-/** SDK credential objects are plain JSON apart from absent optional fields, which are dropped. */
 const json = <A extends object>(value: A) =>
   Schema.decodeUnknownSync(JSONObject)(JSON.stringify(value));
 
 const copy = (saved: SavedSignIn | null, url: string): Working =>
-  // Tokens and registrations for another URL never reach this one.
   saved === null || saved.url !== url ? { url } : { ...saved };
 
 const AccessToken = Schema.Struct({
@@ -156,7 +142,6 @@ const registeredRedirect = (record: Working) =>
 
 const Stamped = Schema.Struct({ client_id: Schema.String, issuer: Schema.String });
 
-/** The PKCE verifier exists only in memory for one sign-in attempt. */
 interface Session {
   verifier?: string;
 }
@@ -169,10 +154,6 @@ interface ProviderOptions {
   readonly now: () => number;
 }
 
-/**
- * Adapts a working record to the SDK's OAuth client. A configured client ID takes precedence
- * over any registration; its secret comes from protected credentials and is never saved.
- */
 const makeProvider = (
   config: MCPOAuthServer,
   record: Working,
@@ -274,7 +255,6 @@ const clientSecret = (config: MCPOAuthServer) =>
     return Redacted.value(key);
   });
 
-/** Requests the configured scopes, or lets the SDK choose from the server's metadata. */
 const authOptions = (config: MCPOAuthServer, fetchFn: FetchLike) => {
   const options: AuthOptions = { serverUrl: config.url, fetchFn };
 
@@ -288,7 +268,6 @@ const Issued = Schema.Struct({
   scope: Schema.optionalKey(Schema.String),
 });
 
-/** Saved sign-in state for inspection, without token values. */
 export const signInStatus = (config: MCPOAuthServer) =>
   Effect.gen(function* () {
     const saved = yield* MCPSignIns.use((signIns) => signIns.read(config.id));
@@ -312,11 +291,6 @@ export interface SignInOptions<E> extends Omit<BrowserOptions<E>, "service"> {
   readonly now: () => number;
 }
 
-/**
- * Signs in through the browser. Discovery and registration run under the record lock, the
- * browser step does not, and the code exchange replaces tokens under the lock again, so a worker
- * refreshing meanwhile waits at most for one locked step.
- */
 export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -349,8 +323,6 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
           },
         });
 
-      // Ask the resource itself before falling back to well-known discovery. Never
-      // forward endpoint credentials or follow redirects to an authorization server.
       const challenge = yield* Effect.tryPromise({
         try: async (signal) => {
           const response = await fetchFn(config.url, {
@@ -373,7 +345,6 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
           try: async () => {
             const record = copy(saved, config.url);
 
-            // A registration for another callback address cannot complete this attempt.
             if (
               config.oauth.clientId === undefined &&
               registeredRedirect(record) !== callback.redirectUri
@@ -445,7 +416,6 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
     }),
   );
 
-/** Clears tokens and keeps the registration, so the next sign-in can reuse it. */
 export const signOut = (id: string) =>
   MCPSignIns.use((signIns) =>
     signIns.update(id, (saved) => {
@@ -457,15 +427,9 @@ export const signOut = (id: string) =>
     }),
   );
 
-/** Deletes the whole record, including any registration. */
 export const forgetSignIn = (id: string) =>
   MCPSignIns.use((signIns) => signIns.update(id, () => Effect.succeed(null)));
 
-/**
- * Bearer tokens for a running connection. A 401 refreshes under the record lock; when another
- * process already refreshed, its token is adopted instead of spending the refresh token again.
- * A run never opens a browser: a rejected or missing refresh token requires `mcp login`.
- */
 export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) =>
   Effect.gen(function* () {
     const signIns = yield* MCPSignIns;
@@ -518,8 +482,6 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
           try {
             await auth(provider, authOptions(config, fetchFn));
           } catch (cause) {
-            // The SDK clears tokens only when the authorization server rejected them. Any other
-            // failure keeps them for a later attempt.
             if (accessToken(record) === null) {
               state.loginRequired = true;
 
@@ -560,7 +522,6 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
 
     return {
       authProvider,
-      /** The current access token, redacted from results because refresh replaces it. */
       token: () => token,
       loginRequired: () => state.loginRequired,
     };

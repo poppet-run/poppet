@@ -4,7 +4,6 @@ import { Effect } from "effect";
 import { authorized, wake, type GatewayContext } from "#src/context";
 import { answer, chunks } from "#src/replies";
 
-// Reconcile saved results rather than rerun inference after a crash or failed send.
 const scheduleResults = (context: GatewayContext) =>
   Effect.gen(function* () {
     const { channel, repo, store } = context;
@@ -24,7 +23,6 @@ const scheduleResults = (context: GatewayContext) =>
 
       const text = answer(run);
 
-      // A no-reply still saves the inbox row, so the occurrence is reconciled only once.
       yield* repo.scheduleResult(
         item.id,
         item.runId,
@@ -37,7 +35,6 @@ const scheduleResults = (context: GatewayContext) =>
 
 const noticeWindow = 24 * 60 * 60 * 1000;
 
-// A failed occurrence posts one fixed notice. Old failures and repeats in a streak post nothing.
 const scheduleFailureNotices = (context: GatewayContext) =>
   Effect.gen(function* () {
     const { channel, repo, clock } = context;
@@ -52,7 +49,6 @@ const scheduleFailureNotices = (context: GatewayContext) =>
         destination.ownerId === channel.policy.ownerId &&
         destination.scopeId === channel.policy.scopeId;
 
-      // The text carries only the task name and a reason code, never model output or error text.
       const text = `Scheduled task "${item.name}" failed (${item.reason}). Inspect it with: poppet tasks show ${item.jobId}`;
 
       yield* repo.scheduleResult(
@@ -65,7 +61,6 @@ const scheduleFailureNotices = (context: GatewayContext) =>
     }
   });
 
-/** Sends the next saved reply chunk without automatically retrying an uncertain delivery. */
 export const deliverNext = (context: GatewayContext) =>
   Effect.gen(function* () {
     const { channel, repo, clock } = context;
@@ -87,7 +82,6 @@ export const deliverNext = (context: GatewayContext) =>
 
     yield* Effect.gen(function* () {
       yield* channel.checkAccess(entry.message, destination);
-      // Commit before the send. An interruption after this point is an uncertain delivery.
       yield* repo.delivering(delivery);
 
       const id = yield* channel.send(

@@ -27,7 +27,6 @@ export const memoryDefinition: Tool = {
   parameters: toolParameters(Arguments),
 };
 
-/** A validated memory change; the host supplies provenance rather than trusting model arguments. */
 export type MemoryCall =
   | { readonly action: "remember" | "replace"; readonly key: string; readonly value: string }
   | { readonly action: "forget"; readonly key: string };
@@ -50,7 +49,6 @@ export const decodeMemoryCall = (call: ToolCall): Effect.Effect<MemoryCall, Agen
     return yield* Effect.fail(invalid());
   });
 
-/** Preflight the next snapshot before mutation; acknowledgements omit the value to stay bounded. */
 export const executeMemoryCall = (
   memory: Memory["Service"],
   call: MemoryCall,
@@ -91,13 +89,11 @@ export const executeMemoryCall = (
     ),
   );
 
-/** A failed memory write may still have reached storage. */
 export const memoryFailures: FailurePolicy = {
   ...builtinFailures,
   uncertain: new Set(["agent:memory-storage"]),
 };
 
-/** Changes saved facts on the owner's explicit request; scheduled runs cannot call it. */
 export const memoryTool = Effect.gen(function* () {
   const memory = yield* Memory;
   const { factsBytes } = yield* ChatSettings;

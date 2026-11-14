@@ -15,17 +15,13 @@ import {
   type TaskTarget,
 } from "#src/task-schema";
 
-// Recurring summaries lose their usefulness after a day. One-off work never expires.
 export const recurringExpiry = 24 * 60 * 60 * 1000;
 
-/** Converts storage and saved-row failures at the repository boundary. */
 export const taskFailure = (cause: unknown) =>
   cause instanceof TaskError
     ? cause
     : new TaskError({ message: "Could not read or update scheduled tasks." });
 
-// The schedule helpers throw TaskError; these keep that a typed failure inside transactions.
-// A cron slot later than the task's end time does not exist, so the result is null.
 export const nextTime = (schedule: Schedule, after: number, endAt: number | null) =>
   Effect.try({ try: () => nextSlot(schedule, after, endAt), catch: taskFailure });
 

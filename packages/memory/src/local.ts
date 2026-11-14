@@ -13,11 +13,9 @@ import { Memory, MemoryError } from "#src/service";
 const invalid = () =>
   new MemoryError({ reason: "invalid-request", message: "The memory request is invalid." });
 
-/** Validates caller input before any query runs. */
 const input = <S extends Schema.Top>(schema: S, value: S["Encoded"]) =>
   Schema.decodeUnknownEffect(schema)(value).pipe(Effect.mapError(invalid));
 
-// Caller input is validated first, so a schema failure here means a saved row is invalid.
 const memoryFailure = (cause: unknown) =>
   cause instanceof MemoryError
     ? cause
@@ -34,7 +32,6 @@ const memoryFailure = (cause: unknown) =>
 const fail = (reason: MemoryError["reason"], message: string) =>
   Effect.fail(new MemoryError({ reason, message }));
 
-// The host supplies the same SQLite connection used by conversation storage.
 export const LocalMemoryLive = Layer.effect(
   Memory,
   Effect.gen(function* () {
@@ -86,7 +83,6 @@ export const LocalMemoryLive = Layer.effect(
         );
     });
 
-    // Facts are their latest revision, so each change appends exactly one row.
     const commit = (
       key: string,
       action: MemoryRevision["action"],
@@ -97,7 +93,6 @@ export const LocalMemoryLive = Layer.effect(
     ) =>
       Effect.gen(function* () {
         const existing = yield* current(key);
-        // Keep update times moving forward even if the clock steps back.
         const updatedAt = Math.max(at, existing?.updatedAt ?? 0);
 
         yield* sql`INSERT INTO memory_revisions (key, revision, action, value, origin, source_run_id, created_at)

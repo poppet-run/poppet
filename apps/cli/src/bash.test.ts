@@ -12,7 +12,6 @@ import { bashFixtures } from "../../../tools/testing/bash-fixtures";
 
 const signal = () => new AbortController().signal;
 
-// A killed orphan stays signalable until init reaps it, so wait briefly for it to disappear.
 const exited = async (pid: number, deadline = Date.now() + 2000): Promise<boolean> => {
   try {
     process.kill(pid, 0);
@@ -63,7 +62,6 @@ describe("Bash execution", () => {
 
     try {
       await expect(
-        // A fractional timeout keeps the test fast; tool input is still validated as whole seconds.
         executeBash({ command: bashFixtures.timeout, cwd, timeoutSeconds: 0.1 }, 1024, signal()),
       ).rejects.toMatchObject({ reason: "tool-uncertain" });
       const started = Date.now();

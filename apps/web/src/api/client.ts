@@ -26,7 +26,6 @@ const request = async <T>(
   );
 
   if (!response.ok) {
-    // Proxies and the listener's own limits can answer with non-JSON bodies.
     const error: { message?: string } = await response.json().catch(() => ({}));
     throw new ApiError(
       response.status,

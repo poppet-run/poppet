@@ -4,23 +4,14 @@ import type { Callback } from "#src/callback";
 import { SignInError } from "#src/errors";
 
 export interface BrowserOptions<E> {
-  /** Names the service in the printed instructions. */
   readonly service: string;
-  /** Skips the system browser and accepts a callback URL pasted into the terminal. */
   readonly noBrowser: boolean;
-  /** True when the system browser would open on another machine or nowhere. */
   readonly remote: boolean;
-  /** Reads one pasted line when the browser cannot reach the listener. */
   readonly paste: Effect.Effect<string, E>;
-  /** Failures fall back to the printed link. */
   readonly open: (url: string) => Effect.Effect<void, unknown>;
   readonly timeoutMs: number;
 }
 
-/**
- * Sends the owner to an authorization URL and waits for its callback, from the listener or
- * pasted into the terminal, until the deadline.
- */
 export const authorizeInBrowser = <A, E>(
   callback: Callback<A>,
   url: string,
@@ -47,8 +38,6 @@ export const authorizeInBrowser = <A, E>(
         `If that browser then shows an error page for ${callback.redirectUri}, copy the full address from its address bar and paste it here.`,
     );
 
-    // Keep reading until a pasted URL completes the attempt. A forwarded
-    // browser callback can still finish first and interrupts the prompt.
     const pasted = Effect.gen(function* () {
       while (true) {
         const line = yield* options.paste;

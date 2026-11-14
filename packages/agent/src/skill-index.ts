@@ -12,7 +12,6 @@ const maxDescriptionBytes = 240;
 const truncate = (text: string, bytes: number) =>
   byteSize(text) <= bytes ? text : `${clip(text, bytes - byteSize("…")).trimEnd()}…`;
 
-/** The first heading and the start of the first paragraph; skills need no metadata format. */
 export const skillDescription = (content: string) => {
   const lines = content
     .split(/\r?\n/u)

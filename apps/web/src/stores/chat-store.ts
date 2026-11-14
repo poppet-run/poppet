@@ -24,7 +24,6 @@ type ChatState = {
   atBottom: boolean;
 };
 
-// Each mounted app has its own state. Sign-in and sign-out change the generation, so late replies are ignored.
 export const createChatStore = () => {
   const $state = map<ChatState>({
     authenticated: null,
@@ -108,7 +107,6 @@ export const createChatStore = () => {
     const requestGeneration = generation;
 
     try {
-      // Save the recovery ID before sending so it survives a page refresh.
       sessionStorage.setItem("poppet-submission", JSON.stringify(submission));
       set("pending", submission);
       const receipt = await api.submit(submission);
@@ -175,7 +173,6 @@ export const createChatStore = () => {
     }
   };
 
-  // Check the receipt before forgetting local recovery. This never cancels a worker run.
   const forget = async () => {
     const submission = $state.get().pending;
 
@@ -253,7 +250,6 @@ export const createChatStore = () => {
           }
         }
 
-        // EventSource stops retrying after a non-200 response, such as a proxy 502.
         if (
           listening &&
           source === events &&
@@ -308,7 +304,6 @@ export const createChatStore = () => {
 
     void refresh();
 
-    // Poll only while signed in or still connecting, and never from a hidden tab.
     const polling = setInterval(() => {
       if ($state.get().authenticated !== false && !document.hidden) void refresh();
     }, 5000);

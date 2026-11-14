@@ -10,7 +10,6 @@ export const accessTokenWorkflow = Effect.gen(function* () {
   const store = yield* CredentialStore;
   const oauth = yield* OAuthClient;
 
-  // Reusing this Effect still reads current credentials each time it is executed.
   return Effect.gen(function* () {
     const connection = yield* store.read;
 
@@ -30,8 +29,6 @@ export const accessTokenWorkflow = Effect.gen(function* () {
       );
     const now = (yield* DateTime.nowAsDate).getTime();
 
-    // Renew a minute before expiry so a token is unlikely to expire in transit
-    // while the model request is starting.
     if (
       credentials.accessToken &&
       credentials.expiresAt !== null &&
@@ -43,8 +40,6 @@ export const accessTokenWorkflow = Effect.gen(function* () {
 
     const refreshed = yield* oauth.exchange(refreshBody(credentials.refreshToken, clientId)).pipe(
       Effect.catchTag("ConnectionError", (error) => {
-        // Only terminal token failures clear credentials. A network or service
-        // failure leaves them available for a later attempt.
         if (error.reason !== "reconnect") return Effect.fail(error);
 
         return store

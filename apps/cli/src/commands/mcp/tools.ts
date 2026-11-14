@@ -5,7 +5,6 @@ import { Effect, Layer } from "effect";
 const agentFailure = (error: MCPError) =>
   new AgentError({ reason: error.reason, message: error.message });
 
-/** The host adapts MCP tools and errors to the agent's generic contract. */
 export const ExternalAgentToolsLive = Layer.effect(
   ExternalTools,
   Effect.gen(function* () {

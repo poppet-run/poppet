@@ -30,13 +30,11 @@ const ModelCatalog = Schema.Struct({
       slug: Schema.NonEmptyString,
       display_name: Schema.NonEmptyString,
       visibility: Schema.String,
-      // Unverified against a live catalog; a model without it is treated as text-only.
       input_modalities: Schema.optionalKey(Schema.Array(Schema.String)),
     }),
   ),
 });
 
-/** An account-catalog entry before translation into the shared model description. */
 export type AvailableModel = (typeof ModelCatalog.Type.models)[number];
 
 interface CatalogCache {
@@ -48,7 +46,6 @@ interface CatalogCache {
   } | null;
 }
 
-// Provider layers are rebuilt per request; retain only one credential-bound entry per transport.
 const catalogs = new WeakMap<HttpFetch, CatalogCache>();
 
 interface ModelOperations {
@@ -57,7 +54,6 @@ interface ModelOperations {
   readonly resolve: (model: string) => Effect.Effect<SelectedModelOperations, ProviderError>;
 }
 
-/** Lists, verifies, and resolves models available through the current ChatGPT connection. */
 export class ChatGPTModel extends Context.Service<ChatGPTModel, ModelOperations>()(
   "poppet/ChatGPTModel",
 ) {}
@@ -114,7 +110,6 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
                   ),
                 );
 
-                // Offer only models the account catalog marks as visible to the user.
                 const models = catalog.models.filter((model) => model.visibility === "list");
                 catalogCache.entry = {
                   credential,
@@ -162,8 +157,6 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
             }),
           );
         yield* verifyModel(selectedModel(entry)).pipe(Effect.mapError(connectionFailure));
-        // Record success only after inference completes and the local tool result
-        // comes back correctly. This confirms model access and tool handling.
         yield* auth.recordVerification(entry.slug);
 
         return entry.slug;

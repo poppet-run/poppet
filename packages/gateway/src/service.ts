@@ -22,8 +22,6 @@ const gateway = Effect.gen(function* () {
     repo: yield* GatewayRepository,
     store: yield* Store,
     clock: yield* Clock.Clock,
-    // Loops wait for these signals instead of polling storage; timers still cover retries
-    // and results committed by the task worker.
     wakes: {
       inbox: yield* Queue.make<void>({ capacity: 1, strategy: "dropping" }),
       delivery: yield* Queue.make<void>({ capacity: 1, strategy: "dropping" }),
@@ -32,7 +30,6 @@ const gateway = Effect.gen(function* () {
   };
 
   const running = runningRequests();
-  // The agent's limit, so the gateway never claims more requests than the agent can start.
   const { maxConcurrentRequests, imageBytes, textFileBytes } = yield* ChatSettings;
   const approvals = commandApprovals(channel);
 
@@ -64,10 +61,8 @@ const gateway = Effect.gen(function* () {
     ),
   };
 
-  /** Recovers once, then receives input, runs inference, and delivers replies concurrently. */
   const run = Effect.gen(function* () {
     yield* service.recover;
-    // Closing the run's scope interrupts every active request and leaves it for recovery.
     const active = yield* FiberSet.make<void, ChatFailure | ChannelError>();
 
     const receive = Stream.runForEach(channel.messages, (message) =>
@@ -101,7 +96,6 @@ const gateway = Effect.gen(function* () {
   return { ...service, run };
 });
 
-/** Coordinates authorized messaging input, saved agent runs, and durable reply delivery. */
 export class Gateway extends Context.Service<Gateway, Effect.Success<typeof gateway>>()(
   "poppet/Gateway",
 ) {}

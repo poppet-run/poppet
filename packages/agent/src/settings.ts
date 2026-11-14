@@ -1,6 +1,5 @@
 import { Config, Context, Effect, Layer, Schema } from "effect";
 
-/** Per-run diagnostics and limits for context, tools, and memory loaded into the prompt. */
 export interface ChatPolicy {
   readonly logReasoning: boolean;
   readonly logTimings: boolean;
@@ -13,22 +12,16 @@ export interface ChatPolicy {
   readonly soulBytes: number;
   readonly profileBytes: number;
   readonly factsBytes: number;
-  /** UTF-8 bytes of the skill index in instructions; zero disables model-selected skills. */
   readonly skillIndexBytes: number;
-  /** Absolute deadline for one chat request, including every model turn and tool call. */
   readonly runDeadlineSeconds: number;
-  /** Chat requests that may run at once across messaging, interactive chat, and scheduled runs. */
   readonly maxConcurrentRequests: number;
   readonly attachmentsPerMessage: number;
   readonly imageBytes: number;
   readonly textFileBytes: number;
-  /** Images resent in one request; older ones in retained history become a text placeholder. */
   readonly imagesPerRequest: number;
-  /** Context bytes each image counts as, since providers bill images by size, not encoding. */
   readonly imageContextBytes: number;
 }
 
-/** Supplies validated chat limits shared by context assembly and the tool loop. */
 export class ChatSettings extends Context.Service<ChatSettings, ChatPolicy>()(
   "poppet/ChatSettings",
 ) {}

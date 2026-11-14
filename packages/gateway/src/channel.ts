@@ -1,6 +1,5 @@
 import { Context, Data, Effect, Schema, Stream } from "effect";
 
-/** An adapter failure; uncertain means a remote action may already have taken effect. */
 export class ChannelError extends Data.TaggedError("ChannelError")<{
   readonly reason: "unavailable" | "permission" | "uncertain" | "configuration" | "overloaded";
   readonly message: string;
@@ -9,19 +8,15 @@ export class ChannelError extends Data.TaggedError("ChannelError")<{
 
 const ExternalId = Schema.NonEmptyString.check(Schema.isMaxLength(128));
 
-/** A file on a message, downloaded through its adapter only when the request runs. */
 export const IncomingAttachment = Schema.Struct({
   id: ExternalId,
   name: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
-  /** The size the channel reports before download, when it reports one. */
   size: Schema.optionalKey(Schema.Natural),
-  /** The adapter's own locator, such as a URL or file ID; opaque to the gateway. */
   ref: Schema.NonEmptyString.check(Schema.isMaxLength(4096)),
 });
 
 export type IncomingAttachment = typeof IncomingAttachment.Type;
 
-/** Adapter-normalized input with source IDs retained for authorization and deduplication. */
 export const IncomingMessage = Schema.Struct({
   messageId: ExternalId,
   scopeId: ExternalId,
@@ -35,7 +30,6 @@ export const IncomingMessage = Schema.Struct({
 
 export type IncomingMessage = typeof IncomingMessage.Type;
 
-/** The owner and remote scope allowed to submit requests. */
 export interface ChannelPolicy {
   readonly ownerId: string;
   readonly scopeId: string;
@@ -43,54 +37,40 @@ export interface ChannelPolicy {
 
 export type ApprovalState = "approved" | "denied" | "expired" | "cancelled" | "unavailable";
 
-/** A button decision, with the prompt and actor IDs supplied by the adapter. */
 export interface ApprovalAction {
   readonly requestId: string;
   readonly decision: "approve" | "deny";
   readonly source: IncomingMessage;
-  /** Completes the adapter's already acknowledged, private interaction response. */
   readonly reply: (text: string) => Effect.Effect<void, ChannelError>;
 }
 
-/** Remote messaging operations supplied by an adapter; the gateway owns queueing and inference. */
 export class MessagingChannel extends Context.Service<
   MessagingChannel,
   {
     readonly id: string;
-    /** Resolves the authenticated account without blocking connection status during login. */
     readonly accountId: Effect.Effect<string, ChannelError>;
     readonly policy: ChannelPolicy;
-    /** Default destination for proactive messages, if configured. */
     readonly homeConversationId?: string;
     readonly messages: Stream.Stream<IncomingMessage, ChannelError>;
-    /** Rechecks current authorization and remote permissions before execution or delivery. */
     readonly checkAccess: (
       message: IncomingMessage,
       conversationId: string,
     ) => Effect.Effect<void, ChannelError>;
-    /** Resolves an existing destination's parent; the gateway rechecks its policy and access. */
     readonly destination: (conversationId: string) => Effect.Effect<string, ChannelError>;
     readonly typing: (conversationId: string) => Effect.Effect<void, ChannelError>;
-    /** Updates a source message's progress indicator; the gateway treats failures as best effort. */
     readonly mark: (
       message: IncomingMessage,
       state: "working" | "completed" | "stopped",
     ) => Effect.Effect<void, ChannelError>;
-    /**
-     * Downloads an attachment's bytes, refusing more than `maxBytes`. Permission and
-     * configuration failures are final; unavailable ones may be retried.
-     */
     readonly download?: (
       attachment: IncomingAttachment,
       maxBytes: number,
     ) => Effect.Effect<Uint8Array, ChannelError>;
-    /** Sends one text chunk with a stable nonce and returns its remote message ID. */
     readonly send: (
       conversationId: string,
       text: string,
       nonce: string,
     ) => Effect.Effect<string, ChannelError>;
-    /** Optional buttons for approval prompts; text controls remain available. */
     readonly approvals?: {
       readonly actions: Stream.Stream<ApprovalAction, ChannelError>;
       readonly send: (
@@ -106,10 +86,8 @@ export class MessagingChannel extends Context.Service<
         state: ApprovalState,
       ) => Effect.Effect<void, ChannelError>;
     };
-    /** Local connection observations only; must not send requests or change state. */
     readonly status: Effect.Effect<Schema.JsonObject>;
     readonly textLimit: number;
-    /** Naming for conversations whose creation ownership the adapter can prove. */
     readonly naming: {
       readonly sanitize: (title: string) => string;
       readonly conversation: (
@@ -123,7 +101,6 @@ export class MessagingChannel extends Context.Service<
         message: IncomingMessage,
         id: string,
       ) => Effect.Effect<string, ChannelError>;
-      /** Rechecks access and the expected name immediately before the remote update. */
       readonly rename: (
         message: IncomingMessage,
         id: string,

@@ -19,7 +19,6 @@ import { findProvider } from "#src/runtime";
 
 const actions = ["login", "status", "models", "logout"] as const;
 
-/** Parsed provider options, with a null provider left for configuration to resolve. */
 interface ProviderCommand {
   readonly action: (typeof actions)[number];
   readonly provider: ProviderId | null;
@@ -28,7 +27,6 @@ interface ProviderCommand {
   readonly json: boolean;
 }
 
-/** Parsed arguments; only login takes sign-in options, and only reports take --json. */
 interface ProviderInput {
   readonly target: Option.Option<string>;
   readonly provider: Option.Option<ProviderId>;

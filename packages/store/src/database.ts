@@ -13,12 +13,10 @@ import { SqlClient } from "effect/sql";
 import { StoreError, storageFailure } from "#src/errors";
 import { migrate, storeSchema } from "#src/migrations";
 
-/** Where the shared database lives. Query it through `SqlClient`, which this layer also provides. */
 export class StoreDatabase extends Context.Service<StoreDatabase, { readonly path: string }>()(
   "poppet/StoreDatabase",
 ) {}
 
-// The store only migrates databases it created. Anything else is left untouched.
 const checkOrigin = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
@@ -33,7 +31,6 @@ const checkOrigin = Effect.gen(function* () {
     });
 });
 
-/** Protects, opens, and migrates local storage; closes the connection before its owner lock. */
 export const StoreDatabaseLive = Layer.effectContext(
   Effect.gen(function* () {
     const config = yield* AppConfig;
@@ -45,8 +42,6 @@ export const StoreDatabaseLive = Layer.effectContext(
       catch: storageFailure,
     });
 
-    // Acquire ownership before SQLite opens, migrates, or recovers unfinished work.
-    // Scope finalizers run in reverse, so the connection closes before this lock is released.
     yield* acquireOwnerLock(join(directory, "owner.lock")).pipe(
       Effect.mapError((error) =>
         error.reason === "busy"
@@ -59,7 +54,6 @@ export const StoreDatabaseLive = Layer.effectContext(
       ),
     );
 
-    // Refuse symlinks and create the file owner-only before SQLite opens it.
     yield* Effect.tryPromise({
       try: async () => {
         await Promise.all(
@@ -90,14 +84,12 @@ export const StoreDatabaseLive = Layer.effectContext(
       catch: storageFailure,
     });
 
-    // Rows use camelCase names, and insert helpers write snake_case columns.
     const client = yield* SqliteClient.make({
       filename: path,
       transformResultNames: Str.snakeToCamel,
       transformQueryNames: Str.camelToSnake,
     }).pipe(Effect.provide(Reactivity.layer), Effect.mapError(storageFailure));
 
-    // One connection serves every query, so these settings hold for its lifetime.
     yield* Effect.all([client`PRAGMA foreign_keys = ON`, client`PRAGMA synchronous = FULL`]).pipe(
       Effect.mapError(storageFailure),
     );
@@ -108,7 +100,6 @@ export const StoreDatabaseLive = Layer.effectContext(
       Effect.mapError(storageFailure),
     );
 
-    // Sidecars can survive closing on macOS; protect them as well as the main file.
     yield* Effect.tryPromise({
       try: () =>
         Promise.all(

@@ -44,7 +44,6 @@ interface PlannedCall {
   readonly prepared: PreparedCall;
 }
 
-/** Builds the bounded model/tool loop; the caller owns the run's final outcome. */
 export const conversation = Effect.gen(function* () {
   const store = yield* Store;
   const policy = yield* ChatSettings;
@@ -55,7 +54,6 @@ export const conversation = Effect.gen(function* () {
   const skillView = yield* skillViewTool;
   const task = yield* taskTool;
 
-  // Built-in tools in the order the model sees them; a null tool is absent from this host.
   const builtins: ReadonlyArray<AgentTool | null> = [
     yield* bashTool,
     yield* sessionSearchTool,
@@ -69,7 +67,6 @@ export const conversation = Effect.gen(function* () {
 
   const executeTool = yield* toolExecution;
 
-  /** Offers this run's external tools, then the built-ins it may use, each identity at most once. */
   const chooseTools = ({ run, model, origin }: RunContext) =>
     Effect.gen(function* () {
       const catalog =
@@ -83,7 +80,6 @@ export const conversation = Effect.gen(function* () {
             )
           : [];
 
-      // A frozen per-run index; the model loads a matching skill only when it needs one.
       const skillTools =
         model.description.capabilities.tools && skills !== null && policy.skillIndexBytes > 0;
 
@@ -121,7 +117,6 @@ export const conversation = Effect.gen(function* () {
       return { tools, skillsIndex };
     });
 
-  /** Extends the run's prompt with the skill index, host tool policy, and the time tasks resolve against. */
   const buildInstructions = (
     { prompt, origin, selectedSkill }: RunContext,
     skillsIndex: SkillIndex | null,
@@ -136,7 +131,6 @@ export const conversation = Effect.gen(function* () {
         ? indexedPrompt
         : `${indexedPrompt}\n\n${external.instructions}`;
 
-    // Scheduled runs may finish silently, so conditional tasks post only when there is news.
     if (origin === "scheduled")
       return `${baseInstructions}\nThis is a scheduled run. If the task prompt makes reporting conditional and the condition is not met, reply with exactly ${noReply} and nothing else. Otherwise answer normally.`;
 
@@ -150,7 +144,6 @@ export const conversation = Effect.gen(function* () {
       Effect.gen(function* () {
         const { run, model, text, attachments, runs, mentionedSkills } = runContext;
 
-        // Earlier turns replay the skills saved with their messages, never the current files.
         const history = runContext.history.map((entry) => ({
           ...entry,
           message: withMentionedSkills(entry.message),
@@ -161,7 +154,6 @@ export const conversation = Effect.gen(function* () {
         const allowedURLs = suppliedPageURLs(text);
         const context: ToolContext = { ...runContext, pageURLs: allowedURLs };
 
-        // Untrusted content withdraws task and memory mutations; external tools need explicit opt-in to remain.
         let untrusted = attachments.length > 0;
 
         const activeTools = () =>
@@ -212,7 +204,6 @@ export const conversation = Effect.gen(function* () {
           }),
         ];
 
-        // Saved attachment contents, read once per run as the assembled context first needs them.
         const contents = new Map<string, AttachmentContent>();
 
         const attachmentContents = (messages: ReadonlyArray<Message>) =>
@@ -252,7 +243,6 @@ export const conversation = Effect.gen(function* () {
         let reasoningBytes = 0;
         let usage: Completion["usage"] = { inputTokens: 0, outputTokens: 0 };
 
-        /** Requests one model turn within the run's turn budget and times it. */
         const turn = (): ConversationStream =>
           Stream.unwrap(
             Effect.gen(function* () {
@@ -330,7 +320,6 @@ export const conversation = Effect.gen(function* () {
             }),
           );
 
-        /** Bounds streamed text and reasoning; a completed response either ends the run or calls tools. */
         const handleEvent = (event: ModelEvent): ConversationStream => {
           if (event.type === "reasoning-delta") {
             reasoningBytes += byteSize(event.text);
@@ -384,7 +373,6 @@ export const conversation = Effect.gen(function* () {
           );
         };
 
-        /** Journals a batch of calls, then runs it only if every call prepared, then takes the next turn. */
         const toolBatch = (response: Completion, calls: ReadonlyArray<ToolCall>) =>
           Stream.unwrap(
             Effect.gen(function* () {
@@ -414,7 +402,6 @@ export const conversation = Effect.gen(function* () {
                   }),
                 );
 
-              // Validate every call before executing any tool in the batch.
               const planned = yield* Effect.forEach(calls, (call) =>
                 prepareTool(call).pipe(Effect.result),
               );
@@ -443,7 +430,6 @@ export const conversation = Effect.gen(function* () {
             }),
           );
 
-        /** No call in a rejected batch runs; each one reports why. */
         const rejectBatch = (
           calls: ReadonlyArray<ToolCall>,
           planned: ReadonlyArray<Result.Result<PlannedCall, AgentError | StoreError>>,
@@ -475,7 +461,6 @@ export const conversation = Effect.gen(function* () {
             }
           });
 
-        /** Runs prepared calls in order; context-only results must still fit the run's budget. */
         const executeBatch = (planned: ReadonlyArray<PlannedCall>) =>
           Effect.gen(function* () {
             for (const { callId, tool, prepared } of planned) {

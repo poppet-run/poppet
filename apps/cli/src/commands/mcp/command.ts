@@ -103,8 +103,6 @@ export const mcpCommand = (context: CLIContext) => {
       ),
     );
 
-  // Setup edits config.json and protected credentials locally; a running worker keeps its
-  // settings until restart.
   const setup = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(CredentialInput, {

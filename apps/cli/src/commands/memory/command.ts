@@ -19,7 +19,6 @@ const factFields = (fact: MemoryFact) =>
 
 const forgotten = (result: typeof Forgotten.Type) => `Forgot ${result.key}.`;
 
-/** Prints a memory result; local results and worker replies share each action's shape. */
 const printMemory = <A>(json: boolean, command: MemoryCommand, value: A) => {
   switch (command.action) {
     case "list":
@@ -53,7 +52,6 @@ const printMemory = <A>(json: boolean, command: MemoryCommand, value: A) => {
     case "forget":
       return printParsed(json, value, Forgotten, forgotten);
     case "revert":
-      // Reverting to a forget revision leaves no fact.
       return printParsed(json, value, Schema.Union([Forgotten, MemoryFact]), (result) =>
         Schema.is(Forgotten)(result)
           ? forgotten(result)

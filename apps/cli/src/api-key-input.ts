@@ -25,8 +25,6 @@ export const readHiddenKey = (
 };
 
 export const readVisibleLine = (provider: ProviderId, prompt: string) => {
-  // Without a terminal nothing can be pasted, so leave the caller's other
-  // sources, such as a forwarded sign-in callback, to finish instead.
   if (!process.stdin.isTTY) return Effect.never;
 
   return Effect.scoped(
@@ -69,7 +67,6 @@ export const readVisibleLine = (provider: ProviderId, prompt: string) => {
   );
 };
 
-/** Reads API keys from hidden terminal input. */
 export const terminalKeyInput: CredentialInput["Service"] = {
   readKey: (provider) => readHiddenKey(provider),
   readLine: readVisibleLine,

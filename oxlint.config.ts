@@ -85,7 +85,6 @@ export default defineConfig({
     {
       files: ["packages/provider-openai/src/test/fixtures/**/*.ts"],
       rules: {
-        // Shared test fixtures construct injected services just like test files.
         "anti-slop-effect/no-service-constructor-imports": "off",
       },
     },

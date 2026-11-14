@@ -1,4 +1,3 @@
-/** Counts each chunk before reading more, then cancels and releases the reader on every exit. */
 export const readBounded = async (
   stream: ReadableStream<Uint8Array>,
   maxBytes: number,
@@ -41,7 +40,6 @@ export interface BoundedRun {
   readonly aborted: boolean;
 }
 
-/** Bounds each pipe independently, kills on abort or timeout, and always kills and reaps. */
 export const runBounded = async (
   child: Bun.Subprocess<"ignore", "pipe", "pipe">,
   options: {

@@ -22,11 +22,9 @@ const filesFor = (dataDirectory: string, adapter: string) =>
     return protectedFiles(join(dataDirectory, "channels"), settingsError, 16384);
   });
 
-/** Reads bounded protected text; each adapter decodes its own settings schema. */
 export const loadChannelSettings = (dataDirectory: string, adapter: string) =>
   filesFor(dataDirectory, adapter).pipe(Effect.flatMap((files) => files.read(adapter)));
 
-/** Atomically replaces one adapter file under its existing owner lock. */
 export const saveChannelSettings = (dataDirectory: string, adapter: string, contents: string) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -38,7 +36,6 @@ export const saveChannelSettings = (dataDirectory: string, adapter: string, cont
     }),
   ).pipe(Effect.uninterruptible);
 
-/** Protected settings for one adapter, decoded strictly from its saved JSON text. */
 export const channelSettings = <S extends Schema.Top>(
   adapter: string,
   label: string,
@@ -65,7 +62,6 @@ export const channelSettings = <S extends Schema.Top>(
 
   return {
     load,
-    /** Loads settings now and defers the adapter import until the layer is built. */
     loader: (
       createLayer: (
         settings: S["Type"],
@@ -88,7 +84,6 @@ export const channelSettings = <S extends Schema.Top>(
   };
 };
 
-/** Saves adapter policy and secrets under one outer lock, preserving the existing file layout. */
 export const configuredChannelSettings = <
   K extends "discord" | "slack",
   P extends Schema.Top & { readonly Type: object },
@@ -115,10 +110,8 @@ export const configuredChannelSettings = <
             try: () => mkdir(directory, { recursive: true, mode: 0o700 }),
             catch: failure,
           });
-          // Serialize policy and secret writes; a crash between writes can still leave them apart.
           yield* acquireOwnerLock(join(directory, `${adapter}-config.lock`));
           const policy = yield* Schema.decodeUnknownEffect(policySchema)(settings);
-          // Refuse invalid configuration before replacing credentials.
           yield* readConfigFile(directory);
           yield* credentials.save(directory, settings);
           yield* updateConfigFile(directory, (file) => ({ ...file, [adapter]: policy }));

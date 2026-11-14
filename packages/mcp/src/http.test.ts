@@ -27,7 +27,6 @@ const inputSchema = {
   additionalProperties: false,
 };
 
-/** An in-process Streamable HTTP server that answers with JSON bodies or SSE streams. */
 const serve = (mode: "json" | "sse" | "oversized" | "oversized-sse" | "redirect" = "json") => {
   const events: Event[] = [];
   let sessions = 0;
@@ -46,7 +45,6 @@ const serve = (mode: "json" | "sse" | "oversized" | "oversized-sse" | "redirect"
   const respond = (message: Schema.JsonObject, headers: Record<string, string> = {}) => {
     const body = JSON.stringify(message);
 
-    // Large comment events before each message exceed the cap together but not one by one.
     const padding = mode === "sse" ? `: ${"x".repeat(200000)}\n\n`.repeat(2) : "";
 
     return mode === "sse" || mode === "oversized-sse"
@@ -271,7 +269,6 @@ describe("MCP over HTTP", () => {
       );
 
       expect(server.events.filter((event) => event.method === "tools/call")).toHaveLength(1);
-      // The failed session ends before its replacement starts.
       expect(
         server.events
           .filter((event) => event.http === "DELETE" || event.method === "initialize")

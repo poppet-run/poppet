@@ -6,7 +6,6 @@ import { bold, fields, printParsed, sections, table, tableOr, time } from "#src/
 
 const Time = Schema.NullOr(Schema.Number);
 
-/** The session fields that text output shows. */
 const SessionRow = Schema.Struct({
   id: Schema.String,
   provider: Schema.String,
@@ -126,7 +125,6 @@ const renderSession = ({ session, messages, runs, toolCalls }: typeof SessionDet
   ]);
 };
 
-/** Prints a session inspection; local results and worker replies share each action's shape. */
 export const printChatInspection = <A>(
   json: boolean,
   command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,

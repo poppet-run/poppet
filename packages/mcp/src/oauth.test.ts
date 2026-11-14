@@ -62,7 +62,6 @@ const harness = async (options: OAuthFixtureOptions = {}) => {
       ]),
     );
 
-  // A consenting browser follows the authorization redirect to the loopback callback.
   const login = signIn(config, {
     noBrowser: false,
     remote: false,
@@ -123,7 +122,6 @@ describe("MCP OAuth", () => {
           Effect.scoped(
             Effect.gen(function* () {
               const first = yield* call;
-              // The fixture accepts each access token once, so this call refreshes first.
               const second = yield* call;
               const status = yield* (yield* MCP).status;
 
@@ -164,7 +162,6 @@ describe("MCP OAuth", () => {
               const failure = yield* Effect.flip(mcp.tools("remote"));
               const waiting = yield* mcp.status;
 
-              // Another process signs in again; the next request reconnects without a backoff.
               delete state.server.options.tokenUses;
               delete state.server.options.refreshError;
               yield* Effect.promise(() => state.login());
@@ -239,7 +236,6 @@ describe("MCP OAuth", () => {
     try {
       await state.login();
 
-      // Two runtime authorizations stand in for the worker and a CLI process.
       const [first, second] = await state.run(
         Effect.all([
           runtimeAuthorization(state.config, Date.now),

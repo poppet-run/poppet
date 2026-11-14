@@ -1,7 +1,6 @@
 import { Memory, MemoryError, MemoryKey, MemoryValue } from "@poppet/memory";
 import { Effect, Schema } from "effect";
 
-/** Explicit fact-management requests shared by direct CLI execution and worker routing. */
 export const MemoryCommand = Schema.Union([
   Schema.Struct({ action: Schema.Literal("list") }),
   Schema.Struct({
@@ -26,7 +25,6 @@ export const MemoryCommand = Schema.Union([
 
 export type MemoryCommand = typeof MemoryCommand.Type;
 
-/** Runs a fact command; forgetting reports the key, since no fact remains. */
 export const manageMemory = (command: MemoryCommand) =>
   Effect.gen(function* () {
     const memory = yield* Memory;

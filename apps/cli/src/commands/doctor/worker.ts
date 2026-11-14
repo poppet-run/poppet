@@ -31,7 +31,6 @@ export const gatewayObservation = (status: Schema.JsonObject) => {
   };
 };
 
-/** Queries the worker's existing connection. No runtime construction, auth calls or recovery. */
 export const doctorSnapshot = (identity: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;

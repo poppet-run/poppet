@@ -4,7 +4,6 @@ import { Schema } from "effect";
 
 const Token = Schema.RedactedFromValue(Schema.String.check(Schema.isPattern(/^\S{1,8192}$/)));
 
-/** Runtime policy and credentials, combined only after both sources validate. */
 export const SlackSettings = Schema.Struct({
   ...SlackConfiguration.fields,
   token: Token,

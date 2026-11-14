@@ -22,7 +22,6 @@ const fixture = async (
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-"));
   const errors: string[] = [];
 
-  // Further copies run the same fixture in their own subdirectory.
   const serverDirectories = [
     directory,
     ...Array.from({ length: copies - 1 }, (_, index) => join(directory, `copy-${index + 1}`)),
@@ -61,7 +60,6 @@ const fixture = async (
     errors,
     server,
     layer,
-    // The child appends while the test polls, so a read may end mid-line; keep complete lines only.
     events: async () =>
       (await readFile(join(directory, "events"), "utf8"))
         .split("\n")
@@ -100,7 +98,6 @@ const expireRequest = async <A>(
 ) => {
   let expired = false;
 
-  // Install the real deadline before Bun replaces timers and monotonic clocks.
   const deadline = setTimeout(() => {
     expired = true;
   }, 2000);
@@ -116,7 +113,6 @@ const expireRequest = async <A>(
 
     const pause = new Int32Array(new SharedArrayBuffer(4));
 
-    // Give the real subprocess time to exit between advances of its shutdown timers.
     await Effect.runPromise(
       Effect.gen(function* () {
         for (;;) {
@@ -144,7 +140,6 @@ const expireRequest = async <A>(
   }
 };
 
-// Real time passes for the child process while the test clock controls backoff.
 const reaped = (pid: number) =>
   Effect.gen(function* () {
     while (!dead(pid))
@@ -422,7 +417,6 @@ describe("MCP", () => {
           expect(yield* mcp.snapshot(false)).toHaveLength(1);
           const first = (yield* mcp.status)[0]!.pid!;
 
-          // A successful reconnect resets the backoff, so each later failure waits 30 seconds.
           for (let attempt = 0; attempt < 2; attempt++) {
             const pid = (yield* mcp.status)[0]!.pid!;
             process.kill(pid, "SIGUSR1");
@@ -717,7 +711,6 @@ describe("MCP", () => {
             const mcp = yield* MCP;
             const snapshot = yield* mcp.snapshot(false).pipe(Effect.forkScoped);
 
-            // Startup waits up to eight seconds per server, so seeing both well before then shows they overlap.
             const deadline = Date.now() + 4000;
 
             while (Date.now() < deadline) {

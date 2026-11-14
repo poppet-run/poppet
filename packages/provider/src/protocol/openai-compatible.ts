@@ -29,7 +29,6 @@ export const fetchModelCatalog = <S extends Schema.Top>(options: {
   readonly failure: (cause: unknown) => ProviderError;
 }) =>
   Effect.gen(function* () {
-    // Keep the response body inside the fetch's cancellation boundary.
     const body = yield* Effect.tryPromise({
       try: async (signal) => {
         const response = await options.http(options.url, { signal, headers: options.headers });

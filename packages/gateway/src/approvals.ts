@@ -24,11 +24,9 @@ interface PendingApproval {
 const missing =
   "No matching pending approval in this conversation. It may have expired; request the operation again.";
 
-/** Text replies and buttons consume the same one-time decision. */
 export const commandApprovals = (channel: MessagingChannel["Service"]) => {
   const pending = new Map<string, PendingApproval>();
 
-  /** Sends the prompt, waits up to two minutes, and rechecks access before approving. */
   const request = (message: IncomingMessage, conversation: string, approval: CommandApproval) =>
     Effect.gen(function* () {
       const id = randomUUID();
@@ -50,7 +48,6 @@ export const commandApprovals = (channel: MessagingChannel["Service"]) => {
         if (!authorized(channel.policy, message)) return false;
         yield* channel.checkAccess(message, conversation);
 
-        // JSON escapes preserve literal backticks without letting them close the code span.
         const invocation = JSON.stringify({
           command: approval.command,
           cwd: approval.cwd,
@@ -61,7 +58,6 @@ export const commandApprovals = (channel: MessagingChannel["Service"]) => {
         const details = `${heading} \`${invocation}\``;
         const controls = `Reply \`/approve ${id}\` or \`/deny ${id}\`. Expires in two minutes; permits one execution only.`;
 
-        // Keep the fallback commands intact, with buttons only after all invocation details.
         const parts =
           `${details}\n${controls}`.length <= channel.textLimit
             ? [`${details}\n${controls}`]
@@ -122,7 +118,6 @@ export const commandApprovals = (channel: MessagingChannel["Service"]) => {
                   ? "expired"
                   : "unavailable";
 
-            // UI failure cannot undo the decision or keep cancellation waiting indefinitely.
             yield* channel.approvals.update(conversation, entry.promptId, id, state).pipe(
               Effect.timeout("5 seconds"),
               Effect.catch(() => Effect.void),
@@ -147,7 +142,6 @@ export const commandApprovals = (channel: MessagingChannel["Service"]) => {
       Deferred.await(entry.ready).pipe(Effect.andThen(effect)),
     );
 
-  /** The text control path already checks the owner and current conversation access. */
   const answer = (conversation: string, text: string) =>
     Effect.gen(function* () {
       const reply = /^\/(approve|deny) ([a-f0-9-]{36})$/.exec(text.trim());

@@ -5,7 +5,6 @@ import { ensurePrivateDirectory, isMissingFile, openNoFollow } from "@poppet/io"
 
 import { WorkerError } from "#src/contract";
 
-/** Returns null when absent and rejects links or non-regular files at a service or log path. */
 export const regularFileInfo = async (path: string) => {
   const info = await lstat(path).catch((cause: unknown) => {
     if (isMissingFile(cause)) return null;
@@ -18,7 +17,6 @@ export const regularFileInfo = async (path: string) => {
   return info;
 };
 
-/** Creates the protected log directory and an empty private log before a service first starts. */
 export const prepareWorkerLog = async (directory: string, log: string) => {
   await ensurePrivateDirectory(directory).catch(() => {
     throw new WorkerError({ message: "The log directory must be a real directory." });
@@ -39,14 +37,12 @@ export const prepareWorkerLog = async (directory: string, log: string) => {
   }
 };
 
-/** Reads the last 64 KiB across the current log and its archives without following links. */
 export const readWorkerLogs = async (log: string) => {
   const chunks: Buffer[] = [];
   const seen = new Set<string>();
   let remaining = 65_536;
   let truncated = false;
 
-  // Read newest first because each file consumes the remaining shared byte budget.
   /* eslint-disable no-await-in-loop */
   for (const path of [log, `${log}.1`, `${log}.2`, `${log}.3`]) {
     if (remaining === 0) break;
@@ -62,7 +58,6 @@ export const readWorkerLogs = async (log: string) => {
         throw new WorkerError({ message: "Expected a regular worker log without links." });
       const identity = `${info.dev}:${info.ino}`;
 
-      // Rotation may move a file between opens; include each inode only once.
       if (seen.has(identity)) continue;
       seen.add(identity);
       const start = Math.max(0, info.size - remaining);

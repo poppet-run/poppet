@@ -1,6 +1,5 @@
 import { packageSchema } from "@poppet/store";
 
-// Messaging channels: inbox, bindings, and deliveries. Each statement runs separately; append new migrations, never edit applied ones.
 const baseline: ReadonlyArray<string> = [
   `CREATE TABLE gateway_bindings (
     adapter TEXT NOT NULL,
@@ -49,5 +48,4 @@ const baseline: ReadonlyArray<string> = [
   ) STRICT`,
 ];
 
-/** Migrations for this package's tables, recorded in their own ledger. */
 export const gatewaySchema = packageSchema("gateway_migrations", { "1_baseline": baseline });

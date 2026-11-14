@@ -36,7 +36,6 @@ const discordFailure = (cause: unknown, sending = false) =>
           cause instanceof RateLimitError ? Math.max(cause.retryAfter, cause.timeToReset) : 0,
       });
 
-// Discord counts UTF-16 code units; never cut an astral character to meet its 100-unit limit.
 const threadName = (title: string) => {
   let name = "";
 
@@ -62,7 +61,6 @@ export const discordChannelLayer = (
       rest: {
         retries: 0,
         timeout: 10000,
-        // Let the SDK retry the limited reaction without replaying the entire state change.
         rejectOnRateLimit: ({ route }) => !route.includes("/reactions/"),
       },
     }),
@@ -181,7 +179,6 @@ export const discordChannelLayer = (
 
       yield* login.pipe(Effect.forkScoped);
 
-      // A text channel or thread in the configured server; null for anything else.
       const guildChannel = async (id: string, force = false) => {
         const channel = await client.channels.fetch(id, { force });
 
@@ -265,7 +262,6 @@ export const discordChannelLayer = (
                 message: "Cannot create a thread for this message.",
               });
 
-            // Discord assigns the source message's ID to its thread, so this recovers lost create replies.
             const thread = source.hasThread
               ? await client.channels.fetch(source.id, { force: true })
               : await source.startThread({ name: threadName(title), autoArchiveDuration: 1440 });
@@ -276,7 +272,6 @@ export const discordChannelLayer = (
                 message: "Cannot find the Discord thread.",
               });
 
-            // Source ID plus bot ownership proves creation even after a lost acknowledgement.
             return {
               id: thread.id,
               managedName:
@@ -382,7 +377,6 @@ export const discordChannelLayer = (
                 await source.react("👀");
               } else {
                 if (state === "completed") await source.react("✅");
-                // Remove only our reaction, even when fetched reaction metadata is stale.
                 await client.rest.delete(
                   `/channels/${source.channelId}/messages/${source.id}/reactions/${encodeURIComponent("👀")}/@me`,
                 );

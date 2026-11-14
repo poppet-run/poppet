@@ -125,7 +125,6 @@ describe("manageWorker", () => {
           }
 
           if (args[0] === "bootstrap") {
-            // launchd rejects a replacement until the old registration is gone.
             if (pending >= 0) return 5;
             bootstrapped = true;
           }

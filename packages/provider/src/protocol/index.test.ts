@@ -565,7 +565,6 @@ for (const adapter of cases) {
             continuation: { provider, model, version: version as 1, data: {} },
           };
 
-          // Decode at the public boundary to exercise invalid persisted versions too.
           const invalid = { ...request, messages: [input] };
           await expect(
             Effect.runPromise(Stream.runCollect(harness.model.stream(invalid))),

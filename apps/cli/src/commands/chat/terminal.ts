@@ -17,11 +17,9 @@ const clean = (text: string) =>
   // oxlint-disable-next-line no-control-regex
   stripVTControlCharacters(text.replace(/\u001b\][\s\S]*?(?:\u0007|\u001b\\)/g, ""))
     .replace(/\r\n?/g, "\n")
-    // Terminal control bytes must never be interpreted as message content.
     // oxlint-disable-next-line no-control-regex
     .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
 
-/** Normalize enhanced keyboard reports while preserving the existing editing shortcuts. */
 const chatKey = (key: string) => {
   if (key === `${escape}27;2;13~`) return "newline";
   // oxlint-disable-next-line no-control-regex
@@ -29,7 +27,6 @@ const chatKey = (key: string) => {
 
   if (!report) return key;
   const code = Number(report[1]);
-  // Caps Lock and Num Lock do not change these shortcuts.
   const modifiers = (Number(report[2] ?? "1") - 1) & ~192;
 
   if (code === 13 && (modifiers === 1 || modifiers === 2)) return "newline";
@@ -41,7 +38,6 @@ const chatKey = (key: string) => {
   return key;
 };
 
-/** Wrap by terminal cells, without splitting emoji or wide characters. */
 export const wrapChatText = (text: string, width: number): string[] => {
   const rows = [""];
   let cells = 0;
@@ -77,7 +73,6 @@ type QueuedMessage = { text: string; attachments: readonly string[] };
 type Output = Pick<NodeJS.WriteStream, "write" | "columns" | "rows"> &
   Partial<Pick<NodeJS.WriteStream, "hasColors">>;
 
-/** Owns the screen and input for the entire session, including inference. */
 export class ChatTerminal {
   private messages: Message[] = [];
   private readonly markdown: ChatMarkdown;
@@ -198,7 +193,6 @@ export class ChatTerminal {
     const inputRows = wrapChatText(this.draft.join(""), inner);
     const before = wrapChatText(this.draft.slice(0, this.cursor).join(""), inner);
 
-    // An exact-width line needs a new visual row for the insertion cursor.
     if (Bun.stringWidth(before.at(-1)!) === inner) before.push("");
 
     if (before.length > inputRows.length) inputRows.push("");
@@ -278,7 +272,6 @@ export class ChatTerminal {
     return rows.map((row) => this.style(wrapChatText(row, width)[0]!, "2;36"));
   }
 
-  /** Only the prompt's next read releases another turn, after the previous send completes. */
   private dispatch() {
     if (this.closed || this.busy || this.paused || !this.reader || !this.queue.length) return;
     const message = this.queue.shift()!;
@@ -303,7 +296,6 @@ export class ChatTerminal {
     });
   });
 
-  /** Keep scoped service diagnostics away from the terminal's input cursor. */
   console = (base: Console.Console): Console.Console => {
     const diagnostic = (...values: readonly unknown[]) => {
       Effect.runSync(this.info(formatWithOptions({ colors: false }, ...values)));
@@ -469,7 +461,6 @@ export class ChatTerminal {
     return true;
   }
 
-  /** Buffers escape sequences and bracketed paste across input chunks. */
   input = (text: string) => {
     if (this.closed) return;
     this.pending += text;
@@ -618,7 +609,6 @@ export const openChatTerminal = Effect.gen(function* () {
   const wasRaw = process.stdin.isRaw;
   const wasFlowing = process.stdin.readableFlowing;
 
-  // Register restoration before any terminal mutation, including failed setup.
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
       process.stdin.off("data", input);

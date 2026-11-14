@@ -28,8 +28,6 @@ const callbackFor = (authorizationUrl: string) => {
   return callback;
 };
 
-// Starts a sign-in that prints its link instead of opening a browser, with a
-// queue standing in for lines pasted into the terminal.
 const startPasteSignIn = async (selected: Partial<SignInRequest> = {}) => {
   const printed = Promise.withResolvers<string>();
   const errors: string[] = [];
@@ -88,8 +86,6 @@ describe("makeBrowserSignIn", () => {
         }),
       );
 
-      // The system browser returns before making the callback request. Keep the
-      // response read outside the opener so shutdown can race with its delivery.
       const authorization = Effect.runPromise(
         browser
           .authorize(request)
@@ -266,7 +262,6 @@ describe("makeBrowserSignIn", () => {
   });
 
   test("with a fixed callback port, a forwarded browser callback completes sign-in without a paste", async () => {
-    // Reserve a free port, then release it for the sign-in listener.
     const reserved = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
     const port = Number(reserved.url.port);
     await reserved.stop(true);

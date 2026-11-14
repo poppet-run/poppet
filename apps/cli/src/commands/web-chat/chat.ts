@@ -42,7 +42,6 @@ const ReceiptRow = Schema.Struct({
   error: Schema.NullOr(Schema.String),
 });
 
-// The fingerprint stays on the server.
 const toReceipt = ({ id, sessionId, status, error }: typeof ReceiptRow.Type): Receipt => ({
   id,
   sessionId,
@@ -78,7 +77,6 @@ const summary = (session: ChatSession): ChatSession => ({
   updatedAt: session.updatedAt,
 });
 
-/** Runs belong to the worker scope, never to an HTTP connection. */
 const makeWebChat = Effect.gen(function* () {
   const store = yield* Store;
   const agent = yield* Agent;
@@ -122,8 +120,6 @@ const makeWebChat = Effect.gen(function* () {
             ];
 
           if (entry.message.role === "assistant") {
-            // Tool requests also create assistant messages. Show the live reply until
-            // the run finishes, then show its saved messages.
             if (entry.runId === running?.id) return [];
 
             const text = outputText(entry.message.output);
@@ -140,7 +136,6 @@ const makeWebChat = Effect.gen(function* () {
       } satisfies ChatSnapshot;
     });
 
-  /** Changes whenever the snapshot can change, without loading the conversation. */
   const marker = (id: string) =>
     Effect.gen(function* () {
       const [row] = yield* sql<{ readonly marker: string | null }>`SELECT
@@ -255,7 +250,6 @@ const makeWebChat = Effect.gen(function* () {
       const running = active.get(id);
 
       if (running?.fiber) yield* Fiber.interrupt(running.fiber);
-      // The permit waits for a submission that is still assigning its fiber.
     }).pipe(submissions.withPermit);
 
   return {

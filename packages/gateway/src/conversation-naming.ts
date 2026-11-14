@@ -7,7 +7,6 @@ import type { Inbox } from "#src/repository";
 export const conversationNaming = (context: GatewayContext, agent: Agent["Service"]) => {
   const { channel, repo, store } = context;
 
-  // A failed or uncertain rename is inspected once, never blindly replayed.
   const syncName = (account: string, entry: Inbox) =>
     Effect.gen(function* () {
       const naming = channel.naming;
@@ -67,7 +66,6 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
         return;
       }
 
-      // A fresh fetch reconciles a lost acknowledgement without sending a second rename.
       const observed = yield* naming.current(entry.message, destination).pipe(Effect.result);
 
       if (Result.isSuccess(observed) && observed.success === desired)

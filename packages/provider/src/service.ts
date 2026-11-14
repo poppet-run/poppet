@@ -8,7 +8,6 @@ import {
   type ProviderId,
 } from "#src/schema";
 
-/** A provider failure classified for callers without exposing its wire protocol. */
 export class ProviderError extends Data.TaggedError("ProviderError")<{
   readonly provider: ProviderId;
   readonly reason:
@@ -26,22 +25,17 @@ export class ProviderError extends Data.TaggedError("ProviderError")<{
   readonly requestId?: string | undefined;
 }> {}
 
-/** Inference operations for one resolved provider and model. */
 export interface ModelOperations {
   readonly description: ModelDescription;
-  /** Starts inference when consumed; emits answer and reasoning deltas followed by one final completion. */
   readonly stream: (request: ModelRequest) => Stream.Stream<ModelEvent, ProviderError>;
 }
 
-/** Lists and resolves models using the provider's own credentials and protocol. */
 export interface ProviderOperations {
   readonly id: ProviderId;
   readonly models: Effect.Effect<ReadonlyArray<ModelDescription>, ProviderError>;
-  /** Resolves the requested model or fails; callers must not silently switch models. */
   readonly resolve: (modelId: string) => Effect.Effect<ModelOperations, ProviderError>;
 }
 
-/** Supplies the selected provider's model catalogue and resolver. */
 export class Provider extends Context.Service<Provider, ProviderOperations>()("poppet/Provider") {}
 
 export const invalidRequest = (provider: ProviderId, message: string) =>
@@ -50,7 +44,6 @@ export const invalidRequest = (provider: ProviderId, message: string) =>
 export const interrupted = (provider: ProviderId, message: string) =>
   new ProviderError({ provider, reason: "interrupted", message });
 
-/** Rejects malformed requests, unsupported settings, and continuation from another model. */
 export const validateRequest = (description: ModelDescription, request: ModelRequest) =>
   Effect.gen(function* () {
     const decoded = yield* Schema.decodeUnknownEffect(ModelRequest, { onExcessProperty: "error" })(
@@ -145,7 +138,6 @@ export const validateRequest = (description: ModelDescription, request: ModelReq
     return decoded;
   });
 
-/** Consumes a model stream and requires exactly one completion as its final event. */
 export const completeModel = (model: ModelOperations, request: ModelRequest) =>
   Effect.gen(function* () {
     const response = yield* Stream.runFoldEffect(

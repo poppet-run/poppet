@@ -7,8 +7,6 @@ import { ConnectionError, planScope, resource } from "#src/connection";
 import { OAuthClient } from "#src/oauth/client";
 import { BrowserSignIn, type SignInOptions } from "#src/sign-in/service";
 
-// Capture the supplied services when the auth layer is built. The returned
-// function describes a login attempt, which runs when its Effect is executed.
 export const loginWorkflow = Effect.gen(function* () {
   const config = yield* ProviderEnvironment;
   const store = yield* CredentialStore;
@@ -36,8 +34,6 @@ export const loginWorkflow = Effect.gen(function* () {
             message: "The callback did not match the saved registration.",
           }),
         );
-      // Save the issued registration before exchanging the code. If exchange
-      // fails, the next attempt can reuse this client ID.
       const registered = { ...saved, clientId: authorization.clientId };
       yield* store.write(registered);
 
@@ -66,8 +62,6 @@ export const loginWorkflow = Effect.gen(function* () {
         authorization.nonce,
       );
 
-      // Compare the verified account ID before replacing credentials, so a browser
-      // signed into a different account cannot overwrite the saved connection.
       if (saved.identity !== null && saved.identity.subject !== identity.subject)
         return yield* Effect.fail(
           new ConnectionError({

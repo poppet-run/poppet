@@ -47,7 +47,6 @@ describe.concurrent("refresh.ts", () => {
       harness.controls.expireAccess = true;
       await harness.run(login);
 
-      // Each run builds its own provider services, as each worker request does.
       expect(await Promise.all([harness.run(verify), harness.run(verify)])).toEqual([
         "test-model",
         "test-model",

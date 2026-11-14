@@ -11,14 +11,11 @@ import type { SignInOptions } from "#src/sign-in/service";
 interface AuthOperations {
   readonly login: (options: SignInOptions) => Effect.Effect<ConnectionStatus, ConnectionError>;
   readonly status: Effect.Effect<ConnectionStatus, ConnectionError>;
-  /** Reads current credentials and refreshes near expiry while holding the auth permit. */
   readonly accessToken: Effect.Effect<Redacted.Redacted<string>, ConnectionError>;
-  /** Deletes local connection details first; false means remote revocation was not confirmed. */
   readonly signOut: Effect.Effect<boolean, ConnectionError>;
   readonly recordVerification: (model: string) => Effect.Effect<void, ConnectionError>;
 }
 
-/** Serializes ChatGPT sign-in, token refresh, status reads, and sign-out. */
 export class ChatGPTAuth extends Context.Service<ChatGPTAuth, AuthOperations>()(
   "poppet/ChatGPTAuth",
 ) {}
@@ -31,24 +28,18 @@ export const ChatGPTAuthLive = Layer.effect(
     const login = yield* loginWorkflow;
     const accessToken = yield* accessTokenWorkflow;
 
-    // The store's process-wide permit serializes credential updates and status
-    // reads. In particular, two requests cannot renew the same refresh token.
     const signOut = store.withPermit(
       Effect.gen(function* () {
         let revoked = true;
 
         const connection = yield* store.read.pipe(
           Effect.catchTag("ConnectionError", () => {
-            // Corrupt or unreadable details still need deleting; remote revocation
-            // cannot be confirmed without their token and registration.
             revoked = false;
 
             return Effect.succeed(null);
           }),
         );
 
-        // Delete local identity before contacting the remote endpoint so failure
-        // or interruption cannot leave provider details behind.
         yield* store.remove;
 
         if (connection?.credentials?.refreshToken && connection.clientId) {

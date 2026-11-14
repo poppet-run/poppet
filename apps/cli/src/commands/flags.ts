@@ -7,7 +7,6 @@ export const textArgument = (name: string) =>
     Argument.map((words) => words.join(" ")),
   );
 
-/** An optional boolean flag that is false when omitted. */
 export const booleanFlag = (name: string, description: string) =>
   Flag.Boolean(name).pipe(
     Flag.withDescription(description),
@@ -15,7 +14,6 @@ export const booleanFlag = (name: string, description: string) =>
     Flag.map(([value = false]) => value),
   );
 
-/** Selects machine-readable output in place of the default human-readable text. */
 export const jsonFlag = booleanFlag("json", "Print JSON instead of human-readable text");
 
 export const skillFlag = Flag.String("skill").pipe(

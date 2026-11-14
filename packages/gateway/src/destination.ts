@@ -3,7 +3,6 @@ import { Effect, Schema } from "effect";
 
 import { ChannelError, type MessagingChannel } from "#src/channel";
 
-/** Resolves a proactive destination, defaulting to home, and rechecks its policy and access. */
 export const resolveDestination = (
   channel: MessagingChannel["Service"],
   requested: string | null = null,
@@ -50,7 +49,6 @@ export const resolveDestination = (
         }),
       );
 
-    // checkAccess takes a source message; the owner posting in this destination stands in for one.
     yield* channel.checkAccess(
       {
         messageId: "scheduled-destination",

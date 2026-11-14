@@ -21,7 +21,6 @@ export const skillsCommand = (context: CLIContext) => {
           if (json || names.length === 0)
             return yield* printResult(json, names, () => "No local skills.");
 
-          // Invalid files still list by name; `skills show` reports what is wrong with them.
           const lines = yield* Effect.forEach(names, (name) =>
             skills.load(name).pipe(
               Effect.map((skill) => (isManualOnly(skill.content) ? `${name}  manual-only` : name)),

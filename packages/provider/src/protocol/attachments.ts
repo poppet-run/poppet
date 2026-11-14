@@ -1,13 +1,11 @@
 import { invalidRequest, type ModelDescription, type ModelRequest } from "#src/index";
 
-/** One part of a user message, before a protocol gives it its wire shape. */
 export type UserPart =
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "image"; readonly url: string };
 
 type UserMessage = Extract<ModelRequest["messages"][number], { readonly role: "user" }>;
 
-/** The owner's text, then each attachment in order; text files are labelled as untrusted data. */
 export const userParts = (
   description: ModelDescription,
   request: ModelRequest,

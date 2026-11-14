@@ -18,7 +18,6 @@ export const workerLaunch = (dataDirectory: string): WorkerLaunch => ({
     "run",
   ],
   workingDirectory: process.cwd(),
-  // Settings are read from config.json at startup; shell overrides remain local to the caller.
   environment: new Map([["POPPET_DATA_DIR", dataDirectory]]),
 });
 

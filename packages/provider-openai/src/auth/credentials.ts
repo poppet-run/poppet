@@ -14,19 +14,13 @@ import { Context, Effect, Layer, RcMap, Schema, Scope, Semaphore } from "effect"
 import { Connection, ConnectionError } from "#src/connection";
 
 interface StoreOperations {
-  /** Returns null without creating identity when no connection file exists. */
   readonly read: Effect.Effect<Connection | null, ConnectionError>;
-  /** Reuses a saved connection or creates a host identity for a new login. */
   readonly initialize: Effect.Effect<Connection, ConnectionError>;
-  /** Deletes the entire saved connection, including identity, registration, and verification. */
   readonly remove: Effect.Effect<void, ConnectionError>;
-  /** Atomically replaces the protected connection file, deferring cancellation until cleanup. */
   readonly write: (connection: Connection) => Effect.Effect<void, ConnectionError>;
-  /** Runs an effect while no other user of this store in the process holds the permit. */
   readonly withPermit: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 }
 
-/** Protected ChatGPT connection storage owned by this process while any service scope is open. */
 export class CredentialStore extends Context.Service<CredentialStore, StoreOperations>()(
   "poppet/CredentialStore",
 ) {}
@@ -39,9 +33,6 @@ const storageError = () =>
     message: "Cannot read or write Poppet's protected authentication storage.",
   });
 
-// Concurrent model requests each build this layer. Builds in one process share
-// the owner lock and one permit per lock path, so a token refresh runs once
-// while other processes stay out until the last build here closes.
 const owners = Effect.runSync(
   RcMap.make({
     lookup: (lockPath: string) =>
@@ -75,9 +66,6 @@ export const CredentialStoreLive = Layer.effect(
       ),
     );
 
-    // Write and sync a separate file, then rename it over the saved connection
-    // so readers never see partial JSON. Cancellation waits for this write or
-    // its cleanup to finish because the whole operation is uninterruptible.
     const write = (connection: Connection) =>
       Effect.tryPromise({
         try: () => writeFileAtomic(path, Schema.encodeSync(ConnectionJson)(connection)),
@@ -102,8 +90,6 @@ export const CredentialStoreLive = Layer.effect(
 
       if (saved !== null) return saved;
 
-      // Only a login creates provider identity. Status and logout stay read-only
-      // when no connection has been saved.
       const connection: Connection = {
         version: 1,
         hostId: `urn:uuid:${randomUUID()}`,

@@ -3,14 +3,9 @@ import { stripVTControlCharacters, styleText } from "node:util";
 import { WorkerRequestError } from "@poppet/worker";
 import { Console, Effect, Match, Predicate, Schema } from "effect";
 
-/** Prints the value as JSON when requested, otherwise its human-readable rendering. */
 export const printResult = <A>(json: boolean, value: A, render: (value: A) => string) =>
   Console.log(json ? JSON.stringify(value, null, 2) : render(value));
 
-/**
- * Prints a local or worker result as JSON unchanged, or as text from the fields `schema` reads.
- * Worker replies are untyped JSON, so the text form parses them before formatting.
- */
 export const printParsed = <A, S extends Schema.Top>(
   json: boolean,
   value: A,
@@ -30,7 +25,6 @@ export const printParsed = <A, S extends Schema.Top>(
         Effect.flatMap((parsed) => Console.log(render(parsed))),
       );
 
-/** Prints a value from an effect, as JSON or human-readable text. */
 export const printWith =
   <A>(json: boolean, render: (value: A) => string) =>
   <E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -48,16 +42,11 @@ const width = (text: string) => stripVTControlCharacters(text).length;
 
 const pad = (text: string, size: number) => text + " ".repeat(Math.max(0, size - width(text)));
 
-// Collapse line breaks so each record stays on one row.
 const cell = (value: string) => value.replace(/\s+/gu, " ").trim();
 
 const truncate = (text: string, size: number) =>
   text.length <= size ? text : `${text.slice(0, Math.max(0, size - 1))}…`;
 
-/**
- * Renders aligned columns with a header row. On a terminal, the last column is shortened to fit
- * the window; piped output keeps full values.
- */
 export const table = (
   headers: ReadonlyArray<string>,
   rows: ReadonlyArray<ReadonlyArray<string>>,
@@ -86,14 +75,12 @@ export const table = (
   return [line(headers, bold), ...cells.map((row) => line(row))].join("\n");
 };
 
-/** Renders a table, or a message when there are no rows. */
 export const tableOr = (
   empty: string,
   headers: ReadonlyArray<string>,
   rows: ReadonlyArray<ReadonlyArray<string>>,
 ) => (rows.length === 0 ? empty : table(headers, rows));
 
-/** Renders labelled values with aligned labels; null entries are omitted. */
 export const fields = (entries: ReadonlyArray<readonly [string, string] | null>) => {
   const shown = entries.filter((entry) => entry !== null);
   const size = Math.max(0, ...shown.map(([label]) => label.length + 1));
@@ -103,7 +90,6 @@ export const fields = (entries: ReadonlyArray<readonly [string, string] | null>)
     .join("\n");
 };
 
-/** Joins titled blocks, skipping empty ones. */
 export const sections = (blocks: ReadonlyArray<readonly [string | null, string] | null>) =>
   blocks
     .flatMap((block) =>
@@ -115,7 +101,6 @@ export const sections = (blocks: ReadonlyArray<readonly [string | null, string] 
 
 const two = (value: number) => String(value).padStart(2, "0");
 
-/** A local timestamp in minutes, with a dash for unset times. */
 export const time = (ms: number | null | undefined) => {
   if (ms === null || ms === undefined) return "-";
   const date = new Date(ms);
@@ -141,13 +126,11 @@ const isList = (value: Schema.Json): value is Schema.JsonArray => Array.isArray(
 const isRecord = (value: Schema.Json): value is Schema.JsonObject =>
   Predicate.isObject(value) && !isList(value);
 
-// Scalars and lists of scalars fit on their label's line.
 const nested = (value: Schema.Json) =>
   isRecord(value) || (isList(value) && value.some((item) => isList(item) || isRecord(item)));
 
 const acronyms = new Set(["api", "id", "mcp", "pid", "url"]);
 
-/** Turns a camelCase key into a sentence-case label, such as "MCP servers" for mcpServers. */
 const label = (key: string) =>
   key
     .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
@@ -162,7 +145,6 @@ const label = (key: string) =>
     )
     .join(" ");
 
-/** Renders JSON as indented labelled lines, for provider- or configuration-defined shapes. */
 export const tree = (value: Schema.Json, indent = 0): string => {
   const prefix = " ".repeat(indent);
 

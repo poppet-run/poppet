@@ -6,7 +6,6 @@ import wrapAnsi from "wrap-ansi";
 
 const plain = (text: string) => text;
 
-/** Each line carries its own styling so a scrolled viewport can start anywhere. */
 const style = (open: number, close: number, color: boolean) => (text: string) => {
   if (!color) return text;
   const start = `\u001b[${open}m`;
@@ -18,7 +17,6 @@ const style = (open: number, close: number, color: boolean) => (text: string) =>
     .join("\n");
 };
 
-/** Only renderer styling may survive into the screen, never cursor or image commands. */
 const safeOutput = (text: string) => {
   return (
     text
@@ -34,7 +32,6 @@ const safeOutput = (text: string) => {
   );
 };
 
-/** Reflow can insert newlines inside styles; restore our basic SGR styles on each row. */
 const independentLines = (text: string) => {
   const active = new Map<number, number>();
 
@@ -62,7 +59,6 @@ const independentLines = (text: string) => {
     .join("\n");
 };
 
-/** Cache by message identity and text; streaming and resizing invalidate only affected rows. */
 export class ChatMarkdown {
   private cache = new WeakMap<{ text: string }, { text: string; width: number; rows: string[] }>();
   private parser: Marked | undefined;
@@ -129,7 +125,6 @@ export class ChatMarkdown {
     try {
       rendered = this.parser.parse(message.text, { async: false });
     } catch {
-      // A partial or unsupported construct must not interrupt the conversation.
       rendered = message.text;
     }
 

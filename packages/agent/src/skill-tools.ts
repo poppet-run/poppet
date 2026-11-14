@@ -29,7 +29,6 @@ const missingSkill = (name: string) =>
     message: `The skill ${JSON.stringify(name)} is missing or invalid.`,
   });
 
-/** Shared by every model-driven selection, so a manual-only skill stays with the owner. */
 export const ownerOnlySkill = (name: string) =>
   new AgentError({
     reason: "tool-arguments",
@@ -46,7 +45,6 @@ export const executeSkillView = (skills: Skills["Service"], name: string) =>
     ),
   );
 
-/** Loads a skill named in the run's index; absent when the host has no skills. */
 export const skillViewTool = Effect.gen(function* () {
   const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
 

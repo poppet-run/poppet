@@ -149,7 +149,6 @@ describe("web chat", () => {
   test("conversation deep links load the production scripts and styles", async () => {
     const web = fileURLToPath(new URL("../../../../web/", import.meta.url));
 
-    // bun run check builds these production artifacts before running tests.
     const assets = new Map<string, Blob>();
 
     for (const name of await readdir(join(web, "dist")))
@@ -302,7 +301,6 @@ describe("web chat", () => {
       expect(snapshot.active).toBeNull();
       expect(JSON.stringify(snapshot)).not.toContain("provider-only-continuation");
       expect(app.state.calls).toBe(1);
-      // Simulate a crash after the answer committed but before the receipt settled.
       await app.runtime.runPromise(
         SqlClient.SqlClient.use(
           (sql) =>
@@ -342,7 +340,6 @@ describe("web chat", () => {
       await app.runtime.runPromise(Deferred.await(app.entered));
       const store = await app.runtime.runPromise(Store);
 
-      // Reproduce persisted tool exchanges while the provider's final reply is still streaming.
       await app.runtime.runPromise(
         Effect.gen(function* () {
           for (const callId of ["search", "fetch"]) {

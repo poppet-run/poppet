@@ -6,7 +6,6 @@ import { byteSize } from "#src/context";
 import { AgentError } from "#src/errors";
 import { streamReply } from "#src/reply";
 
-/** Display metadata only; identifiers and saved prompt text stay unchanged. */
 export const sessionTitle = (text: string) => {
   const clean = text
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ")
@@ -22,7 +21,6 @@ export const sessionTitle = (text: string) => {
   return boundary > 0 && characters[80] !== " " ? prefix.slice(0, boundary) : prefix;
 };
 
-/** One isolated, bounded request, with no tools, memory, or continuation from the chat. */
 export const generateTitle = (model: ModelOperations, session: Session, prompt: string) =>
   Effect.gen(function* () {
     if (model.description.provider !== session.provider || model.description.id !== session.model)

@@ -14,7 +14,6 @@ const KagiSearchResponse = Schema.Struct({
   }),
 });
 
-/** Fixed endpoint and explicit redirect rejection keep the search key at Kagi. */
 export const makeKagiSearch = (
   key: Redacted.Redacted<string>,
   toolBytes: number,
@@ -47,7 +46,6 @@ export const makeKagiSearch = (
   ),
 });
 
-/** Kagi's credential and environment key, alongside its constructor. */
 export const kagiSearch = {
   name: "Kagi Search",
   credentialId: "kagi-search",

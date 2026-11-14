@@ -294,7 +294,6 @@ export const slackChannelLayer = (settings: SlackSettings) =>
 
               if (target.ts) args.thread_ts = target.ts;
 
-              // Slack's SDK uses the same method name as browser window messaging.
               /* oxlint-disable unicorn/require-post-message-target-origin */
               const reply = await web.chat.postMessage(args);
 

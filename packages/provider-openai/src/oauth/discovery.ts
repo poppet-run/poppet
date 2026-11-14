@@ -3,7 +3,6 @@ import { Effect, Schema } from "effect";
 import { ConnectionError, requestFailure } from "#src/connection";
 import { type HttpFetch, networkError, request } from "#src/oauth/http";
 
-/** Issuer metadata decoded before discovery checks endpoint origins against the expected issuer. */
 export const Discovery = Schema.Struct({
   issuer: Schema.NonEmptyString,
   authorization_endpoint: Schema.NonEmptyString,
@@ -34,8 +33,6 @@ export const discoverIssuer = (http: HttpFetch, expectedIssuer: string) =>
       ),
     );
 
-    // Restrict every advertised endpoint to the expected issuer before sending
-    // codes or tokens to it or fetching its signing keys.
     if (
       metadata.issuer !== expectedIssuer ||
       [

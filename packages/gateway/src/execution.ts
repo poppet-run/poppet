@@ -18,7 +18,6 @@ import { answer } from "#src/replies";
 import type { Inbox } from "#src/repository";
 import { prepareSession, type SessionSetup } from "#src/session";
 
-/** What executing a request needs beyond the shared context. */
 export interface Execution {
   readonly agent: Agent["Service"];
   readonly setup: SessionSetup;
@@ -26,7 +25,6 @@ export interface Execution {
   readonly running: RunningRequest;
 }
 
-/** Reconciles saved runs with the inbox and leaves interrupted sends uncertain. */
 export const recover = (context: GatewayContext) =>
   Effect.gen(function* () {
     const { channel, repo, store } = context;
@@ -44,7 +42,6 @@ export const recover = (context: GatewayContext) =>
     }
   });
 
-/** Retries setup while no run is saved; otherwise fails the entry, replying when it can. */
 const settleFailure = (
   context: GatewayContext,
   entry: Inbox,
@@ -74,7 +71,6 @@ const settleFailure = (
     else yield* repo.state(entry.id, "failed");
   });
 
-/** Prepares the session, runs the agent with typing shown, and saves the run's answer. */
 const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
   Effect.gen(function* () {
     const { channel, store } = context;
@@ -108,7 +104,6 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
       own.entry = { ...entry, conversationId: conversation, sessionId: session.id };
     yield* Effect.scoped(
       Effect.gen(function* () {
-        // Discord typing expires after ten seconds; progress must never block inference.
         yield* channel.typing(conversation).pipe(
           Effect.catchTag("ChannelError", () => Effect.void),
           Effect.andThen(Effect.sleep("8 seconds")),
@@ -139,7 +134,6 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
     ),
   );
 
-// Storage failures and defects stop the gateway; other failures were settled with their request.
 const outcome = (exit: Exit.Exit<void, ChatFailure | ChannelError>) =>
   Effect.gen(function* () {
     if (Exit.isSuccess(exit)) return;
@@ -151,10 +145,6 @@ const outcome = (exit: Exit.Exit<void, ChatFailure | ChannelError>) =>
     );
   });
 
-/**
- * Claims the next eligible request and starts it with `start`, registered as running before
- * it begins. Returns null when nothing is eligible, or "skipped" for an entry it did not run.
- */
 const claimNext = (
   context: GatewayContext,
   execution: Execution,
@@ -198,7 +188,6 @@ const claimNext = (
     }),
   );
 
-/** Executes the next eligible queued request and waits for it to finish. */
 export const processNext = (context: GatewayContext, execution: Execution) =>
   Effect.gen(function* () {
     const fiber = yield* claimNext(context, execution, Effect.forkChild);
@@ -210,10 +199,6 @@ export const processNext = (context: GatewayContext, execution: Execution) =>
     return true;
   });
 
-/**
- * Starts the next eligible request in `active` while fewer than `limit` are running. Each
- * request wakes the inbox when it ends, so a later request in its conversation can start.
- */
 export const dispatchNext = (
   context: GatewayContext,
   execution: Execution,
