@@ -31,6 +31,14 @@ describe("toolIdentity", () => {
   });
 });
 
+// Each property adds two nodes: its schema and its "type" value.
+const wide = (count: number): Schema.JsonObject => ({
+  type: "object",
+  properties: Object.fromEntries(
+    Array.from({ length: count }, (_, i) => [`p${i}`, { type: "string" }]),
+  ),
+});
+
 describe("compileSchema", () => {
   test("when validating 2020-12 schemas, rejects unsupported schemas without coercion or defaults", () => {
     const validate = compileSchema({
@@ -55,8 +63,14 @@ describe("compileSchema", () => {
     ).toThrow();
     let nested: Schema.JsonObject = { type: "object" };
 
-    for (let i = 0; i < 20; i++) nested = { type: "object", properties: { nested } };
+    // 15 wrappers put the innermost "type" at depth 31; one more exceeds the limit of 32.
+    for (let i = 0; i < 15; i++) nested = { type: "object", properties: { nested } };
+    expect(compileSchema(nested)({})).toBe(true);
+    nested = { type: "object", properties: { nested } };
     expect(() => compileSchema(nested)).toThrow("Unsupported MCP schema");
+
+    expect(compileSchema(wide(500))({})).toBe(true);
+    expect(() => compileSchema(wide(520))).toThrow("Unsupported MCP schema");
   });
 
   test("when properties or literals resemble schema keywords, treats them as data", () => {

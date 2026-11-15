@@ -20,7 +20,7 @@ export const toolIdentity = (server: string, tool: string): Pick<Tool, "name" | 
 
 const invalid = () =>
   new Error(
-    "Unsupported MCP schema. Use a JSON object schema of at most 16 KiB, depth 16 and 512 nodes, without references or patternProperties; patterns must be supported by RE2.",
+    "Unsupported MCP schema. Use a JSON object schema of at most 16 KiB, depth 32 and 1024 nodes, without references or patternProperties; patterns must be supported by RE2.",
   );
 
 const schemaMaps = new Set([
@@ -74,7 +74,7 @@ export const compileSchema = (input: Schema.JsonObject) => {
     depth: number,
     position: "schema" | "map" | "data",
   ): Schema.Json => {
-    if (++nodes > 512 || depth > 16) throw invalid();
+    if (++nodes > 1024 || depth > 32) throw invalid();
 
     if (Array.isArray(value)) return value.map((item) => visit(item, depth + 1, position));
 

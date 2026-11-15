@@ -114,7 +114,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         name,
         description: "Fixture tool",
         inputSchema:
-          mode === "schema"
+          mode === "schema" && name === "read"
             ? { type: "object", properties: { text: { type: "string", pattern: "(?=a)" } } }
             : inputSchema,
       };

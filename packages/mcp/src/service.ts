@@ -44,6 +44,9 @@ export interface MCPTool {
 
 class MCPDiagnostic extends Data.TaggedError("MCPDiagnostic")<{ readonly message: string }> {}
 
+/** One tool Poppet cannot offer; the server's other tools remain available. */
+class UnsupportedTool extends Data.TaggedError("UnsupportedTool")<{ readonly message: string }> {}
+
 type ConnectionState =
   | { readonly status: "idle"; readonly retries: number }
   | { readonly status: "disabled" }
@@ -51,6 +54,8 @@ type ConnectionState =
       readonly status: "connected";
       readonly tools: ReadonlyArray<MCPTool>;
       readonly discovered: ReadonlyArray<string>;
+      /** Allowed tools skipped because Poppet cannot support their definitions. */
+      readonly diagnostic: string | null;
     }
   | {
       readonly status: "unavailable";
@@ -75,7 +80,9 @@ const retryAt = (state: Extract<ConnectionState, { status: "unavailable" }>) =>
   state.failedAt + reconnectDelay(state.retries);
 
 const diagnostic = (connection: Connection) =>
-  connection.state.status === "unavailable" || connection.state.status === "needs-login"
+  connection.state.status === "unavailable" ||
+  connection.state.status === "needs-login" ||
+  connection.state.status === "connected"
     ? connection.state.diagnostic
     : null;
 
@@ -327,8 +334,8 @@ const compile = (input: Schema.JsonObject, tool: string, kind: "input" | "output
   try {
     return compileSchema(input);
   } catch {
-    throw new MCPDiagnostic({
-      message: `Unsupported ${kind} schema for tool ${JSON.stringify(tool)}. Use draft-07 or 2020-12 JSON Schema, at most 16 KiB, depth 16 and 512 nodes; patterns must be supported by RE2. References, patternProperties and unknown formats or keywords are unsupported.`,
+    throw new UnsupportedTool({
+      message: `Unsupported ${kind} schema for tool ${JSON.stringify(tool)}. Use draft-07 or 2020-12 JSON Schema, at most 16 KiB, depth 32 and 1024 nodes; patterns must be supported by RE2. References, patternProperties and unknown formats or keywords are unsupported.`,
     });
   }
 };
@@ -341,8 +348,8 @@ const makeTool = (
   toolBytes: number,
 ): MCPTool => {
   if ((tool.description?.length ?? 0) > 4096 || tool.execution?.taskSupport === "required")
-    throw new MCPDiagnostic({
-      message: "Tool description exceeds 4096 characters or requires unsupported task execution.",
+    throw new UnsupportedTool({
+      message: `Tool ${JSON.stringify(tool.name)} has a description over 4096 characters or requires unsupported task execution.`,
     });
 
   if (
@@ -353,7 +360,9 @@ const makeTool = (
   const schema = Schema.decodeUnknownSync(Schema.JsonObject)(tool.inputSchema);
 
   if (schema.type !== "object")
-    throw new MCPDiagnostic({ message: "Tool input must be an object schema." });
+    throw new UnsupportedTool({
+      message: `Tool ${JSON.stringify(tool.name)} input must be an object schema.`,
+    });
   const validate = compile(schema, tool.name, "input");
 
   const output =
@@ -544,11 +553,23 @@ export const makeMCPLive = (toolBytes: number) =>
               catch: (cause) => startupFailure(config, cause),
             });
 
+            const skipped: string[] = [];
+
+            // An unsupported tool is skipped alone; other failures still reject the server.
             const tools = yield* Effect.try({
               try: () =>
                 discovered
                   .filter((tool) => config.tools.includes(tool.name))
-                  .map((tool) => makeTool(config, tool, connection, current, toolBytes)),
+                  .flatMap((tool) => {
+                    try {
+                      return [makeTool(config, tool, connection, current, toolBytes)];
+                    } catch (cause) {
+                      if (!(cause instanceof UnsupportedTool)) throw cause;
+                      skipped.push(cause.message);
+
+                      return [];
+                    }
+                  }),
               catch: (cause) => startupFailure(config, cause),
             });
 
@@ -563,7 +584,14 @@ export const makeMCPLive = (toolBytes: number) =>
               status: "connected",
               tools,
               discovered: discovered.map((tool) => tool.name),
+              diagnostic:
+                skipped.length === 0
+                  ? null
+                  : `MCP ${config.id}: skipped ${skipped.length} allowed ${skipped.length === 1 ? "tool" : "tools"}. ${skipped.join(" ")}`,
             };
+
+            if (connection.state.diagnostic !== null)
+              yield* Console.error(connection.state.diagnostic);
           }).pipe(Effect.timeout("8 seconds"));
 
           yield* startup.pipe(

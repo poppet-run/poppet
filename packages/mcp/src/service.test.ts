@@ -245,15 +245,29 @@ describe("MCP", () => {
     }
   });
 
-  test.each([
-    "duplicate",
-    "schema",
-    "oversized",
-    "flood",
-    "endless",
-    "no-tools",
-    "protocol-startup",
-  ])(
+  test("when an allowed tool has an unsupported schema, skips only that tool", async () => {
+    const state = await fixture("schema");
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const mcp = yield* MCP;
+          expect((yield* mcp.snapshot(false)).map((tool) => tool.toolName)).toEqual(["write"]);
+          const status = (yield* mcp.status)[0]!;
+          expect(status).toMatchObject({ state: "connected", availableTools: ["write"] });
+          expect(status.diagnostic).toContain('Unsupported input schema for tool "read"');
+          expect([status.diagnostic]).toEqual(state.errors);
+          expect((yield* mcp.tools("fixture")).find((tool) => tool.toolName === "read")).toEqual(
+            expect.objectContaining({ allowed: true, definition: null }),
+          );
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each(["duplicate", "oversized", "flood", "endless", "no-tools", "protocol-startup"])(
     "when discovery is %s, rejects it and closes the child without disabling built-ins",
     async (mode) => {
       const state = await fixture(mode);
@@ -270,9 +284,6 @@ describe("MCP", () => {
               diagnostic: expect.stringContaining("MCP fixture:"),
             });
             expect([status.diagnostic]).toEqual(state.errors);
-
-            if (mode === "schema")
-              expect(state.errors[0]).toContain('Unsupported input schema for tool "read"');
 
             const pid = Number(
               yield* Effect.promise(() => readFile(join(state.directory, "pid"), "utf8")),
