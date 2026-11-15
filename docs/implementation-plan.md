@@ -2,7 +2,7 @@
 
 [Documentation index](README.md)
 
-Phases 30–34 are planned only. Plans do not authorize implementation.
+Phases 30–35 are planned only. Plans do not authorize implementation.
 
 Implemented work has no phase page. Use the linked guides for current behavior,
 setup, and validation. Git history retains delivery plans and validation records.
@@ -15,7 +15,7 @@ Reusable workflows start with [drafting a skill in chat](skills.md#draft-a-skill
 owner review, and manual saving into the local skill library. The agent can read
 matching skills from an index; it cannot write skills or curate facts automatically.
 
-Updated: 2026-10-30
+Updated: 2026-11-15
 
 Storage history: the unreleased base schema was consolidated into version 1.
 Store migration 2 allows one active run per session instead of one across the
@@ -33,6 +33,7 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 32: Host commands in an isolated container](phases/32.md)
 - [Phase 33: Trusted time for scheduled runs](phases/33.md)
 - [Phase 34: Model and reasoning selection for new sessions](phases/34.md)
+- [Phase 35: iOS app for chat and worker management](phases/35.md)
 
 ## Validation
 
