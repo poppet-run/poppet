@@ -127,7 +127,20 @@ The append-only `memory_revisions` table is the only place facts are stored. It
 records every remember, replace, forget, and revert per key, with the value (null
 when forgotten), origin (`cli` or `turn`), source run, and time. The `memories`
 view shows each key's latest revision unless that revision forgot it. CLI changes
-have no source run; model changes always do.
+have no source run. Model changes have one until its session is deleted.
+
+## Session deletion
+
+[Deleting a session](chat.md#delete-old-sessions) removes its search entries,
+tool calls, messages, attachments, runs, and the session in one transaction.
+Packages that reference sessions or runs detach themselves through `BEFORE DELETE`
+triggers added by their own migrations: task migration 5 clears occurrence and
+note links, gateway migration 2 removes thread bindings and clears inbox links,
+web chat migration 2 removes submission receipts, and memory migration 2 clears
+`source_run_id`. Memory migration 2 also rebuilds `memory_revisions` so a `turn`
+revision may have no source run; existing rows are copied unchanged. Deletion
+applies every package's pending migrations first, so the triggers exist even when
+that package has not started since an upgrade.
 
 ## Conversation search index
 

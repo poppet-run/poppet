@@ -112,6 +112,11 @@ proxy, the last `X-Forwarded-For` address identifies the client. Poppet keeps at
 - You can draft the next message while a reply runs. Send becomes available when it
   finishes. There is no message queue yet.
 - Stop cancels a web-started run. Partial text is not saved as a completed answer.
+- Delete in the conversation header removes the open conversation after you confirm.
+  It is unavailable while a reply runs or the page is reconnecting. See
+  [delete old sessions](chat.md#delete-old-sessions) for what else is removed.
+  `DELETE /api/sessions/<id>` returns 404 for an unknown conversation and 409 while
+  it has a reply in progress.
 - The browser assigns each message an ID and keeps it in this tab's session storage
   until the worker confirms receipt. After a lost response, Recover submission
   uses the same ID. The worker returns its saved receipt instead of starting it again.
@@ -154,7 +159,9 @@ Manual checks:
 4. Disconnect during submission, reconnect, and recover it. Confirm there is one input.
 5. Stop a reply and inspect it with `poppet chat show`. Restart the worker during another
    reply and confirm it is interrupted without being retried.
-6. Check the mobile keyboard, multiline input, sidebar, long code blocks, and sign-out.
+6. Delete a conversation, confirm it leaves the sidebar on both devices, and that the
+   other device shows "Conversation not found." if it had it open.
+7. Check the mobile keyboard, multiline input, sidebar, long code blocks, and sign-out.
 
 The frontend keeps chat state in Nanostores and uses `@nanostores/preact` for UI
 subscriptions. The store polls the session list every five seconds while signed in.

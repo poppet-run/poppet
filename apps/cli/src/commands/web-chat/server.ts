@@ -196,6 +196,12 @@ export const webHandler = (
       if (request.method === "GET" && !session[2])
         return Response.json(await run(chat.snapshot(id)));
 
+      if (request.method === "DELETE" && !session[2]) {
+        await run(chat.remove(id));
+
+        return Response.json({ ok: true });
+      }
+
       if (request.method === "GET" && session[2] === "/events") {
         let marker = await run(chat.marker(id));
         let previous = JSON.stringify(await run(chat.snapshot(id)));

@@ -781,6 +781,111 @@ describe("Store", () => {
     }
   });
 
+  test("when sessions are deleted, removes their messages, runs, tools, files and search entries only", async () => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const sql = yield* SqlClient.SqlClient;
+          const kept = yield* store.createSession("first-provider", "selected-model");
+
+          const complete = (sessionId: string, text: string) =>
+            Effect.gen(function* () {
+              const reference = {
+                id: `image-${text}`,
+                name: "screen.png",
+                mediaType: "image/png",
+                size: 4,
+              } as const;
+
+              const run = yield* store.queueRun(
+                sessionId,
+                [{ role: "user", text, attachments: [reference] }],
+                undefined,
+                undefined,
+                [
+                  {
+                    id: reference.id,
+                    name: reference.name,
+                    mediaType: reference.mediaType,
+                    body: new Uint8Array([137, 80, 78, 71]),
+                  },
+                ],
+              );
+
+              yield* store.startRun(run.id);
+              yield* store.recordToolCalls(run.id, {
+                ...responseFor("first-provider"),
+                output: [toolCall("read")],
+                finishReason: "tool-calls",
+              });
+              yield* store.startToolCall(run.id, "read");
+              yield* store.finishToolCall(run.id, "read", { status: "completed", output: "page" });
+              yield* store.finishRun(run.id, {
+                status: "completed",
+                response: responseFor("first-provider", text),
+              });
+            });
+
+          const removed = yield* store.createSession("first-provider", "selected-model");
+          yield* complete(removed.id, "orchard");
+          yield* complete(kept.id, "meadow");
+
+          expect((yield* store.deleteSessions([removed.id, removed.id])).map((s) => s.id)).toEqual([
+            removed.id,
+          ]);
+          expect((yield* store.sessions).map((session) => session.id)).toEqual([kept.id]);
+          expect((yield* store.searchSessions("orchard", 16384)).matches).toEqual([]);
+          expect((yield* store.searchSessions("meadow", 16384)).matches).toHaveLength(2);
+
+          const counts = yield* sql<Record<string, number>>`SELECT
+            (SELECT COUNT(*) FROM runs) AS runs, (SELECT COUNT(*) FROM messages) AS messages,
+            (SELECT COUNT(*) FROM tool_calls) AS tools, (SELECT COUNT(*) FROM attachments) AS files`;
+
+          expect(counts).toEqual([{ runs: 1, messages: 4, tools: 1, files: 1 }]);
+
+          yield* reject(store.deleteSessions([removed.id]), "not-found");
+          yield* reject(store.deleteSessions([kept.id, "missing"]), "not-found");
+          expect(yield* store.session(kept.id)).not.toBeNull();
+        }),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test("when sessions are pruned, removes only idle sessions last active before the cutoff", async () => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const sql = yield* SqlClient.SqlClient;
+          const old = yield* store.createSession("first-provider", "selected-model");
+          const busy = yield* store.createSession("first-provider", "selected-model");
+          const recent = yield* store.createSession("first-provider", "selected-model");
+          yield* store.queueRun(busy.id, [user]);
+          yield* sql`UPDATE sessions SET updated_at = 1000 WHERE id IN (${old.id}, ${busy.id})`;
+
+          const listed = yield* store.pruneSessions(2000, { dryRun: true });
+          expect(listed.map((session) => session.id)).toEqual([old.id]);
+          expect(yield* store.session(old.id)).not.toBeNull();
+
+          yield* store.pruneSessions(2000, { dryRun: false });
+          expect((yield* store.sessions).map((session) => session.id).toSorted()).toEqual(
+            [busy.id, recent.id].toSorted(),
+          );
+          yield* reject(store.deleteSessions([busy.id]), "conflict");
+        }),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
   test("when tool calls fail, permits completion only if their failures were reported to the model", async () => {
     const provider = "new-provider";
     const fixtureStore = await fixture();

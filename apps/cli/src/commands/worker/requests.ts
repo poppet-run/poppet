@@ -11,6 +11,7 @@ import {
   workerReply,
 } from "@poppet/worker";
 import { Cause, Effect, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
+import { SqlClient } from "effect/sql";
 
 import {
   ChatInspection,
@@ -67,7 +68,7 @@ export const WorkerRequestsLive = Layer.effect(
   WorkerRequests,
   Effect.gen(function* () {
     const services = yield* Effect.context<
-      Agent | AppConfig | Store | Memory | ChatSettings | Skills | MCP
+      Agent | AppConfig | Store | SqlClient.SqlClient | Memory | ChatSettings | Skills | MCP
     >();
 
     return {

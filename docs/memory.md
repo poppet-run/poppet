@@ -22,7 +22,8 @@ value; history records which it did. `forget` requires an existing key. Keys sta
 digits, dots, underscores, and hyphens, up to 128 characters. Values must be nonempty,
 have no surrounding whitespace, and fit in 4096 UTF-8 bytes. The store holds up to
 128 facts per scope. Listing includes keys, values, update times, and source run IDs when
-available; CLI-created facts have no source run.
+available; CLI-created facts have no source run, and facts lose theirs when the
+session that saved them is [deleted](chat.md#delete-old-sessions).
 
 ## Ask the model to change a fact
 

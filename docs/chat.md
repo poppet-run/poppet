@@ -226,6 +226,32 @@ Manual names survive restart and win over an in-flight title request. Renaming
 needs no model or credentials and works through the worker when it owns storage.
 Title changes do not change activity timestamps or saved message order.
 
+## Delete old sessions
+
+```sh
+poppet chat delete $session_id
+poppet chat prune --days 90 --dry-run
+poppet chat prune --days 90
+```
+
+`chat delete` takes one or more session IDs and removes each session with its
+messages, runs, tool calls, attachments, and search entries. Nothing is deleted if
+any ID does not exist or any session has a reply in progress. Stop the reply first.
+
+`chat prune` deletes every session whose last activity is more than the given
+number of days ago (1 to 36500). Sessions with a reply in progress are skipped.
+`--dry-run` lists the sessions without deleting them. Renaming does not count as
+activity. Both commands print the removed sessions; add `--json` for the saved
+session records. They need no model or credentials and route through the worker
+when it owns storage. Deletion cannot be undone.
+
+Records that point at a deleted session are kept but detached:
+
+- A Discord or Slack thread loses its binding, so its next message starts a new session.
+- Scheduled task history keeps its occurrences and notes without the session or run.
+- Saved facts keep their values and origin, but no longer name a source run.
+- Web chat drops the session's submission receipts.
+
 ## Search past conversations
 
 ```sh

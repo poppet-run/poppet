@@ -14,8 +14,11 @@ import {
   type SendOptions,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
+import { gatewaySchema } from "@poppet/gateway";
 import { readFileBounded } from "@poppet/io";
+import { memorySchema } from "@poppet/memory";
 import {
+  migrate,
   Session,
   SessionSearchQuery,
   SkillName,
@@ -23,7 +26,10 @@ import {
   type StoredMessage,
   type Run,
 } from "@poppet/store";
-import { Effect, Schema, Stream } from "effect";
+import { taskSchema } from "@poppet/tasks";
+import { Clock, Effect, Schema, Stream } from "effect";
+
+import { webSchema } from "#src/commands/web-chat/chat";
 
 export const MessageText = Schema.NonEmptyString.check(
   Schema.makeFilter((text) => text.trim().length > 0 || "Enter a nonempty message."),
@@ -55,17 +61,26 @@ export const ChatSubmission = Schema.Union([
   }),
 ]);
 
+export const PruneDays = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 36500 }));
+
 export const ChatInspection = Schema.Union([
   Schema.Struct({ action: Schema.Literal("rename"), id: Session.fields.id, text: MessageText }),
   Schema.Struct({ action: Schema.Literal("show"), id: Session.fields.id }),
   Schema.Struct({ action: Schema.Literal("sessions") }),
   Schema.Struct({ action: Schema.Literal("search"), query: SessionSearchQuery }),
+  Schema.Struct({
+    action: Schema.Literal("delete"),
+    ids: Schema.Array(Session.fields.id).check(Schema.isMinLength(1)),
+  }),
+  Schema.Struct({ action: Schema.Literal("prune"), days: PruneDays, dryRun: Schema.Boolean }),
 ]);
+
+export type ChatInspection = typeof ChatInspection.Type;
 
 export type ChatSubmission = typeof ChatSubmission.Type;
 
 export type ChatCommand =
-  | typeof ChatInspection.Type
+  | ChatInspection
   | {
       readonly action: "send";
       readonly id: string;
@@ -143,12 +158,28 @@ const runForInspection = (run: Run) => ({
   finishReason: run.result?.finishReason ?? null,
 });
 
-export const inspectChat = (
-  command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,
-  toolBytes = defaultPolicy.toolBytes,
-) =>
+// Other packages detach their references to removed sessions through triggers in
+// their own migrations, so apply those before removing anything.
+export const removeSessions = <A, E, R>(remove: Effect.Effect<A, E, R>) =>
+  Effect.forEach([taskSchema, gatewaySchema, memorySchema, webSchema], migrate, {
+    discard: true,
+  }).pipe(Effect.andThen(remove));
+
+const dayMs = 24 * 60 * 60 * 1000;
+
+export const inspectChat = (command: ChatInspection, toolBytes = defaultPolicy.toolBytes) =>
   Effect.gen(function* () {
     const store = yield* Store;
+
+    if (command.action === "delete")
+      return yield* removeSessions(store.deleteSessions(command.ids));
+
+    if (command.action === "prune") {
+      const before = (yield* Clock.currentTimeMillis) - command.days * dayMs;
+      const prune = store.pruneSessions(before, { dryRun: command.dryRun });
+
+      return yield* command.dryRun ? prune : removeSessions(prune);
+    }
 
     if (command.action === "search") return yield* store.searchSessions(command.query, toolBytes);
 

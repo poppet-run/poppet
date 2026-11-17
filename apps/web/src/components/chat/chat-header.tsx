@@ -4,10 +4,18 @@ import type { ChatSession } from "../../api/protocol";
 interface ChatHeaderProps {
   readonly session: ChatSession | null;
   readonly reconnecting: boolean;
+  readonly deletable: boolean;
   readonly onOpenSidebar: () => void;
+  readonly onDelete: () => void;
 }
 
-export const ChatHeader = ({ session, reconnecting, onOpenSidebar }: ChatHeaderProps) => (
+export const ChatHeader = ({
+  session,
+  reconnecting,
+  deletable,
+  onOpenSidebar,
+  onDelete,
+}: ChatHeaderProps) => (
   <header class="flex min-h-[60px] items-center gap-4 border-b border-line px-5 py-[0.65rem] mobile:gap-[0.65rem] mobile:p-[0.8rem]">
     <button class="hidden mobile:block" aria-label="Open conversations" onClick={onOpenSidebar}>
       ☰
@@ -24,6 +32,16 @@ export const ChatHeader = ({ session, reconnecting, onOpenSidebar }: ChatHeaderP
       <span class="text-xs text-muted" role="status">
         Reconnecting…
       </span>
+    )}
+    {session && (
+      <button
+        class="bg-transparent text-muted hover:bg-surface-hover"
+        disabled={!deletable}
+        title={deletable ? undefined : "Stop the current reply first"}
+        onClick={onDelete}
+      >
+        Delete
+      </button>
     )}
   </header>
 );

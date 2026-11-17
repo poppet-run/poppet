@@ -457,3 +457,94 @@ test("successful polling clears only refresh errors and expired sign-out clears 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("deleting a conversation asks first, keeps it on refusal and leaves it after success", async () => {
+  const { createChatStore } = await import("../stores/chat-store");
+  const originalFetch = globalThis.fetch;
+  const originalEvents = Object.getOwnPropertyDescriptor(globalThis, "EventSource");
+  const originalConfirm = Object.getOwnPropertyDescriptor(globalThis, "confirm");
+  const streams: FakeEvents[] = [];
+  const deletes: string[] = [];
+  const answers = [false, true, true];
+  let deleteStatus = 409;
+
+  class FakeEvents extends dom.window.EventTarget {
+    static CLOSED = 2;
+    readyState = 1;
+    constructor(readonly url: string) {
+      super();
+      streams.push(this);
+    }
+    close() {
+      this.readyState = FakeEvents.CLOSED;
+    }
+  }
+
+  const session = { id: "old", title: "Old plans", provider: "test", model: "test", updatedAt: 0 };
+
+  const fakeFetch = async (
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ) => {
+    if (init?.method === "DELETE") {
+      deletes.push(String(input));
+
+      return Response.json({ message: "Stop the current reply first." }, { status: deleteStatus });
+    }
+
+    if (input === "/api/sessions") return Response.json(deleteStatus === 200 ? [] : [session]);
+    throw new Error(`Unexpected request ${input}`);
+  };
+
+  Object.defineProperty(globalThis, "EventSource", { configurable: true, value: FakeEvents });
+  Object.defineProperty(globalThis, "confirm", {
+    configurable: true,
+    value: () => answers.shift(),
+  });
+  globalThis.fetch = Object.assign(fakeFetch, { preconnect: originalFetch.preconnect });
+  history.replaceState(null, "", "/chat/old");
+  const store = createChatStore();
+  const dispose = store.start();
+
+  try {
+    await flush();
+    store.set("drafts", { old: "Unsent", new: "Other" });
+    streams[0]!.dispatchEvent(
+      new dom.window.MessageEvent("message", {
+        data: JSON.stringify({ session, messages: [], receipts: [], active: null }),
+      }),
+    );
+
+    await store.remove();
+    expect(deletes).toEqual([]);
+
+    await store.remove();
+    expect(deletes).toEqual(["/api/sessions/old"]);
+    expect(store.$state.get().sessionId).toBe("old");
+    expect(store.$state.get().error).toBe("Stop the current reply first.");
+
+    deleteStatus = 200;
+    await store.remove();
+    await flush();
+    expect(deletes).toHaveLength(2);
+    expect(location.pathname).toBe("/");
+    expect(store.$state.get()).toMatchObject({
+      sessionId: null,
+      sessions: [],
+      drafts: { new: "Other" },
+      error: "",
+    });
+    expect(streams[0]!.readyState).toBe(FakeEvents.CLOSED);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+
+    for (const [key, descriptor] of [
+      ["EventSource", originalEvents],
+      ["confirm", originalConfirm],
+    ] as const)
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    history.replaceState(null, "", "/");
+  }
+});

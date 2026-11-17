@@ -5,11 +5,12 @@ import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
 import type { Completion } from "@poppet/provider";
-import { Store, StoreLive } from "@poppet/store";
+import { migrate, packageSchema, Store, StoreLive } from "@poppet/store";
 import { Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { LocalMemoryLive } from "#src/local";
+import { memoryMigrations } from "#src/migrations";
 import { Memory, MemoryError } from "#src/service";
 
 const fixture = async () => {
@@ -27,6 +28,8 @@ const fixture = async () => {
 
   return {
     directory,
+    runStore: <A, E>(program: Effect.Effect<A, E, Store | SqlClient.SqlClient>) =>
+      Effect.runPromise(program.pipe(Effect.provide(store))),
     run: <A, E>(program: Effect.Effect<A, E, Memory | Store | SqlClient.SqlClient>) =>
       Effect.runPromise(program.pipe(Effect.provide(layer))),
     close: () => rm(directory, { recursive: true, force: true }),
@@ -99,6 +102,67 @@ describe.concurrent("LocalMemoryLive", () => {
         }),
       );
       expect(await saved.run(Memory.use((memory) => memory.list))).toEqual([]);
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test("when facts were saved before session removal, keeps them and detaches deleted source runs", async () => {
+    const saved = await fixture();
+
+    try {
+      const runId = await saved.runStore(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const sql = yield* SqlClient.SqlClient;
+          yield* migrate(
+            packageSchema("memory_migrations", { "1_baseline": memoryMigrations["1_baseline"] }),
+          );
+          const session = yield* store.createSession("first-provider", "selected-model");
+          const run = yield* store.queueRun(session.id, [{ role: "user", text: "Hello" }]);
+          yield* sql`INSERT INTO memory_revisions ${sql.insert([
+            {
+              key: "cli",
+              revision: 1,
+              action: "remember",
+              value: "A",
+              origin: "cli",
+              sourceRunId: null,
+              createdAt: 1,
+            },
+            {
+              key: "turn",
+              revision: 1,
+              action: "remember",
+              value: "B",
+              origin: "turn",
+              sourceRunId: run.id,
+              createdAt: 2,
+            },
+          ])}`;
+
+          return run.id;
+        }),
+      );
+
+      await saved.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const memory = yield* Memory;
+          expect((yield* memory.list).map((fact) => [fact.key, fact.sourceRunId])).toEqual([
+            ["cli", null],
+            ["turn", runId],
+          ]);
+          const run = yield* store.run(runId);
+          yield* store.deleteSessions([run!.sessionId]);
+          expect(
+            (yield* memory.list).map((fact) => [fact.key, fact.value, fact.sourceRunId]),
+          ).toEqual([
+            ["cli", "A", null],
+            ["turn", "B", null],
+          ]);
+        }),
+      );
     } finally {
       await saved.close();
     }
