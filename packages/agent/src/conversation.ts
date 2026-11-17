@@ -293,9 +293,7 @@ export const conversation = Effect.gen(function* () {
                   messages,
                   tools: activeTools(),
                   attachments: sent,
-                  settings: policy.logReasoning
-                    ? { ...settings, reasoningSummary: true }
-                    : settings,
+                  settings: { ...settings, reasoningSummary: true },
                 },
                 run,
               ).pipe(
@@ -322,6 +320,8 @@ export const conversation = Effect.gen(function* () {
 
         const handleEvent = (event: ModelEvent): ConversationStream => {
           if (event.type === "reasoning-delta") {
+            if (!policy.logReasoning) return Stream.empty;
+
             reasoningBytes += byteSize(event.text);
 
             if (reasoningBytes > maxTextBytes)
@@ -332,7 +332,7 @@ export const conversation = Effect.gen(function* () {
                 }),
               );
 
-            return policy.logReasoning ? Stream.make(event) : Stream.empty;
+            return Stream.make(event);
           }
 
           if (event.type === "text-delta") {

@@ -49,7 +49,7 @@ after editing settings: `poppet worker restart`.
 | `tasks.catchUpMinutes`       | `60`             | Missed recurring-job window, from 0 to 1440 minutes                                             |
 | `chat.outputTokens`          | `2048`           | Requested output limit, from 1 to 32768, capped by model metadata                               |
 | `chat.runDeadlineSeconds`    | `300`            | Overall run deadline, from 30 to 3600 seconds                                                   |
-| `chat.logReasoning`          | `false`          | Show readable reasoning in CLI diagnostics and worker logs                                      |
+| `chat.logReasoning`          | `false`          | Show saved reasoning in CLI diagnostics and worker logs                                         |
 | `chat.logTimings`            | `false`          | Log request-stage durations                                                                     |
 | `chat.maxConcurrentRequests` | `3`              | Chat requests that run at once across messaging, CLI, web chat, and scheduled runs, from 1 to 8 |
 
@@ -143,12 +143,16 @@ the environment and credential references explicitly listed in their server entr
 
 ## Reasoning logs
 
-Set `chat.logReasoning` to `true` to show readable reasoning in CLI diagnostics
+Poppet always requests readable reasoning when the provider supports it and saves
+it with each assistant message's provider continuation in the session database,
+whatever this setting says.
+
+Set `chat.logReasoning` to `true` to also show readable reasoning in CLI diagnostics
 and `<data directory>/logs/worker.log`. It covers chat, messaging, and scheduled
 runs. Answer output and gateway replies contain only the answer. The provider
 must return readable reasoning; encrypted continuation metadata is never logged.
-Reasoning is limited to 128 KiB per run and buffered diagnostic entries are flushed
-on failure or interruption. Logs can contain private prompt or tool content and
+Logged reasoning is limited to 128 KiB per run and buffered diagnostic entries are
+flushed on failure or interruption. Logs can contain private prompt or tool content and
 use the existing protected files and rotation. This setting does not select
 reasoning effort or a reasoning-token budget.
 
