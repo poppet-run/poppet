@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -244,6 +245,45 @@ describe("makeCLI", () => {
       expect(job.schedule.type).toBe("once");
       expect(job.schedule.at).toBeGreaterThanOrEqual(before + 60_000);
       expect(job.schedule.at).toBeLessThanOrEqual(Date.now() + 60_000);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("when a task has a note, shows it with its writer and clears it", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-task-note-cli-"));
+    const environment = await configure(directory, { model: "saved-model" });
+
+    try {
+      const added = await invoke(
+        ["tasks", "add", "--json", "Watch", "--at", "2099-10-22T09:00:00Z", "Check the page"],
+        environment,
+      );
+
+      const id = JSON.parse(added.stdout).id;
+      const database = new Database(join(directory, "store/poppet.sqlite"));
+
+      database.run(
+        "INSERT INTO job_notes (job_id, text, origin, occurrence_id, created_at) VALUES (?, ?, 'occurrence', 'saved-occurrence', 0)",
+        [id, "Version 1.2"],
+      );
+      database.close();
+
+      const shown = stripVTControlCharacters(
+        (await invoke(["tasks", "show", id], environment)).stdout,
+      );
+
+      expect(shown).toContain("Note\nVersion 1.2\n\nSaved by:  occurrence saved-occurrence");
+
+      expect((await invoke(["tasks", "clear-note", id], environment)).stdout).toBe(
+        "Cleared the note for task Watch.\n",
+      );
+      expect(
+        JSON.parse((await invoke(["tasks", "show", "--json", id], environment)).stdout),
+      ).toMatchObject({
+        note: { text: null, origin: "cli", occurrenceId: null },
+        noteHistory: [{ text: null }, { text: "Version 1.2" }],
+      });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

@@ -159,7 +159,7 @@ export const TaskCommand = Schema.Union([
   }),
   Schema.Struct({ action: Schema.Literals(["list", "providers", "clear", "status"]) }),
   Schema.Struct({
-    action: Schema.Literals(["show", "pause", "resume", "delete"]),
+    action: Schema.Literals(["show", "pause", "resume", "delete", "clear-note"]),
     id: Session.fields.id,
   }),
   Schema.Struct({
@@ -217,6 +217,16 @@ export const Occurrence = Schema.Struct({
 });
 
 export type Occurrence = typeof Occurrence.Type;
+
+export const TaskNote = Schema.Struct({
+  text: Schema.NullOr(Schema.String),
+  origin: Schema.Literals(["occurrence", "cli"]),
+  occurrenceId: Schema.NullOr(Session.fields.id),
+  runId: Schema.NullOr(Session.fields.id),
+  createdAt: Schema.Natural,
+});
+
+export type TaskNote = typeof TaskNote.Type;
 
 export const ProviderPause = Schema.Struct({
   provider: ProviderId,

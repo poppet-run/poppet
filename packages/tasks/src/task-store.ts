@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { TaskNoteArguments, taskNoteBytes, taskNoteDefinition } from "@poppet/agent";
 import { taskCatchUpMinutes } from "@poppet/config";
 import {
   DeliveryDestination,
@@ -9,7 +10,7 @@ import {
   migrate,
   reportAs,
 } from "@poppet/store";
-import { Context, Effect, Layer, Schema, Semaphore } from "effect";
+import { Context, Effect, Layer, Option, Schema, Semaphore } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { taskSchema } from "#src/migrations";
@@ -22,6 +23,7 @@ import {
   Skipped,
   Task,
   TaskError,
+  TaskNote,
   checkEndTime,
 } from "#src/task-schema";
 
@@ -383,6 +385,72 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
   const link = (id: string, sessionId: string, runId: string | null) =>
     sql`UPDATE job_occurrences SET session_id = ${sessionId}, run_id = ${runId} WHERE id = ${id}`;
 
+  const noteHistory = (jobId: string) =>
+    sql`SELECT text, origin, occurrence_id, run_id, created_at FROM job_notes
+      WHERE job_id = ${jobId} ORDER BY id DESC`.pipe(decodeRows(TaskNote));
+
+  const note = (jobId: string) =>
+    sql`SELECT text, origin, occurrence_id, run_id, created_at FROM job_notes
+      WHERE job_id = ${jobId} ORDER BY id DESC LIMIT 1`.pipe(decodeRow(TaskNote));
+
+  const saveNote = (jobId: string, text: string | null, writer: Omit<TaskNote, "text">) =>
+    Effect.gen(function* () {
+      if (((yield* note(jobId))?.text ?? null) === text) return false;
+
+      yield* sql`INSERT INTO job_notes ${sql.insert({ jobId, text, ...writer })}`;
+
+      return true;
+    });
+
+  const commitNote = (saved: Occurrence, now: number) =>
+    Effect.gen(function* () {
+      if (saved.runId === null) return false;
+
+      const [call] = yield* sql<{ readonly arguments: string }>`SELECT arguments FROM tool_calls
+        WHERE run_id = ${saved.runId} AND namespace = ${taskNoteDefinition.namespace}
+          AND name = ${taskNoteDefinition.name} AND server_id IS NULL AND status = 'completed'
+        ORDER BY position DESC LIMIT 1`;
+
+      if (call === undefined) return false;
+
+      const args = Schema.decodeUnknownOption(Schema.fromJsonString(TaskNoteArguments))(
+        call.arguments,
+      );
+
+      if (Option.isNone(args)) return false;
+      const { text } = args.value;
+
+      if (text !== null && Buffer.byteLength(text) > taskNoteBytes) return false;
+
+      return yield* saveNote(saved.jobId, text, {
+        origin: "occurrence",
+        occurrenceId: saved.id,
+        runId: saved.runId,
+        createdAt: now,
+      });
+    });
+
+  const clearNote = (id: string, now: number) =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const job = yield* task(id);
+
+        if ((yield* activeOccurrence(id, "running")) !== null)
+          return yield* new TaskError({
+            message: "Cancel the running occurrence before clearing this task's note.",
+          });
+
+        const cleared = yield* saveNote(job.id, null, {
+          origin: "cli",
+          occurrenceId: null,
+          runId: null,
+          createdAt: now,
+        });
+
+        return { taskId: job.id, name: job.name, cleared };
+      }),
+    );
+
   const finish = (
     id: string,
     status: "completed" | "failed" | "interrupted",
@@ -392,18 +460,22 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
   ) =>
     sql.withTransaction(
       Effect.gen(function* () {
-        yield* sql`UPDATE job_occurrences SET status = ${status}, reason = ${reason},
-          finished_at = ${now} WHERE id = ${id} AND status = 'running'`;
+        const finished = yield* sql`UPDATE job_occurrences SET status = ${status},
+          reason = ${reason}, finished_at = ${now} WHERE id = ${id} AND status = 'running'
+          RETURNING id`;
 
         const saved = yield* occurrence(id);
         const provider = saved.definition.provider;
+
+        const noteUpdated =
+          status === "completed" && finished.length > 0 && (yield* commitNote(saved, now));
 
         const providerPause =
           pauseReason === null ? null : yield* blockProvider(provider, pauseReason, now);
 
         const providerResumed = status === "completed" && (yield* resumeProvider(provider, now));
 
-        return { occurrence: saved, pause: providerPause, providerResumed };
+        return { occurrence: saved, pause: providerPause, providerResumed, noteUpdated };
       }),
     );
 
@@ -529,6 +601,9 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
     control: operation(control),
     providers: operation(providers),
     skips: operation(skips),
+    note: operation(note),
+    noteHistory: operation(noteHistory),
+    clearNote: operation(clearNote),
     add: operation(add),
     reconcile: operation(reconcile),
     recover: operation(recover),

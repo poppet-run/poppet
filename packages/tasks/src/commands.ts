@@ -76,9 +76,13 @@ export const executeTaskCommand = (
         }),
       );
 
+      const noteHistory = yield* repo.noteHistory(job.id);
+
       return {
         task: job,
         target: yield* repo.nextTarget(job.id),
+        note: noteHistory[0] ?? null,
+        noteHistory,
         occurrences: results,
         skipped: yield* repo.skips(job.id),
       };
@@ -134,6 +138,9 @@ export const executeTaskCommand = (
 
         return { action: "delete", taskId: task.id, name: task.name, deleted: true };
       }
+
+      case "clear-note":
+        return yield* repo.clearNote(command.id, now);
 
       case "cancel-task":
       case "retry-task":

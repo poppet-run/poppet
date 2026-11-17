@@ -24,6 +24,7 @@ export interface RunContext {
   readonly origin: "interactive" | "scheduled";
   readonly selectedSkill: string | null;
   readonly mentionedSkills: ReadonlyArray<SkillSnapshot>;
+  readonly taskNote: { readonly text: string | null } | null;
   readonly approveCommand: ApproveCommand | null;
   readonly here: Effect.Effect<DeliveryDestination, AgentError> | null;
   readonly home: Effect.Effect<DeliveryDestination, AgentError> | null;

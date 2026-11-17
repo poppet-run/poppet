@@ -30,6 +30,7 @@ import { skillIndex, skillIndexGuidance, type SkillIndex } from "#src/skill-inde
 import { withMentionedSkills } from "#src/skill-mentions";
 import { skillViewTool } from "#src/skill-tools";
 import { Skills } from "#src/skills";
+import { taskNoteGuidance, taskNoteTool } from "#src/task-note";
 import { taskTool } from "#src/task-tools";
 import { toolExecution, preflightReported, failureReason, failureReply } from "#src/tool-execution";
 import { webSearchTool } from "#src/web-search";
@@ -67,7 +68,7 @@ export const conversation = Effect.gen(function* () {
 
   const executeTool = yield* toolExecution;
 
-  const chooseTools = ({ run, model, origin }: RunContext) =>
+  const chooseTools = ({ run, model, origin, taskNote }: RunContext) =>
     Effect.gen(function* () {
       const catalog =
         model.description.capabilities.tools && external !== null
@@ -96,6 +97,7 @@ export const conversation = Effect.gen(function* () {
                 (tool !== skillView || skillsIndex !== null) &&
                 (origin === "interactive" || tool.availableWhenScheduled),
             ),
+            ...(origin === "scheduled" && taskNote !== null ? [taskNoteTool] : []),
           ]
         : [];
 
@@ -118,7 +120,7 @@ export const conversation = Effect.gen(function* () {
     });
 
   const buildInstructions = (
-    { prompt, origin, selectedSkill }: RunContext,
+    { prompt, origin, selectedSkill, taskNote }: RunContext,
     skillsIndex: SkillIndex | null,
   ) => {
     const indexedPrompt =
@@ -131,8 +133,13 @@ export const conversation = Effect.gen(function* () {
         ? indexedPrompt
         : `${indexedPrompt}\n\n${external.instructions}`;
 
+    const scheduledInstructions =
+      taskNote === null
+        ? baseInstructions
+        : `${baseInstructions}\n\n${taskNoteGuidance(taskNote.text)}`;
+
     if (origin === "scheduled")
-      return `${baseInstructions}\nThis is a scheduled run. If the task prompt makes reporting conditional and the condition is not met, reply with exactly ${noReply} and nothing else. Otherwise answer normally.`;
+      return `${scheduledInstructions}\nThis is a scheduled run. If the task prompt makes reporting conditional and the condition is not met, reply with exactly ${noReply} and nothing else. Otherwise answer normally.`;
 
     return task !== null
       ? `${baseInstructions}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`

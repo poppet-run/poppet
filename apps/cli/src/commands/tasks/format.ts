@@ -26,8 +26,16 @@ type TaskRow = typeof TaskRow.Type;
 
 const OccurrenceRow = Schema.Struct({ id: Schema.String, jobId: Schema.String });
 
+const NoteRow = Schema.Struct({
+  text: Schema.NullOr(Schema.String),
+  origin: Schema.String,
+  occurrenceId: Schema.NullOr(Schema.String),
+  createdAt: Schema.Number,
+});
+
 const TaskDetails = Schema.Struct({
   task: TaskRow,
+  note: Schema.optionalKey(Schema.NullOr(NoteRow)),
   target: Schema.NullOr(Schema.Struct({ scheduledAt: Schema.Number, availableAt: Schema.Number })),
   occurrences: Schema.Array(
     Schema.Struct({
@@ -118,7 +126,21 @@ const taskFields = (task: TaskRow) =>
     ["Delivery", destination(task)],
   ]);
 
-const showTask = ({ task, target, occurrences, skipped }: typeof TaskDetails.Type) => {
+const noteWriter = (note: typeof NoteRow.Type) =>
+  note.occurrenceId === null ? note.origin : `occurrence ${note.occurrenceId}`;
+
+const showNote = (note: typeof NoteRow.Type | null | undefined) =>
+  note == null
+    ? "None."
+    : [
+        note.text ?? "None.",
+        fields([
+          [note.text === null ? "Cleared by" : "Saved by", noteWriter(note)],
+          [note.text === null ? "Cleared" : "Saved", time(note.createdAt)],
+        ]),
+      ].join("\n\n");
+
+const showTask = ({ task, target, note, occurrences, skipped }: typeof TaskDetails.Type) => {
   const latest = occurrences
     .map((item) => outputText(item.output ?? []).trim())
     .find((output) => output !== "");
@@ -126,6 +148,7 @@ const showTask = ({ task, target, occurrences, skipped }: typeof TaskDetails.Typ
   return sections([
     [null, taskFields(task)],
     ["Prompt", task.prompt],
+    ["Note", showNote(note)],
     target === null
       ? null
       : [
@@ -246,6 +269,16 @@ export const printTaskResult = <A>(json: boolean, command: TaskCommand, value: A
         value,
         Schema.Struct({ name: Schema.String }),
         (task) => `Removed task ${task.name} and its history.`,
+      );
+    case "clear-note":
+      return printParsed(
+        json,
+        value,
+        Schema.Struct({ name: Schema.String, cleared: Schema.Boolean }),
+        (result) =>
+          result.cleared
+            ? `Cleared the note for task ${result.name}.`
+            : `Task ${result.name} has no note to clear.`,
       );
     case "clear":
       return printParsed(

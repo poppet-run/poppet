@@ -187,7 +187,7 @@ export const tasksCommand = (context: CLIContext) => {
           ),
         ),
       ),
-      ...(["show", "pause", "resume", "delete"] as const).map((action) =>
+      ...(["show", "pause", "resume", "delete", "clear-note"] as const).map((action) =>
         Command.make(
           action === "delete" ? "remove" : action,
           {
@@ -202,6 +202,7 @@ export const tasksCommand = (context: CLIContext) => {
               pause: "Pause scheduling and cancel pending work",
               resume: "Resume future occurrences",
               delete: "Remove a task and its history unless it is running",
+              "clear-note": "Clear the note a task keeps between occurrences",
             }[action],
           ),
         ),
