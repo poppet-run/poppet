@@ -3,6 +3,7 @@ import { packageSchema } from "@poppet/store";
 import { removeWorkload } from "#src/migrations/0002_remove_workload";
 import { taskEnd } from "#src/migrations/0003_task_end";
 import { taskNotes } from "#src/migrations/0004_task_notes";
+import { sessionRemoval } from "#src/migrations/0005_session_removal";
 
 const baseline: ReadonlyArray<string> = [
   `CREATE TABLE jobs (
@@ -64,4 +65,5 @@ export const taskSchema = packageSchema("task_migrations", {
   "2_remove_workload": removeWorkload,
   "3_task_end": taskEnd,
   "4_task_notes": taskNotes,
+  "5_session_removal": sessionRemoval,
 });

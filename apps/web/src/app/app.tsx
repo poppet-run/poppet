@@ -69,7 +69,9 @@ export const App = () => {
         <ChatHeader
           session={snapshot?.session ?? null}
           reconnecting={!!sessionId && !connected}
+          deletable={connected && !active}
           onOpenSidebar={() => store.set("sidebar", true)}
+          onDelete={store.remove}
         />
         <Transcript
           snapshot={snapshot}

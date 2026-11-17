@@ -38,8 +38,8 @@ poppet memory set --json project "Poppet"
 
 For commands that take free text, put `--json` before the text; after it,
 `--json` is part of the text. `--json` is available on `config`, `doctor`,
-`provider status` and `models`, `web status`, `chat rename`, `search`,
-`sessions` and `show`, `skills list` and `show`, all `memory` and `tasks`
+`provider status` and `models`, `web status`, `chat rename`, `delete`, `prune`,
+`search`, `sessions` and `show`, `skills list` and `show`, all `memory` and `tasks`
 commands, `mcp servers` and `tools`, `store status`, and `worker status`.
 Commands that stream answers, prompt for input, or only confirm a setup step
 print text only.
@@ -186,6 +186,8 @@ Selecting a provider enables search once its key is saved. Restart any running w
 | `chat new [--skill <name>] [--attach <path>]... <message>` | Start a session with the configured provider and model. |
 | `chat send <session> [--attach <path>]... <message>`       | Continue a saved session.                               |
 | `chat rename <session> <title>`                            | Rename a saved session without inference.               |
+| `chat delete <session>...`                                 | Delete saved sessions.                                  |
+| `chat prune --days <n> [--dry-run]`                        | Delete sessions with no activity in the last n days.    |
 | `chat search <query>`                                      | Search completed conversation text without inference.   |
 | `chat sessions`                                            | List saved sessions.                                    |
 | `chat show <session>`                                      | Show saved messages and run outcomes.                   |

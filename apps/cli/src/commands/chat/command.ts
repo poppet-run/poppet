@@ -1,12 +1,14 @@
 import { ChatSettings, logChatDiagnostic } from "@poppet/agent";
 import { Session, SessionSearchQuery } from "@poppet/store";
 import { Console, Effect, Option } from "effect";
-import { Argument, Command } from "effect/cli";
+import { Argument, Command, Flag } from "effect/cli";
 
 import {
   inspectChat,
   type ChatCommand,
+  type ChatInspection,
   MessageText,
+  PruneDays,
   prepareChat,
   sendChat,
   type ChatWriter,
@@ -21,14 +23,12 @@ import {
 } from "#src/commands/chat/prompt";
 import { openChatTerminal, type ChatTerminal } from "#src/commands/chat/terminal";
 import type { CLIContext } from "#src/commands/context";
-import { attachFlag, jsonFlag, skillFlag, textArgument } from "#src/commands/flags";
+import { attachFlag, booleanFlag, jsonFlag, skillFlag, textArgument } from "#src/commands/flags";
 
 export const chatCommand = (context: CLIContext) => {
   const { runtime, throughWorker, queryWorker, write, writeThinking, readLine } = context;
 
-  const inspect = (
-    command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,
-  ) =>
+  const inspect = (command: ChatInspection) =>
     queryWorker(
       { kind: "chat", command },
       (command.action === "search"
@@ -40,10 +40,7 @@ export const chatCommand = (context: CLIContext) => {
       ).pipe(Effect.provide(runtime.store)),
     );
 
-  const runInspection = (
-    command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,
-    json: boolean,
-  ) =>
+  const runInspection = (command: ChatInspection, json: boolean) =>
     inspect(command).pipe(Effect.flatMap((result) => printChatInspection(json, command, result)));
 
   const runChat = (
@@ -199,6 +196,29 @@ export const chatCommand = (context: CLIContext) => {
         },
         ({ id, text, json }) => runInspection({ action: "rename", id, text }, json),
       ).pipe(Command.withDescription("Rename a saved session")),
+      Command.make(
+        "delete",
+        {
+          ids: Argument.String("session").pipe(
+            Argument.withSchema(Session.fields.id),
+            Argument.variadic({ min: 1 }),
+          ),
+          json: jsonFlag,
+        },
+        ({ ids, json }) => runInspection({ action: "delete", ids }, json),
+      ).pipe(Command.withDescription("Delete saved sessions and their messages, runs and files")),
+      Command.make(
+        "prune",
+        {
+          days: Flag.Int("days").pipe(
+            Flag.withSchema(PruneDays),
+            Flag.withDescription("Delete sessions with no activity in this many days"),
+          ),
+          dryRun: booleanFlag("dry-run", "List the sessions without deleting them"),
+          json: jsonFlag,
+        },
+        ({ days, dryRun, json }) => runInspection({ action: "prune", days, dryRun }, json),
+      ).pipe(Command.withDescription("Delete sessions idle for a number of days")),
       Command.make("sessions", { json: jsonFlag }, ({ json }) =>
         runInspection({ action: "sessions" }, json),
       ).pipe(Command.withDescription("List sessions")),

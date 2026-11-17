@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import { ProviderId } from "@poppet/provider";
-import { Clock, Effect } from "effect";
+import { Clock, Effect, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { decodeInput, reportAs, storeFailure } from "#src/errors";
-import { SessionRow, MessageRow, type StoreRecords } from "#src/records";
+import { conflict, SessionRow, MessageRow, type StoreRecords } from "#src/records";
 import { Id, ModelId, SessionTitle, SkillSnapshot } from "#src/schema";
 import type { StoreOperations } from "#src/service";
 import { decodeRows } from "#src/sql";
@@ -39,8 +39,56 @@ export const sessionOperations = (sql: SqlClient.SqlClient, records: StoreRecord
       return yield* requireSession(id);
     }).pipe(reportAs(storeFailure));
 
+  const removeRows = (ids: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (ids.length === 0) return;
+      const sessions = sql.in("session_id", ids);
+      const runs = sql`SELECT id FROM runs WHERE ${sessions}`;
+
+      yield* sql`DELETE FROM session_search
+        WHERE rowid IN (SELECT id FROM messages WHERE ${sessions})`;
+      yield* sql`DELETE FROM tool_calls WHERE run_id IN (${runs})`;
+      yield* sql`DELETE FROM messages WHERE ${sessions}`;
+      yield* sql`DELETE FROM attachments WHERE ${sessions}`;
+      yield* sql`DELETE FROM runs WHERE ${sessions}`;
+      yield* sql`DELETE FROM sessions WHERE ${sql.in("id", ids)}`;
+    });
+
+  const idle = sql`NOT EXISTS (SELECT 1 FROM runs
+    WHERE runs.session_id = sessions.id AND runs.status IN ('pending', 'running'))`;
+
   return {
     createSession,
+    deleteSessions: (ids) =>
+      transaction(
+        Effect.gen(function* () {
+          const selected = [...new Set(yield* decodeInput(Schema.Array(Id), ids))];
+          const sessions = yield* Effect.forEach(selected, requireSession);
+
+          const busy =
+            yield* sql`SELECT id FROM sessions WHERE ${sql.in("id", selected)} AND NOT ${idle}`;
+
+          if (busy.length > 0)
+            return yield* conflict(
+              "A reply is in progress in this session. Stop it before deleting the session.",
+            );
+          yield* removeRows(selected);
+
+          return sessions;
+        }),
+      ),
+    pruneSessions: (before, { dryRun }) =>
+      transaction(
+        Effect.gen(function* () {
+          const sessions = yield* sql`SELECT * FROM sessions
+            WHERE updated_at < ${yield* decodeInput(Schema.Int, before)} AND ${idle}
+            ORDER BY updated_at, id`.pipe(decodeRows(SessionRow));
+
+          if (!dryRun) yield* removeRows(sessions.map((session) => session.id));
+
+          return sessions;
+        }),
+      ),
     renameSession: (id, title) =>
       transaction(
         Effect.gen(function* () {
@@ -97,6 +145,8 @@ export const sessionOperations = (sql: SqlClient.SqlClient, records: StoreRecord
   } satisfies Pick<
     StoreOperations,
     | "createSession"
+    | "deleteSessions"
+    | "pruneSessions"
     | "renameSession"
     | "claimTitle"
     | "finishTitle"

@@ -48,4 +48,15 @@ const baseline: ReadonlyArray<string> = [
   ) STRICT`,
 ];
 
-export const gatewaySchema = packageSchema("gateway_migrations", { "1_baseline": baseline });
+const sessionRemoval: ReadonlyArray<string> = [
+  `CREATE TRIGGER detach_gateway_sessions BEFORE DELETE ON sessions
+  BEGIN
+    DELETE FROM gateway_bindings WHERE session_id = OLD.id;
+    UPDATE gateway_inbox SET session_id = NULL WHERE session_id = OLD.id;
+  END`,
+];
+
+export const gatewaySchema = packageSchema("gateway_migrations", {
+  "1_baseline": baseline,
+  "2_session_removal": sessionRemoval,
+});

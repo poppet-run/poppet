@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-import type { ChatCommand } from "#src/commands/chat/chat";
+import type { ChatInspection } from "#src/commands/chat/chat";
 import { chatHistory, HistoryMessages } from "#src/commands/chat/history";
 import { bold, fields, printParsed, sections, table, tableOr, time } from "#src/output";
 
@@ -125,11 +125,7 @@ const renderSession = ({ session, messages, runs, toolCalls }: typeof SessionDet
   ]);
 };
 
-export const printChatInspection = <A>(
-  json: boolean,
-  command: Extract<ChatCommand, { action: "show" | "sessions" | "rename" | "search" }>,
-  value: A,
-) => {
+export const printChatInspection = <A>(json: boolean, command: ChatInspection, value: A) => {
   switch (command.action) {
     case "sessions":
       return printParsed(json, value, Schema.Array(SessionRow), renderSessions);
@@ -144,5 +140,15 @@ export const printChatInspection = <A>(
       );
     case "show":
       return printParsed(json, value, SessionDetails, renderSession);
+    case "delete":
+      return printParsed(json, value, Schema.Array(SessionRow), (sessions) =>
+        sessions.map((session) => `Deleted session ${session.id} (${title(session)}).`).join("\n"),
+      );
+    case "prune":
+      return printParsed(json, value, Schema.Array(SessionRow), (sessions) =>
+        sessions.length === 0
+          ? `No sessions have been idle for ${command.days} days.`
+          : `${command.dryRun ? "Would delete" : "Deleted"} ${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}:\n\n${renderSessions(sessions)}`,
+      );
   }
 };

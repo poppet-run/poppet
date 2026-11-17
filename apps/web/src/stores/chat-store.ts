@@ -212,6 +212,30 @@ export const createChatStore = () => {
     }
   };
 
+  const remove = async () => {
+    const { sessionId, snapshot } = $state.get();
+
+    if (!sessionId || snapshot?.active) return;
+    const title = snapshot?.session.title ?? "this conversation";
+
+    if (!confirm(`Delete ${JSON.stringify(title)}? This cannot be undone.`)) return;
+
+    try {
+      await api.remove(sessionId);
+      const { [sessionId]: _, ...drafts } = $state.get().drafts;
+      set("drafts", drafts);
+      set(
+        "sessions",
+        $state.get().sessions.filter((session) => session.id !== sessionId),
+      );
+      navigate(null);
+      void refresh();
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 401) unauthenticate();
+      set("error", errorMessage(cause));
+    }
+  };
+
   const stream = (sessionId: string) => {
     let listening = true;
     let events: EventSource;
@@ -325,6 +349,7 @@ export const createChatStore = () => {
     logout,
     forget,
     stop,
+    remove,
     set,
     start,
     refresh,

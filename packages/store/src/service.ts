@@ -40,6 +40,13 @@ export interface StoreOperations {
     },
   ) => Effect.Effect<Session, StoreError>;
   readonly renameSession: (id: string, title: string) => Effect.Effect<Session, StoreError>;
+  readonly deleteSessions: (
+    ids: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<Session>, StoreError>;
+  readonly pruneSessions: (
+    before: number,
+    options: { readonly dryRun: boolean },
+  ) => Effect.Effect<ReadonlyArray<Session>, StoreError>;
   readonly claimTitle: (id: string) => Effect.Effect<Session | null, StoreError>;
   readonly finishTitle: (
     id: string,

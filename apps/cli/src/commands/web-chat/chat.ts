@@ -19,6 +19,8 @@ import {
 } from "effect";
 import { SqlClient } from "effect/sql";
 
+import { removeSessions } from "#src/commands/chat/chat";
+
 export class WebChatError extends Data.TaggedError("WebChatError")<{
   readonly status: number;
   readonly message: string;
@@ -49,7 +51,7 @@ const toReceipt = ({ id, sessionId, status, error }: typeof ReceiptRow.Type): Re
   error,
 });
 
-const webSchema = packageSchema("web_chat_migrations", {
+export const webSchema = packageSchema("web_chat_migrations", {
   "1_submissions": [
     `CREATE TABLE web_chat_submissions (
       id TEXT PRIMARY KEY,
@@ -59,6 +61,12 @@ const webSchema = packageSchema("web_chat_migrations", {
       error TEXT
     ) STRICT`,
     "CREATE INDEX web_chat_session ON web_chat_submissions(session_id)",
+  ],
+  "2_session_removal": [
+    `CREATE TRIGGER detach_web_chat_sessions BEFORE DELETE ON sessions
+    BEGIN
+      DELETE FROM web_chat_submissions WHERE session_id = OLD.id;
+    END`,
   ],
 });
 
@@ -252,7 +260,26 @@ const makeWebChat = Effect.gen(function* () {
       if (running?.fiber) yield* Fiber.interrupt(running.fiber);
     }).pipe(submissions.withPermit);
 
+  const remove = (id: string) =>
+    Effect.gen(function* () {
+      const busy = new WebChatError({
+        status: 409,
+        message: "Stop the current reply before deleting this conversation.",
+      });
+
+      if (!(yield* store.session(id)))
+        return yield* new WebChatError({ status: 404, message: "Conversation not found." });
+
+      if (active.has(id)) return yield* busy;
+
+      yield* removeSessions(store.deleteSessions([id])).pipe(
+        Effect.provideService(SqlClient.SqlClient, sql),
+        Effect.mapError((error) => (error.reason === "conflict" ? busy : error)),
+      );
+    }).pipe(submissions.withPermit);
+
   return {
+    remove,
     sessions: store.sessions.pipe(
       Effect.map((sessions) => sessions.map(summary).toSorted((a, b) => b.updatedAt - a.updatedAt)),
     ),

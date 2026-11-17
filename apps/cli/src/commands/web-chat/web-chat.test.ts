@@ -443,6 +443,45 @@ describe("web chat", () => {
     },
   );
 
+  test("when a conversation is deleted, refuses it during a reply and removes it with its receipts after", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-"));
+    const app = await fixture(directory);
+
+    const remove = (id: string, cookie: string, origin = settings.origin) =>
+      app.handler(
+        new Request(`${settings.origin}/api/sessions/${id}`, {
+          method: "DELETE",
+          headers: { origin, cookie },
+        }),
+      );
+
+    try {
+      const cookie = await app.login();
+      const submission = { id: randomUUID(), sessionId: null, text: "Please answer" };
+      const receipt = await app.runtime.runPromise(app.chat.submit(submission));
+      await app.runtime.runPromise(Deferred.await(app.entered));
+      expect((await remove(receipt.sessionId, cookie)).status).toBe(409);
+
+      await app.runtime.runPromise(Deferred.succeed(app.release, undefined));
+      expect((await app.settled(submission.id))?.status).toBe("completed");
+      expect((await remove(receipt.sessionId, "")).status).toBe(401);
+      expect((await remove(receipt.sessionId, cookie, "https://other.test")).status).toBe(403);
+      expect((await remove(receipt.sessionId, cookie)).status).toBe(200);
+
+      expect((await app.send(`/api/sessions/${receipt.sessionId}`, undefined, cookie)).status).toBe(
+        404,
+      );
+      expect((await app.send(`/api/submissions/${submission.id}`, undefined, cookie)).status).toBe(
+        404,
+      );
+      expect(await (await app.send("/api/sessions", undefined, cookie)).json()).toEqual([]);
+      expect((await remove(receipt.sessionId, cookie)).status).toBe(404);
+    } finally {
+      await app.runtime.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("serves the same protected API through a TCP listener behind a preserved public Host", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-web-"));
     const app = await fixture(directory);

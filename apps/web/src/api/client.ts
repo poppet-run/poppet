@@ -12,13 +12,14 @@ export class ApiError extends Error {
 const request = async <T>(
   path: string,
   body?: Submission | { readonly key: string } | Record<string, never>,
+  method = body === undefined ? "GET" : "POST",
 ): Promise<T> => {
   const response = await fetch(
     path,
     body === undefined
-      ? { credentials: "same-origin" }
+      ? { method, credentials: "same-origin" }
       : {
-          method: "POST",
+          method,
           credentials: "same-origin",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
@@ -43,5 +44,6 @@ export const api = {
   logout: () => request("/api/logout", {}),
   receipt: (id: string) => request<Receipt>(`/api/submissions/${encodeURIComponent(id)}`),
   submit: (submission: Submission) => request<Receipt>("/api/submissions", submission),
+  remove: (id: string) => request(`/api/sessions/${encodeURIComponent(id)}`, undefined, "DELETE"),
   stop: (id: string) => request(`/api/sessions/${encodeURIComponent(id)}/stop`, {}),
 };

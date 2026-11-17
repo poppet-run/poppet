@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
@@ -2046,6 +2047,127 @@ describe.concurrent("chat.ts", () => {
       await chat.close();
     }
   });
+
+  test.each(["local", "worker"])(
+    "when sessions are deleted or pruned through %s execution, detaches tasks, messaging, memory and web chat",
+    async (mode) => {
+      const chat = await fixture();
+      let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
+
+      const start = async (text: string) => {
+        await chat.invoke(["chat", "new", text]);
+
+        return chat.errors.findLast((line) => line.startsWith("Session: "))!.slice(9);
+      };
+
+      const json = async (args: string[]) => {
+        await chat.invoke(args);
+
+        return JSON.parse(chat.lines.at(-1)!);
+      };
+
+      try {
+        if (mode === "worker") worker = await chat.startWorker();
+        chat.state.useTools = true;
+        const remembered = await start("Remember that I prefer concise answers");
+        chat.state.useTools = false;
+        const other = await start("A second conversation");
+        const idle = await start("A forgotten conversation");
+
+        expect(
+          (await json(["chat", "delete", "--json", other])).map(
+            (session: { id: string }) => session.id,
+          ),
+        ).toEqual([other]);
+
+        const runId = (await json(["chat", "show", "--json", remembered])).runs[0].id;
+        const database = new Database(join(chat.directory, "store/poppet.sqlite"));
+
+        try {
+          database.run("PRAGMA foreign_keys = ON");
+          database.run(
+            `INSERT INTO jobs (id, name, prompt, provider, model, schedule, created_at)
+              VALUES ('job', 'Daily', 'Summarize', 'chat-provider', 'chat-model', '{}', 1)`,
+          );
+          database.run(
+            `INSERT INTO job_occurrences (id, job_id, revision, definition, scheduled_at,
+              available_at, status, session_id, run_id, finished_at)
+              VALUES ('occurrence', 'job', 0, '{}', 1, 1, 'completed', ?1, ?2, 2)`,
+            [remembered, runId],
+          );
+          database.run(
+            `INSERT INTO job_notes (job_id, text, origin, occurrence_id, run_id, created_at)
+              VALUES ('job', 'Note', 'occurrence', 'occurrence', ?1, 2)`,
+            [runId],
+          );
+          database.run(
+            `INSERT INTO gateway_bindings (adapter, account, scope_id, conversation_id, session_id)
+              VALUES ('discord', 'bot', 'guild', 'thread', ?1)`,
+            [remembered],
+          );
+          database.run(
+            `INSERT INTO gateway_inbox (adapter, account, external_id, payload, session_id, run_id, state)
+              VALUES ('discord', 'bot', 'message', '{}', ?1, 'gateway-run', 'completed')`,
+            [remembered],
+          );
+          database.run(
+            `INSERT INTO web_chat_submissions (id, session_id, fingerprint, status)
+              VALUES (?1, ?2, 'fingerprint', 'completed')`,
+            [runId, remembered],
+          );
+        } finally {
+          database.close();
+        }
+
+        await chat.invoke(["chat", "delete", remembered]);
+        expect(chat.lines.at(-1)).toStartWith(`Deleted session ${remembered} (`);
+        expect(await json(["memory", "list", "--json"])).toEqual([
+          expect.objectContaining({ key: "answer.style", origin: "turn", sourceRunId: null }),
+        ]);
+
+        const saved = new Database(join(chat.directory, "store/poppet.sqlite"), {
+          readonly: true,
+        });
+
+        try {
+          expect(saved.query("SELECT session_id, run_id FROM job_occurrences").all()).toEqual([
+            { session_id: null, run_id: null },
+          ]);
+          expect(saved.query("SELECT text, run_id FROM job_notes").all()).toEqual([
+            { text: "Note", run_id: null },
+          ]);
+          expect(saved.query("SELECT COUNT(*) AS count FROM gateway_bindings").get()).toEqual({
+            count: 0,
+          });
+          expect(saved.query("SELECT session_id FROM gateway_inbox").all()).toEqual([
+            { session_id: null },
+          ]);
+          expect(saved.query("SELECT COUNT(*) AS count FROM web_chat_submissions").get()).toEqual({
+            count: 0,
+          });
+        } finally {
+          saved.close();
+        }
+
+        await expect(chat.invoke(["chat", "delete", remembered])).rejects.toMatchObject({
+          message: "The session does not exist.",
+        });
+
+        const aged = new Database(join(chat.directory, "store/poppet.sqlite"));
+        aged.run("UPDATE sessions SET updated_at = 0 WHERE id = ?1", [idle]);
+        aged.close();
+        await chat.invoke(["chat", "prune", "--days", "30", "--dry-run"]);
+        expect(chat.lines.at(-1)).toContain("Would delete 1 session:");
+        expect(chat.lines.at(-1)).toContain(idle);
+        await chat.invoke(["chat", "prune", "--days", "30"]);
+        expect(chat.lines.at(-1)).toContain("Deleted 1 session:");
+        expect(await json(["chat", "sessions", "--json"])).toEqual([]);
+      } finally {
+        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        await chat.close();
+      }
+    },
+  );
 
   test("when the output stream closes, interrupts the run and retains only the input", async () => {
     const chat = await fixture();
