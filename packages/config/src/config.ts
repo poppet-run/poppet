@@ -18,6 +18,8 @@ export {
   updateConfigFile,
 } from "#src/source";
 
+export { QuietHours, quietHours, quietHoursEnd } from "#src/quiet-hours";
+
 export const gatewayPackages = Config.schema(
   Schema.fromJsonString(Schema.Array(ConfigText)),
   "gatewayPackages",

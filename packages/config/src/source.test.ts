@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
-import { loadConfig, taskCatchUpMinutes, webSearchProvider } from "#src/config";
+import { loadConfig, quietHours, taskCatchUpMinutes, webSearchProvider } from "#src/config";
 import { ConfigSource, loadConfigSource } from "#src/source";
 
 const load = (environment: Record<string, string>) =>
@@ -40,7 +40,10 @@ describe("loadConfigSource", () => {
         provider: "other-provider",
         model: "file-model",
         webSearchProvider: "kagi",
-        tasks: { catchUpMinutes: 15 },
+        tasks: {
+          catchUpMinutes: 15,
+          quietHours: { start: "22:00", end: "07:30", timeZone: "Europe/London" },
+        },
         chat: { outputTokens: 4096 },
         browser: { enabled: true, command: "bin/browser", allowedDomains: ["example.com"] },
         mcpServers: [
@@ -84,6 +87,7 @@ describe("loadConfigSource", () => {
         Effect.all({
           provider: webSearchProvider,
           catchUp: taskCatchUpMinutes,
+          quiet: quietHours,
           mcp: mcpServers,
           output: Config.schema(Schema.Int, "outputTokens"),
           secret: Config.String("POPPET_OPENROUTER_API_KEY"),
@@ -93,6 +97,7 @@ describe("loadConfigSource", () => {
       expect(resolved).toMatchObject({
         provider: "kagi",
         catchUp: 15,
+        quiet: { start: "22:00", end: "07:30", timeZone: "Europe/London" },
         output: 4096,
         secret: "secret-key",
         mcp: [{ cwd: join(directory, "local") }],
@@ -168,6 +173,28 @@ describe("loadConfigSource", () => {
       }
     },
   );
+
+  test.each([
+    [{ start: "7:30", end: "22:00", timeZone: "UTC" }, "Use a 24-hour HH:MM time"],
+    [{ start: "22:00", end: "24:00", timeZone: "UTC" }, "Use a 24-hour HH:MM time"],
+    [{ start: "22:00", end: "07:30", timeZone: "Mars/Olympus" }, "Use an IANA time zone"],
+    [{ start: "22:00", end: "07:30", timeZone: "+01:00" }, "Use an IANA time zone"],
+    [{ start: "22:00", end: "22:00", timeZone: "UTC" }, "Use different quiet-hours start"],
+    [{ start: "22:00", end: "07:30" }, "timeZone"],
+  ])("when quiet hours are %j, rejects them with %j", async (window, message) => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-quiet-hours-"));
+    const path = join(directory, "config.json");
+
+    try {
+      await writeFile(path, JSON.stringify({ tasks: { quietHours: window } }));
+      const error = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }).pipe(Effect.flip));
+
+      expect(error.message).toContain(path);
+      expect(error.message).toContain(message);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 
   test("authorization configuration rejects symlinks and files writable by other users", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-config-permissions-"));

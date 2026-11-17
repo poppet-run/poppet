@@ -1,4 +1,5 @@
 import type { ChatFailure } from "@poppet/agent";
+import type { QuietHours } from "@poppet/config";
 import type { Store } from "@poppet/store";
 import { type Clock, type Duration, Effect, type Fiber, Queue, Semaphore } from "effect";
 
@@ -17,6 +18,7 @@ export interface GatewayContext {
   readonly repo: GatewayRepository["Service"];
   readonly store: Store["Service"];
   readonly clock: Clock.Clock;
+  readonly quietHours: QuietHours | null;
   readonly wakes: GatewayWakes;
 }
 

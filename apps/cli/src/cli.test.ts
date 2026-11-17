@@ -76,6 +76,8 @@ const invoke = async (
   return { stdout, stderr: errors.join("\n"), exitCode };
 };
 
+const utcClock = (offset: number) => new Date(Date.now() + offset).toISOString().slice(11, 16);
+
 describe("makeCLI", () => {
   test.each([false, true])(
     "when gateway settings are unreadable=%j, reports status without exposing secrets",
@@ -284,6 +286,51 @@ describe("makeCLI", () => {
         note: { text: null, origin: "cli", occurrenceId: null },
         noteHistory: [{ text: null }, { text: "Version 1.2" }],
       });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("when a scheduled delivery is held for quiet hours, shows when it will send", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-task-quiet-cli-"));
+
+    const environment = await configure(directory, {
+      model: "saved-model",
+      tasks: {
+        quietHours: { start: utcClock(-3_600_000), end: utcClock(3_600_000), timeZone: "UTC" },
+      },
+    });
+
+    try {
+      const added = await invoke(
+        ["tasks", "add", "--json", "Watch", "--at", "2099-10-22T09:00:00Z", "Check the page"],
+        environment,
+      );
+
+      const id = JSON.parse(added.stdout).id;
+      const queued = await invoke(["tasks", "run", "--json", id], environment);
+      const database = new Database(join(directory, "store/poppet.sqlite"));
+
+      database.run(
+        "INSERT INTO gateway_inbox (adapter, account, external_id, payload, run_id, state, occurrence_id) VALUES ('discord', 'bot', 'task', '{}', 'run', 'completed', ?)",
+        [JSON.parse(queued.stdout).occurrenceId],
+      );
+      database.run(
+        "INSERT INTO gateway_deliveries (inbox_id, position, text, state) VALUES (last_insert_rowid(), 0, 'Answer', 'pending')",
+      );
+      database.close();
+
+      expect((await invoke(["tasks", "show", id], environment)).stdout).toMatch(
+        / 1 held until \d{4}-\d\d-\d\d \d\d:\d\d /,
+      );
+
+      const [delivery] = JSON.parse(
+        (await invoke(["tasks", "show", "--json", id], environment)).stdout,
+      ).occurrences[0].delivery;
+
+      expect(delivery).toMatchObject({ state: "pending", attempts: 0 });
+      expect(delivery.heldUntil - Date.now()).toBeGreaterThan(3_000_000);
+      expect(delivery.heldUntil - Date.now()).toBeLessThanOrEqual(3_600_000);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

@@ -108,6 +108,8 @@ channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#delive
 channel with `--to discord`. Use `--to discord:<channel-or-thread-id>` to
 select another destination. Use the worker to execute and deliver
 them. Scheduled results use the same queue and do not alter thread sessions.
+During [quiet hours](../configuration.md#quiet-hours) scheduled results and
+failure notices wait until the window ends; replies to you are not held.
 A scheduled run that answers with exactly `NO_REPLY` posts nothing; its saved
 output stays inspectable in `tasks show`.
 Discord and [Slack](slack.md) are bundled adapters. Additional adapters can use the

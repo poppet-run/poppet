@@ -8,6 +8,8 @@ import { readProtectedFile, writeFileAtomic } from "@poppet/io";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
 
+import { QuietHours } from "#src/quiet-hours";
+
 export const ConfigText = Schema.NonEmptyString.check(Schema.isTrimmed());
 
 export const dataDirectory = Config.schema(ConfigText, "POPPET_DATA_DIR").pipe(
@@ -36,7 +38,12 @@ const FileSettings = Schema.Struct({
   webSearchProvider: Schema.optionalKey(Schema.Literals(["brave", "kagi"])),
   mcpServers: Schema.optionalKey(MCPServers),
   gatewayPackages: Schema.optionalKey(Schema.Array(ConfigText)),
-  tasks: Schema.optionalKey(Schema.Struct({ catchUpMinutes: Schema.optionalKey(Schema.Int) })),
+  tasks: Schema.optionalKey(
+    Schema.Struct({
+      catchUpMinutes: Schema.optionalKey(Schema.Int),
+      quietHours: Schema.optionalKey(QuietHours),
+    }),
+  ),
   chat: Schema.optionalKey(
     Schema.Struct({
       logReasoning: Schema.optionalKey(Schema.Boolean),
@@ -106,6 +113,8 @@ export const loadConfigSource = Effect.gen(function* () {
     gatewayPackages:
       file.gatewayPackages === undefined ? undefined : JSON.stringify(file.gatewayPackages),
     catchUpMinutes: file.tasks?.catchUpMinutes,
+    quietHours:
+      file.tasks?.quietHours === undefined ? undefined : JSON.stringify(file.tasks.quietHours),
     logReasoning: file.chat?.logReasoning,
     logTimings: file.chat?.logTimings,
     outputTokens: file.chat?.outputTokens,

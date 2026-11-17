@@ -26,6 +26,7 @@ export interface TaskDelivery {
   readonly state: DeliveryState;
   readonly messageId: string | null;
   readonly attempts: number;
+  readonly heldUntil: number | null;
 }
 
 export class TaskDeliveries extends Context.Service<

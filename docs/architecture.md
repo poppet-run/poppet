@@ -973,6 +973,15 @@ inbox entry with no chunks, so it is reconciled once and nothing is sent. The no
 rechecks current policy and adapter permissions and preserves bounded retries
 and uncertain-send handling. Delivery status never changes execution status.
 
+Quiet hours are decided when a chunk is about to send, not when it is queued, so
+nothing about the window is stored. `quietHoursEnd` in `@poppet/config` returns
+the end of the window containing an instant, or null; any sender of scheduled
+output uses it. While it returns a time, the delivery query sorts chunks of
+scheduled entries last, so replies keep flowing; when only scheduled chunks remain,
+the loop leaves them pending without an attempt and logs the hold once per window.
+The loop's existing one-second fallback wake sends them after the window ends.
+`TaskDeliveries` reports `heldUntil` from the same function.
+
 ### Package boundaries
 
 The `@poppet/gateway` package owns validated incoming messages,

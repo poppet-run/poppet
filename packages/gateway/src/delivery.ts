@@ -1,5 +1,6 @@
 import { isNoReply } from "@poppet/agent";
-import { Effect } from "effect";
+import { quietHoursEnd } from "@poppet/config";
+import { Console, Effect } from "effect";
 
 import { authorized, wake, type GatewayContext } from "#src/context";
 import { answer, chunks } from "#src/replies";
@@ -61,16 +62,32 @@ const scheduleFailureNotices = (context: GatewayContext) =>
     }
   });
 
-export const deliverNext = (context: GatewayContext) =>
-  Effect.gen(function* () {
-    const { channel, repo, clock } = context;
+export const deliverNext = (context: GatewayContext) => {
+  let announcedHold: number | null = null;
+
+  return Effect.gen(function* () {
+    const { channel, repo, clock, quietHours } = context;
     const account = yield* channel.accountId;
     yield* scheduleResults(context);
     yield* scheduleFailureNotices(context);
 
-    const delivery = yield* repo.nextDelivery(channel.id, account, clock.currentTimeMillisUnsafe());
+    const now = clock.currentTimeMillisUnsafe();
+    const heldUntil = quietHours === null ? null : quietHoursEnd(quietHours, now);
+    // During quiet hours scheduled posts sort last, so one only comes back when nothing else is ready.
+    const delivery = yield* repo.nextDelivery(channel.id, account, now, heldUntil !== null);
 
     if (delivery === null) return false;
+
+    if (heldUntil !== null && delivery.scheduled) {
+      if (announcedHold !== heldUntil)
+        yield* Console.log(
+          `Holding scheduled ${channel.id} posts for quiet hours until ${new Date(heldUntil).toISOString()}.`,
+        );
+      announcedHold = heldUntil;
+
+      return false;
+    }
+
     const entry = yield* repo.item(delivery.inboxId);
     const destination = entry.conversationId;
 
@@ -109,3 +126,4 @@ export const deliverNext = (context: GatewayContext) =>
 
     return true;
   });
+};
