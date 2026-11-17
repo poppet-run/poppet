@@ -50,7 +50,9 @@ databases are never reset automatically.
 
 Sessions retain their selected provider and model. Messages preserve order,
 tool call IDs, tool
-results, and versioned provider continuation. Runs persist pending
+results, and versioned provider continuation. Continuation includes the readable
+reasoning the provider returned, which is saved even when `chat.logReasoning` is
+off, alongside any encrypted reasoning. Runs persist pending
 inputs before execution, then transition through running to completed, failed,
 or interrupted. Successful completion writes its assistant message and result
 in one transaction. The store validates continuation identity on write and read.

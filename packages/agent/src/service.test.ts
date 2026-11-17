@@ -192,7 +192,7 @@ describe.concurrent("Agent", () => {
   );
 
   test.each([false, true])(
-    "when reasoning is enabled=%j, logs only permitted reasoning without changing the answer",
+    "when reasoning logging is enabled=%j, requests saved reasoning and logs it only when enabled",
     async (enabled) => {
       const requests: ModelRequest[] = [];
       const logs: string[] = [];
@@ -235,7 +235,7 @@ describe.concurrent("Agent", () => {
                 .join(""),
             ).toBe("Hello");
             expect((yield* store.runs(session.id))[0]?.result).toEqual(response());
-            expect(requests[0]?.settings.reasoningSummary).toBe(enabled ? true : undefined);
+            expect(requests[0]?.settings.reasoningSummary).toBe(true);
             expect(logs).toHaveLength(enabled ? 2 : 0);
 
             if (enabled) {
@@ -604,11 +604,6 @@ describe.concurrent("Agent", () => {
       reason: "output-limit",
     },
     {
-      name: "oversize reasoning",
-      events: [{ type: "reasoning-delta", text: "x".repeat(131073) }],
-      reason: "output-limit",
-    },
-    {
       name: "trailing reasoning",
       events: [
         { type: "completed", response: response() },
@@ -640,6 +635,43 @@ describe.concurrent("Agent", () => {
               result: null,
             });
             expect((yield* store.messages(session.id)).length).toBe(1);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test.each([false, true])(
+    "when reasoning exceeds the log limit and logging is enabled=%j, fails only a logged run",
+    async (enabled) => {
+      const state = await fixture(
+        () =>
+          Effect.succeed({
+            description,
+            stream: () =>
+              Stream.make<ModelEvent[]>(
+                { type: "reasoning-delta", text: "x".repeat(131073) },
+                { type: "completed", response: response() },
+              ),
+          }),
+        enabled,
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            const sent = Stream.runDrain((yield* Agent).send(session.id, "Hello"));
+
+            if (enabled) expect(yield* failure(sent)).toMatchObject({ reason: "output-limit" });
+            else yield* sent;
+
+            expect((yield* store.runs(session.id))[0]?.status).toBe(
+              enabled ? "failed" : "completed",
+            );
           }),
         );
       } finally {
