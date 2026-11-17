@@ -2,6 +2,7 @@ import { ChatSettings } from "@poppet/agent";
 import {
   AppConfig,
   ConfigSource,
+  quietHours,
   taskCatchUpMinutes,
   webSearchProvider,
   gatewayPackages,
@@ -33,7 +34,7 @@ const showConfig = (json: boolean) =>
           runDeadlineSeconds,
           maxConcurrentRequests,
         },
-        tasks: { catchUpMinutes: yield* taskCatchUpMinutes },
+        tasks: { catchUpMinutes: yield* taskCatchUpMinutes, quietHours: yield* quietHours },
         ...(yield* ConfigSource),
       },
       tree,

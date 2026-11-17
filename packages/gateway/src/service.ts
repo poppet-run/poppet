@@ -1,5 +1,5 @@
 import { Agent, ChatSettings, Skills, type ChatFailure } from "@poppet/agent";
-import { AppConfig } from "@poppet/config";
+import { AppConfig, quietHours } from "@poppet/config";
 import { Store } from "@poppet/store";
 import { Clock, Console, Context, Effect, FiberSet, Layer, Queue, Stream } from "effect";
 
@@ -22,6 +22,7 @@ const gateway = Effect.gen(function* () {
     repo: yield* GatewayRepository,
     store: yield* Store,
     clock: yield* Clock.Clock,
+    quietHours: yield* quietHours,
     wakes: {
       inbox: yield* Queue.make<void>({ capacity: 1, strategy: "dropping" }),
       delivery: yield* Queue.make<void>({ capacity: 1, strategy: "dropping" }),

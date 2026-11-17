@@ -47,6 +47,7 @@ after editing settings: `poppet worker restart`.
 | `mcpServers`                 | `[]`             | [MCP servers, sign-in, and tool permissions](mcp.md)                                            |
 | `gatewayPackages`            | `[]`             | Explicitly installed [external gateway packages](development.md#adding-a-channel)               |
 | `tasks.catchUpMinutes`       | `60`             | Missed recurring-job window, from 0 to 1440 minutes                                             |
+| `tasks.quietHours`           | Unset            | Daily window when scheduled messaging posts wait; see [quiet hours](#quiet-hours)               |
 | `chat.outputTokens`          | `2048`           | Requested output limit, from 1 to 32768, capped by model metadata                               |
 | `chat.runDeadlineSeconds`    | `300`            | Overall run deadline, from 30 to 3600 seconds                                                   |
 | `chat.logReasoning`          | `false`          | Show readable reasoning in CLI diagnostics and worker logs                                      |
@@ -71,6 +72,37 @@ writable by group or other users. Symlinks and hard links are rejected. Unknown
 keys, incorrect types, and invalid values fail clearly. Text values must be
 nonempty and trimmed. Relative MCP working-directory paths
 resolve beside `config.json`; bare executable names use `PATH`. Literal `~` is not expanded.
+
+## Quiet hours
+
+Set `tasks.quietHours` to hold scheduled posts to Discord and Slack overnight:
+
+```json
+{
+  "tasks": {
+    "quietHours": { "start": "22:00", "end": "07:30", "timeZone": "Europe/London" }
+  }
+}
+```
+
+Times are 24-hour `HH:MM` wall-clock times in the IANA `timeZone`. A window can
+cross midnight. `start` and `end` must differ; invalid times, unknown zones, and
+UTC offsets such as `+01:00` are rejected. Without the setting nothing is held.
+
+Scheduled results and [failure notices](tasks.md#failure-notices) that are ready
+inside the window wait and send, in their usual order, when it ends. Tasks still
+run at their scheduled time. Replies to your messages, approval prompts, and tasks
+without a messaging destination are never held. `tasks show` reports a held post
+with `heldUntil`; the worker log notes each held window once.
+
+On a daylight-saving change, a `start` or `end` that does not exist that day
+takes effect when the clocks jump past it, and one that occurs twice takes effect
+at its first occurrence. A window ending at 01:30 on the night the clocks go back
+therefore ends at the first 01:30 and does not resume for the repeated hour.
+
+The worker reads the setting when it starts and checks it before each post, so
+after `poppet worker restart` a changed or removed window also applies to posts
+already waiting.
 
 ## Discord
 

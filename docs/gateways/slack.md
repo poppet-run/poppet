@@ -36,6 +36,8 @@ not implemented. Session titles remain local.
 Scheduled delivery uses `--to slack` for the home channel. Use `--to slack:C123`
 for an explicit channel or `--to slack:C123:1730000000.000001` for a thread.
 Replies are saved before delivery; an uncertain send is not automatically repeated.
+During [quiet hours](../configuration.md#quiet-hours) scheduled results and
+failure notices wait until the window ends; replies to you are not held.
 
 A failed scheduled occurrence posts a short [failure notice](../tasks.md#failure-notices)
 to its configured channel or thread, naming the task and its reason code without

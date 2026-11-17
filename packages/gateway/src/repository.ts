@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { quietHours, quietHoursEnd } from "@poppet/config";
 import {
   DeliveryDestination,
   StoreError,
@@ -9,7 +10,7 @@ import {
   reportAs,
 } from "@poppet/store";
 import { DeliveryState, TaskDeliveries, TaskError, taskSchema } from "@poppet/tasks";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Clock, Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { IncomingMessage, ChannelError } from "#src/channel";
@@ -46,6 +47,7 @@ const Delivery = Schema.Struct({
   position: Schema.Natural,
   text: Schema.String,
   attempts: Schema.Natural,
+  scheduled: Schema.BooleanFromBit,
 });
 
 export type Delivery = typeof Delivery.Type;
@@ -383,15 +385,17 @@ const repository = Effect.gen(function* () {
           }),
         ),
     ),
-    nextDelivery: operation((adapter: string, account: string, now: number) =>
-      sql`SELECT d.inbox_id, d.position, d.text, d.attempts FROM gateway_deliveries d
+    nextDelivery: operation((adapter: string, account: string, now: number, quiet: boolean) =>
+      sql`SELECT d.inbox_id, d.position, d.text, d.attempts,
+          i.occurrence_id IS NOT NULL AS scheduled FROM gateway_deliveries d
         JOIN gateway_inbox i ON i.id = d.inbox_id
         WHERE i.adapter = ${adapter} AND i.account = ${account} AND d.state = 'pending'
           AND d.retry_at <= ${now}
           AND NOT EXISTS (SELECT 1 FROM gateway_deliveries earlier
             WHERE earlier.inbox_id = d.inbox_id AND earlier.position < d.position
               AND earlier.state != 'sent')
-        ORDER BY d.inbox_id, d.position LIMIT 1`.pipe(decodeRow(Delivery)),
+        ORDER BY ${quiet ? 1 : 0} AND i.occurrence_id IS NOT NULL, d.inbox_id, d.position
+        LIMIT 1`.pipe(decodeRow(Delivery)),
     ),
     delivering: operation((entry: Delivery) =>
       sql`UPDATE gateway_deliveries SET state = 'sending'
@@ -454,20 +458,35 @@ const Delivered = Schema.Struct({
   state: DeliveryState,
   messageId: Schema.NullOr(Schema.String),
   attempts: Schema.Natural,
+  retryAt: Schema.Number,
 });
 
 export const TaskDeliveriesLive = Layer.effect(
   TaskDeliveries,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    const window = yield* quietHours;
     yield* migrate(gatewaySchema);
 
     return {
       forOccurrence: (occurrenceId: string) =>
-        sql`SELECT i.run_id, d.position, d.state, d.message_id, d.attempts
+        sql`SELECT i.run_id, d.position, d.state, d.message_id, d.attempts, d.retry_at
           FROM gateway_deliveries d JOIN gateway_inbox i ON i.id = d.inbox_id
           WHERE i.occurrence_id = ${occurrenceId} ORDER BY i.id, d.position`.pipe(
           decodeRows(Delivered),
+          Effect.flatMap((rows) =>
+            Clock.currentTimeMillis.pipe(
+              Effect.map((now) =>
+                rows.map(({ retryAt, ...row }) => ({
+                  ...row,
+                  heldUntil:
+                    window === null || row.state !== "pending"
+                      ? null
+                      : quietHoursEnd(window, Math.max(now, retryAt)),
+                })),
+              ),
+            ),
+          ),
           reportAs(() => new TaskError({ message: "Could not read or update scheduled tasks." })),
         ),
     };

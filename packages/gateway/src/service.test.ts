@@ -15,7 +15,17 @@ import {
   executeTaskCommand,
   executeOccurrence,
 } from "@poppet/tasks";
-import { Console, Deferred, Effect, Fiber, Layer, Match, Queue, Stream } from "effect";
+import {
+  ConfigProvider,
+  Console,
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  Match,
+  Queue,
+  Stream,
+} from "effect";
 import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
@@ -164,12 +174,17 @@ const fixture = async (
         | Agent
         | Skills
       >,
+      configured: { readonly quietHours?: string } = {},
     ) =>
       Effect.runPromise(
         program.pipe(
           Effect.provide(layer),
           Effect.provide(TestClock.layer()),
           Effect.provideService(Console.Console, quietConsole),
+          Effect.provideService(
+            ConfigProvider.ConfigProvider,
+            ConfigProvider.fromUnknown(configured),
+          ),
         ),
       ),
     close: harness.close,
@@ -270,6 +285,13 @@ const recurring = (destination: DeliveryDestination) =>
       }),
     };
   });
+
+const quietHours = (start: string, end: string) => ({
+  quietHours: JSON.stringify({ start, end, timeZone: "UTC" }),
+});
+
+const overnight = quietHours("23:00", "07:00");
+const windowEnd = 7 * 60 * 60 * 1000;
 
 describe.concurrent("Gateway", () => {
   test("when an old approval button arrives through the channel, replies privately without inference", async () => {
@@ -1325,6 +1347,134 @@ describe.concurrent("Gateway", () => {
       await state.close();
     }
   });
+
+  test.each(["result", "failure notice"] as const)(
+    "when a scheduled %s is ready during quiet hours, holds it without attempts while replies send, then sends it when they end",
+    async (kind) => {
+      let failing = kind === "failure notice";
+
+      const state = await fixture({}, () =>
+        failing
+          ? Stream.fail(
+              new ProviderError({
+                provider: "test-provider",
+                reason: "invalid-request",
+                message: "Private provider detail",
+              }),
+            )
+          : response(),
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            const deliveries = yield* TaskDeliveries;
+            const item = yield* scheduled(yield* gateway.resolveDestination("saved-thread"));
+            failing = false;
+            expect(yield* gateway.deliverNext).toBe(false);
+            expect(yield* deliveries.forOccurrence(item.id)).toMatchObject([
+              { state: "pending", attempts: 0, heldUntil: windowEnd },
+            ]);
+
+            yield* gateway.accept(message("during-quiet-hours", "chat"));
+            yield* gateway.processNext;
+            expect(yield* gateway.deliverNext).toBe(true);
+            expect(yield* gateway.deliverNext).toBe(false);
+            expect(state.sent.map((part) => part.destination)).toEqual(["chat"]);
+
+            yield* TestClock.adjust(windowEnd - 1000);
+            expect(yield* gateway.deliverNext).toBe(false);
+            yield* TestClock.adjust("1 second");
+            expect(yield* gateway.deliverNext).toBe(true);
+            expect(yield* deliveries.forOccurrence(item.id)).toMatchObject([
+              { state: "sent", attempts: 0, heldUntil: null },
+            ]);
+          }),
+          overnight,
+        );
+        expect(state.sent.at(-1)).toMatchObject({
+          destination: "saved-thread",
+          text:
+            kind === "result"
+              ? "Answer"
+              : expect.stringMatching(/^Scheduled task "Summary" failed/),
+        });
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when quiet hours do not cover the ready time or are removed before a restart, sends scheduled results at once", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* scheduled(yield* gateway.resolveDestination("saved-thread"));
+          expect(yield* gateway.deliverNext).toBe(true);
+        }),
+        quietHours("22:00", "23:00"),
+      );
+
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* scheduled(yield* gateway.resolveDestination("saved-thread"));
+          expect(yield* gateway.deliverNext).toBe(false);
+        }),
+        overnight,
+      );
+
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.recover;
+          expect(yield* gateway.deliverNext).toBe(true);
+        }),
+      );
+      expect(state.sent).toHaveLength(2);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each(["unavailable", "uncertain"] as const)(
+    "when a held scheduled send is %s after quiet hours end, applies the usual retry rules",
+    async (reason) => {
+      let sends = 0;
+
+      const state = await fixture({
+        send: () =>
+          ++sends === 1
+            ? Effect.fail(new ChannelError({ reason, message: "Send failed" }))
+            : Effect.succeed("sent"),
+      });
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const gateway = yield* Gateway;
+            const item = yield* scheduled(yield* gateway.resolveDestination("saved-thread"));
+            expect(yield* gateway.deliverNext).toBe(false);
+            yield* TestClock.adjust(windowEnd);
+            expect(yield* gateway.deliverNext).toBe(true);
+            yield* TestClock.adjust("1 second");
+            expect(yield* gateway.deliverNext).toBe(reason === "unavailable");
+            expect(yield* (yield* TaskDeliveries).forOccurrence(item.id)).toMatchObject([
+              { state: reason === "unavailable" ? "sent" : "uncertain", attempts: 1 },
+            ]);
+          }),
+          overnight,
+        );
+        expect(sends).toBe(reason === "unavailable" ? 2 : 1);
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
   test("when threads are deleted or revoked, rechecks access before delivery and keeps destination-free tasks local", async () => {
     let allowed = true;

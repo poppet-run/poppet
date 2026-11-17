@@ -256,12 +256,16 @@ conversation or redirects a result when its destination becomes inaccessible.
 Completed results and failure notices enter the gateway delivery queue, using the
 task's saved destination. `tasks show`
 includes the destination and a `delivery` array of run IDs, chunk states, message
-IDs, and attempt counts. Each delivered run has its own receipt. An empty array
+IDs, attempt counts, and `heldUntil`. Each delivered run has its own receipt. An empty array
 means no reply has been queued. Temporary delivery failures
 retry with bounded backoff. Failed and uncertain sends remain inspectable;
 uncertain sends are not resent automatically. Inspect the saved output before
 manually reposting it. Delivery failures never change a completed occurrence or
 repeat inference, and `tasks retry` rejects completed occurrences.
+
+With [quiet hours](configuration.md#quiet-hours) set, a post that is ready inside
+the window stays pending with `heldUntil` set to the window's end, then sends.
+Holding is not a failure and uses no attempts.
 
 A task can stay quiet when it has nothing to report. Make the prompt conditional,
 for example "Tell me only if the page changed." When the condition is not met, the
@@ -288,7 +292,7 @@ Each failure streak posts once. If the task's previous finished occurrence also
 failed, the new failure is recorded without a post; a failure after a success
 posts again. Failures that finished more than 24 hours ago post nothing, so
 upgrading does not announce old failures. Notices use the same destination checks,
-retries, and uncertain-send handling as results. In the `delivery` array a notice
+retries, quiet hours, and uncertain-send handling as results. In the `delivery` array a notice
 appears with the run ID `notice:<occurrence-id>:<finished-at>`.
 
 Results and notices are standalone posts. They do not change the destination's conversation

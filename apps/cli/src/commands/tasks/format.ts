@@ -45,7 +45,12 @@ const TaskDetails = Schema.Struct({
       scheduledAt: Schema.Number,
       finishedAt: Time,
       reason: Schema.NullOr(Schema.String),
-      delivery: Schema.Array(Schema.Struct({ state: Schema.String })),
+      delivery: Schema.Array(
+        Schema.Struct({
+          state: Schema.String,
+          heldUntil: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+        }),
+      ),
       noAction: Schema.optionalKey(Schema.Boolean),
       output: Schema.NullOr(Schema.Array(Output)),
       failureReason: Schema.NullOr(Schema.String),
@@ -90,11 +95,16 @@ const destination = (task: TaskRow) =>
     ? "local"
     : `${task.destination.adapter}:${task.destination.conversationId}`;
 
-const deliveries = (rows: ReadonlyArray<{ readonly state: string }>) => {
+const deliveries = (
+  rows: ReadonlyArray<{ readonly state: string; readonly heldUntil?: number | null }>,
+) => {
   if (rows.length === 0) return "-";
   const counts = new Map<string, number>();
 
-  for (const row of rows) counts.set(row.state, (counts.get(row.state) ?? 0) + 1);
+  for (const row of rows) {
+    const label = row.heldUntil == null ? row.state : `held until ${time(row.heldUntil)}`;
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
 
   return [...counts].map(([name, count]) => `${count} ${name}`).join(", ");
 };
