@@ -95,9 +95,14 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
         skill: job.skill,
       });
 
+      const note = yield* repo.note(item.jobId);
+
       yield* repo.link(item.id, session.id, null);
       yield* Stream.runForEach(
-        agent.send(session.id, job.prompt, { origin: "scheduled" }),
+        agent.send(session.id, job.prompt, {
+          origin: "scheduled",
+          taskNote: { text: note?.text ?? null },
+        }),
         (event) =>
           event.type === "started" ? repo.link(item.id, session.id, event.run.id) : Effect.void,
       );
@@ -162,7 +167,7 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
           if (status !== "cancelled")
             yield* workerLog(
               now,
-              `${occurrenceLabel(job.name, item.id)} ${status}${quiet ? " no-action" : ""}${status === "failed" ? ` reason=${outcome.reason}` : ""}`,
+              `${occurrenceLabel(job.name, item.id)} ${status}${quiet ? " no-action" : ""}${outcome.noteUpdated ? " note-updated" : ""}${status === "failed" ? ` reason=${outcome.reason}` : ""}`,
               outcome.occurrence.status === "failed",
             );
 
@@ -248,7 +253,7 @@ export const makeTaskWorker = Effect.gen(function* () {
 
       const result = yield* executeTaskCommand(repo, store, command, now);
 
-      if (isTaskControl(command) || command.action === "delete")
+      if (isTaskControl(command) || command.action === "delete" || command.action === "clear-note")
         yield* workerLog(now, `Task ${command.id} action=${command.action}`);
 
       if (command.action === "pause" || command.action === "resume") {

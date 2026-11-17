@@ -79,10 +79,15 @@ may fall on, in UTC milliseconds. Existing tasks have none and behave as before.
 It stays on the job and out of the occurrence definition, so changing it does not
 raise the revision.
 
+Task migration 4 adds `job_notes`, one row per [task note](tasks.md#task-notes)
+change: the job, the text (null when cleared), its `origin` (`occurrence` or
+`cli`), the occurrence and run that saved it, and the time. A job's latest row is
+its current note. Databases from before the migration start with no notes.
+
 Definition edits, occurrence replacement, and timing changes commit together.
-Task changes keep no separate history: occurrences and skipped intervals record
-what ran and what did not. Clearing tasks cascades to their occurrences, preserving
-existing chat and queued-delivery behavior.
+Apart from notes, task changes keep no separate history: occurrences and skipped
+intervals record what ran and what did not. Clearing tasks cascades to their
+occurrences and notes, preserving existing chat and queued-delivery behavior.
 
 ## Scheduled delivery destinations
 

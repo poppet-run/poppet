@@ -124,6 +124,45 @@ describe.concurrent("TaskRepository", () => {
     },
   );
 
+  test("when a database predates task notes, runs its saved task with no note and removes a later note with the task", async () => {
+    const state = await fixture(0, {
+      ...taskSchema,
+      version: 3,
+      loader: taskSchema.loader.pipe(Effect.map((entries) => entries.filter(([id]) => id <= 3))),
+    });
+
+    try {
+      await state.run((repo, _store, sql) =>
+        Effect.gen(function* () {
+          const saved = yield* repo.add(recurring, start);
+          yield* migrate(taskSchema).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+          yield* repo.reconcile(start + 60_000);
+          const claimed = (yield* repo.claim(start + 60_000))!;
+          const finished = yield* repo.finish(claimed.id, "completed", null, start + 61_000);
+
+          expect(finished).toMatchObject({
+            occurrence: { status: "completed" },
+            noteUpdated: false,
+          });
+          expect(yield* repo.task(saved.id)).toMatchObject({ ...recurring, revision: 0 });
+          expect(yield* repo.note(saved.id)).toBeNull();
+
+          yield* sql`INSERT INTO job_notes ${sql.insert({
+            jobId: saved.id,
+            text: "Seen",
+            origin: "occurrence",
+            occurrenceId: claimed.id,
+            createdAt: start + 61_000,
+          })}`;
+          yield* repo.delete(saved.id);
+          expect(yield* sql`SELECT id FROM job_notes`).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when controlling occurrences by task, selects current work and never retries an older failure implicitly", async () => {
     const state = await fixture();
 

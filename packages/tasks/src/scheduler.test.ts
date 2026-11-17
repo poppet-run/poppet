@@ -738,6 +738,7 @@ describe.concurrent("makeTaskWorker", () => {
         "search_sessions",
         "read_session",
         "fetch_page",
+        "save_note",
       ]);
     } finally {
       await state.close();
@@ -1013,7 +1014,12 @@ describe.concurrent("makeTaskWorker", () => {
             secondResult.sessionId,
           );
           expect(state.requests.map((request) => request.tools.map((tool) => tool.name))).toEqual(
-            Array.from({ length: 4 }, () => ["search_sessions", "read_session", "fetch_page"]),
+            Array.from({ length: 4 }, () => [
+              "search_sessions",
+              "read_session",
+              "fetch_page",
+              "save_note",
+            ]),
           );
           expect(state.requests[0]?.instructions).toContain("Concise");
           expect(state.requests[2]?.instructions).toContain("Detailed");
@@ -1368,6 +1374,327 @@ describe.concurrent("makeTaskWorker", () => {
             scheduledAt: start + 60_000,
           });
           expect((yield* repo.task(job.id)).nextAt).toBeNull();
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+});
+
+const noteCall = (args: string, callId = "note"): Output => ({
+  type: "tool-call",
+  callId,
+  namespace: "poppet_tasks",
+  name: "save_note",
+  arguments: args,
+});
+
+const taskPrompt = (request: ModelRequest) =>
+  request.messages.find((message) => message.role === "user")?.text;
+
+const offersNote = (request: ModelRequest) =>
+  request.tools.some((tool) => tool.namespace === "poppet_tasks" && tool.name === "save_note");
+
+const instructions = (prompt: string, requests: ReadonlyArray<ModelRequest>) =>
+  requests.flatMap((request) => (taskPrompt(request) === prompt ? [request.instructions] : []));
+
+const everyMinute = { type: "cron", expression: "* * * * *", timezone: "UTC" } as const;
+const recently = Math.floor(Date.now() / 60_000) * 60_000 - 10 * 60_000;
+const minute = (count: number) => recently + count * 60_000;
+
+const runDue = (at: number) =>
+  Effect.gen(function* () {
+    const repo = yield* TaskRepository;
+    yield* repo.reconcile(at);
+    const finished = [];
+
+    for (let claimed = yield* repo.claim(at); claimed !== null; claimed = yield* repo.claim(at)) {
+      yield* executeOccurrence(repo, claimed);
+      finished.push(yield* repo.occurrence(claimed.id));
+    }
+
+    return finished;
+  });
+
+const page = (url: string) =>
+  response([
+    {
+      type: "tool-call",
+      callId: "page",
+      namespace: "poppet_web",
+      name: "fetch_page",
+      arguments: JSON.stringify({ url }),
+    },
+  ]);
+
+describe.concurrent("executeOccurrence", () => {
+  test("when an occurrence saves a note, gives it to the task's next occurrence and not to another task", async () => {
+    let saved = false;
+
+    const state = await fixture((request) => {
+      if (taskPrompt(request) === "Watch the page" && !saved) {
+        saved = true;
+
+        return response([noteCall('{"text":"version 1"}')]);
+      }
+
+      return response([{ type: "text", text: "NO_REPLY" }]);
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const store = yield* Store;
+
+          const add = (prompt: string) =>
+            repo.add({ ...state.task, prompt, schedule: everyMinute }, minute(0));
+
+          const watch = yield* add("Watch the page");
+          const other = yield* add("Other task");
+
+          const first = (yield* runDue(minute(1))).find((item) => item.jobId === watch.id);
+          const firstRequests = state.requests.splice(0);
+          yield* runDue(minute(2));
+
+          expect(firstRequests.every(offersNote)).toBe(true);
+          expect(instructions("Watch the page", firstRequests)).toEqual([
+            expect.stringContaining('{"note":null}'),
+            expect.stringContaining('{"note":null}'),
+          ]);
+          expect(instructions("Watch the page", state.requests)).toEqual([
+            expect.stringContaining('{"note":"version 1"}'),
+          ]);
+          expect(instructions("Other task", state.requests)).toEqual([
+            expect.stringContaining('{"note":null}'),
+          ]);
+          expect(state.lines).toContainEqual(
+            expect.stringMatching(
+              new RegExp(`occurrence=${first!.id} completed no-action note-updated$`),
+            ),
+          );
+
+          const show = (id: string) => executeTaskCommand(repo, store, { action: "show", id }, 0);
+          expect(yield* show(watch.id)).toMatchObject({
+            note: {
+              text: "version 1",
+              origin: "occurrence",
+              occurrenceId: first!.id,
+              runId: first!.runId,
+            },
+            noteHistory: [{ text: "version 1" }],
+          });
+          expect(yield* show(other.id)).toMatchObject({ note: null, noteHistory: [] });
+
+          expect(
+            yield* executeTaskCommand(repo, store, { action: "clear-note", id: watch.id }, 1),
+          ).toEqual({ taskId: watch.id, name: watch.name, cleared: true });
+          expect(
+            yield* executeTaskCommand(repo, store, { action: "clear-note", id: watch.id }, 2),
+          ).toMatchObject({ cleared: false });
+          expect(yield* show(watch.id)).toMatchObject({
+            note: { text: null, origin: "cli", occurrenceId: null, createdAt: 1 },
+            noteHistory: [{ text: null }, { text: "version 1" }],
+          });
+          state.requests.splice(0);
+          yield* runDue(minute(3));
+          expect(instructions("Watch the page", state.requests)).toEqual([
+            expect.stringContaining('{"note":null}'),
+          ]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test.each(["failed", "interrupted"] as const)(
+    "when an occurrence ends %s after saving a note, keeps the previous note",
+    async (outcome) => {
+      let turns = 0;
+
+      const state = await fixture((request) => {
+        turns++;
+
+        if (turns === 1) return response([noteCall('{"text":"kept"}')]);
+
+        if (turns === 3) return response([noteCall('{"text":"discarded"}')]);
+
+        if (turns === 4)
+          return Stream.fail(
+            new ProviderError({
+              provider: "test-provider",
+              reason: outcome === "failed" ? "invalid-request" : "interrupted",
+              message: "The model stopped.",
+            }),
+          );
+
+        expect(offersNote(request)).toBe(true);
+
+        return final();
+      });
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const repo = yield* TaskRepository;
+            const job = yield* repo.add({ ...state.task, schedule: everyMinute }, minute(0));
+
+            expect((yield* runDue(minute(1))).map((item) => item.status)).toEqual(["completed"]);
+            expect((yield* runDue(minute(2))).map((item) => item.status)).toEqual([outcome]);
+            expect(yield* repo.note(job.id)).toMatchObject({ text: "kept" });
+            yield* runDue(minute(3));
+            expect(state.requests.at(-1)?.instructions).toContain('{"note":"kept"}');
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when a saved note is too large, reports the limit to the model and keeps the previous note", async () => {
+    let turns = 0;
+
+    const state = await fixture(() => {
+      turns++;
+
+      if (turns === 1) return response([noteCall('{"text":"kept"}')]);
+
+      if (turns === 3) return response([noteCall(JSON.stringify({ text: "é".repeat(2049) }))]);
+
+      return final();
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const store = yield* Store;
+          const job = yield* repo.add({ ...state.task, schedule: everyMinute }, minute(0));
+          yield* runDue(minute(1));
+          const [second] = yield* runDue(minute(2));
+
+          expect(second?.status).toBe("completed");
+          expect(yield* store.toolCalls(second!.runId!)).toMatchObject([
+            { status: "failed", failureReason: "agent:tool-limit" },
+          ]);
+          expect(state.requests.at(-1)?.messages.at(-1)).toMatchObject({
+            role: "tool",
+            output: expect.stringContaining(
+              "The note is 4098 bytes; a task note holds at most 4096 UTF-8 bytes. The saved note is unchanged.",
+            ),
+          });
+          expect(yield* repo.note(job.id)).toMatchObject({ text: "kept" });
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a note is saved after a page was read, keeps the note tool and its URLs do not authorize later fetches", async () => {
+    let turns = 0;
+    const fetched: string[] = [];
+
+    const state = await fixture(
+      (request) => {
+        turns++;
+
+        if (turns === 1) return page("https://example.com/status");
+
+        if (turns === 2) {
+          expect(offersNote(request)).toBe(true);
+
+          return response([noteCall('{"text":"Moved to https://example.com/private"}')]);
+        }
+
+        if (turns === 4) return page("https://example.com/private");
+
+        return final();
+      },
+      {
+        fetch: (url) =>
+          Effect.sync(() => {
+            fetched.push(url);
+
+            return JSON.stringify({ url, title: null, text: "Moved", truncated: false });
+          }),
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const store = yield* Store;
+
+          const job = yield* repo.add(
+            { ...state.task, prompt: "Check https://example.com/status", schedule: everyMinute },
+            minute(0),
+          );
+
+          yield* runDue(minute(1));
+          expect(yield* repo.note(job.id)).toMatchObject({
+            text: "Moved to https://example.com/private",
+          });
+
+          const [second] = yield* runDue(minute(2));
+          expect(yield* store.toolCalls(second!.runId!)).toMatchObject([
+            { status: "failed", failureReason: "agent:tool-permission" },
+          ]);
+          expect(fetched).toEqual(["https://example.com/status"]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when chat calls the note tool or a task names another task, saves no note", async () => {
+    const state = await fixture((request) => {
+      const chat = taskPrompt(request) === "Save a note";
+
+      expect(offersNote(request)).toBe(!chat);
+
+      if (chat) expect(request.instructions).not.toContain("This task keeps one note");
+
+      return response([
+        noteCall(
+          chat
+            ? '{"text":"from chat"}'
+            : JSON.stringify({ text: "for another task", taskId: "other" }),
+        ),
+      ]);
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const store = yield* Store;
+          const agent = yield* Agent;
+          const session = yield* store.createSession("test-provider", "test-model");
+
+          yield* Stream.runDrain(
+            agent.send(session.id, "Save a note", { taskNote: { text: null } }),
+          );
+          const [chatRun] = yield* store.runs(session.id);
+          expect(yield* store.toolCalls(chatRun!.id)).toMatchObject([
+            { status: "failed", failureReason: "agent:tool-permission" },
+          ]);
+
+          const writer = yield* repo.add({ ...state.task, schedule: everyMinute }, minute(0));
+          const other = yield* repo.add(state.task, minute(0));
+
+          const occurrence = (yield* runDue(minute(1))).find((item) => item.jobId === writer.id);
+
+          expect(yield* store.toolCalls(occurrence!.runId!)).toMatchObject([
+            { status: "failed", failureReason: "agent:tool-arguments" },
+          ]);
+          expect(yield* repo.note(writer.id)).toBeNull();
+          expect(yield* repo.note(other.id)).toBeNull();
         }),
       );
     } finally {

@@ -454,7 +454,8 @@ the model within the existing budgets. An invalid batch executes none of its
 calls. Uncertain effects end the run without replay. Once page, search, or MCP
 content enters a run, or the owner's message carries attachments, task management,
 memory changes, and MCP tools are withdrawn until a new owner message. A server configured with
-`availableAfterUntrusted` keeps its allowed MCP tools.
+`availableAfterUntrusted` keeps its allowed MCP tools. A scheduled task's note tool
+also stays available; see [task notes](#task-notes).
 See [chat limits](chat.md#context-and-run-limits).
 
 ### Reviewed host commands
@@ -643,6 +644,27 @@ Automated checks cover tool-call recovery, atomic rollback, local/worker parity,
 destination revocation, scheduled rejection of every action, result limits, and
 an interactive pause while a scheduled occurrence waits for the agent. Live
 chat creation, pause/resume, and delivered occurrence checks remain separate.
+
+## Task notes
+
+`agent/task-note.ts` defines `poppet_tasks.save_note`, its 4096-byte limit, and the
+instructions that carry the current note. `SendOptions.taskNote` supplies the note
+text; the conversation offers the tool and adds the note only when that option is
+set on a scheduled run. `executeOccurrence` reads the task's latest `job_notes`
+row and passes it. The note goes into the instructions as JSON, not into the user
+message, so it never grants `fetch_page` URLs or reaches the Bash reviewer.
+
+The tool writes nothing itself. Its arguments and result are the run's tool
+journal entry. `TaskRepository.finish` commits the note in the same transaction
+that moves a running occurrence to completed: it reads the run's last completed
+built-in `save_note` call and appends a `job_notes` row unless the text is
+unchanged. Failed, interrupted, and cancelled occurrences never reach that path.
+Startup recovery completes an occurrence whose run completed through the same
+function, so its note commits too. The tool is not withdrawn after untrusted
+content, since change detection saves values derived from fetched pages.
+
+`tasks clear-note` appends a `cli` row under the same running-occurrence check as
+other task controls. See [task notes](tasks.md#task-notes).
 
 ## Conversation search
 

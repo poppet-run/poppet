@@ -63,6 +63,7 @@ export interface SendOptions {
   readonly home?: RunContext["home"];
   readonly destination?: RunContext["destination"];
   readonly attachments?: ReadonlyArray<AttachmentInput>;
+  readonly taskNote?: RunContext["taskNote"];
 }
 
 export class Agent extends Context.Service<
@@ -289,6 +290,7 @@ export const AgentLive = Layer.effect(
                   origin: options.origin ?? "interactive",
                   selectedSkill: session.skill?.name ?? null,
                   mentionedSkills,
+                  taskNote: options.taskNote ?? null,
                   approveCommand: options.approveCommand ?? null,
                   here: options.here ?? null,
                   home: options.home ?? null,

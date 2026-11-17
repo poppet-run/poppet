@@ -39,6 +39,8 @@ export { WebSearch, type WebSearchResult } from "@poppet/web-search";
 
 export { toolArguments, BoundedText } from "#src/tool-schema";
 
+export { TaskNoteArguments, taskNoteBytes, taskNoteDefinition } from "#src/task-note";
+
 export {
   Bash,
   type BashArguments,

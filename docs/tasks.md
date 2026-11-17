@@ -53,6 +53,7 @@ Leave the worker running. In another terminal using the same `POPPET_DATA_DIR`:
 ```sh
 poppet tasks
 poppet tasks show <task-id>
+poppet tasks clear-note <task-id>
 poppet tasks pause <task-id>
 poppet tasks resume <task-id>
 ```
@@ -268,7 +269,8 @@ run answers with exactly `NO_REPLY` and nothing is posted. The occurrence still
 completes, the worker logs `completed no-action`, and `tasks show` marks it with
 `noAction: true` and keeps the saved output. An answer that mentions `NO_REPLY`
 among other text is delivered as usual. This applies to every scheduled run,
-including tasks without a messaging destination.
+including tasks without a messaging destination. To report only when something
+changed since the last run, keep the last value in a [task note](#task-notes).
 
 ### Failure notices
 
@@ -301,6 +303,73 @@ Omit `--to` to keep results local. This replaces the former `--channel` and
 The selected adapter validates its conversation ID and access before the task is saved.
 Existing Discord task destinations keep their stored format. Tasks for removed adapters
 retain their history and results but cannot deliver until that adapter is available again.
+
+## Task notes
+
+Each task can keep one note: plain UTF-8 text of at most 4096 bytes that its
+scheduled runs carry from one occurrence to the next. A new task has no note.
+A note lets a task report only changes. The run compares what it finds with the
+note, saves the new value, and answers `NO_REPLY` when nothing changed:
+
+```fish
+poppet tasks add release-watch --cron "0 9 * * *" --tz Europe/London --to discord "Read https://example.com/releases and find the newest release version. The task note holds the version you last reported. If there is no note or the version differs, save the new version as the note and tell me the new version. Otherwise reply NO_REPLY."
+```
+
+Each occurrence receives the task's current note in its instructions, marked as
+data an earlier occurrence saved. Its runs can call `poppet_tasks.save_note`,
+which replaces the note, or clears it when given `null`. The tool is offered only
+to that task's scheduled runs. Interactive chat and messaging do not get it, and
+it takes no task ID, so a run can write only its own task's note. Calls from
+anywhere else fail the normal permission check.
+
+A saved note takes effect only when the occurrence completes. The tool records
+the value in the run's tool journal, and completion commits the last value saved
+in the run. The run itself keeps the note it started with.
+
+| Occurrence outcome              | Note                                                                                                                                                           |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Completed, including `NO_REPLY` | The last value saved is committed.                                                                                                                             |
+| Failed                          | Unchanged.                                                                                                                                                     |
+| Interrupted                     | Unchanged. If the worker process ended after the run completed but before recording the occurrence, startup recovery marks it completed and commits its value. |
+| Cancelled                       | Unchanged, even if the run finishes after the cancellation.                                                                                                    |
+| Retried                         | The retry starts with the task's current note. Values saved by the earlier attempt are discarded; the retry's own value commits.                               |
+| Expired or skipped              | Never ran; unchanged.                                                                                                                                          |
+
+Saving the text the note already holds records nothing. A note over 4096 bytes is
+refused with a tool result that gives its size and the limit, so the run can save
+a shorter one; the previous note stays. The worker adds `note-updated` to the
+completed log line when an occurrence changes its note.
+
+The note grants nothing, and it is not [memory](memory.md): it belongs to one
+task, only that task's scheduled runs see it, and it never changes saved facts.
+URLs in a note do not count as supplied by the task prompt, so `fetch_page` will
+not read them, and Bash commands are still reviewed against the task prompt alone.
+Unlike task, memory, and MCP tools, `save_note` stays available after a page,
+search result, or MCP result enters the run, because change detection has to save
+values derived from that content. Page text can therefore reach the next
+occurrence through the note, but only as data, and that occurrence keeps its own
+scheduled tool restrictions.
+
+Editing a task's name, prompt, schedule, or end time keeps its note; occurrence
+snapshots do not include it. Removing or clearing tasks deletes their notes.
+
+`tasks show` prints the current note with the occurrence that saved it and when,
+or `cli` for an owner clear. JSON output has `note`, the latest change with its
+`text`, `origin` (`occurrence` or `cli`), `occurrenceId`, `runId`, and
+`createdAt`, or `null` when the task never had a note. A cleared note has a null
+`text`. `noteHistory` lists every change, newest first.
+
+Clear a note from the CLI:
+
+```sh
+poppet tasks clear-note <task-id>
+```
+
+This works with the worker running or stopped. It rejects a task with a running
+occurrence; wait for it to finish or cancel it first. Clearing a task without a
+note changes nothing. The note is task state rather than part of the definition,
+so clearing is its own command instead of a `tasks edit` flag. Owners cannot
+write note text, and chat cannot clear notes.
 
 ## Select a skill
 
@@ -414,8 +483,8 @@ To permanently remove one task by its ID:
 poppet tasks remove <task-id>
 ```
 
-This works with the worker running or stopped. It removes the selected task and
-its occurrence/skip history, including pending work, and retains conversations
+This works with the worker running or stopped. It removes the selected task, its
+note, and its occurrence/skip history, including pending work, and retains conversations
 and runs. Other tasks are unaffected. If the task has a running occurrence,
 wait for it to finish or use `poppet tasks cancel <task-id>` first.
 An unknown task ID returns an error.

@@ -67,7 +67,10 @@ The tool does not edit `profile.md`, `soul.md`, or credential files.
 
 Scheduled runs retain their starting fact snapshot but have no memory-writing
 tool, even when a task or selected skill asks for changes. The shared
-`origin: "scheduled"` policy enforces this restriction.
+`origin: "scheduled"` policy enforces this restriction. A task can instead keep a
+[task note](tasks.md#task-notes) between its occurrences. The note is not memory:
+it belongs to one task, only that task's scheduled runs see it, and saving it
+never changes facts.
 
 Automated checks cover local/worker chat, mutation provenance, restart, argument
 validation, byte limits, protected scheduled runs, cancellation, and storage/journal
