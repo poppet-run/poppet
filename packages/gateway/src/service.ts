@@ -1,7 +1,7 @@
 import { Agent, ChatSettings, Skills, type ChatFailure } from "@poppet/agent";
 import { AppConfig, quietHours } from "@poppet/config";
 import { Store } from "@poppet/store";
-import { Clock, Console, Context, Effect, FiberSet, Layer, Queue, Stream } from "effect";
+import { Clock, Context, Effect, FiberSet, Layer, Queue, Stream } from "effect";
 
 import { accept } from "#src/accept";
 import { commandApprovals } from "#src/approvals";
@@ -71,7 +71,13 @@ const gateway = Effect.gen(function* () {
         Effect.catchTag("ChannelError", (error) =>
           Effect.sync(() => {
             rejected++;
-          }).pipe(Effect.andThen(Console.error(error.message))),
+          }).pipe(
+            Effect.andThen(
+              Effect.logWarning("messaging message rejected").pipe(
+                Effect.annotateLogs({ error: error.message }),
+              ),
+            ),
+          ),
         ),
       ),
     );

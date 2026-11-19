@@ -142,7 +142,7 @@ logs the ending once, when the last slot is used up, which can be before the end
 time itself:
 
 ```text
-[2099-10-29T09:00:00.000Z] Task "release-watch" task=<task-id> ended until=2099-10-29T09:00:00.000Z; no later occurrences
+time=2099-10-29T09:00:00.000Z level=info msg="task ended" task=<task-id> name=release-watch end_at=2099-10-29T09:00:00.000Z
 ```
 
 The task and its history are kept. To revive it, set a later end time or clear it

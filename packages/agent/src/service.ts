@@ -1,5 +1,6 @@
 import { styleText } from "node:util";
 
+import { formatLogLine } from "@poppet/io";
 import {
   ProviderError,
   RequestTiming,
@@ -99,6 +100,20 @@ const failureOutcome = (exit: Exit.Exit<unknown, ChatFailure>): RunOutcome => {
   };
 };
 
+const timingLine = (
+  session: string,
+  run: string | undefined,
+  timing: Parameters<RequestTiming["Service"]["record"]>[0],
+) =>
+  formatLogLine(new Date(), "info", "timing", {
+    session,
+    run,
+    stage: timing.stage,
+    duration_ms: timing.durationMs,
+    outcome: timing.outcome,
+    cached: timing.cached,
+  });
+
 export const logChatDiagnostic = (text: string) =>
   Console.error(process.env.NO_COLOR ? text : styleText("gray", text, { stream: process.stderr }));
 
@@ -152,7 +167,7 @@ export const AgentLive = Layer.effect(
           record: (entry) =>
             policy.logTimings
               ? (options.timingLog ?? Console.error)(
-                  `[${new Date().toISOString()}] Timing session=${sessionId} run=${active?.id ?? "pending"} ${JSON.stringify(entry)}`,
+                  timingLine(sessionId, active?.id ?? "pending", entry),
                 )
               : Effect.void,
         };
@@ -234,7 +249,12 @@ export const AgentLive = Layer.effect(
                   if (length === 0) break;
                   const chunk = reasoning.slice(0, length);
                   reasoning = reasoning.slice(length);
-                  const line = `[${new Date().toISOString()}] Thinking session=${sessionId} run=${run.id} ${JSON.stringify(chunk)}`;
+
+                  const line = formatLogLine(new Date(), "info", "thinking", {
+                    session: sessionId,
+                    run: run.id,
+                    text: chunk,
+                  });
 
                   yield* options.reasoningLog?.(line) ?? logChatDiagnostic(line);
                 }
@@ -411,17 +431,13 @@ export const AgentLive = Layer.effect(
         naming.withPermit,
         Effect.provideService(RequestTiming, {
           record: (timing) =>
-            policy.logTimings
-              ? timingLog(
-                  `[${new Date().toISOString()}] Timing session=${sessionId} ${JSON.stringify(timing)}`,
-                )
-              : Effect.void,
+            policy.logTimings ? timingLog(timingLine(sessionId, undefined, timing)) : Effect.void,
         }),
         Effect.catchCause((cause) =>
           Cause.hasInterrupts(cause)
             ? Effect.void
-            : Console.error(
-                "Optional session naming failed; the saved answer and fallback title are unchanged.",
+            : Effect.logWarning("optional session naming failed").pipe(
+                Effect.annotateLogs({ session: sessionId }),
               ),
         ),
       );

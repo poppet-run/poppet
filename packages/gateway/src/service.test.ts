@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { Agent, Bash, type ChatPolicy, Pages, Skills, SkillsLive } from "@poppet/agent";
 import { agentHarness, gatedStream, optionalService, testModel } from "@poppet/agent/test";
+import { LogfmtLoggerLive } from "@poppet/io";
 import { ProviderError, type ModelOperations, type ModelRequest } from "@poppet/provider";
 import { DeliveryDestination, Store } from "@poppet/store";
 import {
@@ -178,7 +179,7 @@ const fixture = async (
     ) =>
       Effect.runPromise(
         program.pipe(
-          Effect.provide(layer),
+          Effect.provide([layer, LogfmtLoggerLive]),
           Effect.provide(TestClock.layer()),
           Effect.provideService(Console.Console, quietConsole),
           Effect.provideService(
@@ -597,8 +598,10 @@ describe.concurrent("Gateway", () => {
             expect(item.reason).toContain("Command needs approval");
             expect(item.reason).toContain("restart-service");
             expect(executed).toBe(0);
-            expect(errors[0]).toContain(
-              `occurrence=${item.id} failed reason=agent:command-approval-required`,
+            expect(errors).toContainEqual(
+              expect.stringContaining(
+                `occurrence=${item.id} status=failed reason=agent:command-approval-required`,
+              ),
             );
 
             if (queuedNotice)

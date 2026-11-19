@@ -13,6 +13,28 @@ import { makeCLI } from "#src/cli";
 import type { manageWorker } from "#src/commands/worker/service";
 import { providers } from "#src/providers";
 
+const readWorkerLog = (stream: ReadableStream<Uint8Array>) => {
+  const { promise: started, resolve } = Promise.withResolvers<void>();
+
+  const text = (async () => {
+    const decoder = new TextDecoder();
+    let output = "";
+
+    for await (const chunk of stream) {
+      output += decoder.decode(chunk, { stream: true });
+
+      if (output.includes('msg="worker started"')) resolve();
+    }
+
+    return output;
+  })();
+
+  return {
+    started: Promise.race([started, text.then((output) => Promise.reject(new Error(output)))]),
+    text,
+  };
+};
+
 const configure = async (directory: string, settings: Schema.JsonObject) => {
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, "config.json"), JSON.stringify(settings));
@@ -656,11 +678,10 @@ describe("makeCLI", () => {
       stderr: "pipe",
     });
 
-    const errors = new Response(worker.stderr).text();
+    const log = readWorkerLog(worker.stderr);
 
     try {
-      const ready = await worker.stdout.getReader().read();
-      expect(new TextDecoder().decode(ready.value)).toContain("Worker running.");
+      await log.started;
       expect(
         (
           await invoke(
@@ -684,7 +705,7 @@ describe("makeCLI", () => {
     } finally {
       worker.kill("SIGKILL");
       await worker.exited;
-      expect(await errors).toBe("");
+      expect(await log.text).not.toContain("level=error");
       await rm(directory, { recursive: true, force: true });
     }
   });
@@ -790,11 +811,10 @@ describe("makeCLI", () => {
       stderr: "pipe",
     });
 
-    const errors = new Response(worker.stderr).text();
+    const log = readWorkerLog(worker.stderr);
 
     try {
-      const ready = await worker.stdout.getReader().read();
-      expect(new TextDecoder().decode(ready.value)).toContain("Worker running.");
+      await log.started;
       const second = await invoke(["worker", "run"], environment);
       expect(second.exitCode).toBe(1);
       expect(second.stderr).toContain("Another Poppet process has the store open");
@@ -873,7 +893,7 @@ describe("makeCLI", () => {
     } finally {
       worker.kill("SIGTERM");
       await worker.exited;
-      expect(await errors).toBe("");
+      expect(await log.text).not.toContain("level=error");
       expect(await readdir(join(directory, "store"))).not.toContain("owner.lock");
       expect(await readdir(join(directory, "store"))).not.toContain("tasks.sock");
       await rm(directory, { recursive: true, force: true });

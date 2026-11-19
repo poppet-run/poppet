@@ -207,7 +207,7 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
       try {
         await Effect.runPromise(
           Effect.gen(function* () {
-            while (!lines.some((line) => line.includes("Worker running.")))
+            while (!errors.some((line) => line.includes('msg="worker started"')))
               yield* Effect.sleep("5 millis");
           }).pipe(Effect.timeout("2 seconds")),
         );

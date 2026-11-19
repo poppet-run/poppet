@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ApiKeyStore } from "@poppet/credentials";
+import { LogfmtLoggerLive } from "@poppet/io";
 import { Clock, ConfigProvider, Console, Effect, Fiber, Layer, Redacted, Schema } from "effect";
 import { TestClock } from "effect/testing";
 
@@ -68,7 +69,7 @@ const fixture = async (
     run: <A, E>(program: Effect.Effect<A, E, MCP>) =>
       Effect.runPromise(
         program.pipe(
-          Effect.provide(layer),
+          Effect.provide([layer, LogfmtLoggerLive]),
           Effect.provideService(Console.Console, {
             ...console,
             error: (...values) => errors.push(values.join(" ")),
@@ -256,7 +257,11 @@ describe("MCP", () => {
           const status = (yield* mcp.status)[0]!;
           expect(status).toMatchObject({ state: "connected", availableTools: ["write"] });
           expect(status.diagnostic).toContain('Unsupported input schema for tool "read"');
-          expect([status.diagnostic]).toEqual(state.errors);
+          expect(state.errors).toEqual([
+            expect.stringContaining(
+              `level=warn msg="mcp server diagnostic" server=fixture detail=${JSON.stringify(status.diagnostic)}`,
+            ),
+          ]);
           expect((yield* mcp.tools("fixture")).find((tool) => tool.toolName === "read")).toEqual(
             expect.objectContaining({ allowed: true, definition: null }),
           );
@@ -277,13 +282,17 @@ describe("MCP", () => {
           Effect.gen(function* () {
             expect(yield* (yield* MCP).snapshot(false)).toEqual([]);
             const status = (yield* (yield* MCP).status)[0]!;
+            expect(state.errors).toEqual([
+              expect.stringContaining(
+                `level=warn msg="mcp server diagnostic" server=fixture detail=${JSON.stringify(status.diagnostic)}`,
+              ),
+            ]);
             expect(status).toMatchObject({
               state: "unavailable",
               pid: null,
               availableTools: [],
               diagnostic: expect.stringContaining("MCP fixture:"),
             });
-            expect([status.diagnostic]).toEqual(state.errors);
 
             const pid = Number(
               yield* Effect.promise(() => readFile(join(state.directory, "pid"), "utf8")),
@@ -480,7 +489,7 @@ describe("MCP", () => {
             yield* TestClock.adjust(1);
           }
         }).pipe(
-          Effect.provide(state.layer),
+          Effect.provide([state.layer, LogfmtLoggerLive]),
           Effect.provide(TestClock.layer()),
           Effect.provideService(Console.Console, {
             ...console,
@@ -539,7 +548,11 @@ describe("MCP", () => {
             expect(status).toMatchObject({ state: "unavailable", pid: null });
             expect(status.diagnostic).toContain("selected credential");
             expect(JSON.stringify(status)).not.toContain("selected-mcp-secret");
-            expect([status.diagnostic]).toEqual(state.errors);
+            expect(state.errors).toEqual([
+              expect.stringContaining(
+                `level=warn msg="mcp server diagnostic" server=fixture detail=${JSON.stringify(status.diagnostic)}`,
+              ),
+            ]);
           }),
         );
       } finally {

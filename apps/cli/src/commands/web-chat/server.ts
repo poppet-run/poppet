@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { AppConfig } from "@poppet/config";
 import { readProtectedFile } from "@poppet/io";
-import { Cause, Console, Context, Effect, Exit, Layer, Option, Schema } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Option, Schema } from "effect";
 
 import { WebChatLive, SubmissionBody, WebChatError, WebChat } from "#src/commands/web-chat/chat";
 
@@ -341,5 +341,5 @@ export const serveWebChat = Effect.gen(function* () {
     }),
     (server) => Effect.promise(() => server.stop(true)),
   );
-  yield* Console.log(`Web chat: ${settings.origin}`);
+  yield* Effect.logInfo("web chat started").pipe(Effect.annotateLogs({ url: settings.origin }));
 });

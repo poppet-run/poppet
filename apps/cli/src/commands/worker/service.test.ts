@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { Agent, SkillsLive } from "@poppet/agent";
 import { AppConfig, ConfigIdentity } from "@poppet/config";
 import { gatewaySchema } from "@poppet/gateway";
+import { LogfmtLoggerLive } from "@poppet/io";
 import { StoreLive, migrate } from "@poppet/store";
 import { TaskRepositoryLive, remoteTaskCommand } from "@poppet/tasks";
 import { WorkerRequests, workerSocketPath, requestWorker } from "@poppet/worker";
@@ -85,8 +86,8 @@ describe("runWorker", () => {
 
     const output: Console.Console = {
       ...console,
-      log: (...values) => {
-        if (values.join(" ").startsWith("Worker running."))
+      error: (...values) => {
+        if (values.join(" ").includes('msg="worker started"'))
           Effect.runSync(Deferred.succeed(ready, undefined));
       },
     };
@@ -140,7 +141,10 @@ describe("runWorker", () => {
             expect(yield* sql`SELECT * FROM job_occurrences`).toEqual(before);
             yield* Fiber.interrupt(fiber);
           }),
-        ).pipe(Effect.provide(services), Effect.provideService(Console.Console, output)),
+        ).pipe(
+          Effect.provide([services, LogfmtLoggerLive]),
+          Effect.provideService(Console.Console, output),
+        ),
       );
     } finally {
       await rm(directory, { recursive: true, force: true });

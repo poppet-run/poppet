@@ -13,3 +13,5 @@ export { readBounded, readBoundedText, runBounded, type BoundedRun } from "#src/
 export { publicHttpURL, urlHostname, publicAddress } from "#src/public-url";
 
 export { clip, fitPrefix, fitText, longestFit } from "#src/budget";
+
+export { formatLogLine, LogfmtLoggerLive, logfmtLogger, type LogValue } from "#src/log";

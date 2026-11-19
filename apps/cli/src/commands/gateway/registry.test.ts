@@ -59,10 +59,13 @@ describe("external gateway registrations", () => {
           const output: Console.Console = {
             ...console,
             log: (...values) => {
+              lines.push(values.join(" "));
+            },
+            error: (...values) => {
               const text = values.join(" ");
               lines.push(text);
 
-              if (text.includes("Worker running."))
+              if (text.includes('msg="worker started"'))
                 Effect.runSync(Deferred.succeed(ready, undefined));
             },
           };

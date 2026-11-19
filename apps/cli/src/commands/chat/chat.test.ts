@@ -330,14 +330,21 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     startWorker: async (consoleOutput = output) => {
       const args = ["worker", "run"];
 
-      const worker = clock.runFork(program(args, readChatLine, consoleOutput));
+      const started = Promise.withResolvers<void>();
+
+      const watched: Console.Console = {
+        ...consoleOutput,
+        error: (...values) => {
+          if (values.join(" ").includes('msg="worker started"')) started.resolve();
+          consoleOutput.error(...values);
+        },
+      };
+
+      const worker = clock.runFork(program(args, readChatLine, watched));
 
       try {
         await Effect.runPromise(
-          Effect.gen(function* () {
-            while (!lines.some((line) => line.includes("Worker running.")))
-              yield* Effect.sleep("5 millis");
-          }).pipe(Effect.timeout("2 seconds")),
+          Effect.promise(() => started.promise).pipe(Effect.timeout("2 seconds")),
         );
       } catch (error) {
         await Effect.runPromise(Fiber.interrupt(worker));
@@ -568,8 +575,8 @@ describe.concurrent("chat.ts", () => {
               ]
             : [],
         );
-        expect(chat.errors.some((line) => line.includes("Thinking session="))).toBe(false);
-        expect(workerLogs.filter((line) => line.includes("Thinking session="))).toHaveLength(
+        expect(chat.errors.some((line) => line.includes("msg=thinking session="))).toBe(false);
+        expect(workerLogs.filter((line) => line.includes("msg=thinking session="))).toHaveLength(
           mode === "worker" && enabled ? 2 : 0,
         );
 
@@ -661,11 +668,11 @@ describe.concurrent("chat.ts", () => {
       expect(frames).not.toContainEqual(
         expect.objectContaining({
           type: "stderr",
-          text: expect.stringContaining("Thinking session="),
+          text: expect.stringContaining("msg=thinking session="),
         }),
       );
       expect(frames.at(-1)).toEqual({ type: "done" });
-      expect(chat.errors.filter((line) => line.includes("Thinking session="))).toHaveLength(1);
+      expect(chat.errors.filter((line) => line.includes("msg=thinking session="))).toHaveLength(1);
     } finally {
       await Effect.runPromise(Fiber.interrupt(worker));
       await chat.close();
@@ -762,7 +769,7 @@ describe.concurrent("chat.ts", () => {
 
         await chat.invoke(["chat", "new", "Hello"]);
         expect(chat.chunks.join("")).toBe("Answer\n");
-        const reasoning = chat.errors.filter((line) => line.includes("Thinking session="));
+        const reasoning = chat.errors.filter((line) => line.includes("msg=thinking session="));
         expect(reasoning).toEqual([]);
         expect(chat.thinkingChunks).toEqual([
           "Thinking:\n",
@@ -781,13 +788,19 @@ describe.concurrent("chat.ts", () => {
         await expect(
           chat.invoke(["chat", "send", chat.requests[0]!.sessionId, "Again"]),
         ).rejects.toMatchObject({ message: "Fixture request failed" });
-        const diagnostics = chat.errors.filter((line) => line.includes("Thinking session="));
+        const diagnostics = chat.errors.filter((line) => line.includes("msg=thinking session="));
+
         expect(diagnostics).toHaveLength(1);
         expect(diagnostics.at(-1)).toContain(chat.state.reasoning);
 
         if (mode === "worker") {
           const workerLog = await readFile(join(chat.directory, "logs/worker.log"), "utf8");
-          const saved = stripVTControlCharacters(workerLog).trim().split("\n");
+
+          const saved = stripVTControlCharacters(workerLog)
+            .trim()
+            .split("\n")
+            .filter((line) => line.includes("msg=thinking"));
+
           expect(saved).toHaveLength(3);
           expect(saved[0]).toContain(`session=${chat.requests[0]?.sessionId} run=`);
           expect(saved[0]).toContain("Check the notes before answering.");
@@ -828,11 +841,12 @@ describe.concurrent("chat.ts", () => {
 
         await chat.invoke(["chat", "new", "Private prompt"]);
         expect(chat.chunks.join("")).toBe("Answer\n");
-        const entries = chat.errors.filter((line) => line.includes("Timing session="));
+        const entries = chat.errors.filter((line) => line.includes("msg=timing session="));
 
-        const timings: { stage: string; durationMs: number }[] = entries.map((line) =>
-          JSON.parse(line.slice(line.indexOf(" {") + 1)),
-        );
+        const timings = entries.map((line) => ({
+          stage: /\bstage=(\S+)/.exec(line)?.[1],
+          durationMs: Number(/\bduration_ms=(\S+)/.exec(line)?.[1]),
+        }));
 
         expect(timings.map((timing) => timing.stage)).toEqual([
           "memory",
@@ -851,11 +865,12 @@ describe.concurrent("chat.ts", () => {
         await expect(
           chat.invoke(["chat", "send", chat.requests[0]!.sessionId, "Fail"]),
         ).rejects.toMatchObject({ message: "Fixture request failed" });
-        const diagnostics = chat.errors.filter((line) => line.includes("Timing session="));
-        expect(diagnostics.at(-1)).toContain('"stage":"run"');
-        expect(diagnostics.at(-1)).toContain('"outcome":"failed"');
+        const diagnostics = chat.errors.filter((line) => line.includes("msg=timing session="));
+        expect(diagnostics.at(-1)).toContain(" stage=run ");
+        expect(diagnostics.at(-1)).toContain(" outcome=failed");
 
-        if (mode === "worker") expect(workerLogs).toEqual(diagnostics);
+        if (mode === "worker")
+          expect(workerLogs.filter((line) => line.includes("msg=timing"))).toEqual(diagnostics);
       } finally {
         if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
         await chat.close();
@@ -871,7 +886,7 @@ describe.concurrent("chat.ts", () => {
       chat.state.reasoning = "Private thinking";
       await chat.invoke(["chat", "new", "Hello"]);
       expect(chat.thinkingChunks.join("")).toContain("Private thinking");
-      expect(chat.errors.some((line) => line.includes("Timing session="))).toBe(true);
+      expect(chat.errors.some((line) => line.includes("msg=timing session="))).toBe(true);
       await chat.configure({ chat: { logReasoning: "invalid" } });
       await expect(chat.invoke(["config", "--json"])).rejects.toHaveProperty("_tag", "ConfigError");
       await chat.configure({ chat: { logReasoning: false } });
@@ -1751,7 +1766,12 @@ describe.concurrent("chat.ts", () => {
       await expect(Effect.runPromise(Fiber.join(queued))).rejects.toThrow("not retried");
       expect(chat.requests).toHaveLength(1);
       expect(chat.state.active).toBe(0);
-      await chat.invoke(["chat", "show", "--json", chat.errors[0]!.slice(9)]);
+      await chat.invoke([
+        "chat",
+        "show",
+        "--json",
+        chat.errors.find((line) => line.startsWith("Session: "))!.slice(9),
+      ]);
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
         runs: [{ status: "interrupted", output: null }],
         messages: [{ message: { role: "user", text: "Stop this run" } }],
@@ -1818,7 +1838,10 @@ describe.concurrent("chat.ts", () => {
         "chat",
         "show",
         "--json",
-        sessions.find((item: { id: string }) => item.id === chat.errors[0]!.slice(9)).id,
+        sessions.find(
+          (item: { id: string }) =>
+            item.id === chat.errors.find((line) => line.startsWith("Session: "))!.slice(9),
+        ).id,
       ]);
       expect(JSON.parse(chat.lines.at(-1)!)).toMatchObject({
         runs: [{ status: "interrupted", output: null }],

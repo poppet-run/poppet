@@ -1,5 +1,6 @@
 import { Agent, AgentError, Skills, sessionTitle } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
+import type { LogValue } from "@poppet/io";
 import { ProviderError } from "@poppet/provider";
 import { Store, type StoreError } from "@poppet/store";
 import {
@@ -11,6 +12,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  Logger,
   Option,
   Queue,
   Stream,
@@ -33,42 +35,49 @@ export class WorkerConnections extends Context.Service<
   }
 >()("poppet/WorkerConnections") {}
 
-const workerLog = (at: number, message: string, failed = false) => {
-  const line = `[${new Date(at).toISOString()}] ${message}`;
-
-  return failed ? Console.error(line) : Console.log(line);
-};
-
-const occurrenceLabel = (name: string, id: string) =>
-  `Task ${JSON.stringify(name)} occurrence=${id}`;
-
-const logProviderPause = (at: number, pause: ProviderPause) =>
-  workerLog(
-    at,
-    `Provider ${pause.provider} paused reason=${pause.reason}; ${
-      pause.resumeAt === null
-        ? "scheduled work is paused"
-        : `resumes at ${new Date(pause.resumeAt).toISOString()}`
-    }`,
+const log = (
+  message: string,
+  fields: Readonly<Record<string, LogValue>>,
+  level: "info" | "error" = "info",
+) =>
+  (level === "error" ? Effect.logError(message) : Effect.logInfo(message)).pipe(
+    Effect.annotateLogs(fields),
   );
 
-const logTaskEnd = (at: number, task: { name: string; jobId: string; endAt: number }) =>
-  workerLog(
-    at,
-    `Task ${JSON.stringify(task.name)} task=${task.jobId} ended until=${new Date(task.endAt).toISOString()}; no later occurrences`,
-  );
+const occurrenceFields = (item: { id: string; jobId: string }, name: string) => ({
+  task: item.jobId,
+  name,
+  occurrence: item.id,
+});
+
+const logProviderPause = (pause: ProviderPause) =>
+  log("provider paused", {
+    provider: pause.provider,
+    reason: pause.reason,
+    resume_at: pause.resumeAt === null ? null : new Date(pause.resumeAt).toISOString(),
+  });
+
+const logTaskEnd = (task: { name: string; jobId: string; endAt: number }) =>
+  log("task ended", {
+    task: task.jobId,
+    name: task.name,
+    end_at: new Date(task.endAt).toISOString(),
+  });
 
 export const reconcileTasks = (repo: TaskStore, now: number, startup = false) =>
   Effect.gen(function* () {
     const { skipped, ended } = yield* repo.reconcile(now, startup);
 
     yield* Effect.forEach(skipped, (item) =>
-      workerLog(
-        now,
-        `Task ${JSON.stringify(item.name)} task=${item.jobId} skipped ${new Date(item.firstAt).toISOString()} to ${new Date(item.lastAt).toISOString()} reason=${item.reason}`,
-      ),
+      log("task occurrences skipped", {
+        task: item.jobId,
+        name: item.name,
+        from: new Date(item.firstAt).toISOString(),
+        to: new Date(item.lastAt).toISOString(),
+        reason: item.reason,
+      }),
     );
-    yield* Effect.forEach(ended, (item) => logTaskEnd(now, item));
+    yield* Effect.forEach(ended, logTaskEnd);
   });
 
 export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
@@ -85,10 +94,10 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
       });
 
     yield* Effect.gen(function* () {
-      yield* workerLog(
-        clock.currentTimeMillisUnsafe(),
-        `${occurrenceLabel(job.name, item.id)} started provider=${job.provider}`,
-      );
+      yield* log("task occurrence started", {
+        ...occurrenceFields(item, job.name),
+        provider: job.provider,
+      });
 
       const session = yield* store.createSession(job.provider, job.model, {
         taskTitle: sessionTitle(job.name),
@@ -165,15 +174,21 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
             status === "completed" && runId !== null && noAction(yield* store.run(runId));
 
           if (status !== "cancelled")
-            yield* workerLog(
-              now,
-              `${occurrenceLabel(job.name, item.id)} ${status}${quiet ? " no-action" : ""}${outcome.noteUpdated ? " note-updated" : ""}${status === "failed" ? ` reason=${outcome.reason}` : ""}`,
-              outcome.occurrence.status === "failed",
+            yield* log(
+              "task occurrence finished",
+              {
+                ...occurrenceFields(item, job.name),
+                status,
+                no_action: quiet || undefined,
+                note_updated: outcome.noteUpdated || undefined,
+                reason: status === "failed" ? outcome.reason : undefined,
+              },
+              status === "failed" ? "error" : "info",
             );
 
-          if (outcome.pause !== null) yield* logProviderPause(now, outcome.pause);
+          if (outcome.pause !== null) yield* logProviderPause(outcome.pause);
 
-          if (outcome.providerResumed) yield* workerLog(now, `Provider ${job.provider} resumed`);
+          if (outcome.providerResumed) yield* log("provider resumed", { provider: job.provider });
         }),
       ),
     );
@@ -193,6 +208,7 @@ export const makeTaskWorker = Effect.gen(function* () {
   const repo = yield* TaskRepository;
   const clock = yield* Clock.Clock;
   const output = yield* Console.Console;
+  const loggers = yield* Logger.CurrentLoggers;
   const wake = yield* Queue.make<void>({ capacity: 1, strategy: "dropping" });
   const commands = repo.commandLock;
   let active: ActiveOccurrence | null = null;
@@ -205,7 +221,7 @@ export const makeTaskWorker = Effect.gen(function* () {
     pauses.filter(
       (pause) => pause.resumeAt === null || pause.resumeAt > clock.currentTimeMillisUnsafe(),
     ),
-    (pause) => logProviderPause(clock.currentTimeMillisUnsafe(), pause),
+    logProviderPause,
   );
 
   const readStatus = Effect.gen(function* () {
@@ -235,7 +251,7 @@ export const makeTaskWorker = Effect.gen(function* () {
           Effect.gen(function* () {
             if (active !== null) yield* Fiber.interrupt(active.fiber);
             const result = yield* executeTaskCommand(repo, store, command, now);
-            yield* workerLog(clock.currentTimeMillisUnsafe(), "All tasks cleared.");
+            yield* log("tasks cleared", {});
 
             return result;
           }),
@@ -254,16 +270,19 @@ export const makeTaskWorker = Effect.gen(function* () {
       const result = yield* executeTaskCommand(repo, store, command, now);
 
       if (isTaskControl(command) || command.action === "delete" || command.action === "clear-note")
-        yield* workerLog(now, `Task ${command.id} action=${command.action}`);
+        yield* log("task updated", { task: command.id, action: command.action });
 
       if (command.action === "pause" || command.action === "resume") {
         const job = yield* repo.task(command.id);
-        yield* workerLog(
-          now,
-          `Task ${JSON.stringify(job.name)} task=${job.id} ${command.action === "pause" ? "paused" : "resumed"}`,
-        );
+        yield* log(command.action === "pause" ? "task paused" : "task resumed", {
+          task: job.id,
+          name: job.name,
+        });
         yield* Effect.forEach(pending, (item) =>
-          workerLog(now, `${occurrenceLabel(job.name, item.id)} cancelled reason=task-paused`),
+          log("task occurrence cancelled", {
+            ...occurrenceFields(item, job.name),
+            reason: "task-paused",
+          }),
         );
       }
 
@@ -271,7 +290,7 @@ export const makeTaskWorker = Effect.gen(function* () {
         const job = yield* repo.task(before.id);
 
         if (job.nextAt === null && job.endAt !== null)
-          yield* logTaskEnd(now, { name: job.name, jobId: job.id, endAt: job.endAt });
+          yield* logTaskEnd({ name: job.name, jobId: job.id, endAt: job.endAt });
       }
 
       if (command.action === "retry-task" || command.action === "cancel-task") {
@@ -281,14 +300,14 @@ export const makeTaskWorker = Effect.gen(function* () {
 
         if (cancelling && active?.id === item.id) yield* Fiber.interrupt(active.fiber);
         const job = yield* repo.task(item.jobId);
-        yield* workerLog(
-          now,
-          `${occurrenceLabel(job.name, item.id)} ${cancelling ? "cancelled" : "queued for retry"}`,
+        yield* log(
+          cancelling ? "task occurrence cancelled" : "task occurrence queued for retry",
+          occurrenceFields(item, job.name),
         );
       }
 
       if (command.action === "resume-provider")
-        yield* workerLog(now, `Provider ${command.provider} resumed by request`);
+        yield* log("provider resumed", { provider: command.provider, by: "request" });
 
       yield* Queue.offer(wake, undefined);
 
@@ -296,15 +315,13 @@ export const makeTaskWorker = Effect.gen(function* () {
     }).pipe(
       commands.withPermit,
       Effect.provideService(Console.Console, output),
+      Effect.provideService(Logger.CurrentLoggers, loggers),
       Effect.provideService(Skills, skills),
     );
 
   const run = Effect.scoped(
     Effect.gen(function* () {
-      yield* workerLog(
-        clock.currentTimeMillisUnsafe(),
-        "Task worker running. Use tasks commands in another terminal; Ctrl-C stops the worker.",
-      );
+      yield* log("task worker started", {});
 
       const timer = Effect.gen(function* () {
         yield* reconcileTasks(repo, clock.currentTimeMillisUnsafe());
@@ -349,9 +366,7 @@ export const makeTaskWorker = Effect.gen(function* () {
       yield* Effect.all([timer, worker], { concurrency: 2, discard: true });
     }),
   ).pipe(
-    Effect.onExit(() =>
-      Clock.currentTimeMillis.pipe(Effect.flatMap((now) => workerLog(now, "Task worker stopped."))),
-    ),
+    Effect.onExit(() => log("task worker stopped", {})),
     Effect.provideService(Store, store),
     Effect.provideService(Agent, agent),
     Effect.provideService(Clock.Clock, clock),

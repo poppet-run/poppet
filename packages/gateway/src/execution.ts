@@ -1,6 +1,6 @@
 import { AgentError, type Agent, type ChatFailure } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
-import { Cause, Console, Deferred, Effect, Exit, Fiber, FiberSet, Option, Stream } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, FiberSet, Option, Stream } from "effect";
 
 import type { CommandApprovals } from "#src/approvals";
 import type { ChannelError } from "#src/channel";
@@ -140,9 +140,7 @@ const outcome = (exit: Exit.Exit<void, ChatFailure | ChannelError>) =>
     const failure = Option.getOrNull(Cause.findErrorOption(exit.cause));
 
     if (Cause.hasDies(exit.cause) || failure instanceof StoreError) return yield* exit;
-    yield* Console.error(
-      "Messaging request failed or was cancelled. Inspect worker status and saved runs.",
-    );
+    yield* Effect.logWarning("messaging request failed or was cancelled");
   });
 
 const claimNext = (

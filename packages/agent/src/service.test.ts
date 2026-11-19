@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
+import { LogfmtLoggerLive } from "@poppet/io";
 import {
   ProviderError,
   type Completion,
@@ -17,6 +18,12 @@ import { AgentError } from "#src/errors";
 import { Agent, type ChatEvent, type ModelResolver } from "#src/service";
 import { defaultPolicy, type ChatPolicy } from "#src/settings";
 import { agentHarness, gatedStream } from "#src/test/harness";
+
+const thinkingText = (line: string): string => {
+  const value = line.slice(line.indexOf(" text=") + " text=".length);
+
+  return value.startsWith('"') ? JSON.parse(value) : value;
+};
 
 describe("logChatDiagnostic", () => {
   test.each([false, true])(
@@ -240,11 +247,9 @@ describe.concurrent("Agent", () => {
 
             if (enabled) {
               expect(
-                logs.every((line) => line.includes(`Thinking session=${session.id} run=`)),
+                logs.every((line) => line.includes(`msg=thinking session=${session.id} run=`)),
               ).toBe(true);
-              expect(
-                logs.map((line) => JSON.parse(line.slice(line.indexOf(' "') + 1))).join(""),
-              ).toBe(thinking);
+              expect(logs.map(thinkingText).join("")).toBe(thinking);
               expect(logs.join("")).not.toContain("\u001b");
             }
           }).pipe(
@@ -300,11 +305,7 @@ describe.concurrent("Agent", () => {
                 reason: "temporary",
               });
 
-            const chunks: string[] = logs.map((line) =>
-              JSON.parse(line.slice(line.indexOf(' "') + 1)),
-            );
-
-            expect(chunks.join("")).toBe(thinking);
+            expect(logs.map(thinkingText).join("")).toBe(thinking);
             expect((yield* store.runs(session.id))[0]?.status).toBe(status);
           }).pipe(
             Effect.provideService(Console.Console, {
@@ -928,7 +929,7 @@ describe("Agent.nameSession", () => {
               result: response(),
             });
           }).pipe(
-            Effect.provide(TestClock.layer()),
+            Effect.provide([TestClock.layer(), LogfmtLoggerLive]),
             Effect.provideService(Console.Console, {
               ...console,
               error: (...values) => errors.push(stripVTControlCharacters(values.join(" "))),
