@@ -145,6 +145,25 @@ Lifecycle logs go to `<data directory>/logs/worker.log`, with `0700` directory a
 `0600` file permissions. Default lifecycle logs exclude prompts, model output, and tokens. Enabling
 [`chat.logReasoning`](configuration.md#reasoning-logs) also records readable reasoning,
 which can contain private prompt or tool content.
+
+Each entry is one [logfmt](https://brandur.org/logfmt) line on standard error:
+`time`, `level` (`info`, `warn`, or `error`), and a fixed lowercase `msg`, then
+fields for the entry. Values with spaces, quotes, or `=` are JSON-quoted, so
+multi-line text stays on one line. Search by message or field:
+
+```text
+time=2099-10-29T09:00:00.000Z level=info msg="task occurrence finished" task=<task-id> name=Summary occurrence=<occurrence-id> status=completed
+```
+
+```sh
+grep 'level=error' worker.log
+grep 'msg="task occurrence' worker.log
+grep 'session=<session-id>' worker.log
+```
+
+Common fields are `task`, `occurrence`, `session`, `run`, `provider`, `adapter`,
+`server`, `reason`, and `error`. Reasoning entries use `msg=thinking` with the
+chunk in `text`; timing entries use `msg=timing` with `stage` and `duration_ms`.
 The background launcher limits each new log file to 5 MiB and retains three
 archives, `worker.log.1` through `worker.log.3`, newest first. It appends after
 restart and rotates between writes, including when a single output chunk exceeds

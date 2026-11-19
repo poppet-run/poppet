@@ -1,5 +1,6 @@
 import { BunServices } from "@effect/platform-bun";
 import type { ChannelRegistration } from "@poppet/gateway";
+import { LogfmtLoggerLive } from "@poppet/io";
 import type { ProviderRegistration } from "@poppet/provider";
 import { Effect } from "effect";
 import { CliConfig, CliOutput, Command, GlobalFlag } from "effect/cli";
@@ -75,7 +76,7 @@ export const makeCLI = (
         CliConfig.CliConfig,
         CliConfig.make({ builtIns: [GlobalFlag.Help, GlobalFlag.Completions] }),
       ),
-      Effect.provide(BunServices.layer),
+      Effect.provide([BunServices.layer, LogfmtLoggerLive]),
     );
 };
 

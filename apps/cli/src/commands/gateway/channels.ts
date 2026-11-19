@@ -92,9 +92,15 @@ export const superviseAdapter = <E>(
             health.lastError =
               error instanceof Error ? error.message : "The adapter stopped unexpectedly.";
 
-            if (error === null) yield* Console.error(Cause.pretty(cause));
-            yield* Console.error(
-              `Messaging adapter ${id} stopped: ${health.lastError} Restarting in ${delay / 1000} seconds.`,
+            yield* Effect.logError(
+              "messaging adapter stopped",
+              ...(error === null ? [cause] : []),
+            ).pipe(
+              Effect.annotateLogs({
+                adapter: id,
+                error: health.lastError,
+                restart_in_ms: delay,
+              }),
             );
             yield* Effect.sleep(delay);
 

@@ -49,12 +49,13 @@ export const decodeInput = <S extends Schema.Top>(
 
 export const logStorageCause = (cause: unknown) =>
   cause instanceof SqlError.SqlError
-    ? Effect.logError(
-        "Storage query failed",
-        cause.reason.cause instanceof Error ? cause.reason.cause.message : cause.message,
+    ? Effect.logError("storage query failed").pipe(
+        Effect.annotateLogs({
+          error: cause.reason.cause instanceof Error ? cause.reason.cause.message : cause.message,
+        }),
       )
     : cause instanceof Schema.SchemaError
-      ? Effect.logError("A saved record does not match its schema")
+      ? Effect.logError("saved record does not match its schema")
       : Effect.void;
 
 export const reportAs =

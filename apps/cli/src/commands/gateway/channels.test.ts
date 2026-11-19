@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { ChannelError } from "@poppet/gateway";
+import { LogfmtLoggerLive } from "@poppet/io";
 import { StoreError } from "@poppet/store";
 import { Clock, Console, Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
@@ -11,7 +12,10 @@ const quiet: Console.Console = { ...console, error: () => {} };
 
 const run = <A, E>(program: Effect.Effect<A, E>) =>
   Effect.runPromise(
-    program.pipe(Effect.provideService(Console.Console, quiet), Effect.provide(TestClock.layer())),
+    program.pipe(
+      Effect.provideService(Console.Console, quiet),
+      Effect.provide([TestClock.layer(), LogfmtLoggerLive]),
+    ),
   );
 
 describe("superviseAdapter", () => {

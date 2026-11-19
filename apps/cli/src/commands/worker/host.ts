@@ -7,7 +7,7 @@ import {
   taskResponse,
 } from "@poppet/tasks";
 import { serveWorker, workerSocketPath, WorkerRequests } from "@poppet/worker";
-import { Clock, Console, Effect, Option } from "effect";
+import { Clock, Effect, Option } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { doctorSnapshot, gatewayObservation } from "#src/commands/doctor/worker";
@@ -84,11 +84,11 @@ export const runWorker = Effect.scoped(
       );
     });
     yield* serveWebChat.pipe(
-      Effect.catch((error) => Console.error(`Web chat disabled. ${error.message}`)),
+      Effect.catch((error) =>
+        Effect.logWarning("web chat disabled").pipe(Effect.annotateLogs({ error: error.message })),
+      ),
     );
-    yield* Console.log(
-      "Worker running. Use commands in another terminal; Ctrl-C stops the worker.",
-    );
+    yield* Effect.logInfo("worker started").pipe(Effect.annotateLogs({ pid: process.pid }));
 
     yield* Effect.all([tasks.run, messaging.run], {
       concurrency: 2,

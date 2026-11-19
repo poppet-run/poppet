@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Agent, Pages, WebSearch, Skills, SkillsLive } from "@poppet/agent";
 import { agentHarness, testModel } from "@poppet/agent/test";
 import { AppConfig } from "@poppet/config";
+import { LogfmtLoggerLive } from "@poppet/io";
 import { Memory } from "@poppet/memory";
 import {
   ProviderError,
@@ -66,15 +67,11 @@ const fixture = async (
   const { directory, config, store, settings } = harness;
   const requests: ModelRequest[] = [];
   const lines: string[] = [];
-  const errors: string[] = [];
 
   const output: Console.Console = {
     ...console,
-    log: (...values) => {
-      lines.push(values.join(" "));
-    },
     error: (...values) => {
-      errors.push(values.join(" "));
+      lines.push(values.join(" ").replace(/^time=\S+ /, ""));
     },
   };
 
@@ -103,7 +100,9 @@ const fixture = async (
     directory,
     requests,
     lines,
-    errors,
+    get errors() {
+      return lines.filter((line) => line.startsWith("level=error "));
+    },
     task,
     run: <A, E>(
       program: Effect.Effect<
@@ -113,7 +112,10 @@ const fixture = async (
       >,
     ) =>
       Effect.runPromise(
-        program.pipe(Effect.provide(layer), Effect.provideService(Console.Console, output)),
+        program.pipe(
+          Effect.provide([layer, LogfmtLoggerLive]),
+          Effect.provideService(Console.Console, output),
+        ),
       ),
     close: harness.close,
   };
@@ -770,7 +772,7 @@ describe.concurrent("makeTaskWorker", () => {
 
           expect(occurrence.status).toBe("interrupted");
           expect((yield* store.run(occurrence.runId!))?.status).toBe("interrupted");
-          expect(state.lines.at(-1)).toContain(`occurrence=${occurrence.id} interrupted`);
+          expect(state.lines.at(-1)).toContain(`occurrence=${occurrence.id} status=interrupted`);
           expect(state.errors).toEqual([]);
         }).pipe(Effect.provide(TestClock.layer())),
       );
@@ -816,7 +818,7 @@ describe.concurrent("makeTaskWorker", () => {
           expect(yield* repo.occurrences(pending.id)).toEqual([]);
           expect((yield* repo.occurrence(active.id)).status).toBe("running");
           expect(state.lines).toContainEqual(
-            expect.stringContaining(`Task ${pending.id} action=delete`),
+            expect.stringContaining(`task=${pending.id} action=delete`),
           );
           expect((yield* remoteTaskCommand(path, { action: "list" }))?.value).toHaveLength(1);
           yield* Fiber.interrupt(worker);
@@ -855,7 +857,7 @@ describe.concurrent("makeTaskWorker", () => {
           expect(yield* repo.occurrences(pending.id)).toEqual([]);
           expect((yield* store.run(active.runId!))?.status).toBe("interrupted");
           expect(state.requests).toHaveLength(1);
-          expect(state.lines).toContainEqual(expect.stringContaining("All tasks cleared."));
+          expect(state.lines).toContainEqual(expect.stringContaining('msg="tasks cleared"'));
           expect((yield* remoteTaskCommand(path, { action: "list" }))?.value).toEqual([]);
 
           const added = yield* remoteTaskCommand(path, {
@@ -890,9 +892,9 @@ describe.concurrent("makeTaskWorker", () => {
           yield* reconcileTasks(repo, start + 10 * 60_000);
 
           expect(state.lines).toEqual([
-            `[2026-10-14T09:05:00.000Z] Task "Summary" task=${job.id} skipped 2026-10-14T09:01:00.000Z to 2026-10-14T09:04:59.999Z reason=downtime`,
-            `[2026-10-14T09:06:00.000Z] Task "Summary" task=${job.id} skipped 2026-10-14T09:06:00.000Z to 2026-10-14T09:06:00.000Z reason=previous-occurrence-active`,
-            `[2026-10-14T09:10:00.000Z] Task "Summary" task=${job.id} skipped 2026-10-14T09:07:00.000Z to 2026-10-14T09:10:00.000Z reason=previous-occurrence-active`,
+            `level=info msg="task occurrences skipped" task=${job.id} name=Summary from=2026-10-14T09:01:00.000Z to=2026-10-14T09:04:59.999Z reason=downtime`,
+            `level=info msg="task occurrences skipped" task=${job.id} name=Summary from=2026-10-14T09:06:00.000Z to=2026-10-14T09:06:00.000Z reason=previous-occurrence-active`,
+            `level=info msg="task occurrences skipped" task=${job.id} name=Summary from=2026-10-14T09:07:00.000Z to=2026-10-14T09:10:00.000Z reason=previous-occurrence-active`,
           ]);
           const broken = yield* repo.add({ ...state.task, schedule }, start + 1);
           yield* sql.unsafe("UPDATE jobs SET schedule = ? WHERE id = ?", [
@@ -1025,11 +1027,10 @@ describe.concurrent("makeTaskWorker", () => {
           expect(state.requests[2]?.instructions).toContain("Detailed");
           expect(state.requests[2]?.messages).toHaveLength(1);
           expect(state.lines).toHaveLength(4);
-          expect(state.lines[0]).toMatch(
-            /^\[\d{4}-\d{2}-\d{2}T[\d:.]+Z\] Task "Summary" occurrence=/,
+          expect(state.lines[0]).toBe(
+            `level=info msg="task occurrence started" task=${active.jobId} name=Summary occurrence=${active.id} provider=test-provider`,
           );
-          expect(state.lines[0]).toContain(`occurrence=${active.id} started`);
-          expect(state.lines[1]).toContain(`occurrence=${active.id} completed`);
+          expect(state.lines[1]).toContain(`occurrence=${active.id} status=completed`);
           expect(state.lines.join("\n")).not.toContain("Acorn");
           expect(state.lines.join("\n")).not.toContain(state.task.prompt);
           expect(state.errors).toEqual([]);
@@ -1065,8 +1066,8 @@ describe.concurrent("makeTaskWorker", () => {
             { occurrences: [{ status: "completed", noAction: true }] },
             { occurrences: [{ status: "completed", noAction: false }] },
           ]);
-          expect(state.lines[1]).toMatch(/ completed no-action$/);
-          expect(state.lines[3]).toMatch(/ completed$/);
+          expect(state.lines[1]).toMatch(/ status=completed no_action=true$/);
+          expect(state.lines[3]).toMatch(/ status=completed$/);
         }),
       );
     } finally {
@@ -1150,10 +1151,10 @@ describe.concurrent("makeTaskWorker", () => {
             { provider: "test-provider", reason: "quota", resumeAt: null },
           ]);
           expect(state.errors[0]).toContain(
-            `occurrence=${claimed.id} failed reason=provider:quota`,
+            `occurrence=${claimed.id} status=failed reason=provider:quota`,
           );
-          expect(state.lines.at(-1)).toContain(
-            "Provider test-provider paused reason=quota; scheduled work is paused",
+          expect(state.lines.at(-1)).toBe(
+            'level=info msg="provider paused" provider=test-provider reason=quota',
           );
           expect([...state.lines, ...state.errors].join("\n")).not.toContain(
             "private-provider-details",
@@ -1228,7 +1229,7 @@ describe.concurrent("makeTaskWorker", () => {
           yield* repo.blockProvider("test-provider", "quota", Date.now());
           yield* remoteTaskCommand(path, { action: "resume-provider", provider: "test-provider" });
           expect(state.lines).toContainEqual(
-            expect.stringContaining("Provider test-provider resumed by request"),
+            'level=info msg="provider resumed" provider=test-provider by=request',
           );
           hang = false;
           const added = yield* remoteTaskCommand(path, { action: "add", task: state.task });
@@ -1239,13 +1240,21 @@ describe.concurrent("makeTaskWorker", () => {
           expect(yield* remoteTaskCommand(path, { action: "list" })).not.toBeNull();
           yield* Fiber.interrupt(worker);
           expect(state.lines).toContainEqual(
-            expect.stringContaining(`occurrence=${active.id} cancelled`),
+            expect.stringMatching(
+              new RegExp(`^level=info msg="task occurrence cancelled" .*occurrence=${active.id}`),
+            ),
           );
           expect(
-            state.lines.filter((line) => line.includes(`occurrence=${active.id} cancelled`)),
+            state.lines.filter(
+              (line) =>
+                line.includes("task occurrence cancelled") &&
+                line.includes(`occurrence=${active.id}`),
+            ),
           ).toHaveLength(1);
-          expect(state.lines).toContainEqual(expect.stringContaining(`task=${job.id} paused`));
-          expect(state.lines.at(-1)).toContain("Task worker stopped.");
+          expect(state.lines).toContainEqual(
+            `level=info msg="task paused" task=${job.id} name=Summary`,
+          );
+          expect(state.lines.at(-1)).toBe('level=info msg="task worker stopped"');
         }).pipe(Effect.provide(TestClock.layer())),
       );
       expect(await Bun.file(workerSocketPath(state.directory)).exists()).toBe(false);
@@ -1364,7 +1373,7 @@ describe.concurrent("makeTaskWorker", () => {
           yield* reconcileTasks(repo, start + 60_000);
           yield* reconcileTasks(repo, start + 300_000);
           expect(state.lines).toEqual([
-            `[2026-10-14T09:01:00.000Z] Task "Summary" task=${job.id} ended until=2026-10-14T09:01:30.000Z; no later occurrences`,
+            `level=info msg="task ended" task=${job.id} name=Summary end_at=2026-10-14T09:01:30.000Z`,
           ]);
 
           const claimed = (yield* repo.claim(start + 300_000))!;
@@ -1471,7 +1480,9 @@ describe.concurrent("executeOccurrence", () => {
           ]);
           expect(state.lines).toContainEqual(
             expect.stringMatching(
-              new RegExp(`occurrence=${first!.id} completed no-action note-updated$`),
+              new RegExp(
+                `occurrence=${first!.id} status=completed no_action=true note_updated=true$`,
+              ),
             ),
           );
 

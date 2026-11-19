@@ -8,7 +8,7 @@ import {
 } from "@modelcontextprotocol/client";
 import { ApiKeyStore } from "@poppet/credentials";
 import type { Tool } from "@poppet/provider";
-import { Clock, Console, Context, Data, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
+import { Clock, Context, Data, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
 
 import {
   compileSchema,
@@ -85,6 +85,9 @@ const diagnostic = (connection: Connection) =>
   connection.state.status === "connected"
     ? connection.state.diagnostic
     : null;
+
+const logDiagnostic = (server: string, detail: string | null) =>
+  Effect.logWarning("mcp server diagnostic").pipe(Effect.annotateLogs({ server, detail }));
 
 export class MCP extends Context.Service<
   MCP,
@@ -591,7 +594,7 @@ export const makeMCPLive = (toolBytes: number) =>
             };
 
             if (connection.state.diagnostic !== null)
-              yield* Console.error(connection.state.diagnostic);
+              yield* logDiagnostic(config.id, connection.state.diagnostic);
           }).pipe(Effect.timeout("8 seconds"));
 
           yield* startup.pipe(
@@ -608,7 +611,7 @@ export const makeMCPLive = (toolBytes: number) =>
                   prior?.state.status !== "needs-login" ||
                   connection.state.status !== "needs-login"
                 )
-                  yield* Console.error(diagnostic(connection));
+                  yield* logDiagnostic(config.id, diagnostic(connection));
               }),
             ),
             Effect.onInterrupt(() =>
