@@ -4,7 +4,7 @@ import { Store } from "@poppet/store";
 import { Clock, Console, Context, Effect, FiberSet, Layer, Queue, Stream } from "effect";
 
 import { accept } from "#src/accept";
-import { commandApprovals } from "#src/approvals";
+import { actionApprovals } from "#src/approvals";
 import { MessagingChannel, type ChannelError, type IncomingMessage } from "#src/channel";
 import { loop, runningRequests, type GatewayContext } from "#src/context";
 import { conversationNaming } from "#src/conversation-naming";
@@ -32,7 +32,7 @@ const gateway = Effect.gen(function* () {
 
   const running = runningRequests();
   const { maxConcurrentRequests, imageBytes, textFileBytes } = yield* ChatSettings;
-  const approvals = commandApprovals(channel);
+  const approvals = actionApprovals(channel);
 
   const execution: Execution = {
     agent,

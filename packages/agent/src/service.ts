@@ -23,9 +23,9 @@ import {
   type Scope,
 } from "effect";
 
+import type { ApproveAction } from "#src/action-approval";
 import type { RunContext } from "#src/agent-tool";
 import { prepareAttachments, type AttachmentInput } from "#src/attachments";
-import type { ApproveCommand } from "#src/bash";
 import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
 import { memoryPrompt } from "#src/memory";
@@ -55,7 +55,7 @@ export type ChatFailure = AgentError | ProviderError | StoreError;
 
 export interface SendOptions {
   readonly origin?: RunContext["origin"];
-  readonly approveCommand?: ApproveCommand;
+  readonly approveAction?: ApproveAction;
   readonly runId?: string;
   readonly reasoningLog?: (line: string) => Effect.Effect<void>;
   readonly timingLog?: (line: string) => Effect.Effect<void>;
@@ -291,7 +291,7 @@ export const AgentLive = Layer.effect(
                   selectedSkill: session.skill?.name ?? null,
                   mentionedSkills,
                   taskNote: options.taskNote ?? null,
-                  approveCommand: options.approveCommand ?? null,
+                  approveAction: options.approveAction ?? null,
                   here: options.here ?? null,
                   home: options.home ?? null,
                   destination: options.destination ?? null,

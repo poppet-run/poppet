@@ -52,7 +52,8 @@ Discord also provides **Approve once** and **Deny** buttons. Both methods settle
 the same request; repeated clicks or replies cannot execute it again. Only the configured owner in
 the same authorized conversation can answer, and access is checked again before
 execution. Approval covers that command, directory, and timeout for one invocation.
-It grants no future permissions.
+It grants no future permissions. [Reviewed MCP actions](mcp.md#review-an-action)
+use the same controls and show the target, expected effects, and exact tool arguments.
 
 In Discord, buttons appear after the full invocation, even when it spans several messages.
 Poppet confirms button clicks privately and replaces the buttons with a disabled

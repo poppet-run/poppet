@@ -26,6 +26,7 @@ export {
   Run,
   RunStatus,
   RunOutcome,
+  ToolApproval,
   ToolCall,
   ToolOutcome,
   ToolReview,

@@ -41,10 +41,6 @@ export { toolArguments, BoundedText } from "#src/tool-schema";
 
 export { TaskNoteArguments, taskNoteBytes, taskNoteDefinition } from "#src/task-note";
 
-export {
-  Bash,
-  type BashArguments,
-  type BashResult,
-  type CommandApproval,
-  type ApproveCommand,
-} from "#src/bash";
+export { Bash, type BashArguments, type BashResult } from "#src/bash";
+
+export { escapedApprovalJSON, type ActionApproval, type ApproveAction } from "#src/action-approval";

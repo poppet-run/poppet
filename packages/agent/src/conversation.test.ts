@@ -323,10 +323,10 @@ describe.concurrent("conversation", () => {
           yield* Stream.runDrain(
             (yield* Agent).send(session.id, "Restart my service", {
               origin: mode === "scheduled" ? "scheduled" : "interactive",
-              approveCommand: (request) =>
+              approveAction: (request) =>
                 Effect.sync(() => {
                   approvals++;
-                  expect(request).toEqual({ ...args, reason: "Service change" });
+                  expect(request).toEqual({ kind: "bash", ...args, reason: "Service change" });
 
                   return approved;
                 }),

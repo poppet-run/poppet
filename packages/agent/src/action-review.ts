@@ -6,16 +6,30 @@ import { AgentError } from "#src/errors";
 import { streamReply } from "#src/reply";
 import { BoundedText } from "#src/tool-schema";
 
-const Review = Schema.Struct({
+export const BashReview = Schema.Struct({
   decision: Schema.Literals(["allow", "needs_approval", "deny"]),
   reason: BoundedText(1024),
 });
 
-export const reviewAction = (
+export const MCPReview = Schema.Union([
+  Schema.Struct({
+    decision: Schema.Literals(["allow", "deny"]),
+    reason: BashReview.fields.reason,
+  }),
+  Schema.Struct({
+    decision: Schema.Literal("needs_approval"),
+    reason: BashReview.fields.reason,
+    target: BoundedText(1024),
+    effects: BoundedText(1024),
+  }),
+]);
+
+export const reviewAction = <A>(
   model: ModelOperations,
   run: Run,
   instructions: string,
   input: string,
+  response: Schema.Decoder<A>,
   failureReason: "command-review" | "mcp-review",
 ) =>
   Effect.gen(function* () {
@@ -83,7 +97,7 @@ export const reviewAction = (
 
     const text = outputText(last.value.response.output);
 
-    return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Review), {
+    return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(response), {
       onExcessProperty: "error",
     })(text).pipe(
       Effect.mapError(

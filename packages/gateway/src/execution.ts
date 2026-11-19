@@ -2,7 +2,7 @@ import { AgentError, type Agent, type ChatFailure } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
 import { Cause, Console, Deferred, Effect, Exit, Fiber, FiberSet, Option, Stream } from "effect";
 
-import type { CommandApprovals } from "#src/approvals";
+import type { ActionApprovals } from "#src/approvals";
 import type { ChannelError } from "#src/channel";
 import {
   authorized,
@@ -21,7 +21,7 @@ import { prepareSession, type SessionSetup } from "#src/session";
 export interface Execution {
   readonly agent: Agent["Service"];
   readonly setup: SessionSetup;
-  readonly approvals: CommandApprovals;
+  readonly approvals: ActionApprovals;
   readonly running: RunningRequest;
 }
 
@@ -114,7 +114,8 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
           agent.send(session.id, prompt, {
             runId: entry.runId,
             attachments,
-            approveCommand: (request) => approvals.request(entry.message, conversation, request),
+            approveAction: (request, recordAnswer) =>
+              approvals.request(entry.message, conversation, request, recordAnswer),
             home: taskDestination(),
             here: taskDestination(conversation),
             destination: taskDestination,

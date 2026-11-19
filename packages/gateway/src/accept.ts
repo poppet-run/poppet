@@ -1,6 +1,6 @@
 import { Effect, Fiber, Schema } from "effect";
 
-import type { CommandApprovals } from "#src/approvals";
+import type { ActionApprovals } from "#src/approvals";
 import { ChannelError, IncomingMessage } from "#src/channel";
 import {
   authorized,
@@ -11,10 +11,10 @@ import {
   type RunningRequest,
 } from "#src/context";
 import type { Inbox } from "#src/repository";
-import { isCommandApproval, isControl } from "#src/request";
+import { isApprovalReply, isControl } from "#src/request";
 
 export interface Controls {
-  readonly approvals: CommandApprovals;
+  readonly approvals: ActionApprovals;
   readonly running: RunningRequest;
 }
 
@@ -29,10 +29,10 @@ const controlReply = (
   Effect.gen(function* () {
     const { channel, repo, store } = context;
 
-    if (isCommandApproval(message.text)) {
+    if (isApprovalReply(message.text)) {
       yield* channel.checkAccess(message, conversation);
 
-      return yield* controls.approvals.answer(conversation, message.text);
+      return yield* controls.approvals.answer(conversation, message);
     }
 
     if (message.text === "/cancel") {

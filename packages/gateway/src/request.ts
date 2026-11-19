@@ -28,7 +28,7 @@ export const messagingRequest = (text: string, attached = false) =>
     return { fresh: true, prompt, skill };
   });
 
-export const isCommandApproval = (text: string) => /^\/(?:approve|deny)(?:\s|$)/.test(text);
+export const isApprovalReply = (text: string) => /^\/(?:approve|deny)(?:\s|$)/.test(text);
 
 export const isControl = (text: string) =>
-  text === "/status" || text === "/cancel" || isCommandApproval(text);
+  text === "/status" || text === "/cancel" || isApprovalReply(text);

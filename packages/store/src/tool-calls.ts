@@ -95,10 +95,24 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
         Effect.gen(function* () {
           const { call } = yield* activeTool(runId, callId);
 
-          if (call.status !== "pending" || call.serverId === null || call.review !== null)
-            return yield* conflict("Only a pending MCP call can record its first review.");
+          if (call.status !== "pending" || call.serverId === null)
+            return yield* conflict("Only a pending MCP call can record review.");
 
           const decoded = yield* decodeInput(ToolReview, review, { onExcessProperty: "error" });
+          const { approval } = decoded;
+
+          if (
+            call.review === null
+              ? approval !== undefined
+              : call.review.decision !== "needs_approval" ||
+                call.review.approval !== undefined ||
+                approval === undefined ||
+                call.review.decision !== decoded.decision ||
+                call.review.reason !== decoded.reason ||
+                call.review.target !== decoded.target ||
+                call.review.effects !== decoded.effects
+          )
+            return yield* conflict("A saved tool review only accepts one owner decision.");
 
           yield* sql`UPDATE tool_calls SET review = ${JSON.stringify(decoded)}
               WHERE run_id = ${runId} AND call_id = ${callId}`;
@@ -112,6 +126,16 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
 
           if (call.status !== "pending")
             return yield* conflict("The tool call has already started.");
+
+          if (
+            call.review !== null &&
+            call.review.decision !== "allow" &&
+            !(
+              call.review.decision === "needs_approval" &&
+              call.review.approval?.decision === "approved"
+            )
+          )
+            return yield* conflict("The tool call requires an allowed review before dispatch.");
 
           yield* sql`UPDATE tool_calls SET status = 'running',
               started_at = ${Math.max(at, call.createdAt)}
