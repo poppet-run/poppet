@@ -14,4 +14,10 @@ export { publicHttpURL, urlHostname, publicAddress } from "#src/public-url";
 
 export { clip, fitPrefix, fitText, longestFit } from "#src/budget";
 
-export { formatLogLine, LogfmtLoggerLive, logfmtLogger, type LogValue } from "#src/log";
+export {
+  formatLogLine,
+  LogfmtLoggerLive,
+  logfmtLogger,
+  writeDiagnostic,
+  type LogValue,
+} from "#src/log";

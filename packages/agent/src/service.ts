@@ -1,6 +1,6 @@
 import { styleText } from "node:util";
 
-import { formatLogLine } from "@poppet/io";
+import { formatLogLine, writeDiagnostic } from "@poppet/io";
 import {
   ProviderError,
   RequestTiming,
@@ -115,7 +115,9 @@ const timingLine = (
   });
 
 export const logChatDiagnostic = (text: string) =>
-  Console.error(process.env.NO_COLOR ? text : styleText("gray", text, { stream: process.stderr }));
+  writeDiagnostic(
+    process.env.NO_COLOR ? text : styleText("gray", text, { stream: process.stderr }),
+  );
 
 export const AgentLive = Layer.effect(
   Agent,
