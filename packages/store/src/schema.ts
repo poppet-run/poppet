@@ -155,7 +155,7 @@ export const ToolApproval = Schema.Struct({
 });
 
 export const ToolReview = Schema.Struct({
-  decision: Schema.Literals(["allow", "needs_approval", "deny", "unavailable"]),
+  decision: Schema.Literals(["pending", "allow", "needs_approval", "deny", "unavailable"]),
   reason: Schema.NonEmptyString,
   target: Schema.optionalKey(Schema.NonEmptyString),
   effects: Schema.optionalKey(Schema.NonEmptyString),

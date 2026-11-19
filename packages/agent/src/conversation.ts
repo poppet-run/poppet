@@ -200,7 +200,7 @@ export const conversation = Effect.gen(function* () {
             if (untrusted && tool.withdrawnWhenUntrusted)
               return yield* Effect.fail(
                 new AgentError({
-                  reason: "tool-permission",
+                  reason: tool.external?.reviewed === true ? "mcp-denied" : "tool-permission",
                   message:
                     "This tool is disabled after untrusted content entered this run. Propose the action and ask the owner to confirm it in a new message.",
                 }),

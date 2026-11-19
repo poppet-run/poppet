@@ -65,7 +65,7 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
           if (context.hasUntrustedContent())
             return yield* Effect.fail(
               new AgentError({
-                reason: "tool-permission",
+                reason: "mcp-denied",
                 message:
                   "Reviewed MCP tools are disabled after untrusted content enters this run. Ask for the action and target in a fresh owner message.",
               }),
@@ -182,5 +182,9 @@ export const externalAgentTool = (entry: ExternalTool): AgentTool => ({
   contextOnly: false,
   availableWhenScheduled: true,
   failures: entry.review === undefined ? externalFailures : reviewedFailures,
-  external: { serverId: entry.serverId, toolName: entry.toolName },
+  external: {
+    serverId: entry.serverId,
+    toolName: entry.toolName,
+    reviewed: entry.review !== undefined,
+  },
 });

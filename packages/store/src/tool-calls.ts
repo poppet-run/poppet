@@ -45,6 +45,13 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
               arguments: call.arguments,
               serverId: identity?.serverId ?? null,
               toolName: identity?.toolName ?? null,
+              review:
+                identity?.reviewed === true
+                  ? JSON.stringify({
+                      decision: "pending",
+                      reason: "Review did not reach a decision.",
+                    } satisfies ToolReview)
+                  : null,
               status: "pending",
               createdAt,
             };
@@ -100,17 +107,19 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
 
           const decoded = yield* decodeInput(ToolReview, review, { onExcessProperty: "error" });
           const { approval } = decoded;
+          const previous = call.review;
+          const firstDecision = previous === null || previous.decision === "pending";
 
           if (
-            call.review === null
-              ? approval !== undefined
-              : call.review.decision !== "needs_approval" ||
-                call.review.approval !== undefined ||
+            firstDecision
+              ? approval !== undefined || decoded.decision === "pending"
+              : previous.decision !== "needs_approval" ||
+                previous.approval !== undefined ||
                 approval === undefined ||
-                call.review.decision !== decoded.decision ||
-                call.review.reason !== decoded.reason ||
-                call.review.target !== decoded.target ||
-                call.review.effects !== decoded.effects
+                previous.decision !== decoded.decision ||
+                previous.reason !== decoded.reason ||
+                previous.target !== decoded.target ||
+                previous.effects !== decoded.effects
           )
             return yield* conflict("A saved tool review only accepts one owner decision.");
 

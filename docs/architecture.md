@@ -456,7 +456,8 @@ the model within the existing budgets. An invalid batch executes none of its
 calls. Uncertain effects end the run without replay. Once page, search, or MCP
 content enters a run, or the owner's message carries attachments, task management,
 memory changes, and MCP tools are withdrawn until a new owner message. A server configured with
-`availableAfterUntrusted` keeps its allowed MCP tools except for tools that require review. A scheduled task's note tool
+`availableAfterUntrusted` keeps its allowed MCP tools except for tools that require review.
+Bash output also withdraws reviewed MCP tools. A scheduled task's note tool
 also stays available; see [task notes](#task-notes).
 See [chat limits](chat.md#context-and-run-limits).
 
@@ -810,9 +811,10 @@ pairs. Limit loaded memory, tool output, model turns, and tool calls. Stop clear
 when the active exchange alone exceeds the context budget.
 
 Keep credentials separate from memory and tool-readable files. The runner
-enforces allowed tools before invoking them. Scheduled runs retain read-only MCP tools and exclude memory/task writes.
-The host Bash tool follows the same command review as interactive runs, but
-fails the occurrence when human approval is needed.
+enforces allowed tools before invoking them. Scheduled runs exclude memory and
+task writes. MCP offers owner-verified reads from `scheduledTools` and reviewed
+actions from `scheduledReviewedTools`. The agent reviews Bash and MCP actions
+against the saved prompt and fails the occurrence if human approval is needed.
 
 Do not automatically retry a side effect whose completion is uncertain. Record
 its state and require an explicit retry. Database updates use transactions. Exactly-once external execution is not assumed.

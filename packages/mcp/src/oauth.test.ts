@@ -112,7 +112,7 @@ describe("MCP OAuth", () => {
               const [tool] = yield* (yield* MCP).snapshot(false);
               const prepared = yield* tool!.prepare('{"input":"{}"}');
 
-              if (mode === "challenge") state.server.options.tokenUses = 0;
+              if (mode === "challenge") state.server.options.challengeToolCall = true;
               else yield* Effect.promise(state.login);
 
               const initialRequests = state.server.events.length;
@@ -123,9 +123,9 @@ describe("MCP OAuth", () => {
                 mode === "challenge" ? "tool-uncertain" : "tool-permission",
               );
               expect(requests.some((event) => event.path === "/token")).toBe(false);
-              expect(requests.filter((event) => event.path === "/mcp").length).toBeLessThanOrEqual(
-                mode === "challenge" ? 2 : 1,
-              );
+              expect(
+                requests.filter((event) => event.path === "/mcp" && event.method === "POST"),
+              ).toHaveLength(mode === "challenge" ? 1 : 0);
             }),
           ).pipe(Effect.provide(state.mcp([{ ...state.config, reviewedTools: ["read"] }])), quiet),
         );

@@ -21,13 +21,20 @@ export interface OAuthFixtureOptions {
   customDiscovery?: boolean;
   noRefreshToken?: boolean;
   tokenUses?: number;
+  challengeToolCall?: boolean;
   refreshError?: string;
   stepUpScope?: string;
 }
 
 export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
   const options = { ...initial };
-  const events: { readonly path: string; readonly authorization: string | null }[] = [];
+
+  const events: {
+    readonly method: string;
+    readonly path: string;
+    readonly authorization: string | null;
+  }[] = [];
+
   const clients = new Map<string, readonly string[]>();
   const codes = new Map<string, { readonly client: string; readonly challenge: string }>();
   const access = new Map<string, number>();
@@ -59,7 +66,7 @@ export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
       const url = new URL(request.url);
       const origin = url.origin;
       const authorization = request.headers.get("authorization");
-      events.push({ path: url.pathname, authorization });
+      events.push({ method: request.method, path: url.pathname, authorization });
 
       const metadataPath = options.customDiscovery
         ? "/custom-resource"
@@ -148,13 +155,16 @@ export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
       const bearer = authorization?.replace(/^Bearer /, "") ?? "";
       const uses = access.get(bearer);
 
-      if (uses === undefined || uses >= (options.tokenUses ?? Number.POSITIVE_INFINITY))
-        return new Response(null, {
+      const challenge = () =>
+        new Response(null, {
           status: 401,
           headers: {
             "www-authenticate": `Bearer resource_metadata="${origin}${metadataPath}"`,
           },
         });
+
+      if (uses === undefined || uses >= (options.tokenUses ?? Number.POSITIVE_INFINITY))
+        return challenge();
 
       if (request.method !== "POST")
         return new Response(null, { status: request.method === "DELETE" ? 200 : 405 });
@@ -162,6 +172,8 @@ export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
       const message = Schema.decodeUnknownSync(Schema.fromJsonString(Request))(
         await request.text(),
       );
+
+      if (options.challengeToolCall && message.method === "tools/call") return challenge();
 
       if (message.id === undefined) return new Response(null, { status: 202 });
 

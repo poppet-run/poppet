@@ -1,8 +1,8 @@
-import { ToolReview } from "@poppet/store";
 import { Schema } from "effect";
 
 import type { ChatInspection } from "#src/commands/chat/chat";
 import { chatHistory, HistoryMessages } from "#src/commands/chat/history";
+import { ReviewedCall, renderReviewedCall } from "#src/commands/tool-review";
 import { bold, fields, printParsed, sections, table, tableOr, time } from "#src/output";
 
 const Time = Schema.NullOr(Schema.Number);
@@ -31,50 +31,6 @@ const SearchResult = Schema.Struct({
   ),
   truncated: Schema.Boolean,
 });
-
-const ReviewedCall = Schema.Struct({
-  runId: Schema.String,
-  serverId: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  toolName: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  arguments: Schema.optionalKey(Schema.String),
-  status: Schema.optionalKey(Schema.String),
-  failureReason: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  review: Schema.optionalKey(Schema.NullOr(ToolReview)),
-});
-
-export const renderReviewedCall = (call: typeof ReviewedCall.Type) => {
-  const { review } = call;
-
-  if (review == null) return [];
-
-  return [
-    fields([
-      ["Run", call.runId],
-      ["Tool", `${call.serverId}/${call.toolName}`],
-      ["Arguments", call.arguments ?? "-"],
-      ["Review", review.decision],
-      ["Reason", JSON.stringify(review.reason)],
-      ["Target", review.target === undefined ? "-" : JSON.stringify(review.target)],
-      ["Expected effects", review.effects === undefined ? "-" : JSON.stringify(review.effects)],
-      [
-        "Approved by",
-        review.decision === "allow"
-          ? "reviewer"
-          : review.approval?.decision === "approved"
-            ? `${review.approval.adapter}/${review.approval.senderId}`
-            : "-",
-      ],
-      review.approval === undefined
-        ? null
-        : [
-            "Owner decision",
-            `${review.approval.decision} by ${review.approval.adapter}/${review.approval.senderId} at ${time(review.approval.at)}`,
-          ],
-      ["Outcome", call.status ?? "-"],
-      ["Failure", call.failureReason ?? "-"],
-    ]),
-  ];
-};
 
 const SessionDetails = Schema.Struct({
   session: SessionRow,

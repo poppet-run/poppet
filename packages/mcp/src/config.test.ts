@@ -28,6 +28,8 @@ describe("config.ts", () => {
       [{ ...server, reviewedTools: ["write"] }],
       [{ ...server, reviewedTools: ["read", "read"] }],
       [{ ...server, reviewedTools: ["read"], scheduledTools: ["read"] }],
+      [{ ...server, scheduledReviewedTools: ["read"] }],
+      [{ ...server, reviewedTools: ["read"], scheduledReviewedTools: ["read", "read"] }],
       [{ ...server, environment: { TOKEN: "secret-literal" } }],
     ]) {
       expect(Schema.is(MCPServers)(servers)).toBe(false);

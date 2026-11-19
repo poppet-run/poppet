@@ -3,24 +3,29 @@
 [Documentation index](README.md)
 
 Scheduled [MCP tools](mcp.md) are denied by default. A server's `scheduledTools`
-must be an explicitly reviewed read-only subset of its interactive `tools`.
+lists owner-verified reads. A separate `scheduledReviewedTools` list opts
+specific tools into [per-call review](mcp.md#schedule-a-reviewed-action) using
+the saved task prompt. Either kind of tool must also be on the interactive
+allowlist.
 Annotations cannot grant permission. Restart the worker after changing these
 lists. MCP results cannot authorize built-in mutations or page fetching.
 
-## Host commands
+## Reviewed actions
 
 Scheduled runs can use the [Bash tool](commands.md). Each command is reviewed
 against the saved job prompt using the job's provider and model. Allowed commands
-can modify the machine. A denial, unavailable reviewer, or need for human approval
-fails that occurrence immediately, without trying another command or waiting for
-a person. The recurring schedule stays intact. Earlier completed commands are
-not rolled back.
+can modify the machine. Reviewed MCP actions follow the same rules. A denial,
+unavailable reviewer, or need for human approval fails the occurrence before
+dispatch. This stops the run without waiting for a person or trying an
+alternative tool. Future scheduled occurrences stay active. Earlier actions
+may already have taken effect.
 
 Failed runs log their failure reason code and retain details in `tasks show`.
 A task with a messaging destination also posts a short
-[failure notice](#failure-notices) there. Approval failures retain the blocked
-invocation and reason. Inspect them before retrying; later occurrences still run
-on their normal schedule. Successful results go to the task's configured destination.
+[failure notice](#failure-notices) there. `tasks show` includes the reviewed
+MCP invocation, decision, reason, and journal outcome, including uncertain
+dispatches. Inspect them before retrying. Successful results go to the task's
+configured destination.
 
 ## Create and inspect tasks
 
@@ -347,7 +352,8 @@ completed log line when an occurrence changes its note.
 The note grants nothing, and it is not [memory](memory.md): it belongs to one
 task, only that task's scheduled runs see it, and it never changes saved facts.
 URLs in a note do not count as supplied by the task prompt, so `fetch_page` will
-not read them, and Bash commands are still reviewed against the task prompt alone.
+not read them. Bash and reviewed MCP actions are checked against the task prompt
+alone.
 Unlike task, memory, and MCP tools, `save_note` stays available after a page,
 search result, or MCP result enters the run, because change detection has to save
 values derived from that content. Page text can therefore reach the next

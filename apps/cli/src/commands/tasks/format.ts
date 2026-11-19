@@ -2,6 +2,7 @@ import { Output, outputText } from "@poppet/provider";
 import { ProviderPause, Schedule, type TaskCommand } from "@poppet/tasks";
 import { Schema } from "effect";
 
+import { ReviewedCall, renderReviewedCall } from "#src/commands/tool-review";
 import { fields, plural, printParsed, sections, table, tableOr, time, tree } from "#src/output";
 
 const Time = Schema.NullOr(Schema.Number);
@@ -54,6 +55,7 @@ const TaskDetails = Schema.Struct({
       noAction: Schema.optionalKey(Schema.Boolean),
       output: Schema.NullOr(Schema.Array(Output)),
       failureReason: Schema.NullOr(Schema.String),
+      toolCalls: Schema.optionalKey(Schema.Array(ReviewedCall)),
     }),
   ),
   skipped: Schema.Array(
@@ -155,6 +157,12 @@ const showTask = ({ task, target, note, occurrences, skipped }: typeof TaskDetai
     .map((item) => outputText(item.output ?? []).trim())
     .find((output) => output !== "");
 
+  const reviewed = occurrences.flatMap((item) =>
+    (item.toolCalls ?? []).flatMap((call) =>
+      renderReviewedCall(call).map((detail) => `Occurrence ${item.id}\n${detail}`),
+    ),
+  );
+
   return sections([
     [null, taskFields(task)],
     ["Prompt", task.prompt],
@@ -185,6 +193,7 @@ const showTask = ({ task, target, note, occurrences, skipped }: typeof TaskDetai
       ),
     ],
     latest === undefined ? null : ["Latest result", latest],
+    reviewed.length === 0 ? null : ["Reviewed MCP calls", reviewed.join("\n\n")],
     skipped.length === 0
       ? null
       : [

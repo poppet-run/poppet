@@ -81,7 +81,8 @@ The recurring schedule remains active. Earlier commands may have completed;
 failure does not roll them back. Inspect the saved task and machine state before
 requesting a retry.
 
-Other scheduled restrictions remain: no memory writes or task management, and MCP tools must be explicitly listed in `scheduledTools` as read-only.
+Scheduled runs exclude memory writes and task management. MCP uses explicit,
+separate allowlists for [scheduled reads and reviewed actions](mcp.md#schedule-a-reviewed-action).
 The reviewed Bash tool can perform host changes authorized by the saved prompt.
 
 ## Validation
