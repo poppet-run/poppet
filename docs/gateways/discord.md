@@ -115,17 +115,19 @@ output stays inspectable in `tasks show`.
 Discord and [Slack](slack.md) are bundled adapters. Additional adapters can use the
 [external package contract](../development.md#adding-a-channel).
 
-## Command approval
+## Action approval
 
 The [Bash tool](../commands.md) can manage the host machine. If command review
 requires a person, Poppet posts the exact command, working directory, timeout,
 and reason in the original thread. Reply `/approve <id>` or `/deny <id>` using
-the ID in that message. Only the configured owner in that same authorized
+the ID in that message. [Reviewed MCP actions](../mcp.md#review-an-action)
+show the target, expected effects, and exact arguments. Only the configured
+owner in that same authorized
 conversation can answer. Each ID permits one invocation and expires after two
 minutes, cancellation, or worker restart. `/cancel` also cancels the pending run.
 
 Approval controls bypass the model queue. Unknown, expired, and reused IDs never
-start commands. Cron jobs do not create approval prompts; their occurrence fails,
+start actions. Cron jobs do not create approval prompts; their occurrence fails,
 logs a reason code, and retains the details in `tasks show`. A failed occurrence
 posts one short [failure notice](../tasks.md#failure-notices) to the task's
 configured destination, without model output or error text.

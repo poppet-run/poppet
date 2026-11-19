@@ -9,7 +9,7 @@ import type {
 } from "@poppet/store";
 import type { Effect } from "effect";
 
-import type { ApproveCommand } from "#src/bash";
+import type { ApproveAction } from "#src/action-approval";
 import type { AgentError } from "#src/errors";
 
 export type ToolCall = Extract<Output, { type: "tool-call" }>;
@@ -26,7 +26,7 @@ export interface RunContext {
   readonly selectedSkill: string | null;
   readonly mentionedSkills: ReadonlyArray<SkillSnapshot>;
   readonly taskNote: { readonly text: string | null } | null;
-  readonly approveCommand: ApproveCommand | null;
+  readonly approveAction: ApproveAction | null;
   readonly here: Effect.Effect<DeliveryDestination, AgentError> | null;
   readonly home: Effect.Effect<DeliveryDestination, AgentError> | null;
   readonly destination:

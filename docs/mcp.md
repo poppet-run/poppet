@@ -254,7 +254,13 @@ dispatches. Review uses the same model and decision contract as
 name, the validated arguments in full, and the server's untrusted description
 and input schema. The limits are 8 KiB for the escaped invocation and 32 KiB
 for the JSON-encoded owner message. Larger requests fail before dispatch.
-A denial, failed review, or decision requiring a person stops the run.
+A denial or failed review stops the run. When review requires a person,
+Poppet sends the target, expected effects, reason, and exact invocation to
+the originating Discord or Slack conversation. Only the configured owner
+can answer with `/approve <id>` or `/deny <id>`. Discord also has buttons.
+The request expires in two minutes and permits one execution. Use a private
+conversation for private arguments. CLI and web chat stop when a person is
+needed. Make a fresh request in Discord or Slack to obtain approval there.
 
 Attachments and results from pages, searches, Bash, or MCP withdraw reviewed
 MCP tools for the rest of the run, including calls waiting behind those
@@ -263,8 +269,9 @@ message. The server's `availableAfterUntrusted` setting never overrides this
 rule for reviewed tools.
 
 `poppet chat show <session>` displays the review decision, reason, and journal
-outcome. A completed receipt with `approvedBy: "reviewer"` describes a call
-that already ran. If a connection fails during dispatch, inspect the provider
+outcome, and identifies the owner if they answered an approval request. A
+completed receipt with `approvedBy: "reviewer"` or `approvedBy: "owner"`
+describes a call that already ran. If a connection fails during dispatch, inspect the provider
 before requesting the action again. Reviewed HTTP calls stop at redirects and
 auth challenges. Sign in again if needed before making a new request.
 

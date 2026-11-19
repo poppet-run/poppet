@@ -2,7 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { Agent, Bash, type ChatPolicy, Pages, Skills, SkillsLive } from "@poppet/agent";
+import {
+  Agent,
+  Bash,
+  type ChatPolicy,
+  ExternalTools,
+  Pages,
+  Skills,
+  SkillsLive,
+} from "@poppet/agent";
 import { agentHarness, gatedStream, optionalService, testModel } from "@poppet/agent/test";
 import { LogfmtLoggerLive } from "@poppet/io";
 import { ProviderError, type ModelOperations, type ModelRequest } from "@poppet/provider";
@@ -80,6 +88,7 @@ const fixture = async (
   policy: Partial<ChatPolicy> = {},
   pages: Pages["Service"] = { fetch: () => Effect.die("Unexpected page fetch") },
   bash?: Bash["Service"],
+  external?: ExternalTools["Service"],
 ) => {
   const harness = await agentHarness(policy);
   const { directory } = harness;
@@ -142,6 +151,7 @@ const fixture = async (
     skills,
     Layer.succeed(Pages, pages),
     optionalService(Bash, bash),
+    optionalService(ExternalTools, external),
   );
 
   const layer = GatewayLive.pipe(
@@ -330,23 +340,38 @@ describe.concurrent("Gateway", () => {
   });
 
   test.each(
-    ["text", "button"].flatMap((transport) =>
-      ["approve", "deny", "timeout", "cancel", "revoked", "update-failed"].map((action) => [
-        transport,
-        action,
+    ["text", "button"]
+      .flatMap((transport) =>
+        ["approve", "deny", "timeout", "cancel", "revoked", "update-failed"].map((action) => [
+          transport,
+          action,
+        ]),
+      )
+      .flatMap(([transport, action]) => [
+        [transport, action, "bash"],
+        [transport, action, "mcp"],
       ]),
-    ),
   )(
-    "when %s command approval ends with %s, binds the decision to the owner and original conversation",
-    async (transport, action) => {
+    "when %s approval ends with %s for %s, binds the decision to the owner and original conversation",
+    async (transport, action, kind) => {
       const requested = Effect.runSync(Deferred.make<string>());
       let executed = 0;
       let revoked = false;
       const updates: ApprovalState[] = [];
       const replies: string[] = [];
+      const prompts: string[] = [];
+      const args = { target: "Services/42", message: "Restart after deploy " + "`😀`".repeat(400) };
+
+      const definition = {
+        name: "restart_service",
+        namespace: "poppet_mcp",
+        description: "Restart a service",
+        parameters: {},
+      };
 
       const send = (_conversation: string, text: string) =>
         Effect.gen(function* () {
+          prompts.push(text);
           const id = /\/approve ([a-f0-9-]{36})/.exec(text)?.[1];
 
           if (id) yield* Deferred.succeed(requested, id);
@@ -387,7 +412,9 @@ describe.concurrent("Gateway", () => {
         (request) => {
           if (request.settings.toolChoice === "none")
             return response(
-              JSON.stringify({ decision: "needs_approval", reason: "Restart a service" }),
+              kind === "bash"
+                ? '{"decision":"needs_approval","reason":"Restart a service"}'
+                : '{"decision":"needs_approval","reason":"Restart a service","target":"Services/42","effects":"Interrupt service while it restarts"}',
             );
 
           if (request.messages.at(-1)?.role === "tool") return response("Done");
@@ -398,14 +425,17 @@ describe.concurrent("Gateway", () => {
               output: [
                 {
                   type: "tool-call",
-                  namespace: "poppet_system",
-                  name: "bash",
-                  callId: "bash-1",
-                  arguments: JSON.stringify({
-                    command: "restart-service",
-                    cwd: "/tmp",
-                    timeoutSeconds: 5,
-                  }),
+                  namespace: kind === "bash" ? "poppet_system" : definition.namespace,
+                  name: kind === "bash" ? "bash" : definition.name,
+                  callId: "restart-1",
+                  arguments:
+                    kind === "bash"
+                      ? JSON.stringify({
+                          command: "restart-service",
+                          cwd: "/tmp",
+                          timeoutSeconds: 5,
+                        })
+                      : JSON.stringify(args),
                 },
               ],
               continuation: {
@@ -422,14 +452,38 @@ describe.concurrent("Gateway", () => {
         true,
         {},
         undefined,
-        {
-          run: () =>
-            Effect.sync(() => {
-              executed++;
+        kind === "bash"
+          ? {
+              run: () =>
+                Effect.sync(() => {
+                  executed++;
 
-              return { stdout: "done", stderr: "", exitCode: 0, truncated: false };
-            }),
-        },
+                  return { stdout: "done", stderr: "", exitCode: 0, truncated: false };
+                }),
+            }
+          : undefined,
+        kind === "mcp"
+          ? {
+              snapshot: () =>
+                Effect.succeed([
+                  {
+                    definition,
+                    serverId: "fixture",
+                    toolName: "restart_service",
+                    review: { origin: "https://mcp.example.test" },
+                    prepare: (input) =>
+                      Effect.succeed({
+                        validatedArguments: input,
+                        execute: Effect.sync(() => {
+                          executed++;
+
+                          return '{"content":["done"]}';
+                        }),
+                      }),
+                  },
+                ]),
+            }
+          : undefined,
       );
 
       try {
@@ -440,6 +494,25 @@ describe.concurrent("Gateway", () => {
             const running = yield* gateway.processNext.pipe(Effect.forkChild);
             const id = yield* Deferred.await(requested);
             yield* TestClock.adjust(0);
+
+            if (kind === "mcp") {
+              expect(prompts[0]).toContain('Target: `"Services/42"`');
+              expect(prompts[0]).toContain(
+                'Expected effects: `"Interrupt service while it restarts"`',
+              );
+
+              const exact = prompts
+                .slice(1, -1)
+                .map((chunk) => chunk.slice(1, -1))
+                .join("");
+
+              expect(JSON.parse(exact)).toEqual({
+                server: "fixture",
+                tool: "restart_service",
+                origin: "https://mcp.example.test",
+                arguments: args,
+              });
+            }
 
             const click = (
               source = message("approval-message", "thread"),
@@ -505,6 +578,28 @@ describe.concurrent("Gateway", () => {
                       ? "expired"
                       : "unavailable",
             ]);
+
+            if (kind === "mcp") {
+              const store = yield* Store;
+              const [session] = yield* store.sessions;
+              const [run] = yield* store.runs(session!.id);
+              const [call] = yield* store.toolCalls(run!.id);
+              const answered = approved || action === "deny" || action === "revoked";
+              expect(call?.review?.decision).toBe("needs_approval");
+
+              if (answered)
+                expect(call?.review?.approval).toMatchObject({
+                  decision: action === "deny" ? "denied" : "approved",
+                  adapter: "discord",
+                  senderId: "owner",
+                });
+              else expect(call?.review?.approval).toBeUndefined();
+
+              if (approved)
+                expect(JSON.parse(call!.output!)).toMatchObject({ approvedBy: "owner" });
+              else expect(call?.startedAt).toBeNull();
+            }
+
             revoked = false;
             yield* gateway.accept(message("replay", "thread", `/approve ${id}`));
             yield* gateway.answerApproval(click());

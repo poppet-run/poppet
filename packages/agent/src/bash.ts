@@ -4,7 +4,7 @@ import { toolParameters, type ModelOperations } from "@poppet/provider";
 import type { Run } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
-import { reviewAction } from "#src/action-review";
+import { BashReview, reviewAction } from "#src/action-review";
 import type {
   AgentTool,
   FailurePolicy,
@@ -25,12 +25,6 @@ const Arguments = Schema.Struct({
 });
 
 export type BashArguments = typeof Arguments.Type;
-
-export interface CommandApproval extends BashArguments {
-  readonly reason: string;
-}
-
-export type ApproveCommand = (request: CommandApproval) => Effect.Effect<boolean, AgentError>;
 
 export interface BashResult {
   readonly stdout: string;
@@ -70,13 +64,14 @@ export const reviewCommand = (
     run,
     commandReviewInstructions,
     JSON.stringify({ ownerRequest, ...request }),
+    BashReview,
     "command-review",
   );
 
 const prepareBash = (
   call: ToolCall,
   runner: Bash["Service"],
-  { model, run, text: ownerRequest, origin, approveCommand: approve }: ToolContext,
+  { model, run, text: ownerRequest, origin, approveAction: approve }: ToolContext,
   maxBytes: number,
 ) =>
   Effect.gen(function* () {
@@ -99,11 +94,11 @@ const prepareBash = (
             return yield* Effect.fail(
               new AgentError({
                 reason: "command-approval-required",
-                message: `Command needs approval: ${review.reason}. Nothing was executed. ${origin === "scheduled" ? "This occurrence has stopped." : "Request this operation in Discord to approve it."}`,
+                message: `Command needs approval: ${review.reason}. Nothing was executed. ${origin === "scheduled" ? "This occurrence has stopped." : "Request this operation in Discord or Slack to approve it."}`,
               }),
             );
 
-          if (!(yield* approve({ ...request, reason: review.reason })))
+          if (!(yield* approve({ kind: "bash", ...request, reason: review.reason })))
             return yield* Effect.fail(
               new AgentError({
                 reason: "command-denied",
@@ -121,7 +116,7 @@ const prepareBash = (
         });
       }).pipe(
         Effect.mapError((error) =>
-          error.reason.startsWith("command-")
+          error instanceof AgentError && error.reason.startsWith("command-")
             ? new AgentError({
                 reason: error.reason,
                 message: `${error.message}\nInvocation: ${JSON.stringify(request)}`,

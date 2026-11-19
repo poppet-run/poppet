@@ -478,12 +478,14 @@ available for subsequent independently reviewed commands.
 For tools in `reviewedTools`, the CLI exposes the validated arguments through
 the external-tool adapter. The agent uses the same review request machinery
 with MCP-specific instructions and journals the decision on the pending call.
-Only an allowed call reaches dispatch. The HTTP transport binds the prepared
+Only a reviewer-allowed or owner-approved call reaches dispatch. The HTTP transport binds the prepared
 sign-in and permits one POST for the reviewed call. Redirects and authorization
 challenges stop dispatch without a resend. The store distinguishes
 pre-dispatch interruption from uncertain in-flight effects.
 
-The gateway holds pending approval IDs in memory for at most two minutes. Discord
+The gateway shares pending approval IDs between Bash commands and reviewed MCP
+actions and holds them in memory for at most two minutes. The MCP journal records
+the authenticated owner's answer before dispatch. Discord
 buttons and Discord or Slack text controls resolve them outside the inference queue
 and only in the originating conversation, with access rechecked before execution.
 Restart expires pending requests. CLI and web chat supply no approval callback,

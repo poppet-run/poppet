@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { Deferred, Effect, Fiber, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
-import { commandApprovals, type CommandApprovals } from "#src/approvals";
+import { actionApprovals, type ActionApprovals } from "#src/approvals";
 import {
   ChannelError,
   type ApprovalAction,
@@ -22,7 +22,13 @@ const message: IncomingMessage = {
   mentioned: true,
 };
 
-const approval = { command: "ls", cwd: "/tmp", timeoutSeconds: 10, reason: "List files" };
+const approval = {
+  kind: "bash" as const,
+  command: "ls",
+  cwd: "/tmp",
+  timeoutSeconds: 10,
+  reason: "List files",
+};
 
 const channel = (sent: string[]): MessagingChannel["Service"] => ({
   id: "discord",
@@ -50,7 +56,7 @@ const channel = (sent: string[]): MessagingChannel["Service"] => ({
   },
 });
 
-const prompted = (sent: string[], approvals: CommandApprovals) =>
+const prompted = (sent: string[], approvals: ActionApprovals) =>
   Effect.gen(function* () {
     const fiber = yield* approvals.request(message, "thread", approval).pipe(Effect.forkChild);
 
@@ -94,7 +100,7 @@ const click = (
     }),
 });
 
-describe("commandApprovals", () => {
+describe("actionApprovals", () => {
   test.each(["text", "button"])(
     "when the %s answer arrives before the send acknowledgement, waits for complete delivery",
     async (transport) => {
@@ -103,7 +109,7 @@ describe("commandApprovals", () => {
       const acknowledge = Deferred.makeUnsafe<void>();
       const replies: string[] = [];
 
-      const approvals = commandApprovals({
+      const approvals = actionApprovals({
         ...adapter,
         approvals: {
           ...adapter.approvals!,
@@ -128,7 +134,7 @@ describe("commandApprovals", () => {
           const answering = yield* (
             transport === "button"
               ? approvals.answerAction(click(id, replies))
-              : approvals.answer("thread", `/approve ${id}`).pipe(
+              : approvals.answer("thread", { ...message, text: `/approve ${id}` }).pipe(
                   Effect.tap((text) =>
                     Effect.sync(() => {
                       replies.push(text);
@@ -152,7 +158,7 @@ describe("commandApprovals", () => {
     "when the %s button races the opposite text command, only one decision wins",
     async (decision) => {
       const { sent, updates, adapter } = interactive();
-      const approvals = commandApprovals(adapter);
+      const approvals = actionApprovals(adapter);
       const replies: string[] = [];
 
       await Effect.runPromise(
@@ -162,7 +168,10 @@ describe("commandApprovals", () => {
           const [, text] = yield* Effect.all(
             [
               approvals.answerAction(click(id, replies, decision)),
-              approvals.answer("thread", `/${decision === "approve" ? "deny" : "approve"} ${id}`),
+              approvals.answer("thread", {
+                ...message,
+                text: `/${decision === "approve" ? "deny" : "approve"} ${id}`,
+              }),
             ],
             { concurrency: "unbounded" },
           );
@@ -188,7 +197,7 @@ describe("commandApprovals", () => {
     const checking = Deferred.makeUnsafe<void>();
     const release = Deferred.makeUnsafe<void>();
 
-    const approvals = commandApprovals({
+    const approvals = actionApprovals({
       ...adapter,
       checkAccess: (source) =>
         source.messageId === "sent-1"
@@ -218,18 +227,18 @@ describe("commandApprovals", () => {
 
   test("when the worker restarts, the new approval manager rejects old buttons and text IDs", async () => {
     const { sent, adapter } = interactive();
-    const original = commandApprovals(adapter);
+    const original = actionApprovals(adapter);
     const replies: string[] = [];
 
     await Effect.runPromise(
       Effect.gen(function* () {
         const { fiber, id } = yield* prompted(sent, original);
-        const restarted = commandApprovals(adapter);
+        const restarted = actionApprovals(adapter);
         yield* restarted.answerAction(click(id, replies));
         expect(replies[0]).toStartWith("No matching pending approval");
-        expect(yield* restarted.answer("thread", `/approve ${id}`)).toStartWith(
-          "No matching pending approval",
-        );
+        expect(
+          yield* restarted.answer("thread", { ...message, text: `/approve ${id}` }),
+        ).toStartWith("No matching pending approval");
         yield* Fiber.interrupt(fiber);
       }),
     );
@@ -237,7 +246,7 @@ describe("commandApprovals", () => {
 
   test("when the private confirmation fails, the accepted decision remains consumed", async () => {
     const { sent, adapter } = interactive();
-    const approvals = commandApprovals(adapter);
+    const approvals = actionApprovals(adapter);
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -248,9 +257,9 @@ describe("commandApprovals", () => {
             Effect.fail(new ChannelError({ reason: "unavailable", message: "Lost reply" })),
         });
         expect(yield* Fiber.join(fiber)).toBe(true);
-        expect(yield* approvals.answer("thread", `/approve ${id}`)).toStartWith(
-          "No matching pending approval",
-        );
+        expect(
+          yield* approvals.answer("thread", { ...message, text: `/approve ${id}` }),
+        ).toStartWith("No matching pending approval");
       }),
     );
   });
@@ -259,7 +268,7 @@ describe("commandApprovals", () => {
     const { sent, adapter } = interactive();
     const updating = Deferred.makeUnsafe<void>();
 
-    const approvals = commandApprovals({
+    const approvals = actionApprovals({
       ...adapter,
       approvals: {
         ...adapter.approvals!,
@@ -275,9 +284,9 @@ describe("commandApprovals", () => {
         yield* Deferred.await(updating);
         yield* TestClock.adjust("5 seconds");
         yield* Fiber.join(cancelling);
-        expect(yield* approvals.answer("thread", `/approve ${id}`)).toStartWith(
-          "No matching pending approval",
-        );
+        expect(
+          yield* approvals.answer("thread", { ...message, text: `/approve ${id}` }),
+        ).toStartWith("No matching pending approval");
       }).pipe(Effect.provide(TestClock.layer())),
     );
   });
@@ -289,7 +298,7 @@ describe("commandApprovals", () => {
       const buttons: { text: string; id: string }[] = [];
       const ready = Deferred.makeUnsafe<void>();
 
-      const approvals = commandApprovals({
+      const approvals = actionApprovals({
         ...adapter,
         send: (conversation, text, nonce) =>
           sent.length === 1 && fail
@@ -345,7 +354,7 @@ describe("commandApprovals", () => {
             expect(buttons[0]!.text).toContain(
               `\`/approve ${buttons[0]!.id}\` or \`/deny ${buttons[0]!.id}\``,
             );
-            yield* approvals.answer("thread", `/deny ${buttons[0]!.id}`);
+            yield* approvals.answer("thread", { ...message, text: `/deny ${buttons[0]!.id}` });
             expect(yield* Fiber.join(fiber)).toBe(false);
           }
         }),
@@ -353,12 +362,54 @@ describe("commandApprovals", () => {
     },
   );
 
+  test("when MCP invocation details cannot be delivered, leaves no approval to settle", async () => {
+    const { adapter, sent } = interactive();
+
+    const approvals = actionApprovals({
+      ...adapter,
+      send: (_conversation, part) => {
+        if (part.startsWith("`"))
+          return Effect.fail(new ChannelError({ reason: "unavailable", message: "Send failed" }));
+
+        return adapter.send("thread", part, "summary");
+      },
+    });
+
+    let recorded = false;
+
+    const result = await Effect.runPromise(
+      approvals
+        .request(
+          message,
+          "thread",
+          {
+            kind: "mcp",
+            invocation: JSON.stringify({ arguments: { text: "x".repeat(4000) } }),
+            target: "Docs/42",
+            effects: "Replace the document text",
+            reason: "Overwrites an existing record",
+          },
+          () =>
+            Effect.sync(() => {
+              recorded = true;
+            }),
+        )
+        .pipe(Effect.flip),
+    );
+
+    expect(result.reason).toBe("mcp-approval-required");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("Exact invocation:");
+    expect(sent[0]).not.toContain("/approve");
+    expect(recorded).toBe(false);
+  });
+
   test.each([
     ["approve", true, "Approved this exact command once."],
     ["deny", false, "Command denied."],
   ])("when the owner replies /%s, settles the request once", async (action, approved, reply) => {
     const sent: string[] = [];
-    const approvals = commandApprovals(channel(sent));
+    const approvals = actionApprovals(channel(sent));
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -367,18 +418,20 @@ describe("commandApprovals", () => {
         expect(sent[0]).toContain(
           'Exact invocation: `{"command":"ls","cwd":"/tmp","timeoutSeconds":10}`',
         );
-        expect(yield* approvals.answer("thread", `/${action} ${id}`)).toBe(reply);
-        expect(yield* Fiber.join(fiber)).toBe(approved);
-        expect(yield* approvals.answer("thread", `/${action} ${id}`)).toStartWith(
-          "No matching pending approval",
+        expect(yield* approvals.answer("thread", { ...message, text: `/${action} ${id}` })).toBe(
+          reply,
         );
+        expect(yield* Fiber.join(fiber)).toBe(approved);
+        expect(
+          yield* approvals.answer("thread", { ...message, text: `/${action} ${id}` }),
+        ).toStartWith("No matching pending approval");
       }),
     );
   });
 
   test("when a reply comes from another conversation or names no request, leaves it pending", async () => {
     const sent: string[] = [];
-    const approvals = commandApprovals(channel(sent));
+    const approvals = actionApprovals(channel(sent));
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -389,11 +442,15 @@ describe("commandApprovals", () => {
           ["thread", "/approve"],
           ["thread", `/approve ${id} now`],
         ])
-          expect(yield* approvals.answer(conversation!, text!)).toStartWith(
-            "No matching pending approval",
-          );
+          expect(
+            yield* approvals.answer(conversation!, {
+              ...message,
+              conversationId: conversation!,
+              text: text!,
+            }),
+          ).toStartWith("No matching pending approval");
 
-        expect(yield* approvals.answer("thread", `/approve ${id}`)).toBe(
+        expect(yield* approvals.answer("thread", { ...message, text: `/approve ${id}` })).toBe(
           "Approved this exact command once.",
         );
         expect(yield* Fiber.join(fiber)).toBe(true);

@@ -147,9 +147,19 @@ export const RunOutcome = Schema.Union([
   }),
 ]);
 
+export const ToolApproval = Schema.Struct({
+  decision: Schema.Literals(["approved", "denied"]),
+  adapter: Schema.NonEmptyString,
+  senderId: Schema.NonEmptyString,
+  at: Schema.Natural,
+});
+
 export const ToolReview = Schema.Struct({
   decision: Schema.Literals(["allow", "needs_approval", "deny", "unavailable"]),
   reason: Schema.NonEmptyString,
+  target: Schema.optionalKey(Schema.NonEmptyString),
+  effects: Schema.optionalKey(Schema.NonEmptyString),
+  approval: Schema.optionalKey(ToolApproval),
 });
 
 export const ToolCall = Schema.Struct({
@@ -197,6 +207,8 @@ export type SavedAttachment = typeof SavedAttachment.Type;
 export type ToolCall = typeof ToolCall.Type;
 
 export type ToolOutcome = typeof ToolOutcome.Type;
+
+export type ToolApproval = typeof ToolApproval.Type;
 
 export type ToolReview = typeof ToolReview.Type;
 

@@ -454,6 +454,7 @@ describe("ExternalAgentToolsLive", () => {
     ["deny", "mcp-denied", "failed", 0],
     ["needs_approval", "mcp-approval-required", "failed", 0],
     ["malformed", "mcp-review", "failed", 0],
+    ["missing effects", "mcp-review", "failed", 0],
     ["oversized", "mcp-review", "failed", 0],
   ] as const)(
     "when the reviewed invocation yields %s, journals the decision and dispatches only an allowed call",
@@ -465,8 +466,13 @@ describe("ExternalAgentToolsLive", () => {
         decision === "malformed"
           ? "unexpected"
           : JSON.stringify({
-              decision,
+              decision: decision === "missing effects" ? "needs_approval" : decision,
               reason: "Fixture review for record 42.",
+              target:
+                decision === "needs_approval" || decision === "missing effects"
+                  ? "Record 42"
+                  : undefined,
+              effects: decision === "needs_approval" ? "Write the supplied text" : undefined,
             }),
       );
 
@@ -510,8 +516,7 @@ describe("ExternalAgentToolsLive", () => {
         const session = sessions[0].id;
         const saved = JSON.parse(await state.invoke(["chat", "show", session, "--json"]));
 
-        const reviewDecision =
-          decision === "malformed" || decision === "oversized" ? "unavailable" : decision;
+        const reviewDecision = failure === "mcp-review" ? "unavailable" : decision;
 
         expect(saved.toolCalls[0]).toMatchObject({ status, review: { decision: reviewDecision } });
         expect(await state.invoke(["chat", "show", session])).toContain("Reviewed MCP calls");
