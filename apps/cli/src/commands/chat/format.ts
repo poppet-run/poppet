@@ -1,3 +1,4 @@
+import { ToolReview } from "@poppet/store";
 import { Schema } from "effect";
 
 import type { ChatInspection } from "#src/commands/chat/chat";
@@ -31,6 +32,35 @@ const SearchResult = Schema.Struct({
   truncated: Schema.Boolean,
 });
 
+const ReviewedCall = Schema.Struct({
+  runId: Schema.String,
+  serverId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  toolName: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  arguments: Schema.optionalKey(Schema.String),
+  status: Schema.optionalKey(Schema.String),
+  failureReason: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  review: Schema.optionalKey(Schema.NullOr(ToolReview)),
+});
+
+export const renderReviewedCall = (call: typeof ReviewedCall.Type) => {
+  const { review } = call;
+
+  if (review == null) return [];
+
+  return [
+    fields([
+      ["Run", call.runId],
+      ["Tool", `${call.serverId}/${call.toolName}`],
+      ["Arguments", call.arguments ?? "-"],
+      ["Review", review.decision],
+      ["Reason", JSON.stringify(review.reason)],
+      ["Approved by", review.decision === "allow" ? "reviewer" : "-"],
+      ["Outcome", call.status ?? "-"],
+      ["Failure", call.failureReason ?? "-"],
+    ]),
+  ];
+};
+
 const SessionDetails = Schema.Struct({
   session: SessionRow,
   messages: HistoryMessages,
@@ -46,7 +76,7 @@ const SessionDetails = Schema.Struct({
       ),
     }),
   ),
-  toolCalls: Schema.Array(Schema.Struct({ runId: Schema.String })),
+  toolCalls: Schema.Array(ReviewedCall),
 });
 
 const title = (session: SessionRow) => session.title ?? "Untitled";
@@ -82,6 +112,7 @@ const renderSearch = (result: typeof SearchResult.Type) => {
 
 const renderSession = ({ session, messages, runs, toolCalls }: typeof SessionDetails.Type) => {
   const history = chatHistory(messages);
+  const reviewed = toolCalls.flatMap(renderReviewedCall);
 
   return sections([
     [
@@ -106,6 +137,7 @@ const renderSession = ({ session, messages, runs, toolCalls }: typeof SessionDet
             )
             .join("\n\n"),
     ],
+    reviewed.length === 0 ? null : ["Reviewed MCP calls", reviewed.join("\n\n")],
     [
       "Runs",
       tableOr(

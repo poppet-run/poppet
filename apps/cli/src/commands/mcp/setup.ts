@@ -130,6 +130,11 @@ export const changeMCPPermissions = (options: {
 
     if (options.action === "allow") {
       if (!server.enabled) return yield* invalid(`MCP server ${options.id} is disabled.`);
+
+      if (options.scheduled && names.some((name) => server.reviewedTools?.includes(name)))
+        return yield* invalid(
+          "Reviewed MCP tools cannot be added to the read-only scheduledTools list.",
+        );
       const discovered = yield* probeServer(server);
 
       if (options.all) names = [...discovered];
@@ -164,6 +169,9 @@ export const changeMCPPermissions = (options: {
                 : entry.tools.filter((name) => !names.includes(name)),
               scheduledTools: scheduled.filter((name) => !names.includes(name)),
             };
+
+      if (options.action === "deny" && !options.scheduled && entry.reviewedTools !== undefined)
+        updated.reviewedTools = entry.reviewedTools.filter((name) => !names.includes(name));
 
       changed = true;
 

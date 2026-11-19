@@ -9,7 +9,14 @@ import type {
 import { Store, StoreError } from "@poppet/store";
 import { Cause, Clock, Effect, Exit, Option, Result, Stream } from "effect";
 
-import type { AgentTool, PreparedCall, RunContext, ToolCall, ToolContext } from "#src/agent-tool";
+import type {
+  AgentTool,
+  PreparedCall,
+  ReviewableCall,
+  RunContext,
+  ToolCall,
+  ToolContext,
+} from "#src/agent-tool";
 import { bashTool } from "#src/bash";
 import {
   assembleContext,
@@ -42,7 +49,7 @@ type ConversationStream = Stream.Stream<ConversationEvent, AgentError | Provider
 interface PlannedCall {
   readonly callId: string;
   readonly tool: AgentTool;
-  readonly prepared: PreparedCall;
+  readonly prepared: PreparedCall | ReviewableCall;
 }
 
 export const conversation = Effect.gen(function* () {
@@ -159,9 +166,13 @@ export const conversation = Effect.gen(function* () {
         const { tools, skillsIndex } = yield* chooseTools(runContext);
         const instructions = buildInstructions(runContext, skillsIndex);
         const allowedURLs = suppliedPageURLs(text);
-        const context: ToolContext = { ...runContext, pageURLs: allowedURLs };
-
         let untrusted = attachments.length > 0;
+
+        const context: ToolContext = {
+          ...runContext,
+          pageURLs: allowedURLs,
+          hasUntrustedContent: () => untrusted,
+        };
 
         const activeTools = () =>
           (untrusted ? tools.filter((tool) => !tool.withdrawnWhenUntrusted) : tools).map(

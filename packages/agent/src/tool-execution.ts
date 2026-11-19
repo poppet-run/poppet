@@ -8,6 +8,7 @@ import {
   type AgentTool,
   type FailurePolicy,
   type PreparedCall,
+  type ReviewableCall,
 } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 
@@ -40,46 +41,67 @@ export const toolExecution = Effect.gen(function* () {
     run: Run,
     callId: string,
     tool: AgentTool,
-    call: PreparedCall,
+    call: PreparedCall | ReviewableCall,
     guard: (output: string) => Effect.Effect<void, AgentError>,
   ) => {
     const operation = Effect.gen(function* () {
-      yield* store.startToolCall(run.id, callId);
+      const failCall = (error: AgentError | StoreError) => {
+        const kind = toolFailureKind(tool.failures, error);
 
-      const outcome = yield* measureTiming("tool", call.execute).pipe(
-        Effect.tap((output) => (tool.contextOnly ? guard(output) : Effect.void)),
-        Effect.map((output) => ({ output, reported: false })),
-        Effect.catch((error) => {
-          const kind = toolFailureKind(tool.failures, error);
-
-          if (kind === "reported") {
-            const output = failureReply(error.reason, error.message);
-
-            return store
-              .finishToolCall(run.id, callId, {
-                status: "failed",
-                reason: failureReason(error),
-                output,
-              })
-              .pipe(Effect.as({ output, reported: true }));
-          }
-
-          if (tool.failures.journalFatalReply === true && kind === "fatal")
-            return store
-              .finishToolCall(run.id, callId, {
-                status: "failed",
-                reason: failureReason(error),
-                output: failureReply(error.reason, error.message),
-              })
-              .pipe(Effect.andThen(Effect.fail(error)));
+        if (kind === "reported") {
+          const output = failureReply(error.reason, error.message);
 
           return store
             .finishToolCall(run.id, callId, {
-              status: kind === "uncertain" ? "uncertain" : "failed",
+              status: "failed",
               reason: failureReason(error),
+              output,
+            })
+            .pipe(Effect.as({ output, reported: true }));
+        }
+
+        if (tool.failures.journalFatalReply === true && kind === "fatal")
+          return store
+            .finishToolCall(run.id, callId, {
+              status: "failed",
+              reason: failureReason(error),
+              output: failureReply(error.reason, error.message),
             })
             .pipe(Effect.andThen(Effect.fail(error)));
-        }),
+
+        return store
+          .finishToolCall(run.id, callId, {
+            status: kind === "uncertain" ? "uncertain" : "failed",
+            reason: failureReason(error),
+          })
+          .pipe(Effect.andThen(Effect.fail(error)));
+      };
+
+      const authorized =
+        "authorize" in call
+          ? yield* call
+              .authorize((review) => store.recordToolReview(run.id, callId, review))
+              .pipe(
+                Effect.catch((error) =>
+                  error instanceof AgentError
+                    ? store
+                        .finishToolCall(run.id, callId, {
+                          status: "failed",
+                          reason: failureReason(error),
+                          output: failureReply(error.reason, error.message),
+                        })
+                        .pipe(Effect.andThen(Effect.fail(error)))
+                    : Effect.fail(error),
+                ),
+              )
+          : call;
+
+      yield* store.startToolCall(run.id, callId);
+
+      const outcome = yield* measureTiming("tool", authorized.execute).pipe(
+        Effect.tap((output) => (tool.contextOnly ? guard(output) : Effect.void)),
+        Effect.map((output) => ({ output, reported: false })),
+        Effect.catch(failCall),
       );
 
       if (!outcome.reported && tool.recordsOwnResult !== true)
@@ -90,7 +112,7 @@ export const toolExecution = Effect.gen(function* () {
 
       return {
         output: outcome.output,
-        urls: outcome.reported ? [] : (call.grantedURLs?.() ?? []),
+        urls: outcome.reported ? [] : (authorized.grantedURLs?.() ?? []),
       };
     });
 

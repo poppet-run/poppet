@@ -27,7 +27,16 @@ const inputSchema = {
   additionalProperties: false,
 };
 
-const serve = (mode: "json" | "sse" | "oversized" | "oversized-sse" | "redirect" = "json") => {
+const serve = (
+  mode:
+    | "json"
+    | "sse"
+    | "oversized"
+    | "oversized-sse"
+    | "redirect"
+    | "call-redirect"
+    | "call-unauthorized" = "json",
+) => {
   const events: Event[] = [];
   let sessions = 0;
   const elsewhere = { requests: 0 };
@@ -110,6 +119,11 @@ const serve = (mode: "json" | "sse" | "oversized" | "oversized-sse" | "redirect"
               })),
             });
 
+      if (request.url.endsWith("/redirected")) elsewhere.requests++;
+      else if (mode === "call-redirect")
+        return new Response(null, { status: 307, headers: { location: "/redirected" } });
+      else if (mode === "call-unauthorized") return new Response(null, { status: 401 });
+
       if (message.params?.name === "fail") return new Response("failed", { status: 500 });
 
       return reply({
@@ -133,8 +147,13 @@ const serve = (mode: "json" | "sse" | "oversized" | "oversized-sse" | "redirect"
   };
 };
 
-const layer = (url: string, headers: MCPHTTPServer["headers"] = {}, tools = ["read"]) => {
-  const server: MCPHTTPServer = { id: "remote", enabled: true, url, headers, tools };
+const layer = (
+  url: string,
+  headers: MCPHTTPServer["headers"] = {},
+  tools = ["read"],
+  reviewedTools: string[] = [],
+) => {
+  const server: MCPHTTPServer = { id: "remote", enabled: true, url, headers, tools, reviewedTools };
 
   return makeMCPLive(16384).pipe(
     Layer.provide([
@@ -235,6 +254,29 @@ describe("MCP over HTTP", () => {
             });
           }).pipe(Effect.provide(layer(server.url)), quiet),
         );
+        expect(server.elsewhere.requests).toBe(0);
+      } finally {
+        await server.stop();
+      }
+    },
+  );
+
+  test.each(["call-redirect", "call-unauthorized"] as const)(
+    "when a reviewed POST receives %s, stops after one dispatch",
+    async (mode) => {
+      const server = serve(mode);
+
+      try {
+        const failure = await Effect.runPromise(
+          call().pipe(
+            Effect.flip,
+            Effect.provide(layer(server.url, {}, ["read"], ["read"])),
+            quiet,
+          ),
+        );
+
+        expect(failure.reason).toBe("tool-uncertain");
+        expect(server.events.filter((event) => event.method === "tools/call")).toHaveLength(1);
         expect(server.elsewhere.requests).toBe(0);
       } finally {
         await server.stop();

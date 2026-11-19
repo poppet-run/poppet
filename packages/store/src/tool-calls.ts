@@ -4,7 +4,7 @@ import { SqlClient } from "effect/sql";
 
 import { decodeInput, logStorageCause, reportAs, storageFailure, storeFailure } from "#src/errors";
 import { conflict, type StoreRecords } from "#src/records";
-import { Id, ToolOutcome } from "#src/schema";
+import { Id, ToolOutcome, ToolReview } from "#src/schema";
 import type { StoreOperations } from "#src/service";
 
 export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecords) => {
@@ -90,6 +90,20 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
 
   return {
     recordToolCalls,
+    recordToolReview: (runId, callId, review) =>
+      transaction(
+        Effect.gen(function* () {
+          const { call } = yield* activeTool(runId, callId);
+
+          if (call.status !== "pending" || call.serverId === null || call.review !== null)
+            return yield* conflict("Only a pending MCP call can record its first review.");
+
+          const decoded = yield* decodeInput(ToolReview, review, { onExcessProperty: "error" });
+
+          yield* sql`UPDATE tool_calls SET review = ${JSON.stringify(decoded)}
+              WHERE run_id = ${runId} AND call_id = ${callId}`;
+        }),
+      ),
     startToolCall: (runId, callId) =>
       transaction(
         Effect.gen(function* () {
@@ -143,6 +157,11 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
       }).pipe(reportAs(storeFailure)),
   } satisfies Pick<
     StoreOperations,
-    "recordToolCalls" | "startToolCall" | "finishToolCall" | "commitToolCall" | "toolCalls"
+    | "recordToolCalls"
+    | "recordToolReview"
+    | "startToolCall"
+    | "finishToolCall"
+    | "commitToolCall"
+    | "toolCalls"
   >;
 };

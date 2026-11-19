@@ -147,6 +147,11 @@ export const RunOutcome = Schema.Union([
   }),
 ]);
 
+export const ToolReview = Schema.Struct({
+  decision: Schema.Literals(["allow", "needs_approval", "deny", "unavailable"]),
+  reason: Schema.NonEmptyString,
+});
+
 export const ToolCall = Schema.Struct({
   runId: Id,
   callId: Schema.NonEmptyString,
@@ -156,6 +161,7 @@ export const ToolCall = Schema.Struct({
   arguments: Schema.String,
   serverId: Schema.NullOr(Schema.NonEmptyString),
   toolName: Schema.NullOr(Schema.NonEmptyString),
+  review: Schema.NullOr(Schema.fromJsonString(ToolReview)),
   status: Schema.Literals([
     "pending",
     "running",
@@ -191,6 +197,8 @@ export type SavedAttachment = typeof SavedAttachment.Type;
 export type ToolCall = typeof ToolCall.Type;
 
 export type ToolOutcome = typeof ToolOutcome.Type;
+
+export type ToolReview = typeof ToolReview.Type;
 
 export type Session = typeof Session.Type;
 

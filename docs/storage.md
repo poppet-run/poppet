@@ -76,6 +76,12 @@ eligibility and recurring expiration, while `scheduled_at` identifies the logica
 slot. `origin` distinguishes scheduled and manual work. Legacy rows are backfilled
 from the previously immutable job definition and their own destination snapshot.
 
+Store migration 5 adds nullable review metadata to tool calls. Reviewed MCP
+calls save the decision before dispatch. A pending call interrupted during
+review remains interrupted. A running call interrupted after dispatch may
+have had effects and is recorded as uncertain. Existing calls have no review
+metadata.
+
 Task migration 3 adds the nullable `jobs.end_at`, the last instant a cron slot
 may fall on, in UTC milliseconds. Existing tasks have none and behave as before.
 It stays on the job and out of the occurrence definition, so changing it does not

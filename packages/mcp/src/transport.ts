@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { StreamableHTTPClientTransport, type FetchLike } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 
@@ -77,6 +79,55 @@ export const boundedFetch =
       statusText: response.statusText,
       headers: response.headers,
     });
+  };
+
+export class ReviewedAccountChanged extends Error {}
+
+interface ReviewedRequest {
+  readonly endpoint: string;
+  readonly token: string | undefined;
+  sent: boolean;
+}
+
+const reviewedRequests = new AsyncLocalStorage<ReviewedRequest>();
+
+export const reviewedHTTPRequest = <A>(
+  endpoint: string,
+  token: string | undefined,
+  send: () => Promise<A>,
+) => reviewedRequests.run({ endpoint: new URL(endpoint).href, token, sent: false }, send);
+
+export const checkReviewedToken = (token: string | undefined) => {
+  const request = reviewedRequests.getStore();
+
+  if (request !== undefined && request.token !== token) throw new ReviewedAccountChanged();
+
+  return token;
+};
+
+export const singleReviewedPost =
+  (base: FetchLike): FetchLike =>
+  async (url, init) => {
+    const request = reviewedRequests.getStore();
+
+    if (request === undefined || init?.method !== "POST") return base(url, init);
+
+    if (request.sent || String(url) !== request.endpoint)
+      throw new Error("A reviewed MCP call permits one POST to its configured endpoint.");
+
+    request.sent = true;
+    const response = await base(url, { ...init, redirect: "manual" });
+
+    if (
+      (response.status >= 300 && response.status < 400) ||
+      response.status === 401 ||
+      response.status === 403
+    ) {
+      await response.body?.cancel().catch(() => {});
+      throw new Error("A reviewed MCP call cannot follow a redirect or retry authorization.");
+    }
+
+    return response;
   };
 
 export class ScopedHTTPTransport extends StreamableHTTPClientTransport {

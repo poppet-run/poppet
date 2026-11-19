@@ -37,6 +37,7 @@ const MCPTools = Schema.Array(
     toolName: Schema.String,
     allowed: Schema.Boolean,
     scheduled: Schema.Boolean,
+    reviewed: Schema.optionalKey(Schema.Boolean),
     definition: Schema.NullOr(Schema.Struct({ description: Schema.String })),
   }),
 );
@@ -79,11 +80,12 @@ const renderServers = (servers: typeof MCPServers.Type) => {
 const renderTools = (tools: typeof MCPTools.Type) =>
   tableOr(
     "The server offers no tools.",
-    ["TOOL", "ALLOWED", "SCHEDULED", "DESCRIPTION"],
+    ["TOOL", "ALLOWED", "SCHEDULED", "REVIEWED", "DESCRIPTION"],
     tools.map((tool) => [
       tool.toolName,
       yesNo(tool.allowed),
       yesNo(tool.scheduled),
+      yesNo(tool.reviewed === true),
       tool.definition?.description ?? "-",
     ]),
   );

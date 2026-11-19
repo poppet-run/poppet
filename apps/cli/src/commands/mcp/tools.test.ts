@@ -19,7 +19,11 @@ import { ConfigProvider, Console, Effect, Fiber, Layer, Stream } from "effect";
 import { makeCLI } from "#src/cli";
 import { runtimeLayers } from "#src/runtime";
 
-const fixture = async (name = "read", scheduledTools: string[] = []) => {
+const fixture = async (
+  name = "read",
+  scheduledTools: string[] = [],
+  reviewedTools: string[] = [],
+) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-cli-"));
 
   const configuration = ConfigProvider.fromEnv({
@@ -37,6 +41,7 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
     ],
     tools: [name],
     scheduledTools,
+    reviewedTools,
   };
 
   await writeFile(
@@ -45,6 +50,9 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
   );
   const requests: ModelRequest[] = [];
   let built = 0;
+  let review: string | null = null;
+  let input = "{}";
+  let batch = false;
   let followup: "done" | "fetch" | "memory" | "task" | "mcp" = "done";
 
   const registration: ProviderRegistration = {
@@ -84,6 +92,14 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
                   requests.push(request);
                   let output: ReadonlyArray<Output> = [{ type: "text", text: "Done" }];
 
+                  if (
+                    request.instructions.startsWith("Review this exact MCP invocation") &&
+                    review !== null
+                  ) {
+                    if (review === "hang") return Stream.never;
+                    output = [{ type: "text", text: review }];
+                  }
+
                   if (request.settings.toolChoice !== "none") {
                     const after = request.messages.some((message) => message.role === "tool");
                     const mcp = request.tools.find((tool) => tool.namespace === "poppet_mcp");
@@ -95,9 +111,13 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
                           callId: "mcp-call",
                           name: mcp.name,
                           namespace: mcp.namespace,
-                          arguments: JSON.stringify({ input: "{}" }),
+                          arguments: JSON.stringify({ input }),
                         },
                       ];
+
+                    if (!after && batch && output[0]?.type === "tool-call") {
+                      output = [output[0], { ...output[0], callId: "next-call" }];
+                    }
 
                     const answered = request.messages.some(
                       (message) => message.role === "tool" && message.callId === "injected",
@@ -191,6 +211,15 @@ const fixture = async (name = "read", scheduledTools: string[] = []) => {
       Layer.provide(Layer.succeed(ConfigProvider.ConfigProvider, configuration)),
     ),
     built: () => built,
+    review: (value: string) => {
+      review = value;
+    },
+    input: (value: string) => {
+      input = value;
+    },
+    batch: () => {
+      batch = true;
+    },
     followup: (value: typeof followup) => {
       followup = value;
     },
@@ -420,6 +449,127 @@ describe("ExternalAgentToolsLive", () => {
     },
   );
 
+  test.each([
+    ["allow", null, "completed", 1],
+    ["deny", "mcp-denied", "failed", 0],
+    ["needs_approval", "mcp-approval-required", "failed", 0],
+    ["malformed", "mcp-review", "failed", 0],
+    ["oversized", "mcp-review", "failed", 0],
+  ] as const)(
+    "when the reviewed invocation yields %s, journals the decision and dispatches only an allowed call",
+    async (decision, failure, status, attempts) => {
+      const state = await fixture("write", [], ["write"]);
+      const args = { text: decision === "oversized" ? "x".repeat(8300) : "Write to record 42" };
+      state.input(JSON.stringify(args));
+      state.review(
+        decision === "malformed"
+          ? "unexpected"
+          : JSON.stringify({
+              decision,
+              reason: "Fixture review for record 42.",
+            }),
+      );
+
+      if (decision === "deny") state.batch();
+
+      try {
+        const tools = JSON.parse(await state.invoke(["mcp", "tools", "fixture", "--json"]));
+        expect(tools.find((tool: { toolName: string }) => tool.toolName === "write")).toMatchObject(
+          {
+            allowed: true,
+            reviewed: true,
+            scheduled: false,
+          },
+        );
+
+        const request = state.invoke(["chat", "new", "Write to record 42"]);
+
+        if (failure === null) expect(await request).toContain("Done");
+        else await expect(request).rejects.toHaveProperty("reason", failure);
+
+        const reviews = state.requests.filter((item) =>
+          item.instructions.startsWith("Review this exact MCP invocation"),
+        );
+
+        expect(reviews).toHaveLength(decision === "oversized" ? 0 : 1);
+
+        if (reviews[0]) {
+          expect(reviews[0].tools).toEqual([]);
+          expect(reviews[0].messages).toHaveLength(1);
+          expect(reviews[0].messages[0]).toMatchObject({ role: "user" });
+          const message = reviews[0].messages[0];
+
+          if (message?.role !== "user") throw new Error("Expected review input.");
+          expect(JSON.parse(message.text)).toMatchObject({
+            ownerRequest: "Write to record 42",
+            invocation: { server: "fixture", tool: "write", arguments: args },
+          });
+        }
+
+        const sessions = JSON.parse(await state.invoke(["chat", "sessions", "--json"]));
+        const session = sessions[0].id;
+        const saved = JSON.parse(await state.invoke(["chat", "show", session, "--json"]));
+
+        const reviewDecision =
+          decision === "malformed" || decision === "oversized" ? "unavailable" : decision;
+
+        expect(saved.toolCalls[0]).toMatchObject({ status, review: { decision: reviewDecision } });
+        expect(await state.invoke(["chat", "show", session])).toContain("Reviewed MCP calls");
+
+        if (status === "completed")
+          expect(JSON.parse(saved.toolCalls[0].output)).toMatchObject({
+            status: "completed",
+            approvedBy: "reviewer",
+          });
+        const log = await readFile(join(state.directory, "events"), "utf8");
+
+        const calls = log
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+          .filter((event) => event.method === "tools/call");
+
+        expect(calls).toHaveLength(attempts);
+
+        if (attempts > 0) expect(calls[0].params.arguments).toEqual(args);
+
+        if (decision === "deny") {
+          expect(state.requests).toHaveLength(2);
+          expect(saved.toolCalls[1].status).toBe("interrupted");
+        }
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when an earlier result makes the batch untrusted, blocks the next reviewed action on an opted-in server", async () => {
+    const state = await fixture("write", [], ["write"]);
+    state.batch();
+    state.review('{"decision":"allow","reason":"The owner specified it."}');
+
+    try {
+      const path = join(state.directory, "config.json");
+      const config = JSON.parse(await readFile(path, "utf8"));
+      config.mcpServers[0].availableAfterUntrusted = true;
+      await writeFile(path, JSON.stringify(config));
+
+      await expect(state.invoke(["chat", "new", "Write to record 42"])).rejects.toHaveProperty(
+        "reason",
+        "tool-permission",
+      );
+      const log = await readFile(join(state.directory, "events"), "utf8");
+      expect(log.match(/"method":"tools\/call"/g)).toHaveLength(1);
+      expect(
+        state.requests.filter((item) =>
+          item.instructions.startsWith("Review this exact MCP invocation"),
+        ),
+      ).toHaveLength(1);
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when one MCP server is unavailable, leaves other allowed tools usable", async () => {
     const state = await fixture();
 
@@ -448,8 +598,44 @@ describe("ExternalAgentToolsLive", () => {
     }
   });
 
+  test("when review is cancelled before dispatch, keeps the call interrupted across reopening", async () => {
+    const state = await fixture("write", [], ["write"]);
+    state.review("hang");
+
+    const fiber = Effect.runFork(state.program(["chat", "new", "Write to record 42"]));
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          while (
+            !state.requests.some((item) =>
+              item.instructions.startsWith("Review this exact MCP invocation"),
+            )
+          )
+            yield* Effect.sleep("5 millis");
+        }).pipe(Effect.timeout("3 seconds")),
+      );
+      await Effect.runPromise(Fiber.interrupt(fiber));
+
+      const sessions = JSON.parse(await state.invoke(["chat", "sessions", "--json"]));
+      const saved = JSON.parse(await state.invoke(["chat", "show", sessions[0].id, "--json"]));
+      expect(saved.toolCalls[0]).toMatchObject({
+        status: "interrupted",
+        review: null,
+        startedAt: null,
+      });
+      expect(await readFile(join(state.directory, "events"), "utf8")).not.toContain(
+        '"method":"tools/call"',
+      );
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      await state.close();
+    }
+  });
+
   test("when a dispatched MCP call is cancelled, reaps the child and retains uncertainty across reopening", async () => {
-    const state = await fixture("hang");
+    const state = await fixture("hang", [], ["hang"]);
+    state.review('{"decision":"allow","reason":"The owner specified it."}');
     const fiber = Effect.runFork(state.program(["chat", "new", "Run the fixture"]));
 
     try {
@@ -474,6 +660,7 @@ describe("ExternalAgentToolsLive", () => {
         status: "uncertain",
         serverId: "fixture",
         toolName: "hang",
+        review: { decision: "allow" },
       });
       expect(
         (await readFile(join(state.directory, "events"), "utf8")).match(/"method":"tools\/call"/g),
@@ -485,7 +672,8 @@ describe("ExternalAgentToolsLive", () => {
   });
 
   test("when an MCP call disconnects, retains uncertainty across reopening without replay", async () => {
-    const state = await fixture("disconnect");
+    const state = await fixture("disconnect", [], ["disconnect"]);
+    state.review('{"decision":"allow","reason":"The owner specified it."}');
 
     try {
       await expect(state.invoke(["chat", "new", "Run the fixture"])).rejects.toHaveProperty(
@@ -498,6 +686,7 @@ describe("ExternalAgentToolsLive", () => {
         status: "uncertain",
         serverId: "fixture",
         toolName: "disconnect",
+        review: { decision: "allow" },
       });
       expect(saved.runs[0].status).toBe("failed");
 

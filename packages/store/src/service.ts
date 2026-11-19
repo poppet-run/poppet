@@ -21,6 +21,7 @@ import {
   StoredMessage,
   ToolCall,
   ToolOutcome,
+  type ToolReview,
   type StoreStatus,
 } from "#src/schema";
 import { searchSessions } from "#src/search";
@@ -89,6 +90,11 @@ export interface StoreOperations {
     }>,
   ) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;
   readonly toolCalls: (runId: string) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;
+  readonly recordToolReview: (
+    runId: string,
+    callId: string,
+    review: ToolReview,
+  ) => Effect.Effect<void, StoreError>;
   readonly startToolCall: (runId: string, callId: string) => Effect.Effect<void, StoreError>;
   readonly finishToolCall: (
     runId: string,
