@@ -62,9 +62,9 @@ Initial sign-in registers Poppet with its own host identifier and issued client
 ID. The browser handles account and workspace selection and plan-usage consent.
 The local callback displays a confirmation page before its listener closes.
 Return to the terminal for the final identity and permission checks.
-Later sign-ins reuse the registration and host identifier until logout. The next
-login after logout creates a fresh registration and host identifier. Poppet currently stores
-one account and rejects a returning identity that does not match it until logout.
+Later sign-ins reuse the saved registration and host identifier, including after
+logout. Poppet stores one account and checks that the signed-in identity matches
+it before saving new tokens.
 [OpenAI registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
 
 If identity sign-in succeeds without plan-usage permission, status reports
@@ -99,11 +99,14 @@ Never remove the lock database while Poppet is running.
 
 ## Logout
 
-`poppet provider logout openai-chatgpt` deletes the saved connection file,
-including account identity, tokens, verification, registration, and host identifier,
-then attempts remote revocation. Status does not recreate those details.
-Other providers' credentials are preserved. If remote revocation cannot
-be confirmed, the command reports this so you can disconnect Poppet in ChatGPT
-Settings.
+`poppet provider logout openai-chatgpt` attempts to revoke the session and clears
+its local tokens and verification. It keeps the account identity, registration,
+and host identifier so signing back in reuses the same entry in ChatGPT.
+If remote revocation cannot be confirmed, the command reports it.
+
+To switch accounts or reset the registration, run
+`poppet provider logout openai-chatgpt --forget` before signing in again. This
+removes the local connection file. To remove an old entry from ChatGPT, disconnect
+it in ChatGPT Settings.
 
 See [provider selection](../cli.md#providers-and-models) for configuring inference and [chat](../chat.md) for saved sessions.

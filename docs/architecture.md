@@ -211,9 +211,11 @@ dependency. Authentication flows remain provider-specific.
 
 `ProviderRegistration` contains an ID, display name, authentication capabilities,
 help text, and a layer supplying the shared `Provider` and `ProviderConnection`
-services. `ProviderConnection` exposes login, secret-free status, logout, and
-verification. Logout deletes the selected provider's persisted connection details.
-For ChatGPT this includes the registration and host ID; status never recreates them.
+services. `ProviderConnection` exposes login, secret-free status, logout,
+verification, and an optional operation to forget the saved registration.
+ChatGPT logout revokes the session and clears tokens and verification while
+retaining the account identity, registration, and host ID. API-key providers
+delete the saved key.
 Externally supplied environment keys remain under the host shell's control. Login returns provider-owned guidance; verification returns the
 verified model ID. Provider-owned verification can record subscription metadata.
 The CLI uses these services for every auth command, including normalized model

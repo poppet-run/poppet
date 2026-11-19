@@ -13,7 +13,7 @@ import { Argument, Command, Flag } from "effect/cli";
 import { terminalKeyInput } from "#src/api-key-input";
 import type { CLIContext } from "#src/commands/context";
 import { UsageError } from "#src/commands/errors";
-import { jsonFlag } from "#src/commands/flags";
+import { booleanFlag, jsonFlag } from "#src/commands/flags";
 import { printResult, tableOr, tree, yesNo } from "#src/output";
 import { findProvider } from "#src/runtime";
 
@@ -25,6 +25,7 @@ interface ProviderCommand {
   readonly openBrowser: boolean;
   readonly callbackPort: number | null;
   readonly json: boolean;
+  readonly forget: boolean;
 }
 
 interface ProviderInput {
@@ -33,6 +34,7 @@ interface ProviderInput {
   readonly browser?: boolean;
   readonly callbackPort?: number | null;
   readonly json?: boolean;
+  readonly forget?: boolean;
 }
 
 const renderModels = (models: ReadonlyArray<ModelDescription>) =>
@@ -58,7 +60,7 @@ const describe = (action: ProviderCommand["action"]) =>
       login: "Sign in or save an API key",
       status: "Show connection status without secrets",
       models: "List available models",
-      logout: "Clear the selected provider's saved connection",
+      logout: "Sign out or remove a saved API key",
     }[action],
   );
 
@@ -90,7 +92,11 @@ export const providerCommand = (context: CLIContext) => {
         if (command.action === "login") yield* Console.log(yield* connection.login(command));
         else if (command.action === "status")
           yield* printResult(command.json, yield* connection.status, tree);
-        else if (command.action === "logout") yield* Console.log(yield* connection.logout);
+        else if (command.action === "logout") {
+          const logout = (command.forget ? connection.forget : undefined) ?? connection.logout;
+
+          yield* Console.log(yield* logout);
+        }
       }).pipe(
         Effect.provide(runtime.selectedProvider(selected)),
         Effect.provideService(CredentialInput, terminalKeyInput),
@@ -138,6 +144,7 @@ export const providerCommand = (context: CLIContext) => {
         openBrowser: input.browser ?? true,
         callbackPort,
         json: input.json ?? false,
+        forget: input.forget ?? false,
       });
     }).pipe(Effect.provide(runtime.config));
 
@@ -169,8 +176,14 @@ export const providerCommand = (context: CLIContext) => {
         (input) => handle(action, input),
       ).pipe(describe(action)),
     ),
-    Command.make("logout", { target: targetArgument, provider: providerFlag }, (input) =>
-      handle("logout", input),
+    Command.make(
+      "logout",
+      {
+        target: targetArgument,
+        provider: providerFlag,
+        forget: booleanFlag("forget", "Also remove the saved ChatGPT registration and host ID"),
+      },
+      (input) => handle("logout", input),
     ).pipe(describe("logout")),
   ];
 

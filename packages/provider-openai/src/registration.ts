@@ -27,6 +27,20 @@ const connection = Layer.effect(
     const auth = yield* ChatGPTAuth;
     const model = yield* ChatGPTModel;
 
+    const signOut = (forget: boolean) =>
+      auth.signOut(forget).pipe(
+        Effect.mapError(providerFailure),
+        Effect.map((revoked) => {
+          const message = forget
+            ? "Signed out and removed the saved ChatGPT registration."
+            : "Signed out of ChatGPT.";
+
+          return revoked
+            ? message
+            : `${message} Remote revocation could not be confirmed. Disconnect Poppet in ChatGPT Settings.`;
+        }),
+      );
+
     return {
       login: (options) =>
         Effect.gen(function* () {
@@ -55,14 +69,8 @@ const connection = Layer.effect(
         Effect.mapError(providerFailure),
         Effect.map((status) => ({ ...status })),
       ),
-      logout: auth.signOut.pipe(
-        Effect.mapError(providerFailure),
-        Effect.map((revoked) =>
-          revoked
-            ? "Signed out. All local ChatGPT connection details were deleted, including identity, tokens, verification, registration, and host ID."
-            : "All local ChatGPT connection details were deleted, but remote revocation was not confirmed. Disconnect Poppet in ChatGPT Settings.",
-        ),
-      ),
+      logout: signOut(false),
+      forget: signOut(true),
       verify: (modelId) => model.verify(modelId).pipe(Effect.mapError(providerFailure)),
     };
   }),

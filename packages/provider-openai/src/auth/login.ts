@@ -23,7 +23,8 @@ export const loginWorkflow = Effect.gen(function* () {
         applicationName: config.applicationName,
         hostId: saved.hostId,
         clientId: saved.clientId,
-        consent: !statusFor(saved).planUsage,
+        consent:
+          saved.identity === null || (saved.credentials !== null && !statusFor(saved).planUsage),
         ...options,
       });
 

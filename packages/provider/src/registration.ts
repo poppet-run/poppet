@@ -33,6 +33,7 @@ export interface ConnectionOperations {
   readonly login: (options: LoginOptions) => Effect.Effect<string, ProviderError, CredentialInput>;
   readonly status: Effect.Effect<Schema.JsonObject, ProviderError>;
   readonly logout: Effect.Effect<string, ProviderError>;
+  readonly forget?: Effect.Effect<string, ProviderError>;
   readonly verify: (model: string | null) => Effect.Effect<string, ProviderError>;
 }
 
