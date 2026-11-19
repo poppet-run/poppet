@@ -2,7 +2,7 @@
 
 [Documentation index](README.md)
 
-Phases 30–35 are planned only. Phase 36 is in progress. Plans do not authorize implementation.
+Phases 30–35 are planned only. Plans do not authorize implementation.
 
 Implemented work has no phase page. Use the linked guides for current behavior,
 setup, and validation. Git history retains delivery plans and validation records.
@@ -20,7 +20,8 @@ Updated: 2026-11-15
 Storage history: the unreleased base schema was consolidated into version 1.
 Store migration 2 allows one active run per session instead of one across the
 store, migration 3 adds attachments, and migration 4 removes the session
-workload column. Task migration 2 removes the workload from tasks and their
+workload column. Store migration 5 records review decisions and owner approvals
+on tool calls. Task migration 2 removes the workload from tasks and their
 occurrences.
 See [storage](storage.md#schema-and-saved-records),
 [development](development.md#store-migrations), and
@@ -34,7 +35,6 @@ See [storage](storage.md#schema-and-saved-records),
 - [Phase 33: Trusted time for scheduled runs](phases/33.md)
 - [Phase 34: Model and reasoning selection for new sessions](phases/34.md)
 - [Phase 35: iOS app for chat and worker management](phases/35.md)
-- [Phase 36: Reviewed MCP actions](phases/36.md)
 
 ## Validation
 

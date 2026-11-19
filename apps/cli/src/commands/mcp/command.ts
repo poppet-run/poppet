@@ -27,6 +27,7 @@ const MCPServers = Schema.Array(
     retryAt: Schema.NullOr(Schema.Number),
     tools: Schema.Array(Schema.String),
     scheduledTools: Schema.Array(Schema.String),
+    scheduledReviewedTools: Schema.optionalKey(Schema.Array(Schema.String)),
     availableTools: Schema.Array(Schema.String),
     signIn: Schema.NullOr(Schema.Struct({ signedIn: Schema.Boolean })),
   }),
@@ -38,6 +39,7 @@ const MCPTools = Schema.Array(
     allowed: Schema.Boolean,
     scheduled: Schema.Boolean,
     reviewed: Schema.optionalKey(Schema.Boolean),
+    scheduledReviewed: Schema.optionalKey(Schema.Boolean),
     definition: Schema.NullOr(Schema.Struct({ description: Schema.String })),
   }),
 );
@@ -45,9 +47,9 @@ const MCPTools = Schema.Array(
 const toolCount = (server: (typeof MCPServers.Type)[number]) => {
   const count = `${server.tools.length}/${server.availableTools.length}`;
 
-  return server.scheduledTools.length === 0
-    ? count
-    : `${count} (${server.scheduledTools.length} scheduled)`;
+  const scheduled = server.scheduledTools.length + (server.scheduledReviewedTools?.length ?? 0);
+
+  return scheduled === 0 ? count : `${count} (${scheduled} scheduled)`;
 };
 
 const renderServers = (servers: typeof MCPServers.Type) => {
@@ -80,12 +82,13 @@ const renderServers = (servers: typeof MCPServers.Type) => {
 const renderTools = (tools: typeof MCPTools.Type) =>
   tableOr(
     "The server offers no tools.",
-    ["TOOL", "ALLOWED", "SCHEDULED", "REVIEWED", "DESCRIPTION"],
+    ["TOOL", "ALLOWED", "SCHEDULED READ", "REVIEWED", "SCHEDULED REVIEW", "DESCRIPTION"],
     tools.map((tool) => [
       tool.toolName,
       yesNo(tool.allowed),
       yesNo(tool.scheduled),
       yesNo(tool.reviewed === true),
+      yesNo(tool.scheduledReviewed === true),
       tool.definition?.description ?? "-",
     ]),
   );

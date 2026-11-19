@@ -112,6 +112,7 @@ export class MCP extends Context.Service<
         readonly retryAt: number | null;
         readonly tools: ReadonlyArray<string>;
         readonly scheduledTools: ReadonlyArray<string>;
+        readonly scheduledReviewedTools: ReadonlyArray<string>;
         readonly availableTools: ReadonlyArray<string>;
         readonly signIn: {
           readonly signedIn: boolean;
@@ -128,6 +129,7 @@ export class MCP extends Context.Service<
         readonly definition: MCPTool["definition"] | null;
         readonly allowed: boolean;
         readonly scheduled: boolean;
+        readonly scheduledReviewed: boolean;
         readonly reviewed: boolean;
       }>,
       MCPError
@@ -700,6 +702,7 @@ export const makeMCPLive = (toolBytes: number) =>
             retryAt: state?.status === "unavailable" ? retryAt(state) : null,
             tools: config.tools,
             scheduledTools: config.scheduledTools ?? [],
+            scheduledReviewedTools: config.scheduledReviewedTools ?? [],
             availableTools:
               state?.status === "connected" ? state.tools.map((tool) => tool.toolName) : [],
             signIn,
@@ -728,6 +731,7 @@ export const makeMCPLive = (toolBytes: number) =>
             definition: allowed.find((tool) => tool.toolName === name)?.definition ?? null,
             allowed: config.tools.includes(name),
             scheduled: config.scheduledTools?.includes(name) ?? false,
+            scheduledReviewed: config.scheduledReviewedTools?.includes(name) ?? false,
             reviewed: config.reviewedTools?.includes(name) ?? false,
           }));
         });
@@ -739,14 +743,20 @@ export const makeMCPLive = (toolBytes: number) =>
           Effect.forEach(
             servers.filter(
               (config) =>
-                config.enabled && (!scheduled || (config.scheduledTools?.length ?? 0) > 0),
+                config.enabled &&
+                (!scheduled ||
+                  (config.scheduledTools?.length ?? 0) > 0 ||
+                  (config.scheduledReviewedTools?.length ?? 0) > 0),
             ),
             (config) =>
               connect(config).pipe(
                 Effect.map((connection) =>
                   connection.state.status === "connected"
                     ? connection.state.tools.filter(
-                        (tool) => !scheduled || config.scheduledTools?.includes(tool.toolName),
+                        (tool) =>
+                          !scheduled ||
+                          config.scheduledTools?.includes(tool.toolName) ||
+                          config.scheduledReviewedTools?.includes(tool.toolName),
                       )
                     : [],
                 ),

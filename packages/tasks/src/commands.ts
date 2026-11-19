@@ -67,12 +67,18 @@ export const executeTaskCommand = (
           const run = item.runId === null ? null : yield* store.run(item.runId);
           const delivery = deliveries === null ? [] : yield* deliveries.forOccurrence(item.id);
 
+          const toolCalls =
+            run === null
+              ? []
+              : (yield* store.toolCalls(run.id)).filter((call) => call.review !== null);
+
           return {
             ...item,
             delivery,
             noAction: noAction(run),
             output: run?.result?.output ?? null,
             failureReason: run?.failureReason ?? null,
+            toolCalls,
           };
         }),
       );

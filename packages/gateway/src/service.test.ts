@@ -613,6 +613,88 @@ describe.concurrent("Gateway", () => {
     },
   );
 
+  test("when a scheduled MCP action needs approval, only delivers the fixed failure notice", async () => {
+    const definition = {
+      name: "edit_record",
+      namespace: "poppet_mcp",
+      description: "Edit a record",
+      parameters: {},
+    };
+
+    const state = await fixture(
+      {},
+      (request) =>
+        request.settings.toolChoice === "none"
+          ? response(
+              '{"decision":"needs_approval","reason":"Confirm before overwriting private content","target":"Record 42","effects":"Replace the record text"}',
+            )
+          : Stream.make({
+              type: "completed",
+              response: {
+                output: [
+                  {
+                    type: "tool-call",
+                    namespace: definition.namespace,
+                    name: definition.name,
+                    callId: "edit-42",
+                    arguments: '{"target":"Record 42","body":"private content"}',
+                  },
+                ],
+                continuation: {
+                  version: 1,
+                  provider: "test-provider",
+                  model: "test-model",
+                  data: {},
+                },
+                finishReason: "tool-calls",
+                usage: null,
+              },
+            }),
+      true,
+      {},
+      undefined,
+      undefined,
+      {
+        snapshot: (isScheduled) =>
+          isScheduled
+            ? Effect.succeed([
+                {
+                  definition,
+                  serverId: "fixture",
+                  toolName: "edit_record",
+                  review: { origin: null },
+                  prepare: (input) =>
+                    Effect.succeed({
+                      validatedArguments: input,
+                      execute: Effect.die("A scheduled call cannot wait for approval or dispatch."),
+                    }),
+                },
+              ])
+            : Effect.succeed([]),
+      },
+    );
+
+    try {
+      const item = await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const destination = yield* gateway.resolveDestination("scheduled-thread");
+          const occurrence = yield* scheduled(destination);
+          expect(occurrence.status).toBe("failed");
+          yield* gateway.deliverNext;
+
+          return occurrence;
+        }),
+      );
+
+      expect(state.sent.map((part) => part.text)).toEqual([
+        `Scheduled task "Summary" failed (agent:mcp-approval-required). Inspect it with: poppet tasks show ${item.jobId}`,
+      ]);
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each([false, true])(
     "when cron needs approval with an old queued notice=%j, posts one fixed notice and delivers a successful retry",
     async (queuedNotice) => {

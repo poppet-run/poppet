@@ -70,7 +70,11 @@ export interface AgentTool {
   readonly failures: FailurePolicy;
   readonly uninterruptible?: boolean;
   readonly recordsOwnResult?: boolean;
-  readonly external?: { readonly serverId: string; readonly toolName: string };
+  readonly external?: {
+    readonly serverId: string;
+    readonly toolName: string;
+    readonly reviewed: boolean;
+  };
 }
 
 export const reportedReasons: ReadonlySet<string> = new Set([

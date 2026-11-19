@@ -65,6 +65,7 @@ const shared = {
   tools: Names,
   scheduledTools: Schema.optionalKey(Names),
   reviewedTools: Schema.optionalKey(Names),
+  scheduledReviewedTools: Schema.optionalKey(Names),
   availableAfterUntrusted: Schema.optionalKey(Schema.Boolean),
 };
 
@@ -131,6 +132,14 @@ export const MCPServers = Schema.Array(MCPServer).check(
       if (server.scheduledTools?.some((name) => reviewed.includes(name)))
         return "Reviewed MCP tools cannot appear in the read-only scheduledTools list.";
 
+      const scheduledReviewed = server.scheduledReviewedTools ?? [];
+
+      if (
+        new Set(scheduledReviewed).size !== scheduledReviewed.length ||
+        scheduledReviewed.some((name) => !reviewed.includes(name))
+      )
+        return "Scheduled reviewed MCP tools must be a unique subset of reviewedTools.";
+
       if (isHTTPServer(server)) {
         const names = Object.keys(server.headers ?? {}).map((name) => name.toLowerCase());
 
@@ -161,7 +170,7 @@ export const mcpServers = Config.String("mcpServers").pipe(
       new Config.ConfigError(
         new ConfigProvider.SourceError({
           message:
-            "Invalid mcpServers in config.json. Use unique enabled server entries with either a command or an https url, named environment/credential/header references, OAuth without an Authorization header, and reviewedTools and read-only scheduledTools as disjoint subsets of tools. See docs/mcp.md.",
+            "Invalid mcpServers in config.json. Use unique enabled server entries with either a command or an https url, named environment/credential/header references, OAuth without an Authorization header, reviewedTools and read-only scheduledTools as disjoint subsets of tools, and scheduledReviewedTools contained in reviewedTools. See docs/mcp.md.",
         }),
       ),
   ),

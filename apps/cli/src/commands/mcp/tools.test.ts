@@ -14,7 +14,9 @@ import {
   type ProviderRegistration,
 } from "@poppet/provider";
 import { Store } from "@poppet/store";
-import { ConfigProvider, Console, Effect, Fiber, Layer, Stream } from "effect";
+import { TaskRepository, executeOccurrence } from "@poppet/tasks";
+import { Clock, ConfigProvider, Console, Deferred, Effect, Fiber, Layer, Stream } from "effect";
+import { TestClock } from "effect/testing";
 
 import { makeCLI } from "#src/cli";
 import { runtimeLayers } from "#src/runtime";
@@ -23,6 +25,7 @@ const fixture = async (
   name = "read",
   scheduledTools: string[] = [],
   reviewedTools: string[] = [],
+  scheduledReviewedTools?: string[],
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-cli-"));
 
@@ -44,13 +47,17 @@ const fixture = async (
     reviewedTools,
   };
 
+  const configured =
+    scheduledReviewedTools === undefined ? server : { ...server, scheduledReviewedTools };
+
   await writeFile(
     join(directory, "config.json"),
-    JSON.stringify({ provider: "fixture", model: "fixture", mcpServers: [server] }),
+    JSON.stringify({ provider: "fixture", model: "fixture", mcpServers: [configured] }),
   );
   const requests: ModelRequest[] = [];
   let built = 0;
   let review: string | null = null;
+  const waitingForReview = Deferred.makeUnsafe<void>();
   let input = "{}";
   let batch = false;
   let followup: "done" | "fetch" | "memory" | "task" | "mcp" = "done";
@@ -96,7 +103,12 @@ const fixture = async (
                     request.instructions.startsWith("Review this exact MCP invocation") &&
                     review !== null
                   ) {
-                    if (review === "hang") return Stream.never;
+                    if (review === "hang") {
+                      Deferred.doneUnsafe(waitingForReview, Effect.void);
+
+                      return Stream.never;
+                    }
+
                     output = [{ type: "text", text: review }];
                   }
 
@@ -210,7 +222,11 @@ const fixture = async (
     chat: runtime.chat.pipe(
       Layer.provide(Layer.succeed(ConfigProvider.ConfigProvider, configuration)),
     ),
+    tasks: Layer.merge(runtime.chat, runtime.tasks).pipe(
+      Layer.provide(Layer.succeed(ConfigProvider.ConfigProvider, configuration)),
+    ),
     built: () => built,
+    waitingForReview,
     review: (value: string) => {
       review = value;
     },
@@ -548,28 +564,185 @@ describe("ExternalAgentToolsLive", () => {
     },
   );
 
-  test("when an earlier result makes the batch untrusted, blocks the next reviewed action on an opted-in server", async () => {
-    const state = await fixture("write", [], ["write"]);
-    state.batch();
-    state.review('{"decision":"allow","reason":"The owner specified it."}');
+  test.each(["batch", "next turn"] as const)(
+    "when an earlier result makes the %s untrusted, blocks the next reviewed action on an opted-in server",
+    async (mode) => {
+      const state = await fixture("write", [], ["write"]);
+
+      if (mode === "batch") state.batch();
+      else state.followup("mcp");
+      state.review('{"decision":"allow","reason":"The owner specified it."}');
+
+      try {
+        const path = join(state.directory, "config.json");
+        const config = JSON.parse(await readFile(path, "utf8"));
+        config.mcpServers[0].availableAfterUntrusted = true;
+        await writeFile(path, JSON.stringify(config));
+
+        await expect(state.invoke(["chat", "new", "Write to record 42"])).rejects.toHaveProperty(
+          "reason",
+          "mcp-denied",
+        );
+        const log = await readFile(join(state.directory, "events"), "utf8");
+        expect(log.match(/"method":"tools\/call"/g)).toHaveLength(1);
+        expect(
+          state.requests.filter((item) =>
+            item.instructions.startsWith("Review this exact MCP invocation"),
+          ),
+        ).toHaveLength(1);
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test.each([
+    ["excluded", "completed", null, 0, null],
+    ["allow", "completed", null, 1, "allow"],
+    ["deny", "failed", "agent:mcp-denied", 0, "deny"],
+    ["needs_approval", "failed", "agent:mcp-approval-required", 0, "needs_approval"],
+    ["unavailable", "failed", "agent:mcp-review", 0, "unavailable"],
+    ["timeout", "failed", "agent:mcp-review", 0, "unavailable"],
+    ["disconnect", "failed", "agent:tool-uncertain", 1, "allow"],
+  ] as const)(
+    "when a scheduled MCP action yields %s, dispatches only with scheduled permission and an allowing review",
+    async (decision, status, failureReason, attempts, expectedDecision) => {
+      const name = decision === "disconnect" ? "disconnect" : "write";
+      const scheduled = decision === "excluded" ? [] : [name];
+      const state = await fixture(name, [], [name], scheduled);
+      const prompt = "Write to record 42";
+      state.input(JSON.stringify({ text: prompt }));
+      state.review(
+        JSON.stringify({
+          decision: decision === "disconnect" ? "allow" : decision,
+          reason: "Fixture review for record 42.",
+          target: decision === "needs_approval" ? "Record 42" : undefined,
+          effects: decision === "needs_approval" ? "Write the supplied text" : undefined,
+        }),
+      );
+
+      if (decision === "timeout") state.review("hang");
+
+      try {
+        const jobId = await Effect.runPromise(
+          Effect.gen(function* () {
+            const repo = yield* TaskRepository;
+            const now = yield* Clock.currentTimeMillis;
+
+            const job = yield* repo.add(
+              {
+                name: "Scheduled MCP fixture",
+                prompt,
+                provider: "fixture",
+                model: "fixture",
+                schedule: { type: "once", at: now },
+              },
+              now,
+            );
+
+            yield* repo.reconcile(now);
+            const claimed = yield* repo.claim(now);
+
+            if (claimed === null) throw new Error("Missing occurrence.");
+
+            if (decision === "timeout") {
+              const active = yield* executeOccurrence(repo, claimed).pipe(Effect.forkChild);
+              yield* Deferred.await(state.waitingForReview);
+              yield* TestClock.adjust("30 seconds");
+              yield* Fiber.join(active);
+            } else yield* executeOccurrence(repo, claimed);
+            expect(yield* repo.claim(now)).toBeNull();
+
+            return job.id;
+          }).pipe(
+            Effect.provide(state.tasks),
+            Effect.provide(TestClock.layer()),
+            Effect.provideService(Console.Console, { ...console, log: () => {}, error: () => {} }),
+          ),
+        );
+
+        const reviews = state.requests.filter((item) =>
+          item.instructions.startsWith("Review this exact MCP invocation"),
+        );
+
+        expect(reviews).toHaveLength(decision === "excluded" ? 0 : 1);
+
+        if (reviews[0]) {
+          expect(reviews[0].messages).toHaveLength(1);
+          const message = reviews[0].messages[0];
+
+          if (message?.role !== "user") throw new Error("Expected the saved task prompt.");
+
+          expect(JSON.parse(message.text)).toMatchObject({ ownerRequest: prompt });
+        }
+
+        const saved = JSON.parse(await state.invoke(["tasks", "show", jobId, "--json"]));
+        expect(saved.occurrences[0]).toMatchObject({ status, failureReason });
+
+        if (decision === "excluded") expect(saved.occurrences[0].toolCalls).toEqual([]);
+        else {
+          expect(saved.occurrences[0].toolCalls).toEqual([
+            expect.objectContaining({
+              toolName: name,
+              status: decision === "disconnect" ? "uncertain" : status,
+              review: expect.objectContaining({
+                decision: expectedDecision,
+                reason:
+                  decision === "unavailable" || decision === "timeout"
+                    ? expect.stringContaining(
+                        decision === "timeout" ? "timed out" : "invalid decision",
+                      )
+                    : "Fixture review for record 42.",
+              }),
+            }),
+          ]);
+          expect(await state.invoke(["tasks", "show", jobId])).toContain("Reviewed MCP calls");
+        }
+
+        const log = await readFile(join(state.directory, "events"), "utf8").catch(() => "");
+        expect(log.match(/"method":"tools\/call"/g) ?? []).toHaveLength(attempts);
+
+        const listed = JSON.parse(await state.invoke(["mcp", "tools", "fixture", "--json"]));
+        expect(listed.find((tool: { toolName: string }) => tool.toolName === name)).toMatchObject({
+          scheduled: false,
+          reviewed: true,
+          scheduledReviewed: decision !== "excluded",
+        });
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when changing reviewed tool permissions, removes the matching scheduled grant without enabling read access", async () => {
+    const state = await fixture("write", [], ["write"], ["write"]);
+
+    const readConfig = async () =>
+      JSON.parse(await readFile(join(state.directory, "config.json"), "utf8")).mcpServers[0];
 
     try {
-      const path = join(state.directory, "config.json");
-      const config = JSON.parse(await readFile(path, "utf8"));
-      config.mcpServers[0].availableAfterUntrusted = true;
-      await writeFile(path, JSON.stringify(config));
+      await expect(
+        state.invoke(["mcp", "allow", "fixture", "write", "--scheduled"]),
+      ).rejects.toThrow("scheduledReviewedTools");
+      expect(await readConfig()).toMatchObject({
+        scheduledTools: [],
+        reviewedTools: ["write"],
+        scheduledReviewedTools: ["write"],
+      });
 
-      await expect(state.invoke(["chat", "new", "Write to record 42"])).rejects.toHaveProperty(
-        "reason",
-        "tool-permission",
-      );
-      const log = await readFile(join(state.directory, "events"), "utf8");
-      expect(log.match(/"method":"tools\/call"/g)).toHaveLength(1);
-      expect(
-        state.requests.filter((item) =>
-          item.instructions.startsWith("Review this exact MCP invocation"),
-        ),
-      ).toHaveLength(1);
+      await state.invoke(["mcp", "deny", "fixture", "write", "--scheduled"]);
+      expect(await readConfig()).toMatchObject({
+        tools: ["write"],
+        reviewedTools: ["write"],
+        scheduledReviewedTools: [],
+      });
+
+      await state.invoke(["mcp", "deny", "fixture", "write"]);
+      expect(await readConfig()).toMatchObject({
+        tools: [],
+        reviewedTools: [],
+        scheduledReviewedTools: [],
+      });
     } finally {
       await state.close();
     }
@@ -626,7 +799,7 @@ describe("ExternalAgentToolsLive", () => {
       const saved = JSON.parse(await state.invoke(["chat", "show", sessions[0].id, "--json"]));
       expect(saved.toolCalls[0]).toMatchObject({
         status: "interrupted",
-        review: null,
+        review: { decision: "pending" },
         startedAt: null,
       });
       expect(await readFile(join(state.directory, "events"), "utf8")).not.toContain(

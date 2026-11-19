@@ -87,6 +87,7 @@ export interface StoreOperations {
       readonly callId: string;
       readonly serverId: string;
       readonly toolName: string;
+      readonly reviewed?: boolean;
     }>,
   ) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;
   readonly toolCalls: (runId: string) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;
