@@ -122,12 +122,12 @@ The runtime builds only the selected provider's dependencies and never falls
 back to another model. ChatGPT's browser login handles plan-usage consent
 through `provider login openai-chatgpt`.
 
-| Command                               | Action                                  |
-| ------------------------------------- | --------------------------------------- |
-| `provider login [provider] [options]` | Sign in or save an API key.             |
-| `provider status [provider]`          | Show connection status without secrets. |
-| `provider models [provider]`          | List available models.                  |
-| `provider logout [provider]`          | Clear that provider's saved connection. |
+| Command                                 | Action                                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `provider login [provider] [options]`   | Sign in or save an API key.                                                                       |
+| `provider status [provider]`            | Show connection status without secrets.                                                           |
+| `provider models [provider]`            | List available models.                                                                            |
+| `provider logout [provider] [--forget]` | Sign out or remove a saved API key. Use `--forget` to also remove the saved ChatGPT registration. |
 
 API-key login always prompts with hidden input, even when an environment key is set. `--no-browser` and
 `--callback-port <port>` apply to browser sign-in; see

@@ -1,4 +1,4 @@
-import { Context, DateTime, Effect, Layer, Redacted } from "effect";
+import { Context, DateTime, Effect, Layer, Redacted, Result } from "effect";
 
 import { CredentialStore } from "#src/auth/credentials";
 import { loginWorkflow } from "#src/auth/login";
@@ -12,7 +12,7 @@ interface AuthOperations {
   readonly login: (options: SignInOptions) => Effect.Effect<ConnectionStatus, ConnectionError>;
   readonly status: Effect.Effect<ConnectionStatus, ConnectionError>;
   readonly accessToken: Effect.Effect<Redacted.Redacted<string>, ConnectionError>;
-  readonly signOut: Effect.Effect<boolean, ConnectionError>;
+  readonly signOut: (forget?: boolean) => Effect.Effect<boolean, ConnectionError>;
   readonly recordVerification: (model: string) => Effect.Effect<void, ConnectionError>;
 }
 
@@ -28,36 +28,45 @@ export const ChatGPTAuthLive = Layer.effect(
     const login = yield* loginWorkflow;
     const accessToken = yield* accessTokenWorkflow;
 
-    const signOut = store.withPermit(
-      Effect.gen(function* () {
-        let revoked = true;
+    const signOut = (forget = false) =>
+      store.withPermit(
+        Effect.gen(function* () {
+          const saved = yield* Effect.result(store.read);
 
-        const connection = yield* store.read.pipe(
-          Effect.catchTag("ConnectionError", () => {
-            revoked = false;
+          if (Result.isFailure(saved)) {
+            yield* store.remove;
 
-            return Effect.succeed(null);
-          }),
-        );
+            return false;
+          }
 
-        yield* store.remove;
+          const connection = saved.success;
 
-        if (connection?.credentials?.refreshToken && connection.clientId) {
-          revoked = yield* oauth
-            .revoke(connection.credentials.refreshToken, connection.clientId)
-            .pipe(Effect.isSuccess);
-        }
+          if (connection === null) return true;
 
-        return revoked;
-      }),
-    );
+          const clear = forget
+            ? store.remove
+            : store.write({ ...connection, credentials: null, verification: null });
+
+          const refreshToken = connection.credentials?.refreshToken;
+
+          if (refreshToken && connection.clientId)
+            return yield* oauth.revoke(refreshToken, connection.clientId).pipe(
+              Effect.isSuccess,
+              Effect.onExit(() => clear),
+            );
+
+          yield* clear;
+
+          return true;
+        }),
+      );
 
     const recordVerification = (model: string) =>
       store.withPermit(
         Effect.gen(function* () {
           const connection = yield* store.read;
 
-          if (connection === null) return yield* Effect.fail(reconnect());
+          if (!connection?.credentials) return yield* Effect.fail(reconnect());
           yield* store.write({
             ...connection,
             verification: { model, at: (yield* DateTime.nowAsDate).getTime() },

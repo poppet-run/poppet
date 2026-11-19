@@ -40,7 +40,7 @@ const catalogFixture = () => {
     ),
     login: () => Effect.die("Unexpected login"),
     status: Effect.die("Unexpected status"),
-    signOut: Effect.die("Unexpected sign-out"),
+    signOut: () => Effect.die("Unexpected sign-out"),
     recordVerification: () => Effect.die("Unexpected verification"),
   };
 
@@ -226,7 +226,7 @@ describe("makeChatGPTProvider", () => {
       accessToken: Effect.succeed(Redacted.make("test-token")),
       login: () => Effect.die("Login must not run."),
       status: Effect.die("Status must not run."),
-      signOut: Effect.die("Sign-out must not run."),
+      signOut: () => Effect.die("Sign-out must not run."),
       recordVerification: () => Effect.die("Verification must not be recorded."),
     };
 
@@ -272,7 +272,7 @@ describe("makeChatGPTProvider", () => {
         accessToken: Effect.succeed(Redacted.make("test-token")),
         login: () => Effect.die("Login must not run."),
         status: Effect.die("Status must not run."),
-        signOut: Effect.die("Sign-out must not run."),
+        signOut: () => Effect.die("Sign-out must not run."),
         recordVerification: () => Effect.die("Verification must not be recorded."),
       };
 

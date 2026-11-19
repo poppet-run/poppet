@@ -1064,8 +1064,8 @@ describe("makeCLI", () => {
     }
   });
 
-  test.each(["retained registration", "malformed details"])(
-    "when logging out with %s, deletes all details without affecting another provider or recreating files",
+  test.each(["saved registration", "malformed details"])(
+    "when logging out with %s, preserves only a readable registration and supports forgetting it",
     async (kind) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-logout-details-"));
       const environment = { POPPET_DATA_DIR: directory };
@@ -1073,36 +1073,49 @@ describe("makeCLI", () => {
       try {
         await mkdir(join(directory, "auth"));
         const path = join(directory, "auth/connection.json");
+
+        const registration = {
+          version: 1,
+          hostId: "urn:uuid:00000000-0000-4000-8000-000000000000",
+          clientId: "oaiapp_test",
+          identity: { subject: "old-account", email: "signed-out@example.invalid" },
+          credentials: null,
+        };
+
+        const readable = kind === "saved registration";
         await writeFile(
           path,
-          kind === "malformed details"
-            ? "invalid-json"
-            : JSON.stringify({
-                version: 1,
-                hostId: "urn:uuid:00000000-0000-4000-8000-000000000000",
-                clientId: "oaiapp_test",
-                identity: { subject: "old-account", email: "signed-out@example.invalid" },
-                credentials: null,
-                verification: { model: "previous-model", at: 1 },
-              }),
+          readable
+            ? JSON.stringify({ ...registration, verification: { model: "previous-model", at: 1 } })
+            : "invalid-json",
         );
         const unrelated = join(directory, "auth/other-provider.json");
         await writeFile(unrelated, "other-provider-details");
 
         const logout = await invoke(["provider", "logout"], environment);
         expect(logout.exitCode).toBe(0);
-        expect(logout.stdout).toContain("All local ChatGPT connection details were deleted");
-        expect(await Bun.file(path).exists()).toBe(false);
+        expect(logout.stdout).toContain("Signed out of ChatGPT");
         const status = await invoke(["provider", "status", "--json"], environment);
         expect(status.exitCode).toBe(0);
         expect(JSON.parse(status.stdout)).toMatchObject({
           connected: false,
-          email: null,
-          clientId: null,
+          email: readable ? registration.identity.email : null,
+          clientId: readable ? registration.clientId : null,
           verification: null,
         });
-        expect(await Bun.file(path).exists()).toBe(false);
         expect((await invoke(["provider", "logout"], environment)).exitCode).toBe(0);
+
+        if (readable)
+          expect(await Bun.file(path).json()).toEqual({ ...registration, verification: null });
+        else expect(await Bun.file(path).exists()).toBe(false);
+
+        const forget = await invoke(
+          ["provider", "logout", "openai-chatgpt", "--forget"],
+          environment,
+        );
+
+        expect(forget.exitCode).toBe(0);
+        expect((await invoke(["provider", "status", "--json"], environment)).exitCode).toBe(0);
         expect((await readdir(join(directory, "auth"))).toSorted()).toEqual([
           "other-provider.json",
           "owner.lock.sqlite",

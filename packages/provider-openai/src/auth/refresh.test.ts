@@ -120,7 +120,7 @@ describe.concurrent("refresh.ts", () => {
     }
   });
   test.each([false, true])(
-    "when sign-out has revocation failure=%j, deletes local provider details and starts a fresh registration",
+    "when sign-out has revocation failure=%j, clears the session and reuses the registration on sign-in",
     async (revokeFailure) => {
       const harness = await createHarness();
 
@@ -132,34 +132,30 @@ describe.concurrent("refresh.ts", () => {
         await writeFile(unrelated, "other-provider-details");
         harness.controls.revokeFailure = revokeFailure;
 
-        const revoked = await harness.run(
-          Effect.gen(function* () {
-            const auth = yield* ChatGPTAuth;
-
-            return yield* auth.signOut;
-          }),
-        );
+        const revoked = await harness.run(ChatGPTAuth.use((auth) => auth.signOut()));
 
         expect(revoked).toBe(!revokeFailure);
         expect(harness.revoked()).toBe("test-refresh-1");
         expect(await harness.run(status)).toMatchObject({
           connected: false,
-          email: null,
-          clientId: null,
+          email: before.identity?.email,
+          clientId: before.clientId,
           planUsage: false,
           expiresAt: null,
           verification: null,
         });
-        const connectionFile = Bun.file(join(harness.directory, "auth/connection.json"));
-        expect(await connectionFile.exists()).toBe(false);
+        expect(await harness.saved()).toEqual({
+          ...before,
+          credentials: null,
+          verification: null,
+        });
         expect(await readFile(unrelated, "utf8")).toBe("other-provider-details");
         await expect(harness.run(verify)).rejects.toMatchObject({ reason: "reconnect" });
-        expect(await connectionFile.exists()).toBe(false);
-        await harness.run(login);
-        expect((await harness.saved()).hostId).not.toBe(before.hostId);
-        expect(harness.authorizations.at(-1)?.searchParams.get("client_id")).toBe(
-          "dynamic_agent_client",
-        );
+        expect(await harness.run(login)).toMatchObject({ connected: true, planUsage: true });
+        const authorization = harness.authorizations.at(-1)?.searchParams;
+        expect(authorization?.get("client_id")).toBe(before.clientId);
+        expect(authorization?.get("ext_agent_host_id")).toBe(before.hostId);
+        expect(authorization?.has("prompt")).toBe(false);
       } finally {
         await harness.close();
       }
