@@ -7,6 +7,7 @@ import { baseline } from "#src/migrations/0001_baseline";
 import { sessionActiveRun } from "#src/migrations/0002_session_active_run";
 import { attachments } from "#src/migrations/0003_attachments";
 import { removeWorkload } from "#src/migrations/0004_remove_workload";
+import { toolCallReview } from "#src/migrations/0005_tool_call_review";
 import { decodeRow } from "#src/sql";
 
 export interface PackageSchema {
@@ -40,6 +41,7 @@ export const storeSchema = packageSchema("effect_sql_migrations", {
   "2_session_active_run": sessionActiveRun,
   "3_attachments": attachments,
   "4_remove_workload": removeWorkload,
+  "5_tool_call_review": toolCallReview,
 });
 
 const migrationFailure = (message: string) => new StoreError({ reason: "migration", message });

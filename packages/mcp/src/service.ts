@@ -27,16 +27,26 @@ import {
   signInStatus,
   type RuntimeAuthorization,
 } from "#src/oauth";
-import { boundedFetch, ScopedHTTPTransport, ScopedStdioTransport } from "#src/transport";
+import {
+  boundedFetch,
+  checkReviewedToken,
+  ReviewedAccountChanged,
+  reviewedHTTPRequest,
+  ScopedHTTPTransport,
+  ScopedStdioTransport,
+  singleReviewedPost,
+} from "#src/transport";
 
 export interface MCPTool {
   readonly definition: Tool;
   readonly serverId: string;
   readonly toolName: string;
   readonly availableAfterUntrusted: boolean;
+  readonly review?: { readonly origin: string | null } | undefined;
   readonly prepare: (argumentsJSON: string) => Effect.Effect<
     {
       readonly execute: Effect.Effect<string, MCPError>;
+      readonly validatedArguments?: string;
     },
     MCPError
   >;
@@ -69,6 +79,7 @@ interface Connection {
   readonly client: Client;
   readonly transport: ScopedStdioTransport | ScopedHTTPTransport;
   readonly now: () => number;
+  readonly token: () => string | undefined;
   state: ConnectionState;
   closing: Promise<void> | null;
   readonly signIn: { readonly required: () => boolean; readonly message: string } | null;
@@ -117,6 +128,7 @@ export class MCP extends Context.Service<
         readonly definition: MCPTool["definition"] | null;
         readonly allowed: boolean;
         readonly scheduled: boolean;
+        readonly reviewed: boolean;
       }>,
       MCPError
     >;
@@ -287,7 +299,7 @@ interface AuthorizationSlot {
 }
 
 const delegate = (authorization: AuthorizationSlot): AuthProvider => ({
-  token: () => authorization.current?.authProvider.token() ?? Promise.resolve(undefined),
+  token: async () => checkReviewedToken(await authorization.current?.authProvider.token()),
   onUnauthorized: (context) =>
     authorization.current === null
       ? Promise.reject(new Error("Sign-in required."))
@@ -315,7 +327,7 @@ const makeTransport = (
 
   const options: StreamableHTTPClientTransportOptions = {
     requestInit: { headers: references },
-    fetch,
+    fetch: singleReviewedPost(fetch),
     redirectPolicy: "same-origin",
     reconnectionOptions: {
       initialReconnectionDelay: 1000,
@@ -380,7 +392,10 @@ const makeTool = (
       message: `MCP ${config.id}/${tool.name}: Connection or protocol failed after dispatch; effects may be unknown. No call was retried; Poppet reconnects on a later request.`,
     });
 
-  const execute = (args: Schema.JsonObject) =>
+  const reviewed = config.reviewedTools?.includes(tool.name) === true;
+  const endpoint = isHTTPServer(config) ? config.url : null;
+
+  const execute = (args: Schema.JsonObject, token?: string) =>
     Effect.gen(function* () {
       if (connection.state.status !== "connected")
         return yield* Effect.fail(
@@ -388,12 +403,25 @@ const makeTool = (
         );
 
       const result = yield* Effect.tryPromise({
-        try: (signal) =>
-          connection.client.request(
-            { method: "tools/call", params: { name: tool.name, arguments: args } },
-            { signal, timeout: 10000 },
-          ),
+        try: (signal) => {
+          const send = () =>
+            connection.client.request(
+              { method: "tools/call", params: { name: tool.name, arguments: args } },
+              { signal, timeout: 10000 },
+            );
+
+          return reviewed && endpoint !== null
+            ? reviewedHTTPRequest(endpoint, token, send)
+            : send();
+        },
         catch: (cause) => {
+          if (cause instanceof ReviewedAccountChanged)
+            return new MCPError({
+              reason: "tool-permission",
+              message:
+                "The MCP sign-in changed after preparation. Nothing was sent. Request the action again.",
+            });
+
           if (connection.signIn?.required() === true) return failed(connection.signIn.message);
 
           if (cause instanceof InsufficientScopeError)
@@ -411,7 +439,7 @@ const makeTool = (
           if (!result.isError && output !== null && !output(result.structuredContent))
             throw new Error("Invalid structured output.");
 
-          return toolResult(result, toolBytes, secrets());
+          return toolResult(result, reviewed ? toolBytes - 128 : toolBytes, secrets());
         },
         catch: (cause) => (cause instanceof MCPError ? cause : uncertain()),
       });
@@ -428,6 +456,7 @@ const makeTool = (
     serverId: config.id,
     toolName: tool.name,
     availableAfterUntrusted: config.availableAfterUntrusted === true,
+    review: reviewed ? { origin: endpoint === null ? null : new URL(endpoint).origin } : undefined,
     definition: definition(config.id, tool.name, tool.description ?? "", schema),
     prepare: (argumentsJSON) =>
       Effect.try({
@@ -436,7 +465,20 @@ const makeTool = (
 
           if (!validate(args)) throw new Error("Arguments do not match schema.");
 
-          return { execute: execute(args) };
+          if (!reviewed) return { execute: execute(args) };
+
+          if (
+            containsSecret(
+              args,
+              secrets().filter((secret) => secret.length > 0),
+            )
+          )
+            throw new Error("Reviewed arguments contain a selected credential.");
+
+          return {
+            validatedArguments: JSON.stringify(args),
+            execute: execute(args, connection.token()),
+          };
         },
         catch: () =>
           new MCPError({
@@ -494,6 +536,7 @@ export const makeMCPLive = (toolBytes: number) =>
             client,
             transport,
             now,
+            token: () => authorization.current?.token(),
             state: config.enabled ? { status: "idle", retries } : { status: "disabled" },
             closing: null,
             signIn:
@@ -685,6 +728,7 @@ export const makeMCPLive = (toolBytes: number) =>
             definition: allowed.find((tool) => tool.toolName === name)?.definition ?? null,
             allowed: config.tools.includes(name),
             scheduled: config.scheduledTools?.includes(name) ?? false,
+            reviewed: config.reviewedTools?.includes(name) ?? false,
           }));
         });
 

@@ -99,6 +99,42 @@ const call = Effect.gen(function* () {
 });
 
 describe("MCP OAuth", () => {
+  test.each(["challenge", "changed sign-in"] as const)(
+    "when a reviewed call encounters a %s, sends no retry or replacement-account request",
+    async (mode) => {
+      const state = await harness();
+
+      try {
+        await state.login();
+        await Effect.runPromise(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const [tool] = yield* (yield* MCP).snapshot(false);
+              const prepared = yield* tool!.prepare('{"input":"{}"}');
+
+              if (mode === "challenge") state.server.options.tokenUses = 0;
+              else yield* Effect.promise(state.login);
+
+              const initialRequests = state.server.events.length;
+              const error = yield* Effect.flip(prepared.execute);
+              const requests = state.server.events.slice(initialRequests);
+
+              expect(error.reason).toBe(
+                mode === "challenge" ? "tool-uncertain" : "tool-permission",
+              );
+              expect(requests.some((event) => event.path === "/token")).toBe(false);
+              expect(requests.filter((event) => event.path === "/mcp").length).toBeLessThanOrEqual(
+                mode === "challenge" ? 2 : 1,
+              );
+            }),
+          ).pipe(Effect.provide(state.mcp([{ ...state.config, reviewedTools: ["read"] }])), quiet),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test.each([false, true])(
     "when custom discovery is %j, signs in, refreshes and redacts tokens from tool results",
     async (customDiscovery) => {

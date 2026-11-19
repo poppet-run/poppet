@@ -41,7 +41,7 @@ Add `mcpServers` to your existing `<data directory>/config.json`:
 
 Replace the executable, arguments, and tool names with your server's values.
 `args` and `tools` are required arrays; `cwd`, `environment`, `scheduledTools`,
-and `availableAfterUntrusted` are optional. IDs must be unique lowercase names beginning with a letter, with
+`reviewedTools`, and `availableAfterUntrusted` are optional. IDs must be unique lowercase names beginning with a letter, with
 letters, digits, and hyphens thereafter, at most 64 characters. Commands run with
 an argument array and no shell. Install servers yourself. Never put secret values
 in commands, arguments, or general configuration.
@@ -68,14 +68,14 @@ from a hidden prompt or `--api-key <key>`, saves it as the protected credential
 OAuth for a separate `mcp login` step.
 
 `mcp tools <id>` discovers tools and shows their `allowed` and `scheduled`
-permissions. `mcp allow <id> <tools...>` adds discovered names to the interactive
+permissions, plus whether each tool requires per-call review. `mcp allow <id> <tools...>` adds discovered names to the interactive
 allowlist. `mcp allow <id> --all` saves all names discovered now; tools the
-server adds later remain blocked. It cannot be combined with explicit names
+server adds later remain blocked. It does not add tools to `reviewedTools` and cannot be combined with explicit names
 or `--scheduled`. Use `mcp allow <id> <tools...> --scheduled` for explicitly
 reviewed read-only tools; this grants both interactive and scheduled access.
 Unknown tools and failed discovery leave permissions unchanged.
 
-`mcp deny <id> <tools...>` removes both permissions without connecting to the
+`mcp deny <id> <tools...>` removes the selected tools and their scheduled and review permissions without connecting to the
 server. Add `--scheduled` to remove only scheduled access. These commands work
 with both HTTP and configured stdio servers. Restart the worker after adding,
 removing, or changing permissions. Until then inspection through that worker
@@ -230,13 +230,43 @@ Once a fetched page, search result, or MCP result enters a run, MCP tools are
 withdrawn for the rest of it, so each run makes at most one round of MCP calls.
 Set `"availableAfterUntrusted": true` on a server whose workflow needs several
 calls, such as reading its own docs before running code. Its allowed tools then
-stay available after untrusted content; task and memory tools are still
+stay available after untrusted content unless listed in `reviewedTools`. Task and memory tools are still
 withdrawn. Only opt in a server you trust with that content: text from an email,
 page, or earlier result can then steer that server's later calls in the same
 run, limited to its `tools` (or `scheduledTools` in scheduled runs). URLs
 returned by MCP do not receive web-search grants. Scheduled runs retain the
 built-in mutation restrictions. Poppet sends the validated arguments and selected
 child credentials, without automatically attaching history or global memory.
+
+## Review an action
+
+Add exact tool names to a server's `reviewedTools` and keep those names in
+`tools`. Restart the worker after editing the file. For example, a server
+might have `"tools": ["find_issue", "create_issue"]` and
+`"reviewedTools": ["create_issue"]`. An omitted review list keeps the existing
+allowlist behavior. Server annotations, including `readOnlyHint`, never change
+permissions or review policy. Keep reviewed tools out of the read-only
+`scheduledTools` list.
+
+Poppet reviews each proposed call against your current message before it
+dispatches. Review uses the same model and decision contract as
+[host commands](commands.md). It receives the configured server, original tool
+name, the validated arguments in full, and the server's untrusted description
+and input schema. The limits are 8 KiB for the escaped invocation and 32 KiB
+for the JSON-encoded owner message. Larger requests fail before dispatch.
+A denial, failed review, or decision requiring a person stops the run.
+
+Attachments and results from pages, searches, Bash, or MCP withdraw reviewed
+MCP tools for the rest of the run, including calls waiting behind those
+results in the same batch. Name the proposed action and target in a fresh
+message. The server's `availableAfterUntrusted` setting never overrides this
+rule for reviewed tools.
+
+`poppet chat show <session>` displays the review decision, reason, and journal
+outcome. A completed receipt with `approvedBy: "reviewer"` describes a call
+that already ran. If a connection fails during dispatch, inspect the provider
+before requesting the action again. Reviewed HTTP calls stop at redirects and
+auth challenges. Sign in again if needed before making a new request.
 
 ## Bounds and schema compatibility
 

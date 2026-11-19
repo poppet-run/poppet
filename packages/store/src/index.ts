@@ -28,5 +28,6 @@ export {
   RunOutcome,
   ToolCall,
   ToolOutcome,
+  ToolReview,
   type StoreStatus,
 } from "#src/schema";

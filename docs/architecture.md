@@ -454,14 +454,14 @@ the model within the existing budgets. An invalid batch executes none of its
 calls. Uncertain effects end the run without replay. Once page, search, or MCP
 content enters a run, or the owner's message carries attachments, task management,
 memory changes, and MCP tools are withdrawn until a new owner message. A server configured with
-`availableAfterUntrusted` keeps its allowed MCP tools. A scheduled task's note tool
+`availableAfterUntrusted` keeps its allowed MCP tools except for tools that require review. A scheduled task's note tool
 also stays available; see [task notes](#task-notes).
 See [chat limits](chat.md#context-and-run-limits).
 
-### Reviewed host commands
+### Reviewed host commands and MCP actions
 
-`agent/bash.ts` defines the native Bash tool and an isolated reviewer request to
-the run's resolved model. Review has no tools or continuation and receives only
+`agent/action-review.ts` makes the isolated reviewer request to the run's
+resolved model. `agent/bash.ts` supplies Bash's command policy. Review has no tools or continuation and receives only
 the owner request, command, working directory, and timeout. It must return a
 validated allow/needs-approval/deny decision within thirty seconds. Review failure
 stops execution. Each invocation is independently reviewed; approvals are not cached.
@@ -472,6 +472,14 @@ and kills the process group on exit, timeout, or cancellation. The tool journal
 records invocation and outcome; fatal review failures also save their reason in
 the transcript and end the run. Command output is untrusted, but Bash stays
 available for subsequent independently reviewed commands.
+
+For tools in `reviewedTools`, the CLI exposes the validated arguments through
+the external-tool adapter. The agent uses the same review request machinery
+with MCP-specific instructions and journals the decision on the pending call.
+Only an allowed call reaches dispatch. The HTTP transport binds the prepared
+sign-in and permits one POST for the reviewed call. Redirects and authorization
+challenges stop dispatch without a resend. The store distinguishes
+pre-dispatch interruption from uncertain in-flight effects.
 
 The gateway holds pending approval IDs in memory for at most two minutes. Discord
 buttons and Discord or Slack text controls resolve them outside the inference queue

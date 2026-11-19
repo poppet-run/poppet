@@ -25,6 +25,9 @@ describe("config.ts", () => {
     for (const servers of [
       [server, server],
       [{ ...server, scheduledTools: ["write"] }],
+      [{ ...server, reviewedTools: ["write"] }],
+      [{ ...server, reviewedTools: ["read", "read"] }],
+      [{ ...server, reviewedTools: ["read"], scheduledTools: ["read"] }],
       [{ ...server, environment: { TOKEN: "secret-literal" } }],
     ]) {
       expect(Schema.is(MCPServers)(servers)).toBe(false);

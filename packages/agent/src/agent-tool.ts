@@ -5,6 +5,7 @@ import type {
   SkillSnapshot,
   StoredMessage,
   StoreError,
+  ToolReview,
 } from "@poppet/store";
 import type { Effect } from "effect";
 
@@ -35,11 +36,18 @@ export interface RunContext {
 
 export interface ToolContext extends RunContext {
   readonly pageURLs: ReadonlySet<string>;
+  readonly hasUntrustedContent: () => boolean;
 }
 
 export interface PreparedCall {
   readonly execute: Effect.Effect<string, AgentError | StoreError>;
   readonly grantedURLs?: () => ReadonlyArray<string>;
+}
+
+export interface ReviewableCall {
+  readonly authorize: (
+    record: (review: ToolReview) => Effect.Effect<void, StoreError>,
+  ) => Effect.Effect<PreparedCall, AgentError | StoreError>;
 }
 
 export interface FailurePolicy {
@@ -54,7 +62,7 @@ export interface AgentTool {
   readonly prepare: (
     call: ToolCall,
     context: ToolContext,
-  ) => Effect.Effect<PreparedCall, AgentError | StoreError>;
+  ) => Effect.Effect<PreparedCall | ReviewableCall, AgentError | StoreError>;
   readonly untrustedResult: boolean;
   readonly withdrawnWhenUntrusted: boolean;
   readonly contextOnly: boolean;

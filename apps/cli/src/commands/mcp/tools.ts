@@ -21,11 +21,15 @@ export const ExternalAgentToolsLive = Layer.effect(
               serverId: tool.serverId,
               toolName: tool.toolName,
               availableAfterUntrusted: tool.availableAfterUntrusted,
+              review: tool.review,
               prepare: (argumentsJSON: string) =>
                 Effect.gen(function* () {
                   const call = yield* tool.prepare(argumentsJSON);
 
-                  return { execute: Effect.mapError(call.execute, agentFailure) };
+                  return {
+                    execute: Effect.mapError(call.execute, agentFailure),
+                    validatedArguments: call.validatedArguments,
+                  };
                 }).pipe(Effect.mapError(agentFailure)),
             })),
           ),
