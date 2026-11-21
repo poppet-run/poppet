@@ -209,7 +209,7 @@ const inspectWorker = (directory: string, identity: string | null) =>
         "worker",
         `${delivery.pending} messages waiting to send, ${delivery.failed} failed sends, ${delivery.uncertain} sends with unknown delivery status.`,
         deliveryProblem
-          ? "Run poppet gateway status. Check the destination for messages with unknown delivery status before retrying, to avoid duplicates."
+          ? "Run poppet worker status. Check the destination for messages with unknown delivery status before retrying, to avoid duplicates."
           : null,
       ),
       snapshot.gateway === undefined
@@ -227,7 +227,7 @@ const inspectWorker = (directory: string, identity: string | null) =>
             "worker",
             `${snapshot.gateway.enabled} messaging services enabled. ${snapshot.gateway.disconnected} report being disconnected, ${snapshot.gateway.configurationErrors} have setup problems, and ${snapshot.gateway.unknown} did not report a connection state. Doctor has not sent a test message.`,
             snapshot.gateway.disconnected + snapshot.gateway.configurationErrors > 0
-              ? "Run poppet gateway status and poppet worker logs."
+              ? "Run poppet worker status and poppet worker logs."
               : null,
           ),
     ];
