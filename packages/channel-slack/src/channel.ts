@@ -2,12 +2,14 @@ import {
   boundedAttachment,
   ChannelError,
   MessagingChannel,
+  type ApprovalAction,
   type IncomingMessage,
 } from "@poppet/gateway";
 import { SocketModeClient } from "@slack/socket-mode";
 import { ErrorCode, WebClient, type ChatPostMessageArguments } from "@slack/web-api";
 import { Deferred, Effect, Exit, Layer, Queue, Redacted, Schema, Stream } from "effect";
 
+import { ActionBody, approvalBlocks, approvalClick } from "#src/approvals";
 import type { SlackSettings } from "#src/settings";
 
 export const escapeSlackText = (text: string) =>
@@ -121,6 +123,8 @@ export const slackChannelLayer = (settings: SlackSettings) =>
     MessagingChannel,
     Effect.gen(function* () {
       const messages = yield* Queue.make<IncomingMessage>({ capacity: 64, strategy: "dropping" });
+      const actions = yield* Queue.make<ApprovalAction>({ capacity: 64, strategy: "dropping" });
+      const prompts = new Map<string, string>();
       const identity = yield* Deferred.make<string>();
 
       const web = new WebClient(Redacted.value(settings.token), {
@@ -153,11 +157,23 @@ export const slackChannelLayer = (settings: SlackSettings) =>
       });
       socket.on(
         "slack_event",
-        async ({ body, ack }: { body: unknown; ack: () => Promise<void> }) => {
+        async ({ type, body, ack }: { type: string; body: unknown; ack: () => Promise<void> }) => {
           try {
             await ack();
           } catch {
             error = "Slack event acknowledgement failed.";
+
+            return;
+          }
+
+          if (type === "interactive") {
+            const action = Schema.decodeUnknownExit(ActionBody)(body);
+
+            if (Exit.isFailure(action)) return;
+
+            await approvalAction(action.value).catch(() => {
+              error = "Slack approval interaction failed.";
+            });
 
             return;
           }
@@ -194,6 +210,82 @@ export const slackChannelLayer = (settings: SlackSettings) =>
         Effect.forever,
         Effect.forkScoped,
       );
+
+      const ephemeral = async (channel: string, user: string, text: string, thread?: string) => {
+        await web.chat.postEphemeral({
+          channel,
+          user,
+          text: escapeSlackText(text),
+          ...(thread && { thread_ts: thread }),
+        });
+      };
+
+      const approvalAction = async (body: typeof ActionBody.Type) => {
+        const click = approvalClick(body, settings, botId);
+
+        if (click.kind === "ignored") return;
+
+        if (click.kind === "rejected") {
+          await ephemeral(
+            click.channel,
+            click.user,
+            "Only the configured owner can answer an approval in the configured workspace.",
+            click.thread,
+          );
+
+          return;
+        }
+
+        const reply = (text: string) =>
+          Effect.tryPromise({
+            try: () => ephemeral(click.source.parentId, click.source.senderId, text, click.thread),
+            catch: failure,
+          });
+
+        if (
+          !Queue.offerUnsafe(actions, {
+            requestId: click.requestId,
+            decision: click.decision,
+            source: click.source,
+            reply,
+          })
+        )
+          await Effect.runPromise(
+            reply("Poppet is busy. Try this approval again before it expires."),
+          );
+      };
+
+      const send = (id: string, text: string, requestId?: string) =>
+        Effect.tryPromise({
+          try: async () => {
+            const target = parseConversation(id);
+
+            const args: ChatPostMessageArguments = {
+              channel: target.channel,
+              text: escapeSlackText(text),
+              mrkdwn: false,
+              parse: "none",
+              unfurl_links: false,
+              unfurl_media: false,
+            };
+
+            if (target.ts) args.thread_ts = target.ts;
+
+            /* oxlint-disable unicorn/require-post-message-target-origin */
+            const reply = await web.chat.postMessage(
+              requestId ? { ...args, blocks: approvalBlocks(text, requestId) } : args,
+            );
+
+            /* oxlint-enable unicorn/require-post-message-target-origin */
+
+            if (!reply.ts) throw new Error("Missing message timestamp");
+
+            if (requestId) prompts.set(requestId, text);
+
+            return reply.ts;
+          },
+          catch: (cause) => failure(cause, true),
+        });
 
       const checkAccess = (message: IncomingMessage, id: string) =>
         Effect.tryPromise({
@@ -278,33 +370,26 @@ export const slackChannelLayer = (settings: SlackSettings) =>
             },
             catch: failure,
           }),
-        send: (id, text) =>
-          Effect.tryPromise({
-            try: async () => {
-              const target = parseConversation(id);
+        send: (id, text) => send(id, text),
+        approvals: {
+          actions: Stream.fromQueue(actions),
+          send: (id, text, _nonce, requestId) => send(id, text, requestId),
+          update: (id, messageId, requestId, state) =>
+            Effect.tryPromise({
+              try: async () => {
+                const text = prompts.get(requestId) ?? "";
+                prompts.delete(requestId);
 
-              const args: ChatPostMessageArguments = {
-                channel: target.channel,
-                text: escapeSlackText(text),
-                mrkdwn: false,
-                parse: "none",
-                unfurl_links: false,
-                unfurl_media: false,
-              };
-
-              if (target.ts) args.thread_ts = target.ts;
-
-              /* oxlint-disable unicorn/require-post-message-target-origin */
-              const reply = await web.chat.postMessage(args);
-
-              /* oxlint-enable unicorn/require-post-message-target-origin */
-
-              if (!reply.ts) throw new Error("Missing message timestamp");
-
-              return reply.ts;
-            },
-            catch: (cause) => failure(cause, true),
-          }),
+                await web.chat.update({
+                  channel: parseConversation(id).channel,
+                  ts: messageId,
+                  text: escapeSlackText(text),
+                  blocks: approvalBlocks(text, requestId, state),
+                });
+              },
+              catch: (cause) => failure(cause, true),
+            }),
+        },
         download: (attachment, maxBytes) =>
           Effect.tryPromise({
             try: () => web.files.info({ file: attachment.ref }),

@@ -6,7 +6,8 @@ Create a Slack app for your workspace and enable Socket Mode. Generate an
 app-level token with `connections:write`, and install the app with bot scopes
 `chat:write`, `channels:read`, `channels:history`,
 `groups:read`, `groups:history`, `reactions:write`, and `files:read`.
-Subscribe to `message.channels` and `message.groups` bot events.
+Subscribe to `message.channels` and `message.groups` bot events, and turn on
+**Interactivity & Shortcuts** for approval buttons. Socket Mode needs no request URL.
 Invite the bot to an unshared channel. Shared channels and DMs are unsupported.
 
 Run `poppet setup` for masked entry of both tokens, or configure directly:
@@ -28,7 +29,9 @@ access can read replies. `/new`, `/status`, `/cancel`, `/approve`, and `/deny`
 use the gateway's existing text controls. These are ordinary messages, not Slack
 slash commands. Prefix controls with the bot mention where necessary. Use the
 approval controls in the originating thread for [Bash commands](../commands.md)
-and [reviewed MCP actions](../mcp.md#review-an-action).
+and [reviewed MCP actions](../mcp.md#review-an-action). Approvals also show
+**Approve once** and **Deny** buttons; see
+[messaging approval](../commands.md#messaging-approval).
 
 Images and text files use the normal attachment limits. File downloads are
 bounded, authenticated, and restricted to Slack's file host. Progress uses eyes

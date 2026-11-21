@@ -487,7 +487,7 @@ pre-dispatch interruption from uncertain in-flight effects.
 The gateway shares pending approval IDs between Bash commands and reviewed MCP
 actions and holds them in memory for at most two minutes. The MCP journal records
 the authenticated owner's answer before dispatch. Discord
-buttons and Discord or Slack text controls resolve them outside the inference queue
+and Slack buttons and text controls resolve them outside the inference queue
 and only in the originating conversation, with access rechecked before execution.
 Restart expires pending requests. CLI and web chat supply no approval callback,
 so commands needing a person stop without execution. Scheduled runs never wait for
@@ -1063,8 +1063,9 @@ without a mention. See [Slack setup](gateways/slack.md).
 
 The adapter supplies authenticated, bounded downloads from Slack's file host and
 progress reactions. `/new`, `/status`, `/cancel`, `/approve`, and `/deny` use the
-shared gateway text-control path. Slack supplies no approval buttons, typing
-indicator, or remote thread naming. Scheduled destinations use a channel ID or
+shared gateway text-control path. Approval prompts carry Block Kit buttons that
+arrive as Socket Mode interactive events. Slack supplies no typing
+indicator or remote thread naming. Scheduled destinations use a channel ID or
 `<channel-id>:<thread-timestamp>` and the same durable result and failure-notice
 queue as Discord.
 

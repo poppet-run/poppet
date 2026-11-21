@@ -260,7 +260,7 @@ for the JSON-encoded owner message. Larger requests fail before dispatch.
 A denial or failed review stops the run. When review requires a person,
 Poppet sends the target, expected effects, reason, and exact invocation to
 the originating Discord or Slack conversation. Only the configured owner
-can answer with `/approve <id>` or `/deny <id>`. Discord also has buttons.
+can answer with `/approve <id>` or `/deny <id>`. Discord and Slack also have buttons.
 The request expires in two minutes and permits one execution. Use a private
 conversation for private arguments. CLI and web chat stop when a person is
 needed. Make a fresh request in Discord or Slack to obtain approval there.
