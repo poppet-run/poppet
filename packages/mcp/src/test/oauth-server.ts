@@ -19,6 +19,8 @@ const inputSchema = {
 export interface OAuthFixtureOptions {
   issuer?: string;
   customDiscovery?: boolean;
+  advertisedMetadata?: string;
+  beforeRefresh?: () => Promise<void>;
   noRefreshToken?: boolean;
   tokenUses?: number;
   challengeToolCall?: boolean;
@@ -141,6 +143,7 @@ export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
         }
 
         const presented = body.get("refresh_token") ?? "";
+        await options.beforeRefresh?.();
 
         if (options.refreshError !== undefined)
           return Response.json({ error: options.refreshError }, { status: 400 });
@@ -159,7 +162,7 @@ export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
         new Response(null, {
           status: 401,
           headers: {
-            "www-authenticate": `Bearer resource_metadata="${origin}${metadataPath}"`,
+            "www-authenticate": `Bearer resource_metadata="${options.advertisedMetadata ?? origin + metadataPath}"`,
           },
         });
 

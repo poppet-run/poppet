@@ -303,12 +303,24 @@ interface AuthorizationSlot {
   current: RuntimeAuthorization | null;
 }
 
-const delegate = (authorization: AuthorizationSlot): AuthProvider => ({
-  token: async () => checkReviewedToken(await authorization.current?.authProvider.token()),
-  onUnauthorized: (context) =>
-    authorization.current === null
-      ? Promise.reject(new Error("Sign-in required."))
-      : authorization.current.authProvider.onUnauthorized!(context),
+interface RejectedRequest {
+  readonly token: string;
+  readonly signal: AbortSignal | undefined;
+}
+
+const delegate = (
+  authorization: AuthorizationSlot,
+  rejected: WeakMap<Response, RejectedRequest>,
+): AuthProvider => ({
+  token: async () => checkReviewedToken(await authorization.current?.readToken()),
+  onUnauthorized: async ({ response }) => {
+    const request = rejected.get(response);
+
+    if (authorization.current === null || request === undefined)
+      throw new Error("Sign-in required.");
+
+    await authorization.current.refresh(request.token, response, request.signal);
+  },
 });
 
 const makeClient = () =>
@@ -332,9 +344,24 @@ const makeTransport = (
       maxBufferSize: 262144,
     });
 
+  const rejected = new WeakMap<Response, RejectedRequest>();
+
+  const transportFetch: FetchLike = async (url, init) => {
+    const response = await fetch(url, init);
+
+    if (response.status === 401) {
+      const bearer = new Headers(init?.headers).get("authorization");
+
+      if (bearer?.startsWith("Bearer "))
+        rejected.set(response, { token: bearer.slice(7), signal: init?.signal ?? undefined });
+    }
+
+    return response;
+  };
+
   const options: StreamableHTTPClientTransportOptions = {
     requestInit: { headers: references },
-    fetch: singleReviewedPost(fetch),
+    fetch: singleReviewedPost(transportFetch),
     redirectPolicy: "same-origin",
     reconnectionOptions: {
       initialReconnectionDelay: 1000,
@@ -344,7 +371,7 @@ const makeTransport = (
     },
   };
 
-  if (isOAuthServer(config)) options.authProvider = delegate(authorization);
+  if (isOAuthServer(config)) options.authProvider = delegate(authorization, rejected);
 
   return new ScopedHTTPTransport(new URL(config.url), options);
 };
@@ -568,7 +595,13 @@ export const makeMCPLive = (toolBytes: number) =>
           // eslint-disable-next-line unicorn/prefer-add-event-listener
           client.onclose = disconnected;
           // eslint-disable-next-line unicorn/prefer-add-event-listener
-          client.onerror = disconnected;
+          client.onerror = (error) => {
+            if (
+              !(error instanceof ReviewedAccountChanged || error instanceof InsufficientScopeError)
+            )
+              disconnected();
+          };
+
           connections.set(config.id, connection);
 
           if (!config.enabled) return connection;
