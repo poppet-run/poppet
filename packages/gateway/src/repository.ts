@@ -72,7 +72,8 @@ const operation =
   (...args: Args) =>
     run(...args).pipe(reportAs(gatewayFailure));
 
-const conflictingSession = () => new Error("Conflicting messaging session");
+const conflictingSession = () =>
+  new StoreError({ reason: "storage", message: "Conflicting messaging session" });
 
 const repository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -87,7 +88,9 @@ const repository = Effect.gen(function* () {
     sql`${inbox} WHERE id = ${id}`.pipe(
       decodeRow(Inbox),
       Effect.flatMap((row) =>
-        row === null ? Effect.fail(new Error("Missing messaging request")) : Effect.succeed(row),
+        row === null
+          ? Effect.fail(new StoreError({ reason: "storage", message: "Missing messaging request" }))
+          : Effect.succeed(row),
       ),
     );
 

@@ -304,8 +304,9 @@ describe("MCP over HTTP", () => {
           expect(yield* mcp.snapshot(false)).toHaveLength(2);
           expect((yield* mcp.status)[0]).toMatchObject({ state: "connected", retryAt: null });
         }).pipe(
-          Effect.provide(layer(server.url, {}, ["read", "fail"])),
-          Effect.provide(TestClock.layer()),
+          Effect.provide(
+            layer(server.url, {}, ["read", "fail"]).pipe(Layer.provideMerge(TestClock.layer())),
+          ),
           quiet,
         ),
       );
