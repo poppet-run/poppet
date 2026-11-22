@@ -233,13 +233,20 @@ const repository = Effect.gen(function* () {
         WHERE adapter = ${adapter} AND account = ${account} AND scope_id = ${scope} AND conversation_id = ${conversation}
           AND naming_disabled = 0 AND session_id = ${session}`.pipe(Effect.asVoid),
     ),
+    clearPendingName: operation(({ adapter, account, scope, conversation, session }: BindingKey) =>
+      sql`UPDATE gateway_bindings SET pending_name = NULL
+        WHERE adapter = ${adapter} AND account = ${account} AND scope_id = ${scope} AND conversation_id = ${conversation}
+          AND session_id = ${session}`.pipe(Effect.asVoid),
+    ),
     disableNaming: operation(({ adapter, account, scope, conversation, session }: BindingKey) =>
       sql`UPDATE gateway_bindings SET naming_disabled = 1, pending_name = NULL
         WHERE adapter = ${adapter} AND account = ${account} AND scope_id = ${scope} AND conversation_id = ${conversation}
           AND session_id = ${session}`.pipe(Effect.asVoid),
     ),
-    namingEntries: operation((adapter: string, account: string) =>
+    namingEntries: operation((adapter: string, account: string, scopeId: string, ownerId: string) =>
       sql`${inbox} WHERE adapter = ${adapter} AND account = ${account}
+        AND json_extract(payload, '$.scopeId') = ${scopeId}
+        AND json_extract(payload, '$.senderId') = ${ownerId}
         AND session_id IS NOT NULL AND state = 'completed'
         AND id = (SELECT MIN(first.id) FROM gateway_inbox first
           WHERE first.session_id = gateway_inbox.session_id AND first.state = 'completed'
@@ -340,7 +347,8 @@ const repository = Effect.gen(function* () {
             })} ON CONFLICT DO NOTHING`;
 
             if (replace)
-              yield* sql`UPDATE gateway_bindings SET session_id = ${session}, synced_title = NULL
+              yield* sql`UPDATE gateway_bindings SET session_id = ${session}, synced_title = NULL,
+                pending_name = NULL
               WHERE adapter = ${entry.adapter} AND account = ${entry.account}
                 AND scope_id = ${entry.message.scopeId} AND conversation_id = ${conversation}
                 AND session_id != ${session}`;

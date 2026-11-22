@@ -2680,11 +2680,17 @@ describe("conversationNaming", () => {
               mode === "manual" ? "My manual title" : "Generated conversation title",
             );
 
-            if (["external-edit", "permission", "rate-limit"].includes(mode)) {
+            if (["external-edit", "permission"].includes(mode)) {
               expect(
                 (yield* repo.namedBinding("discord", "bot", "guild", "thread-title"))
                   ?.namingDisabled,
               ).toBe(true);
+            }
+
+            if (mode === "rate-limit") {
+              expect(
+                yield* repo.namedBinding("discord", "bot", "thread-title"),
+              ).toMatchObject({ namingDisabled: false, pendingName: null });
             }
 
             return session.id;
@@ -2767,6 +2773,50 @@ describe("conversationNaming", () => {
             namingDisabled: false,
           });
           expect(renames).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when /new replaces a binding with a stale pending_name or policy changes, clears pending_name and filters unauthorized naming entries", async () => {
+    const state = await fixture({
+      naming: {
+        sanitize: (title) => title,
+        changes: Stream.never,
+        conversation: () => Effect.succeed({ id: "managed", managedName: "Original" }),
+        current: () => Effect.succeed("Original"),
+        rename: (_m, _id, _expected, title) => Effect.succeed(title),
+      },
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const repo = yield* GatewayRepository;
+          yield* gateway.accept(message("m1", null, "First"));
+          yield* gateway.processNext;
+          yield* gateway.deliverNext;
+
+          const firstSession = (yield* (yield* Store).sessions)[0]!;
+          yield* repo.namePending(
+            { adapter: "discord", account: "bot", conversation: "managed", session: firstSession.id },
+            "Stale pending",
+          );
+
+          yield* gateway.accept(message("m2", "managed", "/new Second"));
+          yield* gateway.processNext;
+          yield* gateway.deliverNext;
+
+          expect(yield* repo.namedBinding("discord", "bot", "managed")).toMatchObject({
+            pendingName: null,
+            namingDisabled: false,
+          });
+
+          expect(yield* repo.namingEntries("discord", "bot", "other-guild", "owner")).toEqual([]);
+          expect(yield* repo.namingEntries("discord", "bot", "guild", "other-owner")).toEqual([]);
         }),
       );
     } finally {
