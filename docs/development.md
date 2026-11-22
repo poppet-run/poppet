@@ -141,7 +141,9 @@ packages/
     src/io.ts             Bounded stream reads and subprocess cleanup
     src/public-url.ts     Shared HTTP URL validation and public-address policy
   mcp/                    @poppet/mcp
-    src/service.ts        MCP contract, scoped clients, permissions, discovery, invocation
+    src/service.ts        MCP contract, server registry, snapshots, and server probing
+    src/connection.ts     Connection state, transport/auth wiring, and tool discovery
+    src/tools.ts          Tool compilation, argument validation, and execution
     src/config.ts         Server schemas and environment/file configuration
     src/commands.ts       Read-only inspection commands
     src/errors.ts         MCP failures adapted by the host
