@@ -66,6 +66,7 @@ export const openWorkerLog = (directory: string) => {
   let size = fstatSync(handle).size;
 
   const rotate = () => {
+    if (handle === -1) throw new Error("The worker log is closed.");
     validate();
     closeSync(handle);
     handle = -1;
@@ -87,6 +88,7 @@ export const openWorkerLog = (directory: string) => {
 
   return {
     write: (chunk: Uint8Array) => {
+      if (handle === -1) throw new Error("The worker log is closed.");
       let offset = 0;
 
       while (offset < chunk.length) {

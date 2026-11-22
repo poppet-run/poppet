@@ -113,4 +113,17 @@ describe("openWorkerLog", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  test("when writing after closing the log, rejects cleanly without calling writeSync on fd -1", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-log-closed-"));
+    const log = openWorkerLog(directory);
+
+    try {
+      log.close();
+      expect(() => log.write(Buffer.from("after close"))).toThrow("closed");
+    } finally {
+      log.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

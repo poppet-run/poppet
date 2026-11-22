@@ -117,4 +117,34 @@ describe("runLoggedWorker", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  test("when log rotation fails while the child writes heavily on shutdown, drains pipes without deadlocking", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-background-log-error-"));
+
+    try {
+      const worker = `
+        import { symlinkSync } from "node:fs";
+        import { join } from "node:path";
+        const dir = ${JSON.stringify(join(directory, "logs"))};
+        process.on("SIGTERM", () => {
+          process.stdout.write("z".repeat(256 * 1024));
+          process.stderr.write("y".repeat(256 * 1024));
+          process.exit(0);
+        });
+        await Bun.write(Bun.stdout, "a".repeat(${workerLogBytes}));
+        symlinkSync(join(dir, "worker.log"), join(dir, "worker.log.2"));
+        await Bun.write(Bun.stdout, "trigger rotation\\n");
+        await new Promise((resolve) => setTimeout(resolve, 10_000));
+      `;
+
+      const startedAt = Date.now();
+      await expect(
+        runLoggedWorker([process.execPath, "--eval", worker], directory),
+      ).rejects.toThrow();
+      expect(Date.now() - startedAt).toBeLessThan(10_000);
+      expect(await Bun.file(join(directory, "logs/worker.lock")).exists()).toBe(false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });
