@@ -605,6 +605,28 @@ describe("makeOpenRouterProvider", () => {
     },
   );
 
+  test("when the catalog body drops during download, reports a temporary failure", async () => {
+    const provider = makeOpenRouterProvider(
+      Effect.die("Key must not be read"),
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("{"));
+            },
+            pull(controller) {
+              controller.error(new TypeError("Socket closed"));
+            },
+          }),
+        ),
+    );
+
+    await expect(Effect.runPromise(provider.models)).rejects.toMatchObject({
+      provider: "openrouter",
+      reason: "temporary",
+    });
+  });
+
   test.each([
     [401, "authentication"],
     [402, "quota"],

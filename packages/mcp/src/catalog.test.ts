@@ -113,15 +113,8 @@ describe("compileSchema", () => {
       expect(() => compileSchema({ type: "string", pattern })).toThrow();
   });
 
-  test("when a pattern has a named group, validates input after releasing the discovery probe", () => {
-    const validate = compileSchema({ type: "string", pattern: "^(?<letter>[a-z])$" });
-
-    expect(validate("a")).toBe(true);
-    expect(validate("12")).toBe(false);
-  });
-
-  test("when patterns have nested repetition, validates long inputs without backtracking", () => {
-    const validate = compileSchema({ type: "string", pattern: "^(a+)+$" });
+  test("when a named group has nested repetition, validates long inputs without backtracking", () => {
+    const validate = compileSchema({ type: "string", pattern: "^(?<letters>a+)+$" });
     expect(validate("a".repeat(64000))).toBe(true);
     expect(validate("a".repeat(64000) + "!")).toBe(false);
   });

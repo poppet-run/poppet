@@ -15,8 +15,7 @@ import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt
 const catalogFixture = () => {
   const state = { token: "first-token", connected: true, reads: 0, fail: false, malformed: false };
 
-  const http: HttpFetch = async (_url, init) => {
-    expect(new Headers(init?.headers).get("user-agent")).toBe(userAgent);
+  const http: HttpFetch = async () => {
     state.reads++;
 
     return state.fail
@@ -202,8 +201,10 @@ describe("ChatGPTModel", () => {
   );
 });
 
-const modalityCatalog: HttpFetch = async () =>
-  Response.json({
+const modalityCatalog: HttpFetch = async (_url, init) => {
+  expect(new Headers(init?.headers).get("user-agent")).toBe(userAgent);
+
+  return Response.json({
     models: [
       {
         slug: "vision-model",
@@ -220,9 +221,10 @@ const modalityCatalog: HttpFetch = async () =>
       { slug: "unlisted-model", display_name: "Unlisted", visibility: "list" },
     ],
   });
+};
 
 describe("makeChatGPTProvider", () => {
-  test("when the catalog lists input modalities, reports image input only for models that list images", async () => {
+  test("when listing models, sends Poppet's user agent and reports supported image input", async () => {
     const auth: ChatGPTAuth["Service"] = {
       accessToken: Effect.succeed(Redacted.make("test-token")),
       login: () => Effect.die("Login must not run."),

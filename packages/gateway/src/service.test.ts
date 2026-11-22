@@ -564,7 +564,7 @@ describe.concurrent("Gateway", () => {
                   "thread",
                   action === "cancel"
                     ? "/cancel"
-                    : `/${action === "revoked" || action === "update-failed" ? "approve" : action} ${id}`,
+                    : `  /${action === "revoked" || action === "update-failed" ? "approve" : action} ${id}  `,
                 ),
               );
             yield* Fiber.join(running);
@@ -1039,7 +1039,7 @@ describe.concurrent("Gateway", () => {
             text: "Review Acorn",
           });
           expect(yield* store.session(original)).toMatchObject({ skill: null });
-          yield* gateway.accept(message("status", "chat", "  /status  "));
+          yield* gateway.accept(message("status", "chat", "/status"));
 
           while (yield* gateway.deliverNext) {}
 
@@ -1159,7 +1159,7 @@ describe.concurrent("Gateway", () => {
           const session = (yield* repo.binding("discord", "bot", "guild", "chat"))!;
           yield* TestClock.adjust("1 second");
           yield* store.queueRun(session, []);
-          yield* gateway.accept(message("status", "chat", "/status"));
+          yield* gateway.accept(message("status", "chat", "  /status  "));
           yield* gateway.deliverNext;
         }),
       );
@@ -3056,7 +3056,7 @@ describe.concurrent("Gateway concurrent requests", () => {
           expect(yield* inboxStates).toMatchObject({ a1: "cancelled", b1: "executing" });
 
           yield* gateway.accept(
-            message("right", "thread-b", `  /approve ${prompts.get("thread-b")}  `),
+            message("right", "thread-b", `/approve ${prompts.get("thread-b")}`),
           );
           yield* settledInbox("b1");
           expect(executed).toEqual(["restart-b"]);

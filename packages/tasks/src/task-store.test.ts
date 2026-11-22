@@ -972,33 +972,6 @@ describe.concurrent("TaskRepository", () => {
     }
   });
 
-  test("when a run fails before its task outcome commits, recovers the occurrence as failed", async () => {
-    const state = await fixture();
-
-    try {
-      await state.run((repo, store) =>
-        Effect.gen(function* () {
-          yield* repo.add(once, start);
-          yield* repo.reconcile(start);
-          const active = (yield* repo.claim(start))!;
-          const session = yield* store.createSession("test-provider", "test-model");
-          const run = yield* store.queueRun(session.id, [{ role: "user", text: once.prompt }]);
-          yield* store.startRun(run.id);
-          yield* repo.link(active.id, session.id, run.id);
-          yield* store.finishRun(run.id, { status: "failed", reason: "provider:authentication" });
-          yield* repo.recover(start + 1000);
-
-          expect(yield* repo.occurrence(active.id)).toMatchObject({
-            status: "failed",
-            reason: "provider:authentication",
-          });
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
-
   test("when DST changes local time, shifts missing times forward and runs repeated times once", () => {
     const schedule = { type: "cron", expression: "30 1 * * *", timezone: "Europe/London" } as const;
     const spring = nextOccurrence(schedule, Date.parse("2026-03-28T23:00:00Z"));

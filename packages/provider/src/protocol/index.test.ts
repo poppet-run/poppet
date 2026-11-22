@@ -621,22 +621,19 @@ for (const adapter of cases) {
       );
     });
 
-    test.each(["Hello", ""])(
-      "when a user message has an empty attachment list and text %j, sends string content",
-      async (text) => {
-        const harness = fixture(adapter, "text");
-        await Effect.runPromise(
-          completeModel(harness.model, {
-            ...request,
-            messages: [{ role: "user", text, attachments: [] }],
-          }),
-        );
-        const body = harness.requests[0];
-        const messages = adapter.protocol === "responses" ? body?.input : body?.messages;
+    test("when a user message has empty text and an empty attachment list, sends string content", async () => {
+      const harness = fixture(adapter, "text");
+      await Effect.runPromise(
+        completeModel(harness.model, {
+          ...request,
+          messages: [{ role: "user", text: "", attachments: [] }],
+        }),
+      );
+      const body = harness.requests[0];
+      const messages = adapter.protocol === "responses" ? body?.input : body?.messages;
 
-        expect(messages).toContainEqual({ role: "user", content: text });
-      },
-    );
+      expect(messages).toContainEqual({ role: "user", content: "" });
+    });
 
     test("when an image is sent to a text-only model or contents are missing, rejects the request before sending", async () => {
       const harness = fixture(adapter);

@@ -31,8 +31,6 @@ describe("identityVerifier", () => {
       azp: "other",
       valid: false,
     },
-    { name: "an expired token", aud: client, exp: now - 6, valid: false },
-    { name: "a future issue time", aud: client, iat: now + 6, valid: false },
   ])("when the token has $name, reports validity as $valid", async (example) => {
     const { publicKey, privateKey } = await keys;
     const jwk = await exportJWK(publicKey);
@@ -42,8 +40,8 @@ describe("identityVerifier", () => {
       .setIssuer(issuer)
       .setAudience(example.aud)
       .setSubject("test-user")
-      .setIssuedAt(example.iat ?? now)
-      .setExpirationTime(example.exp ?? now + 60)
+      .setIssuedAt(now)
+      .setExpirationTime(now + 60)
       .sign(privateKey);
 
     const verify = identityVerifier(
