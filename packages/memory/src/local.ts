@@ -189,6 +189,8 @@ export const LocalMemoryLive = Layer.effect(
           Effect.gen(function* () {
             yield* input(MemoryFact.fields.key, key);
 
+            yield* input(MemoryRevision.fields.revision, revision);
+
             const target = yield* sql`SELECT * FROM memory_revisions
               WHERE key = ${key} AND revision = ${revision}`.pipe(decodeRow(MemoryRevision));
 

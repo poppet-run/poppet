@@ -90,9 +90,10 @@ poppet memory history answer.style        # every revision, its origin and sourc
 poppet memory revert answer.style 1       # restore revision 1 as a new revision
 ```
 
-Reverting never rewrites history. Restoring a forgotten revision forgets the
-fact again; restoring an earlier value recreates or replaces it as a CLI change.
-Both commands go through a running worker.
+Reverting appends a revision. Use a positive whole revision number. Restoring
+a forgotten revision forgets the fact again. Restoring an earlier value
+recreates or replaces it as a CLI change. Both commands go through a running
+worker.
 
 ## Profile
 

@@ -304,6 +304,8 @@ describe.concurrent("LocalMemoryLive", () => {
           expect(yield* memory.list).toEqual([]);
           yield* reject(memory.revert("answer.style", 3), "conflict");
           yield* reject(memory.revert("answer.style", 99), "not-found");
+          yield* reject(memory.revert("answer.style", 0), "invalid-request");
+          yield* reject(memory.revert("answer.style", 1.5), "invalid-request");
           expect((yield* memory.history("answer.style")).at(-1)).toMatchObject({
             revision: 5,
             action: "forget",
