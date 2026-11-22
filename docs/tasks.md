@@ -271,7 +271,7 @@ repeat inference, and `tasks retry` rejects completed occurrences.
 
 With [quiet hours](configuration.md#quiet-hours) set, a post that is ready inside
 the window stays pending with `heldUntil` set to the window's end, then sends.
-Holding is not a failure and uses no attempts.
+The worker logs the hold and its end time. A hold uses no delivery attempts.
 
 A task can stay quiet when it has nothing to report. Make the prompt conditional,
 for example "Tell me only if the page changed." When the condition is not met, the

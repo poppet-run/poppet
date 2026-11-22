@@ -1,6 +1,6 @@
 import { isNoReply } from "@poppet/agent";
 import { quietHoursEnd } from "@poppet/config";
-import { Console, Effect } from "effect";
+import { Effect } from "effect";
 
 import { authorized, wake, type GatewayContext } from "#src/context";
 import { answer, chunks } from "#src/replies";
@@ -80,7 +80,7 @@ export const deliverNext = (context: GatewayContext) => {
 
     if (heldUntil !== null && delivery.scheduled) {
       if (announcedHold !== heldUntil)
-        yield* Console.log(
+        yield* Effect.logInfo(
           `Holding scheduled ${channel.id} posts for quiet hours until ${new Date(heldUntil).toISOString()}.`,
         );
       announcedHold = heldUntil;
