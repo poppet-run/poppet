@@ -13,6 +13,24 @@
     "exactOptionalPropertyTypes": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "includeSuggestionsInTsc": false,
+        "ignoreEffectWarningsInTscExitCode": false,
+        "allowedUnstableApis": [
+          "effect/cli",
+          "effect/sql",
+          "effect/Terminal",
+          "effect/reactivity",
+          "@effect/platform-bun",
+          "@effect/sql-sqlite-bun"
+        ],
+        "diagnosticSeverity": {
+          "floatingEffect": "error"
+        }
+      }
+    ]
   }
 }

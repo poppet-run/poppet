@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "bun run build:css && rm -rf ./dist && bun build ./index.html --outdir ./dist --target browser --public-path / --minify",
-    "typecheck": "bun --check",
+    "typecheck": "bun --check && effect-tsgo tsc",
     "build:css": "bun --bun tailwindcss -i ./src/styles/style.css -o ./.generated/style.css --minify"
   },
   "dependencies": {
