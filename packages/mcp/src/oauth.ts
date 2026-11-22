@@ -152,6 +152,7 @@ interface ProviderOptions {
   readonly redirectUri: string;
   readonly state?: string;
   readonly secret: string | undefined;
+  readonly allowRegistration?: boolean;
   readonly redirect: (url: URL) => void;
   readonly now: () => number;
 }
@@ -188,12 +189,14 @@ const makeProvider = (
 
       return information;
     },
-    saveClientInformation: (information) => {
-      record.client =
-        configured === undefined
-          ? json(information)
-          : json({ client_id: configured, issuer: information.issuer });
-    },
+    ...(options.allowRegistration !== false && {
+      saveClientInformation: (information: StoredOAuthClientInformation) => {
+        record.client =
+          configured === undefined
+            ? json(information)
+            : json({ client_id: configured, issuer: information.issuer });
+      },
+    }),
     // SAFETY: saveTokens stores only SDK-validated token responses.
     tokens: () => record.tokens as StoredOAuthTokens | undefined,
     saveTokens: (tokens) => {
@@ -551,6 +554,7 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
             {
               redirectUri: registeredRedirect(record) ?? "http://127.0.0.1/auth/callback",
               secret,
+              allowRegistration: false,
               now,
               redirect: () => {
                 throw new Error("Sign-in required.");

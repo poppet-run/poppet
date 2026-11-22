@@ -440,4 +440,33 @@ describe("MCP OAuth", () => {
       await state.close();
     }
   });
+
+  test("when background refresh receives invalid_client, marks sign-in required without triggering dynamic client registration", async () => {
+    const state = await harness();
+
+    try {
+      await state.login();
+      expect(state.server.registrations.count).toBe(1);
+      state.server.options.tokenUses = 0;
+      state.server.options.refreshError = "invalid_client";
+
+      const result = await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const mcp = yield* MCP;
+            const failure = yield* Effect.flip(mcp.tools("remote"));
+            const waiting = yield* mcp.status;
+
+            return { failure, waiting };
+          }),
+        ).pipe(Effect.provide(state.mcp()), quiet),
+      );
+
+      expect(result.failure.message).toContain("Run poppet mcp login remote.");
+      expect(result.waiting[0]).toMatchObject({ state: "needs-login" });
+      expect(state.server.registrations.count).toBe(1);
+    } finally {
+      await state.close();
+    }
+  });
 });
