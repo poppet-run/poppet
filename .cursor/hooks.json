@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "bun tools/hooks/hook-bypass.ts cursor",
+        "failClosed": true
+      }
+    ]
+  }
+}

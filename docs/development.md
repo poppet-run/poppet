@@ -40,6 +40,25 @@ or `bun run --filter '@poppet/provider-openai' test`.
 `bun install` runs `lefthook install`, which adds a pre-commit hook that runs
 `bun run check` (see `lefthook.yml`). A failing check blocks the commit.
 
+`tools/hooks/hook-bypass.ts` refuses shell commands that skip or disable that hook:
+`--no-verify` and its abbreviations on any Git command, `git commit -n`, `LEFTHOOK=0`,
+`LEFTHOOK_EXCLUDE`, `HUSKY=0`, `core.hooksPath` overrides through `git -c`, `git config`,
+or `GIT_CONFIG_*` variables, `lefthook uninstall`, and writes under `.git/hooks`, including
+inside `sh -c`, `bash -c`, `eval`, and command substitutions. Claude Code
+(`.claude/settings.json`), Cursor (`.cursor/hooks.json`), and Codex (`.codex/hooks.json`)
+run it before each shell command. Cursor and Codex run project hooks only in a trusted
+workspace, and Codex asks you to review new or changed hooks with `/hooks`.
+
+The guard only stops agents inside those harnesses. A terminal still honours every
+bypass, so CI runs the same checks on every pull request. To check the guard, pipe a
+command into it:
+
+```sh
+echo '{"tool_input":{"command":"git commit --no-verify"}}' | bun tools/hooks/hook-bypass.ts
+```
+
+It prints the refusal and exits with status 2.
+
 ## Isolated tests
 
 Use `bun run test` for the suite or `bun run test <path>` for focused tests.
