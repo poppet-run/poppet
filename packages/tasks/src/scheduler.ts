@@ -324,34 +324,49 @@ export const makeTaskWorker = Effect.gen(function* () {
       yield* log("task worker started", {});
 
       const timer = Effect.gen(function* () {
-        yield* reconcileTasks(repo, clock.currentTimeMillisUnsafe());
-        yield* Queue.offer(wake, undefined);
+        yield* commands.withPermit(reconcileTasks(repo, clock.currentTimeMillisUnsafe())).pipe(
+          Effect.andThen(Queue.offer(wake, undefined)),
+          Effect.catch((error) =>
+            log("task timer failed", { error: error.message }, "error").pipe(
+              Effect.andThen(Effect.sleep("5 seconds")),
+            ),
+          ),
+        );
         yield* Effect.sleep("1 second");
       }).pipe(Effect.forever);
 
       const worker = Effect.gen(function* () {
         yield* Queue.take(wake);
 
-        const current = yield* commands.withPermit(
-          Effect.uninterruptibleMask((restore) =>
-            Effect.gen(function* () {
-              const claimed = yield* repo.claim(clock.currentTimeMillisUnsafe());
+        const claimed = yield* commands
+          .withPermit(
+            Effect.uninterruptibleMask((restore) =>
+              Effect.gen(function* () {
+                const next = yield* repo.claim(clock.currentTimeMillisUnsafe());
 
-              if (claimed === null) return null;
+                if (next === null) return null;
 
-              const fiber = yield* restore(executeOccurrence(repo, claimed)).pipe(Effect.forkChild);
+                const fiber = yield* restore(executeOccurrence(repo, next)).pipe(Effect.forkChild);
 
-              const running = { id: claimed.id, fiber };
-              active = running;
+                const running = { id: next.id, fiber };
+                active = running;
 
-              return running;
-            }),
-          ),
-        );
+                return running;
+              }),
+            ),
+          )
+          .pipe(
+            Effect.catch((error) =>
+              log("task worker claim failed", { error: error.message }, "error").pipe(
+                Effect.andThen(Effect.sleep("5 seconds")),
+                Effect.as(null),
+              ),
+            ),
+          );
 
-        if (current === null) return;
+        if (claimed === null) return;
 
-        const exit = yield* Fiber.await(current.fiber).pipe(
+        const exit = yield* Fiber.await(claimed.fiber).pipe(
           Effect.ensuring(
             Effect.sync(() => {
               active = null;
@@ -359,7 +374,19 @@ export const makeTaskWorker = Effect.gen(function* () {
           ),
         );
 
-        if (Exit.isFailure(exit) && !Cause.hasInterrupts(exit.cause)) yield* exit;
+        if (Exit.isFailure(exit) && !Cause.hasInterrupts(exit.cause)) {
+          if (Cause.hasDies(exit.cause)) return yield* exit;
+
+          const error = Option.getOrNull(Cause.findErrorOption(exit.cause));
+
+          yield* log(
+            "task occurrence storage failed",
+            { occurrence: claimed.id, error: error?.message ?? "unknown" },
+            "error",
+          );
+          yield* Effect.sleep("5 seconds");
+        }
+
         yield* Queue.offer(wake, undefined);
       }).pipe(Effect.forever);
 
