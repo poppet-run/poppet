@@ -512,6 +512,16 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
     if (initial === null) return yield* Effect.fail(required(config.id, "sign-in required."));
 
     let token = initial.access_token;
+    const seenSecrets = new Set<string>();
+
+    const track = (value: string | undefined) => {
+      if (value !== undefined && value.length > 0) seenSecrets.add(value);
+    };
+
+    track(secret);
+    track(initial.access_token);
+    track(initial.refresh_token);
+
     let loginRequired = false;
     const server = new URL(config.url);
 
@@ -525,6 +535,8 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
           return Effect.fail(required(config.id, "sign-in required."));
         }
 
+        track(latest.access_token);
+        track(latest.refresh_token);
         token = latest.access_token;
 
         return Effect.succeed(token);
@@ -567,6 +579,10 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
           } catch (cause) {
             if (accessToken(record) !== null) throw cause;
           }
+
+          const refreshed = accessToken(record);
+          track(refreshed?.access_token);
+          track(refreshed?.refresh_token);
         },
         catch: (cause) => cause,
       });
@@ -631,6 +647,8 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
             if (current === null || latest === null) break;
 
             if (latest.access_token !== rejected) {
+              track(latest.access_token);
+              track(latest.refresh_token);
               token = latest.access_token;
 
               return;
@@ -659,6 +677,7 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
       readToken: () => Effect.runPromise(readToken),
       refresh,
       token: () => token,
+      secrets: () => [...seenSecrets],
       loginRequired: () => loginRequired,
     };
   });

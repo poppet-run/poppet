@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { ApiKeyStore } from "@poppet/credentials";
 import { ProviderEnvironment } from "@poppet/provider";
-import { ConfigProvider, Console, Effect, Layer } from "effect";
+import { ConfigProvider, Console, Effect, Layer, Redacted } from "effect";
 
 import type { MCPHTTPServer } from "#src/config";
 import {
@@ -465,6 +465,48 @@ describe("MCP OAuth", () => {
       expect(result.failure.message).toContain("Run poppet mcp login remote.");
       expect(result.waiting[0]).toMatchObject({ state: "needs-login" });
       expect(state.server.registrations.count).toBe(1);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when OAuth tokens rotate with a client secret, retains client_secret, refresh_token, and prior access tokens in secrets()", async () => {
+    const state = await harness({ tokenUses: 1 });
+
+    try {
+      await state.login();
+
+      const withSecret: MCPOAuthServer = {
+        ...state.config,
+        oauth: { clientSecret: { credential: "oauth-client-secret" } },
+      };
+
+      const auth = await state.run(
+        runtimeAuthorization(withSecret, Date.now).pipe(
+          Effect.provideService(ApiKeyStore, {
+            read: () => Effect.succeed(Redacted.make("oauth-secret-value")),
+            write: () => Effect.die("Unexpected write"),
+            remove: () => Effect.die("Unexpected remove"),
+          }),
+        ),
+      );
+
+      const firstToken = auth.token();
+      expect(auth.secrets()).toContain("oauth-secret-value");
+      expect(auth.secrets()).toContain(firstToken);
+      expect(auth.secrets().some((value) => value.startsWith("refresh-"))).toBe(true);
+
+      await auth.authProvider.onUnauthorized!({
+        response: new Response(null, { status: 401 }),
+        serverUrl: new URL(state.server.url),
+        fetchFn: fetch,
+      });
+
+      const secondToken = auth.token();
+      expect(secondToken).not.toBe(firstToken);
+      expect(auth.secrets()).toContain("oauth-secret-value");
+      expect(auth.secrets()).toContain(firstToken);
+      expect(auth.secrets()).toContain(secondToken);
     } finally {
       await state.close();
     }

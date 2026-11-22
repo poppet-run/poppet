@@ -240,7 +240,8 @@ const resolveReferences = (config: MCPServer, credentials: ApiKeyStore["Service"
         );
 
         values[name] = value;
-        secrets.push(value);
+
+        if ("credential" in reference) secrets.push(value);
       }
     }
 
@@ -636,7 +637,7 @@ export const makeMCPLive = (toolBytes: number) =>
             const current = () =>
               authorization.current === null
                 ? secrets
-                : [...secrets, authorization.current.token()];
+                : [...secrets, ...authorization.current.secrets()];
 
             const discovered = yield* Effect.tryPromise({
               try: async (signal) => {
