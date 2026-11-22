@@ -31,8 +31,8 @@ const committedFailure = (cause: StoreError | TaskError) =>
   cause instanceof StoreError
     ? cause
     : new StoreError({
-        reason: "storage",
-        message: "Poppet could not read or write its conversation store.",
+        reason: "invalid-request",
+        message: cause.message,
       });
 
 const invalid = (cause: unknown) =>

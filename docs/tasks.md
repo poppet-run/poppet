@@ -230,7 +230,9 @@ via CLI first. Retrying occurrences, cancelling active runs, and changing
 provider pauses remain CLI operations.
 
 Task changes and their durable tool receipts commit together. A saved change
-survives a later model failure or interrupted answer. Inspect `tasks list`,
+survives a later model failure or interrupted answer. If the task changes
+between preparing and applying a request, the tool can report that the request
+is no longer valid. Inspect `tasks list`,
 `tasks show`, or the run's tool records in `chat show` before requesting a new
 creation after an unclear result. Completed calls are not replayed. Scheduled
 runs cannot use this tool, including its read actions. Historical conversations,

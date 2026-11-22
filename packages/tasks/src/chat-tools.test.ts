@@ -201,6 +201,34 @@ describe("ChatTasks", () => {
     }
   });
 
+  test("when a task disappears before its pause commits, reports the invalid request", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const first = yield* recorded(create);
+          const id = JSON.parse(yield* execute(create, first.context)).task.id;
+          const action: ChatTaskAction = { action: "pause", id };
+          const call = yield* recorded(action, "pause", first.run);
+          const planned = yield* (yield* ChatTasks).prepare(action, call.context);
+          yield* repo.delete(id);
+          yield* first.store.startToolCall(call.context.runId, call.context.callId);
+
+          expect(yield* planned.execute.pipe(Effect.result)).toMatchObject({
+            failure: {
+              reason: "invalid-request",
+              message: "The task does not exist. Use tasks list.",
+            },
+          });
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when the deletion receipt cannot be saved, restores the task and pending history", async () => {
     const state = await fixture();
 
