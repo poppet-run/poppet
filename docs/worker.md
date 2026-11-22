@@ -180,6 +180,9 @@ worker rather than allowing it to run without captured diagnostics.
 
 ## Stop, start, restart, and uninstall
 
+When you accept the restart prompt in `poppet setup`, Poppet restarts the active
+installed worker in one service-manager operation.
+
 ```sh
 poppet worker stop
 poppet worker start

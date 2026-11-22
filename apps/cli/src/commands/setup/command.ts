@@ -37,7 +37,7 @@ const setupWorker = (context: CLIContext, directory: string) =>
       return;
     }
 
-    const action = status.installed ? "start" : "install";
+    const action = status.installed ? (status.active ? "restart" : "start") : "install";
 
     const message = status.active
       ? "Restart the worker to apply these settings? This can interrupt active runs."
@@ -46,7 +46,6 @@ const setupWorker = (context: CLIContext, directory: string) =>
         : "Install and start the login worker for scheduling and messaging?";
 
     if (yield* Prompt.Confirm({ message, initial: false })) {
-      if (status.active) yield* context.worker("stop", directory);
       yield* Console.log(yield* context.worker(action, directory));
       yield* Console.log("Run poppet worker status to check readiness.");
     } else {
