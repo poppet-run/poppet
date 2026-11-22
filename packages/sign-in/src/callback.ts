@@ -82,6 +82,7 @@ export const startCallback = <A>(options: CallbackOptions<A>) =>
             port: options.port ?? 0,
             fetch: (httpRequest, listener) => {
               const headers = {
+                Connection: "close",
                 "Cache-Control": "no-store",
                 "Referrer-Policy": "no-referrer",
                 "Content-Type": "text/plain; charset=utf-8",
@@ -106,7 +107,19 @@ export const startCallback = <A>(options: CallbackOptions<A>) =>
                 : `Could not listen for the sign-in callback on 127.0.0.1:${options.port}. Choose another callback port.`,
           }),
       }),
-      (listener) => Effect.promise(() => listener.stop()),
+      (listener) =>
+        Effect.promise(async () => {
+          // Let an in-flight callback page flush before forcing stuck connections closed.
+          const force = setTimeout(() => {
+            void listener.stop(true);
+          }, 1000);
+
+          try {
+            await listener.stop();
+          } finally {
+            clearTimeout(force);
+          }
+        }),
     );
 
     const origin = `http://127.0.0.1:${server.port}`;

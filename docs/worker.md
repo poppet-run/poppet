@@ -34,7 +34,9 @@ CLI, web chat, scheduled, and messaging model requests share
 session always run one at a time, so a CLI chat sent to a session that a messaging
 thread is using waits for the thread's request. Chat streams to the
 invoking terminal; Ctrl-C cancels that request and leaves the worker running.
-Stopping the worker interrupts active requests and releases the socket and owner lock. After a crash,
+The worker closes a socket request's resources when the request finishes or the
+client disconnects. Stopping the worker interrupts active requests, closes open
+connections, and releases the socket and owner lock. After a crash,
 a new owner automatically reclaims storage from a dead process, even if its PID has
 been reused; unfinished work needs an explicit retry. A messaging adapter that
 fails restarts on its own after a delay, from one second doubling to five minutes,
