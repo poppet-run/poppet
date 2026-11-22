@@ -485,7 +485,8 @@ poppet tasks retry <task-id> --occurrence <occurrence-id>
 Quota failures pause scheduled requests for that provider indefinitely. The CLI
 has no command to clear a quota pause. Inspect provider pauses with `worker status`.
 Temporary and rate-limit failures delay subsequent work by 30 seconds, doubling
-after further failures up to five minutes. A failed occurrence is never retried
+after further failures up to five minutes. Status shows provider holds until
+they expire. A failed occurrence is never retried
 automatically. `retry` creates a fresh session for an unsuccessful occurrence;
 earlier runs remain available through chat inspection. Resume a paused task before
 retrying it. A cancelled one-off needs `retry`, since it has no future occurrences.

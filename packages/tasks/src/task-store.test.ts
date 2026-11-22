@@ -8,6 +8,7 @@ import { memorySchema } from "@poppet/memory";
 import { Store, StoreLive, migrate } from "@poppet/store";
 import { Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql";
+import { TestClock } from "effect/testing";
 
 import { taskSchema } from "#src/migrations";
 import { recurringExpiry } from "#src/task-records";
@@ -1259,6 +1260,31 @@ describe.concurrent("TaskRepository", () => {
             yield* repo.blockProvider("test-provider", "rate-limit", start);
           expect((yield* repo.providers())[0]?.resumeAt).toBe(start + 300_000);
         }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a temporary provider pause expires, only shows active holds in status", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo) =>
+        Effect.gen(function* () {
+          yield* TestClock.setTime(start);
+          yield* repo.blockProvider("quota-provider", "quota", start);
+          yield* repo.blockProvider("test-provider", "temporary", start);
+          expect((yield* repo.status()).providerPauses.map((pause) => pause.provider)).toEqual([
+            "quota-provider",
+            "test-provider",
+          ]);
+
+          yield* TestClock.adjust("30 seconds");
+          expect((yield* repo.status()).providerPauses.map((pause) => pause.provider)).toEqual([
+            "quota-provider",
+          ]);
+        }).pipe(Effect.provide(TestClock.layer())),
       );
     } finally {
       await state.close();
