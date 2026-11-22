@@ -16,16 +16,16 @@
     "test": "bun --no-env-file ../../tools/testing/run.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/client": "2.4.0",
     "@poppet/credentials": "workspace:*",
     "@poppet/io": "workspace:*",
     "@poppet/provider": "workspace:*",
     "@poppet/sign-in": "workspace:*",
     "ajv": "8.20.0",
-    "effect": "4.0.4",
+    "effect": "4.1.5",
     "re2-wasm": "1.0.2"
   },
   "devDependencies": {
-    "openai": "7.32.0"
+    "openai": "7.62.0"
   }
 }

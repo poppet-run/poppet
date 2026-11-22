@@ -4,7 +4,7 @@ import {
   type Continuation,
   type Message as ModelMessage,
 } from "@poppet/provider";
-import { Effect, Schema } from "effect";
+import { Array, Effect, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { StoreError, decodeInput, reportAs, storeFailure } from "#src/errors";
@@ -122,9 +122,9 @@ export const storeRecords = (sql: SqlClient.SqlClient) => {
 
       const start = next?.position ?? 0;
 
-      if (messages.length > 0)
+      if (Array.isReadonlyArrayNonEmpty(messages))
         yield* sql`INSERT INTO messages ${sql.insert(
-          messages.map((message, index) => ({
+          Array.map(messages, (message, index) => ({
             sessionId: session.id,
             runId,
             position: start + index,

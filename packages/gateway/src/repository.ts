@@ -10,7 +10,7 @@ import {
   reportAs,
 } from "@poppet/store";
 import { DeliveryState, TaskDeliveries, TaskError, taskSchema } from "@poppet/tasks";
-import { Clock, Context, Effect, Layer, Schema } from "effect";
+import { Array, Clock, Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { IncomingMessage, ChannelError } from "#src/channel";
@@ -110,11 +110,11 @@ const repository = Effect.gen(function* () {
     state: "pending" | "failed",
     ignoreExisting = false,
   ) =>
-    chunks.length === 0
-      ? Effect.void
-      : sql`INSERT INTO gateway_deliveries ${sql.insert(
-          chunks.map((text, position) => ({ inboxId, position, text, state })),
-        )} ${sql.literal(ignoreExisting ? "ON CONFLICT DO NOTHING" : "")}`.pipe(Effect.asVoid);
+    Array.isReadonlyArrayNonEmpty(chunks)
+      ? sql`INSERT INTO gateway_deliveries ${sql.insert(
+          Array.map(chunks, (text, position) => ({ inboxId, position, text, state })),
+        )} ${sql.literal(ignoreExisting ? "ON CONFLICT DO NOTHING" : "")}`.pipe(Effect.asVoid)
+      : Effect.void;
 
   return {
     rejectScheduledDeliveries: operation((adapter: string, account: string) =>

@@ -19,8 +19,8 @@
     "@poppet/io": "workspace:*",
     "@poppet/provider": "workspace:*",
     "@poppet/sign-in": "workspace:*",
-    "effect": "4.0.4",
-    "jose": "6.2.12",
-    "openai": "7.32.0"
+    "effect": "4.1.5",
+    "jose": "6.2.18",
+    "openai": "7.62.0"
   }
 }
