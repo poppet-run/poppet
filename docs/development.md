@@ -328,8 +328,8 @@ Live chat, ChatGPT token renewal, Discord and Slack setup and reconnection,
 web chat over HTTPS, macOS and Linux login startup, and physical sleep/wake
 remain separate manual checks. Follow the [Discord](gateways/discord.md),
 [Slack](gateways/slack.md), [web chat](web-chat.md#current-scope-and-verification),
-and [worker validation](worker.md#manual-validation) guides for those paths. The [implementation plan](implementation-plan.md) lists
-planned work.
+and [worker validation](worker.md#manual-validation) guides for those paths. Planned work is tracked in
+[GitHub issues](https://github.com/poppet-run/poppet/issues).
 
 ### Manual live test checklist
 
