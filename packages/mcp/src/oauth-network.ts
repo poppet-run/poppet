@@ -1,24 +1,17 @@
-import { Resolver } from "node:dns/promises";
 import { request } from "node:https";
 import { isIP } from "node:net";
 import { checkServerIdentity } from "node:tls";
 
 import type { FetchLike } from "@modelcontextprotocol/client";
-import { publicAddress, urlHostname } from "@poppet/io";
+import { publicAddress, resolveAddresses, urlHostname } from "@poppet/io";
 import { Schema } from "effect";
 
 import { boundedFetch } from "#src/transport";
 
 const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]);
-const absent = new Set(["ENODATA", "ENOTFOUND"]);
 
 const blocked = () =>
   new Error("OAuth endpoints must use public HTTPS or explicitly configured loopback.");
-
-const optional = (error: NodeJS.ErrnoException) => {
-  if (absent.has(error.code ?? "")) return [];
-  throw error;
-};
 
 export const oauthAddress = async (server: URL, endpoint: URL, signal: AbortSignal) => {
   signal.throwIfAborted();
@@ -33,37 +26,12 @@ export const oauthAddress = async (server: URL, endpoint: URL, signal: AbortSign
     return null;
 
   if (endpoint.protocol !== "https:" || loopback.has(endpoint.hostname)) throw blocked();
-  const host = urlHostname(endpoint);
+  const addresses = await resolveAddresses(urlHostname(endpoint), signal);
+  const address = addresses[0];
 
-  if (isIP(host)) {
-    if (!publicAddress(host)) throw blocked();
+  if (address === undefined || !addresses.every(publicAddress)) throw blocked();
 
-    return host;
-  }
-
-  const resolver = new Resolver();
-  const cancel = () => resolver.cancel();
-  signal.addEventListener("abort", cancel, { once: true });
-
-  try {
-    const addresses = (
-      await Promise.all([
-        resolver.resolve4(host).catch(optional),
-        resolver.resolve6(host).catch(optional),
-      ])
-    ).flat();
-
-    signal.throwIfAborted();
-
-    const address = addresses[0];
-
-    if (address === undefined || !addresses.every(publicAddress)) throw blocked();
-
-    return address;
-  } finally {
-    signal.removeEventListener("abort", cancel);
-    resolver.cancel();
-  }
+  return address;
 };
 
 const pinnedRequest = (url: URL, address: string, init: RequestInit, signal: AbortSignal) =>

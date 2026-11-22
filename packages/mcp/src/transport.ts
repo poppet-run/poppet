@@ -57,16 +57,18 @@ const bounded = (
           return;
         }
 
-        for (const byte of chunk) {
-          if (++size > limit) {
-            controller.error(new Error("MCP HTTP message exceeds the size limit."));
+        if (streamLimit !== undefined) {
+          for (const byte of chunk) {
+            if (++size > limit) {
+              controller.error(new Error("MCP HTTP message exceeds the size limit."));
 
-            return;
+              return;
+            }
+
+            if (byte === LF && previous === LF) size = 0;
+
+            if (byte !== CR) previous = byte;
           }
-
-          if (streamLimit !== undefined && byte === LF && previous === LF) size = 0;
-
-          if (byte !== CR) previous = byte;
         }
 
         controller.enqueue(chunk);

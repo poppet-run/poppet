@@ -1,11 +1,10 @@
-import { Resolver } from "node:dns/promises";
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { checkServerIdentity } from "node:tls";
 import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 
-import { publicHttpURL, urlHostname as pageHostname } from "@poppet/io";
+import { publicHttpURL, resolveAddresses, urlHostname as pageHostname } from "@poppet/io";
 import { Context, Effect, Layer } from "effect";
 
 import { AgentError } from "#src/errors";
@@ -23,38 +22,11 @@ const forbidden = () =>
 
 export const pageURL = (value: string) => publicHttpURL(value, forbidden);
 
-export { urlHostname as pageHostname, publicAddress } from "@poppet/io";
-
-const NoRecords = new Set(["ENODATA", "ENOTFOUND"]);
-
-export const resolvePage = async (hostname: string, signal: AbortSignal) => {
-  signal.throwIfAborted();
-
-  if (isIP(hostname)) return [hostname];
-  const resolver = new Resolver();
-  const cancel = () => resolver.cancel();
-  signal.addEventListener("abort", cancel, { once: true });
-
-  try {
-    const records = await Promise.all([
-      resolver.resolve4(hostname).catch((error: NodeJS.ErrnoException) => {
-        if (NoRecords.has(error.code ?? "")) return [];
-        throw error;
-      }),
-      resolver.resolve6(hostname).catch((error: NodeJS.ErrnoException) => {
-        if (NoRecords.has(error.code ?? "")) return [];
-        throw error;
-      }),
-    ]);
-
-    signal.throwIfAborted();
-
-    return records.flat();
-  } finally {
-    signal.removeEventListener("abort", cancel);
-    resolver.cancel();
-  }
-};
+export {
+  urlHostname as pageHostname,
+  publicAddress,
+  resolveAddresses as resolvePage,
+} from "@poppet/io";
 
 export interface PageResponse {
   readonly status: number;
@@ -172,7 +144,7 @@ export class PageTransport extends Context.Service<
 
 export const PageTransportLive = Layer.succeed(PageTransport, {
   resolve: (hostname) =>
-    Effect.tryPromise({ try: (signal) => resolvePage(hostname, signal), catch: pageFailure }),
+    Effect.tryPromise({ try: (signal) => resolveAddresses(hostname, signal), catch: pageFailure }),
   request: (url, address) =>
     Effect.tryPromise({
       try: (signal) => requestPage(url, address, signal),
