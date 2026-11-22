@@ -8,6 +8,7 @@ import type { Completion } from "@poppet/provider";
 import { migrate, packageSchema, Store, StoreLive } from "@poppet/store";
 import { Array, Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql";
+import { TestClock } from "effect/testing";
 
 import { LocalMemoryLive } from "#src/local";
 import { memoryMigrations } from "#src/migrations";
@@ -249,6 +250,30 @@ describe.concurrent("LocalMemoryLive", () => {
             reason,
           );
         }),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
+  test("when the clock moves backwards after forgetting a fact, keeps its revision times monotonic", async () => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Effect.gen(function* () {
+          const memory = yield* Memory;
+          yield* TestClock.setTime(1000);
+          yield* memory.remember("answer.style", "Concise");
+          yield* TestClock.setTime(2000);
+          yield* memory.forget("answer.style");
+          yield* TestClock.setTime(1500);
+
+          expect(yield* memory.revert("answer.style", 1)).toMatchObject({ updatedAt: 2000 });
+          expect((yield* memory.history("answer.style")).map((entry) => entry.createdAt)).toEqual([
+            1000, 2000, 2000,
+          ]);
+        }).pipe(Effect.provide(TestClock.layer())),
       );
     } finally {
       await saved.close();
