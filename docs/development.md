@@ -35,6 +35,11 @@ built on them. TypeScript stays installed for editor support. To check one
 workspace, use `bun run --filter '@poppet/config' typecheck`
 or `bun run --filter '@poppet/provider-openai' test`.
 
+## Commit hook and agent guard
+
+`bun install` runs `lefthook install`, which adds a pre-commit hook that runs
+`bun run check` (see `lefthook.yml`). A failing check blocks the commit.
+
 ## Isolated tests
 
 Use `bun run test` for the suite or `bun run test <path>` for focused tests.
