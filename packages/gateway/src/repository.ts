@@ -24,6 +24,7 @@ export type InboxState = typeof InboxState.Type;
 export interface BindingKey {
   readonly adapter: string;
   readonly account: string;
+  readonly scope: string;
   readonly conversation: string;
   readonly session: string;
 }
@@ -97,12 +98,11 @@ const repository = Effect.gen(function* () {
       Effect.map((row) => row?.sessionId ?? null),
     );
 
-  const namedBinding = (adapter: string, account: string, conversation: string) =>
+  const namedBinding = (adapter: string, account: string, scope: string, conversation: string) =>
     sql`SELECT session_id, managed_name, synced_title, pending_name, naming_disabled,
       creation_message_id FROM gateway_bindings
-      WHERE adapter = ${adapter} AND account = ${account} AND conversation_id = ${conversation}`.pipe(
-      decodeRow(Binding),
-    );
+      WHERE adapter = ${adapter} AND account = ${account}
+        AND scope_id = ${scope} AND conversation_id = ${conversation}`.pipe(decodeRow(Binding));
 
   const insertDeliveries = (
     inboxId: number,
@@ -209,33 +209,33 @@ const repository = Effect.gen(function* () {
         ),
     ),
     namedBinding: operation(namedBinding),
-    namingEntry: operation((adapter: string, account: string, conversation: string) =>
-      sql`${inbox} WHERE adapter = ${adapter} AND account = ${account}
-        AND conversation_id = ${conversation} AND session_id IS NOT NULL ORDER BY id LIMIT 1`.pipe(
-        decodeRow(Inbox),
-      ),
+    namingEntry: operation(
+      (adapter: string, account: string, scope: string, conversation: string) =>
+        sql`${inbox} WHERE adapter = ${adapter} AND account = ${account}
+        AND json_extract(payload, '$.scopeId') = ${scope} AND conversation_id = ${conversation}
+        AND session_id IS NOT NULL ORDER BY id LIMIT 1`.pipe(decodeRow(Inbox)),
     ),
     nameAttempted: operation(
-      ({ adapter, account, conversation, session }: BindingKey, title: string | null) =>
+      ({ adapter, account, scope, conversation, session }: BindingKey, title: string | null) =>
         sql`UPDATE gateway_bindings SET synced_title = ${title} WHERE adapter = ${adapter}
-        AND account = ${account} AND conversation_id = ${conversation}
+        AND account = ${account} AND scope_id = ${scope} AND conversation_id = ${conversation}
         AND session_id = ${session}`.pipe(Effect.asVoid),
     ),
     namePending: operation(
-      ({ adapter, account, conversation, session }: BindingKey, name: string) =>
+      ({ adapter, account, scope, conversation, session }: BindingKey, name: string) =>
         sql`UPDATE gateway_bindings SET pending_name = ${name} WHERE adapter = ${adapter}
-        AND account = ${account} AND conversation_id = ${conversation} AND naming_disabled = 0
+        AND account = ${account} AND scope_id = ${scope} AND conversation_id = ${conversation} AND naming_disabled = 0
         AND session_id = ${session} RETURNING 1`.pipe(Effect.map((rows) => rows.length === 1)),
     ),
     nameConfirmed: operation(
-      ({ adapter, account, conversation, session }: BindingKey, name: string) =>
+      ({ adapter, account, scope, conversation, session }: BindingKey, name: string) =>
         sql`UPDATE gateway_bindings SET managed_name = ${name}, pending_name = NULL
-        WHERE adapter = ${adapter} AND account = ${account} AND conversation_id = ${conversation}
+        WHERE adapter = ${adapter} AND account = ${account} AND scope_id = ${scope} AND conversation_id = ${conversation}
           AND naming_disabled = 0 AND session_id = ${session}`.pipe(Effect.asVoid),
     ),
-    disableNaming: operation(({ adapter, account, conversation, session }: BindingKey) =>
+    disableNaming: operation(({ adapter, account, scope, conversation, session }: BindingKey) =>
       sql`UPDATE gateway_bindings SET naming_disabled = 1, pending_name = NULL
-        WHERE adapter = ${adapter} AND account = ${account} AND conversation_id = ${conversation}
+        WHERE adapter = ${adapter} AND account = ${account} AND scope_id = ${scope} AND conversation_id = ${conversation}
           AND session_id = ${session}`.pipe(Effect.asVoid),
     ),
     namingEntries: operation((adapter: string, account: string) =>
@@ -367,10 +367,10 @@ const repository = Effect.gen(function* () {
     state: operation((id: number, state: InboxState) =>
       sql`UPDATE gateway_inbox SET state = ${state} WHERE id = ${id}`.pipe(Effect.asVoid),
     ),
-    cancel: operation((adapter: string, account: string, conversation: string) =>
+    cancel: operation((adapter: string, account: string, scope: string, conversation: string) =>
       sql`UPDATE gateway_inbox SET state = 'cancelled' WHERE adapter = ${adapter}
-        AND account = ${account} AND conversation_id = ${conversation}
-        AND state = 'queued'`.pipe(Effect.asVoid),
+        AND account = ${account} AND json_extract(payload, '$.scopeId') = ${scope}
+        AND conversation_id = ${conversation} AND state = 'queued'`.pipe(Effect.asVoid),
     ),
     complete: operation(
       (

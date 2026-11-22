@@ -14,7 +14,12 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
 
       if (destination === null || !authorized(channel.policy, entry.message)) return;
 
-      const binding = yield* repo.namedBinding(channel.id, account, destination);
+      const binding = yield* repo.namedBinding(
+        channel.id,
+        account,
+        entry.message.scopeId,
+        destination,
+      );
 
       if (
         !binding ||
@@ -28,6 +33,7 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       const key = {
         adapter: channel.id,
         account,
+        scope: entry.message.scopeId,
         conversation: destination,
         session: binding.sessionId,
       };
@@ -80,6 +86,7 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
               .disableNaming({
                 adapter: channel.id,
                 account,
+                scope: entry.message.scopeId,
                 conversation: entry.conversationId,
                 session: entry.sessionId,
               })
@@ -101,19 +108,32 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
   const externalNameChange = (destination: string) =>
     Effect.gen(function* () {
       const account = yield* channel.accountId;
-      const entry = yield* repo.namingEntry(channel.id, account, destination);
+
+      const entry = yield* repo.namingEntry(
+        channel.id,
+        account,
+        channel.policy.scopeId,
+        destination,
+      );
 
       if (!entry) return;
 
-      const binding = yield* repo.namedBinding(channel.id, account, destination);
+      const binding = yield* repo.namedBinding(
+        channel.id,
+        account,
+        entry.message.scopeId,
+        destination,
+      );
 
       if (!binding || binding.namingDisabled || binding.managedName === null) return;
+
       const current = yield* channel.naming.current(entry.message, destination);
 
       if (current !== binding.managedName && current !== binding.pendingName)
         yield* repo.disableNaming({
           adapter: channel.id,
           account,
+          scope: entry.message.scopeId,
           conversation: destination,
           session: binding.sessionId,
         });
