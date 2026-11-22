@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { acquireOwnerLock } from "@poppet/credentials/lock";
+import { acquireOwnerLock, OwnerLockError } from "@poppet/credentials/lock";
 import { readProtectedFile, writeFileAtomic } from "@poppet/io";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
-import { Config, ConfigProvider, Context, Effect, Layer, Schema } from "effect";
+import { Config, ConfigProvider, Context, Effect, Layer, Schedule, Schema } from "effect";
 
 import { QuietHours } from "#src/quiet-hours";
 
@@ -159,11 +159,29 @@ export const updateConfigFile = (
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
-      yield* Effect.tryPromise({
-        try: () => mkdir(directory, { recursive: true, mode: 0o700 }),
+      const info = yield* Effect.tryPromise({
+        try: async () => {
+          await mkdir(directory, { recursive: true, mode: 0o700 });
+
+          return lstat(directory);
+        },
         catch: () => fileError(directory, "Cannot create configuration directory."),
       });
+
+      if (
+        !info.isDirectory() ||
+        info.isSymbolicLink() ||
+        info.uid !== process.getuid?.() ||
+        (info.mode & 0o022) !== 0
+      )
+        return yield* Effect.fail(fileError(directory, "Unsafe configuration directory."));
+
       yield* acquireOwnerLock(join(directory, "config.lock")).pipe(
+        Effect.retry({
+          while: (error) => error instanceof OwnerLockError && error.reason === "busy",
+          schedule: Schedule.spaced("20 millis"),
+          times: 10,
+        }),
         Effect.mapError(() => fileError(directory, "Configuration is busy or cannot be locked.")),
       );
       const { file, path } = yield* readConfigFile(directory);
@@ -181,8 +199,8 @@ export const updateConfigFile = (
       yield* Effect.tryPromise({
         try: () => writeFileAtomic(path, contents),
         catch: () => fileError(path, "Cannot save configuration."),
-      });
+      }).pipe(Effect.uninterruptible);
 
       return changed;
     }),
-  ).pipe(Effect.uninterruptible);
+  );

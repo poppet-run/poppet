@@ -13,12 +13,13 @@ import {
   type ProviderOperations,
   type ProviderRegistration,
 } from "@poppet/provider";
-import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
+import { Config, Context, Effect, Layer, Option, Redacted, Schedule, Schema } from "effect";
 
 import { readCredentialFile } from "#src/inspection";
 
 export { readCredentialFile } from "#src/inspection";
 
+import { OwnerLockError } from "#src/lock";
 import { protectedFiles } from "#src/records";
 
 export const ApiKey = Schema.RedactedFromValue(
@@ -68,7 +69,7 @@ export const ApiKeyStoreLive = Layer.effect(
   ApiKeyStore,
   Effect.gen(function* () {
     const config = yield* ProviderEnvironment;
-    const files = protectedFiles(join(config.dataDirectory, "auth"), storageError);
+    const files = protectedFiles(join(config.dataDirectory, "auth"), storageError, 65536);
 
     const checked = (provider: ProviderId) =>
       Schema.decodeUnknownEffect(ProviderId)(provider).pipe(
@@ -76,12 +77,19 @@ export const ApiKeyStoreLive = Layer.effect(
       );
 
     const replace = (provider: ProviderId, contents: string | null) =>
-      checked(provider).pipe(
-        Effect.andThen(files.lock(provider)),
-        Effect.mapError(() => storageError(provider)),
-        Effect.andThen(files.write(provider, contents)),
-        Effect.scoped,
-        Effect.uninterruptible,
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* checked(provider);
+          yield* files.lock(provider).pipe(
+            Effect.retry({
+              while: (error) => error instanceof OwnerLockError && error.reason === "busy",
+              schedule: Schedule.spaced("20 millis"),
+              times: 10,
+            }),
+            Effect.mapError(() => storageError(provider)),
+          );
+          yield* files.write(provider, contents).pipe(Effect.uninterruptible);
+        }),
       );
 
     const read = (provider: ProviderId) =>
@@ -236,7 +244,9 @@ export const apiKeyProvider = (options: {
           );
 
           if (text === null) return { connected: false, expiresAt: null, source: "saved" as const };
-          const saved = yield* Schema.decodeUnknownEffect(SavedKey)(text);
+          const saved = yield* Schema.decodeUnknownEffect(SavedKey, { onExcessProperty: "error" })(
+            text,
+          );
 
           if (saved.provider !== options.id) return yield* Effect.fail(storageError(options.id));
 

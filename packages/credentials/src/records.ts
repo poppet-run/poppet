@@ -27,8 +27,8 @@ export const protectedFiles = <E>(
   return {
     read: (name: string) =>
       attempt(name, async () =>
-        (await ensurePrivateDirectory(directory, { create: false }))
-          ? readProtectedFile(path(name), { maxBytes, makePrivate: true })
+        (await ensurePrivateDirectory(directory, { create: false, strict: true }))
+          ? readProtectedFile(path(name), { maxBytes, privateOnly: true })
           : null,
       ),
     lock: (name: string) =>
