@@ -254,13 +254,18 @@ export const toolResult = (
   }
 
   const fits = (texts: ReadonlyArray<string>) => Buffer.byteLength(serialize(texts)) <= limit;
-  const kept = longestFit(content.length, (count) => fits(content.slice(0, count)));
+  // "true" is one byte shorter than "false". Require an actual omission.
+  const kept = longestFit(content.length - 1, (count) => fits(content.slice(0, count)));
 
-  if (kept < 0) throw new Error("MCP result budget is too small.");
+  if (kept < 0 || content.length === 0) throw new Error("MCP result budget is too small.");
   const retained = content.slice(0, kept);
+  const remaining = content[kept]!;
 
-  const next = fitPrefix(content[kept] ?? "", (text) =>
-    fits(text.length === 0 ? retained : [...retained, text]),
+  const next = fitPrefix(
+    remaining,
+    (text) =>
+      (kept < content.length - 1 || text.length < remaining.length) &&
+      fits(text.length === 0 ? retained : [...retained, text]),
   );
 
   return serialize(next ? [...retained, next] : retained);
