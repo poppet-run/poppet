@@ -197,7 +197,7 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
 
             selected = yield* occurrence(
               yield* insertOccurrence(job, logical, {
-                availableAt: Math.min(logical, now),
+                availableAt: now,
                 origin: "manual",
               }),
             );

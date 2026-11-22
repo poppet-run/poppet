@@ -657,6 +657,48 @@ describe.concurrent("TaskRepository", () => {
     }
   });
 
+  test("when catchUpMs is 0 and host wakes hours after a missed cron slot, skips the stale slot instead of running it", async () => {
+    const state = await fixture(0);
+
+    try {
+      await state.run((repo) =>
+        Effect.gen(function* () {
+          const job = yield* repo.add(morning, start - 60_000);
+          const woken = start + 5 * 60 * 60_000;
+
+          yield* repo.reconcile(woken, false);
+          expect(yield* repo.occurrences(job.id)).toEqual([]);
+          expect(yield* repo.skips(job.id)).toEqual([
+            { firstAt: start, lastAt: woken, reason: "worker-delayed" },
+          ]);
+          expect((yield* repo.task(job.id)).nextAt).toBe(start + 24 * 60 * 60_000);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when run-now targets a cron job overdue by more than 24 hours, inserts a claimable occurrence instead of expiring it", async () => {
+    const state = await fixture(0);
+
+    try {
+      await state.run((repo) =>
+        Effect.gen(function* () {
+          const job = yield* repo.add(morning, start - 60_000);
+          const muchLater = start + recurringExpiry + 60 * 60_000;
+
+          const receipt = yield* repo.control({ action: "run-now", id: job.id }, muchLater);
+          expect(receipt.availableAt).toBe(muchLater);
+          const claimed = yield* repo.claim(muchLater);
+          expect(claimed?.id).toBe(receipt.occurrenceId);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when the live task changes before retry, uses the historical definition and schedule kind", async () => {
     const state = await fixture();
 
