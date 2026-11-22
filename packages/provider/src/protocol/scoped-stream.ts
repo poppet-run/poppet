@@ -52,7 +52,13 @@ export const modelStream = (
             return: async () => {
               controller.abort();
 
-              return iterator.return ? iterator.return() : { done: true, value: undefined };
+              try {
+                if (iterator.return) return await iterator.return();
+              } catch {
+                // The aborted transport may reject while closing.
+              }
+
+              return { done: true, value: undefined };
             },
           };
         },
