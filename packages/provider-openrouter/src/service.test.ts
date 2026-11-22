@@ -57,6 +57,8 @@ const details = [
   { type: "reasoning.encrypted", data: "opaque", id: "r-2", format: "google-gemini-v1", index: 2 },
 ];
 
+const mergedDetails = [{ ...details[1], text: "First second" }, ...details.slice(2)];
+
 const sse = (events: ReadonlyArray<Schema.JsonObject>) =>
   new Response(
     ": keepalive\n\n" +
@@ -313,7 +315,7 @@ describe("makeOpenRouterProvider", () => {
         type: "completed",
         response: {
           output: [{ type: "text", text: "Answer" }],
-          continuation: { data: { reasoningDetails: details } },
+          continuation: { data: { reasoningDetails: mergedDetails } },
         },
       });
     },
@@ -348,7 +350,7 @@ describe("makeOpenRouterProvider", () => {
     );
 
     expect(messages.find((message) => message.role === "assistant")).toMatchObject({
-      reasoning_details: details,
+      reasoning_details: mergedDetails,
     });
     expect(JSON.stringify(harness.requests.map((outgoing) => outgoing.body))).not.toContain(
       "router-test-secret",
