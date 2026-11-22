@@ -68,8 +68,9 @@ replaces it with ✅ after a successful run. Failed or cancelled requests clear
 the bot's 👀 without adding ✅. These markers are best effort; missing reaction
 permissions do not stop chat, and a crash or network error can leave a stale marker.
 
-In an attached thread, `@Poppet /status` reports its session, selected skill and project, and latest run;
-`@Poppet /cancel` interrupts its active request and cancels its queued requests.
+In an attached thread, `@Poppet /status` reports the session, selected skill, and
+latest saved run, including one with no messages. `@Poppet /cancel` interrupts its
+active request and cancels its queued requests.
 With `chat.maxConcurrentRequests` above 1, threads and channel mentions run at the
 same time, and messages within one thread are answered in order. Cancelling one
 thread does not affect requests in another, and an approval reply settles only a

@@ -57,8 +57,7 @@ const controlReply = (
       return "Cancelled this thread's queued and active request.";
     }
 
-    const latestId = (yield* store.messages(session)).at(-1)?.runId;
-    const latest = latestId ? yield* store.run(latestId) : null;
+    const latest = (yield* store.runs(session)).at(-1);
     const savedSession = yield* store.session(session);
 
     return `Session: ${session}\nTitle: ${savedSession?.title ?? session}\nSkill: ${savedSession?.skill?.name ?? "none"}\nLatest run: ${latest?.status ?? "none"}`;
