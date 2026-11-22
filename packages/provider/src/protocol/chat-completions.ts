@@ -198,11 +198,13 @@ export const chatCompletionsModel = (
 
             const messages = yield* Effect.try({
               try: () => chatMessages(description, decoded, continuation),
-              catch: () =>
-                invalidRequest(
-                  description.provider,
-                  "The Chat Completions continuation is invalid.",
-                ),
+              catch: (cause) =>
+                cause instanceof ProviderError
+                  ? cause
+                  : invalidRequest(
+                      description.provider,
+                      "The Chat Completions continuation is invalid.",
+                    ),
             });
 
             const sdk = yield* client;

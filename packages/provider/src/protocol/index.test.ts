@@ -6,6 +6,7 @@ import OpenAI from "openai";
 
 import {
   completeModel,
+  ProviderError,
   verifyModel,
   type ModelDescription,
   type ModelRequest,
@@ -710,3 +711,51 @@ for (const adapter of cases) {
     });
   });
 }
+
+describe("chatCompletionsModel", () => {
+  test("when an adapter declines to restore a continuation, reports its provider error", async () => {
+    const harness = fixture(cases[1]!);
+    const description = harness.model.description;
+
+    const failure = new ProviderError({
+      provider: description.provider,
+      reason: "invalid-request",
+      message: "This model cannot restore the saved reasoning.",
+    });
+
+    const model = chatCompletionsModel(
+      description,
+      Effect.die("Unexpected client request"),
+      undefined,
+      {
+        continuation: () => ({
+          restore: () => {
+            throw failure;
+          },
+          append: () => undefined,
+          save: () => ({}),
+        }),
+      },
+    );
+
+    await expect(
+      Effect.runPromise(
+        completeModel(model, {
+          ...request,
+          messages: [
+            {
+              role: "assistant",
+              output: [{ type: "text", text: "Earlier answer" }],
+              continuation: {
+                version: 1,
+                provider: description.provider,
+                model: description.id,
+                data: {},
+              },
+            },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({ reason: failure.reason, message: failure.message });
+  });
+});
