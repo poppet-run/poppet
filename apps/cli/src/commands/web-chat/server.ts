@@ -27,7 +27,7 @@ export const WebSettings = Schema.Struct({
       }
     }),
   ),
-  hostname: Schema.String.check(Schema.isMinLength(1)),
+  hostname: Schema.Literals(["127.0.0.1", "::1", "localhost"]),
   port: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })),
   trustProxy: Schema.optionalKey(Schema.Boolean),
   accessKeyHash: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
@@ -108,6 +108,7 @@ export const webHandler = (
   let globalAttempts = { count: 0, windowStarted: 0 };
   let streams = 0;
   const secure = settings.origin.startsWith("https:");
+  const expectedHost = new URL(settings.origin).host.toLowerCase();
   const cookieName = secure ? "__Host-poppet" : "poppet";
 
   const cookie = (value: string, maxAge: number) =>
@@ -115,11 +116,9 @@ export const webHandler = (
 
   const route = async (request: Request, client: string) => {
     const url = new URL(request.url);
+    const host = request.headers.get("host");
 
-    if (
-      request.headers.get("host") !== null &&
-      request.headers.get("host") !== new URL(settings.origin).host
-    )
+    if (host === null || host.toLowerCase() !== expectedHost)
       return Response.json({ message: "Unexpected host." }, { status: 403 });
 
     if (request.headers.get("sec-fetch-site") === "cross-site")

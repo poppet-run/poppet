@@ -146,15 +146,29 @@ const makeWebChat = Effect.gen(function* () {
 
   const marker = (id: string) =>
     Effect.gen(function* () {
-      const [row] = yield* sql<{ readonly marker: string | null }>`SELECT
-        (SELECT updated_at FROM sessions WHERE id = ${id}) || ':' ||
-        COALESCE((SELECT MAX(id) FROM messages WHERE session_id = ${id}), '') || ':' ||
-        COALESCE((SELECT group_concat(status) FROM web_chat_submissions WHERE session_id = ${id}), '')
-        AS marker`;
+      const [row] = yield* sql<{
+        readonly updatedAt: number | null;
+        readonly title: string | null;
+        readonly titleSource: string | null;
+        readonly lastMessage: number | null;
+        readonly statuses: string | null;
+      }>`SELECT
+        (SELECT updated_at FROM sessions WHERE id = ${id}) AS updatedAt,
+        (SELECT title FROM sessions WHERE id = ${id}) AS title,
+        (SELECT title_source FROM sessions WHERE id = ${id}) AS titleSource,
+        (SELECT MAX(id) FROM messages WHERE session_id = ${id}) AS lastMessage,
+        (SELECT group_concat(status) FROM web_chat_submissions WHERE session_id = ${id}) AS statuses`;
 
       const running = active.get(id);
 
-      return `${row?.marker ?? ""}:${running ? `${running.id}:${running.text.length}` : ""}`;
+      return JSON.stringify([
+        row?.updatedAt ?? null,
+        row?.title ?? null,
+        row?.titleSource ?? null,
+        row?.lastMessage ?? null,
+        row?.statuses ?? null,
+        running ? [running.id, running.text.length] : null,
+      ]);
     });
 
   const submit = (input: Submission) =>

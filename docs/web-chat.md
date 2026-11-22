@@ -89,8 +89,8 @@ chat.example.com {
 See [Caddy's reverse proxy reference](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
 for streaming and header settings. Configure DNS and certificates for your hostname.
 Your devices must be able to reach the proxy. The proxy must preserve the public
-`Host` header and must not buffer server-sent events. The proxy handles HTTPS; keep the HTTP backend
-on loopback. You must set up DNS, certificates, and the proxy yourself. If the
+`Host` header and must not buffer server-sent events. The proxy handles HTTPS; `hostname` must be a loopback address (`127.0.0.1`,
+`::1`, or `localhost`). You must set up DNS, certificates, and the proxy yourself. If the
 listener cannot start, the worker logs why and keeps running tasks and messaging.
 
 For same-machine development, `origin` may be `http://127.0.0.1:8080`. Poppet rejects
