@@ -1,12 +1,7 @@
 import { constants } from "node:fs";
 import { lstat } from "node:fs/promises";
 
-import {
-  ensurePrivateDirectory,
-  isMissingFile,
-  openNoFollow,
-  openProtectedFile,
-} from "@poppet/io";
+import { ensurePrivateDirectory, isMissingFile, openNoFollow, openProtectedFile } from "@poppet/io";
 
 import { WorkerError } from "#src/contract";
 

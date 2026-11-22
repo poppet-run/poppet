@@ -39,6 +39,7 @@ export class ScopedStdioTransport extends StdioClientTransport {
     });
     this.markClosed = resolveClosed;
 
+    // eslint-disable-next-line unicorn/prefer-add-event-listener
     if (this.onclose === undefined) this.onclose = () => {};
 
     try {

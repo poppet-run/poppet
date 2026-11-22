@@ -24,6 +24,22 @@ type ChatState = {
   atBottom: boolean;
 };
 
+const savePending = (submission: Submission) => {
+  try {
+    sessionStorage.setItem("poppet-submission", JSON.stringify(submission));
+  } catch {
+    // Storage may be unavailable or full in restricted browser contexts.
+  }
+};
+
+const clearPending = () => {
+  try {
+    sessionStorage.removeItem("poppet-submission");
+  } catch {
+    // Storage may be unavailable in restricted browser contexts.
+  }
+};
+
 export const createChatStore = () => {
   const $state = map<ChatState>({
     authenticated: null,
@@ -48,22 +64,6 @@ export const createChatStore = () => {
   let generation = 0;
   let deliveryLock = false;
   let removing = false;
-
-  const savePending = (submission: Submission) => {
-    try {
-      sessionStorage.setItem("poppet-submission", JSON.stringify(submission));
-    } catch {
-      // Storage may be unavailable or full in restricted browser contexts.
-    }
-  };
-
-  const clearPending = () => {
-    try {
-      sessionStorage.removeItem("poppet-submission");
-    } catch {
-      // Storage may be unavailable in restricted browser contexts.
-    }
-  };
 
   const unauthenticate = () => {
     generation++;

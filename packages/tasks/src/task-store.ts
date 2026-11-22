@@ -167,6 +167,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
             const stale =
               job.schedule.type === "cron" && catchUpMs === 0 && now - job.nextAt >= 60_000;
+
             const skip = job.schedule.type === "cron" && (startup || busy || stale);
             const missed = startup ? "downtime" : "worker-delayed";
 

@@ -120,13 +120,13 @@ export const routerOptions: ChatOptions = {
       chunk.usage != null &&
       choice !== undefined &&
       choice.finish_reason === finishReason &&
-      Object.entries(choice.delta).every(([key, value]) =>
-        key === "role"
-          ? value === "assistant" || value === null
-          : key === "content"
-            ? value === null || value === ""
-            : value === null,
-      )
+      Object.entries(choice.delta).every(([key, value]) => {
+        if (key === "role") return value === "assistant" || value === null;
+
+        if (key === "content") return value === null || value === "";
+
+        return value === null;
+      })
     );
   },
   prepareRequest: (parameters, request) => {

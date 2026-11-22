@@ -381,6 +381,7 @@ describe("manageWorker", () => {
 
   test("when install finds an active LaunchAgent without an installed plist, boots it out before bootstrapping", async () => {
     const home = await mkdtemp(join(tmpdir(), "poppet-launchd-orphan-"));
+
     const launch = {
       dataDirectory: join(home, "data"),
       executable: "/custom/poppet",

@@ -585,7 +585,12 @@ describe.concurrent("conversation", () => {
       serverId: "server",
       toolName: "server",
       availableAfterUntrusted: false,
-      definition: { name: "server", namespace: "poppet_mcp", description: "server", parameters: {} },
+      definition: {
+        name: "server",
+        namespace: "poppet_mcp",
+        description: "server",
+        parameters: {},
+      },
       prepare: () =>
         Effect.succeed({
           execute: Effect.sync(() => {

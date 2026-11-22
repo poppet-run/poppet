@@ -623,17 +623,18 @@ test("when navigating to the current session, avoids duplicate history entries a
     }
   }
 
-  const fakeFetch = async (input: Parameters<typeof fetch>[0]) => {
-    if (input === "/api/sessions") return Response.json([]);
-
-    if (String(input).endsWith("/stop"))
-      return Response.json({ message: "Sign in" }, { status: 401 });
-
-    return Response.json({});
-  };
-
   Object.defineProperty(globalThis, "EventSource", { configurable: true, value: FakeEvents });
-  globalThis.fetch = Object.assign(fakeFetch, { preconnect: originalFetch.preconnect });
+  globalThis.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0]) => {
+      if (input === "/api/sessions") return Response.json([]);
+
+      if (String(input).endsWith("/stop"))
+        return Response.json({ message: "Sign in" }, { status: 401 });
+
+      return Response.json({});
+    },
+    { preconnect: originalFetch.preconnect },
+  );
   history.replaceState(null, "", "/chat/same");
   const store = createChatStore();
   const dispose = store.start();

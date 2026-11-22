@@ -10,7 +10,7 @@ import { loadChannelSettings, saveChannelSettings } from "#src/settings";
 import { makeFIFO } from "../../../tools/testing/fifo";
 
 describe.concurrent("settings.ts", () => {
-  test("when channel settings are saved or read, protects files and repairs permissions", async () => {
+  test("when channel settings are saved or read, protects files and rejects overly permissive modes", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-channel-settings-"));
     const path = join(directory, "channels/test-channel.json");
 
@@ -19,11 +19,17 @@ describe.concurrent("settings.ts", () => {
       await Effect.runPromise(saveChannelSettings(directory, "test-channel", "channel-secret"));
       expect((await stat(join(directory, "channels"))).mode & 0o777).toBe(0o700);
       expect((await stat(path)).mode & 0o777).toBe(0o600);
-      await chmod(path, 0o644);
       expect(await Effect.runPromise(loadChannelSettings(directory, "test-channel"))).toBe(
         "channel-secret",
       );
-      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      await chmod(path, 0o644);
+
+      const widened = await Effect.runPromise(
+        loadChannelSettings(directory, "test-channel").pipe(Effect.result),
+      );
+
+      expect(widened).toHaveProperty("failure.reason", "configuration");
+      expect((await stat(path)).mode & 0o777).toBe(0o644);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

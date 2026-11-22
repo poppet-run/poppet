@@ -52,6 +52,15 @@ interface PlannedCall {
   readonly prepared: PreparedCall | ReviewableCall;
 }
 
+const withdrawnError = (tool: AgentTool) =>
+  new AgentError({
+    reason: tool.external?.reviewed === true ? "mcp-denied" : "tool-permission",
+    message:
+      tool.external?.reviewed === true
+        ? "Reviewed MCP tools are disabled after untrusted content enters this run. Ask for the action and target in a fresh owner message."
+        : "This tool is disabled after untrusted content entered this run. Propose the action and ask the owner to confirm it in a new message.",
+  });
+
 export const conversation = Effect.gen(function* () {
   const store = yield* Store;
   const policy = yield* ChatSettings;
@@ -184,15 +193,6 @@ export const conversation = Effect.gen(function* () {
             (tool) =>
               tool.definition.name === call.name && tool.definition.namespace === call.namespace,
           );
-
-        const withdrawnError = (tool: AgentTool) =>
-          new AgentError({
-            reason: tool.external?.reviewed === true ? "mcp-denied" : "tool-permission",
-            message:
-              tool.external?.reviewed === true
-                ? "Reviewed MCP tools are disabled after untrusted content enters this run. Ask for the action and target in a fresh owner message."
-                : "This tool is disabled after untrusted content entered this run. Propose the action and ask the owner to confirm it in a new message.",
-          });
 
         const prepareTool = (call: ToolCall) =>
           Effect.gen(function* () {

@@ -697,7 +697,11 @@ for (const adapter of cases) {
 
       test("when a Chat Completions stream returns refusal deltas, emits refusal output and finish reason", async () => {
         const events = [
-          { choices: [{ index: 0, finish_reason: null, delta: { role: "assistant", refusal: "Cannot " } }] },
+          {
+            choices: [
+              { index: 0, finish_reason: null, delta: { role: "assistant", refusal: "Cannot " } },
+            ],
+          },
           { choices: [{ index: 0, finish_reason: "stop", delta: { refusal: "assist." } }] },
         ];
 
@@ -779,9 +783,9 @@ for (const adapter of cases) {
       async (code, reason) => {
         const harness = fixture(adapter, "failed", 200, code);
 
-        await expect(Effect.runPromise(completeModel(harness.model, request))).rejects.toMatchObject(
-          { reason },
-        );
+        await expect(
+          Effect.runPromise(completeModel(harness.model, request)),
+        ).rejects.toMatchObject({ reason });
         expect(harness.requests).toHaveLength(1);
       },
     );
@@ -1037,7 +1041,7 @@ for (const adapter of cases) {
         },
       };
 
-      const hanging = Effect.never as Effect.Effect<OpenAI, never>;
+      const hanging: Effect.Effect<OpenAI, never> = Effect.never;
 
       const model =
         adapter.protocol === "responses"

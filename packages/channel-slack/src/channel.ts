@@ -206,6 +206,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
       let botId = "";
       let error: string | null = null;
       let dropped = 0;
+
       const handleEvent = async ({
         type,
         body,

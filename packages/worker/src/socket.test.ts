@@ -109,13 +109,7 @@ describe("serveWorker", () => {
         expect((await stat(socketDir)).mode & 0o777).toBe(0o700);
         expect((await stat(socketPath)).mode & 0o777).toBe(0o600);
 
-        const response = await requestWorker(
-          socketPath,
-          "/ping",
-          {},
-          new AbortController().signal,
-        );
-
+        const response = await requestWorker(socketPath, "/ping", {}, new AbortController().signal);
         expect(await response?.json()).toEqual({ ok: true, value: "hi" });
 
         await expect(

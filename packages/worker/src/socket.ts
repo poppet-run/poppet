@@ -1,16 +1,8 @@
 import { chmod, lstat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-<<<<<<< HEAD
-import { isMissingFile } from "@poppet/io";
-import { Cause, Context, Data, Effect, Exit, Option, Schema, Scope } from "effect";
-||||||| parent of 81bd2fc (Harden worker socket directory checks and live socket ownership)
-import { isMissingFile } from "@poppet/io";
-import { Cause, Context, Data, Effect, Exit, Fiber, Option, Schema, Scope } from "effect";
-=======
 import { ensurePrivateDirectory, isMissingFile } from "@poppet/io";
-import { Cause, Context, Data, Effect, Exit, Fiber, Option, Schema, Scope } from "effect";
->>>>>>> 81bd2fc (Harden worker socket directory checks and live socket ownership)
+import { Cause, Context, Data, Effect, Exit, Option, Schema, Scope } from "effect";
 
 export class WorkerRequestError extends Data.TaggedError("WorkerRequestError")<{
   readonly message: string;
@@ -141,7 +133,6 @@ const decodeRequestBody = (request: Request) =>
     catch: () => new WorkerRequestError({ message: "Invalid request body." }),
   }).pipe(Effect.timeout("10 seconds"), Effect.option);
 
-<<<<<<< HEAD
 const scopedBody = (
   body: ReadableStream<Uint8Array>,
   finish: (exit: Exit.Exit<unknown, unknown>) => Promise<void>,
@@ -296,17 +287,19 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
 
           Object.assign(options, { idleTimeout: 0 });
           const server = Bun.serve(options);
-          let bound: { readonly dev: number; readonly ino: number };
 
-          try {
+          const bind = async () => {
             await chmod(path, 0o600);
             const stat = await lstat(path);
-            bound = { dev: stat.dev, ino: stat.ino };
-          } catch (cause) {
+
+            return { dev: stat.dev, ino: stat.ino };
+          };
+
+          const bound = await bind().catch(async (cause) => {
             await server.stop(true);
             await unlink(path).catch(() => {});
             throw cause;
-          }
+          });
 
           return { server, bound };
         },

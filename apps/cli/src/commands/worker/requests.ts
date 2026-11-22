@@ -10,13 +10,7 @@ import {
   requestWorkerReply,
   workerReply,
 } from "@poppet/worker";
-<<<<<<< HEAD
-import { Cause, Effect, Layer, Option, Queue, Schema, Stream, type Scope } from "effect";
-||||||| parent of c73d893 (Close worker command scopes on pre-pull disconnects and stop logging streamed reasoning to worker stderr)
-import { Cause, Effect, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
-=======
 import { Cause, Effect, Exit, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
->>>>>>> c73d893 (Close worker command scopes on pre-pull disconnects and stop logging streamed reasoning to worker stderr)
 import { SqlClient } from "effect/sql";
 
 import {

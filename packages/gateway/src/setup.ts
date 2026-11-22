@@ -15,7 +15,10 @@ export const parseSetupFlags = (
     try: () => {
       if (args[0] !== "setup") throw new Error("Expected setup");
       const allowed = [...names, ...optional];
-      const options = Object.fromEntries(allowed.map((name) => [name, { type: "string" as const }]));
+
+      const options = Object.fromEntries(
+        allowed.map((name) => [name, { type: "string" as const }]),
+      );
 
       const { values, tokens } = parseArgs({
         args: args.slice(1),
