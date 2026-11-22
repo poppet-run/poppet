@@ -21,7 +21,7 @@ import {
 import { Context, Data, Effect, Layer, Option, Redacted, Schema, type Types } from "effect";
 
 import type { MCPHTTPServer, MCPOAuth } from "#src/config";
-import { boundedFetch } from "#src/transport";
+import { oauthAddress, oauthFetch } from "#src/oauth-network";
 
 export class MCPLoginRequired extends Data.TaggedError("MCPLoginRequired")<{
   readonly message: string;
@@ -99,17 +99,16 @@ export const MCPSignInsLive = Layer.effect(
   }),
 );
 
-const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const resourceMetadata = (config: MCPOAuthServer, advertised: URL | undefined) => {
+  const explicit = config.oauth.resourceMetadataUrl;
 
-const secure = (url: URL) =>
-  url.protocol === "https:" || (url.protocol === "http:" && loopback.has(url.hostname));
+  if (explicit !== undefined) return new URL(explicit);
 
-export const oauthFetch =
-  (base: FetchLike = boundedFetch(262144)): FetchLike =>
-  (url, init) =>
-    secure(new URL(String(url)))
-      ? base(url, init)
-      : Promise.reject(new Error("OAuth endpoints must use https."));
+  if (advertised !== undefined && advertised.origin !== new URL(config.url).origin)
+    throw new Error("The OAuth resource metadata must use the MCP server origin.");
+
+  return advertised;
+};
 
 const JSONObject = Schema.fromJsonString(Schema.JsonObject);
 
@@ -258,6 +257,9 @@ const clientSecret = (config: MCPOAuthServer) =>
 const authOptions = (config: MCPOAuthServer, fetchFn: FetchLike) => {
   const options: AuthOptions = { serverUrl: config.url, fetchFn };
 
+  if (config.oauth.resourceMetadataUrl !== undefined)
+    options.resourceMetadataUrl = new URL(config.oauth.resourceMetadataUrl);
+
   if (config.oauth.scopes !== undefined) options.scope = config.oauth.scopes.join(" ");
 
   return options;
@@ -296,7 +298,7 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
     Effect.gen(function* () {
       const signIns = yield* MCPSignIns;
       const secret = yield* clientSecret(config);
-      const fetchFn = oauthFetch();
+      const server = new URL(config.url);
       const session: Session = {};
       let authorizationURL: URL | undefined;
 
@@ -328,7 +330,7 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
 
       const challenge = yield* Effect.tryPromise({
         try: async (signal) => {
-          const response = await fetchFn(config.url, {
+          const response = await oauthFetch(server, signal)(config.url, {
             method: "GET",
             redirect: "manual",
             signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
@@ -338,14 +340,19 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
           const parameters = response.status === 401 ? extractWWWAuthenticateParams(response) : {};
           await response.body?.cancel();
 
-          return parameters;
+          return {
+            ...parameters,
+            resourceMetadataUrl: resourceMetadata(config, parameters.resourceMetadataUrl),
+          };
         },
         catch: failure,
       });
 
       yield* signIns.update(config.id, (saved) =>
         Effect.tryPromise({
-          try: async () => {
+          try: async (signal) => {
+            const deadline = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
+            const fetchFn = oauthFetch(server, deadline);
             const record = copy(saved, config.url);
 
             if (
@@ -374,16 +381,18 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
             if (result !== "REDIRECT" || authorizationURL === undefined)
               throw new Error("The authorization server did not start a browser sign-in.");
 
+            await oauthAddress(server, authorizationURL, deadline);
+
             return record;
           },
           catch: failure,
         }),
       );
 
-      if (authorizationURL === undefined || !secure(authorizationURL))
+      if (authorizationURL === undefined)
         return yield* Effect.fail(
           new MCPSignInError({
-            message: `MCP ${config.id}: the authorization endpoint must use https.`,
+            message: `MCP ${config.id}: the authorization endpoint was missing.`,
           }),
         );
 
@@ -394,7 +403,12 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
 
       yield* signIns.update(config.id, (saved) =>
         Effect.tryPromise({
-          try: async () => {
+          try: async (signal) => {
+            const fetchFn = oauthFetch(
+              server,
+              AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+            );
+
             if (saved?.url !== config.url || saved.discovery === undefined)
               throw new Error("The saved sign-in changed during authorization. Sign in again.");
 
@@ -444,11 +458,12 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
 
     let token = initial.access_token;
     const state = { loginRequired: false };
-    const fetchFn = oauthFetch();
+    const server = new URL(config.url);
 
     const refresh = signIns.update(config.id, (current) =>
       Effect.tryPromise({
-        try: async () => {
+        try: async (signal) => {
+          const fetchFn = oauthFetch(server, AbortSignal.any([signal, AbortSignal.timeout(15000)]));
           const record = copy(current, config.url);
           const latest = accessToken(record);
 
