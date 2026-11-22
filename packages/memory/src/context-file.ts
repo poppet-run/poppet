@@ -18,7 +18,13 @@ export const readContextFile = async (path: string, maximum: number) => {
   try {
     const metadata = await file.stat();
 
-    if (!metadata.isFile()) throw new Error("Context must be a regular file.");
+    if (
+      !metadata.isFile() ||
+      metadata.nlink !== 1 ||
+      metadata.uid !== process.getuid?.() ||
+      (metadata.mode & 0o022) !== 0
+    )
+      throw new Error("Context must be a private regular file owned by you.");
 
     if (metadata.size > maximum) throw memoryLimit(basename(path), maximum);
     const bytes = await readFileBounded(file, maximum, () => memoryLimit(basename(path), maximum));
