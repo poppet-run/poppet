@@ -118,7 +118,12 @@ const fixture = async (
     handler(
       new Request(`${settings.origin}${path}`, {
         method: body === undefined ? "GET" : "POST",
-        headers: { origin, cookie, "content-type": "application/json" },
+        headers: {
+          host: new URL(settings.origin).host,
+          origin,
+          cookie,
+          "content-type": "application/json",
+        },
         ...(body !== undefined && { body: JSON.stringify(body) }),
       }),
     );
@@ -517,7 +522,7 @@ describe("web chat", () => {
       app.handler(
         new Request(`${settings.origin}/api/sessions/${id}`, {
           method: "DELETE",
-          headers: { origin, cookie },
+          headers: { host: new URL(settings.origin).host, origin, cookie },
         }),
       );
 
@@ -591,10 +596,55 @@ describe("web chat", () => {
     }
   });
 
-  test("permits HTTP only for loopback development origins", () => {
+  test("permits HTTP only for loopback development origins and restricts listener hostname to loopback", () => {
     const valid = Schema.is(WebSettings);
     expect(valid({ ...settings, origin: "http://127.0.0.1:8080" })).toBe(true);
     expect(valid({ ...settings, origin: "http://192.168.1.20:8080" })).toBe(false);
     expect(valid({ ...settings, origin: "https://chat.example.test/path" })).toBe(false);
+    expect(valid({ ...settings, hostname: "localhost" })).toBe(true);
+    expect(valid({ ...settings, hostname: "::1" })).toBe(true);
+    expect(valid({ ...settings, hostname: "0.0.0.0" })).toBe(false);
+    expect(valid({ ...settings, hostname: "192.168.1.10" })).toBe(false);
+  });
+
+  test("when Host is missing or mismatched, rejects with 403 and accepts case-insensitive matches", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-host-"));
+    const app = await fixture(directory);
+
+    try {
+      expect((await app.handler(new Request(`${settings.origin}/`))).status).toBe(403);
+      expect(
+        (
+          await app.handler(
+            new Request(`${settings.origin}/`, {
+              headers: { host: "CHAT.EXAMPLE.TEST" },
+            }),
+          )
+        ).status,
+      ).toBe(200);
+    } finally {
+      await app.runtime.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("when a session is renamed without changing updated_at, changes its SSE marker", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-rename-"));
+    const app = await fixture(directory);
+
+    try {
+      const store = await app.runtime.runPromise(Store);
+      const session = await app.runtime.runPromise(
+        store.createSession("test-provider", "test-model"),
+      );
+      const before = await app.runtime.runPromise(app.chat.marker(session.id));
+      await app.runtime.runPromise(store.renameSession(session.id, "Renamed conversation"));
+      const after = await app.runtime.runPromise(app.chat.marker(session.id));
+
+      expect(after).not.toBe(before);
+    } finally {
+      await app.runtime.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

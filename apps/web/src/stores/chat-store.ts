@@ -47,6 +47,23 @@ export const createChatStore = () => {
 
   let generation = 0;
   let deliveryLock = false;
+  let removing = false;
+
+  const savePending = (submission: Submission) => {
+    try {
+      sessionStorage.setItem("poppet-submission", JSON.stringify(submission));
+    } catch {
+      // Storage may be unavailable or full in restricted browser contexts.
+    }
+  };
+
+  const clearPending = () => {
+    try {
+      sessionStorage.removeItem("poppet-submission");
+    } catch {
+      // Storage may be unavailable in restricted browser contexts.
+    }
+  };
 
   const unauthenticate = () => {
     generation++;
@@ -75,19 +92,21 @@ export const createChatStore = () => {
   };
 
   const navigate = (id: string | null) => {
+    const path = id ? `/chat/${id}` : "/";
+
     if (id !== $state.get().sessionId) {
       set("snapshot", null);
       set("connected", false);
     }
 
-    history.pushState(null, "", id ? `/chat/${id}` : "/");
+    if (location.pathname !== path) history.pushState(null, "", path);
     set("sessionId", id);
     set("sidebar", false);
     set("error", "");
   };
 
   const settle = (submission: Submission, receipt: Receipt) => {
-    sessionStorage.removeItem("poppet-submission");
+    clearPending();
     set("pending", null);
     const submittedKey = submission.sessionId ?? "new";
     const drafts = $state.get().drafts;
@@ -107,7 +126,7 @@ export const createChatStore = () => {
     const requestGeneration = generation;
 
     try {
-      sessionStorage.setItem("poppet-submission", JSON.stringify(submission));
+      savePending(submission);
       set("pending", submission);
       const receipt = await api.submit(submission);
 
@@ -118,7 +137,7 @@ export const createChatStore = () => {
       if (requestGeneration !== generation) return;
 
       if (cause instanceof ApiError && [400, 403, 404, 409, 413, 415, 429].includes(cause.status)) {
-        sessionStorage.removeItem("poppet-submission");
+        clearPending();
         set("pending", null);
       }
 
@@ -152,7 +171,7 @@ export const createChatStore = () => {
       await api.login(accessKey);
       set("key", "");
       generation++;
-      void refresh();
+      await refresh();
     } catch (cause) {
       set("error", errorMessage(cause));
     } finally {
@@ -189,7 +208,7 @@ export const createChatStore = () => {
       if (requestGeneration !== generation) return;
 
       if (cause instanceof ApiError && cause.status === 404) {
-        sessionStorage.removeItem("poppet-submission");
+        clearPending();
         set("pending", null);
         set(
           "error",
@@ -205,34 +224,52 @@ export const createChatStore = () => {
   };
 
   const stop = async () => {
+    const sessionId = $state.get().sessionId;
+
+    if (!sessionId) return;
+    const requestGeneration = generation;
+
     try {
-      await api.stop($state.get().sessionId!);
+      await api.stop(sessionId);
     } catch (cause) {
+      if (requestGeneration !== generation) return;
+
+      if (cause instanceof ApiError && cause.status === 401) unauthenticate();
       set("error", errorMessage(cause));
     }
   };
 
   const remove = async () => {
+    if (removing) return;
     const { sessionId, snapshot } = $state.get();
 
     if (!sessionId || snapshot?.active) return;
     const title = snapshot?.session.title ?? "this conversation";
 
     if (!confirm(`Delete ${JSON.stringify(title)}? This cannot be undone.`)) return;
+    removing = true;
+    const requestGeneration = generation;
 
     try {
       await api.remove(sessionId);
+
+      if (requestGeneration !== generation) return;
       const { [sessionId]: _, ...drafts } = $state.get().drafts;
       set("drafts", drafts);
       set(
         "sessions",
         $state.get().sessions.filter((session) => session.id !== sessionId),
       );
-      navigate(null);
+
+      if ($state.get().sessionId === sessionId) navigate(null);
       void refresh();
     } catch (cause) {
+      if (requestGeneration !== generation) return;
+
       if (cause instanceof ApiError && cause.status === 401) unauthenticate();
       set("error", errorMessage(cause));
+    } finally {
+      removing = false;
     }
   };
 
@@ -250,9 +287,14 @@ export const createChatStore = () => {
       events = source;
       source.addEventListener("message", (event) => {
         if (!listening || source !== events) return;
-        const value: ChatSnapshot = JSON.parse(event.data);
-        set("snapshot", value);
-        set("connected", true);
+
+        try {
+          const value: ChatSnapshot = JSON.parse(event.data);
+          set("snapshot", value);
+          set("connected", true);
+        } catch {
+          set("connected", false);
+        }
       });
       source.addEventListener("error", async () => {
         if (!listening || source !== events) return;

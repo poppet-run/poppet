@@ -604,3 +604,57 @@ test("deleting a conversation asks first, keeps it on refusal and leaves it afte
     history.replaceState(null, "", "/");
   }
 });
+
+test("when navigating to the current session, avoids duplicate history entries and unauthenticates on 401 stop", async () => {
+  const { createChatStore } = await import("../stores/chat-store");
+  const originalFetch = globalThis.fetch;
+  const originalEvents = Object.getOwnPropertyDescriptor(globalThis, "EventSource");
+  const streams: FakeEvents[] = [];
+
+  class FakeEvents extends dom.window.EventTarget {
+    static CLOSED = 2;
+    readyState = 1;
+    constructor(readonly url: string) {
+      super();
+      streams.push(this);
+    }
+    close() {
+      this.readyState = FakeEvents.CLOSED;
+    }
+  }
+
+  const fakeFetch = async (input: Parameters<typeof fetch>[0]) => {
+    if (input === "/api/sessions") return Response.json([]);
+
+    if (String(input).endsWith("/stop"))
+      return Response.json({ message: "Sign in" }, { status: 401 });
+
+    return Response.json({});
+  };
+
+  Object.defineProperty(globalThis, "EventSource", { configurable: true, value: FakeEvents });
+  globalThis.fetch = Object.assign(fakeFetch, { preconnect: originalFetch.preconnect });
+  history.replaceState(null, "", "/chat/same");
+  const store = createChatStore();
+  const dispose = store.start();
+
+  try {
+    await flush();
+    const before = history.length;
+    store.navigate("same");
+    expect(history.length).toBe(before);
+
+    streams[0]!.dispatchEvent(new dom.window.MessageEvent("message", { data: "{bad json" }));
+    expect(store.$state.get().connected).toBe(false);
+
+    await store.stop();
+    expect(store.$state.get().authenticated).toBe(false);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+
+    if (originalEvents) Object.defineProperty(globalThis, "EventSource", originalEvents);
+    else Reflect.deleteProperty(globalThis, "EventSource");
+    history.replaceState(null, "", "/");
+  }
+});
