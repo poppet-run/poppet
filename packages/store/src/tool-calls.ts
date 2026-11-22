@@ -1,5 +1,5 @@
 import { Completion } from "@poppet/provider";
-import { Clock, Effect } from "effect";
+import { Array, Clock, Effect } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { decodeInput, logStorageCause, reportAs, storageFailure, storeFailure } from "#src/errors";
@@ -20,7 +20,11 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
 
         const calls = decoded.output.flatMap((part) => (part.type === "tool-call" ? [part] : []));
 
-        if (run.status !== "running" || decoded.finishReason !== "tool-calls" || calls.length === 0)
+        if (
+          run.status !== "running" ||
+          decoded.finishReason !== "tool-calls" ||
+          !Array.isReadonlyArrayNonEmpty(calls)
+        )
           return yield* conflict("Only completed tool requests in a running run can be recorded.");
 
         const saved = yield* toolCallsFor(runId);
@@ -33,7 +37,7 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
         const createdAt = Math.max(at, run.startedAt ?? run.createdAt);
 
         yield* sql`INSERT INTO tool_calls ${sql.insert(
-          calls.map((call, index) => {
+          Array.map(calls, (call, index) => {
             const identity = identities.find((entry) => entry.callId === call.callId);
 
             return {

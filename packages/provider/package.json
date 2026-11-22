@@ -16,7 +16,7 @@
     "test": "bun --no-env-file ../../tools/testing/run.ts"
   },
   "dependencies": {
-    "effect": "4.0.4",
-    "openai": "7.32.0"
+    "effect": "4.1.5",
+    "openai": "7.62.0"
   }
 }

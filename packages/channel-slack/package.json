@@ -20,6 +20,6 @@
     "@poppet/gateway": "workspace:*",
     "@slack/socket-mode": "2.0.7",
     "@slack/web-api": "7.19.0",
-    "effect": "4.0.4"
+    "effect": "4.1.5"
   }
 }

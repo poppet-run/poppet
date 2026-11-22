@@ -142,6 +142,7 @@ const fixture = async (includeSlack = false) => {
     const terminal = Terminal.make({
       columns: Effect.succeed(100),
       rows: Effect.succeed(30),
+      size: Effect.die("Setup does not track resizes"),
       readLine: Effect.die("Setup uses prompts"),
       readInput: Effect.gen(function* () {
         const inputs = remaining.shift();

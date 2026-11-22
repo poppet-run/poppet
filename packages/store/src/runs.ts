@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Message } from "@poppet/provider";
-import { Clock, Effect, Schema } from "effect";
+import { Array, Clock, Effect, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { StoreError, decodeInput, reportAs, storeFailure } from "#src/errors";
@@ -90,9 +90,9 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
             message: "Attachments must match the references in the queued messages.",
           });
 
-        if (attachments.length > 0)
+        if (Array.isReadonlyArrayNonEmpty(attachments))
           yield* sql`INSERT INTO attachments ${sql.insert(
-            attachments.map((attachment) => ({
+            Array.map(attachments, (attachment) => ({
               id: attachment.id,
               sessionId,
               name: attachment.name,

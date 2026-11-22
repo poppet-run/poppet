@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { AppConfig } from "@poppet/config";
 import type { Completion } from "@poppet/provider";
 import { migrate, packageSchema, Store, StoreLive } from "@poppet/store";
-import { Effect, Layer } from "effect";
+import { Array, Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { LocalMemoryLive } from "#src/local";
@@ -181,7 +181,7 @@ describe.concurrent("LocalMemoryLive", () => {
           yield* reject(memory.remember("unknown", "value", "missing-run"), "not-found");
           const sql = yield* SqlClient.SqlClient;
           yield* sql`INSERT INTO memory_revisions ${sql.insert(
-            Array.from({ length: 127 }, (_, index) => ({
+            Array.makeBy(127, (index) => ({
               key: `fact-${index}`,
               revision: 1,
               action: "remember",

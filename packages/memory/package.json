@@ -18,7 +18,7 @@
     "@poppet/config": "workspace:*",
     "@poppet/io": "workspace:*",
     "@poppet/store": "workspace:*",
-    "effect": "4.0.4"
+    "effect": "4.1.5"
   },
   "devDependencies": {
     "@poppet/provider": "workspace:*"
