@@ -73,9 +73,85 @@ const Continuation = Schema.Struct({
   items: Schema.Array(Item),
 });
 
+const toolIdentity = (namespace: string | null, name: string) =>
+  JSON.stringify([namespace, name]);
+
+const mergeItems = (
+  provider: ModelDescription["provider"],
+  completed: ReadonlyMap<number, typeof Item.Type>,
+  terminalOutput: ReadonlyArray<typeof Item.Type>,
+): ReadonlyArray<typeof Item.Type> => {
+  if (terminalOutput.length === 0)
+    return inIndexOrder(completed, () =>
+      interrupted(provider, "The stream omitted an output item."),
+    );
+
+  for (const index of completed.keys()) {
+    if (index >= terminalOutput.length)
+      throw interrupted(provider, "The terminal response omitted streamed output items.");
+  }
+
+  return terminalOutput.map((item, index) => {
+    const streamed = completed.get(index);
+
+    if (streamed === undefined) return item;
+
+    if (streamed.type !== item.type)
+      throw interrupted(provider, "The terminal response conflicted with a streamed output item.");
+
+    if (streamed.type === "message" && item.type === "message") {
+      if (
+        streamed.id !== item.id ||
+        JSON.stringify(streamed.content) !== JSON.stringify(item.content)
+      )
+        throw interrupted(
+          provider,
+          "The terminal response conflicted with a streamed output item.",
+        );
+
+      return item;
+    }
+
+    if (streamed.type === "function_call" && item.type === "function_call") {
+      if (
+        streamed.call_id !== item.call_id ||
+        streamed.name !== item.name ||
+        (streamed.namespace ?? null) !== (item.namespace ?? null) ||
+        streamed.arguments !== item.arguments
+      )
+        throw interrupted(
+          provider,
+          "The terminal response conflicted with a streamed output item.",
+        );
+
+      return item;
+    }
+
+    if (streamed.type === "reasoning" && item.type === "reasoning") {
+      if (
+        streamed.id !== item.id ||
+        (streamed.encrypted_content != null &&
+          item.encrypted_content != null &&
+          streamed.encrypted_content !== item.encrypted_content)
+      )
+        throw interrupted(
+          provider,
+          "The terminal response conflicted with a streamed output item.",
+        );
+
+      const encrypted = streamed.encrypted_content ?? item.encrypted_content;
+
+      return encrypted === undefined ? item : { ...item, encrypted_content: encrypted };
+    }
+
+    return item;
+  });
+};
+
 const normalizedOutput = (
   description: ModelDescription,
   items: ReadonlyArray<typeof Item.Type>,
+  validation?: { readonly allowTools: boolean; readonly declaredTools: ReadonlySet<string> },
 ) => {
   const output: Output[] = [];
   const calls = new Set<string>();
@@ -88,6 +164,13 @@ const normalizedOutput = (
           text: content.type === "output_text" ? content.text : content.refusal,
         });
     } else if (item.type === "function_call") {
+      if (
+        validation !== undefined &&
+        (!validation.allowTools ||
+          !validation.declaredTools.has(toolIdentity(item.namespace ?? null, item.name)))
+      )
+        throw interrupted(description.provider, "The model returned an invalid tool call.");
+
       if (calls.has(item.call_id))
         throw interrupted(description.provider, "The model returned duplicate tool calls.");
       Schema.decodeUnknownSync(Schema.fromJsonString(Schema.JsonObject))(item.arguments);
@@ -267,6 +350,9 @@ export const responsesModel = (
               include: ["reasoning.encrypted_content"],
             };
 
+            if (decoded.settings.temperature !== undefined)
+              parameters.temperature = decoded.settings.temperature;
+
             if (decoded.settings.maxOutputTokens !== undefined)
               parameters.max_output_tokens = decoded.settings.maxOutputTokens;
 
@@ -356,15 +442,14 @@ export const responsesModel = (
                     "The stream ended without completed inference.",
                   );
 
-                for (const [index, item] of terminal.output.entries()) {
-                  if (!completedItems.has(index)) completedItems.set(index, item);
-                }
+                const items = mergeItems(description.provider, completedItems, terminal.output);
 
-                const items = inIndexOrder(completedItems, () =>
-                  interrupted(description.provider, "The stream omitted an output item."),
-                );
-
-                const output = normalizedOutput(description, items);
+                const output = normalizedOutput(description, items, {
+                  allowTools: decoded.settings.toolChoice !== "none",
+                  declaredTools: new Set(
+                    decoded.tools.map((tool) => toolIdentity(tool.namespace, tool.name)),
+                  ),
+                });
 
                 const response: Completion = {
                   output,

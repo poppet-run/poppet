@@ -408,6 +408,150 @@ for (const adapter of cases) {
           response: { output: [{ type: "text", text: "Hello world" }] },
         });
       });
+
+      test("when temperature is supported, forwards it and rejects undeclared tools, toolChoice=none calls, or conflicting terminal output", async () => {
+        const sent: Schema.JsonObject[] = [];
+
+        const makeModel = (events: ReadonlyArray<Schema.JsonObject>) =>
+          responsesModel(
+            {
+              provider: adapter.provider,
+              id: "test-model",
+              name: "Test model",
+              capabilities: {
+                tools: true,
+                images: false,
+                generationSettings: ["temperature"],
+                contextWindow: null,
+                maxOutputTokens: null,
+              },
+            },
+            Effect.succeed(
+              new OpenAI({
+                apiKey: "test-secret",
+                baseURL: "https://provider.invalid/v1",
+                maxRetries: 0,
+                logLevel: "off",
+                fetch: async (input, init) => {
+                  const incoming =
+                    input instanceof Request
+                      ? new Request(input, init)
+                      : new Request(input.toString(), init);
+
+                  sent.push(Schema.decodeUnknownSync(Schema.JsonObject)(await incoming.json()));
+
+                  return new Response(events.map(encode).join("") + "data: [DONE]\n\n", {
+                    headers: { "Content-Type": "text/event-stream" },
+                  });
+                },
+              }),
+            ),
+          );
+
+        const okModel = makeModel([
+          {
+            type: "response.completed",
+            response: {
+              status: "completed",
+              output: [
+                {
+                  type: "message",
+                  id: "msg-1",
+                  role: "assistant",
+                  status: "completed",
+                  content: [{ type: "output_text", text: "Warm", annotations: [] }],
+                },
+              ],
+            },
+          },
+        ]);
+
+        await Effect.runPromise(
+          completeModel(okModel, { ...request, settings: { temperature: 0.4 } }),
+        );
+        expect(sent[0]?.temperature).toBe(0.4);
+
+        const undeclaredModel = makeModel([
+          {
+            type: "response.completed",
+            response: {
+              status: "completed",
+              output: [
+                {
+                  type: "function_call",
+                  call_id: "call-1",
+                  name: "unexpected_tool",
+                  arguments: "{}",
+                },
+              ],
+            },
+          },
+        ]);
+
+        await expect(
+          Effect.runPromise(completeModel(undeclaredModel, toolRequest)),
+        ).rejects.toMatchObject({ reason: "interrupted" });
+
+        const blockedByNoneModel = makeModel([
+          {
+            type: "response.completed",
+            response: {
+              status: "completed",
+              output: [
+                {
+                  type: "function_call",
+                  call_id: "call-1",
+                  name: "get_verification_token",
+                  namespace: "poppet_verification",
+                  arguments: '{"challenge":"abc"}',
+                },
+              ],
+            },
+          },
+        ]);
+
+        await expect(
+          Effect.runPromise(
+            completeModel(blockedByNoneModel, {
+              ...toolRequest,
+              settings: { toolChoice: "none" },
+            }),
+          ),
+        ).rejects.toMatchObject({ reason: "interrupted" });
+
+        const conflictingModel = makeModel([
+          {
+            type: "response.output_item.done",
+            output_index: 0,
+            item: {
+              type: "message",
+              id: "msg-1",
+              role: "assistant",
+              status: "completed",
+              content: [{ type: "output_text", text: "First", annotations: [] }],
+            },
+          },
+          {
+            type: "response.completed",
+            response: {
+              status: "completed",
+              output: [
+                {
+                  type: "message",
+                  id: "msg-1",
+                  role: "assistant",
+                  status: "completed",
+                  content: [{ type: "output_text", text: "Different", annotations: [] }],
+                },
+              ],
+            },
+          },
+        ]);
+
+        await expect(
+          Effect.runPromise(completeModel(conflictingModel, request)),
+        ).rejects.toMatchObject({ reason: "interrupted" });
+      });
     }
 
     test("when a tool exchange completes, preserves reasoning and session identity", async () => {
