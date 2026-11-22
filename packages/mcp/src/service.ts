@@ -459,11 +459,19 @@ const makeTool = (
 
           if (connection.signIn?.required() === true) return failed(connection.signIn.message);
 
-          if (cause instanceof InsufficientScopeError)
+          if (cause instanceof InsufficientScopeError) {
+            const scope =
+              cause.requiredScope !== undefined &&
+              cause.requiredScope.length <= 128 &&
+              /^[A-Za-z0-9._:/+-]+(?: [A-Za-z0-9._:/+-]+)*$/.test(cause.requiredScope)
+                ? cause.requiredScope
+                : undefined;
+
             return new MCPError({
               reason: "tool-permission",
-              message: `MCP ${config.id}/${tool.name}: the server requires the scope ${cause.requiredScope ?? "it names"}. Add it to oauth.scopes and run poppet mcp login ${config.id}.`,
+              message: `MCP ${config.id}/${tool.name}: the server requires ${scope === undefined ? "additional scope" : `the scope ${scope}`}. Add it to oauth.scopes and run poppet mcp login ${config.id}.`,
             });
+          }
 
           return uncertain();
         },
