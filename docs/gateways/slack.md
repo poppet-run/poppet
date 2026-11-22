@@ -60,6 +60,10 @@ older than 24 hours. They use the same access checks and delivery queue as succe
 results, without changing the thread session. Cancelled, interrupted, and expired
 occurrences post nothing.
 
+Poppet marks Socket Mode offline when the socket closes and retries the
+connection after 30 seconds. Gateway work blocked by temporary channel
+unavailability can retry for about a minute.
+
 `poppet worker status` shows Slack connection and event errors. A reconnect or
 successful event acknowledgement clears a stale error.
 

@@ -3,6 +3,7 @@ import { quietHoursEnd } from "@poppet/config";
 import { Effect } from "effect";
 
 import { authorized, wake, type GatewayContext } from "#src/context";
+import { channelRetryDelay } from "#src/failure";
 import { answer, chunks } from "#src/replies";
 
 const scheduleResults = (context: GatewayContext) =>
@@ -108,18 +109,16 @@ export const deliverNext = (context: GatewayContext) => {
       );
       yield* wake(context.wakes.naming);
     }).pipe(
-      Effect.catchTag("ChannelError", (error) =>
-        repo.deliveryFailed(
+      Effect.catchTag("ChannelError", (error) => {
+        const delay =
+          error.reason === "unavailable" ? channelRetryDelay(error, delivery.attempts) : null;
+
+        return repo.deliveryFailed(
           delivery,
-          error.reason === "uncertain"
-            ? "uncertain"
-            : error.reason === "unavailable" && delivery.attempts < 3
-              ? "pending"
-              : "failed",
-          clock.currentTimeMillisUnsafe() +
-            Math.max(1000 * 2 ** delivery.attempts, error.retryAfterMs ?? 0),
-        ),
-      ),
+          error.reason === "uncertain" ? "uncertain" : delay === null ? "failed" : "pending",
+          clock.currentTimeMillisUnsafe() + (delay ?? 0),
+        );
+      }),
     );
 
     return true;

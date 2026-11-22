@@ -1,5 +1,6 @@
 import { AgentError, type ChatFailure } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
+import { Match } from "effect";
 
 import { ChannelError } from "#src/channel";
 
@@ -22,15 +23,20 @@ const failureReply = (error: ChatFailure | ChannelError | null) => {
   return "The request failed. Use /status in this conversation to inspect its session before sending a new request.";
 };
 
+export const channelRetryDelay = (error: ChannelError, attempts: number) => {
+  const limit = Match.value(error.reason).pipe(
+    Match.when("unavailable", () => 6),
+    Match.when("uncertain", () => 3),
+    Match.orElse(() => 0),
+  );
+
+  return attempts < limit ? Math.max(1000 * 2 ** attempts, error.retryAfterMs ?? 0) : null;
+};
+
 export const failureDecision = (
   error: ChatFailure | ChannelError | null,
   attempts: number,
 ): FailureDecision => ({
-  retryAfterMs:
-    error instanceof ChannelError &&
-    ["unavailable", "uncertain"].includes(error.reason) &&
-    attempts < 3
-      ? Math.max(1000 * 2 ** attempts, error.retryAfterMs ?? 0)
-      : null,
+  retryAfterMs: error instanceof ChannelError ? channelRetryDelay(error, attempts) : null,
   reply: failureReply(error),
 });
