@@ -18,18 +18,20 @@ import { approvalActions, approvalComponents } from "#src/approvals";
 import { downloadAttachment, incomingAttachments } from "#src/attachments";
 import type { DiscordSettings } from "#src/settings";
 
-const discordFailure = (cause: unknown, sending = false) =>
+export const discordFailure = (cause: unknown, sending = false) =>
   cause instanceof ChannelError
     ? cause
     : new ChannelError({
         reason:
           cause instanceof RateLimitError
             ? "unavailable"
-            : cause instanceof DiscordAPIError && cause.status < 500
-              ? "permission"
-              : sending
-                ? "uncertain"
-                : "unavailable",
+            : cause instanceof DiscordAPIError && (cause.status === 429 || cause.status === 408)
+              ? "unavailable"
+              : cause instanceof DiscordAPIError && cause.status < 500
+                ? "permission"
+                : sending
+                  ? "uncertain"
+                  : "unavailable",
         message:
           "Discord operation failed. Check the bot connection, Message Content intent, and thread permissions.",
         retryAfterMs:

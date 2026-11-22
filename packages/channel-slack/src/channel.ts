@@ -104,13 +104,25 @@ export const allowedSlackChannel = (
   !channel.is_org_shared &&
   !channel.is_pending_ext_shared;
 
-const failure = (cause: unknown, sending = false) => {
+const transientPlatformErrors = new Set([
+  "internal_error",
+  "service_unavailable",
+  "fatal_error",
+  "request_timeout",
+]);
+
+export const slackFailure = (cause: unknown, sending = false) => {
   if (cause instanceof ChannelError) return cause;
 
   const decoded = Schema.decodeUnknownExit(
     Schema.Struct({
       code: Schema.optionalKey(Schema.String),
       retryAfter: Schema.optionalKey(Schema.Number),
+      data: Schema.optionalKey(
+        Schema.Struct({
+          error: Schema.optionalKey(Schema.String),
+        }),
+      ),
     }),
   )(cause);
 
@@ -121,7 +133,9 @@ const failure = (cause: unknown, sending = false) => {
       error.code === ErrorCode.RateLimitedError
         ? "unavailable"
         : error.code === ErrorCode.PlatformError
-          ? "permission"
+          ? error.data?.error !== undefined && transientPlatformErrors.has(error.data.error)
+            ? "unavailable"
+            : "permission"
           : sending
             ? "uncertain"
             : "unavailable",
@@ -129,6 +143,8 @@ const failure = (cause: unknown, sending = false) => {
     retryAfterMs: (error.retryAfter ?? 0) * 1000,
   });
 };
+
+const failure = slackFailure;
 
 export const slackSocketSession = (
   socket: {
@@ -190,7 +206,6 @@ export const slackChannelLayer = (settings: SlackSettings) =>
       let botId = "";
       let error: string | null = null;
       let dropped = 0;
-
       const handleEvent = async ({
         type,
         body,
@@ -200,34 +215,34 @@ export const slackChannelLayer = (settings: SlackSettings) =>
         body: unknown;
         ack: () => Promise<void>;
       }) => {
+        if (type === "interactive") {
+          const action = Schema.decodeUnknownExit(ActionBody)(body);
+
+          if (Exit.isSuccess(action))
+            await approvalAction(action.value).catch(() => {
+              error = "Slack approval interaction failed.";
+            });
+        } else {
+          const decoded = Schema.decodeUnknownExit(EventBody)(body);
+
+          if (Exit.isSuccess(decoded)) {
+            const message = incomingMessage(decoded.value, settings, botId);
+
+            if (message !== null && !Queue.offerUnsafe(messages, message)) {
+              dropped++;
+
+              return;
+            }
+          }
+        }
+
         try {
           await ack();
 
           if (connected) error = null;
         } catch {
           error = "Slack event acknowledgement failed.";
-
-          return;
         }
-
-        if (type === "interactive") {
-          const action = Schema.decodeUnknownExit(ActionBody)(body);
-
-          if (Exit.isFailure(action)) return;
-
-          await approvalAction(action.value).catch(() => {
-            error = "Slack approval interaction failed.";
-          });
-
-          return;
-        }
-
-        const decoded = Schema.decodeUnknownExit(EventBody)(body);
-
-        if (Exit.isFailure(decoded)) return;
-        const message = incomingMessage(decoded.value, settings, botId);
-
-        if (message !== null && !Queue.offerUnsafe(messages, message)) dropped++;
       };
 
       const connect = Effect.scoped(
