@@ -2,6 +2,9 @@
 
 [Documentation index](../README.md)
 
+Scheduled results can be delivered to a Slack thread. Poppet stores the channel
+and thread timestamp together, for example `C123:1700000000.000100`.
+
 Create a Slack app for your workspace and enable Socket Mode. Generate an
 app-level token with `connections:write`, and install the app with bot scopes
 `chat:write`, `channels:read`, `channels:history`,
