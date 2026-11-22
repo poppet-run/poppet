@@ -55,6 +55,27 @@ const reject = <A>(operation: Effect.Effect<A, MemoryError>, reason: MemoryError
   );
 
 describe.concurrent("LocalMemoryLive", () => {
+  test("when a direct write exceeds the serialized fact budget, preserves the previous snapshot", async () => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Effect.gen(function* () {
+          const memory = yield* Memory;
+          yield* memory.set("large", "x".repeat(4096));
+          yield* memory.set("small", "Keep");
+          yield* reject(memory.set("small", '"'.repeat(4096)), "limit");
+          expect(
+            (yield* memory.snapshot({ soulBytes: 8192, profileBytes: 8192, factsBytes: 8192 }))
+              .facts,
+          ).toContainEqual({ key: "small", value: "Keep" });
+        }),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
   test("when keyed facts change across reopening, preserves create, replace, forget, and source-run provenance", async () => {
     const saved = await fixture();
 

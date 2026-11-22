@@ -7,7 +7,13 @@ import { SqlClient } from "effect/sql";
 
 import { memoryLimit, readContextFile } from "#src/context-file";
 import { memorySchema } from "#src/migrations";
-import { MemoryFact, MemoryRevision, SnapshotLimits, type MemoryOrigin } from "#src/schema";
+import {
+  MemoryFact,
+  MemoryRevision,
+  SnapshotLimits,
+  savedFactsBytes,
+  type MemoryOrigin,
+} from "#src/schema";
 import { Memory, MemoryError } from "#src/service";
 
 const invalid = () =>
@@ -98,6 +104,25 @@ export const LocalMemoryLive = Layer.effect(
         );
 
         const updatedAt = Math.max(at, latest?.createdAt ?? 0);
+
+        if (value !== null) {
+          const saved = yield* list;
+          const existing = saved.find((fact) => fact.key === key);
+
+          const facts = saved
+            .filter((fact) => fact.key !== key)
+            .map((fact) => ({ key: fact.key, value: fact.value }));
+
+          facts.push({ key, value });
+
+          if (
+            Buffer.byteLength(JSON.stringify(facts)) > savedFactsBytes &&
+            (existing === undefined ||
+              Buffer.byteLength(JSON.stringify(value)) >=
+                Buffer.byteLength(JSON.stringify(existing.value)))
+          )
+            return yield* Effect.fail(memoryLimit("saved facts", savedFactsBytes));
+        }
 
         yield* sql`INSERT INTO memory_revisions (key, revision, action, value, origin, source_run_id, created_at)
           SELECT ${key}, COALESCE(MAX(revision), 0) + 1, ${action}, ${value}, ${origin},

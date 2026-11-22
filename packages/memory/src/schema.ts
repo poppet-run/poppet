@@ -39,6 +39,8 @@ export const MemoryRevision = Schema.Struct({
 
 export type MemoryRevision = typeof MemoryRevision.Type;
 
+export const savedFactsBytes = 8192;
+
 const Bytes = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65536 }));
 
 export const SnapshotLimits = Schema.Struct({
