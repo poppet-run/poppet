@@ -1,7 +1,10 @@
 export {
   ensurePrivateDirectory,
+  ensurePrivateDirectorySync,
   isMissingFile,
   openNoFollow,
+  openProtectedFile,
+  openProtectedFileSync,
   readFileBounded,
   readProtectedFile,
   unlinkIfPresent,

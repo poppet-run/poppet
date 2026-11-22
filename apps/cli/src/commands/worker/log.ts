@@ -1,50 +1,16 @@
-import {
-  closeSync,
-  constants,
-  fchmodSync,
-  fstatSync,
-  lstatSync,
-  mkdirSync,
-  openSync,
-  renameSync,
-  unlinkSync,
-  writeSync,
-} from "node:fs";
+import { closeSync, constants, fstatSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { join } from "node:path";
 
-import { isMissingFile } from "@poppet/io";
+import { ensurePrivateDirectorySync, isMissingFile, openProtectedFileSync } from "@poppet/io";
 
 export const workerLogBytes = 5 * 1024 * 1024;
 
 export const prepareWorkerLogDirectory = (directory: string) => {
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const info = lstatSync(directory);
-
-  if (
-    !info.isDirectory() ||
-    info.isSymbolicLink() ||
-    info.uid !== process.getuid?.() ||
-    (info.mode & 0o077) !== 0
-  )
-    throw new Error("The worker log directory must be a protected real directory.");
+  ensurePrivateDirectorySync(directory);
 };
 
-const openFile = (file: string, flags: number) => {
-  const handle = openSync(file, flags | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
-
-  try {
-    const stat = fstatSync(handle);
-
-    if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid?.())
-      throw new Error("Worker logs must be owned regular files without links.");
-    fchmodSync(handle, 0o600);
-
-    return handle;
-  } catch (error) {
-    closeSync(handle);
-    throw error;
-  }
-};
+const openFile = (file: string, flags: number) =>
+  openProtectedFileSync(file, flags, { makePrivate: true });
 
 export const openWorkerLog = (directory: string) => {
   prepareWorkerLogDirectory(directory);

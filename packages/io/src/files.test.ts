@@ -17,7 +17,10 @@ import { join } from "node:path";
 
 import {
   ensurePrivateDirectory,
+  ensurePrivateDirectorySync,
   isMissingFile,
+  openProtectedFile,
+  openProtectedFileSync,
   readFileBounded,
   readProtectedFile,
   writeFileAtomic,
@@ -211,5 +214,35 @@ describe("files.ts", () => {
 
     await expect(writeFileAtomic(path, "new")).rejects.toThrow();
     expect(await readdir(directory)).toEqual(["settings"]);
+  });
+
+  test("when strict UTF-8 or NUL rejection is requested, rejects invalid bytes and NUL characters", async () => {
+    const badUtf8 = join(directory, "bad.txt");
+    const withNul = join(directory, "nul.txt");
+    await writeFile(badUtf8, Buffer.from([0xff, 0xfe]), { mode: 0o600 });
+    await writeFile(withNul, "a\0b", { mode: 0o600 });
+
+    await expect(readProtectedFile(badUtf8, { strictUtf8: true })).rejects.toThrow();
+    await expect(
+      readProtectedFile(withNul, { strictUtf8: true, disallowNul: true }),
+    ).rejects.toThrow();
+  });
+
+  test("when opening protected files or directories synchronously or asynchronously, rejects unsafe links and modes", async () => {
+    const privateDir = join(directory, "private");
+    ensurePrivateDirectorySync(privateDir);
+    expect((await stat(privateDir)).mode & 0o777).toBe(0o700);
+    await chmod(privateDir, 0o755);
+    expect(() => ensurePrivateDirectorySync(privateDir)).toThrow();
+
+    const file = join(directory, "secret.log");
+    await writeFile(file, "ok", { mode: 0o644 });
+    const handle = await openProtectedFile(file, 0, { makePrivate: true });
+    await handle.close();
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+
+    const linked = join(directory, "hardlink.log");
+    await link(file, linked);
+    expect(() => openProtectedFileSync(linked, 0)).toThrow();
   });
 });
