@@ -87,15 +87,22 @@ export const acquireOwnerLock = (path: string) =>
             }),
     }),
     ({ database, key, lockPath }) =>
-      Effect.promise(async () => {
-        try {
-          await unlinkIfPresent(lockPath);
-        } finally {
+      Effect.tryPromise({
+        try: async () => {
           try {
-            database.close();
+            await unlinkIfPresent(lockPath);
           } finally {
-            activeLocks.delete(key);
+            try {
+              database.close();
+            } finally {
+              activeLocks.delete(key);
+            }
           }
-        }
-      }),
+        },
+        catch: () =>
+          new OwnerLockError({
+            reason: "storage",
+            message: "Could not finish protected storage cleanup.",
+          }),
+      }).pipe(Effect.catch((error) => Effect.logWarning(error.message))),
   ).pipe(Effect.asVoid);

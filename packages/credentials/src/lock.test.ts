@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -157,6 +157,29 @@ describe("acquireOwnerLock", () => {
       );
 
       await Effect.runPromise(Effect.scoped(acquireOwnerLock(path)));
+      expect(await probeLockInChildProcess(path)).toBe("acquired");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("when marker cleanup fails, releases database ownership without failing the scope", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-owner-cleanup-"));
+    const path = join(directory, "owner.lock");
+
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            yield* acquireOwnerLock(path);
+            yield* Effect.promise(async () => {
+              await rm(path);
+              await mkdir(path);
+            });
+          }),
+        ),
+      );
+      await rm(path, { recursive: true });
       expect(await probeLockInChildProcess(path)).toBe("acquired");
     } finally {
       await rm(directory, { recursive: true, force: true });
