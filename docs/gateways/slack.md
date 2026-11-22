@@ -51,6 +51,9 @@ older than 24 hours. They use the same access checks and delivery queue as succe
 results, without changing the thread session. Cancelled, interrupted, and expired
 occurrences post nothing.
 
+`poppet worker status` shows Slack connection and event errors. A reconnect or
+successful event acknowledgement clears a stale error.
+
 Manual validation requires a real Slack app: check mention and thread replies,
 owner rejection, attachments, cancellation, command approval, scheduled results and failure notices,
 and worker restart/reconnection. Automated checks do not establish live Slack

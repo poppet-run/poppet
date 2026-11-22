@@ -84,8 +84,12 @@ export const discordChannelLayer = (
           connectionError = error.message;
         });
 
-      const actions = yield* approvalActions(client, settings, () => {
-        connectionError = "Discord approval interaction failed.";
+      const clearError = () => {
+        connectionError = null;
+      };
+
+      const actions = yield* approvalActions(client, settings, (error) => {
+        connectionError = error;
       });
 
       const requireReady = () => {
@@ -160,8 +164,9 @@ export const discordChannelLayer = (
       });
       client.on(Events.ClientReady, (connected) => {
         Deferred.doneUnsafe(identity, Effect.succeed(connected.user.id));
-        connectionError = null;
+        clearError();
       });
+      client.on(Events.ShardResume, clearError);
 
       const login = Effect.tryPromise({
         try: () => client.login(Redacted.value(settings.token)),
@@ -224,7 +229,10 @@ export const discordChannelLayer = (
               });
           },
           catch: discordFailure,
-        }).pipe(Effect.tapError(reportError));
+        }).pipe(
+          Effect.tap(() => Effect.sync(clearError)),
+          Effect.tapError(reportError),
+        );
 
       const conversation = (message: IncomingMessage, title: string) =>
         Effect.tryPromise({
@@ -279,7 +287,10 @@ export const discordChannelLayer = (
             };
           },
           catch: discordFailure,
-        }).pipe(Effect.tapError(reportError));
+        }).pipe(
+          Effect.tap(() => Effect.sync(clearError)),
+          Effect.tapError(reportError),
+        );
 
       const send = (conversationId: string, text: string, nonce: string, requestId?: string) =>
         Effect.tryPromise({

@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { setImmediate } from "node:timers/promises";
 
 import { MessagingChannel } from "@poppet/gateway";
 import {
@@ -249,9 +250,15 @@ describe("Discord approval components", () => {
             ["7004", { message: { ...f.prompt, author: owner } }],
             ["7005", { message: { ...f.prompt, webhook_id: "800" } }],
             ["7006", { data: { custom_id: "unrelated", component_type: ComponentType.Button } }],
-            ["7008", {}],
           ] as const)
             f.client.emit(Events.InteractionCreate, f.interaction(interactionId, overrides));
+
+          f.client.emit(Events.InteractionCreate, f.interaction("7008"));
+          yield* Effect.promise(() => setImmediate());
+          expect(yield* channel.status).toHaveProperty(
+            "error",
+            "Discord approval interaction failed.",
+          );
 
           const valid = f.interaction("7009", {
             data: { custom_id: `poppet:approval:deny:${id}`, component_type: ComponentType.Button },
@@ -302,10 +309,7 @@ describe("Discord approval components", () => {
               }),
             }),
           );
-          expect(yield* channel.status).toHaveProperty(
-            "error",
-            "Discord approval interaction failed.",
-          );
+          expect(yield* channel.status).toHaveProperty("error", null);
         }),
       );
       expect(f.client.listenerCount(Events.InteractionCreate)).toBe(0);

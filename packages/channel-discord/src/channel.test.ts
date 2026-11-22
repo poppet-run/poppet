@@ -287,10 +287,20 @@ describe("discordChannelLayer", () => {
           expect(
             yield* channel.naming.conversation(incoming, "New conversation").pipe(Effect.result),
           ).toHaveProperty("failure.reason", "unavailable");
+          expect(yield* channel.status).toHaveProperty("error", expect.any(String));
           expect(yield* channel.naming.conversation(incoming, "New conversation")).toEqual({
             id: "400",
             managedName: null,
           });
+          expect(yield* channel.status).toHaveProperty("error", null);
+          client.emit(Events.ShardError, new Error("Disconnected"), 0);
+          expect(yield* channel.status).toHaveProperty(
+            "error",
+            "Discord connection interrupted; reconnecting.",
+          );
+          client.emit(Events.ShardResume, 0, 0);
+          expect(yield* channel.status).toHaveProperty("error", null);
+
           const naming = channel.naming;
 
           if (!naming) throw new Error("Missing naming capability");

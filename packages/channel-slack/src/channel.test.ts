@@ -1,8 +1,12 @@
-import { expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { setImmediate } from "node:timers/promises";
 
-import { Redacted, Schema } from "effect";
+import { MessagingChannel } from "@poppet/gateway";
+import { SocketModeClient } from "@slack/socket-mode";
+import { WebClient } from "@slack/web-api";
+import { Effect, Redacted, Schema } from "effect";
 
-import { EventBody, escapeSlackText, incomingMessage } from "#src/channel";
+import { EventBody, escapeSlackText, incomingMessage, slackChannelLayer } from "#src/channel";
 
 const settings = {
   ownerId: "U123",
@@ -108,4 +112,57 @@ test("caps file counts and names without dropping the message", () => {
 
   expect(message?.attachments).toHaveLength(10);
   expect(message?.attachments?.[0]?.name).toHaveLength(1024);
+});
+
+describe("slackChannelLayer", () => {
+  test("when Slack acknowledges a later event, clears the earlier acknowledgement error", async () => {
+    const started = Promise.withResolvers<SocketModeClient>();
+
+    const api = spyOn(WebClient.prototype, "apiCall").mockImplementation(async (method) => {
+      if (method !== "auth.test") throw new Error("Unexpected Slack request");
+
+      return { ok: true, team_id: settings.teamId, user_id: "U999" };
+    });
+
+    const start = spyOn(SocketModeClient.prototype, "start").mockImplementation(async function (
+      this: SocketModeClient,
+    ) {
+      this.emit("connected");
+      started.resolve(this);
+
+      return { ok: true };
+    });
+
+    const disconnect = spyOn(SocketModeClient.prototype, "disconnect").mockResolvedValue();
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const channel = yield* MessagingChannel;
+          const socket = yield* Effect.promise(() => started.promise);
+          const input = { type: "events_api", body: { team_id: settings.teamId, event } };
+
+          socket.emit("slack_event", {
+            ...input,
+            ack: async () => {
+              throw new Error("Disconnected");
+            },
+          });
+          yield* Effect.promise(() => setImmediate());
+          expect(yield* channel.status).toHaveProperty(
+            "error",
+            "Slack event acknowledgement failed.",
+          );
+
+          socket.emit("slack_event", { ...input, ack: async () => undefined });
+          yield* Effect.promise(() => setImmediate());
+          expect(yield* channel.status).toHaveProperty("error", null);
+        }).pipe(Effect.provide(slackChannelLayer(settings))),
+      );
+    } finally {
+      disconnect.mockRestore();
+      start.mockRestore();
+      api.mockRestore();
+    }
+  });
 });
