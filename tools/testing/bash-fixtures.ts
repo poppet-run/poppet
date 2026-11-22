@@ -6,5 +6,6 @@ export const bashFixtures = {
   background: "sleep 10 & echo $!",
   cancellation: "echo $$ > pid; sleep 30",
   environment: 'printf \'%s|%s|%s\' "$POPPET_TEST_KEY" "$CDPATH" "${PATH:+present}"',
+  detachedPipe: "perl -MPOSIX -e 'POSIX::setsid(); select(undef,undef,undef,3);' & wait",
   missingDirectory: "echo unwanted",
 };

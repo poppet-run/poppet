@@ -44,6 +44,8 @@ Each invocation has its own process group. Timeout and cancellation kill that
 group, and background children are also stopped when Bash exits. To manage a
 persistent service, use the machine's service manager rather than `command &`.
 Processes that deliberately detach from the group are outside that cleanup guarantee.
+Poppet closes its output pipes on timeout or cancellation, even if a detached
+process still has them open.
 
 ## Messaging approval
 
