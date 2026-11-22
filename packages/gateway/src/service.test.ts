@@ -1425,7 +1425,8 @@ describe.concurrent("Gateway", () => {
           expect(yield* gateway.deliverNext).toBe(false);
           expect(
             (yield* (yield* TaskDeliveries).forOccurrence(occurrence.id)).map((part) => part.state),
-          ).toEqual(["uncertain", "pending"]);
+          ).toEqual(["uncertain", "failed"]);
+          expect((yield* (yield* GatewayRepository).status()).pendingDelivery).toBe(0);
           expect((yield* (yield* TaskRepository).occurrence(occurrence.id)).status).toBe(
             "completed",
           );
@@ -2419,6 +2420,10 @@ describe.concurrent("Gateway", () => {
           yield* gateway.deliverNext;
           yield* gateway.deliverNext;
           expect(yield* gateway.deliverNext).toBe(false);
+          expect((yield* (yield* GatewayRepository).status()).pendingDelivery).toBe(0);
+          const states = yield* sql<{ readonly state: string }>`
+            SELECT state FROM gateway_deliveries ORDER BY position`;
+          expect(states.map((row) => row.state)).toEqual(["sent", "uncertain", "failed"]);
         }),
       );
       expect(attempts).toBe(2);
