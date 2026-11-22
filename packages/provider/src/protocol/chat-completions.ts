@@ -126,14 +126,13 @@ const chatMessages = (
     if (message.role === "user")
       messages.push({
         role: "user",
-        content:
-          message.attachments === undefined
-            ? message.text
-            : userParts(description, request, message).map((part) =>
-                part.type === "text"
-                  ? { type: "text", text: part.text }
-                  : { type: "image_url", image_url: { url: part.url } },
-              ),
+        content: !message.attachments?.length
+          ? message.text
+          : userParts(description, request, message).map((part) =>
+              part.type === "text"
+                ? { type: "text", text: part.text }
+                : { type: "image_url", image_url: { url: part.url } },
+            ),
       });
     else if (message.role === "tool")
       messages.push({ role: "tool", tool_call_id: message.callId, content: message.output });

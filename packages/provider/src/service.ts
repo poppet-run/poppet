@@ -98,6 +98,11 @@ export const validateRequest = (description: ModelDescription, request: ModelReq
 
     const contents = new Map(decoded.attachments?.map((content) => [content.id, content]));
 
+    if (contents.size !== (decoded.attachments?.length ?? 0))
+      return yield* Effect.fail(
+        invalidRequest(description.provider, "Attachment content IDs must be unique."),
+      );
+
     for (const message of decoded.messages) {
       if (message.role !== "user") continue;
 
