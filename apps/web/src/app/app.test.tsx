@@ -46,7 +46,7 @@ const flush = () =>
     await new Promise((resolve) => setTimeout(resolve, 5));
   });
 
-test("renders Markdown without executable HTML, tracking images or script URLs", async () => {
+test("when Markdown contains links and interactive HTML, renders safe links and removes controls", async () => {
   const { Markdown } = await import("../components/chat/transcript/markdown");
   const root = document.createElement("div");
   document.body.append(root);
@@ -56,7 +56,7 @@ test("renders Markdown without executable HTML, tracking images or script URLs",
       render(
         <Markdown
           text={
-            '# Hello\n\n**World**\n\n<script>window.hacked=true</script><img src="https://tracker.test/pixel" onerror="alert(1)"><a href="javascript:alert(1)">click</a>'
+            '# Hello\n\n**World**\n\n<script>window.hacked=true</script><img src="https://tracker.test/pixel" onerror="alert(1)"><a href="javascript:alert(1)">click</a>\n\n[Read more](https://example.com)\n\n<textarea>spoof</textarea><fieldset><label>Choose<select><option>One</option></select></label></fieldset><dialog open>Message</dialog><meter value="1"></meter><progress></progress>'
           }
         />,
         root,
@@ -67,6 +67,13 @@ test("renders Markdown without executable HTML, tracking images or script URLs",
     expect(root.querySelector("strong")?.textContent).toBe("World");
     expect(root.querySelector("script, img, [onerror]")).toBeNull();
     expect(root.querySelector("a")?.getAttribute("href")).toBeNull();
+    const link = root.querySelector("a[href]");
+
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(
+      root.querySelector("textarea, select, option, fieldset, label, dialog, meter, progress"),
+    ).toBeNull();
   } finally {
     render(null, root);
     root.remove();
