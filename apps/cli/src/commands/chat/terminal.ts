@@ -625,7 +625,12 @@ export const openChatTerminal = Effect.gen(function* () {
       process.stdin.off("end", stop);
       process.stdout.off("resize", terminal.repaint);
       process.stdout.off("error", failure);
-      process.stdin.setRawMode(wasRaw);
+
+      try {
+        process.stdin.setRawMode(wasRaw);
+      } catch {
+        // The PTY may have hung up before the finalizer runs.
+      }
 
       if (wasFlowing !== true) process.stdin.pause();
       terminal.close();

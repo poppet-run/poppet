@@ -435,8 +435,8 @@ describe("ChatTerminal", () => {
   });
 });
 
-test.each(["cancel", "exit", "eof", "empty"])(
-  "a real terminal restores raw mode, listeners, and screen after %s",
+test.each(["cancel", "exit", "eof", "empty", "raw mode restore error"])(
+  "when a real terminal closes after %s, restores listeners and screen",
   async (mode) => {
     let transcript = "";
     let submitted = false;
@@ -452,6 +452,14 @@ test.each(["cancel", "exit", "eof", "empty"])(
     import { openChatTerminal } from "./terminal.ts";
     const before = process.stdin.listenerCount("data");
     let interrupted = false;
+    if (${JSON.stringify(mode)} === "raw mode restore error") {
+      const setRawMode = process.stdin.setRawMode.bind(process.stdin);
+      process.stdin.setRawMode = (raw) => {
+        const input = setRawMode(raw);
+        if (!raw) throw new Error("PTY closed");
+        return input;
+      };
+    }
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const { terminal, stopped } = yield* openChatTerminal;
       const chat = Effect.gen(function* () {
@@ -480,7 +488,13 @@ test.each(["cancel", "exit", "eof", "empty"])(
             if (!submitted && transcript.includes("/attach <path>")) {
               submitted = true;
               terminal.write(
-                { exit: "/exit\r", eof: "\u0004", empty: "\u0004", cancel: "Hello\r" }[mode]!,
+                {
+                  exit: "/exit\r",
+                  eof: "\u0004",
+                  empty: "\u0004",
+                  cancel: "Hello\r",
+                  "raw mode restore error": "/exit\r",
+                }[mode]!,
               );
             }
 
