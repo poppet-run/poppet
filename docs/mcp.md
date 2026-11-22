@@ -153,8 +153,11 @@ documents and unattended grants are unsupported.
 
 Tokens live in `<data directory>/auth/mcp-oauth-<id>.json`, protected like API
 keys and bound to the configured URL: changing the URL requires a new sign-in.
-Discovery, registration, and token requests use HTTPS (plain HTTP only to
-loopback) and the same size cap as MCP messages. Access tokens are redacted
+Discovery, registration, and token requests use public HTTPS. Plain HTTP
+OAuth endpoints are allowed for loopback MCP servers only. A
+`WWW-Authenticate` resource metadata URL must share the MCP server's origin
+unless you set `oauth.resourceMetadataUrl` explicitly. Poppet validates the
+browser authorization destination before opening it. Access tokens are redacted
 from results and rejected in tool definitions.
 
 A run never opens a browser. When the server rejects an access token, Poppet

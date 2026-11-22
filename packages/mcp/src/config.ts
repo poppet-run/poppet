@@ -80,6 +80,7 @@ export const MCPStdioServer = Schema.Struct({
 const Scope = Schema.String.check(Schema.isPattern(/^[!#-[\]-~]{1,256}$/));
 
 const OAuth = Schema.Struct({
+  resourceMetadataUrl: Schema.optionalKey(Endpoint),
   clientId: Schema.optionalKey(Text),
   clientSecret: Schema.optionalKey(Schema.Struct({ credential: Id })),
   scopes: Schema.optionalKey(Schema.Array(Scope).check(Schema.isMaxLength(32))),
