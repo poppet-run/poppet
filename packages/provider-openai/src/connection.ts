@@ -69,49 +69,78 @@ export class ConnectionError extends Data.TaggedError("ConnectionError")<{
   readonly requestId?: string | undefined;
 }> {}
 
+const authenticationCodes = new Set([
+  "subscription_sharing_invalid_user",
+  "invalid_grant",
+  "invalid_refresh_token",
+  "token_expired",
+  "refresh_token_expired",
+  "refresh_token_invalidated",
+  "refresh_token_invalid",
+  "refresh_token_reused",
+]);
+
+const temporaryCodes = new Set([
+  "subscription_sharing_usage_unavailable",
+  "subscription_sharing_user_unavailable",
+]);
+
+export type ChatGPTClassification =
+  | "usage_limit"
+  | "ineligible"
+  | "reconnect"
+  | "temporary"
+  | "context_limit"
+  | "permission";
+
+export const classifyChatGPTError = (
+  status?: number,
+  code?: string | null,
+): ChatGPTClassification | null => {
+  const normalized = code ?? "";
+
+  if (normalized === "subscription_sharing_usage_limit_exceeded") return "usage_limit";
+
+  if (normalized === "subscription_sharing_user_not_eligible") return "ineligible";
+
+  if (status === 401 || authenticationCodes.has(normalized)) return "reconnect";
+
+  if ((status !== undefined && status >= 500) || status === 429 || temporaryCodes.has(normalized))
+    return "temporary";
+
+  if (normalized === "context_length_exceeded") return "context_limit";
+
+  if (status === 403) return "permission";
+
+  return null;
+};
+
 export const requestFailure = (
   status: number,
   rawCode: string | null = null,
   requestId: string | null = null,
 ) => {
   const code = safeIdentifier(rawCode);
+  const classified = classifyChatGPTError(status, code);
   let reason: ConnectionFailure = "unsupported";
 
   let message =
     "OpenAI rejected the request. Check the account permissions and request configuration.";
 
-  if (code === "subscription_sharing_usage_limit_exceeded") {
+  if (classified === "usage_limit") {
     reason = "usage_limit";
     message =
       "ChatGPT plan usage is limited. Review https://chatgpt.com/settings/usage before retrying.";
-  } else if (code === "subscription_sharing_user_not_eligible") {
+  } else if (classified === "ineligible") {
     reason = "ineligible";
     message = "ChatGPT plan usage is unavailable for this account, workspace, or policy.";
-  } else if (
-    status === 401 ||
-    [
-      "subscription_sharing_invalid_user",
-      "invalid_grant",
-      "invalid_refresh_token",
-      "token_expired",
-      "refresh_token_expired",
-      "refresh_token_invalidated",
-      "refresh_token_invalid",
-      "refresh_token_reused",
-    ].includes(code ?? "")
-  ) {
+  } else if (classified === "reconnect") {
     reason = "reconnect";
     message = "The ChatGPT connection needs a new sign-in. Run poppet provider login.";
-  } else if (
-    status >= 500 ||
-    status === 429 ||
-    ["subscription_sharing_usage_unavailable", "subscription_sharing_user_unavailable"].includes(
-      code ?? "",
-    )
-  ) {
+  } else if (classified === "temporary") {
     reason = "temporary";
     message = "OpenAI is temporarily unavailable. Credentials were retained; retry later.";
-  } else if (code === "context_length_exceeded") {
+  } else if (classified === "context_limit") {
     reason = "context_limit";
     message = "The request exceeded the model context limit.";
   }

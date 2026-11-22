@@ -4,7 +4,7 @@ import {
   type RemoteReason,
 } from "@poppet/provider/protocol";
 
-import { ConnectionError } from "#src/connection";
+import { classifyChatGPTError, ConnectionError } from "#src/connection";
 
 export const providerFailure = (error: ConnectionError) => {
   const reasons = {
@@ -55,32 +55,18 @@ export const connectionFailure = (error: ProviderError) => {
   });
 };
 
-const authenticationCodes = new Set([
-  "subscription_sharing_invalid_user",
-  "invalid_grant",
-  "invalid_refresh_token",
-  "token_expired",
-  "refresh_token_expired",
-  "refresh_token_invalidated",
-  "refresh_token_invalid",
-  "refresh_token_reused",
-]);
+export const chatGPTReason: RemoteReason = (status, code) => {
+  const classified = classifyChatGPTError(status, code);
 
-const temporaryCodes = new Set([
-  "subscription_sharing_usage_unavailable",
-  "subscription_sharing_user_unavailable",
-]);
+  if (classified === "usage_limit") return "quota";
 
-export const chatGPTReason: RemoteReason = (status, code = "") => {
-  if (code === "subscription_sharing_usage_limit_exceeded") return "quota";
+  if (classified === "ineligible" || classified === "permission") return "permission";
 
-  if (code === "subscription_sharing_user_not_eligible") return "permission";
+  if (classified === "reconnect") return "authentication";
 
-  if (status === 401 || authenticationCodes.has(code)) return "authentication";
+  if (classified === "temporary") return status === 429 ? "rate-limit" : "temporary";
 
-  if (temporaryCodes.has(code) && status !== 429) return "temporary";
-
-  if (status === 403) return "permission";
+  if (classified === "context_limit") return "context-limit";
 
   return undefined;
 };

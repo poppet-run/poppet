@@ -7,7 +7,12 @@ import {
   type ModelDescription,
   type ProviderOperations,
 } from "@poppet/provider";
-import { openAIClient, fetchModelCatalog, chatCompletionsModel } from "@poppet/provider/protocol";
+import {
+  openAIClient,
+  fetchModelCatalog,
+  createCatalogCache,
+  chatCompletionsModel,
+} from "@poppet/provider/protocol";
 import { Effect, Option, Redacted, Schema } from "effect";
 
 import { routerFailure, routerOptions } from "#src/protocol";
@@ -72,12 +77,14 @@ const describeModel = (model: typeof CatalogModel.Type): ModelDescription => {
   };
 };
 
+const catalogCache = createCatalogCache<typeof CatalogModel.Type>();
+
 export const makeOpenRouterProvider = (
   key: Effect.Effect<Redacted.Redacted<string>, ProviderError>,
   http: HttpFetch = fetch,
   baseUrl = "https://openrouter.ai/api/v1",
 ): ProviderOperations => {
-  const catalog = fetchModelCatalog({
+  const load = fetchModelCatalog({
     provider: "openrouter",
     label: "OpenRouter",
     url: `${baseUrl}/models`,
@@ -101,12 +108,14 @@ export const makeOpenRouterProvider = (
     }),
   );
 
+  const readCatalog = catalogCache({ http, key: baseUrl, load });
+
   return {
     id: "openrouter",
-    models: catalog.pipe(Effect.map((models) => models.map(describeModel))),
+    models: readCatalog().pipe(Effect.map((models) => models.map(describeModel))),
     resolve: (modelId) =>
       Effect.gen(function* () {
-        const models = yield* catalog;
+        const models = yield* readCatalog(modelId);
         const selected = models.find((model) => model.id === modelId);
 
         if (!selected)

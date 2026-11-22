@@ -669,4 +669,45 @@ describe("makeOpenRouterProvider", () => {
       expect(cancelled).toBe(true);
     },
   );
+
+  test("when resolving models repeatedly, caches catalog lookups for 60 seconds and does not cache errors", async () => {
+    let reads = 0;
+    let fail = true;
+
+    const http: HttpFetch = async () => {
+      reads++;
+
+      return fail
+        ? Response.json({ error: { message: "down" } }, { status: 503 })
+        : Response.json({ data: [catalogEntry("vendor/model")] });
+    };
+
+    const provider = makeOpenRouterProvider(
+      Effect.succeed(Redacted.make("router-test-secret")),
+      http,
+      "https://router.invalid/api/v1",
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        expect(yield* provider.resolve("vendor/model").pipe(Effect.isFailure)).toBe(true);
+        fail = false;
+        yield* Effect.all([provider.resolve("vendor/model"), provider.resolve("vendor/model")], {
+          concurrency: 2,
+        });
+        expect(reads).toBe(2);
+
+        yield* TestClock.adjust("59999 millis");
+        yield* provider.resolve("vendor/model");
+        expect(reads).toBe(2);
+
+        yield* TestClock.adjust("1 millis");
+        yield* provider.resolve("vendor/model");
+        expect(reads).toBe(3);
+
+        yield* provider.models;
+        expect(reads).toBe(4);
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+  });
 });

@@ -260,4 +260,29 @@ describe("makeOpenCodeProvider", () => {
     });
     expect(harness.requests).toHaveLength(0);
   });
+
+  test("when resolving models repeatedly, caches catalog lookups for 60 seconds and refreshes on expiry or explicit listing", async () => {
+    const harness = fixture();
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* Effect.all(
+          [harness.provider.resolve("glm-5.3"), harness.provider.resolve("glm-5.3")],
+          { concurrency: 2 },
+        );
+        expect(harness.catalogReads()).toBe(1);
+
+        yield* TestClock.adjust("59999 millis");
+        yield* harness.provider.resolve("gpt-6-luna");
+        expect(harness.catalogReads()).toBe(1);
+
+        yield* TestClock.adjust("1 millis");
+        yield* harness.provider.resolve("glm-5.3");
+        expect(harness.catalogReads()).toBe(2);
+
+        yield* harness.provider.models;
+        expect(harness.catalogReads()).toBe(3);
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+  });
 });

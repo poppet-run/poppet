@@ -15,4 +15,8 @@ export {
   type RemoteReason,
 } from "#src/protocol/errors";
 
-export { openAIClient, fetchModelCatalog } from "#src/protocol/openai-compatible";
+export {
+  openAIClient,
+  fetchModelCatalog,
+  createCatalogCache,
+} from "#src/protocol/openai-compatible";
