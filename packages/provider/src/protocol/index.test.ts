@@ -576,6 +576,31 @@ for (const adapter of cases) {
       expect(harness.requests).toHaveLength(0);
     });
 
+    if (adapter.protocol === "chat-completions") {
+      test("when assistant history contains only text, omits tool calls from the request", async () => {
+        const harness = fixture(adapter, "text");
+
+        await Effect.runPromise(
+          completeModel(harness.model, {
+            ...request,
+            messages: [
+              ...request.messages,
+              {
+                role: "assistant",
+                output: [{ type: "text", text: "Earlier answer" }],
+                continuation: null,
+              },
+            ],
+          }),
+        );
+
+        expect(harness.requests[0]?.messages).toContainEqual({
+          role: "assistant",
+          content: "Earlier answer",
+        });
+      });
+    }
+
     test("when a user message has attachments, sends its text, image, and labelled file in order", async () => {
       const harness = fixture(adapter, "text", 200, "request_failed", true);
 

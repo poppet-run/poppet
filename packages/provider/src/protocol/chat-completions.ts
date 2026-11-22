@@ -155,7 +155,7 @@ const chatMessages = (
       let assistant: ChatCompletionAssistantMessageParam = {
         role: "assistant",
         content: outputText(message.output),
-        tool_calls: toolCalls,
+        ...(toolCalls.length > 0 && { tool_calls: toolCalls }),
       };
 
       if (message.continuation !== null)
