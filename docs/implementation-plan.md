@@ -2,10 +2,9 @@
 
 [Documentation index](README.md)
 
-Phases 30–36 are planned only. Plans do not authorize implementation.
-
-Implemented work has no phase page. Use the linked guides for current behavior,
-setup, and validation. Git history retains delivery plans and validation records.
+Planned work is tracked as GitHub issues, one per phase, and plans do not
+authorize implementation. Use the linked guides for current behavior, setup,
+and validation. Git history retains earlier delivery plans and validation records.
 
 The remaining priorities are calendar briefing and weekly review trials using existing tools. The [doctor command](doctor.md) now
 provides local inspection and bounded worker summaries; its guide documents
@@ -29,13 +28,13 @@ See [storage](storage.md#schema-and-saved-records),
 
 ## Phases
 
-- [Phase 30: Calendar briefings and weekly reviews](phases/30.md)
-- [Phase 31: Summaries of trimmed conversation history](phases/31.md)
-- [Phase 32: Host commands in an isolated container](phases/32.md)
-- [Phase 33: Trusted time for scheduled runs](phases/33.md)
-- [Phase 34: Model and reasoning selection for new sessions](phases/34.md)
-- [Phase 35: iOS app for chat and worker management](phases/35.md)
-- [Phase 36: Multiple instances of one messaging adapter](phases/36.md)
+- Phase 30: Calendar briefings and weekly reviews ([#137](https://github.com/poppet-run/poppet/issues/137))
+- Phase 31: Summaries of trimmed conversation history ([#138](https://github.com/poppet-run/poppet/issues/138))
+- Phase 32: Host commands in an isolated container ([#139](https://github.com/poppet-run/poppet/issues/139))
+- Phase 33: Trusted time for scheduled runs ([#140](https://github.com/poppet-run/poppet/issues/140))
+- Phase 34: Model and reasoning selection for new sessions ([#141](https://github.com/poppet-run/poppet/issues/141))
+- Phase 35: iOS app for chat and worker management ([#142](https://github.com/poppet-run/poppet/issues/142))
+- Phase 36: Multiple instances of one messaging adapter ([#145](https://github.com/poppet-run/poppet/issues/145))
 
 ## Validation
 
