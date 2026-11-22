@@ -185,6 +185,15 @@ export const conversation = Effect.gen(function* () {
               tool.definition.name === call.name && tool.definition.namespace === call.namespace,
           );
 
+        const withdrawnError = (tool: AgentTool) =>
+          new AgentError({
+            reason: tool.external?.reviewed === true ? "mcp-denied" : "tool-permission",
+            message:
+              tool.external?.reviewed === true
+                ? "Reviewed MCP tools are disabled after untrusted content enters this run. Ask for the action and target in a fresh owner message."
+                : "This tool is disabled after untrusted content entered this run. Propose the action and ask the owner to confirm it in a new message.",
+          });
+
         const prepareTool = (call: ToolCall) =>
           Effect.gen(function* () {
             const tool = findTool(call);
@@ -198,13 +207,7 @@ export const conversation = Effect.gen(function* () {
               );
 
             if (untrusted && tool.withdrawnWhenUntrusted)
-              return yield* Effect.fail(
-                new AgentError({
-                  reason: tool.external?.reviewed === true ? "mcp-denied" : "tool-permission",
-                  message:
-                    "This tool is disabled after untrusted content entered this run. Propose the action and ask the owner to confirm it in a new message.",
-                }),
-              );
+              return yield* Effect.fail(withdrawnError(tool));
 
             return {
               callId: call.callId,
@@ -482,6 +485,23 @@ export const conversation = Effect.gen(function* () {
         const executeBatch = (planned: ReadonlyArray<PlannedCall>) =>
           Effect.gen(function* () {
             for (const { callId, tool, prepared } of planned) {
+              if (untrusted && tool.withdrawnWhenUntrusted) {
+                const error = withdrawnError(tool);
+                const output = failureReply(error.reason, error.message);
+
+                yield* store.finishToolCall(run.id, callId, {
+                  status: "failed",
+                  reason: failureReason(error),
+                  output,
+                });
+
+                if (tool.external?.reviewed === true) return yield* Effect.fail(error);
+
+                current.push({ role: "tool", callId, output });
+                callsUsed++;
+                continue;
+              }
+
               const guard = (output: string) => {
                 const needed = contextSize(
                   [...current, { role: "tool", callId, output }],
