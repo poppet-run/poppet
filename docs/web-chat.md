@@ -133,7 +133,8 @@ proxy, the last `X-Forwarded-For` address identifies the client. Poppet keeps at
 
 The web API exposes chat operations. It does not expose provider credentials,
 provider continuation data, or the worker's general command endpoint. The browser
-sanitizes Markdown and removes inline images. The worker saves submission receipts
+sanitizes Markdown, removes inline images and interactive controls, and opens
+links in a new tab. The worker saves submission receipts
 in SQLite and tracks their schema migrations separately.
 
 The event stream checks for changes twice per second. When something changes, it
