@@ -41,3 +41,37 @@ test("download limits use received bytes even when declared size is smaller", as
     ),
   ).rejects.toThrow("larger");
 });
+
+test("when an attachment URL contains a port or userinfo or returns non-OK/3xx, rejects it and cancels the response body", async () => {
+  let cancelled = 0;
+
+  const download = boundedAttachment(
+    async () =>
+      new Response(
+        new ReadableStream({
+          cancel() {
+            cancelled++;
+          },
+        }),
+        { status: 500 },
+      ),
+    new Set(["files.slack.com"]),
+    "Slack",
+  );
+
+  for (const ref of [
+    "https://files.slack.com:8443/file",
+    "https://user@files.slack.com/file",
+    "https://user:pass@files.slack.com/file",
+  ])
+    await expect(
+      Effect.runPromise(download({ id: "F123", name: "note.txt", ref }, 10)),
+    ).rejects.toThrow("not hosted");
+
+  await expect(
+    Effect.runPromise(
+      download({ id: "F123", name: "note.txt", ref: "https://files.slack.com/file" }, 10),
+    ),
+  ).rejects.toMatchObject({ reason: "unavailable" });
+  expect(cancelled).toBe(1);
+});

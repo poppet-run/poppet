@@ -31,7 +31,14 @@ export const boundedAttachment =
       try: async (signal) => {
         const url = URL.parse(attachment.ref);
 
-        if (url === null || url.protocol !== "https:" || !hosts.has(url.hostname))
+        if (
+          url === null ||
+          url.protocol !== "https:" ||
+          url.port !== "" ||
+          url.username !== "" ||
+          url.password !== "" ||
+          !hosts.has(url.hostname)
+        )
           throw refused(`the file is not hosted by ${label}.`);
 
         if ((attachment.size ?? 0) > maxBytes) throw tooLarge(maxBytes);
@@ -42,10 +49,15 @@ export const boundedAttachment =
           signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]),
         });
 
-        if (response.status >= 300 && response.status < 400)
+        if (response.status >= 300 && response.status < 400) {
+          await response.body?.cancel().catch(() => {});
           throw refused(`${label} redirected the download.`);
+        }
 
-        if (!response.ok || response.body === null) throw unavailable();
+        if (!response.ok || response.body === null) {
+          await response.body?.cancel().catch(() => {});
+          throw unavailable();
+        }
 
         const chunks: Uint8Array[] = [];
         let received = 0;
