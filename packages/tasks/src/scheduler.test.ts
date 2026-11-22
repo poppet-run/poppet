@@ -908,6 +908,8 @@ describe.concurrent("makeTaskWorker", () => {
           expect(state.errors).toEqual([expect.stringContaining(`task=${broken.id}`)]);
           expect(state.lines).toHaveLength(5);
           expect(yield* repo.skips(job.id)).toHaveLength(4);
+          expect((yield* repo.task(job.id)).nextAt).toBe(start + 12 * 60_000);
+          expect((yield* repo.task(broken.id)).paused).toBe(1);
         }),
       );
     } finally {

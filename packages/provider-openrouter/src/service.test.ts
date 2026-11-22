@@ -111,7 +111,10 @@ const toolResponse = (body: Schema.JsonObject) => {
         {
           index: 0,
           delta: {
-            reasoning_details: details.slice(1),
+            reasoning_details: [
+              { ...details[1], format: null, index: null, data: null, summary: null },
+              ...details.slice(2),
+            ],
             tool_calls: [{ index: 0, function: { arguments: args.slice(5) } }],
           },
           finish_reason: "tool_calls",
@@ -216,7 +219,7 @@ describe("makeOpenRouterProvider", () => {
     expect(signals[0]?.aborted).toBe(true);
   });
 
-  test("when discovering models without credentials, returns concrete text models and catalog capabilities", async () => {
+  test("when a public catalog contains malformed or unsupported entries, lists concrete models and their capabilities", async () => {
     const harness = fixture([
       catalogEntry("vendor/model"),
       catalogEntry("vendor/text-only", ["max_completion_tokens"], ["text"], "GPT", ["text"]),
@@ -226,6 +229,7 @@ describe("makeOpenRouterProvider", () => {
       catalogEntry("~vendor/latest"),
       catalogEntry("vendor/image", [], ["image"]),
       catalogEntry("vendor/multimodal-output", [], ["text", "image"]),
+      { id: "vendor/malformed" },
     ]);
 
     const models = await Effect.runPromise(harness.provider.models);
@@ -252,6 +256,10 @@ describe("makeOpenRouterProvider", () => {
         },
       ],
     ]);
+
+    expect((await Effect.runPromise(harness.provider.resolve("vendor/model"))).description.id).toBe(
+      "vendor/model",
+    );
 
     await Promise.all(
       ["openrouter/auto", "vendor/router", "absent/model"].map((id) =>
@@ -321,7 +329,7 @@ describe("makeOpenRouterProvider", () => {
     },
   );
 
-  test("when tools round-trip, preserves the full reasoning sequence and explicit routing", async () => {
+  test("when tools round-trip with partial reasoning fragments, preserves signed blocks and explicit routing", async () => {
     const harness = fixture();
     const model = await Effect.runPromise(harness.provider.resolve("vendor/model"));
     expect(harness.keyReads()).toBe(0);
@@ -661,14 +669,4 @@ describe("makeOpenRouterProvider", () => {
       expect(cancelled).toBe(true);
     },
   );
-});
-
-describe("makeOpenRouterProvider", () => {
-  test("when one catalog entry is malformed, still lists and resolves supported models", async () => {
-    const { provider } = fixture([{ id: "vendor/malformed" }, catalogEntry("vendor/model")]);
-    expect((await Effect.runPromise(provider.models)).map((model) => model.id)).toEqual([
-      "vendor/model",
-    ]);
-    expect(await Effect.runPromise(provider.resolve("vendor/model"))).toBeDefined();
-  });
 });
