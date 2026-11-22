@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { AppConfig } from "@poppet/config";
 import { readBoundedText, readProtectedFile } from "@poppet/io";
-import { Cause, Context, Effect, Exit, Layer, Option, Schema } from "effect";
+import { Cause, Context, Data, Effect, Exit, Layer, Option, Schema } from "effect";
 
 import { WebChatLive, SubmissionBody, WebChatError, WebChat } from "#src/commands/web-chat/chat";
 
@@ -325,6 +325,10 @@ export const webHandler = (
   };
 };
 
+class WebChatStartError extends Data.TaggedError("WebChatStartError")<{
+  readonly message: string;
+}> {}
+
 export const serveWebChat = Effect.gen(function* () {
   const config = yield* AppConfig;
 
@@ -334,7 +338,10 @@ export const serveWebChat = Effect.gen(function* () {
         maxBytes: 4096,
         privateOnly: true,
       }),
-    catch: () => new Error("Cannot read web.json. Use an owner-only regular file with mode 600."),
+    catch: () =>
+      new WebChatStartError({
+        message: "Cannot read web.json. Use an owner-only regular file with mode 600.",
+      }),
   });
 
   if (text === null) return;
@@ -343,7 +350,10 @@ export const serveWebChat = Effect.gen(function* () {
     onExcessProperty: "error",
   })(text).pipe(
     Effect.mapError(
-      () => new Error("Invalid web.json. Set origin, hostname, port and accessKeyHash."),
+      () =>
+        new WebChatStartError({
+          message: "Invalid web.json. Set origin, hostname, port and accessKeyHash.",
+        }),
     ),
   );
 
@@ -365,7 +375,10 @@ export const serveWebChat = Effect.gen(function* () {
 
       return files;
     },
-    catch: () => new Error("Build the web app first with bun run --cwd apps/web build."),
+    catch: () =>
+      new WebChatStartError({
+        message: "Build the web app first with bun run --cwd apps/web build.",
+      }),
   });
 
   const services = yield* Layer.build(WebChatLive);
@@ -391,7 +404,7 @@ export const serveWebChat = Effect.gen(function* () {
             return response;
           },
         }),
-      catch: () => new Error("Could not start the web chat listener."),
+      catch: () => new WebChatStartError({ message: "Could not start the web chat listener." }),
     }),
     (server) => Effect.promise(() => server.stop(true)),
   );

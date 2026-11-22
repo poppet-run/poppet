@@ -64,7 +64,7 @@ const fixture = async (toolBytes = 16384) => {
           yield* TestClock.setTime(now);
 
           return yield* program;
-        }).pipe(Effect.provide(layer), Effect.provide(TestClock.layer())),
+        }).pipe(Effect.provide(layer.pipe(Layer.provideMerge(TestClock.layer())))),
       ),
     close: () => rm(directory, { recursive: true, force: true }),
   };

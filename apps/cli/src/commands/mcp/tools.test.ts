@@ -655,8 +655,7 @@ describe("ExternalAgentToolsLive", () => {
 
             return job.id;
           }).pipe(
-            Effect.provide(state.tasks),
-            Effect.provide(TestClock.layer()),
+            Effect.provide(state.tasks.pipe(Layer.provideMerge(TestClock.layer()))),
             Effect.provideService(Console.Console, { ...console, log: () => {}, error: () => {} }),
           ),
         );

@@ -3,7 +3,7 @@ import { setImmediate } from "node:timers";
 
 import { MessagingChannel } from "@poppet/gateway";
 import { ChannelType, Client, Events, MessageFlags, Options } from "discord.js";
-import { Effect, Option, Redacted, Stream } from "effect";
+import { Effect, Layer, Option, Redacted, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { discordChannelLayer } from "#src/channel";
@@ -527,8 +527,9 @@ describe("discordChannelLayer", () => {
             error: null,
           });
         }).pipe(
-          Effect.provide(discordChannelLayer(settings, () => client)),
-          Effect.provide(TestClock.layer()),
+          Effect.provide(
+            discordChannelLayer(settings, () => client).pipe(Layer.provideMerge(TestClock.layer())),
+          ),
         ),
       );
       expect(login).toHaveBeenCalledTimes(2);

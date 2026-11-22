@@ -476,6 +476,8 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
     );
 
     const exchange = (record: Working, refreshToken: string | undefined) =>
+      // The MCP SDK inspects the original rejection, so it passes through unchanged.
+      // @effect-diagnostics-next-line unknownInEffectCatch:off
       Effect.tryPromise({
         try: async (signal) => {
           if (refreshToken === undefined) {
@@ -580,7 +582,7 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
             }
 
             if (Date.now() >= limit)
-              return yield* Effect.fail(new Error("MCP OAuth refresh timed out."));
+              return yield* new MCPSignInError({ message: "MCP OAuth refresh timed out." });
 
             if (
               current.refreshLease === undefined ||

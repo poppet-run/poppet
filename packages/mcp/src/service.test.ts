@@ -453,7 +453,7 @@ describe("MCP", () => {
             expect((yield* mcp.status)[0]).toMatchObject({ state: "connected", retryAt: null });
             expect((yield* mcp.status)[0]!.pid).not.toBe(first);
           }
-        }).pipe(Effect.provide(state.layer), Effect.provide(TestClock.layer())),
+        }).pipe(Effect.provide(state.layer.pipe(Layer.provideMerge(TestClock.layer())))),
       );
       expect((await state.events()).filter((event) => event.method === "tools/call")).toHaveLength(
         0,

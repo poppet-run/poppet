@@ -34,11 +34,8 @@ export const runWorker = Effect.scoped(
 
     yield* serveWorker(workerSocketPath(config.dataDirectory), (request, body) => {
       if (new URL(request.url).pathname === "/v1/doctor")
-        return (
-          identity === null
-            ? Effect.fail(new Error("Configuration identity unavailable"))
-            : doctorSnapshot(identity)
-        ).pipe(
+        return Effect.fromNullishOr(identity).pipe(
+          Effect.flatMap(doctorSnapshot),
           Effect.provideService(SqlClient.SqlClient, sql),
           Effect.flatMap((snapshot) =>
             messaging.status.pipe(

@@ -1150,7 +1150,8 @@ describe("Store", () => {
       Effect.gen(function* () {
         const store = yield* Store;
         opened.resolve(store);
-        yield* Effect.never;
+
+        return yield* Effect.never;
       }).pipe(Effect.provide(fixtureStore.layer)),
     );
 
