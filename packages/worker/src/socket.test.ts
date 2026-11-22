@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { Console, Deferred, Effect, Fiber } from "effect";
+import { Console, Deferred, Effect, Exit, Fiber, Scope } from "effect";
 
 import { requestWorker, serveWorker } from "#src/socket";
 
@@ -86,6 +86,52 @@ describe("serveWorker", () => {
           }),
         ),
       );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("when starting on a private socket path, protects the parent directory, refuses to clobber a live listener, and rejects unsafe directories on request", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-worker-socket-"));
+    const socketDir = join(directory, "store");
+    const socketPath = join(socketDir, "tasks.sock");
+
+    try {
+      const scope = await Effect.runPromise(Scope.make());
+
+      try {
+        await Effect.runPromise(
+          serveWorker(socketPath, () =>
+            Effect.succeed(Response.json({ ok: true, value: "hi" })),
+          ).pipe(Scope.provide(scope)),
+        );
+
+        expect((await stat(socketDir)).mode & 0o777).toBe(0o700);
+        expect((await stat(socketPath)).mode & 0o777).toBe(0o600);
+
+        const response = await requestWorker(
+          socketPath,
+          "/ping",
+          {},
+          new AbortController().signal,
+        );
+
+        expect(await response?.json()).toEqual({ ok: true, value: "hi" });
+
+        await expect(
+          Effect.runPromise(
+            Effect.scoped(serveWorker(socketPath, () => Effect.succeed(new Response("ok")))),
+          ),
+        ).rejects.toMatchObject({ message: expect.stringContaining("already listening") });
+
+        await chmod(socketDir, 0o755);
+        await expect(
+          requestWorker(socketPath, "/ping", {}, new AbortController().signal),
+        ).rejects.toMatchObject({ message: expect.stringContaining("not protected") });
+        await chmod(socketDir, 0o700);
+      } finally {
+        await Effect.runPromise(Scope.close(scope, Exit.void));
+      }
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

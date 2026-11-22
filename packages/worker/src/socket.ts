@@ -1,8 +1,16 @@
 import { chmod, lstat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+<<<<<<< HEAD
 import { isMissingFile } from "@poppet/io";
 import { Cause, Context, Data, Effect, Exit, Option, Schema, Scope } from "effect";
+||||||| parent of 81bd2fc (Harden worker socket directory checks and live socket ownership)
+import { isMissingFile } from "@poppet/io";
+import { Cause, Context, Data, Effect, Exit, Fiber, Option, Schema, Scope } from "effect";
+=======
+import { ensurePrivateDirectory, isMissingFile } from "@poppet/io";
+import { Cause, Context, Data, Effect, Exit, Fiber, Option, Schema, Scope } from "effect";
+>>>>>>> 81bd2fc (Harden worker socket directory checks and live socket ownership)
 
 export class WorkerRequestError extends Data.TaggedError("WorkerRequestError")<{
   readonly message: string;
@@ -44,6 +52,7 @@ export const requestWorker = async (
     (info.mode & 0o077) !== 0 ||
     !directory.isDirectory() ||
     directory.isSymbolicLink() ||
+    directory.uid !== process.getuid?.() ||
     (directory.mode & 0o077) !== 0
   )
     throw new WorkerRequestError({
@@ -132,6 +141,7 @@ const decodeRequestBody = (request: Request) =>
     catch: () => new WorkerRequestError({ message: "Invalid request body." }),
   }).pipe(Effect.timeout("10 seconds"), Effect.option);
 
+<<<<<<< HEAD
 const scopedBody = (
   body: ReadableStream<Uint8Array>,
   finish: (exit: Exit.Exit<unknown, unknown>) => Promise<void>,
@@ -158,6 +168,22 @@ const scopedBody = (
   });
 };
 
+const isSocketLive = async (path: string) => {
+  try {
+    const response = await fetch("http://localhost/", {
+      unix: path,
+      method: "GET",
+      signal: AbortSignal.timeout(1000),
+    });
+
+    await response.body?.cancel().catch(() => {});
+
+    return true;
+  } catch (cause) {
+    return !Schema.is(UnavailableSocket)(cause);
+  }
+};
+
 export const serveWorker = (path: string, handle: WorkerRequests["Service"]["handle"]) =>
   Effect.acquireRelease(
     Effect.gen(function* () {
@@ -168,6 +194,12 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
 
       return yield* Effect.tryPromise({
         try: async () => {
+          await ensurePrivateDirectory(dirname(path)).catch(() => {
+            throw new WorkerRequestError({
+              message: "The worker socket directory is not protected.",
+            });
+          });
+
           const info = await lstat(path).catch((cause: unknown) => {
             if (isMissingFile(cause)) return null;
             throw cause;
@@ -178,6 +210,12 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
               throw new WorkerRequestError({
                 message: "Refusing to replace a non-socket worker endpoint.",
               });
+
+            if (await isSocketLive(path))
+              throw new WorkerRequestError({
+                message: "Another worker is already listening on this socket.",
+              });
+
             await unlink(path);
           }
 
@@ -258,16 +296,19 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
 
           Object.assign(options, { idleTimeout: 0 });
           const server = Bun.serve(options);
+          let bound: { readonly dev: number; readonly ino: number };
 
           try {
             await chmod(path, 0o600);
+            const stat = await lstat(path);
+            bound = { dev: stat.dev, ino: stat.ino };
           } catch (cause) {
             await server.stop(true);
-            await unlink(path);
+            await unlink(path).catch(() => {});
             throw cause;
           }
 
-          return server;
+          return { server, bound };
         },
         catch: (cause) =>
           cause instanceof WorkerRequestError
@@ -275,11 +316,18 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
             : new WorkerRequestError({ message: "Could not open the local worker socket." }),
       });
     }),
-    (server) =>
+    ({ server, bound }) =>
       Effect.promise(async () => {
         await server.stop(true);
-        await unlink(path).catch((cause: unknown) => {
-          if (!isMissingFile(cause)) throw cause;
+
+        const current = await lstat(path).catch((cause: unknown) => {
+          if (isMissingFile(cause)) return null;
+          throw cause;
         });
+
+        if (current !== null && current.dev === bound.dev && current.ino === bound.ino)
+          await unlink(path).catch((cause: unknown) => {
+            if (!isMissingFile(cause)) throw cause;
+          });
       }),
   );
