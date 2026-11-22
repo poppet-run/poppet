@@ -1,11 +1,36 @@
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fchmodSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  type Stats,
+} from "node:fs";
 import { chmod, lstat, mkdir, open, rename, unlink, type FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import { Schema } from "effect";
 
 export const isMissingFile = Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }));
+
+const isOwnedPrivateDirectory = (info: Stats, strict: boolean) =>
+  info.isDirectory() &&
+  !info.isSymbolicLink() &&
+  info.uid === process.getuid?.() &&
+  (!strict || (info.mode & 0o077) === 0);
+
+const isOwnedProtectedFile = (
+  info: Stats,
+  options: { readonly ownerWriteOnly?: boolean; readonly privateOnly?: boolean },
+) =>
+  info.isFile() &&
+  info.nlink === 1 &&
+  info.uid === process.getuid?.() &&
+  (!options.ownerWriteOnly || (info.mode & 0o022) === 0) &&
+  (!options.privateOnly || (info.mode & 0o077) === 0);
 
 export const ensurePrivateDirectory = async (
   path: string,
@@ -20,18 +45,20 @@ export const ensurePrivateDirectory = async (
 
   if (info === null) return false;
 
-  if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.())
-    throw new Error("Invalid private directory");
+  if (!isOwnedPrivateDirectory(info, options.strict === true))
+    throw new Error("Expected a private directory owned by the current user.");
 
-  if (options.strict === true) {
-    if ((info.mode & 0o077) !== 0) throw new Error("Unsafe private directory");
-
-    return true;
-  }
-
-  await chmod(path, 0o700);
+  if (options.strict !== true) await chmod(path, 0o700);
 
   return true;
+};
+
+export const ensurePrivateDirectorySync = (path: string): void => {
+  mkdirSync(path, { recursive: true, mode: 0o700 });
+  const info = lstatSync(path);
+
+  if (!isOwnedPrivateDirectory(info, true))
+    throw new Error("Expected a private directory owned by the current user.");
 };
 
 export const unlinkIfPresent = (path: string): Promise<void> =>
@@ -46,6 +73,58 @@ export const openNoFollow = (path: string): Promise<FileHandle | null> =>
       throw cause;
     },
   );
+
+export const openProtectedFile = async (
+  path: string,
+  flags: number,
+  options: {
+    readonly ownerWriteOnly?: boolean;
+    readonly privateOnly?: boolean;
+    readonly makePrivate?: boolean;
+  } = {},
+): Promise<FileHandle> => {
+  const handle = await open(path, flags | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+
+  try {
+    const info = await handle.stat();
+
+    if (!isOwnedProtectedFile(info, options))
+      throw new Error("Expected a private regular file owned by the current user.");
+
+    if (options.makePrivate) await handle.chmod(0o600);
+
+    return handle;
+  } catch (cause) {
+    await handle.close().catch(() => undefined);
+    throw cause;
+  }
+};
+
+export const openProtectedFileSync = (
+  path: string,
+  flags: number,
+  options: {
+    readonly ownerWriteOnly?: boolean;
+    readonly privateOnly?: boolean;
+    readonly makePrivate?: boolean;
+  } = {},
+): number => {
+  const handle = openSync(path, flags | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+
+  try {
+    const info = fstatSync(handle);
+
+    if (!isOwnedProtectedFile(info, options))
+      throw new Error("Expected a private regular file owned by the current user.");
+
+    if (options.makePrivate) fchmodSync(handle, 0o600);
+
+    return handle;
+  } catch (cause) {
+    closeSync(handle);
+    throw cause;
+  }
+};
 
 export const readFileBounded = async (
   handle: {
@@ -86,6 +165,9 @@ export const readProtectedFile = async (
     readonly ownerWriteOnly?: boolean;
     readonly privateOnly?: boolean;
     readonly makePrivate?: boolean;
+    readonly strictUtf8?: boolean;
+    readonly disallowNul?: boolean;
+    readonly onTooLarge?: () => Error;
   } = {},
 ): Promise<string | null> => {
   const {
@@ -93,6 +175,9 @@ export const readProtectedFile = async (
     ownerWriteOnly = false,
     privateOnly = false,
     makePrivate = false,
+    strictUtf8 = false,
+    disallowNul = false,
+    onTooLarge = () => new Error("Protected file is too large"),
   } = options;
 
   const handle = await openNoFollow(path);
@@ -102,24 +187,25 @@ export const readProtectedFile = async (
   try {
     const info = await handle.stat();
 
-    if (
-      !info.isFile() ||
-      info.nlink !== 1 ||
-      info.uid !== process.getuid?.() ||
-      (ownerWriteOnly && (info.mode & 0o022) !== 0) ||
-      (privateOnly && (info.mode & 0o077) !== 0) ||
-      info.size > maxBytes
-    )
-      throw new Error("Invalid protected file");
+    if (!isOwnedProtectedFile(info, { ownerWriteOnly, privateOnly }))
+      throw new Error("Expected a private regular file owned by the current user.");
+
+    if (info.size > maxBytes) throw onTooLarge();
 
     if (makePrivate) await handle.chmod(0o600);
 
     const bytes =
       maxBytes === Infinity
         ? await handle.readFile()
-        : await readFileBounded(handle, maxBytes, () => new Error("Protected file is too large"));
+        : await readFileBounded(handle, maxBytes, onTooLarge);
 
-    return bytes.toString("utf8");
+    const text = strictUtf8
+      ? new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+      : bytes.toString("utf8");
+
+    if (disallowNul && text.includes("\0")) throw new Error("Protected file must be UTF-8 text.");
+
+    return text;
   } finally {
     await handle.close();
   }

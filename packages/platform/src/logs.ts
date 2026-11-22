@@ -1,7 +1,12 @@
 import { constants } from "node:fs";
-import { lstat, open } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
 
-import { ensurePrivateDirectory, isMissingFile, openNoFollow } from "@poppet/io";
+import {
+  ensurePrivateDirectory,
+  isMissingFile,
+  openNoFollow,
+  openProtectedFile,
+} from "@poppet/io";
 
 import { WorkerError } from "#src/contract";
 
@@ -24,26 +29,15 @@ export const prepareWorkerLog = async (directory: string, log: string) => {
 
   await regularFileInfo(log);
 
-  const handle = await open(
+  const handle = await openProtectedFile(
     log,
-    constants.O_WRONLY |
-      constants.O_CREAT |
-      constants.O_APPEND |
-      constants.O_NOFOLLOW |
-      constants.O_NONBLOCK,
-    0o600,
-  );
+    constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND,
+    { makePrivate: true },
+  ).catch(() => {
+    throw new WorkerError({ message: "Expected a private regular worker log owned by you." });
+  });
 
-  try {
-    const info = await handle.stat();
-
-    if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.())
-      throw new WorkerError({ message: "Expected a private regular worker log owned by you." });
-
-    await handle.chmod(0o600);
-  } finally {
-    await handle.close();
-  }
+  await handle.close();
 };
 
 export const readWorkerLogs = async (log: string) => {
