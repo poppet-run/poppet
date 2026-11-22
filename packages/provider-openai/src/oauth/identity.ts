@@ -23,6 +23,7 @@ export const identityVerifier =
   (token: Redacted.Redacted<string>, clientId: string, nonce: string | null) =>
     Effect.gen(function* () {
       const metadata = yield* discovery;
+      const currentDate = yield* DateTime.nowAsDate;
 
       const verified = yield* Effect.tryPromise({
         try: async (signal) => {
@@ -42,6 +43,7 @@ export const identityVerifier =
             algorithms: ["RS256"],
             requiredClaims: ["sub", "exp", "iat"],
             clockTolerance: 5,
+            currentDate,
           });
         },
         catch: invalidIdentity,
@@ -51,7 +53,12 @@ export const identityVerifier =
         Effect.mapError(invalidIdentity),
       );
 
-      if ((verified.payload.iat ?? 0) > (yield* DateTime.nowAsDate).getTime() / 1000 + 5)
+      const { aud, azp, iat } = verified.payload;
+
+      if ((azp !== undefined || (Array.isArray(aud) && aud.length > 1)) && azp !== clientId)
+        return yield* Effect.fail(invalidIdentity());
+
+      if ((iat ?? 0) > currentDate.getTime() / 1000 + 5)
         return yield* Effect.fail(invalidIdentity());
 
       if (nonce !== null && claims.nonce !== nonce) return yield* Effect.fail(invalidIdentity());
