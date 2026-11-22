@@ -23,7 +23,7 @@
     "@poppet/store": "workspace:*",
     "@poppet/web-search": "workspace:*",
     "effect": "4.1.5",
-    "entities": "8.1.0"
+    "entities": "9.0.0"
   },
   "devDependencies": {
     "openai": "7.62.0"
