@@ -8,6 +8,7 @@ export {
   MemoryRevision,
   MemorySnapshot,
   SnapshotLimits,
+  savedFactsBytes,
 } from "#src/schema";
 
 export { LocalMemoryLive } from "#src/local";

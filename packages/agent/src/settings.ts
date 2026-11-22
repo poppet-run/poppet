@@ -1,3 +1,4 @@
+import { savedFactsBytes } from "@poppet/memory";
 import { Config, Context, Effect, Layer, Schema } from "effect";
 
 export interface ChatPolicy {
@@ -37,7 +38,7 @@ export const defaultPolicy: ChatPolicy = {
   toolBytes: 16384,
   soulBytes: 8192,
   profileBytes: 8192,
-  factsBytes: 8192,
+  factsBytes: savedFactsBytes,
   skillIndexBytes: 8192,
   runDeadlineSeconds: 300,
   maxConcurrentRequests: 3,
