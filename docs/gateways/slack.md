@@ -31,7 +31,8 @@ slash commands. Prefix controls with the bot mention where necessary. Use the
 approval controls in the originating thread for [Bash commands](../commands.md)
 and [reviewed MCP actions](../mcp.md#review-an-action). Approvals also show
 **Approve once** and **Deny** buttons; see
-[messaging approval](../commands.md#messaging-approval).
+[messaging approval](../commands.md#messaging-approval). If a reviewed MCP action
+stops a run, the reply includes the approval or review guidance.
 
 Images and text files use the normal attachment limits. File downloads are
 bounded, authenticated, and restricted to Slack's file host. Progress uses eyes
