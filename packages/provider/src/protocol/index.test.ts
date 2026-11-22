@@ -878,6 +878,46 @@ for (const adapter of cases) {
       });
       expect(harness.signals[0]?.aborted).toBe(true);
     });
+
+    test("when acquiring the client hangs past the 60s deadline, interrupts open cleanly", async () => {
+      const description: ModelDescription = {
+        provider: adapter.provider,
+        id: "test-model",
+        name: "Test model",
+        capabilities: {
+          tools: true,
+          images: false,
+          generationSettings: [],
+          contextWindow: null,
+          maxOutputTokens: null,
+        },
+      };
+
+      const hanging = Effect.never as Effect.Effect<OpenAI, never>;
+
+      const model =
+        adapter.protocol === "responses"
+          ? responsesModel(description, hanging)
+          : chatCompletionsModel(description, hanging);
+
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const fiber = yield* completeModel(model, request).pipe(
+            Effect.match({ onSuccess: () => null, onFailure: (failure) => failure }),
+            Effect.forkChild,
+          );
+
+          yield* TestClock.adjust("60 seconds");
+
+          return yield* Fiber.join(fiber);
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+
+      expect(error).toMatchObject({
+        reason: "interrupted",
+        message: "The inference deadline expired.",
+      });
+    });
   });
 }
 
