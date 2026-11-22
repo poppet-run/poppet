@@ -469,7 +469,16 @@ export class ChatTerminal {
       if (this.paste) {
         const end = this.pending.indexOf(`${escape}201~`);
 
-        if (end < 0) break;
+        if (end < 0) {
+          if (this.pending.includes("\u0003") || this.pending.includes(`${escape}99;5u`)) {
+            this.exit();
+
+            return;
+          }
+
+          break;
+        }
+
         this.insert(this.pending.slice(0, end));
         this.pending = this.pending.slice(end + 6);
         this.paste = false;
