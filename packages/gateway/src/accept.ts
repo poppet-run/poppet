@@ -40,10 +40,14 @@ const controlReply = (
 
       yield* claims.withPermit(
         Effect.gen(function* () {
-          yield* repo.cancel(channel.id, entry.account, conversation);
+          yield* repo.cancel(channel.id, entry.account, message.scopeId, conversation);
 
           for (const request of requests.values())
-            if (request.entry.conversationId === conversation) {
+            if (
+              request.entry.account === entry.account &&
+              request.entry.message.scopeId === message.scopeId &&
+              request.entry.conversationId === conversation
+            ) {
               yield* repo.state(request.entry.id, "cancelled");
               yield* Fiber.interrupt(request.fiber);
             }

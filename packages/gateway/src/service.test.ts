@@ -2172,6 +2172,42 @@ describe.concurrent("Gateway", () => {
     }
   });
 
+  test("when two scopes share a conversation ID, looks up and cancels only within the selected scope", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* GatewayRepository;
+          const store = yield* Store;
+
+          const first = (yield* repo.accept("discord", "bot", message("first", "shared")))!;
+
+          const second = (yield* repo.accept("discord", "bot", {
+            ...message("second", "shared"),
+            scopeId: "other-guild",
+          }))!;
+
+          const firstSession = yield* store.createSession("test-provider", "test-model");
+          const secondSession = yield* store.createSession("test-provider", "test-model");
+          yield* repo.attach(first.id, "shared", firstSession.id);
+          yield* repo.attach(second.id, "shared", secondSession.id);
+
+          expect(yield* repo.namedBinding("discord", "bot", "other-guild", "shared")).toMatchObject(
+            {
+              sessionId: secondSession.id,
+            },
+          );
+          yield* repo.cancel("discord", "bot", "other-guild", "shared");
+          expect((yield* repo.item(first.id)).state).toBe("queued");
+          expect((yield* repo.item(second.id)).state).toBe("cancelled");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when thread creation is uncertain, reconciles it before inference", async () => {
     let attempts = 0;
 
@@ -2446,7 +2482,7 @@ describe("conversationNaming", () => {
           yield* Deferred.succeed(release, undefined);
           yield* Fiber.join(naming);
           expect(renames).toEqual([]);
-          expect(yield* repo.namedBinding("discord", "bot", "managed")).toMatchObject({
+          expect(yield* repo.namedBinding("discord", "bot", "guild", "managed")).toMatchObject({
             sessionId: replacement,
             syncedTitle: null,
             namingDisabled: false,
@@ -2454,7 +2490,7 @@ describe("conversationNaming", () => {
           yield* gateway.deliverNext;
           yield* gateway.nameNext;
           expect(renames).toEqual(["New title"]);
-          expect(yield* repo.namedBinding("discord", "bot", "managed")).toMatchObject({
+          expect(yield* repo.namedBinding("discord", "bot", "guild", "managed")).toMatchObject({
             managedName: "New title",
             creationMessageId: "original",
           });
@@ -2553,7 +2589,8 @@ describe("conversationNaming", () => {
 
             if (["external-edit", "permission", "rate-limit"].includes(mode)) {
               expect(
-                (yield* repo.namedBinding("discord", "bot", "thread-title"))?.namingDisabled,
+                (yield* repo.namedBinding("discord", "bot", "guild", "thread-title"))
+                  ?.namingDisabled,
               ).toBe(true);
             }
 
@@ -2613,7 +2650,13 @@ describe("conversationNaming", () => {
           if (!session) throw new Error("Missing session");
           yield* (yield* Store).renameSession(session.id, "Pending title");
           yield* (yield* GatewayRepository).namePending(
-            { adapter: "discord", account: "bot", conversation: "managed", session: session.id },
+            {
+              adapter: "discord",
+              account: "bot",
+              scope: "guild",
+              conversation: "managed",
+              session: session.id,
+            },
             "Pending title",
           );
           current = "Pending title";
@@ -2623,7 +2666,7 @@ describe("conversationNaming", () => {
         Effect.gen(function* () {
           yield* (yield* Gateway).nameNext;
           expect(
-            yield* (yield* GatewayRepository).namedBinding("discord", "bot", "managed"),
+            yield* (yield* GatewayRepository).namedBinding("discord", "bot", "guild", "managed"),
           ).toMatchObject({
             managedName: "Pending title",
             pendingName: null,
