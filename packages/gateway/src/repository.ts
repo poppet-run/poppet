@@ -411,14 +411,34 @@ const repository = Effect.gen(function* () {
         state: Extract<DeliveryState, "pending" | "failed" | "uncertain">,
         retryAt: number,
       ) =>
-        sql`UPDATE gateway_deliveries SET state = ${state}, attempts = attempts + 1,
-        retry_at = ${retryAt} WHERE inbox_id = ${entry.inboxId}
-          AND position = ${entry.position}`.pipe(Effect.asVoid),
+        sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`UPDATE gateway_deliveries SET state = ${state}, attempts = attempts + 1,
+              retry_at = ${retryAt} WHERE inbox_id = ${entry.inboxId}
+                AND position = ${entry.position}`;
+
+            if (state === "failed" || state === "uncertain")
+              yield* sql`UPDATE gateway_deliveries SET state = 'failed'
+                WHERE inbox_id = ${entry.inboxId} AND position > ${entry.position}
+                  AND state = 'pending'`;
+          }),
+        ),
     ),
     recoverDelivery: operation((adapter: string, account: string) =>
-      sql`UPDATE gateway_deliveries SET state = 'uncertain' WHERE state = 'sending'
-        AND inbox_id IN (SELECT id FROM gateway_inbox
-          WHERE adapter = ${adapter} AND account = ${account})`.pipe(Effect.asVoid),
+      sql.withTransaction(
+        Effect.gen(function* () {
+          yield* sql`UPDATE gateway_deliveries SET state = 'uncertain' WHERE state = 'sending'
+            AND inbox_id IN (SELECT id FROM gateway_inbox
+              WHERE adapter = ${adapter} AND account = ${account})`;
+          yield* sql`UPDATE gateway_deliveries SET state = 'failed' WHERE state = 'pending'
+            AND EXISTS (SELECT 1 FROM gateway_deliveries earlier
+              WHERE earlier.inbox_id = gateway_deliveries.inbox_id
+                AND earlier.position < gateway_deliveries.position
+                AND earlier.state IN ('failed', 'uncertain'))
+            AND inbox_id IN (SELECT id FROM gateway_inbox
+              WHERE adapter = ${adapter} AND account = ${account})`;
+        }),
+      ),
     ),
     status: operation(() =>
       sql`SELECT
