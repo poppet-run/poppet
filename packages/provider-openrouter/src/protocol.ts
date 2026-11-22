@@ -122,8 +122,10 @@ export const routerOptions: ChatOptions = {
       choice.finish_reason === finishReason &&
       Object.entries(choice.delta).every(([key, value]) =>
         key === "role"
-          ? value === "assistant"
-          : key === "content" && (value === null || value === ""),
+          ? value === "assistant" || value === null
+          : key === "content"
+            ? value === null || value === ""
+            : value === null,
       )
     );
   },

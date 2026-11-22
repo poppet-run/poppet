@@ -440,7 +440,7 @@ for (const adapter of cases) {
       });
     });
 
-    if (adapter.protocol === "chat-completions")
+    if (adapter.protocol === "chat-completions") {
       test("when terminal choices repeat without an accounting extension, rejects the stream", async () => {
         const harness = fixture(adapter, "trailing-usage");
         await expect(
@@ -451,6 +451,146 @@ for (const adapter of cases) {
         });
         expect(harness.requests).toHaveLength(1);
       });
+
+      test("when deltas carry null fields, empty finish_reason, or repeated tool metadata, parses them cleanly", async () => {
+        const events = [
+          {
+            choices: [
+              {
+                index: 0,
+                finish_reason: "",
+                delta: {
+                  role: null,
+                  content: null,
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "call-1",
+                      type: "function",
+                      function: {
+                        name: "poppet_verification__get_verification_token",
+                        arguments: '{"challenge":',
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          {
+            choices: [
+              {
+                index: 0,
+                finish_reason: "",
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "call-1",
+                      type: null,
+                      function: {
+                        name: "poppet_verification__get_verification_token",
+                        arguments: '"abc"}',
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          {
+            choices: [
+              {
+                index: 0,
+                finish_reason: "tool_calls",
+                delta: { tool_calls: null },
+              },
+            ],
+          },
+        ];
+
+        const client = Effect.succeed(
+          new OpenAI({
+            apiKey: "test-secret",
+            baseURL: "https://provider.invalid/v1",
+            maxRetries: 0,
+            logLevel: "off",
+            fetch: async () =>
+              new Response(events.map(encode).join("") + "data: [DONE]\n\n", {
+                headers: { "Content-Type": "text/event-stream" },
+              }),
+          }),
+        );
+
+        const model = chatCompletionsModel(
+          {
+            provider: adapter.provider,
+            id: "test-model",
+            name: "Test model",
+            capabilities: {
+              tools: true,
+              images: false,
+              generationSettings: [],
+              contextWindow: null,
+              maxOutputTokens: null,
+            },
+          },
+          client,
+        );
+
+        const completed = await Effect.runPromise(completeModel(model, toolRequest));
+        expect(completed.finishReason).toBe("tool-calls");
+        expect(completed.output).toEqual([
+          {
+            type: "tool-call",
+            callId: "call-1",
+            name: "get_verification_token",
+            namespace: "poppet_verification",
+            arguments: '{"challenge":"abc"}',
+          },
+        ]);
+      });
+
+      test("when a Chat Completions stream returns refusal deltas, emits refusal output and finish reason", async () => {
+        const events = [
+          { choices: [{ index: 0, finish_reason: null, delta: { role: "assistant", refusal: "Cannot " } }] },
+          { choices: [{ index: 0, finish_reason: "stop", delta: { refusal: "assist." } }] },
+        ];
+
+        const client = Effect.succeed(
+          new OpenAI({
+            apiKey: "test-secret",
+            baseURL: "https://provider.invalid/v1",
+            maxRetries: 0,
+            logLevel: "off",
+            fetch: async () =>
+              new Response(events.map(encode).join("") + "data: [DONE]\n\n", {
+                headers: { "Content-Type": "text/event-stream" },
+              }),
+          }),
+        );
+
+        const model = chatCompletionsModel(
+          {
+            provider: adapter.provider,
+            id: "test-model",
+            name: "Test model",
+            capabilities: {
+              tools: true,
+              images: false,
+              generationSettings: [],
+              contextWindow: null,
+              maxOutputTokens: null,
+            },
+          },
+          client,
+        );
+
+        const completed = await Effect.runPromise(completeModel(model, request));
+        expect(completed.finishReason).toBe("refusal");
+        expect(completed.output).toEqual([{ type: "text", text: "Cannot assist." }]);
+      });
+    }
 
     test("when output or tool calls arrive out of order, preserves authoritative output or tool-call index order", async () => {
       const harness = fixture(adapter, "ordered");

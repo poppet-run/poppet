@@ -27,24 +27,29 @@ const Chunk = Schema.Struct({
   choices: Schema.Array(
     Schema.Struct({
       index: Schema.Natural,
-      finish_reason: Schema.NullOr(Schema.String),
+      finish_reason: Schema.optionalKey(Schema.NullOr(Schema.String)),
       delta: Schema.StructWithRest(
         Schema.Struct({
-          role: Schema.optionalKey(Schema.Literal("assistant")),
+          role: Schema.optionalKey(Schema.NullOr(Schema.Literal("assistant"))),
           content: Schema.optionalKey(Schema.NullOr(Schema.String)),
+          refusal: Schema.optionalKey(Schema.NullOr(Schema.String)),
           tool_calls: Schema.optionalKey(
-            Schema.Array(
-              Schema.Struct({
-                index: Schema.Natural,
-                id: Schema.optionalKey(Schema.String),
-                type: Schema.optionalKey(Schema.Literal("function")),
-                function: Schema.optionalKey(
-                  Schema.Struct({
-                    name: Schema.optionalKey(Schema.String),
-                    arguments: Schema.optionalKey(Schema.String),
-                  }),
-                ),
-              }),
+            Schema.NullOr(
+              Schema.Array(
+                Schema.Struct({
+                  index: Schema.Natural,
+                  id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+                  type: Schema.optionalKey(Schema.NullOr(Schema.Literal("function"))),
+                  function: Schema.optionalKey(
+                    Schema.NullOr(
+                      Schema.Struct({
+                        name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+                        arguments: Schema.optionalKey(Schema.NullOr(Schema.String)),
+                      }),
+                    ),
+                  ),
+                }),
+              ),
             ),
           ),
         }),
@@ -247,6 +252,7 @@ export const chatCompletionsModel = (
 
             const events = async function* (): AsyncGenerator<ModelEvent> {
               let text = "";
+              let refusal = "";
               let finish: string | null = null;
               let accountingFrameSeen = false;
               let usage: Completion["usage"] = null;
@@ -294,6 +300,8 @@ export const chatCompletionsModel = (
                     yield { type: "text-delta", text: choice.delta.content };
                   }
 
+                  if (choice.delta.refusal) refusal += choice.delta.refusal;
+
                   for (const part of choice.delta.tool_calls ?? []) {
                     let call = calls.get(part.index);
 
@@ -302,12 +310,19 @@ export const chatCompletionsModel = (
                       calls.set(part.index, call);
                     }
 
-                    call.id += part.id ?? "";
-                    call.name += part.function?.name ?? "";
+                    if (part.id && call.id !== part.id) call.id += part.id;
+
+                    if (part.function?.name && call.name !== part.function.name)
+                      call.name += part.function.name;
                     call.arguments += part.function?.arguments ?? "";
                   }
 
-                  if (choice.finish_reason !== null) finish = choice.finish_reason;
+                  if (
+                    choice.finish_reason !== undefined &&
+                    choice.finish_reason !== null &&
+                    choice.finish_reason !== ""
+                  )
+                    finish = choice.finish_reason;
                 }
 
                 if (finish !== "stop" && finish !== "tool_calls")
@@ -322,7 +337,17 @@ export const chatCompletionsModel = (
                     "The completion reason does not match its tool calls.",
                   );
 
-                const output: Output[] = text.length === 0 ? [] : [{ type: "text", text }];
+                if (decoded.settings.toolChoice === "none" && calls.size > 0)
+                  throw interrupted(
+                    description.provider,
+                    "The model returned an invalid tool call.",
+                  );
+
+                const output: Output[] = [
+                  ...(text.length === 0 ? [] : [{ type: "text" as const, text }]),
+                  ...(refusal.length === 0 ? [] : [{ type: "text" as const, text: refusal }]),
+                ];
+
                 const ids = new Set<string>();
 
                 const ordered = inIndexOrder(calls, () =>
@@ -358,7 +383,8 @@ export const chatCompletionsModel = (
                     model: description.id,
                     data: continuation.save(),
                   },
-                  finishReason: calls.size > 0 ? "tool-calls" : "stop",
+                  finishReason:
+                    calls.size > 0 ? "tool-calls" : refusal.length > 0 ? "refusal" : "stop",
                   usage,
                 });
 
