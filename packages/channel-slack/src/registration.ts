@@ -71,9 +71,15 @@ export const slack = {
     if (settings === null) return null;
 
     return Layer.unwrap(
-      Effect.promise(() =>
-        import("#src/channel").then(({ slackChannelLayer }) => slackChannelLayer(settings)),
-      ),
+      Effect.tryPromise({
+        try: () =>
+          import("#src/channel").then(({ slackChannelLayer }) => slackChannelLayer(settings)),
+        catch: () =>
+          new ChannelError({
+            reason: "configuration",
+            message: "Cannot load Slack channel adapter.",
+          }),
+      }),
     );
   }),
 } satisfies ChannelRegistration;

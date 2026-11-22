@@ -74,7 +74,16 @@ export const channelSettings = <S extends Schema.Top>(
 
         if (settings === null) return null;
 
-        return Layer.unwrap(Effect.promise(() => createLayer(settings, dataDirectory)));
+        return Layer.unwrap(
+          Effect.tryPromise({
+            try: () => createLayer(settings, dataDirectory),
+            catch: () =>
+              new ChannelError({
+                reason: "configuration",
+                message: `Cannot load ${label} channel adapter.`,
+              }),
+          }),
+        );
       }),
     save: (dataDirectory: string, settings: S["Type"]) =>
       Schema.encodeEffect(SavedSettings)(settings).pipe(

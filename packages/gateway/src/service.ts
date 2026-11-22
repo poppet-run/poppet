@@ -98,7 +98,15 @@ const gateway = Effect.gen(function* () {
       [
         receive,
         FiberSet.join(controlFibers),
-        Stream.runForEach(channel.approvals?.actions ?? Stream.never, approvals.answerAction),
+        Stream.runForEach(channel.approvals?.actions ?? Stream.never, (action) =>
+          approvals.answerAction(action).pipe(
+            Effect.catchTag("ChannelError", (error) =>
+              Effect.logWarning("messaging approval action failed").pipe(
+                Effect.annotateLogs({ error: error.message }),
+              ),
+            ),
+          ),
+        ),
         loop(
           dispatchNext(context, execution, active, maxConcurrentRequests),
           context.wakes.inbox,

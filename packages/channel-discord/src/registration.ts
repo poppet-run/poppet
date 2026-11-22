@@ -58,9 +58,15 @@ export const discord = {
     if (settings === null) return null;
 
     return Layer.unwrap(
-      Effect.promise(() =>
-        import("#src/channel").then(({ discordChannelLayer }) => discordChannelLayer(settings)),
-      ),
+      Effect.tryPromise({
+        try: () =>
+          import("#src/channel").then(({ discordChannelLayer }) => discordChannelLayer(settings)),
+        catch: () =>
+          new ChannelError({
+            reason: "configuration",
+            message: "Cannot load Discord channel adapter.",
+          }),
+      }),
     );
   }),
 } satisfies ChannelRegistration;
