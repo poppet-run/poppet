@@ -1141,6 +1141,32 @@ describe.concurrent("Gateway", () => {
     }
   });
 
+  test("when the latest run has no messages, reports its status in the channel", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const store = yield* Store;
+          const repo = yield* GatewayRepository;
+          yield* gateway.accept(message("original", "chat"));
+          yield* gateway.processNext;
+          yield* gateway.deliverNext;
+          const session = (yield* repo.binding("discord", "bot", "guild", "chat"))!;
+          yield* TestClock.adjust("1 second");
+          yield* store.queueRun(session, []);
+          yield* gateway.accept(message("status", "chat", "/status"));
+          yield* gateway.deliverNext;
+        }),
+      );
+
+      expect(state.sent.at(-1)?.text).toContain("Latest run: pending");
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when a selected session exists before binding, recovers it without reloading its skill", async () => {
     const state = await fixture();
     const path = join(state.directory, "skills/review/SKILL.md");
