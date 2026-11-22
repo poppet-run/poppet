@@ -1,105 +1,32 @@
-import {
-  Client,
-  InsufficientScopeError,
-  type AuthProvider,
-  type FetchLike,
-  type StreamableHTTPClientTransportOptions,
-  type Tool as ServerTool,
-} from "@modelcontextprotocol/client";
+import { InsufficientScopeError, type FetchLike } from "@modelcontextprotocol/client";
 import { ApiKeyStore } from "@poppet/credentials";
-import type { Tool } from "@poppet/provider";
-import { Clock, Context, Data, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
+import { Clock, Context, Effect, Layer, Ref, Semaphore } from "effect";
 
+import { containsSecret } from "#src/catalog";
+import { isHTTPServer, mcpServers, type MCPServer } from "#src/config";
 import {
-  compileSchema,
-  containsSecret,
-  decodeArguments,
-  definition,
-  toolResult,
-} from "#src/catalog";
-import { isHTTPServer, mcpServers, type MCPReference, type MCPServer } from "#src/config";
+  closeConnection,
+  diagnostic,
+  discoverTools,
+  failed,
+  fetchHTTP,
+  hydrateConnection,
+  invalidateConnection,
+  listTools,
+  logDiagnostic,
+  openConnectionResources,
+  requireLogin,
+  retryAt,
+  startupFailure,
+  type Connection,
+  type ConnectionState,
+} from "#src/connection";
 import { MCPError } from "#src/errors";
-import {
-  isOAuthServer,
-  MCPLoginRequired,
-  MCPSignIns,
-  runtimeAuthorization,
-  signInStatus,
-  type RuntimeAuthorization,
-} from "#src/oauth";
-import {
-  boundedFetch,
-  checkReviewedToken,
-  ReviewedAccountChanged,
-  reviewedHTTPRequest,
-  ScopedHTTPTransport,
-  ScopedStdioTransport,
-  singleReviewedPost,
-} from "#src/transport";
+import { isOAuthServer, MCPSignIns, signInStatus } from "#src/oauth";
+import { buildTools, type MCPTool } from "#src/tools";
+import { ReviewedAccountChanged, ScopedStdioTransport } from "#src/transport";
 
-export interface MCPTool {
-  readonly definition: Tool;
-  readonly serverId: string;
-  readonly toolName: string;
-  readonly availableAfterUntrusted: boolean;
-  readonly review?: { readonly origin: string | null } | undefined;
-  readonly prepare: (argumentsJSON: string) => Effect.Effect<
-    {
-      readonly execute: Effect.Effect<string, MCPError>;
-      readonly validatedArguments?: string;
-    },
-    MCPError
-  >;
-}
-
-class MCPDiagnostic extends Data.TaggedError("MCPDiagnostic")<{ readonly message: string }> {}
-
-/** One tool Poppet cannot offer; the server's other tools remain available. */
-class UnsupportedTool extends Data.TaggedError("UnsupportedTool")<{ readonly message: string }> {}
-
-type ConnectionState =
-  | { readonly status: "idle"; readonly retries: number }
-  | { readonly status: "disabled" }
-  | {
-      readonly status: "connected";
-      readonly tools: ReadonlyArray<MCPTool>;
-      readonly discovered: ReadonlyArray<string>;
-      /** Allowed tools skipped because Poppet cannot support their definitions. */
-      readonly diagnostic: string | null;
-    }
-  | {
-      readonly status: "unavailable";
-      readonly diagnostic: string;
-      readonly failedAt: number;
-      readonly retries: number;
-    }
-  | { readonly status: "needs-login"; readonly diagnostic: string };
-
-interface Connection {
-  readonly client: Client;
-  readonly transport: ScopedStdioTransport | ScopedHTTPTransport;
-  readonly now: () => number;
-  readonly logCloseFailure: () => Promise<void>;
-  readonly token: () => string | undefined;
-  state: ConnectionState;
-  closing: Promise<void> | null;
-  readonly signIn: { readonly required: () => boolean; readonly message: string } | null;
-}
-
-const reconnectDelay = (retries: number) => Math.min(30_000 * 2 ** retries, 600_000);
-
-const retryAt = (state: Extract<ConnectionState, { status: "unavailable" }>) =>
-  state.failedAt + reconnectDelay(state.retries);
-
-const diagnostic = (connection: Connection) =>
-  connection.state.status === "unavailable" ||
-  connection.state.status === "needs-login" ||
-  connection.state.status === "connected"
-    ? connection.state.diagnostic
-    : null;
-
-const logDiagnostic = (server: string, detail: string | null) =>
-  Effect.logWarning("mcp server diagnostic").pipe(Effect.annotateLogs({ server, detail }));
+export type { MCPTool } from "#src/tools";
 
 export class MCP extends Context.Service<
   MCP,
@@ -141,398 +68,6 @@ export class MCP extends Context.Service<
   }
 >()("poppet/MCP") {}
 
-const failed = (message: string) => new MCPError({ reason: "tool-network", message });
-
-const startupFailure = (config: MCPServer, cause: unknown) =>
-  failed(
-    `MCP ${config.id}: ${cause instanceof MCPDiagnostic ? cause.message : isHTTPServer(config) ? "Startup or protocol failed. Check the URL, headers and server compatibility." : "Startup or protocol failed. Check the executable and server compatibility."}`,
-  );
-
-const authorizationFailure = (
-  config: MCPServer,
-  cause: Effect.Error<ReturnType<typeof runtimeAuthorization>>,
-) =>
-  failed(
-    cause instanceof MCPLoginRequired
-      ? cause.message
-      : `MCP ${config.id}: cannot read its saved sign-in or client secret.`,
-  );
-
-const close = (connection: Connection): Promise<void> => {
-  connection.closing ??= (async () => {
-    await connection.client.close().catch(() => {});
-    await connection.transport.close().catch(connection.logCloseFailure);
-  })();
-
-  return connection.closing;
-};
-
-const requireLogin = (connection: Connection, message: string) => {
-  connection.state = { status: "needs-login", diagnostic: message };
-
-  return close(connection);
-};
-
-const invalidate = (connection: Connection, message: string) => {
-  const state = connection.state;
-
-  if (state.status !== "unavailable" && state.status !== "needs-login") {
-    if (connection.signIn?.required() === true)
-      return requireLogin(connection, connection.signIn.message);
-
-    connection.state = {
-      status: "unavailable",
-      diagnostic: message,
-      failedAt: connection.now(),
-      retries: state.status === "idle" ? state.retries : 0,
-    };
-  }
-
-  return close(connection);
-};
-
-const resolveReference = (
-  config: MCPServer,
-  reference: MCPReference,
-  credentials: ApiKeyStore["Service"],
-  invalid: (value: string) => boolean,
-) =>
-  Effect.gen(function* () {
-    const value =
-      "env" in reference
-        ? process.env[reference.env]
-        : yield* credentials.read(reference.credential).pipe(
-            Effect.map((key) => (key === null ? undefined : Redacted.value(key))),
-            Effect.mapError(() => failed(`MCP ${config.id}: cannot read selected credential.`)),
-          );
-
-    if (value === undefined || value.length > 8192 || invalid(value))
-      return yield* Effect.fail(
-        failed(
-          `MCP ${config.id}: a selected environment, credential or header reference is missing or invalid.`,
-        ),
-      );
-
-    return value;
-  });
-
-const resolveReferences = (config: MCPServer, credentials: ApiKeyStore["Service"]) =>
-  Effect.gen(function* () {
-    const values: Record<string, string> = {};
-    const secrets: string[] = [];
-
-    if (isHTTPServer(config)) {
-      for (const [name, reference] of Object.entries(config.headers ?? {})) {
-        const value = yield* resolveReference(
-          config,
-          reference,
-          credentials,
-          (text) => text.length === 0 || !/^[\u0020-\u007E]*$/.test(text),
-        );
-
-        values[name] = `${reference.prefix ?? ""}${value}`;
-        secrets.push(value);
-      }
-    } else {
-      for (const [name, reference] of Object.entries(config.environment ?? {})) {
-        const value = yield* resolveReference(config, reference, credentials, (text) =>
-          text.includes("\0"),
-        );
-
-        values[name] = value;
-
-        if ("credential" in reference) secrets.push(value);
-      }
-    }
-
-    return { values, secrets: secrets.filter((value) => value.length > 0) };
-  });
-
-const listTools = async (client: Client, signal: AbortSignal) => {
-  if (!client.getServerCapabilities()?.tools)
-    throw new MCPDiagnostic({ message: "Server does not advertise tools capability." });
-  const discovered: ServerTool[] = [];
-  const names = new Set<string>();
-  const cursors = new Set<string>();
-  let cursor: string | undefined;
-  let bytes = 0;
-
-  for (let page = 0; ; page++) {
-    if (page === 8) throw new MCPDiagnostic({ message: "Discovery exceeds 8 pages." });
-
-    // eslint-disable-next-line no-await-in-loop
-    const result = await client.request(
-      { method: "tools/list", params: cursor === undefined ? {} : { cursor } },
-      { signal, timeout: 5000 },
-    );
-
-    bytes += Buffer.byteLength(JSON.stringify(result));
-
-    if (bytes > 262144 || discovered.length + result.tools.length > 128)
-      throw new MCPDiagnostic({ message: "Discovery exceeds 128 tools or 256 KiB." });
-
-    for (const tool of result.tools) {
-      if (names.has(tool.name) || tool.name.length > 256)
-        throw new MCPDiagnostic({ message: "Duplicate or oversized tool name." });
-      names.add(tool.name);
-      discovered.push(tool);
-    }
-
-    cursor = result.nextCursor;
-
-    if (cursor === undefined) break;
-
-    if (cursor.length > 1024 || cursors.has(cursor))
-      throw new MCPDiagnostic({ message: "Invalid discovery cursor." });
-    cursors.add(cursor);
-  }
-
-  return discovered;
-};
-
-const discoverTools = async (config: MCPServer, client: Client, signal: AbortSignal) => {
-  const discovered = await listTools(client, signal);
-
-  if (config.tools.some((name) => !discovered.some((tool) => tool.name === name)))
-    throw new MCPDiagnostic({
-      message: "An allowlisted tool was not discovered. Check tools in config.json.",
-    });
-
-  return discovered;
-};
-
-interface AuthorizationSlot {
-  current: RuntimeAuthorization | null;
-}
-
-interface RejectedRequest {
-  readonly token: string;
-  readonly signal: AbortSignal | undefined;
-}
-
-const delegate = (
-  authorization: AuthorizationSlot,
-  rejected: WeakMap<Response, RejectedRequest>,
-): AuthProvider => ({
-  token: async () => checkReviewedToken(await authorization.current?.readToken()),
-  onUnauthorized: async ({ response }) => {
-    const request = rejected.get(response);
-
-    if (authorization.current === null || request === undefined)
-      throw new Error("Sign-in required.");
-
-    await authorization.current.refresh(request.token, response, request.signal);
-  },
-});
-
-const makeClient = () =>
-  new Client({ name: "poppet", version: "0.0.0" }, { capabilities: {}, listMaxPages: 8 });
-
-const fetchHTTP = boundedFetch(262144, (url, init) => fetch(url, init), 16 * 1024 * 1024);
-
-const makeTransport = (
-  config: MCPServer,
-  references: Record<string, string>,
-  fetch: FetchLike = fetchHTTP,
-  authorization: AuthorizationSlot = { current: null },
-) => {
-  if (!isHTTPServer(config))
-    return new ScopedStdioTransport({
-      command: config.command,
-      args: [...config.args],
-      cwd: config.cwd ?? process.cwd(),
-      env: references,
-      stderr: "ignore",
-      maxBufferSize: 262144,
-    });
-
-  const rejected = new WeakMap<Response, RejectedRequest>();
-
-  const transportFetch: FetchLike = async (url, init) => {
-    const response = await fetch(url, init);
-
-    if (response.status === 401) {
-      const bearer = new Headers(init?.headers).get("authorization");
-
-      if (bearer?.startsWith("Bearer "))
-        rejected.set(response, { token: bearer.slice(7), signal: init?.signal ?? undefined });
-    }
-
-    return response;
-  };
-
-  const options: StreamableHTTPClientTransportOptions = {
-    requestInit: { headers: references },
-    fetch: singleReviewedPost(transportFetch),
-    redirectPolicy: "same-origin",
-    reconnectionOptions: {
-      initialReconnectionDelay: 1000,
-      maxReconnectionDelay: 30000,
-      reconnectionDelayGrowFactor: 1.5,
-      maxRetries: 0,
-    },
-  };
-
-  if (isOAuthServer(config)) options.authProvider = delegate(authorization, rejected);
-
-  return new ScopedHTTPTransport(new URL(config.url), options);
-};
-
-const compile = (input: Schema.JsonObject, tool: string, kind: "input" | "output") => {
-  try {
-    return compileSchema(input);
-  } catch {
-    throw new UnsupportedTool({
-      message: `Unsupported ${kind} schema for tool ${JSON.stringify(tool)}. Use draft-07 or 2020-12 JSON Schema, at most 16 KiB, depth 32 and 1024 nodes; patterns must be supported by RE2. References, patternProperties and unknown formats or keywords are unsupported.`,
-    });
-  }
-};
-
-const makeTool = (
-  config: MCPServer,
-  tool: ServerTool,
-  connection: Connection,
-  secrets: () => ReadonlyArray<string>,
-  toolBytes: number,
-): MCPTool => {
-  if ((tool.description?.length ?? 0) > 4096 || tool.execution?.taskSupport === "required")
-    throw new UnsupportedTool({
-      message: `Tool ${JSON.stringify(tool.name)} has a description over 4096 characters or requires unsupported task execution.`,
-    });
-
-  if (
-    secrets().length > 0 &&
-    containsSecret(Schema.decodeUnknownSync(Schema.JsonObject)(tool), secrets())
-  )
-    throw new MCPDiagnostic({ message: "Tool definition contains a selected credential." });
-  const schema = Schema.decodeUnknownSync(Schema.JsonObject)(tool.inputSchema);
-
-  if (schema.type !== "object")
-    throw new UnsupportedTool({
-      message: `Tool ${JSON.stringify(tool.name)} input must be an object schema.`,
-    });
-  const validate = compile(schema, tool.name, "input");
-
-  const output =
-    tool.outputSchema === undefined
-      ? null
-      : compile(
-          Schema.decodeUnknownSync(Schema.JsonObject)(tool.outputSchema),
-          tool.name,
-          "output",
-        );
-
-  const uncertain = () =>
-    new MCPError({
-      reason: "tool-uncertain",
-      message: `MCP ${config.id}/${tool.name}: Connection or protocol failed after dispatch; effects may be unknown. No call was retried; Poppet reconnects on a later request.`,
-    });
-
-  const reviewed = config.reviewedTools?.includes(tool.name) === true;
-  const endpoint = isHTTPServer(config) ? config.url : null;
-
-  const execute = (args: Schema.JsonObject, token?: string) =>
-    Effect.gen(function* () {
-      if (connection.state.status !== "connected")
-        return yield* Effect.fail(
-          failed(diagnostic(connection) ?? `MCP ${config.id} is unavailable.`),
-        );
-
-      const result = yield* Effect.tryPromise({
-        try: (signal) => {
-          const send = () =>
-            connection.client.request(
-              { method: "tools/call", params: { name: tool.name, arguments: args } },
-              { signal, timeout: 10000 },
-            );
-
-          return reviewed && endpoint !== null
-            ? reviewedHTTPRequest(endpoint, token, send)
-            : send();
-        },
-        catch: (cause) => {
-          if (cause instanceof ReviewedAccountChanged)
-            return new MCPError({
-              reason: "tool-permission",
-              message:
-                "The MCP sign-in changed after preparation. Nothing was sent. Request the action again.",
-            });
-
-          if (connection.signIn?.required() === true) return failed(connection.signIn.message);
-
-          if (cause instanceof InsufficientScopeError) {
-            const scope =
-              cause.requiredScope !== undefined &&
-              cause.requiredScope.length <= 128 &&
-              /^[A-Za-z0-9._:/+-]+(?: [A-Za-z0-9._:/+-]+)*$/.test(cause.requiredScope)
-                ? cause.requiredScope
-                : undefined;
-
-            return new MCPError({
-              reason: "tool-permission",
-              message: `MCP ${config.id}/${tool.name}: the server requires ${scope === undefined ? "additional scope" : `the scope ${scope}`}. Add it to oauth.scopes and run poppet mcp login ${config.id}.`,
-            });
-          }
-
-          return uncertain();
-        },
-      });
-
-      return yield* Effect.try({
-        try: () => {
-          if (!result.isError && output !== null && !output(result.structuredContent))
-            throw new Error("Invalid structured output.");
-
-          return toolResult(result, reviewed ? toolBytes - 128 : toolBytes, secrets());
-        },
-        catch: (cause) => (cause instanceof MCPError ? cause : uncertain()),
-      });
-    }).pipe(
-      Effect.tapError((error) =>
-        error.reason === "tool-uncertain" || connection.signIn?.required() === true
-          ? Effect.promise(() => invalidate(connection, error.message))
-          : Effect.void,
-      ),
-      Effect.onInterrupt(() => Effect.promise(() => invalidate(connection, uncertain().message))),
-    );
-
-  return {
-    serverId: config.id,
-    toolName: tool.name,
-    availableAfterUntrusted: config.availableAfterUntrusted === true,
-    review: reviewed ? { origin: endpoint === null ? null : new URL(endpoint).origin } : undefined,
-    definition: definition(config.id, tool.name, tool.description ?? "", schema),
-    prepare: (argumentsJSON) =>
-      Effect.try({
-        try: () => {
-          const args = decodeArguments(argumentsJSON);
-
-          if (!validate(args)) throw new Error("Arguments do not match schema.");
-
-          if (!reviewed) return { execute: execute(args) };
-
-          if (
-            containsSecret(
-              args,
-              secrets().filter((secret) => secret.length > 0),
-            )
-          )
-            throw new Error("Reviewed arguments contain a selected credential.");
-
-          return {
-            validatedArguments: JSON.stringify(args),
-            execute: execute(args, connection.token()),
-          };
-        },
-        catch: () =>
-          new MCPError({
-            reason: "tool-arguments",
-            message: `MCP ${config.id}/${tool.name}: input must contain a JSON object matching the original input schema.`,
-          }),
-      }),
-  };
-};
-
 export const makeMCPLive = (toolBytes: number) =>
   Layer.effect(
     MCP,
@@ -543,11 +78,11 @@ export const makeMCPLive = (toolBytes: number) =>
       const locks = new Map(servers.map((config) => [config.id, Semaphore.makeUnsafe(1)]));
       const clock = yield* Clock.Clock;
       const now = () => clock.currentTimeMillisUnsafe();
-      const connections = new Map<string, Connection>();
+      const connections = new Map<string, Connection<MCPTool>>();
       const run = Effect.runPromiseWith(yield* Effect.context());
 
       yield* Effect.addFinalizer(() =>
-        Effect.promise(() => Promise.allSettled([...connections.values()].map(close))),
+        Effect.promise(() => Promise.allSettled([...connections.values()].map(closeConnection))),
       );
 
       const connect = (config: MCPServer) =>
@@ -556,58 +91,55 @@ export const makeMCPLive = (toolBytes: number) =>
           let retries = 0;
 
           if (prior !== undefined) {
-            const state = prior.state;
+            const state = Ref.getUnsafe(prior.state);
 
             if (
               state.status !== "needs-login" &&
               (state.status !== "unavailable" || clock.currentTimeMillisUnsafe() < retryAt(state))
             )
               return prior;
-            yield* Effect.promise(() => close(prior).catch(() => {}));
+            yield* Effect.promise(() => closeConnection(prior).catch(() => {}));
             connections.delete(config.id);
             retries = state.status === "unavailable" ? state.retries + 1 : 0;
           }
 
-          const references: Record<string, string> = {};
-          const authorization: AuthorizationSlot = { current: null };
+          const resources = openConnectionResources(config);
           const missing = { value: false };
           const oauth = isHTTPServer(config) && isOAuthServer(config) ? config : null;
 
-          const client = makeClient();
-
-          const transport = makeTransport(config, references, undefined, authorization);
-
-          const connection: Connection = {
-            client,
-            transport,
+          const connection: Connection<MCPTool> = {
+            client: resources.client,
+            transport: resources.transport,
             now,
             logCloseFailure: () => run(logDiagnostic(config.id, "Transport cleanup failed.")),
-            token: () => authorization.current?.token(),
-            state: config.enabled ? { status: "idle", retries } : { status: "disabled" },
+            token: () => resources.authorization.current?.token(),
+            state: Ref.makeUnsafe<ConnectionState<MCPTool>>(
+              config.enabled ? { status: "idle", retries } : { status: "disabled" },
+            ),
             closing: null,
             signIn:
               oauth === null
                 ? null
                 : {
                     required: () =>
-                      missing.value || authorization.current?.loginRequired() === true,
+                      missing.value || resources.authorization.current?.loginRequired() === true,
                     message: `MCP ${config.id}: sign-in required. Run poppet mcp login ${config.id}.`,
                   },
           };
 
           const disconnected = () => {
-            void invalidate(
+            void invalidateConnection(
               connection,
-              connection.state.status === "idle"
+              Ref.getUnsafe(connection.state).status === "idle"
                 ? `${startupFailure(config, null).message} Poppet retries on a later request.`
                 : `MCP ${config.id}: disconnected or invalid protocol. Dispatched calls may have unknown effects; Poppet reconnects on a later request.`,
             ).catch(() => {});
           };
 
           // eslint-disable-next-line unicorn/prefer-add-event-listener
-          client.onclose = disconnected;
+          resources.client.onclose = disconnected;
           // eslint-disable-next-line unicorn/prefer-add-event-listener
-          client.onerror = (error) => {
+          resources.client.onerror = (error) => {
             if (
               !(error instanceof ReviewedAccountChanged || error instanceof InsufficientScopeError)
             )
@@ -619,96 +151,80 @@ export const makeMCPLive = (toolBytes: number) =>
           if (!config.enabled) return connection;
 
           const startup = Effect.gen(function* () {
-            const { values, secrets } = yield* resolveReferences(config, credentials);
-            Object.assign(references, values);
-
-            if (oauth !== null)
-              authorization.current = yield* runtimeAuthorization(oauth, now).pipe(
-                Effect.provideService(MCPSignIns, signIns),
-                Effect.provideService(ApiKeyStore, credentials),
-                Effect.catchTag("MCPLoginRequired", (error) => {
-                  missing.value = true;
-
-                  return Effect.fail(error);
-                }),
-                Effect.mapError((error) => authorizationFailure(config, error)),
-              );
-
-            const current = () =>
-              authorization.current === null
-                ? secrets
-                : [...secrets, ...authorization.current.secrets()];
+            const current = yield* hydrateConnection(
+              config,
+              resources,
+              credentials,
+              signIns,
+              now,
+              () => {
+                missing.value = true;
+              },
+            );
 
             const discovered = yield* Effect.tryPromise({
               try: async (signal) => {
-                await client.connect(transport, { signal, timeout: 5000 });
+                await resources.client.connect(resources.transport, { signal, timeout: 5000 });
 
-                return discoverTools(config, client, signal);
+                return discoverTools(config, resources.client, signal);
               },
               catch: (cause) => startupFailure(config, cause),
             });
 
-            const skipped: string[] = [];
+            const { tools, skipped } = yield* buildTools(
+              config,
+              discovered,
+              connection,
+              current,
+              toolBytes,
+            );
 
-            // An unsupported tool is skipped alone; other failures still reject the server.
-            const tools = yield* Effect.try({
-              try: () =>
-                discovered
-                  .filter((tool) => config.tools.includes(tool.name))
-                  .flatMap((tool) => {
-                    try {
-                      return [makeTool(config, tool, connection, current, toolBytes)];
-                    } catch (cause) {
-                      if (!(cause instanceof UnsupportedTool)) throw cause;
-                      skipped.push(cause.message);
+            const currentState = Ref.getUnsafe(connection.state);
 
-                      return [];
-                    }
-                  }),
-              catch: (cause) => startupFailure(config, cause),
-            });
-
-            if (connection.state.status === "unavailable")
-              return yield* Effect.fail(failed(connection.state.diagnostic));
+            if (currentState.status === "unavailable")
+              return yield* Effect.fail(failed(currentState.diagnostic));
 
             if (discovered.some((tool) => containsSecret(tool.name, current())))
               return yield* Effect.fail(
                 failed(`MCP ${config.id}: tool names contain credentials.`),
               );
-            connection.state = {
+
+            const skippedMessage =
+              skipped.length === 0
+                ? null
+                : `MCP ${config.id}: skipped ${skipped.length} allowed ${skipped.length === 1 ? "tool" : "tools"}. ${skipped.join(" ")}`;
+
+            yield* Ref.set(connection.state, {
               status: "connected",
               tools,
               discovered: discovered.map((tool) => tool.name),
-              diagnostic:
-                skipped.length === 0
-                  ? null
-                  : `MCP ${config.id}: skipped ${skipped.length} allowed ${skipped.length === 1 ? "tool" : "tools"}. ${skipped.join(" ")}`,
-            };
+              diagnostic: skippedMessage,
+            });
 
-            if (connection.state.diagnostic !== null)
-              yield* logDiagnostic(config.id, connection.state.diagnostic);
+            if (skippedMessage !== null) yield* logDiagnostic(config.id, skippedMessage);
           }).pipe(Effect.timeout("8 seconds"));
 
           yield* startup.pipe(
             Effect.catch((error) =>
               Effect.gen(function* () {
                 yield* Effect.promise(() =>
-                  invalidate(
+                  invalidateConnection(
                     connection,
                     `${error instanceof MCPError ? error.message : `MCP ${config.id}: startup timed out.`} Poppet retries on a later request.`,
                   ),
                 );
 
                 if (
-                  prior?.state.status !== "needs-login" ||
-                  connection.state.status !== "needs-login"
+                  prior === undefined ||
+                  Ref.getUnsafe(prior.state).status !== "needs-login" ||
+                  Ref.getUnsafe(connection.state).status !== "needs-login"
                 )
                   yield* logDiagnostic(config.id, diagnostic(connection));
               }),
             ),
             Effect.onInterrupt(() =>
               Effect.promise(() =>
-                invalidate(
+                invalidateConnection(
                   connection,
                   `MCP ${config.id}: startup interrupted. Poppet retries on a later request.`,
                 ),
@@ -731,12 +247,16 @@ export const makeMCPLive = (toolBytes: number) =>
                 )
               : null;
 
-          if (connection?.state.status === "connected" && signIn?.signedIn === false)
+          if (
+            connection !== undefined &&
+            Ref.getUnsafe(connection.state).status === "connected" &&
+            signIn?.signedIn === false
+          )
             yield* Effect.promise(() =>
               requireLogin(connection, connection.signIn!.message).catch(() => {}),
             );
 
-          const state = connection?.state;
+          const state = connection === undefined ? undefined : Ref.getUnsafe(connection.state);
 
           return {
             id: config.id,
@@ -769,16 +289,15 @@ export const makeMCPLive = (toolBytes: number) =>
               failed("Unknown MCP server. Use mcp servers to find its ID."),
             );
           const connection = yield* connect(config);
+          const state = Ref.getUnsafe(connection.state);
 
-          if (connection.state.status !== "connected")
+          if (state.status !== "connected")
             return yield* Effect.fail(failed(diagnostic(connection) ?? `MCP ${id} is disabled.`));
 
-          const allowed = connection.state.tools;
-
-          return connection.state.discovered.map((name) => ({
+          return state.discovered.map((name) => ({
             serverId: config.id,
             toolName: name,
-            definition: allowed.find((tool) => tool.toolName === name)?.definition ?? null,
+            definition: state.tools.find((tool) => tool.toolName === name)?.definition ?? null,
             allowed: config.tools.includes(name),
             scheduled: config.scheduledTools?.includes(name) ?? false,
             scheduledReviewed: config.scheduledReviewedTools?.includes(name) ?? false,
@@ -800,16 +319,18 @@ export const makeMCPLive = (toolBytes: number) =>
             ),
             (config) =>
               connect(config).pipe(
-                Effect.map((connection) =>
-                  connection.state.status === "connected"
-                    ? connection.state.tools.filter(
+                Effect.map((connection) => {
+                  const state = Ref.getUnsafe(connection.state);
+
+                  return state.status === "connected"
+                    ? state.tools.filter(
                         (tool) =>
                           !scheduled ||
                           config.scheduledTools?.includes(tool.toolName) ||
                           config.scheduledReviewedTools?.includes(tool.toolName),
                       )
-                    : [],
-                ),
+                    : [];
+                }),
               ),
             { concurrency: "unbounded" },
           ).pipe(Effect.map((perServer) => perServer.flat())),
@@ -820,16 +341,10 @@ export const makeMCPLive = (toolBytes: number) =>
 export const probeServer = (config: MCPServer) =>
   Effect.gen(function* () {
     const credentials = yield* ApiKeyStore;
+    const signIns = yield* MCPSignIns;
     const clock = yield* Clock.Clock;
-    const { values } = yield* resolveReferences(config, credentials);
     const oauth = isHTTPServer(config) && isOAuthServer(config) ? config : null;
-    const authorization: AuthorizationSlot = { current: null };
     let challenged = false;
-
-    if (oauth !== null)
-      authorization.current = yield* runtimeAuthorization(oauth, () =>
-        clock.currentTimeMillisUnsafe(),
-      ).pipe(Effect.mapError((error) => authorizationFailure(config, error)));
 
     const observe: FetchLike = async (url, init) => {
       const response = await fetchHTTP(url, init);
@@ -843,14 +358,16 @@ export const probeServer = (config: MCPServer) =>
       return response;
     };
 
-    const client = makeClient();
-    const transport = makeTransport(config, values, observe, authorization);
+    const resources = openConnectionResources(config, observe);
+    yield* hydrateConnection(config, resources, credentials, signIns, () =>
+      clock.currentTimeMillisUnsafe(),
+    );
 
     return yield* Effect.tryPromise({
       try: async (signal) => {
-        await client.connect(transport, { signal, timeout: 5000 });
+        await resources.client.connect(resources.transport, { signal, timeout: 5000 });
 
-        return (await listTools(client, signal)).map((tool) => tool.name);
+        return (await listTools(resources.client, signal)).map((tool) => tool.name);
       },
       catch: (cause) =>
         challenged && oauth === null
@@ -863,8 +380,8 @@ export const probeServer = (config: MCPServer) =>
       }),
       Effect.ensuring(
         Effect.promise(async () => {
-          await client.close().catch(() => {});
-          await transport.close().catch(() => {});
+          await resources.client.close().catch(() => {});
+          await resources.transport.close().catch(() => {});
         }),
       ),
     );
