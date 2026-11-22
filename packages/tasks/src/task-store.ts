@@ -45,6 +45,8 @@ interface TaskEnd {
 
 const Count = Schema.Struct({ count: Schema.Natural });
 
+export const maxTasks = 64;
+
 const operation =
   <Args extends ReadonlyArray<unknown>, A, E, R>(run: (...args: Args) => Effect.Effect<A, E, R>) =>
   (...args: Args) =>
@@ -218,6 +220,13 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         if (destination !== null)
           yield* Schema.decodeUnknownEffect(DeliveryDestination)(destination);
         const valid = yield* Schema.decodeUnknownEffect(NewTask)(input);
+        const existing = yield* sql`SELECT COUNT(*) AS count FROM jobs`.pipe(decodeRow(Count));
+
+        if ((existing?.count ?? 0) >= maxTasks)
+          return yield* new TaskError({
+            message: `Cannot add more than ${maxTasks} tasks. Delete an unused task first.`,
+          });
+
         const id = randomUUID();
 
         if (endAt !== null)

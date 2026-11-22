@@ -238,6 +238,69 @@ describe("ChatTasks", () => {
     }
   });
 
+  test("when chat creates exceed the per-run cap, total task cap, or 5-minute minimum cron interval, rejects them", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const fastCron: ChatTaskAction = {
+            ...create,
+            schedule: { type: "cron", expression: "* * * * *", timezone: "UTC" },
+          };
+
+          const first = yield* recorded(fastCron, "fast-cron");
+          expect(yield* execute(fastCron, first.context).pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "tool-arguments",
+          );
+
+          const validCron: ChatTaskAction = {
+            ...create,
+            schedule: { type: "cron", expression: "*/5 * * * *", timezone: "UTC" },
+          };
+
+          const batch = yield* recorded(validCron, "create-1");
+          yield* execute(validCron, batch.context);
+
+          for (let index = 2; index <= 5; index++) {
+            const call = yield* recorded(validCron, `create-${index}`, batch.run);
+            yield* execute(validCron, call.context);
+          }
+
+          const sixth = yield* recorded(validCron, "create-6", batch.run);
+          expect(yield* execute(validCron, sixth.context).pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "tool-arguments",
+          );
+
+          const repo = yield* TaskRepository;
+
+          for (let index = 5; index < 64; index++) {
+            yield* repo.add(
+              {
+                name: `Task ${index}`,
+                prompt: "Check",
+                provider: "test-provider",
+                model: "test-model",
+                schedule: { type: "once", at: now + 60_000 },
+              },
+              now,
+            );
+          }
+
+          const overflow = yield* recorded(validCron, "overflow");
+          expect(yield* execute(validCron, overflow.context).pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "tool-arguments",
+          );
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when a task starts after deletion is prepared, rejects deletion without losing the running occurrence", async () => {
     const state = await fixture();
 
