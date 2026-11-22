@@ -29,7 +29,13 @@ export const makeOAuthProvider = async (controls: Controls) => {
         jwks_uri: `${origin}/jwks`,
       });
 
-    if (url.pathname === "/jwks") return Response.json({ keys: [publicKey] });
+    if (url.pathname === "/jwks") {
+      await controls.beforeJwks?.();
+
+      return controls.jwksUnavailable
+        ? new Response(null, { status: 503 })
+        : Response.json({ keys: [publicKey] });
+    }
 
     if (url.pathname === "/authorize") {
       authorizations.push(url);

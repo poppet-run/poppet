@@ -43,11 +43,13 @@ export const ChatGPTAuthLive = Layer.effect(
 
           if (connection === null) return true;
 
+          const { pendingRefresh, ...confirmed } = connection;
+
           const clear = forget
             ? store.remove
-            : store.write({ ...connection, credentials: null, verification: null });
+            : store.write({ ...confirmed, credentials: null, verification: null });
 
-          const refreshToken = connection.credentials?.refreshToken;
+          const refreshToken = pendingRefresh?.refreshToken ?? connection.credentials?.refreshToken;
 
           if (refreshToken && connection.clientId)
             return yield* oauth.revoke(refreshToken, connection.clientId).pipe(

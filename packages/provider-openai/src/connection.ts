@@ -35,6 +35,7 @@ export const Connection = Schema.Struct({
   clientId: Schema.NullOr(Schema.NonEmptyString),
   identity: Schema.NullOr(Identity),
   credentials: Schema.NullOr(Credentials),
+  pendingRefresh: Schema.optionalKey(Credentials),
   verification: Schema.NullOr(Schema.Struct({ model: Schema.NonEmptyString, at: Schema.Natural })),
 });
 

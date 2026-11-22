@@ -1,5 +1,5 @@
 import { DateTime, Effect, Redacted, Schema } from "effect";
-import { createRemoteJWKSet, customFetch, jwtVerify } from "jose";
+import { createRemoteJWKSet, customFetch, errors, jwtVerify } from "jose";
 
 import { ConnectionError } from "#src/connection";
 import type { Discovery } from "#src/oauth/discovery";
@@ -18,35 +18,59 @@ const invalidIdentity = () =>
       "The ChatGPT identity token could not be verified. Existing credentials were retained.",
   });
 
-export const identityVerifier =
-  (http: HttpFetch, expectedIssuer: string, discovery: Effect.Effect<Discovery, ConnectionError>) =>
-  (token: Redacted.Redacted<string>, clientId: string, nonce: string | null) =>
+export const identityVerifier = (
+  http: HttpFetch,
+  expectedIssuer: string,
+  discovery: Effect.Effect<Discovery, ConnectionError>,
+) => {
+  let cached: { uri: string; keys: ReturnType<typeof createRemoteJWKSet> } | undefined;
+
+  const keysFor = (uri: string) => {
+    if (cached?.uri !== uri) {
+      cached = {
+        uri,
+        keys: createRemoteJWKSet(new URL(uri), {
+          timeoutDuration: 10_000,
+          [customFetch]: async (url, options) => {
+            const response = await http(url, { ...options, redirect: "error" }).catch(() => {
+              throw networkError();
+            });
+
+            if (response.status === 429 || response.status >= 500) {
+              await response.body?.cancel().catch(() => {});
+              throw networkError();
+            }
+
+            return response;
+          },
+        }),
+      };
+    }
+
+    return cached.keys;
+  };
+
+  return (token: Redacted.Redacted<string>, clientId: string, nonce: string | null) =>
     Effect.gen(function* () {
       const metadata = yield* discovery;
       const currentDate = yield* DateTime.nowAsDate;
 
       const verified = yield* Effect.tryPromise({
-        try: async (signal) => {
-          const keys = createRemoteJWKSet(new URL(metadata.jwks_uri), {
-            timeoutDuration: 10_000,
-            [customFetch]: (url, options) =>
-              http(url, {
-                ...options,
-                signal: options.signal ? AbortSignal.any([options.signal, signal]) : signal,
-                redirect: "error",
-              }),
-          });
-
-          return jwtVerify(Redacted.value(token), keys, {
+        try: () =>
+          jwtVerify(Redacted.value(token), keysFor(metadata.jwks_uri), {
             issuer: expectedIssuer,
             audience: clientId,
             algorithms: ["RS256"],
             requiredClaims: ["sub", "exp", "iat"],
             clockTolerance: 5,
             currentDate,
-          });
-        },
-        catch: invalidIdentity,
+          }),
+        catch: (cause) =>
+          cause instanceof ConnectionError
+            ? cause
+            : cause instanceof errors.JWKSTimeout
+              ? networkError()
+              : invalidIdentity(),
       });
 
       const claims = yield* Schema.decodeUnknownEffect(Claims)(verified.payload).pipe(
@@ -70,3 +94,4 @@ export const identityVerifier =
         orElse: () => Effect.fail(networkError()),
       }),
     );
+};

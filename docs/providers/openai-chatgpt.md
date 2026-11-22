@@ -102,7 +102,9 @@ the SQLite lock and the next owner replaces the leftover PID marker automaticall
 Never remove the lock database while Poppet is running.
 
 OAuth discovery is cached for an hour after a successful response. A failed
-lookup is retried on the next request.
+lookup is retried on the next request. If identity verification is temporarily
+unavailable after renewal, Poppet keeps the renewal in protected storage.
+The next request verifies it before using the renewed access token.
 
 ## Logout
 

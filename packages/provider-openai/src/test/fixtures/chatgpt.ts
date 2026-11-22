@@ -80,9 +80,11 @@ export const createHarness = async () => {
 
   const run = <A>(
     program: Effect.Effect<A, ConnectionError, ChatGPTAuth | ChatGPTModel | CredentialStore>,
+    options?: Effect.RunOptions,
   ) =>
     Effect.runPromise(
       program.pipe(Effect.provide(runtime), Effect.provideService(Console.Console, localConsole)),
+      options,
     );
 
   const saved = async () =>
