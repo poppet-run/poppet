@@ -29,9 +29,9 @@ access, data transfers, and attempts to disable review or stop Poppet itself.
 An LLM decision is fallible. It cannot guarantee the behavior of scripts, tools,
 or files that change between review and execution.
 
-Bash starts with `--noprofile --norc` and `pipefail`; `BASH_ENV` and `ENV` are
-removed. Other environment variables come from Poppet's process. Commands can
-therefore access the host account's files and environment, including credentials.
+Bash starts with `--noprofile --norc` and `pipefail`. It inherits only
+`HOME`, `PATH`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `TMPDIR`, `LANG`, `LC_ALL`,
+and `LC_CTYPE`. Commands retain the host account's filesystem permissions.
 Standard input is closed. Output includes stdout, stderr, exit code, and whether
 it was truncated. Truncated output ends on a UTF-8 character boundary. A
 nonzero exit is returned to the agent; an interrupted or
