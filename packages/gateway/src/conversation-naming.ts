@@ -6,6 +6,7 @@ import type { Inbox } from "#src/repository";
 
 export const conversationNaming = (context: GatewayContext, agent: Agent["Service"]) => {
   const { channel, repo, store } = context;
+  const scope = channel.policy.scopeId;
 
   const syncName = (account: string, entry: Inbox) =>
     Effect.gen(function* () {
@@ -14,12 +15,7 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
 
       if (destination === null || !authorized(channel.policy, entry.message)) return;
 
-      const binding = yield* repo.namedBinding(
-        channel.id,
-        account,
-        entry.message.scopeId,
-        destination,
-      );
+      const binding = yield* repo.namedBinding(channel.id, account, scope, destination);
 
       if (
         !binding ||
@@ -33,7 +29,7 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       const key = {
         adapter: channel.id,
         account,
-        scope: entry.message.scopeId,
+        scope,
         conversation: destination,
         session: binding.sessionId,
       };
@@ -86,7 +82,7 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
               .disableNaming({
                 adapter: channel.id,
                 account,
-                scope: entry.message.scopeId,
+                scope,
                 conversation: entry.conversationId,
                 session: entry.sessionId,
               })
@@ -108,22 +104,11 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
   const externalNameChange = (destination: string) =>
     Effect.gen(function* () {
       const account = yield* channel.accountId;
-
-      const entry = yield* repo.namingEntry(
-        channel.id,
-        account,
-        channel.policy.scopeId,
-        destination,
-      );
+      const entry = yield* repo.namingEntry(channel.id, account, scope, destination);
 
       if (!entry) return;
 
-      const binding = yield* repo.namedBinding(
-        channel.id,
-        account,
-        entry.message.scopeId,
-        destination,
-      );
+      const binding = yield* repo.namedBinding(channel.id, account, scope, destination);
 
       if (!binding || binding.namingDisabled || binding.managedName === null) return;
 
@@ -133,7 +118,7 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
         yield* repo.disableNaming({
           adapter: channel.id,
           account,
-          scope: entry.message.scopeId,
+          scope,
           conversation: destination,
           session: binding.sessionId,
         });

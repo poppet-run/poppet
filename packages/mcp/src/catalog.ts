@@ -263,9 +263,7 @@ export const toolResult = (
 
   const next = fitPrefix(
     remaining,
-    (text) =>
-      (kept < content.length - 1 || text.length < remaining.length) &&
-      fits(text.length === 0 ? retained : [...retained, text]),
+    (text) => text.length < remaining.length && fits(text ? [...retained, text] : retained),
   );
 
   return serialize(next ? [...retained, next] : retained);
