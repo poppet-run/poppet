@@ -26,11 +26,20 @@ export const prepareWorkerLog = async (directory: string, log: string) => {
 
   const handle = await open(
     log,
-    constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW,
+    constants.O_WRONLY |
+      constants.O_CREAT |
+      constants.O_APPEND |
+      constants.O_NOFOLLOW |
+      constants.O_NONBLOCK,
     0o600,
   );
 
   try {
+    const info = await handle.stat();
+
+    if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.())
+      throw new WorkerError({ message: "Expected a private regular worker log owned by you." });
+
     await handle.chmod(0o600);
   } finally {
     await handle.close();
@@ -45,8 +54,6 @@ export const readWorkerLogs = async (log: string) => {
 
   /* eslint-disable no-await-in-loop */
   for (const path of [log, `${log}.1`, `${log}.2`, `${log}.3`]) {
-    if (remaining === 0) break;
-
     const handle = await openNoFollow(path);
 
     if (handle === null) continue;
@@ -60,12 +67,27 @@ export const readWorkerLogs = async (log: string) => {
 
       if (seen.has(identity)) continue;
       seen.add(identity);
+
+      if (remaining === 0) {
+        if (info.size > 0) truncated = true;
+        break;
+      }
+
       const start = Math.max(0, info.size - remaining);
-      const buffer = Buffer.alloc(Math.min(info.size, remaining));
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
-      chunks.unshift(buffer.subarray(0, bytesRead));
-      remaining -= bytesRead;
-      truncated = start > 0;
+      const target = Math.min(info.size, remaining);
+      const buffer = Buffer.alloc(target);
+      let read = 0;
+
+      while (read < target) {
+        const { bytesRead } = await handle.read(buffer, read, target - read, start + read);
+
+        if (bytesRead === 0) break;
+        read += bytesRead;
+      }
+
+      chunks.unshift(buffer.subarray(0, read));
+      remaining -= read;
+      truncated ||= start > 0;
     } finally {
       await handle.close();
     }

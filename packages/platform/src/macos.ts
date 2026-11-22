@@ -26,8 +26,12 @@ export const workerPaths = (launch: WorkerLaunch, home: string) => {
   };
 };
 
-const xmlText = (value: string) =>
-  value.replace(/[<>&"']/g, (character) => {
+const xmlText = (value: string) => {
+  // eslint-disable-next-line no-control-regex -- XML 1.0 forbids these control characters.
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\ufffe\uffff]/.test(value))
+    throw new WorkerError({ message: "Worker settings cannot contain illegal XML characters." });
+
+  return value.replace(/[<>&"']/g, (character) => {
     switch (character) {
       case "<":
         return "&lt;";
@@ -41,9 +45,17 @@ const xmlText = (value: string) =>
         return "&apos;";
     }
   });
+};
 
 export const workerPlist = (launch: WorkerLaunch, home: string) => {
   const paths = workerPaths(launch, home);
+
+  const environment = Array.from(launch.environment, ([key, value]) => {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+      throw new WorkerError({ message: `Invalid worker environment name: ${key}.` });
+
+    return `<key>${xmlText(key)}</key><string>${xmlText(value)}</string>`;
+  }).join("");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -51,9 +63,7 @@ export const workerPlist = (launch: WorkerLaunch, home: string) => {
   <key>Label</key><string>${xmlText(paths.label)}</string>
   <key>ProgramArguments</key><array>${[launch.executable, ...launch.arguments].map((argument) => `<string>${xmlText(argument)}</string>`).join("")}</array>
   <key>WorkingDirectory</key><string>${xmlText(launch.workingDirectory)}</string>
-  <key>EnvironmentVariables</key><dict>${Array.from(launch.environment)
-    .map(([key, value]) => `<key>${xmlText(key)}</key><string>${xmlText(value)}</string>`)
-    .join("")}</dict>
+  <key>EnvironmentVariables</key><dict>${environment}</dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>30</integer>
@@ -131,6 +141,7 @@ export const manageWorker = (
             message:
               "This worker is already installed. Uninstall it before changing its saved settings.",
           });
+        const contents = workerPlist(launch, home);
         const directory = join(home, "Library", "LaunchAgents");
         await mkdir(directory, { recursive: true });
         await prepareWorkerLog(paths.logs, paths.log);
@@ -138,16 +149,19 @@ export const manageWorker = (
         const plist = await open(paths.plist, "wx", 0o600);
 
         try {
-          await plist.writeFile(workerPlist(launch, home));
+          await plist.writeFile(contents);
           await plist.sync();
-        } finally {
           await plist.close();
+        } catch (cause) {
+          await plist.close().catch(() => {});
+          await unlink(paths.plist).catch(() => {});
+          throw cause;
         }
       } else if (!installed) {
         throw new WorkerError({ message: "Install the worker first with worker install." });
       }
 
-      if (action === "restart" && active) {
+      if ((action === "restart" || action === "install") && active) {
         await command(["bootout", target]);
         const deadline = performance.now() + 35_000;
 
@@ -172,7 +186,8 @@ export const manageWorker = (
         /* eslint-enable no-await-in-loop */
       }
 
-      if (!active || action === "restart") await command(["bootstrap", domain, paths.plist]);
+      if (!active || action === "restart" || action === "install")
+        await command(["bootstrap", domain, paths.plist]);
       else await command(["kickstart", target]);
 
       if (action === "restart") return "Worker restarted. Check worker status for readiness.";

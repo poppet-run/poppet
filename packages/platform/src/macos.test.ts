@@ -344,4 +344,71 @@ describe("manageWorker", () => {
       await rm(home, { recursive: true, force: true });
     }
   });
+
+  test("when plist inputs contain illegal XML characters or invalid env keys, rejects install without leaving a plist", async () => {
+    const home = await mkdtemp(join(tmpdir(), "poppet-launchd-invalid-"));
+
+    try {
+      const badChar = {
+        dataDirectory: join(home, "data"),
+        executable: "/custom/poppet",
+        arguments: ["worker", "run\u0007"],
+        workingDirectory: home,
+        environment: new Map<string, string>(),
+      };
+
+      await expect(
+        Effect.runPromise(manageWorker("install", badChar, home, async () => 113)),
+      ).rejects.toMatchObject({ message: expect.stringContaining("illegal XML") });
+      expect(await Bun.file(workerPaths(badChar, home).plist).exists()).toBe(false);
+
+      const badEnv = {
+        dataDirectory: join(home, "data"),
+        executable: "/custom/poppet",
+        arguments: ["worker", "run"],
+        workingDirectory: home,
+        environment: new Map([["BAD-KEY", "value"]]),
+      };
+
+      await expect(
+        Effect.runPromise(manageWorker("install", badEnv, home, async () => 113)),
+      ).rejects.toMatchObject({ message: expect.stringContaining("Invalid worker environment") });
+      expect(await Bun.file(workerPaths(badEnv, home).plist).exists()).toBe(false);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  test("when install finds an active LaunchAgent without an installed plist, boots it out before bootstrapping", async () => {
+    const home = await mkdtemp(join(tmpdir(), "poppet-launchd-orphan-"));
+    const launch = {
+      dataDirectory: join(home, "data"),
+      executable: "/custom/poppet",
+      arguments: ["worker", "run"],
+      workingDirectory: home,
+      environment: new Map<string, string>(),
+    };
+
+    const calls: ReadonlyArray<string>[] = [];
+    let active = true;
+
+    const launchctl = async (args: ReadonlyArray<string>) => {
+      calls.push(args);
+
+      if (args[0] === "print") return active ? 0 : 113;
+
+      if (args[0] === "bootout") active = false;
+
+      if (args[0] === "bootstrap") active = true;
+
+      return 0;
+    };
+
+    try {
+      await Effect.runPromise(manageWorker("install", launch, home, launchctl));
+      expect(calls.map((args) => args[0])).toEqual(["print", "bootout", "print", "bootstrap"]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
 });
