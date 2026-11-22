@@ -2156,10 +2156,11 @@ describe.concurrent("Gateway", () => {
           yield* gateway.recover;
           expect(yield* gateway.processNext).toBe(false);
           yield* gateway.deliverNext;
-          expect(yield* (yield* GatewayRepository).status()).toMatchObject({
-            queued: 0,
-            executing: 0,
-          });
+          const sql = yield* SqlClient.SqlClient;
+          expect(yield* sql`SELECT external_id, state FROM gateway_inbox ORDER BY id`).toEqual([
+            { externalId: "first", state: "completed" },
+            { externalId: "interrupted", state: "failed" },
+          ]);
         }),
       );
       expect(state.requests).toHaveLength(1);
@@ -2879,7 +2880,7 @@ describe.concurrent("Gateway concurrent requests", () => {
       await state.run(
         Effect.gen(function* () {
           yield* (yield* Gateway).recover;
-          expect(yield* inboxStates).toEqual({ a1: "completed", b1: "completed" });
+          expect(yield* inboxStates).toEqual({ a1: "failed", b1: "failed" });
           const store = yield* Store;
 
           for (const session of yield* store.sessions)
