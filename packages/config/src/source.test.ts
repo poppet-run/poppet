@@ -7,7 +7,7 @@ import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
 import { loadConfig, quietHours, taskCatchUpMinutes, webSearchProvider } from "#src/config";
-import { ConfigSource, loadConfigSource } from "#src/source";
+import { ConfigSource, loadConfigSource, updateConfigFile } from "#src/source";
 
 const load = (environment: Record<string, string>) =>
   Effect.gen(function* () {
@@ -228,6 +228,28 @@ describe("loadConfigSource", () => {
       await expect(Effect.runPromise(load({ POPPET_DATA_DIR: directory }))).rejects.toMatchObject({
         message: expect.stringContaining("Cannot read configuration"),
       });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("when updating configuration in a symlinked or group-writable directory, rejects the directory", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-config-update-"));
+
+    try {
+      const real = join(directory, "real");
+      const linked = join(directory, "linked");
+      await mkdir(real, { mode: 0o700 });
+      await symlink(real, linked);
+
+      await expect(
+        Effect.runPromise(updateConfigFile(linked, (file) => ({ ...file, model: "m" }))),
+      ).rejects.toHaveProperty("_tag", "ConfigError");
+
+      await chmod(real, 0o770);
+      await expect(
+        Effect.runPromise(updateConfigFile(real, (file) => ({ ...file, model: "m" }))),
+      ).rejects.toHaveProperty("_tag", "ConfigError");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

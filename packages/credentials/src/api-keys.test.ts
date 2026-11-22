@@ -145,7 +145,7 @@ describe("ApiKeyStore", () => {
     ["corrupted", "bad-json"],
     ["foreign", JSON.stringify({ version: 1, provider: "other-provider", key: "foreign-secret" })],
   ])(
-    "when credentials are %s, rejects them without overwriting and repairs file permissions",
+    "when credentials are %s or overly permissive, rejects them without overwriting or silently chmodding",
     async (_label, contents) => {
       const store = await harness();
 
@@ -153,9 +153,12 @@ describe("ApiKeyStore", () => {
         await store.run((keys) => keys.write("test-provider", Redacted.make("router-key")));
         const path = join(store.directory, "auth/test-provider.json");
         await chmod(path, 0o644);
-        await store.run((keys) => keys.read("test-provider"));
-        expect((await stat(path)).mode & 0o777).toBe(0o600);
+        await expect(store.run((keys) => keys.read("test-provider"))).rejects.toMatchObject({
+          reason: "authentication",
+        });
+        expect((await stat(path)).mode & 0o777).toBe(0o644);
 
+        await chmod(path, 0o600);
         await writeFile(path, contents);
         await expect(store.run((keys) => keys.read("test-provider"))).rejects.toMatchObject({
           reason: "authentication",
@@ -166,6 +169,41 @@ describe("ApiKeyStore", () => {
       }
     },
   );
+
+  test("when a saved key file exceeds 64 KiB or has excess properties on inspection, rejects it", async () => {
+    const store = await harness();
+
+    try {
+      await store.run((keys) => keys.write("test-provider", Redacted.make("router-key")));
+      const path = join(store.directory, "auth/test-provider.json");
+
+      const { registration } = apiKeyProvider({
+        id: "test-provider",
+        name: "Test provider",
+        environment: "TEST_PROVIDER_KEY",
+        make: () => ({ id: "test-provider", models: Effect.succeed([]), resolve: () => Effect.die("") }),
+      });
+
+      await writeFile(
+        path,
+        JSON.stringify({ version: 1, provider: "test-provider", key: "router-key", extra: true }),
+      );
+      await chmod(path, 0o600);
+
+      await expect(
+        Effect.runPromise(registration.inspectSaved(store.directory)),
+      ).rejects.toMatchObject({ reason: "authentication" });
+
+      await writeFile(path, " ".repeat(65537));
+      await chmod(path, 0o600);
+
+      await expect(store.run((keys) => keys.read("test-provider"))).rejects.toMatchObject({
+        reason: "authentication",
+      });
+    } finally {
+      await store.close();
+    }
+  });
 
   test("when credential paths are symlinked or another writer owns them, rejects access without touching unrelated data", async () => {
     const store = await harness();

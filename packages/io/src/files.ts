@@ -9,7 +9,7 @@ export const isMissingFile = Schema.is(Schema.Struct({ code: Schema.Literal("ENO
 
 export const ensurePrivateDirectory = async (
   path: string,
-  options: { readonly create?: boolean } = {},
+  options: { readonly create?: boolean; readonly strict?: boolean } = {},
 ): Promise<boolean> => {
   if (options.create ?? true) await mkdir(path, { recursive: true, mode: 0o700 });
 
@@ -22,6 +22,13 @@ export const ensurePrivateDirectory = async (
 
   if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.())
     throw new Error("Invalid private directory");
+
+  if (options.strict === true) {
+    if ((info.mode & 0o077) !== 0) throw new Error("Unsafe private directory");
+
+    return true;
+  }
+
   await chmod(path, 0o700);
 
   return true;
