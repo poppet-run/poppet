@@ -1,3 +1,4 @@
+import { Resolver } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
 
 export const publicHttpURL = (value: string, forbidden: () => Error) => {
@@ -63,3 +64,33 @@ export const publicAddress = (address: string) => {
 };
 
 export const urlHostname = (url: URL) => url.hostname.replace(/^\[|\]$/g, "");
+
+const noRecords = new Set(["ENODATA", "ENOTFOUND"]);
+
+const missingAddress = (error: NodeJS.ErrnoException) => {
+  if (noRecords.has(error.code ?? "")) return [];
+  throw error;
+};
+
+export const resolveAddresses = async (hostname: string, signal: AbortSignal) => {
+  signal.throwIfAborted();
+
+  if (isIP(hostname)) return [hostname];
+  const resolver = new Resolver();
+  const cancel = () => resolver.cancel();
+  signal.addEventListener("abort", cancel, { once: true });
+
+  try {
+    const records = await Promise.all([
+      resolver.resolve4(hostname).catch(missingAddress),
+      resolver.resolve6(hostname).catch(missingAddress),
+    ]);
+
+    signal.throwIfAborted();
+
+    return records.flat();
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    resolver.cancel();
+  }
+};
