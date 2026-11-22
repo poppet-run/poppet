@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ChannelEnvironment } from "@poppet/gateway";
+import { ChannelEnvironment, ChannelInput } from "@poppet/gateway";
 import { Effect, Redacted } from "effect";
 
 import { parseConversation } from "#src/channel";
@@ -14,11 +14,17 @@ test("setup protects both tokens and keeps them out of configuration", async () 
   const directory = await mkdtemp(join(tmpdir(), "poppet-slack-"));
 
   try {
-    const setup = (args: string[]) =>
+    const setup = (args: string[], secret?: string) =>
       Effect.runPromise(
-        slack
-          .setup(args)
-          .pipe(Effect.provideService(ChannelEnvironment, { dataDirectory: directory })),
+        slack.setup(args).pipe(
+          Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
+          Effect.provideService(ChannelInput, {
+            readSecret:
+              secret === undefined
+                ? Effect.die("Unexpected stdin secret read")
+                : Effect.succeed(Redacted.make(secret)),
+          }),
+        ),
       );
 
     const args = [
@@ -44,6 +50,14 @@ test("setup protects both tokens and keeps them out of configuration", async () 
     expect(await readFile(join(directory, "config.json"), "utf8")).not.toContain("secret");
     await expect(setup([...args, "--owner-id", "U456"])).rejects.toThrow();
     expect((await Effect.runPromise(loadSlackSettings(directory)))?.ownerId).toBe("U123");
+
+    await setup(
+      ["setup", "--owner-id", "U123", "--team-id", "T123", "--home-channel-id", "C123"],
+      "stdin-bot-secret\nstdin-app-secret",
+    );
+    const fromStdin = await Effect.runPromise(loadSlackSettings(directory));
+    expect(Redacted.value(fromStdin!.token)).toBe("stdin-bot-secret");
+    expect(Redacted.value(fromStdin!.appToken)).toBe("stdin-app-secret");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

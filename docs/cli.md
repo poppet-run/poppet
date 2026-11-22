@@ -243,10 +243,10 @@ is running. Use `--to <gateway>` to deliver to that gateway's home channel, or
 
 ## Messaging
 
-| Command                                                                                                             | Action                                   |
-| ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `gateway discord setup --owner-id <id> --guild-id <id> --home-channel-id <id> --bot-token <token>`                  | Save Discord settings and the bot token. |
-| `gateway slack setup --owner-id <id> --team-id <id> --home-channel-id <id> --bot-token <token> --app-token <token>` | Save Slack settings and both tokens.     |
+| Command                                                                                                                     | Action                                                             |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `gateway discord setup --owner-id <id> --guild-id <id> --home-channel-id <id> [--bot-token <token>]`                        | Save Discord settings and the bot token (or read token on stdin).  |
+| `gateway slack setup --owner-id <id> --team-id <id> --home-channel-id <id> [--bot-token <token>] [--app-token <token>]`     | Save Slack settings and tokens (or read omitted tokens on stdin).  |
 
 See [Discord](gateways/discord.md) and [Slack](gateways/slack.md) for setup, conversation behavior,
 controls, and uncertain deliveries. Use `poppet setup` for masked token entry.

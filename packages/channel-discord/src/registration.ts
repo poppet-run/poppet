@@ -1,16 +1,17 @@
 import {
   ChannelEnvironment,
   ChannelError,
+  ChannelInput,
   parseSetupFlags,
   type ChannelRegistration,
 } from "@poppet/gateway";
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Layer, Redacted, Schema } from "effect";
 
 import { DiscordSettings, loadDiscordSettings, saveDiscordSettings } from "#src/settings";
 import { promptDiscordSetup } from "#src/setup";
 
 const setupHelp =
-  "setup --owner-id <id> --guild-id <id> --home-channel-id <id> --bot-token <token>";
+  "setup --owner-id <id> --guild-id <id> --home-channel-id <id> [--bot-token <token>]";
 
 export const discord = {
   id: "discord",
@@ -19,20 +20,23 @@ export const discord = {
   setupHelp,
   setup: (args) =>
     Effect.gen(function* () {
-      const values = yield* parseSetupFlags(args, "discord", setupHelp, [
-        "owner-id",
-        "guild-id",
-        "home-channel-id",
-        "bot-token",
-      ]);
+      const values = yield* parseSetupFlags(
+        args,
+        "discord",
+        setupHelp,
+        ["owner-id", "guild-id", "home-channel-id"],
+        ["bot-token"],
+      );
 
       const environment = yield* ChannelEnvironment;
+      const input = yield* ChannelInput;
+      const token = values["bot-token"] ?? Redacted.value(yield* input.readSecret);
 
       const settings = yield* Schema.decodeUnknownEffect(DiscordSettings)({
         ownerId: values["owner-id"],
         guildId: values["guild-id"],
         homeChannelId: values["home-channel-id"],
-        token: values["bot-token"],
+        token,
       }).pipe(
         Effect.mapError(
           () =>
