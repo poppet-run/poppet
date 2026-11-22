@@ -273,6 +273,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "re2-wasm@1.0.2": "patches/re2-wasm@1.0.2.patch",
+  },
   "overrides": {
     "zod": "4.6.7",
   },
