@@ -21,9 +21,20 @@ export const executeBash = (
       return;
     }
 
-    const environment = { ...process.env };
-    delete environment.BASH_ENV;
-    delete environment.ENV;
+    const environment = Object.fromEntries(
+      [
+        "HOME",
+        "PATH",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "TERM",
+        "TMPDIR",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+      ].flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name]]])),
+    );
 
     const child = spawn(
       "/bin/bash",

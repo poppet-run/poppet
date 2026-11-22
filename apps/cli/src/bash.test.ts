@@ -26,6 +26,30 @@ const exited = async (pid: number, deadline = Date.now() + 2000): Promise<boolea
   return exited(pid, deadline);
 };
 
+describe("executeBash", () => {
+  test("when the host environment includes secrets and Bash controls, passes only allowed values", async () => {
+    const { POPPET_TEST_KEY, CDPATH } = process.env;
+    process.env.POPPET_TEST_KEY = "test-secret";
+    process.env.CDPATH = "/private";
+
+    try {
+      const result = await executeBash(
+        { command: bashFixtures.environment, cwd: tmpdir(), timeoutSeconds: 5 },
+        4096,
+        signal(),
+      );
+
+      expect(result.stdout).toBe("||present");
+    } finally {
+      if (POPPET_TEST_KEY === undefined) delete process.env.POPPET_TEST_KEY;
+      else process.env.POPPET_TEST_KEY = POPPET_TEST_KEY;
+
+      if (CDPATH === undefined) delete process.env.CDPATH;
+      else process.env.CDPATH = CDPATH;
+    }
+  });
+});
+
 describe("Bash execution", () => {
   test("runs shell operations in the exact directory and returns bounded stdout, stderr, and exit status", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "poppet-bash-"));
