@@ -251,6 +251,17 @@ describe("toolResult", () => {
     expect(output).not.toMatch(/\\ud[89ab][0-9a-f]{2}/i);
   });
 
+  test("when the full result is one byte over budget, marks truncation only after dropping text", () => {
+    const result = { content: [{ type: "text" as const, text: "a🌻" }] };
+    const full = toolResult(result, 1024);
+    const limit = Buffer.byteLength(full) - 1;
+    const output = toolResult(result, limit);
+
+    expect(JSON.parse(full)).toMatchObject({ content: ["a🌻"], truncated: false });
+    expect(JSON.parse(output)).toMatchObject({ content: ["a"], truncated: true });
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(limit);
+  });
+
   test("when many text blocks exceed the budget, retains a useful prefix and counts omissions", () => {
     const content = Array.from({ length: 8000 }, (_, i) => ({
       type: "text" as const,

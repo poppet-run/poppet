@@ -340,6 +340,7 @@ forwarding are outside this implementation. Resource links and media are marked 
 - Serialized results fit the 16 KiB tool-output limit. Text is shortened without splitting
   Unicode; oversized structured JSON is omitted as a whole. Results explicitly
   report `truncated`, `omittedContent`, `omittedStructuredContent`, and `redacted`.
+  A truncated result omits content or shortens a text block.
 
 Tool-reported errors leave a failed durable call. Transport/protocol failures
 following dispatch leave an uncertain call, as does cancellation while a call is
