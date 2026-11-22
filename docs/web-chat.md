@@ -51,7 +51,7 @@ chmod 600 ~/.config/poppet/web.json
 
 The browser accepts keys between 32 and 256 characters. The server stores only the
 configured hash and compares it in constant time. Keep `web.json` owned by your user
-and prevent other users from writing to it. Replace the example hash before
+and set its mode to `0600`. Replace the example hash before
 starting the worker.
 
 Start or restart the worker from this checkout:
@@ -102,9 +102,12 @@ SameSite=Strict cookies, with Secure cookies for HTTPS. They expire after 12 hou
 and end on sign-out or when the worker restarts. Anyone with the access key can read
 and use all conversations. Changing the key hash and restarting revokes all logins.
 
-Poppet allows ten login attempts per minute per client address. Behind a loopback
-proxy, the last `X-Forwarded-For` address identifies the client. Poppet keeps at most
-32 logins. Once that limit is reached, a new login replaces the oldest one.
+Poppet allows ten login attempts per minute per client address and 60 per minute
+across the listener. Set `"trustProxy": true` in `web.json` to use the last valid
+`X-Forwarded-For` address from a loopback proxy that manages this header.
+Ordinary connections have a 10-second idle timeout, and JSON bodies must arrive
+within 10 seconds. Up to 32 authenticated event streams can stay open at once.
+Poppet also keeps at most 32 logins. A new login then replaces the oldest one.
 
 ## Conversation behavior
 

@@ -146,6 +146,72 @@ const fixture = async (
 };
 
 describe("web chat", () => {
+  test.each([false, true])(
+    "when proxy trust is %j, enforces the applicable login throttle",
+    async (trustProxy) => {
+      const directory = await mkdtemp(join(tmpdir(), "poppet-web-throttle-"));
+      const app = await fixture(directory);
+      const handler = webHandler({ ...settings, trustProxy }, app.chat, new Map());
+
+      try {
+        const limit = trustProxy ? 60 : 10;
+
+        for (let index = 0; index <= limit; index++) {
+          const request = new Request(settings.origin + "/api/login", {
+            method: "POST",
+            headers: {
+              origin: settings.origin,
+              "content-type": "application/json",
+              "x-forwarded-for": `192.0.2.${index + 1}`,
+            },
+            body: JSON.stringify({ key: "wrong".repeat(10) }),
+          });
+
+          // eslint-disable-next-line no-await-in-loop -- Count sequential login attempts in the same window.
+          const response = await handler(request, "127.0.0.1");
+          expect(response.status).toBe(index < limit ? 401 : 429);
+        }
+      } finally {
+        await app.runtime.dispose();
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test("when all event stream slots are in use, refuses another until a stream closes", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-stream-cap-"));
+    const app = await fixture(directory);
+    const streams: Response[] = [];
+
+    try {
+      const cookie = await app.login();
+
+      const submitted = await app.send(
+        "/api/submissions",
+        { id: randomUUID(), sessionId: null, text: "Hello" },
+        cookie,
+      );
+
+      const { sessionId } = Schema.decodeUnknownSync(Schema.Struct({ sessionId: Schema.String }))(
+        await submitted.json(),
+      );
+
+      const open = () => app.send(`/api/sessions/${sessionId}/events`, undefined, cookie);
+
+      streams.push(...(await Promise.all(Array.from({ length: 32 }, open))));
+      expect(streams.every((response) => response.status === 200)).toBe(true);
+      expect((await open()).status).toBe(429);
+      await streams.pop()?.body?.cancel();
+      const reopened = await open();
+      streams.push(reopened);
+      expect(reopened.status).toBe(200);
+    } finally {
+      await Promise.all(streams.map((response) => response.body?.cancel()));
+      await app.runtime.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("conversation deep links load the production scripts and styles", async () => {
     const web = fileURLToPath(new URL("../../../../web/", import.meta.url));
 

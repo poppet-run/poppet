@@ -145,6 +145,12 @@ describe("files.ts", () => {
     expect(isMissingFile(Object.assign(new Error("Denied"), { code: "EACCES" }))).toBe(false);
   });
 
+  test("when protected settings require a private mode, refuses a readable file", async () => {
+    const path = join(directory, "readable.json");
+    await writeFile(path, "{}", { mode: 0o644 });
+    await expect(readProtectedFile(path, { privateOnly: true })).rejects.toThrow();
+  });
+
   test("when the file is owned and private, reads it and optionally narrows its mode", async () => {
     const path = join(directory, "settings.json");
     await writeFile(path, "{}", { mode: 0o644 });
