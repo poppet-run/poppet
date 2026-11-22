@@ -11,7 +11,7 @@ import {
 import { responsesModel } from "@poppet/provider/protocol";
 import { SessionReadResult, SessionSearchMatch, Store } from "@poppet/store";
 import { WebSearch, WebSearchError, makeBraveSearch } from "@poppet/web-search";
-import { Effect, Fiber, Redacted, Schema, Stream } from "effect";
+import { Deferred, Effect, Fiber, Redacted, Schema, Stream } from "effect";
 import OpenAI from "openai";
 
 import { Bash, commandReviewInstructions } from "#src/bash";
@@ -340,6 +340,7 @@ describe.concurrent("conversation", () => {
 
           if (approved) expect(JSON.parse(calls[0]!.output!)).toEqual(receipt);
           else {
+            expect(calls[0]!.startedAt).toBeNull();
             const messages = yield* store.messages(session.id);
             expect(
               messages.some(
@@ -352,6 +353,52 @@ describe.concurrent("conversation", () => {
       );
       expect(executions).toBe(approved ? 1 : 0);
       expect(approvals).toBe(approved || mode === "rejected" ? 1 : 0);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a run is cancelled while waiting for Bash approval, records interruption before dispatch", async () => {
+    const approval = Deferred.makeUnsafe<void>();
+    const args = { command: "printf hello", cwd: "/tmp", timeoutSeconds: 5 };
+
+    const state = await fixture(
+      (request) =>
+        request.instructions === commandReviewInstructions
+          ? completed([
+              {
+                type: "text",
+                text: JSON.stringify({ decision: "needs_approval", reason: "Confirm" }),
+              },
+            ])
+          : completed([tool("bash", JSON.stringify(args), "bash-1", "poppet_system")]),
+      { bash: { run: () => Effect.die("Bash should still be waiting for approval") } },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("test-provider", "test-model");
+          const agent = yield* Agent;
+
+          const fiber = yield* Stream.runDrain(
+            agent.send(session.id, "Print hello", {
+              approveAction: () =>
+                Deferred.succeed(approval, undefined).pipe(Effect.andThen(Effect.never)),
+            }),
+          ).pipe(Effect.forkChild);
+
+          yield* Deferred.await(approval);
+          yield* Fiber.interrupt(fiber);
+
+          const [run] = yield* store.runs(session.id);
+          expect((yield* store.toolCalls(run!.id))[0]).toMatchObject({
+            status: "interrupted",
+            startedAt: null,
+          });
+        }),
+      );
     } finally {
       await state.close();
     }
