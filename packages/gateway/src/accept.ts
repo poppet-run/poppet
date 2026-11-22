@@ -1,4 +1,5 @@
-import { Effect, Fiber, Schema } from "effect";
+import type { StoreError } from "@poppet/store";
+import { Effect, Fiber, Result, Schema } from "effect";
 
 import type { ActionApprovals } from "#src/approvals";
 import { ChannelError, IncomingMessage } from "#src/channel";
@@ -16,6 +17,9 @@ import { isApprovalReply, isControl } from "#src/request";
 export interface Controls {
   readonly approvals: ActionApprovals;
   readonly running: RunningRequest;
+  readonly scheduleControl?: (
+    effect: Effect.Effect<void, ChannelError | StoreError>,
+  ) => Effect.Effect<void>;
 }
 
 const controlReply = (
@@ -73,10 +77,27 @@ const handleControl = (
 ) =>
   Effect.gen(function* () {
     yield* mark(context, message, "working");
-    const reply = yield* controlReply(context, controls, entry, message, conversation, session);
-    yield* finish(context, entry.id, reply);
+
+    const outcome = yield* controlReply(
+      context,
+      controls,
+      entry,
+      message,
+      conversation,
+      session,
+    ).pipe(Effect.result);
+
+    if (Result.isFailure(outcome)) {
+      if (outcome.failure instanceof ChannelError)
+        yield* finish(context, entry.id, outcome.failure.message, "failed");
+      yield* mark(context, message, "stopped");
+
+      return yield* Effect.fail(outcome.failure);
+    }
+
+    yield* finish(context, entry.id, outcome.success);
     yield* mark(context, message, "completed");
-  });
+  }).pipe(Effect.onInterrupt(() => mark(context, message, "stopped")));
 
 export const accept = (context: GatewayContext, controls: Controls, input: IncomingMessage) =>
   Effect.gen(function* () {
@@ -112,5 +133,7 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
     yield* repo.state(entry.id, "cancelled");
 
     if (conversation === null || session === null) return;
-    yield* handleControl(context, controls, entry, message, conversation, session);
+    const control = handleControl(context, controls, entry, message, conversation, session);
+
+    yield* controls.scheduleControl ? controls.scheduleControl(control) : control;
   });

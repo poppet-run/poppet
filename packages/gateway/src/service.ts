@@ -1,6 +1,6 @@
 import { Agent, ChatSettings, Skills, type ChatFailure } from "@poppet/agent";
 import { AppConfig, quietHours } from "@poppet/config";
-import { Store } from "@poppet/store";
+import { Store, type StoreError } from "@poppet/store";
 import { Clock, Context, Effect, FiberSet, Layer, Queue, Stream } from "effect";
 
 import { accept } from "#src/accept";
@@ -65,26 +65,39 @@ const gateway = Effect.gen(function* () {
   const run = Effect.gen(function* () {
     yield* service.recover;
     const active = yield* FiberSet.make<void, ChatFailure | ChannelError>();
+    const controlFibers = yield* FiberSet.make<void, StoreError>();
 
-    const receive = Stream.runForEach(channel.messages, (message) =>
-      service.accept(message).pipe(
-        Effect.catchTag("ChannelError", (error) =>
-          Effect.sync(() => {
-            rejected++;
-          }).pipe(
-            Effect.andThen(
-              Effect.logWarning("messaging message rejected").pipe(
-                Effect.annotateLogs({ error: error.message }),
-              ),
-            ),
+    const handleChannelError = (error: ChannelError) =>
+      Effect.sync(() => {
+        rejected++;
+      }).pipe(
+        Effect.andThen(
+          Effect.logWarning("messaging message rejected").pipe(
+            Effect.annotateLogs({ error: error.message }),
           ),
         ),
-      ),
+      );
+
+    const receive = Stream.runForEach(channel.messages, (message) =>
+      accept(
+        context,
+        {
+          approvals,
+          running,
+          scheduleControl: (effect) =>
+            FiberSet.run(
+              controlFibers,
+              effect.pipe(Effect.catchTag("ChannelError", handleChannelError)),
+            ).pipe(Effect.asVoid),
+        },
+        message,
+      ).pipe(Effect.catchTag("ChannelError", handleChannelError)),
     );
 
     yield* Effect.all(
       [
         receive,
+        FiberSet.join(controlFibers),
         Stream.runForEach(channel.approvals?.actions ?? Stream.never, approvals.answerAction),
         loop(
           dispatchNext(context, execution, active, maxConcurrentRequests),
