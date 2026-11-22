@@ -35,25 +35,33 @@ export const searchSessions = Effect.fn(function* (
   const rows = yield* sql`SELECT m.session_id, m.id AS message_id, s.title, m.created_at,
       json_extract(m.payload, '$.role') AS role,
       snippet(session_search, 0, ${marker}, ${marker}, '', 48) AS excerpt,
-      length(session_search.text) AS text_length
+      length(CAST(session_search.text AS BLOB)) AS text_bytes
     FROM session_search JOIN messages AS m ON m.id = session_search.rowid
     JOIN sessions AS s ON s.id = m.session_id
     WHERE session_search MATCH ${terms.join(" AND ")}
     ORDER BY rank, m.id LIMIT ${limit + 1}`.pipe(
-    decodeRows(Schema.Struct({ ...SessionSearchMatch.fields, textLength: Schema.Natural })),
+    decodeRows(Schema.Struct({ ...SessionSearchMatch.fields, textBytes: Schema.Natural })),
   );
 
   let truncated = rows.length > limit;
 
   const matches = rows
     .slice(0, limit)
-    .map(({ sessionId, messageId, title, createdAt, role, excerpt: snippet, textLength }) => {
-      const [before = "", hit = "", after = ""] = snippet.split(marker);
-      const side = Math.max(0, Math.floor((excerptBytes - Buffer.byteLength(hit)) / 2));
-      const lead = [...clip([...before].toReversed().join(""), side)].toReversed().join("");
-      const excerpt = `${lead}${hit}${clip(after, side)}`;
+    .map(({ sessionId, messageId, title, createdAt, role, excerpt: snippet, textBytes }) => {
+      const [before = "", firstHit = "", ...rest] = snippet.split(marker);
+      const after = rest.join("");
+      const hitBytes = Buffer.byteLength(firstHit);
 
-      truncated ||= excerpt.length < textLength;
+      let excerpt: string;
+
+      if (hitBytes >= excerptBytes) excerpt = clip(firstHit, excerptBytes);
+      else {
+        const side = Math.floor((excerptBytes - hitBytes) / 2);
+        const lead = [...clip([...before].toReversed().join(""), side)].toReversed().join("");
+        excerpt = `${lead}${firstHit}${clip(after, side)}`;
+      }
+
+      truncated ||= Buffer.byteLength(excerpt) < textBytes;
 
       return { sessionId, messageId, title, createdAt, role, excerpt };
     });
