@@ -261,8 +261,9 @@ conversation or redirects a result when its destination becomes inaccessible.
 Completed results and failure notices enter the gateway delivery queue, using the
 task's saved destination. `tasks show`
 includes the destination and a `delivery` array of run IDs, chunk states, message
-IDs, attempt counts, and `heldUntil`. Each delivered run has its own receipt. An empty array
-means no reply has been queued. Temporary delivery failures
+IDs, attempt counts, and `heldUntil`. Each delivered run has its own receipt.
+After the channel acknowledges a send, the worker records the message ID before
+finishing a graceful shutdown. An empty array means no reply has been queued. Temporary delivery failures
 retry with bounded backoff. Failed and uncertain sends remain inspectable;
 uncertain sends are not resent automatically. Inspect the saved output before
 manually reposting it. Delivery failures never change a completed occurrence or

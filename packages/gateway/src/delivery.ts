@@ -101,13 +101,11 @@ export const deliverNext = (context: GatewayContext) => {
       yield* channel.checkAccess(entry.message, destination);
       yield* repo.delivering(delivery);
 
-      const id = yield* channel.send(
-        destination,
-        delivery.text,
-        `${entry.id}-${delivery.position}`,
+      yield* Effect.uninterruptibleMask((restore) =>
+        restore(channel.send(destination, delivery.text, `${entry.id}-${delivery.position}`)).pipe(
+          Effect.flatMap((id) => repo.delivered(delivery, id)),
+        ),
       );
-
-      yield* repo.delivered(delivery, id);
       yield* wake(context.wakes.naming);
     }).pipe(
       Effect.catchTag("ChannelError", (error) =>
