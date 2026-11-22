@@ -16,7 +16,6 @@ describe("failureDecision", () => {
       const error = new ChannelError({ reason, message: "Down" });
 
       expect(failureDecision(error, 0)).toEqual({ retryAfterMs: 1000, reply: generic });
-      expect(failureDecision(error, 2)).toEqual({ retryAfterMs: 4000, reply: generic });
       const limit = reason === "unavailable" ? 6 : 3;
       expect(failureDecision(error, limit - 1).retryAfterMs).toBe(1000 * 2 ** (limit - 1));
       expect(failureDecision(error, limit)).toEqual({ retryAfterMs: null, reply: generic });

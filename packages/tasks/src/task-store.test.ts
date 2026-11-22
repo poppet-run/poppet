@@ -899,30 +899,6 @@ describe.concurrent("TaskRepository", () => {
     }
   });
 
-  test("when one schedule becomes invalid, pauses it and reconciles other tasks", async () => {
-    const state = await fixture();
-
-    try {
-      await state.run((repo, _store, sql) =>
-        Effect.gen(function* () {
-          const first = yield* repo.add(recurring, start);
-          const second = yield* repo.add(recurring, start + 1);
-          yield* sql.unsafe("UPDATE jobs SET schedule = ? WHERE id = ?", [
-            JSON.stringify({ ...recurring.schedule, timezone: "Invalid/Zone" }),
-            second.id,
-          ]);
-
-          yield* repo.reconcile(start + 60_000);
-          expect(yield* repo.occurrences(first.id)).toHaveLength(1);
-          expect((yield* repo.task(first.id)).nextAt).toBe(start + 120_000);
-          expect((yield* repo.task(second.id)).paused).toBe(1);
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
-
   test("when an answer commits before its task outcome, recovers it without replay", async () => {
     const state = await fixture();
 

@@ -187,7 +187,7 @@ describe("ChatTasks", () => {
           const { context } = yield* recorded(action);
           const granted = { ...context, destination: () => Effect.succeed(destination) };
           yield* execute(action, granted);
-          expect(yield* repo.occurrences(delivered.id)).toHaveLength(1);
+          expect(yield* repo.occurrences(delivered.id)).toMatchObject([{ destination }]);
           expect(yield* repo.occurrences(manual.id)).toHaveLength(0);
         }),
       );
