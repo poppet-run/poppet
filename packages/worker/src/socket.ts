@@ -222,36 +222,36 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
                 signal: AbortSignal.any([request.signal, shutdown]),
               });
 
-              if (Exit.isSuccess(exit)) {
-                const response = exit.value;
+              if (Exit.isFailure(exit)) {
+                await finish(exit);
 
-                if (
-                  response.body !== null &&
-                  response.headers.get("content-type") === "application/x-ndjson"
-                ) {
-                  if (request.signal.aborted) abort();
-                  else request.signal.addEventListener("abort", abort, { once: true });
+                return Response.json(
+                  { ok: false, message: "The worker stopped before completing the request." },
+                  { status: 503, headers: { connection: "close" } },
+                );
+              }
 
-                  return new Response(
-                    scopedBody(response.body, (outcome) => {
-                      request.signal.removeEventListener("abort", abort);
+              const response = exit.value;
 
-                      return finish(outcome);
-                    }),
-                    response,
-                  );
-                }
-
+              if (
+                response.body === null ||
+                response.headers.get("content-type") !== "application/x-ndjson"
+              ) {
                 await finish(exit);
 
                 return response;
               }
 
-              await finish(exit);
+              if (request.signal.aborted) abort();
+              else request.signal.addEventListener("abort", abort, { once: true });
 
-              return Response.json(
-                { ok: false, message: "The worker stopped before completing the request." },
-                { status: 503, headers: { connection: "close" } },
+              return new Response(
+                scopedBody(response.body, (outcome) => {
+                  request.signal.removeEventListener("abort", abort);
+
+                  return finish(outcome);
+                }),
+                response,
               );
             },
           };
