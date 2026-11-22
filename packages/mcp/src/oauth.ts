@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+
 import {
   auth,
   extractWWWAuthenticateParams,
   type AuthOptions,
-  type AuthProvider,
   type FetchLike,
   type OAuthClientProvider,
   type OAuthDiscoveryState,
@@ -42,6 +44,7 @@ const SavedSignIn = Schema.Struct({
   tokens: Schema.optionalKey(Schema.JsonObject),
   tokensSavedAt: Schema.optionalKey(Schema.Number),
   discovery: Schema.optionalKey(Schema.JsonObject),
+  refreshLease: Schema.optionalKey(Schema.Struct({ id: Schema.String, expiresAt: Schema.Number })),
 });
 
 type SavedSignIn = typeof SavedSignIn.Type;
@@ -348,86 +351,84 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
         catch: failure,
       });
 
-      yield* signIns.update(config.id, (saved) =>
-        Effect.tryPromise({
-          try: async (signal) => {
-            const deadline = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
-            const fetchFn = oauthFetch(server, deadline);
-            const record = copy(saved, config.url);
+      const saved = yield* signIns.read(config.id);
+      const record = copy(saved, config.url);
+      delete record.refreshLease;
 
-            if (
-              config.oauth.clientId === undefined &&
-              registeredRedirect(record) !== callback.redirectUri
-            )
-              delete record.client;
+      const target = yield* Effect.tryPromise({
+        try: async (signal) => {
+          const deadline = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
+          const authorization = authOptions(config, oauthFetch(server, deadline));
+          const advertised = challenge.resourceMetadataUrl?.href;
 
-            const authorization = authOptions(config, fetchFn);
+          if (record.discovery?.resourceMetadataUrl !== advertised) delete record.discovery;
 
-            if (challenge.resourceMetadataUrl !== undefined) {
-              authorization.resourceMetadataUrl = challenge.resourceMetadataUrl;
+          if (
+            config.oauth.clientId === undefined &&
+            registeredRedirect(record) !== callback.redirectUri
+          )
+            delete record.client;
 
-              if (record.discovery?.resourceMetadataUrl !== challenge.resourceMetadataUrl.href)
-                delete record.discovery;
-            }
+          if (challenge.resourceMetadataUrl !== undefined)
+            authorization.resourceMetadataUrl = challenge.resourceMetadataUrl;
 
-            if (authorization.scope === undefined && challenge.scope !== undefined)
-              authorization.scope = challenge.scope;
+          if (authorization.scope === undefined && challenge.scope !== undefined)
+            authorization.scope = challenge.scope;
 
-            const result = await auth(provider(record), {
-              ...authorization,
-              forceReauthorization: true,
-            });
+          const result = await auth(provider(record), {
+            ...authorization,
+            forceReauthorization: true,
+          });
 
-            if (result !== "REDIRECT" || authorizationURL === undefined)
-              throw new Error("The authorization server did not start a browser sign-in.");
+          if (result !== "REDIRECT" || authorizationURL === undefined)
+            throw new Error("The authorization server did not start a browser sign-in.");
 
-            await oauthAddress(server, authorizationURL, deadline);
+          await oauthAddress(server, authorizationURL, deadline);
 
-            return record;
-          },
-          catch: failure,
-        }),
-      );
+          return authorizationURL;
+        },
+        catch: failure,
+      });
 
-      if (authorizationURL === undefined)
-        return yield* Effect.fail(
-          new MCPSignInError({
-            message: `MCP ${config.id}: the authorization endpoint was missing.`,
-          }),
-        );
-
-      const { code, iss } = yield* authorizeInBrowser(callback, authorizationURL.href, {
+      const { code, iss } = yield* authorizeInBrowser(callback, target.href, {
         ...options,
         service: `MCP ${config.id}`,
       });
 
-      yield* signIns.update(config.id, (saved) =>
-        Effect.tryPromise({
-          try: async (signal) => {
-            const fetchFn = oauthFetch(
-              server,
-              AbortSignal.any([signal, AbortSignal.timeout(15000)]),
-            );
+      yield* Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          yield* restore(
+            Effect.tryPromise({
+              try: async (signal) => {
+                const fetchFn = oauthFetch(
+                  server,
+                  AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+                );
 
-            if (saved?.url !== config.url || saved.discovery === undefined)
-              throw new Error("The saved sign-in changed during authorization. Sign in again.");
+                const exchange: AuthOptions = {
+                  ...authOptions(config, fetchFn),
+                  authorizationCode: code,
+                };
 
-            const record = copy(saved, config.url);
+                if (iss !== undefined) exchange.iss = iss;
 
-            const exchange: AuthOptions = {
-              ...authOptions(config, fetchFn),
-              authorizationCode: code,
-            };
+                await auth(provider(record), exchange);
 
-            if (iss !== undefined) exchange.iss = iss;
+                if (accessToken(record) === null) throw new Error("No access token was issued.");
+              },
+              catch: failure,
+            }),
+          );
 
-            await auth(provider(record), exchange);
-
-            if (accessToken(record) === null) throw new Error("No access token was issued.");
-
-            return record;
-          },
-          catch: failure,
+          yield* signIns.update(config.id, (current) =>
+            isDeepStrictEqual(current, saved)
+              ? Effect.succeed(record)
+              : Effect.fail(
+                  failure(
+                    new Error("The saved sign-in changed during authorization. Sign in again."),
+                  ),
+                ),
+          );
         }),
       );
     }),
@@ -438,7 +439,7 @@ export const signOut = (id: string) =>
     signIns.update(id, (saved) => {
       if (saved === null) return Effect.succeed(null);
 
-      const { tokens: _tokens, tokensSavedAt: _savedAt, ...rest } = saved;
+      const { tokens: _tokens, tokensSavedAt: _savedAt, refreshLease: _lease, ...rest } = saved;
 
       return Effect.succeed(rest);
     }),
@@ -460,86 +461,157 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
     const state = { loginRequired: false };
     const server = new URL(config.url);
 
-    const refresh = signIns.update(config.id, (current) =>
-      Effect.tryPromise({
-        try: async (signal) => {
-          const fetchFn = oauthFetch(server, AbortSignal.any([signal, AbortSignal.timeout(15000)]));
-          const record = copy(current, config.url);
-          const latest = accessToken(record);
+    const readToken = async () => {
+      const current = await Effect.runPromise(signIns.read(config.id));
+      const latest = tokenForServer(current, config);
 
-          if (latest !== null && latest.access_token !== token) {
-            token = latest.access_token;
+      if (latest === null || state.loginRequired) {
+        state.loginRequired = true;
+        throw required(config.id, "sign-in required.");
+      }
 
-            return current;
-          }
+      token = latest.access_token;
 
-          if (latest?.refresh_token === undefined) {
-            state.loginRequired = true;
+      return token;
+    };
 
-            if (current === null || current.url !== config.url) return current;
-            delete record.tokens;
-            delete record.tokensSavedAt;
+    const refresh = async (rejected: string, response: Response, signal?: AbortSignal) => {
+      // The existing issuer and registration remain bound to the saved sign-in.
+      resourceMetadata(config, extractWWWAuthenticateParams(response).resourceMetadataUrl);
+      const id = randomUUID();
+      let ownsLease = false;
 
-            return record;
-          }
+      const removeLease = signIns.update(config.id, (current) => {
+        if (current?.refreshLease?.id !== id) return Effect.succeed(current);
+        const { refreshLease: _lease, ...rest } = current;
 
-          const provider = makeProvider(
-            config,
-            record,
-            {},
-            {
-              redirectUri: registeredRedirect(record) ?? "http://127.0.0.1/auth/callback",
-              secret,
-              now,
-              redirect: () => {
-                throw new Error("Sign-in required.");
-              },
-            },
-          );
+        return Effect.succeed(rest);
+      });
 
-          try {
-            await auth(provider, authOptions(config, fetchFn));
-          } catch (cause) {
-            if (accessToken(record) === null) {
-              state.loginRequired = true;
+      return Effect.runPromise(
+        Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const limit = Date.now() + 25_000;
 
-              return record;
+            while (true) {
+              const current = yield* restore(signIns.read(config.id));
+              const latest = tokenForServer(current, config);
+
+              if (current === null || latest === null) break;
+
+              if (latest.access_token !== rejected) {
+                token = latest.access_token;
+
+                return;
+              }
+
+              if (Date.now() >= limit)
+                return yield* Effect.fail(new Error("MCP OAuth refresh timed out."));
+
+              if (
+                current.refreshLease !== undefined &&
+                current.refreshLease.expiresAt > Date.now()
+              ) {
+                yield* restore(Effect.sleep("50 millis"));
+                continue;
+              }
+
+              yield* signIns.update(config.id, (previous) => {
+                if (!isDeepStrictEqual(previous, current)) return Effect.succeed(previous);
+
+                ownsLease = true;
+
+                return Effect.succeed({
+                  ...current,
+                  refreshLease: { id, expiresAt: Date.now() + 20_000 },
+                });
+              });
+
+              if (!ownsLease) continue;
+
+              const record = copy(current, config.url);
+              delete record.refreshLease;
+
+              const exchange = Effect.tryPromise({
+                try: async (abort) => {
+                  if (latest.refresh_token === undefined) {
+                    delete record.tokens;
+                    delete record.tokensSavedAt;
+
+                    return;
+                  }
+
+                  const advertised = record.discovery?.resourceMetadataUrl;
+
+                  if (Schema.is(Schema.String)(advertised))
+                    resourceMetadata(config, new URL(advertised));
+
+                  const fetchFn = oauthFetch(
+                    server,
+                    AbortSignal.any([abort, AbortSignal.timeout(15000)]),
+                  );
+
+                  const provider = makeProvider(
+                    config,
+                    record,
+                    {},
+                    {
+                      redirectUri: registeredRedirect(record) ?? "http://127.0.0.1/auth/callback",
+                      secret,
+                      now,
+                      redirect: () => {
+                        throw new Error("Sign-in required.");
+                      },
+                    },
+                  );
+
+                  try {
+                    await auth(provider, authOptions(config, fetchFn));
+                  } catch (cause) {
+                    if (accessToken(record) !== null) throw cause;
+                  }
+                },
+                catch: (cause) => cause,
+              });
+
+              yield* restore(exchange);
+
+              yield* signIns.update(config.id, (previous) =>
+                Effect.succeed(previous?.refreshLease?.id === id ? record : previous),
+              );
+
+              ownsLease = false;
+              yield* Effect.tryPromise({ try: readToken, catch: (cause) => cause });
+
+              return;
             }
 
-            throw cause;
-          }
+            state.loginRequired = true;
 
-          token = accessToken(record)?.access_token ?? token;
-
-          return record;
-        },
-        catch: (cause) => cause,
-      }),
-    );
-
-    const authProvider: AuthProvider = {
-      token: async () => {
-        const current = await Effect.runPromise(signIns.read(config.id));
-        const latest = tokenForServer(current, config);
-
-        if (latest === null || state.loginRequired) {
-          state.loginRequired = true;
-          throw required(config.id, "sign-in required.");
-        }
-
-        token = latest.access_token;
-
-        return token;
-      },
-      onUnauthorized: async () => {
-        await Effect.runPromise(refresh);
-
-        if (state.loginRequired) throw required(config.id, "the saved sign-in was rejected.");
-      },
+            return yield* Effect.fail(required(config.id, "the saved sign-in was rejected."));
+          }).pipe(
+            Effect.ensuring(
+              Effect.suspend(() =>
+                ownsLease
+                  ? removeLease.pipe(
+                      Effect.catch(() =>
+                        Effect.logWarning("could not release MCP OAuth refresh lease").pipe(
+                          Effect.annotateLogs({ server: config.id }),
+                        ),
+                      ),
+                    )
+                  : Effect.void,
+              ),
+            ),
+          ),
+        ),
+        signal === undefined ? undefined : { signal },
+      );
     };
 
     return {
-      authProvider,
+      readToken,
+      refresh,
       token: () => token,
       loginRequired: () => state.loginRequired,
     };

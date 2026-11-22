@@ -9,6 +9,7 @@ import { ConfigProvider, Console, Effect, Layer } from "effect";
 
 import type { MCPHTTPServer } from "#src/config";
 import {
+  MCPLoginRequired,
   MCPSignIns,
   MCPSignInsLive,
   runtimeAuthorization,
@@ -62,26 +63,27 @@ const harness = async (options: OAuthFixtureOptions = {}, duplicateIssuer = fals
       ]),
     );
 
-  const login = signIn(config, {
-    noBrowser: false,
-    remote: false,
-    paste: Effect.never,
-    open: (url) =>
-      Effect.promise(async () => {
-        opened.push(url);
-        const callback = await server.approve(new URL(url));
+  const login = (configured = config) =>
+    signIn(configured, {
+      noBrowser: false,
+      remote: false,
+      paste: Effect.never,
+      open: (url) =>
+        Effect.promise(async () => {
+          opened.push(url);
+          const callback = await server.approve(new URL(url));
 
-        if (duplicateIssuer) {
-          const issuer = `${new URL(config.url).origin}/`;
-          callback.searchParams.append("iss", issuer);
-          callback.searchParams.append("iss", issuer);
-        }
+          if (duplicateIssuer) {
+            const issuer = `${new URL(configured.url).origin}/`;
+            callback.searchParams.append("iss", issuer);
+            callback.searchParams.append("iss", issuer);
+          }
 
-        await fetch(callback);
-      }),
-    timeoutMs: 5000,
-    now: Date.now,
-  });
+          await fetch(callback);
+        }),
+      timeoutMs: 5000,
+      now: Date.now,
+    });
 
   return {
     server,
@@ -90,7 +92,8 @@ const harness = async (options: OAuthFixtureOptions = {}, duplicateIssuer = fals
     mcp,
     run: <A, E>(program: Effect.Effect<A, E, MCPSignIns | ApiKeyStore>) =>
       Effect.runPromise(program.pipe(Effect.provide(services), quiet)),
-    login: () => Effect.runPromise(login.pipe(Effect.provide(services), quiet)),
+    login: (configured = config) =>
+      Effect.runPromise(login(configured).pipe(Effect.provide(services), quiet)),
     close: async () => {
       await server.stop();
       await rm(directory, { recursive: true, force: true });
@@ -107,6 +110,60 @@ const call = Effect.gen(function* () {
 });
 
 describe("MCP OAuth", () => {
+  test("when a challenge advertises another origin, refuses it unless metadata is explicitly configured", async () => {
+    const state = await harness({
+      customDiscovery: true,
+      advertisedMetadata: "http://localhost:1/meta",
+    });
+
+    try {
+      await expect(state.login()).rejects.toMatchObject({
+        message: expect.stringContaining("MCP server origin"),
+      });
+      expect(state.opened).toHaveLength(0);
+      const metadata = new URL("/custom-resource", state.config.url).href;
+      await state.login({ ...state.config, oauth: { resourceMetadataUrl: metadata } });
+      expect(state.opened).toHaveLength(1);
+      expect(state.server.events.some((event) => event.path === "/custom-resource")).toBe(true);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when sign-out occurs during an OAuth exchange, finishes without waiting and keeps the sign-in removed", async () => {
+    const state = await harness();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+
+    try {
+      await state.login();
+      state.server.options.beforeRefresh = () => {
+        entered.resolve();
+
+        return release.promise;
+      };
+
+      const runtime = await state.run(runtimeAuthorization(state.config, Date.now));
+
+      const refreshing = runtime.refresh(runtime.token(), new Response(null, { status: 401 })).then(
+        () => false,
+        (error) => error instanceof MCPLoginRequired,
+      );
+
+      await entered.promise;
+      await state.run(signOut(state.config.id));
+      release.resolve();
+
+      expect(await refreshing).toBe(true);
+      expect(
+        await state.run(MCPSignIns.use((signIns) => signIns.read(state.config.id))),
+      ).not.toHaveProperty("tokens");
+    } finally {
+      release.resolve();
+      await state.close();
+    }
+  });
+
   test("when a callback repeats the expected issuer, rejects it before token exchange", async () => {
     const state = await harness({}, true);
 
@@ -132,7 +189,7 @@ describe("MCP OAuth", () => {
               const prepared = yield* tool!.prepare('{"input":"{}"}');
 
               if (mode === "challenge") state.server.options.challengeToolCall = true;
-              else yield* Effect.promise(state.login);
+              else yield* Effect.promise(() => state.login());
 
               const initialRequests = state.server.events.length;
               const error = yield* Effect.flip(prepared.execute);
@@ -285,7 +342,7 @@ describe("MCP OAuth", () => {
     },
   );
 
-  test("when two processes refresh the same token at once, spends the refresh token once and both keep a valid token", async () => {
+  test("when concurrent or delayed challenges reject the same token, refreshes it only once", async () => {
     const state = await harness({ tokenUses: 1 });
 
     try {
@@ -298,16 +355,10 @@ describe("MCP OAuth", () => {
         ]),
       );
 
-      const context = {
-        response: new Response(null, { status: 401 }),
-        serverUrl: new URL(state.server.url),
-        fetchFn: fetch,
-      };
-
-      await Promise.all([
-        first!.authProvider.onUnauthorized!(context),
-        second!.authProvider.onUnauthorized!(context),
-      ]);
+      const response = new Response(null, { status: 401 });
+      const rejected = first!.token();
+      await Promise.all([first!.refresh(rejected, response), second!.refresh(rejected, response)]);
+      await first!.refresh(rejected, response);
 
       expect(first!.token()).toBe(second!.token());
       expect(first!.loginRequired() || second!.loginRequired()).toBe(false);

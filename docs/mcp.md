@@ -161,8 +161,9 @@ browser authorization destination before opening it. Access tokens are redacted
 from results and rejected in tool definitions.
 
 A run never opens a browser. When the server rejects an access token, Poppet
-refreshes it under the record's lock; a worker and a CLI process never both
-spend one refresh token, and the second adopts the first's result. A rejected
+claims a short-lived refresh lease and releases the file lock before contacting
+the authorization server. A worker and CLI process adopt the same refreshed
+token, and a delayed rejection of the old token keeps the newer sign-in. A rejected
 or missing refresh token, a missing sign-in, or a changed URL puts the server in
 `needs-login`: its tools are unavailable, other servers keep working, and no
 backoff applies. The next request after `mcp login` reconnects, including in a
