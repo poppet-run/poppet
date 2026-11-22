@@ -11,7 +11,7 @@ import {
   migrate,
   reportAs,
 } from "@poppet/store";
-import { Context, Effect, Layer, Option, Schema, Semaphore } from "effect";
+import { Clock, Context, Effect, Layer, Option, Schema, Semaphore } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { taskSchema } from "#src/migrations";
@@ -520,6 +520,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
   const status = () =>
     Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
       const jobs = yield* list();
 
       const pending = yield* sql`SELECT COUNT(*) AS count FROM job_occurrences
@@ -563,14 +564,16 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         pausedTaskCount: jobs.filter((job) => job.paused).length,
         pendingCount: pending?.count ?? 0,
         nextScheduledAt: upcoming.length === 0 ? null : Math.min(...upcoming),
-        providerPauses: (yield* providers()).map((held) =>
-          Object.assign(held, {
-            action:
-              held.resumeAt === null
-                ? `Scheduled work is paused by a quota limit.`
-                : `Future work can resume at ${new Date(held.resumeAt).toISOString()}.`,
-          }),
-        ),
+        providerPauses: (yield* providers())
+          .filter((held) => held.resumeAt === null || held.resumeAt > now)
+          .map((held) =>
+            Object.assign(held, {
+              action:
+                held.resumeAt === null
+                  ? `Scheduled work is paused by a quota limit.`
+                  : `Future work can resume at ${new Date(held.resumeAt).toISOString()}.`,
+            }),
+          ),
         recent: results.map((item) =>
           Object.assign(item, {
             action:
