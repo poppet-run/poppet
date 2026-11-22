@@ -160,6 +160,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
         async ({ type, body, ack }: { type: string; body: unknown; ack: () => Promise<void> }) => {
           try {
             await ack();
+            error = null;
           } catch {
             error = "Slack event acknowledgement failed.";
 

@@ -97,7 +97,8 @@ send the files again.
 Use `poppet worker status` for connection state, rejected/dropped event
 counts while running, and persisted queue/delivery counts, under `worker.messaging`.
 Each registration has an entry in `channels`, including its ID, display name, enabled state, connection
-metadata, or configuration error. Persisted queue/delivery totals remain at the
+metadata, or configuration error. A later successful connection or request
+clears a stale error. Persisted queue/delivery totals remain at the
 top level and are counted once across channels. When stopped, status inspects
 settings without opening messaging connections. Completed answers
 are saved before sending; a delivery retry never repeats model or tool work.

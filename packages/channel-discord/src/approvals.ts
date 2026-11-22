@@ -55,7 +55,7 @@ export const approvalComponents = (id: string, state?: ApprovalState) => {
 export const approvalActions = (
   client: Client,
   settings: DiscordSettings,
-  reportError: () => void,
+  reportError: (error: string | null) => void,
 ) =>
   Effect.gen(function* () {
     const actions = yield* Queue.make<ApprovalAction>({ capacity: 64, strategy: "dropping" });
@@ -115,6 +115,8 @@ export const approvalActions = (
           return;
         }
 
+        reportError(null);
+
         if (
           !Queue.offerUnsafe(actions, {
             requestId: match[2]!,
@@ -146,7 +148,7 @@ export const approvalActions = (
     };
 
     const listener = (interaction: Interaction) => {
-      void handle(interaction).catch(reportError);
+      void handle(interaction).catch(() => reportError("Discord approval interaction failed."));
     };
 
     yield* Effect.acquireRelease(
