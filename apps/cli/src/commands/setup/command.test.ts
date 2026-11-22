@@ -382,7 +382,7 @@ describe("setup", () => {
   });
 
   test.each(["restart", "start", "foreground"])(
-    "worker %s uses the existing lifecycle actions",
+    "when setup finds worker state %s, uses the matching lifecycle action",
     async (mode) => {
       const f = await fixture();
       f.state.connected = true;
@@ -402,7 +402,7 @@ describe("setup", () => {
 
       const expectedActions = {
         foreground: ["status"],
-        restart: ["status", "stop", "start"],
+        restart: ["status", "restart"],
         start: ["status", "start"],
       };
 
