@@ -1,10 +1,11 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { EventEmitter } from "node:events";
 import { setImmediate } from "node:timers/promises";
 
 import { MessagingChannel } from "@poppet/gateway";
 import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
-import { Effect, Redacted, Schema } from "effect";
+import { Deferred, Effect, Fiber, Redacted, Schema } from "effect";
 
 import {
   EventBody,
@@ -12,6 +13,7 @@ import {
   escapeSlackText,
   incomingMessage,
   slackChannelLayer,
+  slackSocketSession,
 } from "#src/channel";
 
 const settings = {
@@ -127,6 +129,29 @@ test.each(["is_im", "is_mpim", "is_org_shared", "is_pending_ext_shared"] as cons
     expect(allowedSlackChannel({ is_member: true, is_private: true })).toBe(true);
   },
 );
+
+test("when a Slack socket closes, reports it offline and releases its connection attempt", async () => {
+  const socket = Object.assign(new EventEmitter(), { start: async () => ({ ok: true }) });
+  const changes: boolean[] = [];
+
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const online = yield* Deferred.make<void>();
+
+      const fiber = yield* slackSocketSession(socket, (connected) => {
+        changes.push(connected);
+
+        if (connected) Deferred.doneUnsafe(online, Effect.void);
+      }).pipe(Effect.forkChild);
+
+      yield* Deferred.await(online);
+      socket.emit("close");
+      yield* Fiber.join(fiber);
+    }),
+  );
+
+  expect(changes).toEqual([true, false]);
+});
 
 describe("slackChannelLayer", () => {
   test("when Slack acknowledges a later event, clears the earlier acknowledgement error", async () => {

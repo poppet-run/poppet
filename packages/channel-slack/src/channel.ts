@@ -130,6 +130,47 @@ const failure = (cause: unknown, sending = false) => {
   });
 };
 
+export const slackSocketSession = (
+  socket: {
+    readonly start: () => Promise<{ ok: boolean }>;
+    readonly on: (event: string, listener: () => void) => void;
+  },
+  status: (connected: boolean) => void,
+) =>
+  Effect.gen(function* () {
+    const disconnected = yield* Deferred.make<void>();
+
+    const offline = () => {
+      status(false);
+      Deferred.doneUnsafe(disconnected, Effect.void);
+    };
+
+    socket.on("close", offline);
+    socket.on("disconnected", offline);
+    socket.on("reconnecting", offline);
+    socket.on("error", offline);
+
+    const started = yield* Effect.tryPromise({
+      try: () => socket.start(),
+      catch: failure,
+    }).pipe(
+      Effect.as(true),
+      Effect.raceFirst(Deferred.await(disconnected).pipe(Effect.as(false))),
+      Effect.timeoutOrElse({
+        duration: "20 seconds",
+        orElse: () =>
+          Effect.fail(
+            new ChannelError({ reason: "unavailable", message: "Slack connection timed out." }),
+          ),
+      }),
+    );
+
+    if (started && !(yield* Deferred.isDone(disconnected))) {
+      status(true);
+      yield* Deferred.await(disconnected);
+    }
+  });
+
 export const slackChannelLayer = (settings: SlackSettings) =>
   Layer.effect(
     MessagingChannel,
@@ -145,81 +186,101 @@ export const slackChannelLayer = (settings: SlackSettings) =>
         timeout: 10000,
       });
 
-      const socket = yield* Effect.acquireRelease(
-        Effect.sync(() => new SocketModeClient({ appToken: Redacted.value(settings.appToken) })),
-        (owned) =>
-          Effect.promise(async () => {
-            await owned.disconnect();
-          }).pipe(Effect.timeout("5 seconds"), Effect.ignore),
-      );
-
       let connected = false;
       let botId = "";
       let error: string | null = null;
       let dropped = 0;
-      socket.on("connected", () => {
-        connected = true;
-        error = null;
-      });
-      socket.on("disconnected", () => {
-        connected = false;
-      });
-      socket.on("error", () => {
-        error = "Slack connection interrupted.";
-      });
-      socket.on(
-        "slack_event",
-        async ({ type, body, ack }: { type: string; body: unknown; ack: () => Promise<void> }) => {
-          try {
-            await ack();
-            error = null;
-          } catch {
-            error = "Slack event acknowledgement failed.";
 
-            return;
-          }
+      const handleEvent = async ({
+        type,
+        body,
+        ack,
+      }: {
+        type: string;
+        body: unknown;
+        ack: () => Promise<void>;
+      }) => {
+        try {
+          await ack();
 
-          if (type === "interactive") {
-            const action = Schema.decodeUnknownExit(ActionBody)(body);
+          if (connected) error = null;
+        } catch {
+          error = "Slack event acknowledgement failed.";
 
-            if (Exit.isFailure(action)) return;
+          return;
+        }
 
-            await approvalAction(action.value).catch(() => {
-              error = "Slack approval interaction failed.";
-            });
+        if (type === "interactive") {
+          const action = Schema.decodeUnknownExit(ActionBody)(body);
 
-            return;
-          }
+          if (Exit.isFailure(action)) return;
 
-          const decoded = Schema.decodeUnknownExit(EventBody)(body);
+          await approvalAction(action.value).catch(() => {
+            error = "Slack approval interaction failed.";
+          });
 
-          if (Exit.isFailure(decoded)) return;
-          const message = incomingMessage(decoded.value, settings, botId);
+          return;
+        }
 
-          if (message !== null && !Queue.offerUnsafe(messages, message)) dropped++;
-        },
-      );
-      yield* Effect.tryPromise({
-        try: async () => {
-          const auth = await web.auth.test();
+        const decoded = Schema.decodeUnknownExit(EventBody)(body);
+
+        if (Exit.isFailure(decoded)) return;
+        const message = incomingMessage(decoded.value, settings, botId);
+
+        if (message !== null && !Queue.offerUnsafe(messages, message)) dropped++;
+      };
+
+      const connect = Effect.scoped(
+        Effect.gen(function* () {
+          const auth = yield* Effect.tryPromise({ try: () => web.auth.test(), catch: failure });
 
           if (auth.team_id !== settings.teamId || !auth.user_id)
-            throw new ChannelError({
-              reason: "configuration",
-              message: "Slack token belongs to another workspace.",
-            });
+            return yield* Effect.fail(
+              new ChannelError({
+                reason: "configuration",
+                message: "Slack token belongs to another workspace.",
+              }),
+            );
+
           botId = auth.user_id;
-          Deferred.doneUnsafe(identity, Effect.succeed(botId));
-          await socket.start();
-        },
-        catch: failure,
-      }).pipe(
-        Effect.andThen(Effect.never),
+
+          const socket = yield* Effect.acquireRelease(
+            Effect.sync(
+              () =>
+                new SocketModeClient({
+                  appToken: Redacted.value(settings.appToken),
+                  autoReconnectEnabled: false,
+                  clientOptions: {
+                    retryConfig: { retries: 0 },
+                    rejectRateLimitedCalls: true,
+                    timeout: 10000,
+                  },
+                }),
+            ),
+            (owned) =>
+              Effect.tryPromise(() => owned.disconnect()).pipe(
+                Effect.timeout("5 seconds"),
+                Effect.ignore,
+              ),
+          );
+
+          socket.on("slack_event", handleEvent);
+          yield* slackSocketSession(socket, (online) => {
+            connected = online;
+            error = online ? null : "Slack connection interrupted.";
+
+            if (online) Deferred.doneUnsafe(identity, Effect.succeed(botId));
+          });
+        }),
+      );
+
+      yield* connect.pipe(
         Effect.catch((cause) =>
           Effect.sync(() => {
             error = cause.message;
-          }).pipe(Effect.andThen(Effect.sleep("30 seconds"))),
+          }),
         ),
+        Effect.andThen(Effect.sleep("30 seconds")),
         Effect.forever,
         Effect.forkScoped,
       );

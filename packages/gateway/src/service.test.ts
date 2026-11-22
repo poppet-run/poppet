@@ -2002,11 +2002,13 @@ describe.concurrent("Gateway", () => {
               attachments: [{ id: "a1", name: "notes.txt", ref: "file-a1" }],
             });
 
-            for (const delay of ["1 second", "2 seconds", "4 seconds"] as const) {
+            const retryDelays = reason === "unavailable" ? [1, 2, 4, 8, 16, 32] : [1, 2, 4];
+
+            for (const delay of retryDelays) {
               expect(yield* gateway.processNext).toBe(true);
               expect(yield* gateway.deliverNext).toBe(false);
               expect(yield* gateway.processNext).toBe(false);
-              yield* TestClock.adjust(delay);
+              yield* TestClock.adjust(`${delay} seconds`);
             }
 
             expect(yield* gateway.processNext).toBe(true);
@@ -2020,7 +2022,7 @@ describe.concurrent("Gateway", () => {
           }),
         );
 
-        expect(attempts).toBe(4);
+        expect(attempts).toBe(reason === "unavailable" ? 7 : 4);
         expect(state.requests).toHaveLength(0);
         expect(state.sent).toEqual([
           {
