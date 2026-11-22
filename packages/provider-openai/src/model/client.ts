@@ -1,7 +1,7 @@
 import { userAgent } from "@poppet/provider";
 import { openAIClient } from "@poppet/provider/protocol";
 import { Redacted } from "effect";
-import { APIError } from "openai";
+import { APIConnectionError, APIError, APIUserAbortError } from "openai";
 
 import { ConnectionError, requestFailure, resource } from "#src/connection";
 import type { HttpFetch } from "#src/oauth/http";
@@ -9,7 +9,13 @@ import type { HttpFetch } from "#src/oauth/http";
 export const modelFailure = (cause: unknown): ConnectionError => {
   if (cause instanceof ConnectionError) return cause;
 
-  if (cause instanceof APIError)
+  if (cause instanceof APIUserAbortError)
+    return new ConnectionError({
+      reason: "interrupted",
+      message: "The OpenAI request was interrupted.",
+    });
+
+  if (cause instanceof APIError && !(cause instanceof APIConnectionError))
     return requestFailure(cause.status ?? 0, cause.code, cause.requestID);
 
   return new ConnectionError({
