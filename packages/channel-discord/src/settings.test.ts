@@ -3,11 +3,13 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ChannelEnvironment } from "@poppet/gateway";
+import { ChannelEnvironment, ChannelInput } from "@poppet/gateway";
 import { Effect, Redacted } from "effect";
 
 import { discord } from "#src/registration";
 import { loadDiscordSettings, saveDiscordSettings } from "#src/settings";
+
+const noSecretInput = { readSecret: Effect.die("Unexpected stdin secret read") };
 
 const settings = {
   ownerId: "200",
@@ -36,7 +38,10 @@ describe.concurrent("settings.ts", () => {
             "--bot-token",
             "discord-secret",
           ])
-          .pipe(Effect.provideService(ChannelEnvironment, { dataDirectory: directory })),
+          .pipe(
+            Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
+            Effect.provideService(ChannelInput, noSecretInput),
+          ),
       );
 
       expect(message).not.toContain(Redacted.value(settings.token));
@@ -45,6 +50,26 @@ describe.concurrent("settings.ts", () => {
       expect(loaded).toEqual(settings);
       expect(loaded && Redacted.value(loaded.token)).toBe("discord-secret");
       expect(JSON.stringify(loaded)).not.toContain("discord-secret");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("when --bot-token is omitted, reads the Discord token from ChannelInput.readSecret", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-discord-stdin-"));
+
+    try {
+      await Effect.runPromise(
+        discord
+          .setup(["setup", "--owner-id", "200", "--guild-id", "300", "--home-channel-id", "400"])
+          .pipe(
+            Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
+            Effect.provideService(ChannelInput, {
+              readSecret: Effect.succeed(Redacted.make("discord-secret")),
+            }),
+          ),
+      );
+      expect(await Effect.runPromise(loadDiscordSettings(directory))).toEqual(settings);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -63,7 +88,10 @@ describe.concurrent("settings.ts", () => {
             "--owner-id=200",
             "--guild-id=300",
           ])
-          .pipe(Effect.provideService(ChannelEnvironment, { dataDirectory: directory })),
+          .pipe(
+            Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
+            Effect.provideService(ChannelInput, noSecretInput),
+          ),
       );
       expect(await Effect.runPromise(loadDiscordSettings(directory))).toEqual(settings);
     } finally {
@@ -142,6 +170,7 @@ describe.concurrent("settings.ts", () => {
             )
             .pipe(
               Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
+              Effect.provideService(ChannelInput, noSecretInput),
               Effect.result,
             ),
         );
@@ -220,6 +249,7 @@ describe.concurrent("settings.ts", () => {
             ])
             .pipe(
               Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
+              Effect.provideService(ChannelInput, noSecretInput),
               Effect.result,
             ),
         );

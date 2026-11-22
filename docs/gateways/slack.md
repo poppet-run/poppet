@@ -17,15 +17,14 @@ Subscribe to `message.channels` and `message.groups` bot events, and turn on
 **Interactivity & Shortcuts** for approval buttons. Socket Mode needs no request URL.
 Invite the bot to an unshared channel. Shared channels and DMs are unsupported.
 
-Run `poppet setup` for masked entry of both tokens, or configure directly:
+Run `poppet setup` for masked entry of both tokens, or pipe both tokens (bot token on line 1, app token on line 2) on stdin:
 
-```fish
-poppet gateway slack setup --owner-id U123 --team-id T123 --home-channel-id C123 --bot-token <bot-token> --app-token <app-token>
+```sh
+printf '%s\n%s\n' "$SLACK_BOT_TOKEN" "$SLACK_APP_TOKEN" | poppet gateway slack setup --owner-id U123 --team-id T123 --home-channel-id C123
 poppet worker run
 ```
 
-Replace the example IDs and tokens. Direct flags put tokens in shell history;
-interactive setup avoids that. Policy is saved under `slack` in `config.json`.
+You can also pass `--bot-token <token>` and/or `--app-token <token>` directly, though piping on stdin or interactive `poppet setup` keeps tokens out of command arguments and shell history. Policy is saved under `slack` in `config.json`.
 Both tokens are stored in `channels/slack.json` with private file permissions.
 Remove the `slack` configuration section to disable the adapter. Restart the
 worker after changing settings.

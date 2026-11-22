@@ -9,11 +9,13 @@ export const parseSetupFlags = (
   adapter: string,
   help: string,
   names: ReadonlyArray<string>,
+  optional: ReadonlyArray<string> = [],
 ) =>
   Effect.try({
     try: () => {
       if (args[0] !== "setup") throw new Error("Expected setup");
-      const options = Object.fromEntries(names.map((name) => [name, { type: "string" as const }]));
+      const allowed = [...names, ...optional];
+      const options = Object.fromEntries(allowed.map((name) => [name, { type: "string" as const }]));
 
       const { values, tokens } = parseArgs({
         args: args.slice(1),
@@ -24,9 +26,10 @@ export const parseSetupFlags = (
       });
 
       const supplied = tokens.filter((token) => token.kind === "option").map((token) => token.name);
+      const unique = new Set(supplied);
 
-      if (supplied.length !== names.length || new Set(supplied).size !== names.length)
-        throw new Error("Expected each setup flag exactly once");
+      if (unique.size !== supplied.length || names.some((name) => !unique.has(name)))
+        throw new Error("Expected each required setup flag once without duplicates");
 
       return values;
     },

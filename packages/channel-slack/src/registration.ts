@@ -1,16 +1,17 @@
 import {
   ChannelEnvironment,
   ChannelError,
+  ChannelInput,
   parseSetupFlags,
   type ChannelRegistration,
 } from "@poppet/gateway";
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Layer, Redacted, Schema } from "effect";
 
 import { SlackSettings, loadSlackSettings, saveSlackSettings } from "#src/settings";
 import { promptSlackSetup } from "#src/setup";
 
 const setupHelp =
-  "setup --owner-id <id> --team-id <id> --home-channel-id <id> --bot-token <token> --app-token <token>";
+  "setup --owner-id <id> --team-id <id> --home-channel-id <id> [--bot-token <token>] [--app-token <token>]";
 
 export const slack = {
   id: "slack",
@@ -20,22 +21,35 @@ export const slack = {
   setupHelp,
   setup: (args) =>
     Effect.gen(function* () {
-      const values = yield* parseSetupFlags(args, "slack", setupHelp, [
-        "owner-id",
-        "team-id",
-        "home-channel-id",
-        "bot-token",
-        "app-token",
-      ]);
+      const values = yield* parseSetupFlags(
+        args,
+        "slack",
+        setupHelp,
+        ["owner-id", "team-id", "home-channel-id"],
+        ["bot-token", "app-token"],
+      );
 
       const environment = yield* ChannelEnvironment;
+      const input = yield* ChannelInput;
+      let token = values["bot-token"];
+      let appToken = values["app-token"];
+
+      if (token === undefined || appToken === undefined) {
+        const lines = Redacted.value(yield* input.readSecret).split(/\r?\n/);
+
+        if (token === undefined && appToken === undefined) {
+          token = lines[0];
+          appToken = lines[1];
+        } else if (token === undefined) token = lines[0];
+        else appToken = lines[0];
+      }
 
       const settings = yield* Schema.decodeUnknownEffect(SlackSettings)({
         ownerId: values["owner-id"],
         teamId: values["team-id"],
         homeChannelId: values["home-channel-id"],
-        token: values["bot-token"],
-        appToken: values["app-token"],
+        token,
+        appToken,
       }).pipe(
         Effect.mapError(
           () =>

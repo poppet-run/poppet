@@ -18,17 +18,14 @@ channel access can read replies containing personal memory and conversation cont
 Run `poppet setup` to choose an assistant-capable provider and model, then configure
 Discord with token input masked by asterisks. Reruns can reuse the saved token while editing IDs.
 
-For separate gateway setup, pass the Discord settings as named flags. All four
-flags are required and can appear in any order. This command works in Bash,
-POSIX sh, and fish:
+For separate gateway setup, pass the Discord settings as named flags and pipe the bot token on stdin (or pass `--bot-token <bot-token>`). Flags can appear in any order. This command works in Bash, POSIX sh, and fish:
 
 ```sh
-poppet gateway discord setup --owner-id <your-user-id> --guild-id <server-id> --home-channel-id <home-channel-id> --bot-token <bot-token>
+printf '%s\n' "$DISCORD_BOT_TOKEN" | poppet gateway discord setup --owner-id <your-user-id> --guild-id <server-id> --home-channel-id <home-channel-id>
 poppet worker run
 ```
 
-Use `poppet setup` for masked token entry without putting the token in command
-arguments or shell history.
+Piping the token on stdin or using `poppet setup` avoids putting the token in command arguments or shell history.
 
 Replace the angle-bracket placeholders with Discord IDs and the bot token before running the
 setup command. The home channel receives proactive messages and is the default
