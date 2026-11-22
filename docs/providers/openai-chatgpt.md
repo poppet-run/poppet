@@ -104,6 +104,7 @@ Never remove the lock database while Poppet is running.
 `poppet provider logout openai-chatgpt` attempts to revoke the session and clears
 its local tokens and verification. It keeps the account identity, registration,
 and host identifier so signing back in reuses the same entry in ChatGPT.
+The revocation request has a 20-second deadline, including response cleanup.
 If remote revocation cannot be confirmed, the command reports it.
 
 To switch accounts or reset the registration, run

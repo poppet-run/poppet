@@ -52,10 +52,11 @@ describe("client.ts", () => {
     expect(aborted).toBe(true);
   });
 
-  test.each(["discovery", "token", "token-error", "revoke"])(
+  test.each(["discovery", "token", "token-error", "revoke", "stalled revoke"])(
     "when a %s response times out or completes, closes its body",
     async (operation) => {
       const reading = Promise.withResolvers<void>();
+      const cancelled = Promise.withResolvers<void>();
       const signals: AbortSignal[] = [];
       const issuer = "https://oauth.invalid";
 
@@ -88,6 +89,11 @@ describe("client.ts", () => {
             pull() {
               reading.resolve();
             },
+            cancel() {
+              cancelled.resolve();
+
+              if (operation === "stalled revoke") return new Promise<void>(() => {});
+            },
           }),
           { status: operation === "token-error" ? 400 : 200 },
         );
@@ -99,7 +105,7 @@ describe("client.ts", () => {
 
           const request = Match.value(operation).pipe(
             Match.when("discovery", () => client.authorizationEndpoint.pipe(Effect.asVoid)),
-            Match.when("revoke", () =>
+            Match.when(Match.is("revoke", "stalled revoke"), () =>
               client.revoke(Redacted.make("test-refresh"), "test-client").pipe(Effect.asVoid),
             ),
             Match.orElse(() => client.exchange(new URLSearchParams()).pipe(Effect.asVoid)),
@@ -107,7 +113,11 @@ describe("client.ts", () => {
 
           const fiber = yield* request.pipe(Effect.result, Effect.forkChild);
 
-          if (operation !== "revoke") {
+          if (operation.endsWith("revoke")) {
+            yield* Effect.promise(() => cancelled.promise);
+
+            if (operation === "stalled revoke") yield* TestClock.adjust("20 seconds");
+          } else {
             yield* Effect.promise(() => reading.promise);
             yield* TestClock.adjust("20 seconds");
           }

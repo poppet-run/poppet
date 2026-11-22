@@ -94,8 +94,18 @@ export const makeOAuthClient = (http: HttpFetch = fetch, expectedIssuer = issuer
           }),
         });
 
+        yield* Effect.promise(async () => {
+          await response.body?.cancel().catch(() => undefined);
+        });
+
         if (response.status !== 200) return yield* Effect.fail(requestFailure(response.status));
-      }).pipe(Effect.scoped);
+      }).pipe(
+        Effect.scoped,
+        Effect.timeoutOrElse({
+          duration: "20 seconds",
+          orElse: () => Effect.fail(networkError()),
+        }),
+      );
 
     return {
       authorizationEndpoint: discovery.pipe(
