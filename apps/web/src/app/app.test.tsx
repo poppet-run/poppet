@@ -498,7 +498,7 @@ test("successful polling clears only refresh errors and expired sign-out clears 
     expect(store.$state.get().refreshError).toBe("Offline");
     store.set("error", "A submission failed");
     failRefresh = false;
-    store.refresh();
+    await store.refresh();
     await flush();
     expect(store.$state.get().refreshError).toBe("");
     expect(store.$state.get().error).toBe("A submission failed");
