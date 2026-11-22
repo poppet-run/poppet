@@ -85,6 +85,23 @@ describe("service.ts", () => {
     expect(closed).toBe(true);
   });
 
+  test("when two attachment bodies share an ID, rejects the ambiguous request", async () => {
+    await expect(
+      Effect.runPromise(
+        validateRequest(model([]).description, {
+          ...request,
+          attachments: [
+            { id: "file", text: "first" },
+            { id: "file", text: "second" },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({
+      reason: "invalid-request",
+      message: "Attachment content IDs must be unique.",
+    });
+  });
+
   test("when requests exceed tool capabilities or generation bounds, rejects them", async () => {
     const description = model([]).description;
 

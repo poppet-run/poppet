@@ -143,14 +143,13 @@ const responseInput = (description: ModelDescription, request: ModelRequest) => 
     if (message.role === "user")
       input.push({
         role: "user",
-        content:
-          message.attachments === undefined
-            ? message.text
-            : userParts(description, request, message).map((part) =>
-                part.type === "text"
-                  ? { type: "input_text", text: part.text }
-                  : { type: "input_image", image_url: part.url, detail: "auto" },
-              ),
+        content: !message.attachments?.length
+          ? message.text
+          : userParts(description, request, message).map((part) =>
+              part.type === "text"
+                ? { type: "input_text", text: part.text }
+                : { type: "input_image", image_url: part.url, detail: "auto" },
+            ),
       });
     else if (message.role === "tool")
       input.push({ type: "function_call_output", call_id: message.callId, output: message.output });

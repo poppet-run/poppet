@@ -348,7 +348,7 @@ by ID, name, type, and size, not their contents. Conversation search does not
 index attachment contents.
 
 The model receives text files labelled as untrusted file content, and is told
-never to follow instructions found in attachments. A message with attachments
+never to follow instructions found in attachments. Each attachment in a model request must have a unique content ID. A message with attachments
 withdraws task, memory, and MCP mutations for its run, as a fetched page does; ask
 for those changes in a follow-up message.
 
