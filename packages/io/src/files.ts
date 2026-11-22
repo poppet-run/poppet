@@ -77,10 +77,17 @@ export const readProtectedFile = async (
   options: {
     readonly maxBytes?: number;
     readonly ownerWriteOnly?: boolean;
+    readonly privateOnly?: boolean;
     readonly makePrivate?: boolean;
   } = {},
 ): Promise<string | null> => {
-  const { maxBytes = Infinity, ownerWriteOnly = false, makePrivate = false } = options;
+  const {
+    maxBytes = Infinity,
+    ownerWriteOnly = false,
+    privateOnly = false,
+    makePrivate = false,
+  } = options;
+
   const handle = await openNoFollow(path);
 
   if (handle === null) return null;
@@ -93,6 +100,7 @@ export const readProtectedFile = async (
       info.nlink !== 1 ||
       info.uid !== process.getuid?.() ||
       (ownerWriteOnly && (info.mode & 0o022) !== 0) ||
+      (privateOnly && (info.mode & 0o077) !== 0) ||
       info.size > maxBytes
     )
       throw new Error("Invalid protected file");

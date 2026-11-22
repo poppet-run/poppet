@@ -1,10 +1,11 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readdir } from "node:fs/promises";
+import { isIP } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { AppConfig } from "@poppet/config";
-import { readProtectedFile } from "@poppet/io";
+import { readBoundedText, readProtectedFile } from "@poppet/io";
 import { Cause, Context, Effect, Exit, Layer, Option, Schema } from "effect";
 
 import { WebChatLive, SubmissionBody, WebChatError, WebChat } from "#src/commands/web-chat/chat";
@@ -28,6 +29,7 @@ export const WebSettings = Schema.Struct({
   ),
   hostname: Schema.String.check(Schema.isMinLength(1)),
   port: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })),
+  trustProxy: Schema.optionalKey(Schema.Boolean),
   accessKeyHash: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
 });
 
@@ -38,6 +40,9 @@ const Login = Schema.Struct({
 });
 
 const maxBodyBytes = 262144;
+const requestTimeoutSeconds = 10;
+const maxStreams = 32;
+const loopbackPeers = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 const securityHeaders = {
   "cache-control": "no-store",
@@ -64,10 +69,22 @@ const run = async <A, E>(effect: Effect.Effect<A, E>) => {
 const body = async <A>(request: Request, schema: Schema.Codec<A, string | object>) => {
   if (request.headers.get("content-type") !== "application/json")
     throw new WebChatError({ status: 415, message: "Expected application/json." });
-  const text = await request.text();
+  const deadline = AbortSignal.timeout(requestTimeoutSeconds * 1000);
+  const signal = AbortSignal.any([request.signal, deadline]);
 
-  if (Buffer.byteLength(text) > maxBodyBytes)
-    throw new WebChatError({ status: 413, message: "Request too large." });
+  const text =
+    request.body === null
+      ? ""
+      : await readBoundedText(
+          request.body,
+          maxBodyBytes,
+          () => new WebChatError({ status: 413, message: "Request too large." }),
+          signal,
+        ).catch((cause) => {
+          if (deadline.aborted)
+            throw new WebChatError({ status: 408, message: "Request timed out." });
+          throw cause;
+        });
 
   const value = Schema.decodeUnknownOption(Schema.fromJsonString(schema), {
     onExcessProperty: "error",
@@ -78,6 +95,9 @@ const body = async <A>(request: Request, schema: Schema.Codec<A, string | object
   return value.value;
 };
 
+const throttled = () =>
+  Response.json({ message: "Too many login attempts. Wait a minute." }, { status: 429 });
+
 export const webHandler = (
   settings: WebSettings,
   chat: WebChat["Service"],
@@ -85,6 +105,8 @@ export const webHandler = (
 ) => {
   const logins = new Map<string, number>();
   const attempts = new Map<string, { count: number; windowStarted: number }>();
+  let globalAttempts = { count: 0, windowStarted: 0 };
+  let streams = 0;
   const secure = settings.origin.startsWith("https:");
   const cookieName = secure ? "__Host-poppet" : "poppet";
 
@@ -130,18 +152,18 @@ export const webHandler = (
     const authenticated = () => token !== undefined && (logins.get(token) ?? 0) > Date.now();
 
     if (request.method === "POST" && url.pathname === "/api/login") {
+      if (now - globalAttempts.windowStarted >= 60000)
+        globalAttempts = { count: 0, windowStarted: now };
+
+      if (++globalAttempts.count > 60) return throttled();
+
       for (const [address, entry] of attempts)
         if (now - entry.windowStarted >= 60000) attempts.delete(address);
 
-      if (attempts.size >= 1024) attempts.delete(attempts.keys().next().value!);
       const entry = attempts.get(client) ?? { count: 0, windowStarted: now };
       attempts.set(client, entry);
 
-      if (++entry.count > 10)
-        return Response.json(
-          { message: "Too many login attempts. Wait a minute." },
-          { status: 429 },
-        );
+      if (++entry.count > 10) return throttled();
       const input = await body(request, Login);
       const digest = createHash("sha256").update(input.key).digest();
 
@@ -203,19 +225,41 @@ export const webHandler = (
       }
 
       if (request.method === "GET" && session[2] === "/events") {
-        let marker = await run(chat.marker(id));
-        let previous = JSON.stringify(await run(chat.snapshot(id)));
+        if (streams >= maxStreams)
+          return Response.json({ message: "Too many open event streams." }, { status: 429 });
+
+        streams++;
+        let marker: string;
+        let previous: string;
+
+        try {
+          marker = await run(chat.marker(id));
+          previous = JSON.stringify(await run(chat.snapshot(id)));
+        } catch (cause) {
+          streams--;
+          throw cause;
+        }
+
         let first = true;
         let closed = false;
         const encoder = new TextEncoder();
+
+        const release = () => {
+          if (closed) return;
+          closed = true;
+          streams--;
+          request.signal.removeEventListener("abort", release);
+        };
+
+        if (request.signal.aborted) release();
+        else request.signal.addEventListener("abort", release, { once: true });
 
         const stream = new ReadableStream<Uint8Array>({
           async pull(controller) {
             if (!first) await new Promise((resolve) => setTimeout(resolve, 500));
 
-            if (closed) return;
-
-            if (!authenticated() || request.signal.aborted) {
+            if (closed || !authenticated() || request.signal.aborted) {
+              release();
               controller.close();
 
               return;
@@ -229,6 +273,7 @@ export const webHandler = (
                   ? previous
                   : JSON.stringify(await run(chat.snapshot(id)));
 
+              if (closed) return;
               controller.enqueue(
                 encoder.encode(
                   first || current !== previous ? `data: ${current}\n\n` : ": connected\n\n",
@@ -238,12 +283,13 @@ export const webHandler = (
               marker = latest;
               first = false;
             } catch {
-              controller.close();
+              if (!closed) {
+                release();
+                controller.close();
+              }
             }
           },
-          cancel() {
-            closed = true;
-          },
+          cancel: release,
         });
 
         return new Response(stream, {
@@ -255,7 +301,13 @@ export const webHandler = (
     return Response.json({ message: "Not found." }, { status: 404 });
   };
 
-  return async (request: Request, client = "local") => {
+  return async (request: Request, peer = "local") => {
+    const forwarded =
+      settings.trustProxy && loopbackPeers.has(peer)
+        ? request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim()
+        : undefined;
+
+    const client = forwarded && isIP(forwarded) ? forwarded : peer;
     let response: Response;
 
     try {
@@ -280,9 +332,9 @@ export const serveWebChat = Effect.gen(function* () {
     try: () =>
       readProtectedFile(join(config.dataDirectory, "web.json"), {
         maxBytes: 4096,
-        ownerWriteOnly: true,
+        privateOnly: true,
       }),
-    catch: () => new Error("Cannot read web.json. Use an owner-controlled regular file."),
+    catch: () => new Error("Cannot read web.json. Use an owner-only regular file with mode 600."),
   });
 
   if (text === null) return;
@@ -326,15 +378,17 @@ export const serveWebChat = Effect.gen(function* () {
           hostname: settings.hostname,
           port: settings.port,
           maxRequestBodySize: maxBodyBytes,
-          idleTimeout: 0,
-          fetch: (request, server) => {
-            const peer = server.requestIP(request)?.address ?? "unknown";
+          idleTimeout: requestTimeoutSeconds,
+          fetch: async (request, server) => {
+            const response = await handler(
+              request,
+              server.requestIP(request)?.address ?? "unknown",
+            );
 
-            const forwarded = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(peer)
-              ? request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim()
-              : undefined;
+            if (response.headers.get("content-type") === "text/event-stream")
+              server.timeout(request, 0);
 
-            return handler(request, forwarded || peer);
+            return response;
           },
         }),
       catch: () => new Error("Could not start the web chat listener."),
