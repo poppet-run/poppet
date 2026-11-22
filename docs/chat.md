@@ -394,7 +394,8 @@ Search sends the model's query to the configured Brave or Kagi search provider a
 with `title`, `url`, and `snippet`, plus a `truncated` flag. Queries must be trimmed,
 nonempty, and at most 512 UTF-8 bytes. Results keep backend order and fit
 the 16 KiB tool-output limit. Space is reserved for source URLs, then shared across
-titles and passages; URLs that cannot fit are omitted.
+titles and passages. The tool omits URLs that cannot fit and local destinations
+such as `localhost`, subdomains of `.localhost`, and `.local` hostnames.
 Brave uses its LLM Context API with at most five URLs and a 2,048-token context
 budget. Its snippets contain extracted passages joined with blank lines; Kagi
 continues to return search snippets. The byte limit still applies to both.

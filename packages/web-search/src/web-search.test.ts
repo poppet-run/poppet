@@ -53,6 +53,18 @@ describe("webSearchResult", () => {
     expect(result.truncated).toBe(true);
   });
 
+  test.each(["localhost", "dev.localhost", "printer.local", "LOCALHOST.", "printer.local."])(
+    "when a search result points to %s, omits the local hostname",
+    (hostname) => {
+      const result = webSearchResult(
+        [{ title: "Local", url: `http://${hostname}/`, snippet: "" }],
+        1024,
+      );
+
+      expect(result).toEqual({ results: [], truncated: true });
+    },
+  );
+
   test("when passages exceed the budget, retains every source and shares space across long passages", () => {
     const candidates = Array.from({ length: 5 }, (_, i) => ({
       title: `Source ${i}`,
