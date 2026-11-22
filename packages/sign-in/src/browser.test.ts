@@ -61,7 +61,8 @@ describe("authorizeInBrowser", () => {
                 target.searchParams.set("code", "ok-code");
                 target.searchParams.set("state", callback.state);
                 yield* Effect.promise(() => fetch(target));
-                yield* Effect.never;
+
+                return yield* Effect.never;
               }).pipe(
                 Effect.onInterrupt(() =>
                   Effect.sync(() => {
