@@ -48,7 +48,8 @@ Processes that deliberately detach from the group are outside that cleanup guara
 ## Messaging approval
 
 Poppet shows the exact invocation and reason in the originating Discord or Slack
-conversation. Reply `/approve <id>` or `/deny <id>` using the ID in the message.
+conversation. It escapes control characters and markup delimiters so both can
+be read as data. Reply `/approve <id>` or `/deny <id>` using the ID in the message.
 Discord and Slack also provide **Approve once** and **Deny** buttons. Both methods settle
 the same request; repeated clicks or replies cannot execute it again. Only the configured owner in
 the same authorized conversation can answer, and access is checked again before

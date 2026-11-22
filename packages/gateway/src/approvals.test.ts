@@ -101,6 +101,28 @@ const click = (
 });
 
 describe("actionApprovals", () => {
+  test("when a Bash approval contains control characters and markup, renders both fields as escaped data", async () => {
+    const sent: string[] = [];
+    const approvals = actionApprovals(channel(sent));
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* approvals
+          .request(message, "thread", {
+            ...approval,
+            command: "echo \u202e",
+            reason: "`approve`\n\u2066",
+          })
+          .pipe(Effect.forkChild);
+
+        while (sent.length === 0) yield* Effect.yieldNow;
+        expect(sent[0]).toContain('Review reason: `"\\u0060approve\\u0060\\n\\u2066"`');
+        expect(sent[0]).toContain('"command":"echo \\u202e"');
+        yield* Fiber.interrupt(fiber);
+      }),
+    );
+  });
+
   test.each(["text", "button"])(
     "when the %s answer arrives before the send acknowledgement, waits for complete delivery",
     async (transport) => {
