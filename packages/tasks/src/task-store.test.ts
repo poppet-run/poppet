@@ -815,7 +815,10 @@ describe.concurrent("TaskRepository", () => {
           expect(yield* repo.providers()).toMatchObject([
             { provider: "test-provider", reason: "quota", resumeAt: null },
           ]);
-          expect((yield* repo.occurrence(saved.occurrence)).status).toBe("interrupted");
+          expect(yield* repo.occurrence(saved.occurrence)).toMatchObject({
+            status: "failed",
+            reason: "provider:quota",
+          });
           expect((yield* store.run(saved.run))?.failureReason).toBe("provider:quota");
           expect(yield* repo.claim(start + 1000)).toBeNull();
           yield* repo.resumeProvider("test-provider", start + 1000);
@@ -961,6 +964,33 @@ describe.concurrent("TaskRepository", () => {
             { type: "text", text: "Saved answer" },
           ]);
           expect(yield* repo.claim(start + 1000)).toBeNull();
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a run fails before its task outcome commits, recovers the occurrence as failed", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run((repo, store) =>
+        Effect.gen(function* () {
+          yield* repo.add(once, start);
+          yield* repo.reconcile(start);
+          const active = (yield* repo.claim(start))!;
+          const session = yield* store.createSession("test-provider", "test-model");
+          const run = yield* store.queueRun(session.id, [{ role: "user", text: once.prompt }]);
+          yield* store.startRun(run.id);
+          yield* repo.link(active.id, session.id, run.id);
+          yield* store.finishRun(run.id, { status: "failed", reason: "provider:authentication" });
+          yield* repo.recover(start + 1000);
+
+          expect(yield* repo.occurrence(active.id)).toMatchObject({
+            status: "failed",
+            reason: "provider:authentication",
+          });
         }),
       );
     } finally {
