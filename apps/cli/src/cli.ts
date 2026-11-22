@@ -83,10 +83,9 @@ export const makeCLI = (
 export const run = (args: ReadonlyArray<string>, worker: typeof manageWorker = manageWorker) =>
   Effect.gen(function* () {
     const registeredChannels =
-      args[0] === "gateway" ||
-      (args[0] === "worker" &&
-        (args[1] === "run" || args[1] === "status") &&
-        !args.some((arg) => ["--help", "-h"].includes(arg)))
+      !args.some((arg) => arg === "--help" || arg === "-h") &&
+      (args[0] === "gateway" ||
+        (args[0] === "worker" && (args[1] === "run" || args[1] === "status")))
         ? yield* loadRegisteredChannels
         : channels;
 
