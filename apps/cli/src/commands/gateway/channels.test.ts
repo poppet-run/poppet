@@ -118,4 +118,28 @@ describe("superviseAdapter", () => {
       }),
     );
   });
+
+  test("when an adapter completes cleanly, restarts it with backoff", async () => {
+    const health: AdapterHealth = { restarts: 0, lastError: null };
+    let attempts = 0;
+
+    await run(
+      Effect.gen(function* () {
+        const cleanExit = Effect.suspend(() => (attempts++ < 2 ? Effect.void : Effect.never));
+        const fiber = yield* superviseAdapter("clean", cleanExit, health).pipe(Effect.forkChild);
+
+        yield* TestClock.adjust("0 millis");
+        expect([attempts, health.restarts, health.lastError]).toEqual([
+          1,
+          1,
+          "The adapter stopped unexpectedly.",
+        ]);
+        yield* TestClock.adjust("1 second");
+        expect([attempts, health.restarts]).toEqual([2, 2]);
+        yield* TestClock.adjust("2 seconds");
+        expect(attempts).toBe(3);
+        yield* Fiber.interrupt(fiber);
+      }),
+    );
+  });
 });

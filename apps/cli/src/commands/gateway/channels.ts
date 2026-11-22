@@ -77,36 +77,45 @@ export const superviseAdapter = <E>(
     Effect.gen(function* () {
       const startedAt = yield* Clock.currentTimeMillis;
 
+      const restart = (message: string, cause?: Cause.Cause<E>) =>
+        Effect.gen(function* () {
+          const ranFor = (yield* Clock.currentTimeMillis) - startedAt;
+          const attempts = ranFor >= healthyAfter ? 0 : failures;
+          const delay = Math.min(1000 * 2 ** attempts, maxRestartDelay);
+
+          health.restarts++;
+          health.lastError = message;
+
+          yield* Effect.logError(
+            "messaging adapter stopped",
+            ...(cause === undefined ? [] : [cause]),
+          ).pipe(
+            Effect.annotateLogs({
+              adapter: id,
+              error: health.lastError,
+              restart_in_ms: delay,
+            }),
+          );
+          yield* Effect.sleep(delay);
+
+          return yield* attempt(attempts + 1);
+        });
+
       return yield* run.pipe(
-        Effect.catchCause((cause) =>
-          Effect.gen(function* () {
+        Effect.matchCauseEffect({
+          onSuccess: () => restart("The adapter stopped unexpectedly."),
+          onFailure: (cause) => {
             const error = Option.getOrNull(Cause.findErrorOption(cause));
 
             if (Cause.hasInterrupts(cause) || error instanceof StoreError)
-              return yield* Effect.failCause(cause);
-            const ranFor = (yield* Clock.currentTimeMillis) - startedAt;
-            const attempts = ranFor >= healthyAfter ? 0 : failures;
-            const delay = Math.min(1000 * 2 ** attempts, maxRestartDelay);
+              return Effect.failCause(cause);
 
-            health.restarts++;
-            health.lastError =
-              error instanceof Error ? error.message : "The adapter stopped unexpectedly.";
-
-            yield* Effect.logError(
-              "messaging adapter stopped",
-              ...(error === null ? [cause] : []),
-            ).pipe(
-              Effect.annotateLogs({
-                adapter: id,
-                error: health.lastError,
-                restart_in_ms: delay,
-              }),
+            return restart(
+              error instanceof Error ? error.message : "The adapter stopped unexpectedly.",
+              error === null ? cause : undefined,
             );
-            yield* Effect.sleep(delay);
-
-            return yield* attempt(attempts + 1);
-          }),
-        ),
+          },
+        }),
       );
     });
 
