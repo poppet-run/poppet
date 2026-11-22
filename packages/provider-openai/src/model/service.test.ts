@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { completeModel, RequestTiming } from "@poppet/provider";
+import { completeModel, RequestTiming, userAgent } from "@poppet/provider";
 import { Effect, Redacted } from "effect";
 import { TestClock } from "effect/testing";
 
@@ -15,7 +15,8 @@ import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt
 const catalogFixture = () => {
   const state = { token: "first-token", connected: true, reads: 0, fail: false, malformed: false };
 
-  const http: HttpFetch = async () => {
+  const http: HttpFetch = async (_url, init) => {
+    expect(new Headers(init?.headers).get("user-agent")).toBe(userAgent);
     state.reads++;
 
     return state.fail
