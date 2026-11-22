@@ -5,32 +5,88 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 
 export class ScopedStdioTransport extends StdioClientTransport {
   private closing: Promise<void> | null = null;
+  private closed: Promise<void> | null = null;
+  private markClosed: (() => void) | null = null;
+  private started = false;
+  private closedBeforeStart = false;
+
+  constructor(...args: ConstructorParameters<typeof StdioClientTransport>) {
+    super(...args);
+    let currentOnClose: (() => void) | undefined;
+
+    Object.defineProperty(this, "onclose", {
+      configurable: true,
+      enumerable: true,
+      get: () => currentOnClose,
+      set: (handler: (() => void) | undefined) => {
+        currentOnClose =
+          handler === undefined
+            ? undefined
+            : () => {
+                this.markClosed?.();
+                handler();
+              };
+      },
+    });
+  }
+
+  override async start(): Promise<void> {
+    if (this.closedBeforeStart) throw new Error("StdioClientTransport was closed before start.");
+
+    let resolveClosed!: () => void;
+    this.closed = new Promise<void>((resolve) => {
+      resolveClosed = resolve;
+    });
+    this.markClosed = resolveClosed;
+
+    if (this.onclose === undefined) this.onclose = () => {};
+
+    try {
+      await super.start();
+      this.started = true;
+    } catch (cause) {
+      resolveClosed();
+      throw cause;
+    }
+
+    if (this.closedBeforeStart) {
+      await this.close();
+      throw new Error("StdioClientTransport was closed during start.");
+    }
+  }
 
   override close(): Promise<void> {
+    if (!this.started && this.pid === null) {
+      this.closedBeforeStart = true;
+
+      return super.close();
+    }
+
     this.closing ??= this.closeProcess();
 
     return this.closing;
   }
 
   private async closeProcess() {
-    const pid = this.pid;
+    const closed = this.closed;
 
     await super.close();
 
-    if (pid === null) return;
+    if (closed === null) return;
 
-    for (let attempt = 0; attempt < 100; attempt++) {
-      try {
-        process.kill(pid, 0);
-      } catch {
-        return;
-      }
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    const settled = await Promise.race([
+      closed.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), 1000);
+        timer.unref?.();
+      }),
+    ]);
 
-    throw new Error("MCP child did not exit after shutdown.");
+    clearTimeout(timer);
+
+    if (!settled) throw new Error("MCP child did not exit after shutdown.");
   }
 }
 

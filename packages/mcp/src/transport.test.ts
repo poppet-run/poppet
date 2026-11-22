@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { boundedFetch } from "#src/transport";
+import { boundedFetch, ScopedStdioTransport } from "#src/transport";
 
 describe("boundedFetch", () => {
   test.each([
@@ -38,5 +38,35 @@ describe("boundedFetch", () => {
     );
 
     expect(await (await fetch("https://test.invalid")).text()).toBe(text);
+  });
+});
+
+describe("ScopedStdioTransport", () => {
+  test("when close is called before start, rejects a subsequent start without spawning or leaking a child", async () => {
+    const transport = new ScopedStdioTransport({
+      command: process.execPath,
+      args: ["-e", "setInterval(() => {}, 1000)"],
+      stderr: "ignore",
+    });
+
+    await transport.close();
+    await expect(transport.start()).rejects.toThrow("closed before start");
+    expect(transport.pid).toBeNull();
+  });
+
+  test("when a started child ignores SIGTERM, close terminates and awaits child exit cleanly", async () => {
+    const transport = new ScopedStdioTransport({
+      command: process.execPath,
+      args: ["-e", 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);'],
+      stderr: "ignore",
+    });
+
+    await transport.start();
+    const pid = transport.pid;
+    expect(pid).not.toBeNull();
+
+    await transport.close();
+    await transport.close();
+    expect(transport.pid).toBeNull();
   });
 });
