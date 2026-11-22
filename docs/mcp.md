@@ -146,7 +146,8 @@ that sign-in without changing configuration. Use a pre-registered
 client when the authorization server has no dynamic registration; register a
 fixed loopback redirect such as `http://127.0.0.1:1455/auth/callback` and set
 the same `callbackPort`. Without `scopes`, Poppet requests what the server's
-metadata advertises. An OAuth entry cannot also configure an `Authorization`
+metadata advertises. If the callback supplies an issuer (`iss`), it must appear
+once and match the discovered issuer. An OAuth entry cannot also configure an `Authorization`
 header; other headers are sent only to the MCP endpoint. Client metadata
 documents and unattended grants are unsupported.
 

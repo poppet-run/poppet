@@ -26,7 +26,7 @@ const quiet = Effect.provideService(Console.Console, {
   warn: () => {},
 });
 
-const harness = async (options: OAuthFixtureOptions = {}) => {
+const harness = async (options: OAuthFixtureOptions = {}, duplicateIssuer = false) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-oauth-"));
   const server = serveOAuth(options);
   const opened: string[] = [];
@@ -69,7 +69,15 @@ const harness = async (options: OAuthFixtureOptions = {}) => {
     open: (url) =>
       Effect.promise(async () => {
         opened.push(url);
-        await fetch(await server.approve(new URL(url)));
+        const callback = await server.approve(new URL(url));
+
+        if (duplicateIssuer) {
+          const issuer = `${new URL(config.url).origin}/`;
+          callback.searchParams.append("iss", issuer);
+          callback.searchParams.append("iss", issuer);
+        }
+
+        await fetch(callback);
       }),
     timeoutMs: 5000,
     now: Date.now,
@@ -99,6 +107,17 @@ const call = Effect.gen(function* () {
 });
 
 describe("MCP OAuth", () => {
+  test("when a callback repeats the expected issuer, rejects it before token exchange", async () => {
+    const state = await harness({}, true);
+
+    try {
+      await expect(state.login()).rejects.toThrow("invalid code or registration");
+      expect(state.server.events.some((event) => event.path === "/token")).toBe(false);
+    } finally {
+      await state.close();
+    }
+  });
+
   test.each(["challenge", "changed sign-in"] as const)(
     "when a reviewed call encounters a %s, sends no retry or replacement-account request",
     async (mode) => {

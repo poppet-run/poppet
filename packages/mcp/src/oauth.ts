@@ -304,7 +304,10 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
         port: config.oauth.callbackPort ?? null,
         service: `MCP ${config.id}`,
         received: "Return to your terminal while Poppet finishes signing in.",
-        accept: (code, parameters) => ({ code, iss: parameters.get("iss") ?? undefined }),
+        accept: (code, parameters) =>
+          parameters.getAll("iss").length > 1
+            ? null
+            : { code, iss: parameters.get("iss") ?? undefined },
       });
 
       const failure = (cause: unknown) =>
