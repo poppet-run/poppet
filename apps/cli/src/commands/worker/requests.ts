@@ -10,7 +10,13 @@ import {
   requestWorkerReply,
   workerReply,
 } from "@poppet/worker";
+<<<<<<< HEAD
 import { Cause, Effect, Layer, Option, Queue, Schema, Stream, type Scope } from "effect";
+||||||| parent of c73d893 (Close worker command scopes on pre-pull disconnects and stop logging streamed reasoning to worker stderr)
+import { Cause, Effect, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
+=======
+import { Cause, Effect, Exit, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
+>>>>>>> c73d893 (Close worker command scopes on pre-pull disconnects and stop logging streamed reasoning to worker stderr)
 import { SqlClient } from "effect/sql";
 
 import {
@@ -98,16 +104,33 @@ export const WorkerRequestsLive = Layer.effect(
               { status: 400 },
             );
 
-          const scope = yield* Effect.scope;
+          if (request.signal.aborted) return new Response(null, { status: 499 });
+
+          const owned = yield* Scope.fork(yield* Effect.scope);
           const frames = yield* Queue.make<Frame, Cause.Done>({ capacity: 16 });
           const emitFrame = (frame: Frame) => Queue.offer(frames, frame).pipe(Effect.asVoid);
+
+          const onAbort = () => {
+            void Effect.runFork(Scope.close(owned, Exit.void));
+          };
+
+          request.signal.addEventListener("abort", onAbort, { once: true });
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => request.signal.removeEventListener("abort", onAbort)),
+          ).pipe(Effect.provideService(Scope.Scope, owned));
+
+          if (request.signal.aborted) {
+            yield* Scope.close(owned, Exit.void);
+
+            return new Response(null, { status: 499 });
+          }
 
           const logDiagnostic = (text: string) =>
             logChatDiagnostic(text).pipe(Effect.andThen(emitFrame({ type: "stderr", text })));
 
           const reasoning: ChatReasoning = command.value.streamReasoning
             ? {
-                log: logChatDiagnostic,
+                log: () => Effect.void,
                 write: emitFrame,
               }
             : { log: logDiagnostic };
@@ -130,14 +153,19 @@ export const WorkerRequestsLive = Layer.effect(
               onSuccess: () => emitFrame({ type: "done" }),
             }),
             Effect.ensuring(Queue.end(frames)),
-            Effect.forkIn(scope),
+            Effect.forkIn(owned),
           );
 
-          const signal = yield* Effect.abortSignal;
+          yield* Effect.addFinalizer(() => Queue.end(frames)).pipe(
+            Effect.provideService(Scope.Scope, owned),
+          );
+
+          const signal = yield* Effect.abortSignal.pipe(Effect.provideService(Scope.Scope, owned));
           const context = yield* Effect.context<never>();
           const encoder = new TextEncoder();
 
           const body = Stream.fromQueue(frames).pipe(
+            Stream.onExit((exit) => Scope.close(owned, exit)),
             Stream.map((frame) => encoder.encode(`${JSON.stringify(frame)}\n`)),
             Stream.toReadableStreamWith(context, { signal }),
           );

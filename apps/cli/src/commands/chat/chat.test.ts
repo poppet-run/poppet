@@ -576,9 +576,7 @@ describe.concurrent("chat.ts", () => {
             : [],
         );
         expect(chat.errors.some((line) => line.includes("msg=thinking session="))).toBe(false);
-        expect(workerLogs.filter((line) => line.includes("msg=thinking session="))).toHaveLength(
-          mode === "worker" && enabled ? 2 : 0,
-        );
+        expect(workerLogs.filter((line) => line.includes("msg=thinking session="))).toEqual([]);
 
         if (enabled)
           expect(chat.outputEvents.indexOf(`thinking:${chat.state.reasoning}`)).toBeLessThan(
@@ -672,7 +670,7 @@ describe.concurrent("chat.ts", () => {
         }),
       );
       expect(frames.at(-1)).toEqual({ type: "done" });
-      expect(chat.errors.filter((line) => line.includes("msg=thinking session="))).toHaveLength(1);
+      expect(chat.errors.filter((line) => line.includes("msg=thinking session="))).toEqual([]);
     } finally {
       await Effect.runPromise(Fiber.interrupt(worker));
       await chat.close();
@@ -801,10 +799,9 @@ describe.concurrent("chat.ts", () => {
             .split("\n")
             .filter((line) => line.includes("msg=thinking"));
 
-          expect(saved).toHaveLength(3);
+          expect(saved).toHaveLength(1);
           expect(saved[0]).toContain(`session=${chat.requests[0]?.sessionId} run=`);
-          expect(saved[0]).toContain("Check the notes before answering.");
-          expect(saved.at(-1)).toBe(diagnostics[0]);
+          expect(saved[0]).toBe(diagnostics[0]);
         }
 
         await chat.invoke(["chat", "show", "--json", chat.requests[0]!.sessionId]);

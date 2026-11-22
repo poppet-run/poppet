@@ -115,9 +115,9 @@ the interrupted run remains inspectable. Earlier completed answers remain saved.
 There is no automatic retry.
 
 With `chat.logReasoning` enabled, provider reasoning appears under a muted
-`Thinking` heading before the answer. The background worker still writes its
-structured reasoning log entries. Providers may return no readable reasoning for
-a turn; in that case no heading is printed.
+`Thinking` heading before the answer without duplicating it into the worker
+log. Providers may return no readable reasoning for a turn; in that case no
+heading is printed.
 
 `TERM=dumb` uses a simple, single-line `You>` prompt without message queuing. The plain prompt and
 `chat new` retain the streamed thinking output on stderr and answers on stdout.
