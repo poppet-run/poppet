@@ -33,7 +33,8 @@ The adapter uses Chat Completions.
 It derives tools, image input, temperature, output limits, and context size from
 catalog metadata; a model accepts image attachments when its input modalities
 include `image`. Models that generate images or audio and dynamic model routers such as
-`openrouter/auto` and `openrouter/free` are excluded.
+`openrouter/auto` and `openrouter/free` are excluded. A malformed catalog entry
+is skipped when the catalog contains usable entries.
 
 Requests require support for every requested parameter and disable provider
 fallbacks. A stable `session_id` groups the exchange. Plain reasoning and the

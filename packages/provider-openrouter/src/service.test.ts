@@ -660,3 +660,13 @@ describe("makeOpenRouterProvider", () => {
     },
   );
 });
+
+describe("makeOpenRouterProvider", () => {
+  test("when one catalog entry is malformed, still lists and resolves supported models", async () => {
+    const { provider } = fixture([{ id: "vendor/malformed" }, catalogEntry("vendor/model")]);
+    expect((await Effect.runPromise(provider.models)).map((model) => model.id)).toEqual([
+      "vendor/model",
+    ]);
+    expect(await Effect.runPromise(provider.resolve("vendor/model"))).toBeDefined();
+  });
+});
