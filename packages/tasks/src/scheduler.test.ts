@@ -1713,4 +1713,40 @@ describe.concurrent("executeOccurrence", () => {
       await state.close();
     }
   });
+
+  test("when reconcile or claim fails transiently inside the worker loop, keeps the scheduler running and recovers", async () => {
+    const state = await fixture(() => response([{ type: "text", text: "Recovered" }]));
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          yield* TestClock.setTime(Date.now());
+          const base = yield* TaskRepository;
+          let reconcileAttempts = 0;
+
+          const flaky = {
+            ...base,
+            reconcile: (now: number, startup?: boolean) =>
+              !startup && reconcileAttempts++ === 0
+                ? Effect.fail(new TaskError({ message: "Transient reconcile error" }))
+                : base.reconcile(now, startup),
+          };
+
+          const worker = yield* makeTaskWorker.pipe(Effect.provideService(TaskRepository, flaky));
+          const loop = yield* worker.run.pipe(
+            Effect.provideService(TaskRepository, flaky),
+            Effect.forkChild,
+          );
+
+          yield* TestClock.adjust("65 seconds");
+          const status = yield* worker.handle({ action: "status" });
+          expect(status).toMatchObject({ running: true });
+          expect(reconcileAttempts).toBeGreaterThanOrEqual(2);
+          yield* Fiber.interrupt(loop);
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+    } finally {
+      await state.close();
+    }
+  });
 });
