@@ -38,6 +38,15 @@ export const modelStream = (
       }).pipe(Effect.forkScoped);
 
       const iterable = yield* open(decoded, controller.signal).pipe(
+        Effect.timeoutOrElse({
+          duration: "60 seconds",
+          orElse: () => {
+            expired = true;
+            controller.abort();
+
+            return Effect.fail(interrupted(description.provider, "The inference deadline expired."));
+          },
+        }),
         Effect.mapError((error) =>
           expired ? interrupted(description.provider, "The inference deadline expired.") : error,
         ),

@@ -77,7 +77,7 @@ export const ChatGPTAuthLive = Layer.effect(
       );
 
     return {
-      login: (options: SignInOptions) => store.withPermit(login(options)),
+      login,
       accessToken: store.withPermit(accessToken),
       signOut,
       recordVerification,

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { Effect, Redacted } from "effect";
+import { Effect, Fiber, Redacted } from "effect";
 
-import { createHarness, login, verify } from "#src/test/fixtures/chatgpt";
+import { ChatGPTAuth } from "#src/auth/service";
+import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt";
 
 describe.concurrent("loginWorkflow", () => {
   test("when signing in across restarts, reuses registration with fresh state and nonce values", async () => {
@@ -140,6 +141,36 @@ describe.concurrent("loginWorkflow", () => {
           (await harness.saved()).credentials?.accessToken ?? Redacted.make("missing"),
         ),
       ).toBe("test-access-1");
+    } finally {
+      await harness.close();
+    }
+  });
+
+  test("when browser authorization is still waiting, does not hold the credential store permit", async () => {
+    const harness = await createHarness();
+
+    try {
+      await harness.run(
+        Effect.gen(function* () {
+          const auth = yield* ChatGPTAuth;
+
+          const waiting = yield* auth
+            .login({ noBrowser: true, callbackPort: null, paste: Effect.never })
+            .pipe(Effect.forkChild);
+
+          yield* Effect.sleep("20 millis");
+
+          const current = yield* status.pipe(
+            Effect.timeoutOrElse({
+              duration: "500 millis",
+              orElse: () => Effect.die("status blocked on login permit"),
+            }),
+          );
+
+          expect(current.connected).toBe(false);
+          yield* Fiber.interrupt(waiting);
+        }),
+      );
     } finally {
       await harness.close();
     }
