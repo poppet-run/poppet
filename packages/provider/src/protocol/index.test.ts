@@ -216,7 +216,7 @@ const fixture = (
       else if (mode === "failed")
         events.push({
           type: "response.failed",
-          response: { error: { code: "insufficient_quota" } },
+          response: { error: { code: errorCode } },
         });
       else if (mode === "incomplete")
         events.push({ type: "response.incomplete", response: { status: "incomplete" } });
@@ -277,7 +277,7 @@ const fixture = (
       if (mode === "malformed")
         events.push({ choices: [{ index: 0, delta: { content: 42 }, finish_reason: "stop" }] });
       else if (mode === "failed")
-        events.push({ error: { message: "Test failure", code: "insufficient_quota" } });
+        events.push({ error: { message: "Test failure", code: errorCode } });
       else if (mode !== "truncated" && mode !== "stall")
         events.push({
           choices: [
@@ -486,14 +486,21 @@ for (const adapter of cases) {
       expect(harness.requests).toHaveLength(1);
     });
 
-    test("when the stream fails, classifies the failure without repeating inference", async () => {
-      const harness = fixture(adapter, "failed");
+    test.each([
+      ["insufficient_quota", "quota"],
+      ["rate_limit_exceeded", "rate-limit"],
+      ["server_error", "temporary"],
+    ] as const)(
+      "when the stream fails with %s, classifies it as %s without repeating inference",
+      async (code, reason) => {
+        const harness = fixture(adapter, "failed", 200, code);
 
-      await expect(Effect.runPromise(completeModel(harness.model, request))).rejects.toMatchObject({
-        reason: "quota",
-      });
-      expect(harness.requests).toHaveLength(1);
-    });
+        await expect(Effect.runPromise(completeModel(harness.model, request))).rejects.toMatchObject(
+          { reason },
+        );
+        expect(harness.requests).toHaveLength(1);
+      },
+    );
 
     test("when the network fails, reports a temporary failure without retrying or exposing details", async () => {
       const harness = fixture(adapter, "network-failure");

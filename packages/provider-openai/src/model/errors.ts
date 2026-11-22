@@ -58,9 +58,12 @@ export const connectionFailure = (error: ProviderError) => {
 const authenticationCodes = new Set([
   "subscription_sharing_invalid_user",
   "invalid_grant",
+  "invalid_refresh_token",
   "token_expired",
   "refresh_token_expired",
   "refresh_token_invalidated",
+  "refresh_token_invalid",
+  "refresh_token_reused",
 ]);
 
 const temporaryCodes = new Set([
@@ -69,13 +72,15 @@ const temporaryCodes = new Set([
 ]);
 
 export const chatGPTReason: RemoteReason = (status, code = "") => {
-  if (status === 401 || authenticationCodes.has(code)) return "authentication";
-
-  if (status === 403 || code === "subscription_sharing_user_not_eligible") return "permission";
-
   if (code === "subscription_sharing_usage_limit_exceeded") return "quota";
 
+  if (code === "subscription_sharing_user_not_eligible") return "permission";
+
+  if (status === 401 || authenticationCodes.has(code)) return "authentication";
+
   if (temporaryCodes.has(code) && status !== 429) return "temporary";
+
+  if (status === 403) return "permission";
 
   return undefined;
 };

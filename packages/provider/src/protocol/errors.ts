@@ -27,11 +27,15 @@ const sharedReason = (
 
   if (["insufficient_quota", "usage_limit_exceeded"].includes(code ?? "")) return "quota";
 
-  if (status === 429) return "rate-limit";
+  if (status === 429 || code === "rate_limit_exceeded") return "rate-limit";
 
   if (code === "context_length_exceeded") return "context-limit";
 
-  if ((status ?? 0) >= 500) return "temporary";
+  if (
+    (status ?? 0) >= 500 ||
+    ["server_error", "internal_error", "service_unavailable"].includes(code ?? "")
+  )
+    return "temporary";
 
   return "invalid-request";
 };
