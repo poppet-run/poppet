@@ -306,7 +306,8 @@ forwarding are outside this implementation. Resource links and media are marked 
 - At most 8 configured servers, 8 discovery pages per server, 128 discovered tools,
   and 256 KiB of discovery JSON per server.
 - Each stdio read buffer is capped at 256 KiB, before JSON parsing. HTTP JSON
-  bodies and individual SSE events have the same cap while streaming. Oversized
+  bodies, OAuth responses, HTTP errors, and individual SSE events have the same
+  cap. Each successful SSE response has a 16 MiB total byte limit. Oversized
   protocol messages close the connection.
 - HTTP redirects are followed only within the endpoint's origin (or its HTTPS
   upgrade) and only when they keep the method. The SDK's stream reconnection is

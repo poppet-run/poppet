@@ -314,10 +314,12 @@ const delegate = (authorization: AuthorizationSlot): AuthProvider => ({
 const makeClient = () =>
   new Client({ name: "poppet", version: "0.0.0" }, { capabilities: {}, listMaxPages: 8 });
 
+const fetchHTTP: FetchLike = (url, init) => fetch(url, init);
+
 const makeTransport = (
   config: MCPServer,
   references: Record<string, string>,
-  fetch: FetchLike = boundedFetch(262144),
+  fetch: FetchLike = boundedFetch(262144, fetchHTTP, 16 * 1024 * 1024),
   authorization: AuthorizationSlot = { current: null },
 ) => {
   if (!isHTTPServer(config))
@@ -783,7 +785,7 @@ export const probeServer = (config: MCPServer) =>
       authorization.current = yield* runtimeAuthorization(oauth, () =>
         clock.currentTimeMillisUnsafe(),
       ).pipe(Effect.mapError((error) => authorizationFailure(config, error)));
-    const base = boundedFetch(262144);
+    const base = boundedFetch(262144, fetchHTTP, 16 * 1024 * 1024);
 
     const observe: FetchLike = async (url, init) => {
       const response = await base(url, init);

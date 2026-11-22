@@ -37,13 +37,26 @@ export class ScopedStdioTransport extends StdioClientTransport {
 const LF = 0x0a;
 const CR = 0x0d;
 
-const bounded = (body: ReadableStream<Uint8Array>, limit: number, events: boolean) => {
+const bounded = (
+  body: ReadableStream<Uint8Array>,
+  limit: number,
+  streamLimit: number | undefined,
+) => {
   let size = 0;
+  let total = 0;
   let previous = 0;
 
   return body.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
+        total += chunk.byteLength;
+
+        if (total > (streamLimit ?? limit)) {
+          controller.error(new Error("MCP HTTP response exceeds the size limit."));
+
+          return;
+        }
+
         for (const byte of chunk) {
           if (++size > limit) {
             controller.error(new Error("MCP HTTP message exceeds the size limit."));
@@ -51,7 +64,7 @@ const bounded = (body: ReadableStream<Uint8Array>, limit: number, events: boolea
             return;
           }
 
-          if (events && byte === LF && previous === LF) size = 0;
+          if (streamLimit !== undefined && byte === LF && previous === LF) size = 0;
 
           if (byte !== CR) previous = byte;
         }
@@ -63,18 +76,16 @@ const bounded = (body: ReadableStream<Uint8Array>, limit: number, events: boolea
 };
 
 export const boundedFetch =
-  (limit: number, base: FetchLike = fetch): FetchLike =>
+  (limit: number, base: FetchLike = fetch, streamLimit?: number): FetchLike =>
   async (url, init) => {
     const response = await base(url, init);
 
     if (response.body === null) return response;
 
-    const events = response.headers
-      .get("content-type")
-      ?.toLowerCase()
-      .startsWith("text/event-stream");
+    const mediaType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+    const events = response.status === 200 && mediaType === "text/event-stream";
 
-    return new Response(bounded(response.body, limit, events === true), {
+    return new Response(bounded(response.body, limit, events ? streamLimit : undefined), {
       status: response.status,
       statusText: response.statusText,
       headers: response.headers,
