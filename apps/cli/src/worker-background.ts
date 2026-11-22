@@ -16,29 +16,66 @@ export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirect
         yield* acquireOwnerLock(join(directory, "worker.lock"));
 
         return yield* Effect.promise(async () => {
-          const log = openWorkerLog(directory);
+          let child: Bun.Subprocess<"ignore", "pipe", "pipe"> | null = null;
+          let pendingSignal: "SIGINT" | "SIGTERM" | null = null;
+          let timer: ReturnType<typeof setTimeout> | undefined;
+
+          const stop = (signal: "SIGINT" | "SIGTERM") => {
+            if (child === null) {
+              pendingSignal ??= signal;
+
+              return;
+            }
+
+            child.kill(signal);
+            timer ??= setTimeout(() => child?.kill("SIGKILL"), 25_000);
+          };
+
+          const interrupt = () => stop("SIGINT");
+          const terminate = () => stop("SIGTERM");
+          process.on("SIGINT", interrupt);
+          process.on("SIGTERM", terminate);
+
+          let log: ReturnType<typeof openWorkerLog> | null = null;
 
           try {
-            const child = Bun.spawn([...command], {
+            log = openWorkerLog(directory);
+            const activeLog = log;
+
+            if (pendingSignal !== null) return pendingSignal === "SIGINT" ? 130 : 143;
+
+            child = Bun.spawn([...command], {
               stdin: "ignore",
               stdout: "pipe",
               stderr: "pipe",
             });
 
-            let timer: ReturnType<typeof setTimeout> | undefined;
-
-            const stop = (signal: "SIGINT" | "SIGTERM") => {
-              child.kill(signal);
-              timer ??= setTimeout(() => child.kill("SIGKILL"), 25_000);
-            };
-
-            const interrupt = () => stop("SIGINT");
-            const terminate = () => stop("SIGTERM");
-            process.on("SIGINT", interrupt);
-            process.on("SIGTERM", terminate);
+            let writeError: unknown;
+            let failed = false;
 
             const copy = async (stream: ReadableStream<Uint8Array>) => {
-              for await (const chunk of stream) log.write(chunk);
+              const reader = stream.getReader();
+
+              try {
+                for (;;) {
+                  // eslint-disable-next-line no-await-in-loop -- Stream chunks must be drained sequentially.
+                  const { done, value } = await reader.read();
+
+                  if (done) break;
+
+                  if (!failed) {
+                    try {
+                      activeLog.write(value);
+                    } catch (error) {
+                      failed = true;
+                      writeError ??= error;
+                      stop("SIGTERM");
+                    }
+                  }
+                }
+              } finally {
+                reader.releaseLock();
+              }
             };
 
             const copies = [copy(child.stdout), copy(child.stderr)];
@@ -46,19 +83,20 @@ export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirect
             try {
               const [exitCode] = await Promise.all([child.exited, Promise.all(copies)]);
 
+              if (failed) throw writeError;
+
               return exitCode;
             } catch (error) {
               stop("SIGTERM");
               await child.exited;
               await Promise.allSettled(copies);
               throw error;
-            } finally {
-              clearTimeout(timer);
-              process.off("SIGINT", interrupt);
-              process.off("SIGTERM", terminate);
             }
           } finally {
-            log.close();
+            clearTimeout(timer);
+            process.off("SIGINT", interrupt);
+            process.off("SIGTERM", terminate);
+            log?.close();
           }
         });
       }),
