@@ -80,6 +80,55 @@ test("when Markdown contains links and interactive HTML, renders safe links and 
   }
 });
 
+test("when a conversation link is clicked with a modifier or a nonprimary button, leaves navigation to the browser", async () => {
+  const { ConversationLink } = await import("../components/chat/sidebar/conversation-link");
+  const root = document.createElement("div");
+  const navigated: string[] = [];
+
+  try {
+    render(
+      <ConversationLink
+        session={{
+          id: "saved",
+          title: "Saved",
+          provider: "provider",
+          model: "model",
+          updatedAt: 0,
+        }}
+        active={false}
+        onNavigate={(id) => navigated.push(id)}
+      />,
+      root,
+    );
+
+    const link = root.querySelector("a")!;
+    const intercepted: boolean[] = [];
+    link.addEventListener("click", (event) => {
+      intercepted.push(event.defaultPrevented);
+      event.preventDefault();
+    });
+
+    for (const options of [
+      { metaKey: true },
+      { ctrlKey: true },
+      { shiftKey: true },
+      { altKey: true },
+      { button: 1 },
+    ]) {
+      const event = new dom.window.MouseEvent("click", { cancelable: true, ...options });
+      link.dispatchEvent(event);
+    }
+
+    expect(navigated).toEqual([]);
+    const primary = new dom.window.MouseEvent("click", { cancelable: true });
+    link.dispatchEvent(primary);
+    expect(intercepted).toEqual([false, false, false, false, false, true]);
+    expect(navigated).toEqual(["saved"]);
+  } finally {
+    render(null, root);
+  }
+});
+
 test("preserves ambiguous submissions and recovers with the same identifier without auto-resending", async () => {
   const { App } = await import("./app");
   const originalFetch = globalThis.fetch;

@@ -137,6 +137,9 @@ sanitizes Markdown, removes inline images and interactive controls, and opens
 links in a new tab. The worker saves submission receipts
 in SQLite and tracks their schema migrations separately.
 
+Use your browser's usual modified clicks to open a sidebar conversation in a
+separate tab or window.
+
 The event stream checks for changes twice per second. When something changes, it
 sends the full conversation snapshot. Reconnecting therefore needs no replay of
 earlier text updates. The page reopens the stream after a proxy error.
