@@ -875,7 +875,7 @@ describe.concurrent("makeTaskWorker", () => {
     }
   });
 
-  test("when downtime or busy skips commit, logs them once and excludes rolled-back changes", async () => {
+  test("when downtime or busy skips commit and another schedule fails, logs each outcome once", async () => {
     const state = await fixture(final);
     const start = Date.parse("2026-10-14T09:00:00Z");
     const schedule = { type: "cron", expression: "* * * * *", timezone: "UTC" } as const;
@@ -902,13 +902,12 @@ describe.concurrent("makeTaskWorker", () => {
             broken.id,
           ]);
 
-          const error = yield* reconcileTasks(repo, start + 11 * 60_000).pipe(
-            Effect.match({ onFailure: (failure) => failure, onSuccess: () => null }),
-          );
+          yield* reconcileTasks(repo, start + 11 * 60_000);
+          yield* reconcileTasks(repo, start + 11 * 60_000);
 
-          expect(error).toMatchObject({ message: expect.stringContaining("Invalid cron") });
-          expect(state.lines).toHaveLength(3);
-          expect(yield* repo.skips(job.id)).toHaveLength(3);
+          expect(state.errors).toEqual([expect.stringContaining(`task=${broken.id}`)]);
+          expect(state.lines).toHaveLength(5);
+          expect(yield* repo.skips(job.id)).toHaveLength(4);
         }),
       );
     } finally {

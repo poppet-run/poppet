@@ -454,6 +454,10 @@ existing destination flags to deliver completed research through messaging.
 
 ## Missed work, pauses, and retries
 
+Catch-up follows the same forward schedule across daylight saving transitions.
+If Poppet cannot advance a saved schedule, it pauses that task and logs the
+failure while continuing to process other tasks.
+
 The worker executes one occurrence at a time. A recurring task whose most recent
 due time is within the catch-up window, 60 minutes by default, runs that time once;
 earlier and older missed times are skipped (see [worker](worker.md#sleep-and-missed-schedules)).
