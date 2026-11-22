@@ -86,27 +86,22 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
           WHERE occurrences.status = 'running' AND runs.failure_reason = 'provider:quota'
           ON CONFLICT (provider) DO UPDATE SET reason = 'quota', resume_at = NULL`;
 
-        const running = yield* sql`${occurrences} WHERE status = 'running'`.pipe(
-          decodeRows(Occurrence),
+        const running = yield* sql`SELECT o.id, r.status AS run_status, r.failure_reason
+          FROM job_occurrences AS o LEFT JOIN runs AS r ON r.id = o.run_id
+          WHERE o.status = 'running'`.pipe(
+          decodeRows(
+            Schema.Struct({
+              id: Occurrence.fields.id,
+              runStatus: Schema.NullOr(Run.fields.status),
+              failureReason: Run.fields.failureReason,
+            }),
+          ),
         );
 
-        for (const item of running) {
-          const run =
-            item.runId === null
-              ? null
-              : yield* sql`SELECT status, failure_reason FROM runs WHERE id = ${item.runId}`.pipe(
-                  decodeRow(
-                    Schema.Struct({
-                      status: Run.fields.status,
-                      failureReason: Run.fields.failureReason,
-                    }),
-                  ),
-                );
-
-          if (run?.status === "completed") yield* finish(item.id, "completed", null, now);
-          else if (run?.status === "failed")
-            yield* finish(item.id, "failed", run.failureReason, now);
-          else yield* finish(item.id, "interrupted", "owner-stopped", now);
+        for (const { id, runStatus, failureReason } of running) {
+          if (runStatus === "completed") yield* finish(id, "completed", null, now);
+          else if (runStatus === "failed") yield* finish(id, "failed", failureReason, now);
+          else yield* finish(id, "interrupted", "owner-stopped", now);
         }
       }),
     );

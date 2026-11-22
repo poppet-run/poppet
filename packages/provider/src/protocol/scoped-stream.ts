@@ -53,7 +53,7 @@ export const modelStream = (
               controller.abort();
 
               try {
-                if (iterator.return) return await iterator.return();
+                await iterator.return?.();
               } catch {
                 // The aborted transport may reject while closing.
               }

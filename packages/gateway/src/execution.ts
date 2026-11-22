@@ -34,16 +34,14 @@ export const recover = (context: GatewayContext) =>
     for (const entry of yield* repo.executing(channel.id, account)) {
       const run = yield* store.run(entry.runId);
 
-      if (run === null) yield* repo.state(entry.id, "queued");
-      else {
-        yield* finish(
-          context,
-          entry.id,
-          answer(run),
-          run.status === "completed" ? "completed" : "failed",
-        );
-        yield* mark(context, entry.message, run.status === "completed" ? "completed" : "stopped");
+      if (run === null) {
+        yield* repo.state(entry.id, "queued");
+        continue;
       }
+
+      const completed = run.status === "completed";
+      yield* finish(context, entry.id, answer(run), completed ? "completed" : "failed");
+      yield* mark(context, entry.message, completed ? "completed" : "stopped");
     }
   });
 
