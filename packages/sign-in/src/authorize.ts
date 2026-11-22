@@ -22,15 +22,21 @@ export const authorizeInBrowser = <A, E>(
       yield* Console.log(
         `Continue with ${options.service}:\n${url}\nWaiting for the browser callback. Press Ctrl+C to cancel.`,
       );
-      yield* options
-        .open(url)
-        .pipe(
-          Effect.catch(() =>
-            Console.error("Could not open the system browser. Open the sign-in link above."),
-          ),
-        );
 
-      return yield* callback.authorization;
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* options
+            .open(url)
+            .pipe(
+              Effect.catch(() =>
+                Console.error("Could not open the system browser. Open the sign-in link above."),
+              ),
+              Effect.forkScoped,
+            );
+
+          return yield* callback.authorization;
+        }),
+      );
     }
 
     yield* Console.log(

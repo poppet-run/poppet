@@ -5,10 +5,25 @@ import { SignInError } from "#src/errors";
 const browserError = () =>
   new SignInError({ reason: "callback", message: "Could not open the system browser." });
 
+const validatedURL = (url: string) => {
+  const parsed = new URL(url);
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+    throw new Error("Unsupported browser URL scheme.");
+
+  return parsed.href;
+};
+
 export const openBrowser = (url: string) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const command = process.platform === "darwin" ? ["open", url] : ["xdg-open", url];
+      const target = yield* Effect.try({
+        try: () => validatedURL(url),
+        catch: browserError,
+      });
+
+      const command =
+        process.platform === "darwin" ? ["open", "--", target] : ["xdg-open", target];
 
       const browser = yield* Effect.acquireRelease(
         Effect.try({
