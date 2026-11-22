@@ -496,11 +496,7 @@ describe("MCP OAuth", () => {
       expect(auth.secrets()).toContain(firstToken);
       expect(auth.secrets().some((value) => value.startsWith("refresh-"))).toBe(true);
 
-      await auth.authProvider.onUnauthorized!({
-        response: new Response(null, { status: 401 }),
-        serverUrl: new URL(state.server.url),
-        fetchFn: fetch,
-      });
+      await auth.refresh(firstToken, new Response(null, { status: 401 }));
 
       const secondToken = auth.token();
       expect(secondToken).not.toBe(firstToken);

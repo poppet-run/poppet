@@ -59,14 +59,17 @@ test("when an attachment URL contains a port or userinfo or returns non-OK/3xx, 
     "Slack",
   );
 
-  for (const ref of [
-    "https://files.slack.com:8443/file",
-    "https://user@files.slack.com/file",
-    "https://user:pass@files.slack.com/file",
-  ])
-    await expect(
-      Effect.runPromise(download({ id: "F123", name: "note.txt", ref }, 10)),
-    ).rejects.toThrow("not hosted");
+  await Promise.all(
+    [
+      "https://files.slack.com:8443/file",
+      "https://user@files.slack.com/file",
+      "https://user:pass@files.slack.com/file",
+    ].map((ref) =>
+      expect(
+        Effect.runPromise(download({ id: "F123", name: "note.txt", ref }, 10)),
+      ).rejects.toThrow("not hosted"),
+    ),
+  );
 
   await expect(
     Effect.runPromise(

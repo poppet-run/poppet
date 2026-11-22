@@ -242,6 +242,9 @@ creation after an unclear result. Completed calls are not replayed. Scheduled
 runs cannot use this tool, including its read actions. Historical conversations,
 skills, pages, and tool results cannot authorize task changes. Chat cannot select
 a [manual-only skill](skills.md#manual-only-skills) for a task; use `tasks add --skill`.
+Poppet caps the store at 64 scheduled tasks, limits chat turns to at most 5 task
+creations per run, and requires chat-created or chat-edited recurring cron
+schedules to wait at least 5 minutes between consecutive runs.
 
 ## Deliver results to Discord
 
@@ -465,6 +468,8 @@ failure while continuing to process other tasks.
 The worker executes one occurrence at a time. A recurring task whose most recent
 due time is within the catch-up window, 60 minutes by default, runs that time once;
 earlier and older missed times are skipped (see [worker](worker.md#sleep-and-missed-schedules)).
+When `tasks.catchUpMinutes` is `0`, missed recurring slots are also skipped after
+host sleep/wake rather than running stale occurrences.
 An overdue one-off runs once. A recurring task keeps at most one pending
 or running occurrence; additional due times are recorded as skipped intervals.
 Pending recurring summaries expire after 24 hours. One-off work never expires.

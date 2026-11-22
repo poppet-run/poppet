@@ -691,7 +691,7 @@ describe.concurrent("TaskRepository", () => {
           const receipt = yield* repo.control({ action: "run-now", id: job.id }, muchLater);
           expect(receipt.availableAt).toBe(muchLater);
           const claimed = yield* repo.claim(muchLater);
-          expect(claimed?.id).toBe(receipt.occurrenceId);
+          expect(claimed?.id ?? null).toBe(receipt.occurrenceId);
         }),
       );
     } finally {

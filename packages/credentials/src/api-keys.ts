@@ -244,6 +244,7 @@ export const apiKeyProvider = (options: {
           );
 
           if (text === null) return { connected: false, expiresAt: null, source: "saved" as const };
+
           const saved = yield* Schema.decodeUnknownEffect(SavedKey, { onExcessProperty: "error" })(
             text,
           );

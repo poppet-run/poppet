@@ -25,14 +25,12 @@ export const authorizeInBrowser = <A, E>(
 
       return yield* Effect.scoped(
         Effect.gen(function* () {
-          yield* options
-            .open(url)
-            .pipe(
-              Effect.catch(() =>
-                Console.error("Could not open the system browser. Open the sign-in link above."),
-              ),
-              Effect.forkScoped,
-            );
+          yield* options.open(url).pipe(
+            Effect.catch(() =>
+              Console.error("Could not open the system browser. Open the sign-in link above."),
+            ),
+            Effect.forkScoped,
+          );
 
           return yield* callback.authorization;
         }),

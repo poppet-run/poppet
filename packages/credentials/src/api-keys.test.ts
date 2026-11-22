@@ -181,7 +181,11 @@ describe("ApiKeyStore", () => {
         id: "test-provider",
         name: "Test provider",
         environment: "TEST_PROVIDER_KEY",
-        make: () => ({ id: "test-provider", models: Effect.succeed([]), resolve: () => Effect.die("") }),
+        make: () => ({
+          id: "test-provider",
+          models: Effect.succeed([]),
+          resolve: () => Effect.die(""),
+        }),
       });
 
       await writeFile(

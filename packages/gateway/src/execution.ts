@@ -79,6 +79,7 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
     const { channel, store } = context;
     const { agent, approvals, running } = execution;
     yield* mark(context, entry.message, "working");
+
     const prepared = yield* prepareSession(
       context,
       execution.setup,

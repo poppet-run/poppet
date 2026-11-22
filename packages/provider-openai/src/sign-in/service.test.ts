@@ -146,6 +146,7 @@ describe("makeBrowserSignIn", () => {
             received: "Done",
             accept: (code) => code,
           });
+
           const target = `${listener.redirectUri}?code=test&state=${listener.state}`;
           const first = yield* Effect.promise(() => fetch(target));
           const second = yield* Effect.promise(() => fetch(target));

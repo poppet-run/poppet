@@ -73,8 +73,7 @@ const Continuation = Schema.Struct({
   items: Schema.Array(Item),
 });
 
-const toolIdentity = (namespace: string | null, name: string) =>
-  JSON.stringify([namespace, name]);
+const toolIdentity = (namespace: string | null, name: string) => JSON.stringify([namespace, name]);
 
 const mergeItems = (
   provider: ModelDescription["provider"],

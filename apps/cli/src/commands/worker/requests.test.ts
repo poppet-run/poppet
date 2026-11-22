@@ -45,7 +45,9 @@ describe("WorkerRequestsLive", () => {
             Stream.fromEffect(
               Deferred.succeed(started, undefined).pipe(
                 Effect.andThen(Effect.never),
-                Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined).pipe(Effect.asVoid)),
+                Effect.onInterrupt(() =>
+                  Deferred.succeed(interrupted, undefined).pipe(Effect.asVoid),
+                ),
               ),
             ),
           nameSession: () => Effect.void,

@@ -165,6 +165,7 @@ describe("web chat", () => {
           const request = new Request(settings.origin + "/api/login", {
             method: "POST",
             headers: {
+              host: new URL(settings.origin).host,
               origin: settings.origin,
               "content-type": "application/json",
               "x-forwarded-for": `192.0.2.${index + 1}`,
@@ -634,9 +635,11 @@ describe("web chat", () => {
 
     try {
       const store = await app.runtime.runPromise(Store);
+
       const session = await app.runtime.runPromise(
         store.createSession("test-provider", "test-model"),
       );
+
       const before = await app.runtime.runPromise(app.chat.marker(session.id));
       await app.runtime.runPromise(store.renameSession(session.id, "Renamed conversation"));
       const after = await app.runtime.runPromise(app.chat.marker(session.id));

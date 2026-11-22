@@ -108,7 +108,9 @@ const resourceMetadata = (config: MCPOAuthServer, advertised: URL | undefined) =
   if (explicit !== undefined) return new URL(explicit);
 
   if (advertised !== undefined && advertised.origin !== new URL(config.url).origin)
-    throw new Error("The OAuth resource metadata must use the MCP server origin.");
+    throw new MCPSignInError({
+      message: `MCP ${config.id}: the OAuth resource metadata must use the MCP server origin.`,
+    });
 
   return advertised;
 };
@@ -324,14 +326,12 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
         if (cause instanceof Error && cause.message === "OAuth endpoints must use https.")
           return new MCPSignInError({ message: `MCP ${config.id}: ${cause.message}` });
 
-        const code =
-          typeof cause === "object" &&
-          cause !== null &&
-          "errorCode" in cause &&
-          typeof cause.errorCode === "string" &&
-          /^[a-z0-9_]{1,64}$/.test(cause.errorCode)
-            ? cause.errorCode
-            : undefined;
+        const errorCodeSchema = Schema.Struct({
+          errorCode: Schema.String.check(Schema.isPattern(/^[a-z0-9_]{1,64}$/)),
+        });
+
+        const parsed = Schema.decodeUnknownOption(errorCodeSchema)(cause);
+        const code = Option.isSome(parsed) ? parsed.value.errorCode : undefined;
 
         return new MCPSignInError({
           message:
@@ -416,7 +416,6 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
         service: `MCP ${config.id}`,
       });
 
-<<<<<<< HEAD
       yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           yield* restore(
@@ -426,21 +425,6 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
                   server,
                   AbortSignal.any([signal, AbortSignal.timeout(15000)]),
                 );
-||||||| parent of eabc1f5 (Sanitize untrusted OAuth error messages and required scopes in MCP)
-      yield* signIns.update(config.id, (saved) =>
-        Effect.tryPromise({
-          try: async () => {
-            if (saved?.url !== config.url || saved.discovery === undefined)
-              throw new Error("The saved sign-in changed during authorization. Sign in again.");
-=======
-      yield* signIns.update(config.id, (saved) =>
-        Effect.tryPromise({
-          try: async () => {
-            if (saved?.url !== config.url || saved.discovery === undefined)
-              throw new MCPSignInError({
-                message: `MCP ${config.id}: the saved sign-in changed during authorization. Sign in again.`,
-              });
->>>>>>> eabc1f5 (Sanitize untrusted OAuth error messages and required scopes in MCP)
 
                 const exchange: AuthOptions = {
                   ...authOptions(config, fetchFn),
@@ -451,38 +435,24 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
 
                 await auth(provider(record), exchange);
 
-                if (accessToken(record) === null) throw new Error("No access token was issued.");
+                if (accessToken(record) === null)
+                  throw new MCPSignInError({
+                    message: `MCP ${config.id}: no access token was issued.`,
+                  });
               },
               catch: failure,
             }),
           );
 
-<<<<<<< HEAD
           yield* signIns.update(config.id, (current) =>
             isDeepStrictEqual(current, saved)
               ? Effect.succeed(record)
               : Effect.fail(
-                  failure(
-                    new Error("The saved sign-in changed during authorization. Sign in again."),
-                  ),
+                  new MCPSignInError({
+                    message: `MCP ${config.id}: the saved sign-in changed during authorization. Sign in again.`,
+                  }),
                 ),
           );
-||||||| parent of eabc1f5 (Sanitize untrusted OAuth error messages and required scopes in MCP)
-            if (accessToken(record) === null) throw new Error("No access token was issued.");
-
-            return record;
-          },
-          catch: failure,
-=======
-            if (accessToken(record) === null)
-              throw new MCPSignInError({
-                message: `MCP ${config.id}: no access token was issued.`,
-              });
-
-            return record;
-          },
-          catch: failure,
->>>>>>> eabc1f5 (Sanitize untrusted OAuth error messages and required scopes in MCP)
         }),
       );
     }),

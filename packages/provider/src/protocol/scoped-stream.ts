@@ -44,7 +44,9 @@ export const modelStream = (
             expired = true;
             controller.abort();
 
-            return Effect.fail(interrupted(description.provider, "The inference deadline expired."));
+            return Effect.fail(
+              interrupted(description.provider, "The inference deadline expired."),
+            );
           },
         }),
         Effect.mapError((error) =>

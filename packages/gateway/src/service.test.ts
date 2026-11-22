@@ -2421,8 +2421,10 @@ describe.concurrent("Gateway", () => {
           yield* gateway.deliverNext;
           expect(yield* gateway.deliverNext).toBe(false);
           expect((yield* (yield* GatewayRepository).status()).pendingDelivery).toBe(0);
+
           const states = yield* sql<{ readonly state: string }>`
             SELECT state FROM gateway_deliveries ORDER BY position`;
+
           expect(states.map((row) => row.state)).toEqual(["sent", "uncertain", "failed"]);
         }),
       );
@@ -2689,8 +2691,11 @@ describe("conversationNaming", () => {
 
             if (mode === "rate-limit") {
               expect(
-                yield* repo.namedBinding("discord", "bot", "thread-title"),
-              ).toMatchObject({ namingDisabled: false, pendingName: null });
+                yield* repo.namedBinding("discord", "bot", "guild", "thread-title"),
+              ).toMatchObject({
+                namingDisabled: false,
+                pendingName: null,
+              });
             }
 
             return session.id;
@@ -2802,7 +2807,13 @@ describe("conversationNaming", () => {
 
           const firstSession = (yield* (yield* Store).sessions)[0]!;
           yield* repo.namePending(
-            { adapter: "discord", account: "bot", conversation: "managed", session: firstSession.id },
+            {
+              adapter: "discord",
+              account: "bot",
+              scope: "guild",
+              conversation: "managed",
+              session: firstSession.id,
+            },
             "Stale pending",
           );
 
@@ -2810,7 +2821,7 @@ describe("conversationNaming", () => {
           yield* gateway.processNext;
           yield* gateway.deliverNext;
 
-          expect(yield* repo.namedBinding("discord", "bot", "managed")).toMatchObject({
+          expect(yield* repo.namedBinding("discord", "bot", "guild", "managed")).toMatchObject({
             pendingName: null,
             namingDisabled: false,
           });
@@ -3145,9 +3156,11 @@ describe.concurrent("Gateway concurrent requests", () => {
           yield* gateway.deliverNext;
 
           failApprove = true;
+
           const failure = yield* Effect.flip(
             gateway.accept(message("approve-1", "thread-1", "/approve fake-id")),
           );
+
           expect(failure.message).toContain("Thread access lost.");
           expect(state.marks.filter((entry) => entry.messageId === "approve-1")).toEqual([
             { messageId: "approve-1", state: "working" },
@@ -3201,7 +3214,11 @@ describe.concurrent("Gateway concurrent requests", () => {
 
           const repo = yield* GatewayRepository;
           const sql = yield* SqlClient.SqlClient;
-          const [row] = yield* sql<{ id: number }>`SELECT id FROM gateway_inbox WHERE external_id = 'with-file'`;
+
+          const [row] = yield* sql<{
+            id: number;
+          }>`SELECT id FROM gateway_inbox WHERE external_id = 'with-file'`;
+
           yield* repo.attach(
             row!.id,
             "thread-with-file",

@@ -1733,6 +1733,7 @@ describe.concurrent("executeOccurrence", () => {
           };
 
           const worker = yield* makeTaskWorker.pipe(Effect.provideService(TaskRepository, flaky));
+
           const loop = yield* worker.run.pipe(
             Effect.provideService(TaskRepository, flaky),
             Effect.forkChild,

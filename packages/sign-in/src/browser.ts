@@ -22,8 +22,7 @@ export const openBrowser = (url: string) =>
         catch: browserError,
       });
 
-      const command =
-        process.platform === "darwin" ? ["open", "--", target] : ["xdg-open", target];
+      const command = process.platform === "darwin" ? ["open", "--", target] : ["xdg-open", target];
 
       const browser = yield* Effect.acquireRelease(
         Effect.try({

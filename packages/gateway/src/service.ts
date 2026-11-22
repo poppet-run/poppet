@@ -48,6 +48,17 @@ const gateway = Effect.gen(function* () {
   const { nameNext, externalNameChange } = conversationNaming(context, agent);
   let rejected = 0;
 
+  const handleChannelError = (error: ChannelError) =>
+    Effect.sync(() => {
+      rejected++;
+    }).pipe(
+      Effect.andThen(
+        Effect.logWarning("messaging message rejected").pipe(
+          Effect.annotateLogs({ error: error.message }),
+        ),
+      ),
+    );
+
   const service = {
     resolveDestination: (requested: string | null = null) => resolveDestination(channel, requested),
     accept: (input: IncomingMessage) => accept(context, { approvals, running }, input),
@@ -66,17 +77,6 @@ const gateway = Effect.gen(function* () {
     yield* service.recover;
     const active = yield* FiberSet.make<void, ChatFailure | ChannelError>();
     const controlFibers = yield* FiberSet.make<void, StoreError>();
-
-    const handleChannelError = (error: ChannelError) =>
-      Effect.sync(() => {
-        rejected++;
-      }).pipe(
-        Effect.andThen(
-          Effect.logWarning("messaging message rejected").pipe(
-            Effect.annotateLogs({ error: error.message }),
-          ),
-        ),
-      );
 
     const receive = Stream.runForEach(channel.messages, (message) =>
       accept(
@@ -99,11 +99,11 @@ const gateway = Effect.gen(function* () {
         receive,
         FiberSet.join(controlFibers),
         Stream.runForEach(channel.approvals?.actions ?? Stream.never, (action) =>
-          approvals.answerAction(action).pipe(
-            Effect.catchTag("ChannelError", (error) =>
-              Effect.logWarning("messaging approval action failed").pipe(
-                Effect.annotateLogs({ error: error.message }),
-              ),
+          approvals.answerAction(action),
+        ).pipe(
+          Effect.catchTag("ChannelError", (error) =>
+            Effect.logWarning("messaging approval action failed").pipe(
+              Effect.annotateLogs({ error: error.message }),
             ),
           ),
         ),

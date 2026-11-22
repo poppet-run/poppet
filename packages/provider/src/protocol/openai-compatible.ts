@@ -79,6 +79,7 @@ export const fetchModelCatalog = <S extends Schema.Top>(options: {
 
 export const createCatalogCache = <A extends { readonly id: string }>(ttlMs = 60_000) => {
   type Entry = { readonly expiresAt: number; readonly models: ReadonlyArray<A> };
+
   type Slot = { readonly lock: Semaphore.Semaphore; entry: Entry | null };
 
   const caches = new WeakMap<HttpFetch, Map<string, Slot>>();

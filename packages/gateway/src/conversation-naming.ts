@@ -6,7 +6,8 @@ import { authorized, type GatewayContext } from "#src/context";
 import type { Inbox } from "#src/repository";
 
 const definitiveNamingFailure = (cause: unknown) =>
-  cause instanceof ChannelError && (cause.reason === "permission" || cause.reason === "configuration");
+  cause instanceof ChannelError &&
+  (cause.reason === "permission" || cause.reason === "configuration");
 
 export const conversationNaming = (context: GatewayContext, agent: Agent["Service"]) => {
   const { channel, repo, store } = context;
