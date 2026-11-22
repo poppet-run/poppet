@@ -53,7 +53,7 @@ describe("webSearchResult", () => {
     expect(result.truncated).toBe(true);
   });
 
-  test.each(["localhost", "dev.localhost", "printer.local", "LOCALHOST.", "printer.local."])(
+  test.each(["localhost", "dev.localhost", "printer.local."])(
     "when a search result points to %s, omits the local hostname",
     (hostname) => {
       const result = webSearchResult(

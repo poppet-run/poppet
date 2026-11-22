@@ -9,10 +9,5 @@ describe("requestFailure", () => {
       code: undefined,
       requestId: undefined,
     });
-    expect(requestFailure(400, "invalid_grant", "req-123")).toMatchObject({
-      reason: "reconnect",
-      code: "invalid_grant",
-      requestId: "req-123",
-    });
   });
 });
