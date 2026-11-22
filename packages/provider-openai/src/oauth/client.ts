@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Redacted, Schema } from "effect";
+import { Context, Effect, Exit, Layer, Redacted, Schema } from "effect";
 
 import { ConnectionError, type Identity, issuer, requestFailure } from "#src/connection";
 import { discoverIssuer } from "#src/oauth/discovery";
@@ -28,7 +28,10 @@ export class OAuthClient extends Context.Service<OAuthClient, OAuthOperations>()
 
 export const makeOAuthClient = (http: HttpFetch = fetch, expectedIssuer = issuer) =>
   Effect.gen(function* () {
-    const discovery = yield* Effect.cached(discoverIssuer(http, expectedIssuer));
+    const discovery = yield* Effect.cachedWithTTL(discoverIssuer(http, expectedIssuer), (exit) =>
+      Exit.isSuccess(exit) ? "1 hour" : 0,
+    );
+
     const verifyIdentity = identityVerifier(http, expectedIssuer, discovery);
 
     const exchange = (body: URLSearchParams) =>

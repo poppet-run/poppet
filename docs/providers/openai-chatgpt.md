@@ -101,6 +101,9 @@ and is removed on normal shutdown or interruption. After a crash, the OS release
 the SQLite lock and the next owner replaces the leftover PID marker automatically.
 Never remove the lock database while Poppet is running.
 
+OAuth discovery is cached for an hour after a successful response. A failed
+lookup is retried on the next request.
+
 ## Logout
 
 `poppet provider logout openai-chatgpt` attempts to revoke the session and clears

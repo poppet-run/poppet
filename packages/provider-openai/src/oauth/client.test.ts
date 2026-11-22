@@ -7,6 +7,35 @@ import { makeOAuthClient } from "#src/oauth/client";
 import { request as httpRequest, type HttpFetch } from "#src/oauth/http";
 
 describe("client.ts", () => {
+  test("when discovery fails temporarily, retries and caches the successful response", async () => {
+    const issuer = "https://oauth.invalid";
+    let requests = 0;
+
+    const http: HttpFetch = async () => {
+      if (++requests === 1) return new Response(null, { status: 503 });
+
+      return Response.json({
+        issuer,
+        authorization_endpoint: issuer + "/authorize",
+        token_endpoint: issuer + "/token",
+        revocation_endpoint: issuer + "/revoke",
+        jwks_uri: issuer + "/keys",
+      });
+    };
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const client = yield* makeOAuthClient(http, issuer);
+        expect(yield* Effect.flip(client.authorizationEndpoint)).toMatchObject({
+          reason: "temporary",
+        });
+        expect(yield* client.authorizationEndpoint).toBe(issuer + "/authorize");
+        expect(yield* client.authorizationEndpoint).toBe(issuer + "/authorize");
+        expect(requests).toBe(2);
+      }),
+    );
+  });
+
   test("when response headers stall until the request deadline, aborts the request", async () => {
     const started = Promise.withResolvers<void>();
     let aborted = false;
