@@ -1,13 +1,40 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { Effect } from "effect";
 
 import { acquireOwnerLock } from "#src/lock";
 
 import { makeFIFO } from "../../../tools/testing/fifo";
+
+const probeLockInChildProcess = async (path: string) => {
+  const script = `import { Effect } from ${JSON.stringify(import.meta.resolve("effect"))};
+  import { acquireOwnerLock } from ${JSON.stringify(import.meta.resolve("#src/lock"))};
+  try {
+    await Effect.runPromise(Effect.scoped(acquireOwnerLock(${JSON.stringify(path)})));
+    console.log("acquired");
+  } catch (error) {
+    console.log(typeof error === "object" && error !== null && "reason" in error ? String(error.reason) : "error");
+  }`;
+
+  const child = Bun.spawn([process.execPath, "--eval", script], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+
+  expect(stderr).toBe("");
+  expect(exitCode).toBe(0);
+
+  return stdout.trim();
+};
 
 describe("acquireOwnerLock", () => {
   test("when the owner crashes, recovers the lock while still excluding another process", async () => {
@@ -92,6 +119,66 @@ describe("acquireOwnerLock", () => {
       await expect(Effect.runPromise(Effect.scoped(acquireOwnerLock(path)))).rejects.toMatchObject({
         reason: "storage",
       });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("when another fiber contends for a held lock, keeps the OS lock active against another process and allows re-acquisition after release", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-owner-contention-"));
+    const path = join(directory, "owner.lock");
+    const equivalentPath = join(directory, "..", basename(directory), "owner.lock");
+    const symlinkDirectory = join(directory, "alias");
+
+    try {
+      await symlink(directory, symlinkDirectory);
+      const symlinkedParentPath = join(symlinkDirectory, "owner.lock");
+
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            yield* acquireOwnerLock(path);
+
+            yield* Effect.promise(async () => {
+              await expect(
+                Effect.runPromise(Effect.scoped(acquireOwnerLock(path))),
+              ).rejects.toMatchObject({ reason: "busy" });
+              await expect(
+                Effect.runPromise(Effect.scoped(acquireOwnerLock(equivalentPath))),
+              ).rejects.toMatchObject({ reason: "busy" });
+              await expect(
+                Effect.runPromise(Effect.scoped(acquireOwnerLock(symlinkedParentPath))),
+              ).rejects.toMatchObject({ reason: "busy" });
+
+              expect(await probeLockInChildProcess(path)).toBe("busy");
+            });
+          }),
+        ),
+      );
+
+      await Effect.runPromise(Effect.scoped(acquireOwnerLock(path)));
+      expect(await probeLockInChildProcess(path)).toBe("acquired");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("when the owner marker is removed before release, releases cleanly and allows re-acquisition", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-owner-missing-marker-"));
+    const path = join(directory, "owner.lock");
+
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            yield* acquireOwnerLock(path);
+            yield* Effect.promise(() => rm(path));
+          }),
+        ),
+      );
+
+      await Effect.runPromise(Effect.scoped(acquireOwnerLock(path)));
+      expect(await probeLockInChildProcess(path)).toBe("acquired");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

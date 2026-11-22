@@ -1,8 +1,9 @@
 import { Database } from "bun:sqlite";
 import { constants } from "node:fs";
-import { open, unlink } from "node:fs/promises";
+import { open, realpath } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 
-import { openNoFollow, writeFileAtomic } from "@poppet/io";
+import { openNoFollow, unlinkIfPresent, writeFileAtomic } from "@poppet/io";
 import { Data, Effect, Schema } from "effect";
 
 export class OwnerLockError extends Data.TaggedError("OwnerLockError")<{
@@ -11,32 +12,52 @@ export class OwnerLockError extends Data.TaggedError("OwnerLockError")<{
 }> {}
 
 const BusyDatabase = Schema.Struct({ code: Schema.Literal("SQLITE_BUSY") });
+const activeLocks = new Set<string>();
+
+const canonicalLockKey = async (lockPath: string) => {
+  const directory = dirname(lockPath);
+  const canonicalDirectory = await realpath(directory).catch(() => directory);
+
+  return join(canonicalDirectory, basename(lockPath));
+};
 
 export const acquireOwnerLock = (path: string) =>
   Effect.acquireRelease(
     Effect.tryPromise({
       try: async () => {
-        const handle = await open(
-          `${path}.sqlite`,
-          constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW,
-          0o600,
-        );
+        const lockPath = resolve(path);
+        const key = await canonicalLockKey(lockPath);
+
+        if (activeLocks.has(key))
+          throw new OwnerLockError({
+            reason: "busy",
+            message: "Could not acquire protected storage ownership.",
+          });
+
+        activeLocks.add(key);
+
+        let database: Database | undefined;
 
         try {
-          if (!(await handle.stat()).isFile()) throw new Error("Invalid lock file");
-          await handle.chmod(0o600);
-        } finally {
-          await handle.close();
-        }
+          const handle = await open(
+            `${lockPath}.sqlite`,
+            constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW,
+            0o600,
+          );
 
-        const database = new Database(`${path}.sqlite`);
+          try {
+            if (!(await handle.stat()).isFile()) throw new Error("Invalid lock file");
+            await handle.chmod(0o600);
+          } finally {
+            await handle.close();
+          }
 
-        try {
+          database = new Database(`${lockPath}.sqlite`);
           database.run("PRAGMA locking_mode = EXCLUSIVE");
           database.run("BEGIN EXCLUSIVE");
           database.run("COMMIT");
 
-          const previous = await openNoFollow(path);
+          const previous = await openNoFollow(lockPath);
 
           if (previous !== null) {
             try {
@@ -48,11 +69,12 @@ export const acquireOwnerLock = (path: string) =>
             }
           }
 
-          await writeFileAtomic(path, JSON.stringify({ pid: process.pid }));
+          await writeFileAtomic(lockPath, JSON.stringify({ pid: process.pid }));
 
-          return database;
+          return { database, key, lockPath };
         } catch (cause) {
-          database.close();
+          database?.close();
+          activeLocks.delete(key);
           throw cause;
         }
       },
@@ -64,12 +86,16 @@ export const acquireOwnerLock = (path: string) =>
               message: "Could not acquire protected storage ownership.",
             }),
     }),
-    (database) =>
+    ({ database, key, lockPath }) =>
       Effect.promise(async () => {
         try {
-          await unlink(path);
+          await unlinkIfPresent(lockPath);
         } finally {
-          database.close();
+          try {
+            database.close();
+          } finally {
+            activeLocks.delete(key);
+          }
         }
       }),
   ).pipe(Effect.asVoid);
