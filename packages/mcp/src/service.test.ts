@@ -536,9 +536,9 @@ describe("MCP", () => {
   test.each(["credential-description", "credential-key"])(
     "when selected secrets appear in %s, rejects discovery",
     async (mode) => {
-      const previous = process.env.POPPET_MCP_SELECTED;
-      process.env.POPPET_MCP_SELECTED = "selected-mcp-secret";
-      const state = await fixture(mode, ["read"], [], { SELECTED: { env: "POPPET_MCP_SELECTED" } });
+      const state = await fixture(mode, ["read"], [], {
+        SELECTED: { credential: "mcp-fixture" },
+      });
 
       try {
         await state.run(
@@ -547,7 +547,7 @@ describe("MCP", () => {
             const status = (yield* (yield* MCP).status)[0]!;
             expect(status).toMatchObject({ state: "unavailable", pid: null });
             expect(status.diagnostic).toContain("selected credential");
-            expect(JSON.stringify(status)).not.toContain("selected-mcp-secret");
+            expect(JSON.stringify(status)).not.toContain("saved-mcp-secret");
             expect(state.errors).toEqual([
               expect.stringContaining(
                 `level=warn msg="mcp server diagnostic" server=fixture detail=${JSON.stringify(status.diagnostic)}`,
@@ -556,14 +556,12 @@ describe("MCP", () => {
           }),
         );
       } finally {
-        if (previous === undefined) delete process.env.POPPET_MCP_SELECTED;
-        else process.env.POPPET_MCP_SELECTED = previous;
         await state.close();
       }
     },
   );
 
-  test("when a server receives environment and credentials, passes only selected values and redacts results", async () => {
+  test("when a server receives environment and credentials, passes only selected values and redacts credential references without corrupting plain env values", async () => {
     const state = await fixture();
 
     const previous = {
@@ -572,7 +570,7 @@ describe("MCP", () => {
       channel: process.env.POPPET_DISCORD_TOKEN,
     };
 
-    process.env.POPPET_MCP_SELECTED = "selected-mcp-secret";
+    process.env.POPPET_MCP_SELECTED = "production";
     process.env.POPPET_OPENROUTER_API_KEY = "unrelated-provider-secret";
     process.env.POPPET_DISCORD_TOKEN = "unrelated-channel-secret";
 
@@ -614,14 +612,14 @@ describe("MCP", () => {
             .pipe(Effect.flatMap((call) => call.execute));
 
           expect(result).toContain("[REDACTED]");
-          expect(result).not.toContain("selected-mcp-secret");
+          expect(result).toContain("production");
           expect(result).not.toContain("saved-mcp-secret");
           expect(JSON.stringify(yield* (yield* MCP).status)).not.toContain("secret");
         }).pipe(Effect.provide(layer)),
       );
       const start = (await state.events())[0]!;
       expect(start.environment).toMatchObject({
-        SELECTED: "selected-mcp-secret",
+        SELECTED: "production",
         SAVED_SECRET: "saved-mcp-secret",
       });
       expect(start.environment).not.toHaveProperty("POPPET_OPENROUTER_API_KEY");
