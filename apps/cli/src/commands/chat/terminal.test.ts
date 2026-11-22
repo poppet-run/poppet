@@ -297,6 +297,21 @@ describe("ChatTerminal", () => {
     }
   });
 
+  test.each(["\u0003", "\u001b[99;5u"])(
+    "when Ctrl-C arrives as %j during an unfinished bracketed paste, exits",
+    (key) => {
+      const { terminal, exits } = fixture();
+
+      try {
+        terminal.input("\u001b[200~unfinished");
+        terminal.input(key);
+        expect(exits()).toBe(1);
+      } finally {
+        terminal.close();
+      }
+    },
+  );
+
   test("loads earlier messages into the scrollable conversation without starting a turn", () => {
     const { terminal, screen } = fixture();
 

@@ -109,7 +109,8 @@ creates a new session. Interactive chat does not display run IDs.
 
 Each turn uses the same saved session, provider, model, and skill.
 Blank messages are ignored. `/exit`, Ctrl-D at an empty idle composer, or Ctrl-C
-leaves the chat. Ctrl-C during inference cancels the active request and exits;
+leaves the chat, including during an unfinished bracketed paste. Ctrl-C during
+inference cancels the active request and exits;
 the interrupted run remains inspectable. Earlier completed answers remain saved.
 There is no automatic retry.
 
