@@ -2,6 +2,10 @@
 
 [Documentation index](../README.md)
 
+Access is limited to channels the bot belongs to. Direct and group messages,
+archived channels, and shared channels, including organization-shared channels
+and channels with pending external sharing, are refused.
+
 Scheduled results can be delivered to a Slack thread. Poppet stores the channel
 and thread timestamp together, for example `C123:1700000000.000100`.
 
