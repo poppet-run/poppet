@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { startCallback } from "@poppet/sign-in";
 import { Console, Effect, Fiber, Queue } from "effect";
 
 import { ConnectionError } from "#src/connection";
@@ -114,52 +115,72 @@ describe("makeBrowserSignIn", () => {
 
   test("when callbacks use a foreign host or repeat, rejects them and consumes the valid callback once", async () => {
     const statuses: number[] = [];
+    const opened = Promise.withResolvers<URL>();
 
     const browser = makeBrowserSignIn((url) =>
-      Effect.tryPromise({
-        try: async (signal) => {
-          const callback = callbackFor(url);
-          statuses.push(
-            (await fetch(callback, { signal, headers: { Host: "foreign.invalid" } })).status,
-          );
-          const accepted = await fetch(callback, { signal });
-          statuses.push(accepted.status);
-          expect(accepted.headers.get("referrer-policy")).toBe("no-referrer");
-          statuses.push((await fetch(callback, { signal })).status);
-        },
-        catch: browserError,
+      Effect.sync(() => {
+        opened.resolve(callbackFor(url));
       }),
     );
 
-    const result = await Effect.runPromise(
+    const authorization = Effect.runPromise(
       browser.authorize(request).pipe(Effect.provideService(Console.Console, quietConsole)),
     );
 
+    const callback = await opened.promise;
+    statuses.push((await fetch(callback, { headers: { Host: "foreign.invalid" } })).status);
+    const accepted = await fetch(callback);
+    statuses.push(accepted.status);
+    expect(accepted.headers.get("referrer-policy")).toBe("no-referrer");
+
+    const result = await authorization;
     expect(result.clientId).toBe("oaiapp_test");
-    expect(statuses).toEqual([400, 200, 410]);
+    expect(statuses).toEqual([400, 200]);
+
+    const repeated = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const listener = yield* startCallback({
+            port: null,
+            service: "ChatGPT",
+            received: "Done",
+            accept: (code) => code,
+          });
+          const target = `${listener.redirectUri}?code=test&state=${listener.state}`;
+          const first = yield* Effect.promise(() => fetch(target));
+          const second = yield* Effect.promise(() => fetch(target));
+
+          return [first.status, second.status];
+        }),
+      ),
+    );
+
+    expect(repeated).toEqual([200, 410]);
   });
 
   test("when callback state mismatches, ignores it so the valid callback can complete", async () => {
     const statuses: number[] = [];
+    const opened = Promise.withResolvers<URL>();
 
     const browser = makeBrowserSignIn((url) =>
-      Effect.tryPromise({
-        try: async (signal) => {
-          const callback = callbackFor(url);
-          const forged = new URL(callback);
-          forged.searchParams.set("state", "forged");
-          statuses.push((await fetch(forged, { signal })).status);
-          forged.searchParams.delete("state");
-          statuses.push((await fetch(forged, { signal })).status);
-          statuses.push((await fetch(callback, { signal })).status);
-        },
-        catch: browserError,
+      Effect.sync(() => {
+        opened.resolve(callbackFor(url));
       }),
     );
 
-    const result = await Effect.runPromise(
+    const authorization = Effect.runPromise(
       browser.authorize(request).pipe(Effect.provideService(Console.Console, quietConsole)),
     );
+
+    const callback = await opened.promise;
+    const forged = new URL(callback);
+    forged.searchParams.set("state", "forged");
+    statuses.push((await fetch(forged)).status);
+    forged.searchParams.delete("state");
+    statuses.push((await fetch(forged)).status);
+    statuses.push((await fetch(callback)).status);
+
+    const result = await authorization;
 
     expect(result.clientId).toBe("oaiapp_test");
     expect(statuses).toEqual([400, 400, 200]);
