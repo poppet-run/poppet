@@ -3075,6 +3075,101 @@ describe.concurrent("Gateway concurrent requests", () => {
       await state.close();
     }
   });
+
+  test("when a text /approve checkAccess fails, cleans up the working reaction and replies with the error", async () => {
+    let failApprove = false;
+
+    const state = await fixture({
+      checkAccess: (incoming) =>
+        failApprove && incoming.text.startsWith("/approve")
+          ? Effect.fail(new ChannelError({ reason: "permission", message: "Thread access lost." }))
+          : Effect.void,
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.accept(message("first", "thread-1", "Hello"));
+          yield* gateway.processNext;
+          yield* gateway.deliverNext;
+
+          failApprove = true;
+          const failure = yield* Effect.flip(
+            gateway.accept(message("approve-1", "thread-1", "/approve fake-id")),
+          );
+          expect(failure.message).toContain("Thread access lost.");
+          expect(state.marks.filter((entry) => entry.messageId === "approve-1")).toEqual([
+            { messageId: "approve-1", state: "working" },
+            { messageId: "approve-1", state: "stopped" },
+          ]);
+
+          failApprove = false;
+          yield* gateway.deliverNext;
+          expect(state.sent.at(-1)?.text).toContain("Thread access lost.");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a slow control command runs in the gateway loop, receive still accepts other messages and /cancel interrupts prepareSession", async () => {
+    const downloading = Deferred.makeUnsafe<void>();
+    const controlChecking = Deferred.makeUnsafe<void>();
+    const releaseControl = Deferred.makeUnsafe<void>();
+    const incoming = await Effect.runPromise(Queue.unbounded<IncomingMessage>());
+
+    const state = await fixture({
+      messages: Stream.fromQueue(incoming),
+      download: () => Deferred.succeed(downloading, undefined).pipe(Effect.andThen(Effect.never)),
+      checkAccess: (msg) =>
+        msg.text.startsWith("/approve")
+          ? Deferred.succeed(controlChecking, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseControl)),
+            )
+          : Effect.void,
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const worker = yield* gateway.run.pipe(Effect.forkChild);
+
+          Queue.offerUnsafe(incoming, message("seed", "thread-a", "Hello"));
+          yield* settledInbox("seed");
+
+          Queue.offerUnsafe(incoming, message("slow-ctrl", "thread-a", "/approve stale"));
+          yield* Deferred.await(controlChecking);
+
+          Queue.offerUnsafe(incoming, {
+            ...message("with-file", null, "Analyze"),
+            attachments: [{ id: "att-1", name: "a.txt", ref: "https://example.test/a.txt" }],
+          });
+          yield* Deferred.await(downloading);
+
+          const repo = yield* GatewayRepository;
+          const sql = yield* SqlClient.SqlClient;
+          const [row] = yield* sql<{ id: number }>`SELECT id FROM gateway_inbox WHERE external_id = 'with-file'`;
+          yield* repo.attach(
+            row!.id,
+            "thread-with-file",
+            (yield* (yield* Store).createSession("test-provider", "test-model")).id,
+          );
+
+          Queue.offerUnsafe(incoming, message("cancel-it", "thread-with-file", "/cancel"));
+          yield* settledInbox("with-file");
+          expect(yield* inboxStates).toMatchObject({ "with-file": "cancelled" });
+
+          yield* Deferred.succeed(releaseControl, undefined);
+          yield* Fiber.interrupt(worker);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
 });
 
 test("gateway claims a queued request only once and binds concurrent requests separately", async () => {

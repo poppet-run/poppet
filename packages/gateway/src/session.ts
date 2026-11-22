@@ -16,7 +16,12 @@ export interface SessionSetup {
   readonly attachmentBytes: number;
 }
 
-export const prepareSession = (context: GatewayContext, setup: SessionSetup, entry: Inbox) =>
+export const prepareSession = (
+  context: GatewayContext,
+  setup: SessionSetup,
+  entry: Inbox,
+  onConversation?: (conversation: string, sessionId?: string) => void,
+) =>
   Effect.gen(function* () {
     const { channel, repo, store } = context;
     const { config, skills } = setup;
@@ -36,6 +41,7 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
           );
 
     const conversation = created.id;
+    onConversation?.(conversation);
     yield* channel.checkAccess(entry.message, conversation);
 
     const reject = (text: string) =>
@@ -117,6 +123,7 @@ export const prepareSession = (context: GatewayContext, setup: SessionSetup, ent
     }
 
     yield* repo.attach(entry.id, conversation, session.id, created.managedName, request.fresh);
+    onConversation?.(conversation, session.id);
 
     return { conversation, session, prompt: request.prompt, attachments };
   });

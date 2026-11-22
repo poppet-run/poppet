@@ -79,7 +79,21 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
     const { channel, store } = context;
     const { agent, approvals, running } = execution;
     yield* mark(context, entry.message, "working");
-    const prepared = yield* prepareSession(context, execution.setup, entry);
+    const prepared = yield* prepareSession(
+      context,
+      execution.setup,
+      entry,
+      (conversation, sessionId) => {
+        const own = running.requests.get(entry.id);
+
+        if (own !== undefined)
+          own.entry = {
+            ...own.entry,
+            conversationId: conversation,
+            ...(sessionId !== undefined && { sessionId }),
+          };
+      },
+    );
 
     if (prepared === null) return;
     const { conversation, session, prompt, attachments } = prepared;
@@ -101,10 +115,6 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
         );
       });
 
-    const own = running.requests.get(entry.id);
-
-    if (own !== undefined)
-      own.entry = { ...entry, conversationId: conversation, sessionId: session.id };
     yield* Effect.scoped(
       Effect.gen(function* () {
         yield* channel.typing(conversation).pipe(
