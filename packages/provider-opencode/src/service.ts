@@ -11,6 +11,7 @@ import {
 import {
   openAIClient,
   fetchModelCatalog,
+  createCatalogCache,
   inferenceFailure,
   chatCompletionsModel,
   responsesModel,
@@ -54,12 +55,14 @@ const supportedModels: ReadonlyArray<
   },
 ];
 
+const catalogCache = createCatalogCache<ModelDescription>();
+
 export const makeOpenCodeProvider = (
   key: Effect.Effect<Redacted.Redacted<string>, ProviderError>,
   http: HttpFetch = fetch,
   baseUrl = "https://opencode.ai/inference/go/v1",
 ): ProviderOperations => {
-  const models = fetchModelCatalog({
+  const load = fetchModelCatalog({
     provider: "opencode-go",
     label: "OpenCode Go",
     url: `${baseUrl}/models`,
@@ -77,6 +80,9 @@ export const makeOpenCodeProvider = (
     ),
   );
 
+  const readCatalog = catalogCache({ http, key: baseUrl, load });
+  const models = readCatalog();
+
   const resolve = (modelId: string) =>
     Effect.gen(function* () {
       const supported = supportedModels.find((model) => model.id === modelId);
@@ -89,7 +95,7 @@ export const makeOpenCodeProvider = (
           ),
         );
 
-      const catalog = yield* models;
+      const catalog = yield* readCatalog(modelId);
       const description = catalog.find((model) => model.id === modelId);
 
       if (!description)
