@@ -6,7 +6,13 @@ import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
 import { Effect, Redacted, Schema } from "effect";
 
-import { EventBody, escapeSlackText, incomingMessage, slackChannelLayer } from "#src/channel";
+import {
+  EventBody,
+  allowedSlackChannel,
+  escapeSlackText,
+  incomingMessage,
+  slackChannelLayer,
+} from "#src/channel";
 
 const settings = {
   ownerId: "U123",
@@ -113,6 +119,14 @@ test("caps file counts and names without dropping the message", () => {
   expect(message?.attachments).toHaveLength(10);
   expect(message?.attachments?.[0]?.name).toHaveLength(1024);
 });
+
+test.each(["is_im", "is_mpim", "is_org_shared", "is_pending_ext_shared"] as const)(
+  "when Slack reports %s, rejects the conversation even if the bot is a member",
+  (flag) => {
+    expect(allowedSlackChannel({ is_member: true, [flag]: true })).toBe(false);
+    expect(allowedSlackChannel({ is_member: true, is_private: true })).toBe(true);
+  },
+);
 
 describe("slackChannelLayer", () => {
   test("when Slack acknowledges a later event, clears the earlier acknowledgement error", async () => {

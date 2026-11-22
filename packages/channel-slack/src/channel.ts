@@ -92,6 +92,18 @@ export const incomingMessage = (
   };
 };
 
+export const allowedSlackChannel = (
+  channel: Awaited<ReturnType<WebClient["conversations"]["info"]>>["channel"],
+) =>
+  channel?.is_member === true &&
+  !channel.is_archived &&
+  !channel.is_im &&
+  !channel.is_mpim &&
+  !channel.is_shared &&
+  !channel.is_ext_shared &&
+  !channel.is_org_shared &&
+  !channel.is_pending_ext_shared;
+
 const failure = (cause: unknown, sending = false) => {
   if (cause instanceof ChannelError) return cause;
 
@@ -307,12 +319,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
               });
             const info = await web.conversations.info({ channel: target.channel });
 
-            if (
-              !info.channel?.is_member ||
-              info.channel.is_archived ||
-              info.channel.is_shared ||
-              info.channel.is_ext_shared
-            )
+            if (!allowedSlackChannel(info.channel))
               throw new ChannelError({
                 reason: "permission",
                 message: "Use an unshared Slack channel containing the bot.",
