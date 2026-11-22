@@ -535,6 +535,52 @@ describe("Store", () => {
     }
   });
 
+  test("when a snippet matches multiple terms, oversized tokens, or astral characters, preserves tail text, clips hits, and reports truncation by UTF-8 bytes", async () => {
+    const saved = await fixture();
+
+    try {
+      await saved.run(
+        Store.use((store) =>
+          Effect.gen(function* () {
+            const session = yield* store.createSession("new-provider", "selected-model");
+
+            const save = (text: string) =>
+              Effect.gen(function* () {
+                const run = yield* store.queueRun(session.id, [{ role: "user", text }]);
+                yield* store.startRun(run.id);
+                yield* store.finishRun(run.id, {
+                  status: "completed",
+                  response: responseFor("new-provider"),
+                });
+              });
+
+            yield* save("alpha middle beta trailing context");
+            const multi = yield* store.searchSessions("alpha beta", 16384);
+            expect(multi.matches).toHaveLength(1);
+            expect(multi.matches[0]?.excerpt).toBe("alpha middle beta trailing context");
+            expect(multi.truncated).toBe(false);
+
+            const longToken = "語".repeat(120);
+            yield* save(`prefix ${longToken} suffix`);
+            const oversized = yield* store.searchSessions(longToken, 1024);
+            expect(oversized.matches).toHaveLength(1);
+            expect(oversized.truncated).toBe(true);
+            expect(`prefix ${longToken} suffix`).toContain(oversized.matches[0]!.excerpt);
+            expectNearBudget(oversized, 1024);
+
+            yield* save("astral 🙂🙂🙂 marker");
+            const astral = yield* store.searchSessions("astral", 16384);
+            expect(astral.matches).toHaveLength(1);
+            expect(astral.matches[0]?.excerpt).toBe("astral 🙂🙂🙂 marker");
+            expect(astral.truncated).toBe(false);
+          }),
+        ),
+      );
+    } finally {
+      await saved.close();
+    }
+  });
+
   test("when indexing fails, rolls back run completion and the final message", async () => {
     const saved = await fixture();
 
