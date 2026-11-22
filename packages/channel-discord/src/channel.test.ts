@@ -394,6 +394,12 @@ describe("discordChannelLayer", () => {
           const threadChannel = yield* Effect.promise(() => client.channels.fetch("400"));
 
           if (!threadChannel?.isThread()) throw new Error("Missing thread");
+          const after = Object.assign({}, threadChannel, { name: "New title" });
+          const foreign = Object.assign({}, after, { id: "999", guildId: "999" });
+          client.emit(Events.ThreadUpdate, threadChannel, foreign);
+          client.emit(Events.ThreadUpdate, threadChannel, after);
+          expect(Option.getOrNull(yield* Stream.runHead(naming.changes))).toBe(threadChannel.id);
+
           const followup = yield* Effect.promise(() => threadChannel.messages.fetch("401"));
 
           const threadMessage = {
