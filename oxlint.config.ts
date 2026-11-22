@@ -7,6 +7,9 @@ export default defineConfig({
     suspicious: "error",
     perf: "warn",
   },
+  options: {
+    typeAware: true,
+  },
   env: {
     builtin: true,
     es2020: true,
@@ -30,6 +33,19 @@ export default defineConfig({
     { name: "anti-slop-effect", specifier: "./tools/oxlint/anti-slop/effect/index.ts" },
   ],
   rules: {
+    // Type-aware rules with existing findings stay visible until they are cleaned up.
+    "typescript/consistent-return": "warn",
+    "typescript/no-base-to-string": "warn",
+    "typescript/no-misused-spread": "warn",
+    "typescript/no-unnecessary-boolean-literal-compare": "warn",
+    "typescript/no-unnecessary-type-arguments": "warn",
+    "typescript/no-unnecessary-type-assertion": "warn",
+    "typescript/no-unnecessary-type-conversion": "warn",
+    "typescript/no-unnecessary-type-parameters": "warn",
+    "typescript/no-unsafe-enum-assignment": "warn",
+    "typescript/no-unsafe-type-assertion": "warn",
+    "typescript/restrict-template-expressions": "warn",
+    "typescript/unbound-method": "warn",
     "oxc/no-accumulating-spread": "error",
     "anti-slop/no-array-filter-map": "error",
     "anti-slop/no-reduce-accumulator-copy": "error",
@@ -56,6 +72,11 @@ export default defineConfig({
     "anti-slop-effect/prefer-effect-match": "error",
   },
   overrides: [
+    {
+      // Bun types its async matchers, such as `expect(...).rejects`, as returning void.
+      files: ["**/*.test.ts", "**/*.test.tsx"],
+      rules: { "typescript/await-thenable": "off" },
+    },
     {
       files: ["packages/**/*.ts", "apps/cli/src/**/*.ts"],
       rules: {

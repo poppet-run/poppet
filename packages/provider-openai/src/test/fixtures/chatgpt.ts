@@ -104,7 +104,7 @@ export const createHarness = async () => {
     saved,
     revoked: oauth.revoked,
     close: async () => {
-      server.stop(true);
+      await server.stop(true);
       await rm(directory, { recursive: true, force: true });
     },
   };
