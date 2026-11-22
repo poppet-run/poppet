@@ -15,16 +15,63 @@ import type {
 const ReasoningDetail = Schema.StructWithRest(
   Schema.Struct({
     type: Schema.Literals(["reasoning.text", "reasoning.summary", "reasoning.encrypted"]),
-    index: Schema.optionalKey(Schema.Natural),
+    index: Schema.optionalKey(Schema.NullOr(Schema.Natural)),
     id: Schema.optionalKey(Schema.NullOr(Schema.String)),
-    format: Schema.optionalKey(Schema.String),
+    format: Schema.optionalKey(Schema.NullOr(Schema.String)),
     text: Schema.optionalKey(Schema.NullOr(Schema.String)),
-    summary: Schema.optionalKey(Schema.String),
-    data: Schema.optionalKey(Schema.String),
+    summary: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    data: Schema.optionalKey(Schema.NullOr(Schema.String)),
     signature: Schema.optionalKey(Schema.NullOr(Schema.String)),
   }),
   [Schema.Record(Schema.String, Schema.Json)],
 );
+
+type ReasoningDetail = typeof ReasoningDetail.Type;
+
+const mergeDetail = (details: ReasoningDetail[], fragment: ReasoningDetail) => {
+  const fields = ["index", "id", "format"] as const;
+
+  let index = details.findIndex(
+    (detail) =>
+      detail.type === fragment.type &&
+      fields.every((field) => (detail[field] ?? null) === (fragment[field] ?? null)),
+  );
+
+  if (index < 0 && (fragment.index != null || fragment.id != null)) {
+    const matches = details.flatMap((detail, position) =>
+      detail.type === fragment.type &&
+      ((fragment.index != null && fragment.index === detail.index) ||
+        (fragment.id != null && fragment.id === detail.id)) &&
+      fields.every(
+        (field) =>
+          detail[field] == null || fragment[field] == null || detail[field] === fragment[field],
+      )
+        ? [position]
+        : [],
+    );
+
+    if (matches.length === 1) index = matches[0]!;
+  }
+
+  const previous = details[index];
+
+  if (previous === undefined) {
+    details.push(fragment);
+
+    return;
+  }
+
+  const present = Object.fromEntries(
+    Object.entries(fragment).filter(([, value]) => value !== null),
+  );
+
+  details[index] = {
+    ...previous,
+    ...present,
+    ...(fragment.text != null && { text: (previous.text ?? "") + fragment.text }),
+    ...(fragment.summary != null && { summary: (previous.summary ?? "") + fragment.summary }),
+  };
+};
 
 const Continuation = Schema.Struct({
   protocol: Schema.Literal("chat-completions"),
@@ -94,7 +141,7 @@ export const routerOptions: ChatOptions = {
   },
   continuation: () => {
     let reasoning = "";
-    const details: Array<typeof ReasoningDetail.Type> = [];
+    const details: ReasoningDetail[] = [];
 
     return {
       restore: (data, message) => {
@@ -113,7 +160,8 @@ export const routerOptions: ChatOptions = {
       append: (delta) => {
         const value = Schema.decodeUnknownSync(Delta)(delta);
         reasoning += value.reasoning ?? value.reasoning_content ?? "";
-        details.push(...(value.reasoning_details ?? []));
+
+        for (const detail of value.reasoning_details ?? []) mergeDetail(details, detail);
 
         const readable = (value.reasoning_details ?? [])
           .flatMap((detail) =>

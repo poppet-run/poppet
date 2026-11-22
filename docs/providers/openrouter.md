@@ -38,7 +38,8 @@ is skipped when the catalog contains usable entries.
 
 Requests require support for every requested parameter and disable provider
 fallbacks. A stable `session_id` groups the exchange. Plain reasoning and the
-complete structured reasoning sequence survive tool calls. Credit exhaustion,
+complete structured reasoning sequence survive tool calls. Poppet assembles
+streaming fragments into blocks and preserves their signatures. Credit exhaustion,
 rate limits, upstream failures, and interrupted streams produce typed errors;
 requests are not automatically retried.
 [OpenRouter routing](https://openrouter.ai/docs/guides/routing/provider-selection),
