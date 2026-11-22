@@ -1,3 +1,4 @@
+import { userAgent } from "@poppet/provider";
 import { openAIClient } from "@poppet/provider/protocol";
 import { Redacted } from "effect";
 import { APIError } from "openai";
@@ -18,4 +19,4 @@ export const modelFailure = (cause: unknown): ConnectionError => {
 };
 
 export const clientFor = (token: Redacted.Redacted<string>, http: HttpFetch) =>
-  openAIClient({ key: token, baseUrl: resource, http });
+  openAIClient({ key: token, baseUrl: resource, http, headers: { "User-Agent": userAgent } });
