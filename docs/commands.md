@@ -33,7 +33,8 @@ Bash starts with `--noprofile --norc` and `pipefail`; `BASH_ENV` and `ENV` are
 removed. Other environment variables come from Poppet's process. Commands can
 therefore access the host account's files and environment, including credentials.
 Standard input is closed. Output includes stdout, stderr, exit code, and whether
-it was truncated. A nonzero exit is returned to the agent; an interrupted or
+it was truncated. Truncated output ends on a UTF-8 character boundary. A
+nonzero exit is returned to the agent; an interrupted or
 timed-out command ends the run with an uncertain outcome and is never replayed.
 Completed receipts include `status: "completed"` and `approvedBy`, identifying
 the owner or reviewer. They describe a command that has already finished, even

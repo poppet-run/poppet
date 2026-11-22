@@ -57,6 +57,16 @@ describe("Bash execution", () => {
     }
   });
 
+  test("when output crosses the byte limit, retains only complete UTF-8 characters", async () => {
+    const result = await executeBash(
+      { command: bashFixtures.unicode, cwd: tmpdir(), timeoutSeconds: 5 },
+      176,
+      signal(),
+    );
+
+    expect(result).toEqual({ stdout: "a", stderr: "🌻", exitCode: 0, truncated: true });
+  });
+
   test("times out and stops background children even when the shell has already exited", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "poppet-bash-stop-"));
 
