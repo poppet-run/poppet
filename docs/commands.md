@@ -22,6 +22,9 @@ The decision is one of:
   CLI, web chat, and scheduled runs stop because they cannot obtain a human decision.
 - `deny`: end the run without executing the command.
 
+Poppet records dispatch only after review and any required owner approval.
+Cancelling while either is pending records an interruption before dispatch.
+
 Malformed responses, reviewer failures, and review timeouts stop the run without
 starting Bash. A denial cannot be retried by the model within the same run.
 Review considers destructive operations, elevation, unknown scripts, credential

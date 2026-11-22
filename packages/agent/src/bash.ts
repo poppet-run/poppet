@@ -1,14 +1,14 @@
 import { isAbsolute } from "node:path";
 
 import { toolParameters, type ModelOperations } from "@poppet/provider";
-import type { Run } from "@poppet/store";
+import type { Run, StoreError } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
 import { BashReview, reviewAction } from "#src/action-review";
 import type {
   AgentTool,
   FailurePolicy,
-  PreparedCall,
+  ReviewableCall,
   ToolCall,
   ToolContext,
 } from "#src/agent-tool";
@@ -77,54 +77,59 @@ const prepareBash = (
   Effect.gen(function* () {
     const request = yield* toolArguments(bashDefinition, Arguments)(call.arguments);
 
+    const explainFailure = (error: AgentError | StoreError) =>
+      error instanceof AgentError && error.reason.startsWith("command-")
+        ? new AgentError({
+            reason: error.reason,
+            message: `${error.message}\nInvocation: ${JSON.stringify(request)}`,
+          })
+        : error;
+
     return {
-      execute: Effect.gen(function* () {
-        const review = yield* reviewCommand(model, run, ownerRequest, request);
+      authorize: () =>
+        Effect.gen(function* () {
+          const review = yield* reviewCommand(model, run, ownerRequest, request);
 
-        if (review.decision === "deny")
-          return yield* Effect.fail(
-            new AgentError({
-              reason: "command-denied",
-              message: `Command denied: ${review.reason}`,
-            }),
-          );
-
-        if (review.decision === "needs_approval") {
-          if (origin === "scheduled" || approve === null)
-            return yield* Effect.fail(
-              new AgentError({
-                reason: "command-approval-required",
-                message: `Command needs approval: ${review.reason}. Nothing was executed. ${origin === "scheduled" ? "This occurrence has stopped." : "Request this operation in Discord or Slack to approve it."}`,
-              }),
-            );
-
-          if (!(yield* approve({ kind: "bash", ...request, reason: review.reason })))
+          if (review.decision === "deny")
             return yield* Effect.fail(
               new AgentError({
                 reason: "command-denied",
-                message: "The owner did not approve this command. Nothing was executed.",
+                message: `Command denied: ${review.reason}`,
               }),
             );
-        }
 
-        const result = yield* runner.run(request, Math.max(128, maxBytes - 128));
+          if (review.decision === "needs_approval") {
+            if (origin === "scheduled" || approve === null)
+              return yield* Effect.fail(
+                new AgentError({
+                  reason: "command-approval-required",
+                  message: `Command needs approval: ${review.reason}. Nothing was executed. ${origin === "scheduled" ? "This occurrence has stopped." : "Request this operation in Discord or Slack to approve it."}`,
+                }),
+              );
 
-        return JSON.stringify({
-          status: "completed",
-          approvedBy: review.decision === "needs_approval" ? "owner" : "reviewer",
-          ...result,
-        });
-      }).pipe(
-        Effect.mapError((error) =>
-          error instanceof AgentError && error.reason.startsWith("command-")
-            ? new AgentError({
-                reason: error.reason,
-                message: `${error.message}\nInvocation: ${JSON.stringify(request)}`,
-              })
-            : error,
-        ),
-      ),
-    } satisfies PreparedCall;
+            if (!(yield* approve({ kind: "bash", ...request, reason: review.reason })))
+              return yield* Effect.fail(
+                new AgentError({
+                  reason: "command-denied",
+                  message: "The owner did not approve this command. Nothing was executed.",
+                }),
+              );
+          }
+
+          return {
+            execute: Effect.suspend(() => runner.run(request, Math.max(128, maxBytes - 128))).pipe(
+              Effect.mapError(explainFailure),
+              Effect.map((result) =>
+                JSON.stringify({
+                  status: "completed",
+                  approvedBy: review.decision === "needs_approval" ? "owner" : "reviewer",
+                  ...result,
+                }),
+              ),
+            ),
+          };
+        }).pipe(Effect.mapError(explainFailure)),
+    } satisfies ReviewableCall;
   });
 
 export const bashFailures: FailurePolicy = {
