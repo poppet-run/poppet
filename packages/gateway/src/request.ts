@@ -5,16 +5,18 @@ import { ChannelError } from "#src/channel";
 
 export const messagingRequest = (text: string, attached = false) =>
   Effect.gen(function* () {
-    if (!/^\/new(?:\s|$)/.test(text)) return { fresh: false, prompt: text, skill: null };
+    const command = text.trim();
 
-    let prompt = text.slice(4).trim();
+    if (!/^\/new(?:\s|$)/.test(command)) return { fresh: false, prompt: text, skill: null };
+
+    let prompt = command.slice(4).trim();
     let skill: string | null = null;
 
-    const selected = /^--skill\s+(\S+)\s+([\s\S]+)$/.exec(prompt);
+    const selected = /^--skill\s+(\S+)(?:\s+([\s\S]+))?$/.exec(prompt);
 
     if (selected && Schema.is(SkillName)(selected[1])) {
       skill = selected[1];
-      prompt = selected[2]!.trim();
+      prompt = selected[2]?.trim() ?? "";
     }
 
     if (prompt.startsWith("--") || (!prompt && !attached))
@@ -28,7 +30,10 @@ export const messagingRequest = (text: string, attached = false) =>
     return { fresh: true, prompt, skill };
   });
 
-export const isApprovalReply = (text: string) => /^\/(?:approve|deny)(?:\s|$)/.test(text);
+export const isApprovalReply = (text: string) => /^\/(?:approve|deny)(?:\s|$)/.test(text.trim());
 
-export const isControl = (text: string) =>
-  text === "/status" || text === "/cancel" || isApprovalReply(text);
+export const isControl = (text: string) => {
+  const command = text.trim();
+
+  return command === "/status" || command === "/cancel" || isApprovalReply(command);
+};
