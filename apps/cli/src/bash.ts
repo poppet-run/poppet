@@ -52,7 +52,7 @@ export const executeBash = (
     let expired = false;
     const limit = Math.max(1, Math.floor((maxBytes - 128) / 12));
 
-    const stop = () => {
+    const killGroup = () => {
       if (child.pid === undefined) return;
 
       try {
@@ -77,14 +77,22 @@ export const executeBash = (
 
     child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
     child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
+    let exited = false;
+
+    const stop = () => {
+      killGroup();
+      child.stdout.destroy();
+      child.stderr.destroy();
+
+      if (exited) settle(null);
+    };
+
     signal.addEventListener("abort", stop, { once: true });
 
     const timer = setTimeout(() => {
       expired = true;
       stop();
     }, request.timeoutSeconds * 1000);
-
-    child.once("exit", stop);
 
     const cleanup = () => {
       clearTimeout(timer);
@@ -100,7 +108,8 @@ export const executeBash = (
         }),
       );
     });
-    child.once("close", (code) => {
+
+    const settle = (code: number | null) => {
       cleanup();
 
       if (expired || signal.aborted || code === null) {
@@ -121,7 +130,15 @@ export const executeBash = (
         exitCode: code,
         truncated: stdout.truncated || stderr.truncated,
       });
+    };
+
+    child.once("exit", () => {
+      exited = true;
+      killGroup();
+
+      if (expired || signal.aborted) settle(null);
     });
+    child.once("close", settle);
 
     if (signal.aborted) stop();
   });

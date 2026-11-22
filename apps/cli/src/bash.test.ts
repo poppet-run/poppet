@@ -27,6 +27,22 @@ const exited = async (pid: number, deadline = Date.now() + 2000): Promise<boolea
 };
 
 describe("executeBash", () => {
+  test("when a detached descendant holds output pipes, returns promptly on timeout", async () => {
+    const started = performance.now();
+    await expect(
+      executeBash(
+        {
+          command: bashFixtures.detachedPipe,
+          cwd: tmpdir(),
+          timeoutSeconds: 0.3,
+        },
+        4096,
+        signal(),
+      ),
+    ).rejects.toMatchObject({ reason: "tool-uncertain" });
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+
   test("when the host environment includes secrets and Bash controls, passes only allowed values", async () => {
     const { POPPET_TEST_KEY, CDPATH } = process.env;
     process.env.POPPET_TEST_KEY = "test-secret";

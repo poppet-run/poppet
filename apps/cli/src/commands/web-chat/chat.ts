@@ -254,11 +254,9 @@ const makeWebChat = Effect.gen(function* () {
     }).pipe(submissions.withPermit, Effect.uninterruptible);
 
   const stop = (id: string) =>
-    Effect.gen(function* () {
-      const running = active.get(id);
-
-      if (running?.fiber) yield* Fiber.interrupt(running.fiber);
-    }).pipe(submissions.withPermit);
+    submissions
+      .withPermit(Effect.sync(() => active.get(id)?.fiber))
+      .pipe(Effect.flatMap((fiber) => (fiber ? Fiber.interrupt(fiber) : Effect.void)));
 
   const remove = (id: string) =>
     Effect.gen(function* () {
