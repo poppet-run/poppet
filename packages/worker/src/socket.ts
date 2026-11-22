@@ -2,7 +2,7 @@ import { chmod, lstat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { isMissingFile } from "@poppet/io";
-import { Cause, Context, Data, Effect, Exit, Fiber, Option, Schema, Scope } from "effect";
+import { Cause, Context, Data, Effect, Exit, Option, Schema, Scope } from "effect";
 
 export class WorkerRequestError extends Data.TaggedError("WorkerRequestError")<{
   readonly message: string;
@@ -132,10 +132,39 @@ const decodeRequestBody = (request: Request) =>
     catch: () => new WorkerRequestError({ message: "Invalid request body." }),
   }).pipe(Effect.timeout("10 seconds"), Effect.option);
 
+const scopedBody = (
+  body: ReadableStream<Uint8Array>,
+  finish: (exit: Exit.Exit<unknown, unknown>) => Promise<void>,
+) => {
+  const reader = body.getReader();
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const chunk = await reader.read();
+
+        if (chunk.done) {
+          controller.close();
+          await finish(Exit.void);
+        } else controller.enqueue(chunk.value);
+      } catch (cause) {
+        controller.error(cause);
+        await finish(Exit.die(cause));
+      }
+    },
+    async cancel(reason) {
+      await Promise.all([reader.cancel(reason), finish(Exit.interrupt())]);
+    },
+  });
+};
+
 export const serveWorker = (path: string, handle: WorkerRequests["Service"]["handle"]) =>
   Effect.acquireRelease(
     Effect.gen(function* () {
       const scope = yield* Effect.scope;
+      const services = yield* Effect.context<Scope.Scope>();
+      const run = Effect.runPromiseWith(services);
+      const runExit = Effect.runPromiseExitWith(services);
 
       return yield* Effect.tryPromise({
         try: async () => {
@@ -155,7 +184,7 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
           const options: Bun.Serve.Options<undefined> = {
             unix: path,
             maxRequestBodySize: 32 * 1024 * 1024,
-            fetch(request, listener) {
+            async fetch(request, listener) {
               listener.timeout(request, 10);
 
               const reply = Effect.gen(function* () {
@@ -177,19 +206,52 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
                 return response;
               });
 
-              return Effect.runPromise(
-                reply.pipe(
-                  Effect.provideService(Scope.Scope, scope),
-                  Effect.forkIn(scope),
-                  Effect.flatMap(Fiber.await),
-                ),
-              ).then((exit) =>
-                Exit.isSuccess(exit)
-                  ? exit.value
-                  : Response.json(
-                      { ok: false, message: "The worker stopped before completing the request." },
-                      { status: 503, headers: { connection: "close" } },
-                    ),
+              const owned = await run(Scope.fork(scope));
+
+              const shutdown = await run(
+                Effect.provideService(Effect.abortSignal, Scope.Scope, owned),
+              );
+
+              const finish = (exit: Exit.Exit<unknown, unknown>) => run(Scope.close(owned, exit));
+
+              const abort = () => {
+                void finish(Exit.interrupt()).catch(() => {});
+              };
+
+              const exit = await runExit(Effect.provideService(reply, Scope.Scope, owned), {
+                signal: AbortSignal.any([request.signal, shutdown]),
+              });
+
+              if (Exit.isSuccess(exit)) {
+                const response = exit.value;
+
+                if (
+                  response.body !== null &&
+                  response.headers.get("content-type") === "application/x-ndjson"
+                ) {
+                  if (request.signal.aborted) abort();
+                  else request.signal.addEventListener("abort", abort, { once: true });
+
+                  return new Response(
+                    scopedBody(response.body, (outcome) => {
+                      request.signal.removeEventListener("abort", abort);
+
+                      return finish(outcome);
+                    }),
+                    response,
+                  );
+                }
+
+                await finish(exit);
+
+                return response;
+              }
+
+              await finish(exit);
+
+              return Response.json(
+                { ok: false, message: "The worker stopped before completing the request." },
+                { status: 503, headers: { connection: "close" } },
               );
             },
           };
@@ -215,7 +277,7 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
     }),
     (server) =>
       Effect.promise(async () => {
-        await server.stop();
+        await server.stop(true);
         await unlink(path).catch((cause: unknown) => {
           if (!isMissingFile(cause)) throw cause;
         });
