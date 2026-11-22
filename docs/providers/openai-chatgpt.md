@@ -73,6 +73,8 @@ requests consent when saved credentials lack plan-usage permission. Returning
 sign-ins with plan permission do not force another consent prompt. Usage limits,
 ineligible accounts, temporary failures, and interrupted streams produce separate errors. Model requests are not automatically retried.
 The flow uses OAuth credentials and requires no API key or client secret.
+Error codes and request IDs are shown only when they are short identifiers
+without spaces or control characters.
 
 Model resolution reuses a successful catalog lookup for up to one minute within
 the same process, including across interactive CLI turns and worker requests.

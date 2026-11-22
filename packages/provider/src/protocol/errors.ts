@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import { APIError, APIConnectionError, APIConnectionTimeoutError, APIUserAbortError } from "openai";
 
 import { ProviderError, type ProviderId, type ModelRequest } from "#src/index";
@@ -14,7 +15,7 @@ export interface InferenceOptions {
 }
 
 export const safeIdentifier = (value: string | null | undefined) =>
-  value && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : undefined;
+  Schema.is(Schema.String)(value) && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : undefined;
 
 const sharedReason = (
   status: number | undefined,
