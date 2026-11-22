@@ -335,8 +335,6 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
         try: async (signal) => {
           const response = await oauthFetch(server, signal)(config.url, {
             method: "GET",
-            redirect: "manual",
-            signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
             headers: { Accept: "application/json, text/event-stream" },
           });
 
@@ -452,168 +450,159 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
   Effect.gen(function* () {
     const signIns = yield* MCPSignIns;
     const secret = yield* clientSecret(config);
-    const saved = yield* signIns.read(config.id);
-    const initial = tokenForServer(saved, config);
+    const read = signIns.read(config.id);
+    const initial = tokenForServer(yield* read, config);
 
     if (initial === null) return yield* Effect.fail(required(config.id, "sign-in required."));
 
     let token = initial.access_token;
-    const state = { loginRequired: false };
+    let loginRequired = false;
     const server = new URL(config.url);
 
-    const readToken = async () => {
-      const current = await Effect.runPromise(signIns.read(config.id));
-      const latest = tokenForServer(current, config);
+    const readToken = read.pipe(
+      Effect.flatMap((current) => {
+        const latest = tokenForServer(current, config);
 
-      if (latest === null || state.loginRequired) {
-        state.loginRequired = true;
-        throw required(config.id, "sign-in required.");
-      }
+        if (latest === null || loginRequired) {
+          loginRequired = true;
 
-      token = latest.access_token;
+          return Effect.fail(required(config.id, "sign-in required."));
+        }
 
-      return token;
-    };
+        token = latest.access_token;
 
-    const refresh = async (rejected: string, response: Response, signal?: AbortSignal) => {
-      // The existing issuer and registration remain bound to the saved sign-in.
-      resourceMetadata(config, extractWWWAuthenticateParams(response).resourceMetadataUrl);
-      const id = randomUUID();
-      let ownsLease = false;
+        return Effect.succeed(token);
+      }),
+    );
 
-      const removeLease = signIns.update(config.id, (current) => {
-        if (current?.refreshLease?.id !== id) return Effect.succeed(current);
-        const { refreshLease: _lease, ...rest } = current;
+    const exchange = (record: Working, refreshToken: string | undefined) =>
+      Effect.tryPromise({
+        try: async (signal) => {
+          if (refreshToken === undefined) {
+            delete record.tokens;
+            delete record.tokensSavedAt;
 
-        return Effect.succeed(rest);
+            return;
+          }
+
+          const advertised = record.discovery?.resourceMetadataUrl;
+
+          if (Schema.is(Schema.String)(advertised)) resourceMetadata(config, new URL(advertised));
+
+          const fetchFn = oauthFetch(server, AbortSignal.any([signal, AbortSignal.timeout(15000)]));
+
+          const provider = makeProvider(
+            config,
+            record,
+            {},
+            {
+              redirectUri: registeredRedirect(record) ?? "http://127.0.0.1/auth/callback",
+              secret,
+              now,
+              redirect: () => {
+                throw new Error("Sign-in required.");
+              },
+            },
+          );
+
+          try {
+            await auth(provider, authOptions(config, fetchFn));
+          } catch (cause) {
+            if (accessToken(record) !== null) throw cause;
+          }
+        },
+        catch: (cause) => cause,
       });
 
-      return Effect.runPromise(
+    const refresh = async (rejected: string, response: Response, signal?: AbortSignal) => {
+      // Refresh stays bound to the saved issuer and registration.
+      resourceMetadata(config, extractWWWAuthenticateParams(response).resourceMetadataUrl);
+      const id = randomUUID();
+
+      const renew = (current: SavedSignIn, refreshToken: string | undefined) =>
         Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {
-            const limit = Date.now() + 25_000;
+            let claimed = false;
+            yield* signIns.update(config.id, (previous) => {
+              if (!isDeepStrictEqual(previous, current)) return Effect.succeed(previous);
 
-            while (true) {
-              const current = yield* restore(signIns.read(config.id));
-              const latest = tokenForServer(current, config);
+              claimed = true;
 
-              if (current === null || latest === null) break;
-
-              if (latest.access_token !== rejected) {
-                token = latest.access_token;
-
-                return;
-              }
-
-              if (Date.now() >= limit)
-                return yield* Effect.fail(new Error("MCP OAuth refresh timed out."));
-
-              if (
-                current.refreshLease !== undefined &&
-                current.refreshLease.expiresAt > Date.now()
-              ) {
-                yield* restore(Effect.sleep("50 millis"));
-                continue;
-              }
-
-              yield* signIns.update(config.id, (previous) => {
-                if (!isDeepStrictEqual(previous, current)) return Effect.succeed(previous);
-
-                ownsLease = true;
-
-                return Effect.succeed({
-                  ...current,
-                  refreshLease: { id, expiresAt: Date.now() + 20_000 },
-                });
+              return Effect.succeed({
+                ...current,
+                refreshLease: { id, expiresAt: Date.now() + 20_000 },
               });
+            });
 
-              if (!ownsLease) continue;
+            if (!claimed) return false;
 
-              const record = copy(current, config.url);
-              delete record.refreshLease;
+            const { refreshLease: _lease, ...original } = current;
+            const record = { ...original };
 
-              const exchange = Effect.tryPromise({
-                try: async (abort) => {
-                  if (latest.refresh_token === undefined) {
-                    delete record.tokens;
-                    delete record.tokensSavedAt;
-
-                    return;
-                  }
-
-                  const advertised = record.discovery?.resourceMetadataUrl;
-
-                  if (Schema.is(Schema.String)(advertised))
-                    resourceMetadata(config, new URL(advertised));
-
-                  const fetchFn = oauthFetch(
-                    server,
-                    AbortSignal.any([abort, AbortSignal.timeout(15000)]),
-                  );
-
-                  const provider = makeProvider(
-                    config,
-                    record,
-                    {},
-                    {
-                      redirectUri: registeredRedirect(record) ?? "http://127.0.0.1/auth/callback",
-                      secret,
-                      now,
-                      redirect: () => {
-                        throw new Error("Sign-in required.");
-                      },
-                    },
-                  );
-
-                  try {
-                    await auth(provider, authOptions(config, fetchFn));
-                  } catch (cause) {
-                    if (accessToken(record) !== null) throw cause;
-                  }
-                },
-                catch: (cause) => cause,
-              });
-
-              yield* restore(exchange);
-
-              yield* signIns.update(config.id, (previous) =>
-                Effect.succeed(previous?.refreshLease?.id === id ? record : previous),
+            const save = (next: SavedSignIn) =>
+              signIns.update(config.id, (previous) =>
+                Effect.succeed(previous?.refreshLease?.id === id ? next : previous),
               );
 
-              ownsLease = false;
-              yield* Effect.tryPromise({ try: readToken, catch: (cause) => cause });
+            yield* restore(exchange(record, refreshToken)).pipe(
+              Effect.andThen(save(record)),
+              Effect.onError(() =>
+                save(original).pipe(
+                  Effect.catch(() =>
+                    Effect.logWarning("could not release MCP OAuth refresh lease").pipe(
+                      Effect.annotateLogs({ server: config.id }),
+                    ),
+                  ),
+                ),
+              ),
+            );
+
+            yield* readToken;
+
+            return true;
+          }),
+        );
+
+      return Effect.runPromise(
+        Effect.gen(function* () {
+          const limit = Date.now() + 25_000;
+
+          while (true) {
+            const current = yield* read;
+            const latest = tokenForServer(current, config);
+
+            if (current === null || latest === null) break;
+
+            if (latest.access_token !== rejected) {
+              token = latest.access_token;
 
               return;
             }
 
-            state.loginRequired = true;
+            if (Date.now() >= limit)
+              return yield* Effect.fail(new Error("MCP OAuth refresh timed out."));
 
-            return yield* Effect.fail(required(config.id, "the saved sign-in was rejected."));
-          }).pipe(
-            Effect.ensuring(
-              Effect.suspend(() =>
-                ownsLease
-                  ? removeLease.pipe(
-                      Effect.catch(() =>
-                        Effect.logWarning("could not release MCP OAuth refresh lease").pipe(
-                          Effect.annotateLogs({ server: config.id }),
-                        ),
-                      ),
-                    )
-                  : Effect.void,
-              ),
-            ),
-          ),
-        ),
+            if (
+              current.refreshLease === undefined ||
+              current.refreshLease.expiresAt <= Date.now()
+            ) {
+              if (yield* renew(current, latest.refresh_token)) return;
+            } else yield* Effect.sleep("50 millis");
+          }
+
+          loginRequired = true;
+
+          return yield* Effect.fail(required(config.id, "the saved sign-in was rejected."));
+        }),
         signal === undefined ? undefined : { signal },
       );
     };
 
     return {
-      readToken,
+      readToken: () => Effect.runPromise(readToken),
       refresh,
       token: () => token,
-      loginRequired: () => state.loginRequired,
+      loginRequired: () => loginRequired,
     };
   });
 
