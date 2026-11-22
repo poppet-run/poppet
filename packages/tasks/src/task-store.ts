@@ -165,7 +165,9 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
             if (busy && job.schedule.type === "once") continue;
 
-            const skip = job.schedule.type === "cron" && (startup || busy);
+            const stale =
+              job.schedule.type === "cron" && catchUpMs === 0 && now - job.nextAt >= 60_000;
+            const skip = job.schedule.type === "cron" && (startup || busy || stale);
             const missed = startup ? "downtime" : "worker-delayed";
 
             if (job.schedule.type === "cron" && !busy && catchUpMs > 0) {
@@ -179,7 +181,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
               yield* recordSkip(
                 job,
                 job.nextAt,
-                startup ? "downtime" : "previous-occurrence-active",
+                startup ? "downtime" : busy ? "previous-occurrence-active" : "worker-delayed",
               );
             } else {
               yield* queue(job, job.nextAt);
