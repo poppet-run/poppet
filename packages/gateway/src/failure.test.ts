@@ -37,11 +37,17 @@ describe("failureDecision", () => {
     },
   );
 
-  test("when command approval fails, passes its message through", () => {
-    const error = new AgentError({ reason: "command-approval-required", message: "Expired." });
+  test.each(["command-approval-required", "mcp-approval-required"] as const)(
+    "when a run stops with %s, passes its guidance through",
+    (reason) => {
+      const error = new AgentError({ reason, message: "Approval is required." });
 
-    expect(failureDecision(error, 0)).toEqual({ retryAfterMs: null, reply: "Expired." });
-  });
+      expect(failureDecision(error, 0)).toEqual({
+        retryAfterMs: null,
+        reply: "Approval is required.",
+      });
+    },
+  );
 
   test("when another agent error fails, uses the generic reply", () => {
     const error = new AgentError({ reason: "tool-permission", message: "Denied." });

@@ -126,6 +126,8 @@ show the target, expected effects, and exact arguments. Only the configured
 owner in that same authorized
 conversation can answer. Each ID permits one invocation and expires after two
 minutes, cancellation, or worker restart. `/cancel` also cancels the pending run.
+If a reviewed MCP action stops a run, the reply includes the approval or review
+guidance.
 
 Approval controls bypass the model queue. Unknown, expired, and reused IDs never
 start actions. Cron jobs do not create approval prompts; their occurrence fails,

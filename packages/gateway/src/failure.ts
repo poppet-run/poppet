@@ -13,7 +13,9 @@ const failureReply = (error: ChatFailure | ChannelError | null) => {
 
   if (
     error instanceof AgentError &&
-    (error.reason.startsWith("command-") || error.reason === "attachment")
+    (error.reason.startsWith("command-") ||
+      error.reason.startsWith("mcp-") ||
+      error.reason === "attachment")
   )
     return error.message;
 
