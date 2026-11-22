@@ -899,7 +899,7 @@ describe.concurrent("TaskRepository", () => {
     }
   });
 
-  test("when reconciliation fails, rolls back occurrences and schedule advancement together", async () => {
+  test("when one schedule becomes invalid, pauses it and reconciles other tasks", async () => {
     const state = await fixture();
 
     try {
@@ -912,11 +912,10 @@ describe.concurrent("TaskRepository", () => {
             second.id,
           ]);
 
-          expect((yield* Effect.flip(repo.reconcile(start + 60_000))).message).toContain(
-            "Invalid cron",
-          );
-          expect(yield* repo.occurrences(first.id)).toEqual([]);
-          expect((yield* repo.task(first.id)).nextAt).toBe(start + 60_000);
+          yield* repo.reconcile(start + 60_000);
+          expect(yield* repo.occurrences(first.id)).toHaveLength(1);
+          expect((yield* repo.task(first.id)).nextAt).toBe(start + 120_000);
+          expect((yield* repo.task(second.id)).paused).toBe(1);
         }),
       );
     } finally {
@@ -1023,6 +1022,53 @@ describe.concurrent("TaskRepository", () => {
       await state.close();
     }
   });
+
+  test.each([
+    [
+      "spring gap",
+      "30 2 * * *",
+      "2026-03-08T06:00:00Z",
+      "2026-03-08T07:30:00Z",
+      "2026-03-08T07:45:00Z",
+      "2026-03-09T06:30:00Z",
+    ],
+    [
+      "fall fold",
+      "30 1 * * *",
+      "2026-11-01T04:00:00Z",
+      "2026-11-01T05:30:00Z",
+      "2026-11-01T06:45:00Z",
+      "2026-11-02T06:30:00Z",
+    ],
+  ])(
+    "when catch-up spans a DST %s, queues the forward slot exactly once",
+    async (_shift, expression, addedAt, slot, reconciledAt, next) => {
+      const state = await fixture(2 * 60 * 60_000);
+
+      try {
+        await state.run((repo) =>
+          Effect.gen(function* () {
+            const job = yield* repo.add(
+              {
+                ...recurring,
+                schedule: { type: "cron", expression, timezone: "America/New_York" },
+              },
+              Date.parse(addedAt),
+            );
+
+            yield* repo.reconcile(Date.parse(reconciledAt), true);
+            yield* repo.reconcile(Date.parse(reconciledAt));
+            expect((yield* repo.occurrences(job.id)).map((item) => item.scheduledAt)).toEqual([
+              Date.parse(slot),
+            ]);
+            expect((yield* repo.task(job.id)).nextAt).toBe(Date.parse(next));
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
   test("when recurring work is missed within the catch-up window, runs the latest missed slot once", async () => {
     const state = await fixture(60 * 60_000);

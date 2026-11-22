@@ -11,12 +11,12 @@ import {
   migrate,
   reportAs,
 } from "@poppet/store";
-import { Clock, Context, Effect, Layer, Option, Schema, Semaphore } from "effect";
+import { Clock, Context, Effect, Layer, Option, Result, Schema, Semaphore } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { taskSchema } from "#src/migrations";
 import { taskControls } from "#src/task-controls";
-import { latestTime, nextTime, taskFailure, taskRecords, recurringExpiry } from "#src/task-records";
+import { nextTime, taskFailure, taskRecords, recurringExpiry } from "#src/task-records";
 import {
   NewTask,
   Occurrence,
@@ -26,6 +26,7 @@ import {
   TaskError,
   TaskNote,
   checkEndTime,
+  dueOccurrences,
 } from "#src/task-schema";
 
 interface TaskSkip {
@@ -113,70 +114,97 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         AND json_extract(definition, '$.schedule.type') = 'cron'`;
 
   const reconcile = (now: number, startup = false) =>
-    sql.withTransaction(
-      Effect.gen(function* () {
-        const skipped: TaskSkip[] = [];
-        const ended: TaskEnd[] = [];
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const skipped: TaskSkip[] = [];
+          const ended: TaskEnd[] = [];
+          const failed: Array<{ id: string; name: string; reason: string }> = [];
 
-        const recordSkip = (job: Task, firstAt: number, reason: TaskSkip["reason"], until = now) =>
-          Effect.gen(function* () {
-            const lastAt = job.endAt === null ? until : Math.min(until, job.endAt);
+          const recordSkip = (
+            job: Task,
+            firstAt: number,
+            reason: TaskSkip["reason"],
+            until = now,
+          ) =>
+            Effect.gen(function* () {
+              const lastAt = job.endAt === null ? until : Math.min(until, job.endAt);
 
-            yield* sql`INSERT INTO job_skips (job_id, first_at, last_at, reason)
+              yield* sql`INSERT INTO job_skips (job_id, first_at, last_at, reason)
               VALUES (${job.id}, ${firstAt}, ${lastAt}, ${reason})`;
-            skipped.push({ jobId: job.id, name: job.name, firstAt, lastAt, reason });
-          });
+              skipped.push({ jobId: job.id, name: job.name, firstAt, lastAt, reason });
+            });
 
-        if (startup) yield* recover(now);
+          if (startup) yield* recover(now);
 
-        yield* expire(now);
+          yield* expire(now);
 
-        for (const job of yield* list()) {
-          if (job.paused || job.nextAt === null || job.nextAt > now) continue;
-          const nextAt = yield* nextTime(job.schedule, now, job.endAt);
+          for (const job of yield* list()) {
+            if (job.paused || job.nextAt === null || job.nextAt > now) continue;
 
-          const busy = yield* hasActive(job.id);
+            const first = job.nextAt;
 
-          if (busy && job.schedule.type === "once") continue;
+            const schedule = yield* Effect.try({
+              try: () =>
+                job.schedule.type === "cron"
+                  ? dueOccurrences(job.schedule, first, now, job.endAt, catchUpMs)
+                  : { latest: first, nextAt: null, following: null },
+              catch: () => new TaskError({ message: "Invalid or unadvanceable task schedule." }),
+            }).pipe(Effect.result);
 
-          const skip = job.schedule.type === "cron" && (startup || busy);
-          const missed = startup ? "downtime" : "worker-delayed";
-
-          if (job.schedule.type === "cron" && !busy && catchUpMs > 0) {
-            const latest = Math.max(
-              job.nextAt,
-              (yield* latestTime(
-                job.schedule,
-                job.endAt === null ? now : Math.min(now, job.endAt),
-              )) ?? job.nextAt,
-            );
-
-            if (now - latest > catchUpMs) yield* recordSkip(job, job.nextAt, missed);
-            else {
-              yield* queue(job, latest);
-
-              if (latest > job.nextAt) yield* recordSkip(job, job.nextAt, missed, latest - 1);
+            if (Result.isFailure(schedule)) {
+              yield* sql`UPDATE jobs SET paused = 1 WHERE id = ${job.id}`;
+              failed.push({ id: job.id, name: job.name, reason: schedule.failure.message });
+              continue;
             }
-          } else if (skip) {
-            yield* recordSkip(job, job.nextAt, startup ? "downtime" : "previous-occurrence-active");
-          } else {
-            yield* queue(job, job.nextAt);
 
-            const following = yield* nextTime(job.schedule, job.nextAt, job.endAt);
+            const { latest, nextAt, following } = schedule.success;
+            const busy = yield* hasActive(job.id);
 
-            if (following !== null && following <= now)
-              yield* recordSkip(job, following, "worker-delayed");
+            if (busy && job.schedule.type === "once") continue;
+
+            const skip = job.schedule.type === "cron" && (startup || busy);
+            const missed = startup ? "downtime" : "worker-delayed";
+
+            if (job.schedule.type === "cron" && !busy && catchUpMs > 0) {
+              if (now - latest > catchUpMs) yield* recordSkip(job, job.nextAt, missed);
+              else {
+                yield* queue(job, latest);
+
+                if (latest > job.nextAt) yield* recordSkip(job, job.nextAt, missed, latest - 1);
+              }
+            } else if (skip) {
+              yield* recordSkip(
+                job,
+                job.nextAt,
+                startup ? "downtime" : "previous-occurrence-active",
+              );
+            } else {
+              yield* queue(job, job.nextAt);
+
+              if (following !== null && following <= now)
+                yield* recordSkip(job, following, "worker-delayed");
+            }
+
+            yield* sql`UPDATE jobs SET next_at = ${nextAt} WHERE id = ${job.id}`;
+
+            if (nextAt === null && job.endAt !== null)
+              ended.push({ jobId: job.id, name: job.name, endAt: job.endAt });
           }
 
-          yield* sql`UPDATE jobs SET next_at = ${nextAt} WHERE id = ${job.id}`;
-
-          if (nextAt === null && job.endAt !== null)
-            ended.push({ jobId: job.id, name: job.name, endAt: job.endAt });
-        }
-
-        return { skipped, ended };
-      }),
-    );
+          return { skipped, ended, failed };
+        }),
+      )
+      .pipe(
+        Effect.tap(({ failed }) =>
+          Effect.forEach(failed, ({ id, name, reason }) =>
+            Effect.logError("task paused after schedule failure").pipe(
+              Effect.annotateLogs({ task: id, name, reason }),
+            ),
+          ),
+        ),
+        Effect.map(({ skipped, ended }) => ({ skipped, ended })),
+      );
 
   const add = (
     input: NewTask,

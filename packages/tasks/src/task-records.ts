@@ -9,7 +9,6 @@ import {
   Occurrence,
   TaskError,
   TaskDefinition,
-  latestOccurrence,
   nextSlot,
   type Schedule,
   type TaskTarget,
@@ -24,9 +23,6 @@ export const taskFailure = (cause: unknown) =>
 
 export const nextTime = (schedule: Schedule, after: number, endAt: number | null) =>
   Effect.try({ try: () => nextSlot(schedule, after, endAt), catch: taskFailure });
-
-export const latestTime = (schedule: Schedule, atOrBefore: number) =>
-  Effect.try({ try: () => latestOccurrence(schedule, atOrBefore), catch: taskFailure });
 
 export const taskRecords = (sql: SqlClient.SqlClient) => {
   const tasks = sql`SELECT id, name, prompt, provider, model, schedule, revision, skill,

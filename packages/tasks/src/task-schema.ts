@@ -23,17 +23,44 @@ export const Schedule = Schema.Union([
 
 export type Schedule = typeof Schedule.Type;
 
-export const latestOccurrence = (schedule: Schedule, atOrBefore: number): number | null => {
-  if (schedule.type === "once") return null;
+export const dueOccurrences = (
+  schedule: Extract<Schedule, { type: "cron" }>,
+  first: number,
+  now: number,
+  endAt: number | null,
+  catchUpMs: number,
+) => {
+  const cron = Cron.parseUnsafe(schedule.expression, schedule.timezone);
+  const windowStart = now - catchUpMs;
+  const cutoff = endAt === null ? now : Math.min(now, endAt);
+  let latest = first;
+  const following = Cron.next(cron, first).getTime();
+  let next = following;
 
-  try {
-    return Cron.prev(
-      Cron.parseUnsafe(schedule.expression, schedule.timezone),
-      atOrBefore + 1000,
-    ).getTime();
-  } catch {
-    throw new TaskError({ message: "Invalid cron expression or timezone." });
+  // Start well before the catch-up window after a long outage, so a time-zone
+  // transition at its boundary is still traversed in the forward sequence.
+  const seek = Math.min(windowStart, cutoff) - 2 * 24 * 60 * 60 * 1000;
+
+  if (seek > first) {
+    const candidate = Cron.next(cron, seek).getTime();
+
+    if (candidate <= cutoff) {
+      latest = candidate;
+      next = Cron.next(cron, latest).getTime();
+    } else next = candidate;
   }
+
+  while (next <= cutoff) {
+    if (next <= latest) throw new Error("Cron did not advance.");
+    latest = next;
+    next = Cron.next(cron, latest).getTime();
+  }
+
+  return {
+    latest,
+    nextAt: endAt !== null && next > endAt ? null : next,
+    following: endAt !== null && following > endAt ? null : following,
+  };
 };
 
 export const nextOccurrence = (schedule: Schedule, after: number): number | null => {
