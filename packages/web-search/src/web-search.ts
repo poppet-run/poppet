@@ -35,9 +35,15 @@ export const webSearchResult = (
 
     try {
       url = publicHttpURL(candidate.url, () => new Error("Invalid source URL"));
-      const hostname = urlHostname(url);
+      const hostname = urlHostname(url).replace(/\.$/, "");
 
-      if (isIP(hostname) && !publicAddress(hostname)) throw new Error("Non-public address");
+      if (
+        hostname === "localhost" ||
+        hostname.endsWith(".localhost") ||
+        hostname.endsWith(".local") ||
+        (isIP(hostname) && !publicAddress(hostname))
+      )
+        throw new Error("Non-public address");
     } catch {
       truncated = true;
       continue;
