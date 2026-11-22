@@ -1,0 +1,6 @@
+# Agent harnesses refuse hook bypasses through tools/hooks/hook-bypass.ts.
+# `bun install` installs this hook through the prepare script.
+pre-commit:
+  jobs:
+    - name: check
+      run: bun run check

@@ -20,12 +20,14 @@
     "format:check": "oxfmt --check .",
     "test": "bun run build:web && bun --no-env-file tools/testing/run.ts --parallel=4 --max-concurrency=2",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test",
-    "build:web": "bun run --cwd apps/web build"
+    "build:web": "bun run --cwd apps/web build",
+    "prepare": "lefthook install"
   },
   "devDependencies": {
     "@effect/tsgo": "0.73.2",
     "@oxlint/plugins": "1.94.0",
     "@types/bun": "1.4.5",
+    "lefthook": "2.2.2",
     "oxfmt": "0.79.0",
     "oxlint": "1.94.0",
     "oxlint-tsgolint": "7.0.2007",
