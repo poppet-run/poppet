@@ -1,3 +1,4 @@
+import { safeIdentifier } from "@poppet/provider/protocol";
 import { Data, Schema } from "effect";
 
 export const issuer = "https://auth.openai.com";
@@ -69,9 +70,10 @@ export class ConnectionError extends Data.TaggedError("ConnectionError")<{
 
 export const requestFailure = (
   status: number,
-  code: string | null = null,
+  rawCode: string | null = null,
   requestId: string | null = null,
 ) => {
+  const code = safeIdentifier(rawCode);
   let reason: ConnectionFailure = "unsupported";
 
   let message =
@@ -117,7 +119,7 @@ export const requestFailure = (
     reason,
     message,
     status,
-    code: code ?? undefined,
-    requestId: requestId ?? undefined,
+    code,
+    requestId: safeIdentifier(requestId),
   });
 };
