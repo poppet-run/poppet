@@ -22,10 +22,26 @@ import {
   parseTimestamp,
   TaskError,
   TaskPatch,
+  type Schedule,
   type Task,
   type TaskControl,
 } from "#src/task-schema";
-import { TaskRepository } from "#src/task-store";
+import { maxTasks, TaskRepository } from "#src/task-store";
+
+const maxChatCreatesPerRun = 5;
+const minChatCronIntervalMs = 5 * 60_000;
+
+const checkChatCronCadence = (schedule: Schedule, now: number) => {
+  if (schedule.type !== "cron") return;
+
+  const first = nextOccurrence(schedule, now);
+  const second = first === null ? null : nextOccurrence(schedule, first);
+
+  if (first !== null && second !== null && second - first < minChatCronIntervalMs)
+    throw new TaskError({
+      message: "Recurring tasks created or edited in chat must run at least 5 minutes apart.",
+    });
+};
 
 const committedFailure = (cause: StoreError | TaskError) =>
   cause instanceof StoreError
@@ -160,6 +176,7 @@ export const ChatTasksLive = Layer.effect(
                 message: "Choose a future one-off time with an explicit UTC offset.",
               });
             nextOccurrence(schedule, now);
+            checkChatCronCadence(schedule, now);
 
             const endAt = action.endAt === null ? null : parseTimestamp(action.endAt);
 
@@ -178,6 +195,44 @@ export const ChatTasksLive = Layer.effect(
           },
           catch: invalid,
         });
+
+        const existingCount = (yield* repo.list().pipe(Effect.mapError(invalid))).length;
+
+        if (existingCount >= maxTasks)
+          return yield* Effect.fail(
+            new AgentError({
+              reason: "tool-arguments",
+              message: `Cannot add more than ${maxTasks} tasks. Delete an unused task first.`,
+            }),
+          );
+
+        const priorCalls = yield* store.toolCalls(context.runId).pipe(Effect.mapError(invalid));
+        let createsInRun = 0;
+
+        for (const call of priorCalls) {
+          if (
+            call.name !== "manage_tasks" ||
+            call.namespace !== "poppet_tasks" ||
+            call.status === "failed"
+          )
+            continue;
+
+          try {
+            if (JSON.parse(call.arguments)?.action === "create") createsInRun++;
+          } catch {
+            // Ignore malformed calls handled by preflight.
+          }
+
+          if (call.callId === context.callId) break;
+        }
+
+        if (createsInRun > maxChatCreatesPerRun)
+          return yield* Effect.fail(
+            new AgentError({
+              reason: "tool-arguments",
+              message: `At most ${maxChatCreatesPerRun} tasks can be created in one chat run.`,
+            }),
+          );
 
         const skill = action.skill === null ? null : yield* skills.load(action.skill);
 
@@ -238,6 +293,7 @@ export const ChatTasksLive = Layer.effect(
 
             if (schedule !== undefined) {
               nextOccurrence(schedule, now);
+              checkChatCronCadence(schedule, now);
 
               if (
                 schedule.type === "once" &&
