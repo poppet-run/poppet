@@ -8,7 +8,7 @@ import {
   type ProviderOperations,
 } from "@poppet/provider";
 import { openAIClient, fetchModelCatalog, chatCompletionsModel } from "@poppet/provider/protocol";
-import { Effect, Redacted, Schema } from "effect";
+import { Effect, Option, Redacted, Schema } from "effect";
 
 import { routerFailure, routerOptions } from "#src/protocol";
 
@@ -33,7 +33,7 @@ const CatalogModel = Schema.Struct({
   top_provider: Schema.Struct({ max_completion_tokens: Schema.NullOr(Schema.Natural) }),
 });
 
-const Catalog = Schema.Struct({ data: Schema.Array(CatalogModel) });
+const Catalog = Schema.Struct({ data: Schema.Array(Schema.Unknown) });
 
 const supportsText = (model: typeof CatalogModel.Type) =>
   model.architecture.tokenizer !== "Router" &&
@@ -85,7 +85,21 @@ export const makeOpenRouterProvider = (
     headers,
     schema: Catalog,
     failure: routerFailure,
-  }).pipe(Effect.map((value) => value.data.filter(supportsText)));
+  }).pipe(
+    Effect.flatMap((value) => {
+      const models = value.data.flatMap((entry) => {
+        const model = Schema.decodeUnknownOption(CatalogModel)(entry);
+
+        return Option.isSome(model) ? [model.value] : [];
+      });
+
+      return models.length === 0 && value.data.length > 0
+        ? Effect.fail(
+            invalidRequest("openrouter", "OpenRouter returned an unsupported model catalog."),
+          )
+        : Effect.succeed(models.filter(supportsText));
+    }),
+  );
 
   return {
     id: "openrouter",
