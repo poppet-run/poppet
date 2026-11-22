@@ -25,6 +25,7 @@ import {
   executeOccurrence,
 } from "@poppet/tasks";
 import {
+  Clock,
   ConfigProvider,
   Console,
   Deferred,
@@ -45,6 +46,7 @@ import {
   type ApprovalState,
   type IncomingMessage,
 } from "#src/channel";
+import { deliverNext } from "#src/delivery";
 import { chunks } from "#src/replies";
 import { GatewayRepository, GatewayRepositoryLive, TaskDeliveriesLive } from "#src/repository";
 import { Gateway, GatewayLive } from "#src/service";
@@ -177,6 +179,7 @@ const fixture = async (
         A,
         E,
         | Gateway
+        | MessagingChannel
         | Store
         | SqlClient.SqlClient
         | GatewayRepository
@@ -1329,6 +1332,62 @@ describe.concurrent("Gateway", () => {
       }
     },
   );
+
+  test("when shutdown starts after a send is acknowledged, records the delivery before stopping", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* GatewayRepository;
+          const channel = yield* MessagingChannel;
+          const clock = yield* Clock.Clock;
+          const store = yield* Store;
+          const recording = yield* Deferred.make<void>();
+          const resume = yield* Deferred.make<void>();
+
+          const entry = (yield* repo.accept(channel.id, "bot", message("first", "thread")))!;
+          yield* repo.complete(entry.id, ["Reply"]);
+
+          const fiber = yield* deliverNext({
+            channel,
+            clock,
+            store,
+            quietHours: null,
+            repo: {
+              ...repo,
+              delivered: (delivery, id) =>
+                Deferred.succeed(recording, undefined).pipe(
+                  Effect.andThen(Deferred.await(resume)),
+                  Effect.andThen(repo.delivered(delivery, id)),
+                ),
+            },
+            wakes: {
+              inbox: yield* Queue.make<void>(),
+              delivery: yield* Queue.make<void>(),
+              naming: yield* Queue.make<void>(),
+            },
+          }).pipe(Effect.forkChild);
+
+          yield* Deferred.await(recording);
+
+          const shuttingDown = yield* Fiber.interrupt(fiber).pipe(
+            Effect.forkChild({ startImmediately: true }),
+          );
+
+          yield* Deferred.succeed(resume, undefined);
+          yield* Fiber.join(shuttingDown);
+
+          const sql = yield* SqlClient.SqlClient;
+          expect(yield* sql`SELECT state, message_id FROM gateway_deliveries`).toEqual([
+            { state: "sent", messageId: "sent-1" },
+          ]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
 
   test("when a scheduled send crashes, retains uncertainty and blocks later chunks after restart", async () => {
     const sending = Deferred.makeUnsafe<void>();
