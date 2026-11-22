@@ -21,6 +21,8 @@ alternative tool. Future scheduled occurrences stay active. Earlier actions
 may already have taken effect.
 
 Failed runs log their failure reason code and retain details in `tasks show`.
+If the worker stops after saving a failed run, recovery records its occurrence
+as failed and retains the run's failure reason.
 A task with a messaging destination also posts a short
 [failure notice](#failure-notices) there. `tasks show` includes the reviewed
 MCP invocation, decision, reason, and journal outcome, including uncertain

@@ -4,6 +4,7 @@ import { TaskNoteArguments, taskNoteBytes, taskNoteDefinition } from "@poppet/ag
 import { taskCatchUpMinutes } from "@poppet/config";
 import {
   DeliveryDestination,
+  Run,
   SkillSnapshot,
   decodeRow,
   decodeRows,
@@ -90,17 +91,22 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         );
 
         for (const item of running) {
-          const completed =
-            item.runId !== null &&
-            (yield* sql`SELECT id FROM runs WHERE id = ${item.runId} AND status = 'completed'`)
-              .length > 0;
+          const run =
+            item.runId === null
+              ? null
+              : yield* sql`SELECT status, failure_reason FROM runs WHERE id = ${item.runId}`.pipe(
+                  decodeRow(
+                    Schema.Struct({
+                      status: Run.fields.status,
+                      failureReason: Run.fields.failureReason,
+                    }),
+                  ),
+                );
 
-          yield* finish(
-            item.id,
-            completed ? "completed" : "interrupted",
-            completed ? null : "owner-stopped",
-            now,
-          );
+          if (run?.status === "completed") yield* finish(item.id, "completed", null, now);
+          else if (run?.status === "failed")
+            yield* finish(item.id, "failed", run.failureReason, now);
+          else yield* finish(item.id, "interrupted", "owner-stopped", now);
         }
       }),
     );
