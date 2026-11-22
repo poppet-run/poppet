@@ -64,30 +64,30 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
         const invocation =
           approval.kind === "mcp"
             ? approval.invocation
-            : JSON.stringify({
+            : escapedApprovalJSON({
                 command: approval.command,
                 cwd: approval.cwd,
                 timeoutSeconds: approval.timeoutSeconds,
-              }).replaceAll("`", "\\u0060");
+              });
 
-        const headingParts =
+        const fields =
           approval.kind === "mcp"
-            ? [
-                "MCP action approval required",
-                ...(
-                  [
-                    ["Target", approval.target],
-                    ["Expected effects", approval.effects],
-                    ["Review reason", approval.reason],
-                  ] as const
-                ).flatMap(([label, value]) =>
-                  chunks(escapedApprovalJSON(value), channel.textLimit - label.length - 4).map(
-                    (part) => `${label}: \`${part}\``,
-                  ),
-                ),
-                "Exact invocation:",
-              ]
-            : [`Bash approval required: ${approval.reason}\nExact invocation:`];
+            ? ([
+                ["Target", approval.target],
+                ["Expected effects", approval.effects],
+                ["Review reason", approval.reason],
+              ] as const)
+            : ([["Review reason", approval.reason]] as const);
+
+        const headingParts = [
+          approval.kind === "mcp" ? "MCP action approval required" : "Bash approval required",
+          ...fields.flatMap(([label, value]) =>
+            chunks(escapedApprovalJSON(value), channel.textLimit - label.length - 4).map(
+              (part) => `${label}: \`${part}\``,
+            ),
+          ),
+          "Exact invocation:",
+        ];
 
         const heading = headingParts.join("\n");
         const details = `${heading} \`${invocation}\``;
@@ -97,9 +97,7 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
           `${details}\n${controls}`.length <= channel.textLimit
             ? [`${details}\n${controls}`]
             : [
-                ...(heading.length <= channel.textLimit || approval.kind === "bash"
-                  ? chunks(heading, channel.textLimit)
-                  : headingParts),
+                ...(heading.length <= channel.textLimit ? [heading] : headingParts),
                 ...chunks(invocation, channel.textLimit - 2).map((part) => `\`${part}\``),
                 controls,
               ];
