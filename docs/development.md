@@ -243,6 +243,8 @@ packages/
     src/service.ts        OpenRouter catalog, capabilities, and secret configuration
     src/protocol.ts       Routing, reasoning continuation, and stream error rules
 docs/                     User guides, architecture, and implementation plan
+scripts/
+  deploy.ts               SSH deploy of the worker to another machine
 tools/
   oxlint/anti-slop/        Vendored lint rules
 ```
