@@ -10,7 +10,7 @@ import {
   requestWorkerReply,
   workerReply,
 } from "@poppet/worker";
-import { Cause, Effect, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
+import { Cause, Effect, Layer, Option, Queue, Schema, Stream, type Scope } from "effect";
 import { SqlClient } from "effect/sql";
 
 import {
@@ -98,7 +98,7 @@ export const WorkerRequestsLive = Layer.effect(
               { status: 400 },
             );
 
-          const owned = yield* Scope.fork(yield* Effect.scope);
+          const scope = yield* Effect.scope;
           const frames = yield* Queue.make<Frame, Cause.Done>({ capacity: 16 });
           const emitFrame = (frame: Frame) => Queue.offer(frames, frame).pipe(Effect.asVoid);
 
@@ -130,30 +130,14 @@ export const WorkerRequestsLive = Layer.effect(
               onSuccess: () => emitFrame({ type: "done" }),
             }),
             Effect.ensuring(Queue.end(frames)),
-            Effect.forkIn(owned),
+            Effect.forkIn(scope),
           );
 
-          yield* Effect.addFinalizer(() => Queue.end(frames)).pipe(
-            Effect.provideService(Scope.Scope, owned),
-          );
-
-          const disconnected = Effect.callback<void>((resume) => {
-            const abort = () => resume(Effect.void);
-
-            if (request.signal.aborted) abort();
-            else request.signal.addEventListener("abort", abort, { once: true });
-
-            return Effect.sync(() => request.signal.removeEventListener("abort", abort));
-          });
-
-          const signal = yield* Effect.abortSignal.pipe(Effect.provideService(Scope.Scope, owned));
-
+          const signal = yield* Effect.abortSignal;
           const context = yield* Effect.context<never>();
           const encoder = new TextEncoder();
 
           const body = Stream.fromQueue(frames).pipe(
-            Stream.interruptWhen(disconnected),
-            Stream.onExit((exit) => Scope.close(owned, exit)),
             Stream.map((frame) => encoder.encode(`${JSON.stringify(frame)}\n`)),
             Stream.toReadableStreamWith(context, { signal }),
           );
