@@ -61,7 +61,9 @@ work.
 Initial sign-in registers Poppet with its own host identifier and issued client
 ID. The browser handles account and workspace selection and plan-usage consent.
 The local callback displays a confirmation page before its listener closes.
-Return to the terminal for the final identity and permission checks.
+Return to the terminal for the final identity and permission checks. If an ID
+token names multiple audiences or supplies an authorized party, that party must
+match Poppet's registered client ID.
 Later sign-ins reuse the saved registration and host identifier, including after
 logout. Poppet stores one account and checks that the signed-in identity matches
 it before saving new tokens.
