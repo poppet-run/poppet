@@ -3,13 +3,15 @@ import { Schema } from "effect";
 
 export const Id = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/));
 
+const ConversationId = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_.:-]{1,128}$/));
+
 export const DeliveryDestination = Schema.Struct({
   adapter: Id,
   account: Id,
   ownerId: Id,
   scopeId: Id,
   parentId: Id,
-  conversationId: Id,
+  conversationId: ConversationId,
 });
 
 export type DeliveryDestination = typeof DeliveryDestination.Type;
