@@ -12,7 +12,7 @@
     "./test": "./src/test/harness.ts"
   },
   "scripts": {
-    "typecheck": "bun --check",
+    "typecheck": "bun --check && effect-tsgo tsc",
     "test": "bun --no-env-file ../../tools/testing/run.ts"
   },
   "dependencies": {

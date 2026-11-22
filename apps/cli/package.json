@@ -10,7 +10,7 @@
   "scripts": {
     "start": "bun src/main.ts",
     "dev": "bun --watch src/main.ts",
-    "typecheck": "bun --check",
+    "typecheck": "bun --check && effect-tsgo tsc",
     "test": "bun --no-env-file ../../tools/testing/run.ts"
   },
   "dependencies": {

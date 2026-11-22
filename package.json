@@ -13,7 +13,7 @@
   ],
   "type": "module",
   "scripts": {
-    "typecheck": "bun --check && bun run --workspaces typecheck",
+    "typecheck": "bun --check && effect-tsgo tsc && bun run --workspaces typecheck",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt --write .",
@@ -23,6 +23,7 @@
     "build:web": "bun run --cwd apps/web build"
   },
   "devDependencies": {
+    "@effect/tsgo": "0.73.2",
     "@oxlint/plugins": "1.94.0",
     "@types/bun": "1.4.5",
     "oxfmt": "0.79.0",
