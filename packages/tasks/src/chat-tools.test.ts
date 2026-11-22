@@ -122,6 +122,80 @@ const execute = (action: ChatTaskAction, context: ChatTaskContext) =>
   });
 
 describe("ChatTasks", () => {
+  test("when a task has an owner-only skill or a different messaging destination, denies changes that can run it", async () => {
+    const state = await fixture();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const repo = yield* TaskRepository;
+          const tasks = yield* ChatTasks;
+
+          const input = {
+            name: "Summary",
+            prompt: "Keep this prompt",
+            provider: "test-provider",
+            model: "test-model",
+            schedule: { type: "once", at: now + 60_000 } as const,
+          };
+
+          const destination = {
+            adapter: "slack",
+            account: "bot",
+            ownerId: "owner",
+            scopeId: "team",
+            parentId: "C123",
+            conversationId: "C123:1700000000.000100",
+          };
+
+          const manual = yield* repo.add(input, now, {
+            name: "manual",
+            content: "<!-- manual-only -->\nOwner only",
+          });
+
+          const delivered = yield* repo.add(input, now, null, destination);
+
+          for (const job of [manual, delivered]) {
+            const actions: ChatTaskAction[] = [
+              {
+                action: "edit",
+                id: job.id,
+                name: null,
+                prompt: "Replacement",
+                schedule: null,
+                endAt: null,
+              },
+              { action: "run_now", id: job.id },
+              { action: "resume", id: job.id },
+            ];
+
+            for (const action of actions) {
+              const { context } = yield* recorded(action);
+
+              const error = yield* tasks
+                .prepare(action, {
+                  ...context,
+                  destination: () => Effect.succeed({ ...destination, adapter: "discord" }),
+                })
+                .pipe(Effect.flip);
+
+              expect(error.reason).toBe(job === manual ? "tool-arguments" : "tool-permission");
+            }
+          }
+
+          const action: ChatTaskAction = { action: "run_now", id: delivered.id };
+          const { context } = yield* recorded(action);
+          const granted = { ...context, destination: () => Effect.succeed(destination) };
+          yield* execute(action, granted);
+          expect(yield* repo.occurrences(delivered.id)).toHaveLength(1);
+          expect(yield* repo.occurrences(manual.id)).toHaveLength(0);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when deletion commits, removes only the selected task and pending history and replays its receipt", async () => {
     const state = await fixture();
 

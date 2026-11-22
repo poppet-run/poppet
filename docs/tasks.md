@@ -174,6 +174,10 @@ missed.
 
 ## Manage tasks through chat
 
+Editing, resuming, rescheduling, or running a saved task from chat requires
+access to its saved messaging destination. Use the owner CLI to make these
+changes to tasks that use a manual-only skill.
+
 Tool-capable models can create, list, inspect, pause, and resume tasks when you
 explicitly ask in CLI chat or an authorized messaging conversation. For example:
 
