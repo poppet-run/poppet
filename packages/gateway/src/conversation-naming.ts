@@ -1,8 +1,12 @@
 import type { Agent } from "@poppet/agent";
 import { Effect, Result } from "effect";
 
+import { ChannelError } from "#src/channel";
 import { authorized, type GatewayContext } from "#src/context";
 import type { Inbox } from "#src/repository";
+
+const definitiveNamingFailure = (cause: unknown) =>
+  cause instanceof ChannelError && (cause.reason === "permission" || cause.reason === "configuration");
 
 export const conversationNaming = (context: GatewayContext, agent: Agent["Service"]) => {
   const { channel, repo, store } = context;
@@ -38,6 +42,8 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
 
       if (binding.pendingName !== null && current === binding.pendingName) {
         yield* repo.nameConfirmed(key, current);
+      } else if (binding.pendingName !== null && current === binding.managedName) {
+        yield* repo.clearPendingName(key);
       } else if (current !== binding.managedName || binding.pendingName !== null) {
         yield* repo.disableNaming(key);
 
@@ -70,15 +76,19 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
 
       const observed = yield* naming.current(entry.message, destination).pipe(Effect.result);
 
-      if (Result.isSuccess(observed) && observed.success === desired)
-        yield* repo.nameConfirmed(key, observed.success);
-      else yield* repo.disableNaming(key);
+      if (Result.isSuccess(observed)) {
+        if (observed.success === desired) yield* repo.nameConfirmed(key, observed.success);
+        else if (observed.success !== current || definitiveNamingFailure(result.failure))
+          yield* repo.disableNaming(key);
+        else yield* repo.clearPendingName(key);
+      } else if (definitiveNamingFailure(result.failure)) {
+        yield* repo.disableNaming(key);
+      }
     }).pipe(
       Effect.timeout("10 seconds"),
-      Effect.catch(() =>
-        entry.conversationId === null || entry.sessionId === null
-          ? Effect.void
-          : repo
+      Effect.catch((cause) =>
+        definitiveNamingFailure(cause) && entry.conversationId !== null && entry.sessionId !== null
+          ? repo
               .disableNaming({
                 adapter: channel.id,
                 account,
@@ -86,13 +96,20 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
                 conversation: entry.conversationId,
                 session: entry.sessionId,
               })
-              .pipe(Effect.asVoid),
+              .pipe(Effect.asVoid)
+          : Effect.void,
       ),
     );
 
   const nameNext = Effect.gen(function* () {
     const account = yield* channel.accountId;
-    const entries = yield* repo.namingEntries(channel.id, account);
+
+    const entries = yield* repo.namingEntries(
+      channel.id,
+      account,
+      channel.policy.scopeId,
+      channel.policy.ownerId,
+    );
 
     for (const entry of entries) {
       if (entry.sessionId === null) continue;
