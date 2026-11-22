@@ -4,7 +4,7 @@ import { setImmediate } from "node:timers/promises";
 
 import { MessagingChannel } from "@poppet/gateway";
 import { SocketModeClient } from "@slack/socket-mode";
-import { WebClient } from "@slack/web-api";
+import { ErrorCode, WebClient } from "@slack/web-api";
 import { Deferred, Effect, Fiber, Redacted, Schema } from "effect";
 
 import {
@@ -13,6 +13,7 @@ import {
   escapeSlackText,
   incomingMessage,
   slackChannelLayer,
+  slackFailure,
   slackSocketSession,
 } from "#src/channel";
 
@@ -122,6 +123,7 @@ test("caps file counts and names without dropping the message", () => {
   expect(message?.attachments?.[0]?.name).toHaveLength(1024);
 });
 
+<<<<<<< HEAD
 test.each(["is_im", "is_mpim", "is_org_shared", "is_pending_ext_shared"] as const)(
   "when Slack reports %s, rejects the conversation even if the bot is a member",
   (flag) => {
@@ -204,4 +206,15 @@ describe("slackChannelLayer", () => {
       api.mockRestore();
     }
   });
+});
+
+test("when Slack reports transient platform errors, classifies them as retryable unavailable", () => {
+  for (const code of ["internal_error", "service_unavailable", "fatal_error", "request_timeout"])
+    expect(slackFailure({ code: ErrorCode.PlatformError, data: { error: code } }).reason).toBe(
+      "unavailable",
+    );
+
+  expect(
+    slackFailure({ code: ErrorCode.PlatformError, data: { error: "not_in_channel" } }).reason,
+  ).toBe("permission");
 });
