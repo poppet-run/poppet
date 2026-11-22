@@ -245,6 +245,24 @@ describe("manageWorker", () => {
     }
   });
 
+  test.each(["relative/dir", "-/tmp", "/tmp/dir\\"])(
+    "when workingDirectory is %j, refuses to write the systemd unit",
+    async (workingDirectory) => {
+      const home = await mkdtemp(join(tmpdir(), "poppet-systemd-cwd-"));
+      const launch = { ...launchIn(home), workingDirectory };
+      const { systemctl } = fakeSystemd();
+
+      try {
+        await expect(
+          Effect.runPromise(manageWorker("install", launch, home, systemctl)),
+        ).rejects.toMatchObject({ message: expect.stringContaining("working directory") });
+        expect(await Bun.file(workerPaths(launch, home).file).exists()).toBe(false);
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
+    },
+  );
+
   test("when installation is interrupted, waits for mutations to finish", async () => {
     const home = await mkdtemp(join(tmpdir(), "poppet-systemd-interrupt-"));
     const launch = launchIn(home);

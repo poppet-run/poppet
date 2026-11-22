@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { readWorkerLogs } from "#src/logs";
+import { prepareWorkerLog, readWorkerLogs } from "#src/logs";
 
 describe("readWorkerLogs", () => {
   test("when recent logs span rotated files, reads them within one 64 KiB budget", async () => {
@@ -21,6 +21,23 @@ describe("readWorkerLogs", () => {
       expect(await readWorkerLogs(log)).toBe("prefix of one line");
       await symlink(log, `${log}.2`);
       await expect(readWorkerLogs(log)).rejects.toThrow();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("when preparing a worker log that is hardlinked, rejects it", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-worker-log-prepare-"));
+    const logs = join(directory, "logs");
+    const target = join(directory, "other.txt");
+    const log = join(logs, "worker.log");
+
+    try {
+      await prepareWorkerLog(logs, log);
+      await writeFile(target, "other");
+      await rm(log);
+      await link(target, log);
+      await expect(prepareWorkerLog(logs, log)).rejects.toThrow();
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

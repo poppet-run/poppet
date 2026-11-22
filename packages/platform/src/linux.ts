@@ -21,7 +21,10 @@ export interface SystemctlRun {
   readonly stderr: string;
 }
 
-export type Systemctl = (args: ReadonlyArray<string>) => Promise<SystemctlRun>;
+export type Systemctl = (
+  args: ReadonlyArray<string>,
+  signal?: AbortSignal,
+) => Promise<SystemctlRun>;
 
 export const userConfigHome = (home: string, configured: string | undefined) =>
   configured !== undefined && isAbsolute(configured) ? configured : join(home, ".config");
@@ -64,6 +67,11 @@ export const workerUnit = (launch: WorkerLaunch) => {
     return `Environment=${quotedText(`${key}=${value}`)}\n`;
   }).join("");
 
+  if (!isAbsolute(launch.workingDirectory) || launch.workingDirectory.endsWith("\\"))
+    throw new WorkerError({
+      message: "Worker working directory must be an absolute path without a trailing backslash.",
+    });
+
   return `[Unit]
 Description=Poppet worker
 
@@ -84,7 +92,7 @@ WantedBy=default.target
 
 const outputTooLarge = () => new WorkerError({ message: "systemctl output exceeded 64 KiB." });
 
-export const runSystemctl: Systemctl = async (args) => {
+export const runSystemctl: Systemctl = async (args, signal) => {
   const subprocess = Bun.spawn(["systemctl", "--user", ...args], {
     stdin: "ignore",
     stdout: "pipe",
@@ -93,13 +101,24 @@ export const runSystemctl: Systemctl = async (args) => {
     killSignal: "SIGKILL",
   });
 
-  const [stdout, stderr, code] = await Promise.all([
-    readBoundedText(subprocess.stdout, 65_536, outputTooLarge),
-    readBoundedText(subprocess.stderr, 65_536, outputTooLarge),
-    subprocess.exited,
-  ]);
+  const abort = () => subprocess.kill("SIGKILL");
+  signal?.addEventListener("abort", abort, { once: true });
 
-  return { code, stdout, stderr };
+  try {
+    if (signal?.aborted) abort();
+
+    const [stdout, stderr, code] = await Promise.all([
+      readBoundedText(subprocess.stdout, 65_536, outputTooLarge),
+      readBoundedText(subprocess.stderr, 65_536, outputTooLarge),
+      subprocess.exited,
+    ]);
+
+    return { code, stdout, stderr };
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    subprocess.kill("SIGKILL");
+    await subprocess.exited;
+  }
 };
 
 const properties = (stdout: string) =>
@@ -128,14 +147,14 @@ export const manageWorker = (
   systemctl: Systemctl = runSystemctl,
 ) => {
   const operation = Effect.tryPromise({
-    try: async () => {
+    try: async (signal) => {
       const paths = workerPaths(launch, configHome);
 
       if (action === "logs") return await readWorkerLogs(paths.log);
 
       const installed = (await regularFileInfo(paths.file)) !== null;
       const inspectArgs = ["show", "--property=LoadState,ActiveState", paths.unit];
-      const inspection = await systemctl(inspectArgs);
+      const inspection = await systemctl(inspectArgs, signal);
 
       if (inspection.code !== 0)
         throw failure(
@@ -202,8 +221,11 @@ export const manageWorker = (
         try {
           await unit.writeFile(contents);
           await unit.sync();
-        } finally {
           await unit.close();
+        } catch (cause) {
+          await unit.close().catch(() => {});
+          await unlink(paths.file).catch(() => {});
+          throw cause;
         }
 
         await command(["daemon-reload"]);
