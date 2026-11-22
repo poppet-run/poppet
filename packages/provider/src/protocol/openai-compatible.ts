@@ -40,7 +40,9 @@ export const fetchModelCatalog = <S extends Schema.Top>(options: {
 
         try {
           return await response.json();
-        } catch {
+        } catch (cause) {
+          if (!(cause instanceof SyntaxError)) throw cause;
+
           throw invalidRequest(
             options.provider,
             `${options.label} returned an invalid model catalog.`,

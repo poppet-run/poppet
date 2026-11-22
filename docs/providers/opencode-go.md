@@ -2,7 +2,8 @@
 
 [Documentation index](../README.md)
 
-For OpenCode Go, discovery uses its public catalog without an API key. Log in
+For OpenCode Go, discovery uses its public catalog without an API key. A connection drop
+while downloading the catalog is reported as a temporary failure. Log in
 with a hidden key prompt, then select a model:
 
 Save the provider and model in `config.json`:

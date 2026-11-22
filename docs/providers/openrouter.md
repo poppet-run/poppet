@@ -2,7 +2,8 @@
 
 [Documentation index](../README.md)
 
-For OpenRouter, discovery uses its public catalog without an API key. Select a
+For OpenRouter, discovery uses its public catalog without an API key. A connection drop
+while downloading the catalog is reported as a temporary failure. Select a
 concrete model ID returned by `provider models` and save a key through login:
 
 Save the provider and model in `config.json`:
