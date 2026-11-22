@@ -577,6 +577,67 @@ describe.concurrent("conversation", () => {
     }
   });
 
+  test("when a single batch mixes an untrusted read with a withdrawn tool, blocks the later call before execution", async () => {
+    let turns = 0;
+    let externalExecuted = 0;
+
+    const blockedExternal: ExternalTool = {
+      serverId: "server",
+      toolName: "server",
+      availableAfterUntrusted: false,
+      definition: { name: "server", namespace: "poppet_mcp", description: "server", parameters: {} },
+      prepare: () =>
+        Effect.succeed({
+          execute: Effect.sync(() => {
+            externalExecuted++;
+
+            return "done";
+          }),
+        }),
+    };
+
+    const state = await fixture(
+      () => {
+        turns++;
+
+        if (turns === 1)
+          return completed([
+            tool("fetch_page", '{"url":"https://example.com/"}', "page", "poppet_web"),
+            tool(
+              "memory",
+              '{"action":"remember","key":"injected","value":"yes"}',
+              "memory",
+              "poppet_memory",
+            ),
+            tool("server", "{}", "server", "poppet_mcp"),
+          ]);
+
+        return final();
+      },
+      {
+        pages: { fetch: () => Effect.succeed("Untrusted page content") },
+        externalTools: { snapshot: () => Effect.succeed([blockedExternal]) },
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const session = yield* store.createSession("test-provider", "test-model");
+          expect(yield* reportedFailures(session.id, "Check https://example.com/")).toEqual([
+            "agent:tool-permission",
+            "agent:tool-permission",
+          ]);
+          expect(yield* (yield* Memory).list).toEqual([]);
+        }),
+      );
+      expect(externalExecuted).toBe(0);
+    } finally {
+      await state.close();
+    }
+  });
+
   describe("executeSkillView", () => {
     test("when valid skills exist, lists them in instructions and journals viewed content", async () => {
       const state = await skilled(viewing("weekly-review"));
