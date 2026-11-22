@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 
 import { AgentError, Bash, type BashArguments, type BashResult } from "@poppet/agent";
 import { Effect, Layer } from "effect";
@@ -35,9 +36,8 @@ export const executeBash = (
       },
     );
 
-    let stdout = Buffer.alloc(0);
-    let stderr = Buffer.alloc(0);
-    let truncated = false;
+    const stdout = { bytes: Buffer.alloc(0), truncated: false };
+    const stderr = { bytes: Buffer.alloc(0), truncated: false };
     let expired = false;
     const limit = Math.max(1, Math.floor((maxBytes - 128) / 12));
 
@@ -51,19 +51,21 @@ export const executeBash = (
       }
     };
 
-    const collect = (current: Buffer, chunk: Buffer) => {
-      const available = limit - current.length;
-      truncated ||= chunk.length > available;
+    const collect = (output: typeof stdout, chunk: Buffer) => {
+      const available = limit - output.bytes.length;
+      output.truncated ||= chunk.length > available;
 
-      return Buffer.concat([current, chunk.subarray(0, Math.max(0, available))]);
+      if (available <= 0) return;
+      output.bytes = Buffer.concat([output.bytes, chunk.subarray(0, available)]);
     };
 
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout = collect(stdout, chunk);
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr = collect(stderr, chunk);
-    });
+    const decode = (output: typeof stdout) =>
+      output.truncated
+        ? new StringDecoder("utf8").write(output.bytes)
+        : output.bytes.toString("utf8");
+
+    child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
+    child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
     signal.addEventListener("abort", stop, { once: true });
 
     const timer = setTimeout(() => {
@@ -103,10 +105,10 @@ export const executeBash = (
       }
 
       resolve({
-        stdout: stdout.toString("utf8"),
-        stderr: stderr.toString("utf8"),
+        stdout: decode(stdout),
+        stderr: decode(stderr),
         exitCode: code,
-        truncated,
+        truncated: stdout.truncated || stderr.truncated,
       });
     });
 
