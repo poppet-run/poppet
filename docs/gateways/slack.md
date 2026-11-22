@@ -26,7 +26,7 @@ worker after changing settings.
 Mention the bot to start a session in a thread. Follow-ups in an attached thread
 need no mention. Only the configured owner can invoke it; everyone with channel
 access can read replies. `/new`, `/status`, `/cancel`, `/approve`, and `/deny`
-use the gateway's existing text controls. These are ordinary messages, not Slack
+use the gateway's text controls and accept surrounding whitespace. These are ordinary messages, not Slack
 slash commands. Prefix controls with the bot mention where necessary. Use the
 approval controls in the originating thread for [Bash commands](../commands.md)
 and [reviewed MCP actions](../mcp.md#review-an-action). Approvals also show
@@ -34,7 +34,8 @@ and [reviewed MCP actions](../mcp.md#review-an-action). Approvals also show
 [messaging approval](../commands.md#messaging-approval). If a reviewed MCP action
 stops a run, the reply includes the approval or review guidance.
 
-Images and text files use the normal attachment limits. File downloads are
+Images and text files use the normal attachment limits. With a file attached,
+`/new --skill <name>` can start a fresh session without a text prompt. File downloads are
 bounded, authenticated, and restricted to Slack's file host. Progress uses eyes
 and check-mark reactions. Slack typing indicators and remote thread names are
 not implemented. Session titles remain local.

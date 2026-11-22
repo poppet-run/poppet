@@ -35,7 +35,7 @@ const controlReply = (
       return yield* controls.approvals.answer(conversation, message);
     }
 
-    if (message.text === "/cancel") {
+    if (message.text.trim() === "/cancel") {
       const { requests, claims } = controls.running;
 
       yield* claims.withPermit(

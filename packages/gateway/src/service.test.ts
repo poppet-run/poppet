@@ -1036,7 +1036,7 @@ describe.concurrent("Gateway", () => {
             text: "Review Acorn",
           });
           expect(yield* store.session(original)).toMatchObject({ skill: null });
-          yield* gateway.accept(message("status", "chat", "/status"));
+          yield* gateway.accept(message("status", "chat", "  /status  "));
 
           while (yield* gateway.deliverNext) {}
 
@@ -2325,7 +2325,7 @@ describe.concurrent("Gateway", () => {
           yield* Deferred.await(started);
           yield* gateway.accept(message("queued", "thread-first", "/new --skill missing Queued"));
           yield* gateway.accept({ ...message("other", "other-thread"), mentioned: true });
-          yield* gateway.accept(message("cancel", "thread-first", "/cancel"));
+          yield* gateway.accept(message("cancel", "thread-first", "  /cancel  "));
           yield* Fiber.join(running);
           yield* gateway.processNext;
           const store = yield* Store;
@@ -2927,7 +2927,7 @@ describe.concurrent("Gateway concurrent requests", () => {
           expect(yield* inboxStates).toMatchObject({ a1: "cancelled", b1: "executing" });
 
           yield* gateway.accept(
-            message("right", "thread-b", `/approve ${prompts.get("thread-b")}`),
+            message("right", "thread-b", `  /approve ${prompts.get("thread-b")}  `),
           );
           yield* settledInbox("b1");
           expect(executed).toEqual(["restart-b"]);
