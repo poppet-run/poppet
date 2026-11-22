@@ -148,7 +148,8 @@ export const discordChannelLayer = (
 
       client.on(Events.MessageCreate, incoming);
       client.on(Events.ThreadUpdate, (before, after) => {
-        if (before.name !== after.name) Queue.offerUnsafe(nameChanges, after.id);
+        if (after.guildId === settings.guildId && before.name !== after.name)
+          Queue.offerUnsafe(nameChanges, after.id);
       });
       client.on(Events.Error, () => {
         connectionError = "Discord connection failed. Check credentials and intents.";
