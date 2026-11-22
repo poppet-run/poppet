@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -44,7 +44,7 @@ const environment = (directory: string, overrides: Record<string, string> = {}) 
   });
 
 describe("external gateway registrations", () => {
-  test("loads installed package subpaths for setup, help, and the messaging worker", async () => {
+  test("when an adapter is installed, loads its setup and worker commands without adding it to help", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-external-gateway-"));
     const lines: string[] = [];
 
@@ -76,7 +76,7 @@ describe("external gateway registrations", () => {
             );
 
           yield* invoke(["gateway", "--help"]);
-          expect(lines.join("\n")).toContain("Fixture chat");
+          expect(lines.join("\n")).not.toContain("Fixture chat");
           lines.length = 0;
           yield* invoke(["gateway", "fixture", "setup", "--literal"]);
           expect(JSON.parse(lines.at(-1)!)).toEqual({
@@ -100,6 +100,32 @@ describe("external gateway registrations", () => {
           yield* Fiber.interrupt(worker);
         }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, environment(directory))),
       );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("when an adapter is outside the install directory or the directory is writable by others, rejects it before import", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-gateway-paths-"));
+
+    try {
+      const nested = join(directory, "data");
+      await install(nested, "local", registration("local"));
+      await install(directory, "outside", registration("outside"));
+      const gateways = join(nested, "gateways");
+      const outer = join(directory, "gateways", "node_modules", "outside");
+      await symlink(outer, join(gateways, "node_modules", "outside"));
+
+      const invoke = loadRegisteredChannels.pipe(
+        Effect.provideService(ConfigProvider.ConfigProvider, environment(nested)),
+        Effect.flip,
+      );
+
+      await configure(nested, ["outside/registration"]);
+      expect(await Effect.runPromise(invoke)).toMatchObject({ reason: "configuration" });
+      await configure(nested, ["local/registration"]);
+      await chmod(gateways, 0o777);
+      expect(await Effect.runPromise(invoke)).toMatchObject({ reason: "configuration" });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

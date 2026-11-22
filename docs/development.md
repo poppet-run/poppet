@@ -258,14 +258,17 @@ Install the package in `<POPPET_DATA_DIR>/gateways`, then list its entry point i
 ```
 
 The example is a placeholder, not a published adapter. Poppet resolves packages
-from that directory, independently of the working directory. Package names and
+from that directory, independently of the working directory. The install directory
+and package entry points must be owned by the Poppet user and writable only by
+that user. Entry points resolve inside its local `node_modules` directory.
+Package names and
 package subpaths are accepted; file paths and URLs are rejected. Nothing is
 automatically discovered or installed. Discord and Slack are always registered; duplicate
 or reserved IDs and malformed registrations stop gateway startup with an error.
 Restart the worker after changing the list or installed packages.
 
 Gateway commands and messaging worker startup load the same registrations.
-Other CLI commands do not import external adapter code.
+Help shows the bundled gateways without importing external adapter code.
 External modules run with the host's privileges. Use the host's compatible
 `@poppet/gateway` and Effect versions; these packages are currently private
 workspaces, so publishing a standalone adapter still requires packaging those
