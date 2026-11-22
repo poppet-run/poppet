@@ -92,8 +92,12 @@ export const LocalMemoryLive = Layer.effect(
       at: number,
     ) =>
       Effect.gen(function* () {
-        const existing = yield* current(key);
-        const updatedAt = Math.max(at, existing?.updatedAt ?? 0);
+        const latest = yield* sql`SELECT created_at FROM memory_revisions WHERE key = ${key}
+          ORDER BY revision DESC LIMIT 1`.pipe(
+          decodeRow(Schema.Struct({ createdAt: MemoryRevision.fields.createdAt })),
+        );
+
+        const updatedAt = Math.max(at, latest?.createdAt ?? 0);
 
         yield* sql`INSERT INTO memory_revisions (key, revision, action, value, origin, source_run_id, created_at)
           SELECT ${key}, COALESCE(MAX(revision), 0) + 1, ${action}, ${value}, ${origin},
