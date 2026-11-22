@@ -2,7 +2,7 @@ export const callbackResponse = (accepted: boolean, received: string) => {
   const title = accepted ? "Authorization received" : "Sign-in could not be completed";
 
   const message = accepted
-    ? received
+    ? Bun.escapeHTML(received)
     : "Return to your terminal for details, then start a new sign-in when you're ready.";
 
   return new Response(
