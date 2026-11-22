@@ -30,55 +30,80 @@ export const accessTokenWorkflow = Effect.gen(function* () {
     const now = (yield* DateTime.nowAsDate).getTime();
 
     if (
+      connection.pendingRefresh === undefined &&
       credentials.accessToken &&
       credentials.expiresAt !== null &&
       credentials.expiresAt > now + 60_000
     )
       return credentials.accessToken;
 
-    if (!credentials.refreshToken) return yield* Effect.fail(reconnect());
+    const { pendingRefresh, ...confirmed } = connection;
 
-    const refreshed = yield* oauth.exchange(refreshBody(credentials.refreshToken, clientId)).pipe(
-      Effect.catchTag("ConnectionError", (error) => {
-        if (error.reason !== "reconnect") return Effect.fail(error);
+    const renew = Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function* () {
+        let replacement = pendingRefresh;
 
-        return store
-          .write({ ...connection, credentials: null, verification: null })
-          .pipe(Effect.andThen(Effect.fail(error)));
+        if (replacement === undefined) {
+          if (!credentials.refreshToken) return yield* Effect.fail(reconnect());
+
+          const refreshed = yield* restore(
+            oauth.exchange(refreshBody(credentials.refreshToken, clientId)),
+          ).pipe(
+            Effect.catchTag("ConnectionError", (error) => {
+              if (error.reason !== "reconnect") return Effect.fail(error);
+
+              return store
+                .write({ ...confirmed, credentials: null, verification: null })
+                .pipe(Effect.andThen(Effect.fail(error)));
+            }),
+          );
+
+          const renewed = credentialsFor(
+            refreshed,
+            (yield* DateTime.nowAsDate).getTime(),
+            credentials,
+          );
+
+          if (!renewed?.accessToken || !renewed.expiresAt || refreshed.token_type !== "Bearer")
+            return yield* Effect.fail(
+              new ConnectionError({
+                reason: "reconnect",
+                message: "OpenAI returned incomplete renewed credentials. Sign in again.",
+              }),
+            );
+
+          replacement = renewed;
+        }
+
+        if (pendingRefresh !== undefined || replacement.idToken !== credentials.idToken) {
+          const identity = yield* oauth.verifyIdentity(replacement.idToken, clientId, null).pipe(
+            Effect.tapError((error) => {
+              if (error.reason === "temporary")
+                return store.write({ ...confirmed, pendingRefresh: replacement });
+
+              return pendingRefresh === undefined ? Effect.void : store.write(confirmed);
+            }),
+          );
+
+          if (identity.subject !== connection.identity?.subject) {
+            if (pendingRefresh !== undefined) yield* store.write(confirmed);
+
+            return yield* Effect.fail(
+              new ConnectionError({
+                reason: "identity",
+                message: "The renewed token did not match the saved account.",
+              }),
+            );
+          }
+        }
+
+        yield* store.write({ ...confirmed, credentials: replacement });
+
+        return replacement;
       }),
     );
 
-    if (refreshed.id_token) {
-      const identity = yield* oauth.verifyIdentity(refreshed.id_token, clientId, null);
-
-      if (identity.subject !== connection.identity.subject)
-        return yield* Effect.fail(
-          new ConnectionError({
-            reason: "identity",
-            message: "The renewed token did not match the saved account.",
-          }),
-        );
-    }
-
-    const replacement = credentialsFor(
-      refreshed,
-      (yield* DateTime.nowAsDate).getTime(),
-      credentials,
-    );
-
-    if (
-      !replacement ||
-      !replacement.accessToken ||
-      !replacement.expiresAt ||
-      refreshed.token_type !== "Bearer"
-    )
-      return yield* Effect.fail(
-        new ConnectionError({
-          reason: "reconnect",
-          message: "OpenAI returned incomplete renewed credentials. Sign in again.",
-        }),
-      );
-    yield* store.write({ ...connection, credentials: replacement });
+    const replacement = yield* renew;
 
     if (!replacement.scopes.includes(planScope))
       return yield* Effect.fail(
@@ -88,6 +113,8 @@ export const accessTokenWorkflow = Effect.gen(function* () {
             "The renewed connection no longer permits ChatGPT plan usage. Run provider login openai-chatgpt to enable it.",
         }),
       );
+
+    if (!replacement.accessToken) return yield* Effect.fail(reconnect());
 
     return replacement.accessToken;
   });

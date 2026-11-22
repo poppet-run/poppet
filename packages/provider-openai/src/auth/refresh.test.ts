@@ -9,6 +9,65 @@ import { ChatGPTAuth } from "#src/auth/service";
 import { createHarness, login, status, verify } from "#src/test/fixtures/chatgpt";
 
 describe.concurrent("refresh.ts", () => {
+  test("when cancellation arrives after renewal starts identity verification, saves the verified replacement", async () => {
+    const harness = await createHarness();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const controller = new AbortController();
+
+    try {
+      harness.controls.expireAccess = true;
+      await harness.run(login);
+      harness.controls.beforeJwks = () => {
+        entered.resolve();
+
+        return release.promise;
+      };
+
+      const request = harness
+        .run(
+          ChatGPTAuth.use((auth) => auth.accessToken),
+          { signal: controller.signal },
+        )
+        .catch(() => undefined);
+
+      await entered.promise;
+      controller.abort();
+      release.resolve();
+      await request;
+      expect(Redacted.value((await harness.saved()).credentials!.refreshToken!)).toBe(
+        "test-refresh-2",
+      );
+    } finally {
+      release.resolve();
+      await harness.close();
+    }
+  });
+
+  test("when JWKS is temporarily unavailable after rotation, verifies the saved renewal without exchanging again", async () => {
+    const harness = await createHarness();
+
+    try {
+      harness.controls.expireAccess = true;
+      await harness.run(login);
+      harness.controls.jwksUnavailable = true;
+      const access = ChatGPTAuth.use((auth) => auth.accessToken);
+      await expect(harness.run(access)).rejects.toMatchObject({ reason: "temporary" });
+      const pending = await harness.saved();
+      expect(Redacted.value(pending.pendingRefresh!.refreshToken!)).toBe("test-refresh-2");
+      expect(Redacted.value(pending.credentials!.refreshToken!)).toBe("test-refresh-1");
+
+      harness.controls.jwksUnavailable = false;
+      expect(Redacted.value(await harness.run(access))).toBe("test-access-2");
+      expect((await harness.saved()).pendingRefresh).toBeUndefined();
+      expect(
+        harness.grants.filter((grant) => grant.get("grant_type") === "refresh_token"),
+      ).toHaveLength(1);
+    } finally {
+      await harness.close();
+    }
+  });
+
   test("when renewals run concurrently, serializes them and atomically saves the rotated refresh token", async () => {
     const harness = await createHarness();
 

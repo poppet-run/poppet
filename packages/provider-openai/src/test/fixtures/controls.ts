@@ -18,6 +18,8 @@ export interface Controls {
   discoveryEndpoint: string | null;
   tokenError: string | null;
   refreshError: string | null;
+  jwksUnavailable: boolean;
+  beforeJwks?: () => Promise<void>;
   streamMode: StreamMode;
   expireAccess: boolean;
   omitRefreshFields: boolean;
@@ -33,6 +35,7 @@ export const createControls = (): Controls => ({
   discoveryEndpoint: null,
   tokenError: null,
   refreshError: null,
+  jwksUnavailable: false,
   streamMode: "completed",
   expireAccess: false,
   omitRefreshFields: false,

@@ -84,7 +84,8 @@ export const loginWorkflow = Effect.gen(function* () {
             message: "OpenAI granted plan usage without complete bearer credentials.",
           }),
         );
-      const connection = { ...registered, identity, credentials, verification: null };
+      const { pendingRefresh: _pendingRefresh, ...confirmed } = registered;
+      const connection = { ...confirmed, identity, credentials, verification: null };
       yield* store.write(connection);
 
       return statusFor(connection);
