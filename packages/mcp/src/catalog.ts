@@ -87,7 +87,7 @@ export const compileSchema = (input: Schema.JsonObject) => {
       if (position === "schema" && modernKeywords.has(key)) modern = true;
 
       if (position === "schema" && key === "pattern" && Schema.is(Schema.String)(item))
-        regExp(item, "u");
+        regExp(item, "u").dispose();
 
       if (
         position === "schema" &&

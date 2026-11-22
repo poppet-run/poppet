@@ -1,0 +1,70 @@
+diff --git a/build/src/re2.d.ts b/build/src/re2.d.ts
+index ff20e23dd06733f8998dbfac957623835f3b8022..2b4894c614ea07d2b5464b2318f4594be22426b2 100644
+--- a/build/src/re2.d.ts
++++ b/build/src/re2.d.ts
+@@ -25,6 +25,7 @@ export declare class RE2 {
+     private groupNames;
+     private namedGroups;
+     constructor(pattern: string | RegExp | RE2, flags?: string);
++    dispose(): void;
+     get source(): string;
+     get internalSource(): string;
+     get flags(): string;
+diff --git a/build/src/re2.js b/build/src/re2.js
+index 465e1250d5123010ba045bc3078e53f48d8b1d9c..49835256a0bfe212e8be65b7b4ffad9e1beb6f76 100644
+--- a/build/src/re2.js
++++ b/build/src/re2.js
+@@ -185,21 +185,40 @@ class RE2 {
+         }
+         this.pattern = pattern;
+         this.wrapper = new re2_1.WrappedRE2(translateRegExp(pattern, this._multiline), this._ignoreCase, this._multiline, this._dotAll);
+-        if (!this.wrapper.ok()) {
+-            throw new SyntaxError(`Invalid regular expression: /${pattern}/${flags}: ${this.wrapper.error()}`);
+-        }
+-        // Verify that all named groups have unique names
+-        const groupNames = this.wrapper.capturingGroupNames();
+-        const groupNumbers = groupNames.keys();
+-        for (let i = 0; i < groupNumbers.size(); i++) {
+-            const num = groupNumbers.get(i);
+-            const name = groupNames.get(num);
+-            if (name in this.namedGroups) {
+-                throw new SyntaxError(`Invalid regular expression: /${pattern}/${flags}: Duplicate capture group name`);
++        try {
++            if (!this.wrapper.ok()) {
++                throw new SyntaxError(`Invalid regular expression: /${pattern}/${flags}: ${this.wrapper.error()}`);
++            }
++            // Verify that all named groups have unique names
++            const groupNames = this.wrapper.capturingGroupNames();
++            try {
++                const groupNumbers = groupNames.keys();
++                try {
++                    for (let i = 0; i < groupNumbers.size(); i++) {
++                        const num = groupNumbers.get(i);
++                        const name = groupNames.get(num);
++                        if (name in this.namedGroups) {
++                            throw new SyntaxError(`Invalid regular expression: /${pattern}/${flags}: Duplicate capture group name`);
++                        }
++                        this.groupNames[num] = name;
++                        this.namedGroups[name] = num;
++                    }
++                }
++                finally {
++                    groupNumbers.delete();
++                }
++            }
++            finally {
++                groupNames.delete();
+             }
+-            this.groupNames[num] = name;
+-            this.namedGroups[name] = num;
+         }
++        catch (error) {
++            this.wrapper.delete();
++            throw error;
++        }
++    }
++    dispose() {
++        this.wrapper.delete();
+     }
+     get source() {
+         return this.pattern;
