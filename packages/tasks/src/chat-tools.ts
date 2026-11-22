@@ -76,6 +76,28 @@ const resolveDelivery = (
   );
 };
 
+const authorizeControl = (task: Task, context: ChatTaskContext) =>
+  Effect.gen(function* () {
+    if (task.skill !== null && isManualOnly(task.skill.content))
+      return yield* Effect.fail(ownerOnlySkill(task.skill.name));
+
+    if (task.destination === null) return;
+
+    const authorized = yield* resolveDelivery(
+      { conversationId: task.destination.conversationId },
+      context,
+    );
+
+    if (!isDeepStrictEqual(authorized, task.destination))
+      return yield* Effect.fail(
+        new AgentError({
+          reason: "tool-permission",
+          message:
+            "This chat is not authorized to schedule or run work for the saved messaging destination.",
+        }),
+      );
+  });
+
 export const ChatTasksLive = Layer.effect(
   ChatTasks,
   Effect.gen(function* () {
@@ -185,10 +207,8 @@ export const ChatTasksLive = Layer.effect(
         });
       });
 
-    const prepareEdit = (action: Extract<ChatTaskAction, { action: "edit" }>) =>
+    const prepareEdit = (action: Extract<ChatTaskAction, { action: "edit" }>, current: Task) =>
       Effect.gen(function* () {
-        const current = yield* repo.task(action.id).pipe(Effect.mapError(invalid));
-
         const patch = yield* Effect.try({
           try: () => {
             const fields: Record<string, Schema.Json> = {};
@@ -243,14 +263,22 @@ export const ChatTasksLive = Layer.effect(
       context: ChatTaskContext,
     ): Effect.Effect<Effect.Effect<string, StoreError | TaskError>, AgentError> =>
       Effect.gen(function* () {
-        if ("id" in action && action.action !== "edit")
-          yield* repo.task(action.id).pipe(Effect.mapError(invalid));
+        const current =
+          "id" in action ? yield* repo.task(action.id).pipe(Effect.mapError(invalid)) : null;
+
+        if (
+          current !== null &&
+          action.action !== "show" &&
+          action.action !== "pause" &&
+          action.action !== "delete"
+        )
+          yield* authorizeControl(current, context);
 
         switch (action.action) {
           case "create":
             return yield* prepareCreate(action, run, context);
           case "edit":
-            return yield* prepareEdit(action);
+            return yield* prepareEdit(action, current!);
           case "list":
             yield* repo.listPage(action.after).pipe(Effect.mapError(invalid));
 
