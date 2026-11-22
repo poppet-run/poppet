@@ -79,6 +79,7 @@ interface Connection {
   readonly client: Client;
   readonly transport: ScopedStdioTransport | ScopedHTTPTransport;
   readonly now: () => number;
+  readonly logCloseFailure: () => Promise<void>;
   readonly token: () => string | undefined;
   state: ConnectionState;
   closing: Promise<void> | null;
@@ -160,7 +161,7 @@ const authorizationFailure = (
 const close = (connection: Connection): Promise<void> => {
   connection.closing ??= (async () => {
     await connection.client.close().catch(() => {});
-    await connection.transport.close();
+    await connection.transport.close().catch(connection.logCloseFailure);
   })();
 
   return connection.closing;
@@ -534,9 +535,10 @@ export const makeMCPLive = (toolBytes: number) =>
       const clock = yield* Clock.Clock;
       const now = () => clock.currentTimeMillisUnsafe();
       const connections = new Map<string, Connection>();
+      const run = Effect.runPromiseWith(yield* Effect.context());
 
       yield* Effect.addFinalizer(() =>
-        Effect.promise(() => Promise.all([...connections.values()].map(close))),
+        Effect.promise(() => Promise.allSettled([...connections.values()].map(close))),
       );
 
       const connect = (config: MCPServer) =>
@@ -570,6 +572,7 @@ export const makeMCPLive = (toolBytes: number) =>
             client,
             transport,
             now,
+            logCloseFailure: () => run(logDiagnostic(config.id, "Transport cleanup failed.")),
             token: () => authorization.current?.token(),
             state: config.enabled ? { status: "idle", retries } : { status: "disabled" },
             closing: null,

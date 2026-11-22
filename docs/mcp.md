@@ -316,7 +316,8 @@ forwarding are outside this implementation. Resource links and media are marked 
 - HTTP redirects are followed only within the endpoint's origin (or its HTTPS
   upgrade) and only when they keep the method. The SDK's stream reconnection is
   off: a dropped stream fails the connection, and Poppet's backoff reconnects it
-  with a new session.
+  with a new session. The worker logs transport cleanup failures and continues
+  closing its other connections.
 - Allowed descriptions are at most 4096 characters; input/output schemas are at
   most 16 KiB, depth 32, and 1024 nodes. Draft-07 and 2020-12 schemas are validated
   with AJV. Valid required-only union branches retain their runtime assertions.
