@@ -54,7 +54,9 @@ export const suppliedPageURLs = (text: string) => {
 
     try {
       urls.add(pageURL(value).href);
-    } catch {}
+    } catch {
+      // Ignore malformed URLs found in model text.
+    }
   }
 
   return urls;

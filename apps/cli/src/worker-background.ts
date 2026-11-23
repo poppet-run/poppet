@@ -117,8 +117,8 @@ if (import.meta.main) {
       directory,
     );
   } catch {
-    console.error(
-      "Could not run the background worker. Check worker log permissions and ownership.",
+    process.stderr.write(
+      "Could not run the background worker. Check worker log permissions and ownership.\n",
     );
     process.exitCode = 1;
   }

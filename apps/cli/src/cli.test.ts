@@ -30,7 +30,12 @@ const readWorkerLog = (stream: ReadableStream<Uint8Array>) => {
   })();
 
   return {
-    started: Promise.race([started, text.then((output) => Promise.reject(new Error(output)))]),
+    started: Promise.race([
+      started,
+      text.then((output) => {
+        throw new Error(output);
+      }),
+    ]),
     text,
   };
 };

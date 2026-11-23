@@ -1041,7 +1041,9 @@ describe.concurrent("Gateway", () => {
           expect(yield* store.session(original)).toMatchObject({ skill: null });
           yield* gateway.accept(message("status", "chat", "/status"));
 
-          while (yield* gateway.deliverNext) {}
+          while (yield* gateway.deliverNext) {
+            // Drain queued deliveries.
+          }
 
           return { original, skilled };
         }),
@@ -1132,7 +1134,9 @@ describe.concurrent("Gateway", () => {
           expect(yield* store.sessions).toHaveLength(1);
           expect(state.requests).toHaveLength(1);
 
-          while (yield* gateway.deliverNext) {}
+          while (yield* gateway.deliverNext) {
+            // Drain queued deliveries.
+          }
         }),
       );
       expect(state.sent).toHaveLength(7);
@@ -2160,7 +2164,9 @@ describe.concurrent("Gateway", () => {
           yield* gateway.processNext;
           expect(yield* (yield* Store).sessions).toHaveLength(2);
 
-          while (yield* gateway.deliverNext) {}
+          while (yield* gateway.deliverNext) {
+            // Drain queued deliveries.
+          }
         }),
       );
       await state.run(

@@ -33,6 +33,8 @@ const fakeSystemd = () => {
       case "disable":
         state.active = false;
         break;
+      default:
+        break;
     }
 
     return ok();

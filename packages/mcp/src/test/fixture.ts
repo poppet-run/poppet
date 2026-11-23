@@ -2,7 +2,7 @@ import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
-import * as Schema from "effect/Schema";
+import { Schema } from "effect";
 
 import executorSchemas from "./executor-schemas.json";
 

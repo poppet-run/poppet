@@ -216,9 +216,11 @@ export class ChatTerminal {
     ];
 
     while (lines.length < room + 2) lines.push("");
-    lines.push(this.statusLine(width));
-    lines.push(...queueRows);
-    lines.push(this.style("╭" + "─".repeat(Math.max(0, width - 2)) + "╮", "2;36"));
+    lines.push(
+      this.statusLine(width),
+      ...queueRows,
+      this.style("╭" + "─".repeat(Math.max(0, width - 2)) + "╮", "2;36"),
+    );
     const inputTop = lines.length + 1;
 
     for (const row of visibleInput)
@@ -230,8 +232,8 @@ export class ChatTerminal {
           " " +
           this.style("│", "2;36"),
       );
-    lines.push(this.style("╰" + "─".repeat(Math.max(0, width - 2)) + "╯", "2;36"));
     lines.push(
+      this.style("╰" + "─".repeat(Math.max(0, width - 2)) + "╯", "2;36"),
       this.style(
         wrapChatText(
           "Enter send/queue · Shift+Enter newline · ↑↓ history · PgUp/PgDn scroll · Ctrl-C exit",

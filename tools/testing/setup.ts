@@ -1,6 +1,5 @@
 import { homedir } from "node:os";
 import { join, relative, isAbsolute } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { bashFixtures } from "./bash-fixtures";
 
@@ -65,7 +64,7 @@ const protectSpawn = <T extends typeof Bun.spawn | typeof Bun.spawnSync>(spawn: 
           "--no-env-file",
           "--no-install",
           "--preload",
-          fileURLToPath(import.meta.url),
+          import.meta.filename,
           ...settings.cmd.slice(1),
         ],
         env: {

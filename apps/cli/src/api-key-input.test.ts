@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
 import { Effect } from "effect";
@@ -27,7 +26,7 @@ test.each(["submit", "cancel", "correct"])(
         `,
       ],
       {
-        cwd: fileURLToPath(new URL(".", import.meta.url)),
+        cwd: import.meta.dirname,
         env: { PATH: process.env.PATH ?? "", TERM: "xterm-256color", NO_COLOR: "1" },
         terminal: {
           cols: 80,
@@ -76,7 +75,7 @@ test.each(["submit", "cancel", "correct"])(
         raw: false,
       });
     } catch (error) {
-      console.error(transcript);
+      process.stderr.write(`${transcript}\n`);
       throw error;
     } finally {
       child.kill("SIGKILL");

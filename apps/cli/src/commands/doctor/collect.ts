@@ -325,8 +325,6 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
             context.registered.find((provider) => provider.id === config.provider)!,
           ),
         ),
-      );
-      basic.push(
         inspectCheck(
           "mcp",
           "Run poppet mcp servers and check enabled commands and permissions.",
@@ -364,8 +362,6 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
           "Check config.json against docs/configuration.md.",
           true,
         ),
-      );
-      checks.push(
         ...["authentication", "mcp"].map((id) =>
           finding(
             id,

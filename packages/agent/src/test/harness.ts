@@ -95,7 +95,7 @@ export const agentHarness = async (policy: Partial<ChatPolicy> = {}) => {
     config,
     store,
     settings,
-    agent: <const S extends ReadonlyArray<Layer.Layer<never, any, never>>>(
+    agent: <const S extends ReadonlyArray<Layer.Layer<never, unknown, never>>>(
       resolve: ModelResolver["Service"]["resolve"],
       ...services: S
     ) =>

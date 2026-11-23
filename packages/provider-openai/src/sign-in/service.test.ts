@@ -178,8 +178,7 @@ describe("makeBrowserSignIn", () => {
     forged.searchParams.set("state", "forged");
     statuses.push((await fetch(forged)).status);
     forged.searchParams.delete("state");
-    statuses.push((await fetch(forged)).status);
-    statuses.push((await fetch(callback)).status);
+    statuses.push((await fetch(forged)).status, (await fetch(callback)).status);
 
     const result = await authorization;
 
