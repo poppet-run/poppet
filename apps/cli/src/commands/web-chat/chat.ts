@@ -2,9 +2,17 @@ import { createHash } from "node:crypto";
 
 import { Agent } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
+import { gatewaySchema } from "@poppet/gateway";
 import { outputText } from "@poppet/provider";
 import { Store, decodeRow, decodeRows, migrate, packageSchema } from "@poppet/store";
-import type { ChatSession, ChatSnapshot, Receipt, Submission } from "@poppet/web/protocol";
+import { taskSchema } from "@poppet/tasks";
+import type {
+  SessionList,
+  ChatSession,
+  ChatSnapshot,
+  Receipt,
+  Submission,
+} from "@poppet/web/protocol";
 import {
   Cause,
   Context,
@@ -94,6 +102,8 @@ const makeWebChat = Effect.gen(function* () {
   const submissions = yield* Semaphore.make(1);
   const active = new Map<string, ActiveReply>();
 
+  yield* migrate(taskSchema);
+  yield* migrate(gatewaySchema);
   yield* migrate(webSchema);
   yield* sql`UPDATE web_chat_submissions SET
     status = COALESCE((SELECT status FROM runs WHERE runs.id = web_chat_submissions.id AND status IN ('completed', 'failed', 'interrupted')), 'interrupted'),
@@ -290,11 +300,26 @@ const makeWebChat = Effect.gen(function* () {
       );
     }).pipe(submissions.withPermit);
 
+  const sessions = (source: string) =>
+    sql<ChatSession>`SELECT id, title, provider, model, updated_at FROM sessions
+      ${source === "all" ? sql`` : sql`WHERE origin = ${source}`}
+      ORDER BY updated_at DESC, created_at, id`;
+
+  const sessionList = (source: string) =>
+    Effect.gen(function* () {
+      const origins = yield* sql<{ readonly origin: string }>`SELECT DISTINCT origin FROM sessions
+        WHERE origin GLOB 'gateway:*' ORDER BY origin`;
+
+      return {
+        sessions: yield* sessions(source),
+        gateways: origins.map(({ origin }) => origin.slice("gateway:".length)),
+      } satisfies SessionList;
+    });
+
   return {
     remove,
-    sessions: store.sessions.pipe(
-      Effect.map((sessions) => sessions.map(summary).toSorted((a, b) => b.updatedAt - a.updatedAt)),
-    ),
+    sessions: sessions("all"),
+    sessionList,
     snapshot,
     marker,
     submit,

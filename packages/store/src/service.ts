@@ -37,6 +37,7 @@ export interface StoreOperations {
     options?: {
       readonly id?: string;
       readonly taskTitle?: string;
+      readonly origin?: "chat" | "scheduled" | `gateway:${string}`;
       readonly skill?: SkillSnapshot | null;
     },
   ) => Effect.Effect<Session, StoreError>;

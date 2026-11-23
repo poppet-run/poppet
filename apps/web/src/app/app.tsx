@@ -17,6 +17,8 @@ export const App = () => {
     authenticated,
     key,
     sessions,
+    source,
+    gateways,
     sessionId,
     snapshot,
     drafts,
@@ -60,6 +62,9 @@ export const App = () => {
       <Sidebar
         open={sidebar}
         sessions={sessions}
+        source={source}
+        gateways={gateways}
+        onFilter={store.filterSessions}
         sessionId={sessionId}
         onClose={() => store.set("sidebar", false)}
         onNavigate={navigate}

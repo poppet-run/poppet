@@ -100,6 +100,7 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
       });
 
       const session = yield* store.createSession(job.provider, job.model, {
+        origin: "scheduled",
         taskTitle: sessionTitle(job.name),
         skill: job.skill,
       });

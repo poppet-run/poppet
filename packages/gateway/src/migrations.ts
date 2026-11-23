@@ -59,4 +59,15 @@ const sessionRemoval: ReadonlyArray<string> = [
 export const gatewaySchema = packageSchema("gateway_migrations", {
   "1_baseline": baseline,
   "2_session_removal": sessionRemoval,
+  "3_session_origin": [
+    `UPDATE sessions SET origin = 'scheduled' WHERE id IN (
+      SELECT runs.session_id FROM gateway_inbox JOIN runs ON runs.id = gateway_inbox.run_id
+      WHERE occurrence_id IS NOT NULL
+    )`,
+    `UPDATE sessions SET origin = 'gateway:' || history.adapter FROM (
+      SELECT session_id, adapter FROM gateway_bindings
+      UNION
+      SELECT session_id, adapter FROM gateway_inbox WHERE occurrence_id IS NULL
+    ) AS history WHERE sessions.id = history.session_id AND sessions.origin = 'chat'`,
+  ],
 });

@@ -53,6 +53,7 @@ describe("StoreDatabaseLive migrations", () => {
         { migration_id: 3, name: "attachments" },
         { migration_id: 4, name: "remove_workload" },
         { migration_id: 5, name: "tool_call_review" },
+        { migration_id: 6, name: "session_origin" },
       ]);
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions'").get(),
@@ -86,6 +87,7 @@ describe("StoreDatabaseLive migrations", () => {
         old.run(
           "INSERT INTO runs (id, session_id, status, created_at) VALUES ('run', 'saved', 'pending', 2)",
         );
+        old.run("UPDATE sessions SET title_source = 'task' WHERE id = 'saved'");
         old.close();
 
         expect(await store.open()).toBe(true);
@@ -94,10 +96,16 @@ describe("StoreDatabaseLive migrations", () => {
         expect(
           database
             .query(
-              "SELECT provider, model, created_at, updated_at FROM sessions WHERE id = 'saved'",
+              "SELECT provider, model, origin, created_at, updated_at FROM sessions WHERE id = 'saved'",
             )
             .get(),
-        ).toEqual({ provider: "opencode-go", model: "glm-5.3", created_at: 1, updated_at: 2 });
+        ).toEqual({
+          provider: "opencode-go",
+          model: "glm-5.3",
+          origin: "scheduled",
+          created_at: 1,
+          updated_at: 2,
+        });
         expect(
           database.query("SELECT session_id, status FROM runs WHERE id = 'run'").get(),
         ).toEqual({ session_id: "saved", status: "pending" });
@@ -162,11 +170,12 @@ describe("StoreDatabaseLive migrations", () => {
         "3_attachments": Effect.void,
         "4_remove_workload": Effect.void,
         "5_tool_call_review": Effect.void,
-        "6_index": Effect.gen(function* () {
+        "6_session_origin": Effect.void,
+        "7_index": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`CREATE INDEX sessions_by_provider ON sessions (provider)`;
         }),
-        "7_broken": Effect.gen(function* () {
+        "8_broken": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`invalid SQL`;
         }),
@@ -180,6 +189,7 @@ describe("StoreDatabaseLive migrations", () => {
         { migration_id: 3 },
         { migration_id: 4 },
         { migration_id: 5 },
+        { migration_id: 6 },
       ]);
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions_by_provider'").get(),
