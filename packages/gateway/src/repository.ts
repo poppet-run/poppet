@@ -305,7 +305,13 @@ const repository = Effect.gen(function* () {
             state: control ? "cancelled" : "queued",
           })} RETURNING id`.pipe(decodeRows(Schema.Struct({ id: Schema.Natural })));
 
-          return yield* item(inserted[0]!.id);
+          const created = inserted[0];
+
+          if (created === undefined) {
+            return yield* Effect.die(new Error("INSERT INTO gateway_inbox returned no row."));
+          }
+
+          return yield* item(created.id);
         }),
       ),
     ),
@@ -479,7 +485,11 @@ const repository = Effect.gen(function* () {
             failedRequests: Schema.Natural,
           }),
         ),
-        Effect.map((rows) => rows[0]!),
+        Effect.flatMap((rows) =>
+          rows[0] === undefined
+            ? Effect.die(new Error("Gateway counts query returned no row."))
+            : Effect.succeed(rows[0]),
+        ),
       ),
     ),
   };

@@ -68,7 +68,12 @@ const tokenize = (command: string) => {
   };
 
   while (index < command.length) {
-    const char = command[index]!;
+    const char = command[index];
+
+    if (char === undefined) {
+      break;
+    }
+
     const pair = command.slice(index, index + 2);
 
     if (char === "'") {
@@ -132,7 +137,7 @@ const segments = (command: string) => {
     if (token.operator) {
       result.push([]);
     } else {
-      result.at(-1)!.push(token.text);
+      result.at(-1)?.push(token.text);
     }
   }
 
@@ -160,19 +165,23 @@ const bypassingVariable = (name: string, value: string) => {
 const basename = (word: string) => word.slice(word.lastIndexOf("/") + 1);
 
 const skipsVerification = (word: string) =>
-  word.length >= "--no-veri".length && "--no-verify".startsWith(word.split("=")[0]!);
+  word.length >= "--no-veri".length && "--no-verify".startsWith(word.split("=")[0] ?? "");
 
 const commitSkipsHooks = (args: ReadonlyArray<string>) => {
   for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index]!;
+    const arg = args[index];
 
-    if (arg === "--") {
+    if (arg === undefined || arg === "--") {
       return false;
     }
 
     if (arg.startsWith("-") && !arg.startsWith("--")) {
       for (let position = 1; position < arg.length; position += 1) {
-        const flag = arg[position]!;
+        const flag = arg[position];
+
+        if (flag === undefined) {
+          break;
+        }
 
         if (flag === "n") {
           return true;
@@ -195,8 +204,12 @@ const commitSkipsHooks = (args: ReadonlyArray<string>) => {
 const gitBypasses = (args: ReadonlyArray<string>) => {
   let index = 0;
 
-  while (index < args.length && args[index]!.startsWith("-")) {
-    const option = args[index]!;
+  while (index < args.length) {
+    const option = args[index];
+
+    if (option === undefined || !option.startsWith("-")) {
+      break;
+    }
 
     if (option === "-c" || option === "--config-env") {
       if (/^core\.hookspath=/i.test(args[index + 1] ?? "")) {
@@ -237,14 +250,14 @@ const touchesHooksDirectory = (words: ReadonlyArray<string>) =>
 const wordsBypass = (input: ReadonlyArray<string>, depth: number): boolean => {
   const words = [...input];
 
-  while (words.length > 0) {
-    const match = assignment.exec(words[0]!);
+  while (words[0] !== undefined) {
+    const match = assignment.exec(words[0]);
 
-    if (match === null) {
+    if (match?.[1] === undefined || match[2] === undefined) {
       break;
     }
 
-    if (bypassingVariable(match[1]!, match[2]!)) {
+    if (bypassingVariable(match[1], match[2])) {
       return true;
     }
 
@@ -263,7 +276,9 @@ const wordsBypass = (input: ReadonlyArray<string>, depth: number): boolean => {
     return args.some((arg) => {
       const match = assignment.exec(arg);
 
-      return match !== null && bypassingVariable(match[1]!, match[2]!);
+      return (
+        match?.[1] !== undefined && match[2] !== undefined && bypassingVariable(match[1], match[2])
+      );
     });
   }
 
@@ -293,7 +308,9 @@ const wordsBypass = (input: ReadonlyArray<string>, depth: number): boolean => {
 };
 
 const redirectTargets = (command: string) =>
-  [...command.matchAll(/>>?\s*([^\s;&|]+)/g)].map((match) => match[1]!);
+  [...command.matchAll(/>>?\s*([^\s;&|]+)/g)].flatMap((match) =>
+    match[1] === undefined ? [] : [match[1]],
+  );
 
 export const commandBypassesHooks = (command: string, depth = 0): boolean =>
   segments(command).some((words) => wordsBypass(words, depth)) ||

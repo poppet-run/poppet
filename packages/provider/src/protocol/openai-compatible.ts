@@ -97,7 +97,11 @@ export const createCatalogCache = <A extends { readonly id: string }>(ttlMs = 60
 
     if (slot === undefined) {
       if (perKey.size >= 32) {
-        perKey.delete(perKey.keys().next().value!);
+        const oldest = perKey.keys().next().value;
+
+        if (oldest !== undefined) {
+          perKey.delete(oldest);
+        }
       }
 
       slot = { lock: Semaphore.makeUnsafe(1), entry: null };

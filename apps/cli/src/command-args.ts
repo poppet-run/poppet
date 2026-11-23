@@ -47,16 +47,22 @@ export const commandArgs = (
     let positionals = 0;
 
     while (offset < args.length) {
-      const token = args[offset]!;
+      const token = args[offset];
+
+      if (token === undefined) {
+        break;
+      }
+
       const option = /^--([^=]+)(=?)/.exec(token);
+      const optionName = option?.[1];
 
       if (token === "--" || token === "--help" || token === "-h") {
         return args;
       }
 
-      if (option !== null && spec.values.includes(option[1]!)) {
-        offset += option[2] ? 1 : 2;
-      } else if (option !== null && !option[2] && spec.flags.includes(option[1]!)) {
+      if (optionName !== undefined && spec.values.includes(optionName)) {
+        offset += option?.[2] ? 1 : 2;
+      } else if (optionName !== undefined && !option?.[2] && spec.flags.includes(optionName)) {
         offset++;
       } else if (positionals < spec.positionals) {
         if (token.startsWith("-")) {
@@ -73,7 +79,9 @@ export const commandArgs = (
     }
   }
 
-  if (offset >= args.length || ["--", "--help", "-h"].includes(args[offset]!)) {
+  const next = args[offset];
+
+  if (next === undefined || ["--", "--help", "-h"].includes(next)) {
     return args;
   }
 

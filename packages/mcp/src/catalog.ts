@@ -306,7 +306,11 @@ export const toolResult = (
   }
 
   const retained = content.slice(0, kept);
-  const remaining = content[kept]!;
+  const remaining = content[kept];
+
+  if (remaining === undefined) {
+    return serialize(retained);
+  }
 
   const next = fitPrefix(
     remaining,

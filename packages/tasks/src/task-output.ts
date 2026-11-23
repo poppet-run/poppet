@@ -47,17 +47,18 @@ export const listOutput = (rows: ReadonlyArray<Task>, limit: number) => {
     tasks.push(result);
   }
 
-  if (tasks.length === 0 && rows.length > 0) {
+  if (tasks.length === 0 && rows[0] !== undefined) {
     return bounded(
-      JSON.stringify({ tasks: [summary(rows[0]!)], nextCursor: rows[0]!.id, truncated: true }),
+      JSON.stringify({ tasks: [summary(rows[0])], nextCursor: rows[0].id, truncated: true }),
       limit,
     );
   }
 
   const truncated = rows.length > tasks.length;
+  const last = tasks.at(-1);
 
   return Effect.succeed(
-    JSON.stringify({ tasks, nextCursor: truncated ? tasks.at(-1)!.id : null, truncated }),
+    JSON.stringify({ tasks, nextCursor: truncated ? (last?.id ?? null) : null, truncated }),
   );
 };
 

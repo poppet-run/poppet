@@ -51,9 +51,6 @@ export default defineConfig({
     "unicorn/catch-error-name": ["error", { ignore: ["^cause$"] }],
     "unicorn/prefer-top-level-await": "off",
 
-    // Temporarily disabled during @cloudflare/oxlint-config migration; evaluate one rule per commit.
-    "typescript/no-non-null-assertion": "off",
-
     // Project anti-slop and Effect rules.
     "anti-slop/no-array-filter-map": "error",
     "anti-slop/no-reduce-accumulator-copy": "error",

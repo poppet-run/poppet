@@ -234,7 +234,7 @@ export const AgentLive = Layer.effect(
                     },
                   ],
                   options.runId,
-                  sessionTitle(text.trim() || files.references[0]!.name),
+                  sessionTitle(text.trim() || (files.references[0]?.name ?? "")),
                   files.attachments,
                 );
 

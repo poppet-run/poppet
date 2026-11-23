@@ -379,7 +379,10 @@ export const discordChannelLayer = (
               requireReady();
               const target = await guildChannel(conversationId, true);
 
-              if (target === null || (target.isThread() && !target.parentId)) {
+              const parentId =
+                target === null ? null : target.isThread() ? target.parentId : target.id;
+
+              if (!parentId) {
                 throw new ChannelError({
                   reason: "permission",
                   message:
@@ -387,7 +390,7 @@ export const discordChannelLayer = (
                 });
               }
 
-              return target.isThread() ? target.parentId! : target.id;
+              return parentId;
             },
             catch: discordFailure,
           }),

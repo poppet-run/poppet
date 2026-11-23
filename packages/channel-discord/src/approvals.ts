@@ -120,14 +120,23 @@ export const approvalActions = (
 
         reportError(null);
 
+        const requestId = match[2];
+        const parentId = target.isThread() ? target.parentId : target.id;
+
+        if (requestId === undefined || !parentId) {
+          await reply("This approval conversation is no longer available.");
+
+          return;
+        }
+
         if (
           !Queue.offerUnsafe(actions, {
-            requestId: match[2]!,
+            requestId,
             decision: match[1] === "approve" ? "approve" : "deny",
             source: {
               messageId: interaction.message.id,
               scopeId: settings.guildId,
-              parentId: target.isThread() ? target.parentId! : target.id,
+              parentId,
               conversationId: target.id,
               senderId: interaction.user.id,
               text: "",

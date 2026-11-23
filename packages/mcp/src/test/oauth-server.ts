@@ -192,15 +192,14 @@ export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
         return challenge();
       }
 
-      if (message.id === undefined) {
+      const id = message.id;
+
+      if (id === undefined) {
         return new Response(null, { status: 202 });
       }
 
       const reply = (result: Schema.JsonObject) =>
-        Response.json(
-          { jsonrpc: "2.0", id: message.id!, result },
-          { headers: { "mcp-session-id": "session" } },
-        );
+        Response.json({ jsonrpc: "2.0", id, result }, { headers: { "mcp-session-id": "session" } });
 
       if (message.method === "initialize") {
         return reply({

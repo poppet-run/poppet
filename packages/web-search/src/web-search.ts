@@ -75,7 +75,11 @@ export const webSearchResult = (
       const prefix =
         fitPrefix(text, (value) => Buffer.byteLength(JSON.stringify(value)) - 2 <= allowance) ?? "";
 
-      results[index]![field] = prefix;
+      const target = results[index];
+
+      if (target !== undefined) {
+        target[field] = prefix;
+      }
 
       if (prefix !== text) {
         truncated = true;

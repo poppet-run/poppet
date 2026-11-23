@@ -206,9 +206,12 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
       }
 
       const reply = /^\/(approve|deny) ([a-f0-9-]{36})$/.exec(source.text.trim());
-      const match = reply === null ? undefined : pending.get(reply[2]!);
+      const requestId = reply?.[2];
+      const match = requestId === undefined ? undefined : pending.get(requestId);
 
       if (
+        reply === null ||
+        requestId === undefined ||
         match === undefined ||
         match.conversation !== conversation ||
         source.conversationId !== conversation ||
@@ -217,7 +220,7 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
         return missing;
       }
 
-      return yield* settle(reply![2]!, match, source, reply![1] === "approve");
+      return yield* settle(requestId, match, source, reply[1] === "approve");
     });
 
   const answerAction = (action: ApprovalAction) =>

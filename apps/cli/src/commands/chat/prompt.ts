@@ -317,10 +317,10 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
 
       const attach = /^\/attach\s+(.+)$/.exec(text.trim());
 
-      if (attach !== null) {
-        attachments.push(attach[1]!);
+      if (attach?.[1] !== undefined) {
+        attachments.push(attach[1]);
         yield* presentation.attachments?.(attachments) ?? Effect.void;
-        yield* presentation.info(`\nAttached ${attach[1]!} to the next message.\n`);
+        yield* presentation.info(`\nAttached ${attach[1]} to the next message.\n`);
         continue;
       }
 

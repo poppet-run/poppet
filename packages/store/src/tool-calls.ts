@@ -174,8 +174,8 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
               reportAs(storeFailure),
             );
 
-            if (saved?.status === "completed") {
-              return saved.output!;
+            if (saved?.status === "completed" && saved.output !== null) {
+              return saved.output;
             }
 
             const { call } = yield* activeTool(runId, callId).pipe(reportAs(storeFailure));

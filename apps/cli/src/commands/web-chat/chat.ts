@@ -221,7 +221,9 @@ const makeWebChat = Effect.gen(function* () {
         });
       }
 
-      if (!input.sessionId && !config.model) {
+      const model = config.model;
+
+      if (!input.sessionId && !model) {
         return yield* new WebChatError({
           status: 409,
           message: "Set a model in Poppet's config.json first.",
@@ -232,7 +234,7 @@ const makeWebChat = Effect.gen(function* () {
         Effect.gen(function* () {
           const session = input.sessionId
             ? yield* store.session(input.sessionId)
-            : yield* store.createSession(config.provider, config.model!);
+            : yield* store.createSession(config.provider, model ?? "");
 
           if (!session) {
             return yield* new WebChatError({ status: 404, message: "Conversation not found." });

@@ -16,6 +16,6 @@ export class Skills extends Context.Service<
 const manualOnlyMarker = "<!-- manual-only -->";
 
 export const isManualOnly = (content: string) =>
-  content.split("\n", 1)[0]!.trimEnd() === manualOnlyMarker;
+  (content.split("\n", 1)[0] ?? "").trimEnd() === manualOnlyMarker;
 
 export const SkillsLive = Layer.effect(Skills, contextFiles);
