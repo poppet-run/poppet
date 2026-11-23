@@ -5,8 +5,7 @@ export default defineConfig({
   extends: [cloudflare],
   env: cloudflare.env,
   options: {
-    // Temporarily off until stale disables from previous categories are cleaned up.
-    reportUnusedDisableDirectives: "off",
+    reportUnusedDisableDirectives: "error",
     typeAware: true,
   },
   ignorePatterns: [

@@ -262,7 +262,6 @@ describe("web chat", () => {
             body: JSON.stringify({ key: "wrong".repeat(10) }),
           });
 
-          // eslint-disable-next-line no-await-in-loop -- Count sequential login attempts in the same window.
           const response = await handler(request, "127.0.0.1");
           expect(response.status).toBe(index < limit ? 401 : 429);
         }

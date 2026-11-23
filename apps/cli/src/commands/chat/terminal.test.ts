@@ -226,7 +226,6 @@ describe("ChatTerminal", () => {
         terminal.input(`\u0015/queue ${action}\r`);
 
         for (let index = 1; index < total; index++) {
-          // oxlint-disable-next-line no-await-in-loop
           await started[index]!.promise;
           expect(commands).toHaveLength(index + 1);
           release[index]!.resolve();

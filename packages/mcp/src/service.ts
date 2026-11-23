@@ -136,9 +136,7 @@ export const makeMCPLive = (toolBytes: number) =>
             ).catch(() => {});
           };
 
-          // eslint-disable-next-line unicorn/prefer-add-event-listener
           resources.client.onclose = disconnected;
-          // eslint-disable-next-line unicorn/prefer-add-event-listener
           resources.client.onerror = (error) => {
             if (
               !(error instanceof ReviewedAccountChanged || error instanceof InsufficientScopeError)

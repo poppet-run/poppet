@@ -361,12 +361,9 @@ export const slackChannelLayer = (settings: SlackSettings) =>
 
             if (target.ts) args.thread_ts = target.ts;
 
-            /* oxlint-disable unicorn/require-post-message-target-origin */
             const reply = await web.chat.postMessage(
               requestId ? { ...args, blocks: approvalBlocks(text, requestId) } : args,
             );
-
-            /* oxlint-enable unicorn/require-post-message-target-origin */
 
             if (!reply.ts) throw new Error("Missing message timestamp");
 

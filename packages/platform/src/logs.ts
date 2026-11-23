@@ -41,7 +41,6 @@ export const readWorkerLogs = async (log: string) => {
   let remaining = 65_536;
   let truncated = false;
 
-  /* eslint-disable no-await-in-loop */
   for (const path of [log, `${log}.1`, `${log}.2`, `${log}.3`]) {
     const handle = await openNoFollow(path);
 
@@ -81,7 +80,6 @@ export const readWorkerLogs = async (log: string) => {
       await handle.close();
     }
   }
-  /* eslint-enable no-await-in-loop */
 
   const text = Buffer.concat(chunks).toString("utf8");
 

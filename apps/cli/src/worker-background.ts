@@ -58,7 +58,6 @@ export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirect
 
               try {
                 for (;;) {
-                  // eslint-disable-next-line no-await-in-loop -- Stream chunks must be drained sequentially.
                   const { done, value } = await reader.read();
 
                   if (done) break;
