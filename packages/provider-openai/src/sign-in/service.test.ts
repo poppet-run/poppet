@@ -32,7 +32,7 @@ const callbackFor = (authorizationUrl: string) => {
 
 const startPasteSignIn = async (selected: Partial<SignInRequest> = {}) => {
   const printed = Promise.withResolvers<string>();
-  const errors: string[] = [];
+  const errors: Array<string> = [];
   const lines = Effect.runSync(Queue.unbounded<string>());
 
   const recording: Console.Console = {
@@ -40,14 +40,16 @@ const startPasteSignIn = async (selected: Partial<SignInRequest> = {}) => {
     log: (text: string) => {
       const link = text.split("\n").find((line) => line.startsWith("https://"));
 
-      if (link) printed.resolve(link);
+      if (link) {
+        printed.resolve(link);
+      }
     },
     error: (text: string) => {
       errors.push(text);
     },
   };
 
-  const opened: string[] = [];
+  const opened: Array<string> = [];
 
   const browser = makeBrowserSignIn((url) => Effect.sync(() => opened.push(url)));
 
@@ -99,7 +101,9 @@ describe("makeBrowserSignIn", () => {
 
       const callback = await opened.promise;
 
-      if (declined) callback.searchParams.set("error", "access_denied");
+      if (declined) {
+        callback.searchParams.set("error", "access_denied");
+      }
 
       const response = await fetch(callback);
       const body = await response.text();
@@ -115,7 +119,7 @@ describe("makeBrowserSignIn", () => {
   );
 
   test("when callbacks use a foreign host or repeat, rejects them and consumes the valid callback once", async () => {
-    const statuses: number[] = [];
+    const statuses: Array<number> = [];
     const opened = Promise.withResolvers<URL>();
 
     const browser = makeBrowserSignIn((url) =>
@@ -161,7 +165,7 @@ describe("makeBrowserSignIn", () => {
   });
 
   test("when callback state mismatches, ignores it so the valid callback can complete", async () => {
-    const statuses: number[] = [];
+    const statuses: Array<number> = [];
     const opened = Promise.withResolvers<URL>();
 
     const browser = makeBrowserSignIn((url) =>
@@ -195,14 +199,22 @@ describe("makeBrowserSignIn", () => {
           try: async (signal) => {
             const callback = callbackFor(url);
 
-            if (failure === "missing") callback.searchParams.delete("client_id");
+            if (failure === "missing") {
+              callback.searchParams.delete("client_id");
+            }
 
-            if (failure === "placeholder")
+            if (failure === "placeholder") {
               callback.searchParams.set("client_id", "dynamic_agent_client");
+            }
 
-            if (failure === "changed") callback.searchParams.set("client_id", "oaiapp_another");
+            if (failure === "changed") {
+              callback.searchParams.set("client_id", "oaiapp_another");
+            }
 
-            if (failure === "duplicate") callback.searchParams.append("client_id", "oaiapp_test");
+            if (failure === "duplicate") {
+              callback.searchParams.append("client_id", "oaiapp_test");
+            }
+
             await fetch(callback, { signal });
           },
           catch: browserError,
@@ -266,7 +278,10 @@ describe("makeBrowserSignIn", () => {
     const foreign = new URL(signIn.callback);
     foreign.port = "1";
 
-    for (const line of ["", "not a url", forged.toString(), foreign.toString()]) signIn.paste(line);
+    for (const line of ["", "not a url", forged.toString(), foreign.toString()]) {
+      signIn.paste(line);
+    }
+
     signIn.paste(`  ${signIn.callback.toString()}  `);
 
     expect(await signIn.result).toBe("oaiapp_test");

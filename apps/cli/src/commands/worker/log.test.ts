@@ -23,7 +23,10 @@ describe("openWorkerLog", () => {
     let log = openWorkerLog(directory);
 
     try {
-      for (let index = 0; index < 5; index++) log.write(Buffer.alloc(workerLogBytes, 65 + index));
+      for (let index = 0; index < 5; index++) {
+        log.write(Buffer.alloc(workerLogBytes, 65 + index));
+      }
+
       log.close();
       expect((await readdir(directory)).toSorted()).toEqual([
         "worker.log",
@@ -85,10 +88,15 @@ describe("openWorkerLog", () => {
       const archive = join(directory, "worker.log.1");
 
       try {
-        if (kind === "symlink") await symlink(target, archive);
-        else if (kind === "hardlink") await link(target, archive);
-        else if (kind === "directory") await mkdir(archive);
-        else await chmod(directory, 0o755);
+        if (kind === "symlink") {
+          await symlink(target, archive);
+        } else if (kind === "hardlink") {
+          await link(target, archive);
+        } else if (kind === "directory") {
+          await mkdir(archive);
+        } else {
+          await chmod(directory, 0o755);
+        }
 
         expect(() => openWorkerLog(directory)).toThrow();
         expect(await readFile(target, "utf8")).toBe("retain this");

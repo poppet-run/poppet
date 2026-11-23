@@ -19,7 +19,9 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       const naming = channel.naming;
       const destination = entry.conversationId;
 
-      if (destination === null || !authorized(channel.policy, entry.message)) return;
+      if (destination === null || !authorized(channel.policy, entry.message)) {
+        return;
+      }
 
       const binding = yield* repo.namedBinding(channel.id, account, scope, destination);
 
@@ -29,8 +31,9 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
         binding.namingDisabled ||
         binding.managedName === null ||
         binding.creationMessageId === null
-      )
+      ) {
         return;
+      }
 
       const key = {
         adapter: channel.id,
@@ -56,12 +59,17 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       const title = session?.title;
       yield* repo.nameAttempted(key, title ?? null);
 
-      if (!title || naming.sanitize(title) === current) return;
+      if (!title || naming.sanitize(title) === current) {
+        return;
+      }
+
       const desired = naming.sanitize(title);
 
       const pending = yield* repo.namePending(key, desired);
 
-      if (!pending) return;
+      if (!pending) {
+        return;
+      }
 
       const result = yield* naming
         .rename(entry.message, destination, current, desired)
@@ -70,8 +78,11 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       if (Result.isSuccess(result)) {
         const confirmed = result.success;
 
-        if (confirmed === null) yield* repo.disableNaming(key);
-        else yield* repo.nameConfirmed(key, confirmed);
+        if (confirmed === null) {
+          yield* repo.disableNaming(key);
+        } else {
+          yield* repo.nameConfirmed(key, confirmed);
+        }
 
         return;
       }
@@ -79,10 +90,13 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       const observed = yield* naming.current(entry.message, destination).pipe(Effect.result);
 
       if (Result.isSuccess(observed)) {
-        if (observed.success === desired) yield* repo.nameConfirmed(key, observed.success);
-        else if (observed.success !== current || definitiveNamingFailure(result.failure))
+        if (observed.success === desired) {
+          yield* repo.nameConfirmed(key, observed.success);
+        } else if (observed.success !== current || definitiveNamingFailure(result.failure)) {
           yield* repo.disableNaming(key);
-        else yield* repo.clearPendingName(key);
+        } else {
+          yield* repo.clearPendingName(key);
+        }
       } else if (definitiveNamingFailure(result.failure)) {
         yield* repo.disableNaming(key);
       }
@@ -114,7 +128,10 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
     );
 
     for (const entry of entries) {
-      if (entry.sessionId === null) continue;
+      if (entry.sessionId === null) {
+        continue;
+      }
+
       yield* agent.nameSession(entry.sessionId);
       yield* syncName(account, entry);
     }
@@ -125,15 +142,19 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       const account = yield* channel.accountId;
       const entry = yield* repo.namingEntry(channel.id, account, scope, destination);
 
-      if (!entry) return;
+      if (!entry) {
+        return;
+      }
 
       const binding = yield* repo.namedBinding(channel.id, account, scope, destination);
 
-      if (!binding || binding.namingDisabled || binding.managedName === null) return;
+      if (!binding || binding.namingDisabled || binding.managedName === null) {
+        return;
+      }
 
       const current = yield* channel.naming.current(entry.message, destination);
 
-      if (current !== binding.managedName && current !== binding.pendingName)
+      if (current !== binding.managedName && current !== binding.pendingName) {
         yield* repo.disableNaming({
           adapter: channel.id,
           account,
@@ -141,6 +162,7 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
           conversation: destination,
           session: binding.sessionId,
         });
+      }
     }).pipe(Effect.catch(() => Effect.void));
 
   return { nameNext, externalNameChange };

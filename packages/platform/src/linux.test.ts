@@ -11,7 +11,7 @@ import type { SystemctlRun } from "#src/linux";
 const ok = (stdout = ""): SystemctlRun => ({ code: 0, stdout, stderr: "" });
 
 const fakeSystemd = () => {
-  const calls: ReadonlyArray<string>[] = [];
+  const calls: Array<ReadonlyArray<string>> = [];
   const state = { loaded: false, active: false };
 
   const systemctl = async (args: ReadonlyArray<string>) => {
@@ -206,7 +206,7 @@ describe("manageWorker", () => {
     try {
       await Effect.runPromise(manageWorker("install", launch, home, systemctl));
       const original = await readFile(paths.file, "utf8");
-      const calls: ReadonlyArray<string>[] = [];
+      const calls: Array<ReadonlyArray<string>> = [];
 
       const failed = async (args: ReadonlyArray<string>) => {
         calls.push(args);
@@ -304,7 +304,10 @@ describe("manageWorker", () => {
     } finally {
       release.resolve();
 
-      if (stopped !== null) await stopped;
+      if (stopped !== null) {
+        await stopped;
+      }
+
       await Effect.runPromise(Fiber.interrupt(owner));
       await rm(home, { recursive: true, force: true });
     }

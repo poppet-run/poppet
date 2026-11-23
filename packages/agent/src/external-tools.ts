@@ -58,12 +58,14 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
     const prepared = yield* entry.prepare(call.arguments);
     const review = entry.review;
 
-    if (review === undefined) return prepared;
+    if (review === undefined) {
+      return prepared;
+    }
 
     return {
       authorize: (record) =>
         Effect.gen(function* () {
-          if (context.hasUntrustedContent())
+          if (context.hasUntrustedContent()) {
             return yield* Effect.fail(
               new AgentError({
                 reason: "mcp-denied",
@@ -71,6 +73,7 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
                   "Reviewed MCP tools are disabled after untrusted content enters this run. Ask for the action and target in a fresh owner message.",
               }),
             );
+          }
 
           const args = prepared.validatedArguments;
 
@@ -86,7 +89,7 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
           if (
             args === undefined ||
             Buffer.byteLength(exactInvocation) > 8192 ||
-            Buffer.byteLength(JSON.stringify(context.text)) > 32768
+            Buffer.byteLength(JSON.stringify(context.text)) > 32_768
           ) {
             const reason =
               args === undefined
@@ -115,24 +118,26 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
 
           yield* record(result);
 
-          if (result.decision === "deny")
+          if (result.decision === "deny") {
             return yield* Effect.fail(
               new AgentError({
                 reason: "mcp-denied",
                 message: `MCP action denied: ${result.reason}. Nothing was executed.`,
               }),
             );
+          }
 
           if (result.decision === "needs_approval") {
             const approve = context.approveAction;
 
-            if (approve === null || context.origin === "scheduled")
+            if (approve === null || context.origin === "scheduled") {
               return yield* Effect.fail(
                 new AgentError({
                   reason: "mcp-approval-required",
                   message: `MCP action needs approval: ${result.reason}. Nothing was executed. ${context.origin === "scheduled" ? "This occurrence has stopped." : "Request this operation in Discord or Slack to approve it."}`,
                 }),
               );
+            }
 
             const approved = yield* approve(
               {
@@ -145,13 +150,14 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
               (approval) => record({ ...result, approval }),
             );
 
-            if (!approved)
+            if (!approved) {
               return yield* Effect.fail(
                 new AgentError({
                   reason: "mcp-denied",
                   message: "The owner did not approve this MCP action. Nothing was executed.",
                 }),
               );
+            }
           }
 
           return {

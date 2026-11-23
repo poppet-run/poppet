@@ -19,7 +19,9 @@ const id = (
   });
 
 export const promptSlackSetup = Effect.gen(function* () {
-  if (!(yield* Prompt.Confirm({ message: "Configure Slack?", initial: false }))) return null;
+  if (!(yield* Prompt.Confirm({ message: "Configure Slack?", initial: false }))) {
+    return null;
+  }
 
   const { dataDirectory } = yield* ChannelEnvironment;
   const saved = yield* loadSlackSettings(dataDirectory);

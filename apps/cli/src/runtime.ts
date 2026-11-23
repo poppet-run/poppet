@@ -43,13 +43,19 @@ export const findProvider = (
 export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) => {
   const first = registered[0];
 
-  if (first === undefined) throw new Error("Register at least one provider.");
+  if (first === undefined) {
+    throw new Error("Register at least one provider.");
+  }
+
   const ids = new Set<ProviderId>();
 
   for (const entry of registered) {
     Schema.decodeUnknownSync(ProviderId)(entry.id);
 
-    if (ids.has(entry.id)) throw new Error(`Duplicate provider registration: ${entry.id}`);
+    if (ids.has(entry.id)) {
+      throw new Error(`Duplicate provider registration: ${entry.id}`);
+    }
+
     ids.add(entry.id);
   }
 

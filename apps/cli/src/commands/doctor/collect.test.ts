@@ -89,7 +89,9 @@ describe("doctor", () => {
     for (const entry of report.checks) {
       expect(normalized).toContain(entry.message);
 
-      if (entry.nextStep !== null) expect(normalized).toContain(`Next: ${entry.nextStep}`);
+      if (entry.nextStep !== null) {
+        expect(normalized).toContain(`Next: ${entry.nextStep}`);
+      }
     }
 
     expect(plain.split("\n").every((line) => line.length <= 64)).toBe(true);
@@ -276,9 +278,13 @@ describe("doctor", () => {
               yield* serveWorker(workerSocketPath(directory), (request) => {
                 expect(new URL(request.url).pathname).toBe("/v1/doctor");
 
-                if (mode === "old") return Effect.succeed(new Response("secret", { status: 404 }));
+                if (mode === "old") {
+                  return Effect.succeed(new Response("secret", { status: 404 }));
+                }
 
-                if (mode === "oversized") return Effect.succeed(new Response("s".repeat(40000)));
+                if (mode === "oversized") {
+                  return Effect.succeed(new Response("s".repeat(40_000)));
+                }
 
                 return Effect.succeed(
                   Response.json({
@@ -303,7 +309,10 @@ describe("doctor", () => {
         if (mode === "healthy" || mode === "secret") {
           expect(report.exitCode).toBe(0);
           expect(check(report, "tasks").observedAt).toBe(1234);
-        } else expect(report.exitCode).toBe(2);
+        } else {
+          expect(report.exitCode).toBe(2);
+        }
+
         expect(JSON.stringify(report) + renderDoctor(report)).not.toContain("must-not-appear");
       } finally {
         await rm(directory, { recursive: true, force: true });

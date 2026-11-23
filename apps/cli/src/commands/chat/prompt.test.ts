@@ -44,7 +44,9 @@ describe("readChatLine", () => {
             transcript += decoder.decode(data, { stream: true });
             const count = transcript.split("You> ").length - 1;
 
-            while (prompts < count && prompts < input.length) terminal.write(input[prompts++]!);
+            while (prompts < count && prompts < input.length) {
+              terminal.write(input[prompts++]!);
+            }
           },
           exit: () => finished.resolve(transcript),
         },
@@ -72,11 +74,11 @@ describe("readChatLine", () => {
   });
 });
 
-const fixture = (lines: (string | null)[]) => {
+const fixture = (lines: Array<string | null>) => {
   let reads = 0;
-  const commands: ChatCommand[] = [];
-  const errors: string[] = [];
-  const messages: string[] = [];
+  const commands: Array<ChatCommand> = [];
+  const errors: Array<string> = [];
+  const messages: Array<string> = [];
 
   const read = Effect.sync(() => {
     reads++;
@@ -118,10 +120,11 @@ describe.concurrent("interactiveChat", () => {
             state.commands.push(command);
             yield* acknowledge("saved-session");
 
-            if (state.commands.length === 1)
+            if (state.commands.length === 1) {
               return yield* Effect.fail(
                 new WorkerRequestError({ message: "Lost response. Not retried." }),
               );
+            }
           }),
         state.read,
       ),

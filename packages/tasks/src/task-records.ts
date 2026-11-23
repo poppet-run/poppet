@@ -103,12 +103,13 @@ export const taskRecords = (sql: SqlClient.SqlClient) => {
       const job = yield* task(id);
       const pending = yield* activeOccurrence(id, "pending");
 
-      if (pending !== null)
+      if (pending !== null) {
         return {
           occurrenceId: pending.id,
           scheduledAt: pending.scheduledAt,
           availableAt: pending.availableAt,
         } satisfies TaskTarget;
+      }
 
       return job.nextAt === null
         ? null

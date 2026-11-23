@@ -59,19 +59,29 @@ const startsWith = (body: Uint8Array, bytes: ReadonlyArray<number>, offset = 0) 
 const ascii = (text: string) => [...text].map((character) => character.charCodeAt(0));
 
 const imageType = (body: Uint8Array): AttachmentType | null => {
-  if (startsWith(body, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
+  if (startsWith(body, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+    return "image/png";
+  }
 
-  if (startsWith(body, [0xff, 0xd8, 0xff])) return "image/jpeg";
+  if (startsWith(body, [0xff, 0xd8, 0xff])) {
+    return "image/jpeg";
+  }
 
-  if (startsWith(body, ascii("GIF87a")) || startsWith(body, ascii("GIF89a"))) return "image/gif";
+  if (startsWith(body, ascii("GIF87a")) || startsWith(body, ascii("GIF89a"))) {
+    return "image/gif";
+  }
 
-  if (startsWith(body, ascii("RIFF")) && startsWith(body, ascii("WEBP"), 8)) return "image/webp";
+  if (startsWith(body, ascii("RIFF")) && startsWith(body, ascii("WEBP"), 8)) {
+    return "image/webp";
+  }
 
   return null;
 };
 
 const isText = (body: Uint8Array) => {
-  if (body.includes(0)) return false;
+  if (body.includes(0)) {
+    return false;
+  }
 
   try {
     new TextDecoder("utf-8", { fatal: true }).decode(body);
@@ -106,32 +116,38 @@ export const identifyAttachment = (input: AttachmentInput, policy: ChatPolicy) =
   const image = imageType(input.body);
 
   if (image !== null) {
-    if (input.body.length > policy.imageBytes)
+    if (input.body.length > policy.imageBytes) {
       throw rejected(name, `images are limited to ${readableSize(policy.imageBytes)}.`);
+    }
 
     return { name, mediaType: image };
   }
 
-  if (!textExtensions.has(extname(name).toLowerCase()))
+  if (!textExtensions.has(extname(name).toLowerCase())) {
     throw rejected(
       name,
       "only PNG, JPEG, WebP, and GIF images and plain-text files are supported.",
     );
+  }
 
-  if (input.body.length > policy.textFileBytes)
+  if (input.body.length > policy.textFileBytes) {
     throw rejected(name, `text files are limited to ${readableSize(policy.textFileBytes)}.`);
+  }
 
-  if (!isText(input.body)) throw rejected(name, "the file is not UTF-8 text.");
+  if (!isText(input.body)) {
+    throw rejected(name, "the file is not UTF-8 text.");
+  }
 
   return { name, mediaType: "text/plain" as const };
 };
 
 export const prepareAttachments = (inputs: ReadonlyArray<AttachmentInput>, policy: ChatPolicy) => {
-  if (inputs.length > policy.attachmentsPerMessage)
+  if (inputs.length > policy.attachmentsPerMessage) {
     throw new AgentError({
       reason: "attachment",
       message: `Attach at most ${policy.attachmentsPerMessage} files to one message.`,
     });
+  }
 
   const attachments = inputs.map((input) => ({
     id: randomUUID(),

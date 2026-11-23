@@ -31,11 +31,17 @@ export const requestWorker = async (
   signal: AbortSignal,
 ) => {
   const info = await lstat(path).catch((cause: unknown) => {
-    if (isMissingFile(cause)) return null;
+    if (isMissingFile(cause)) {
+      return null;
+    }
+
     throw cause;
   });
 
-  if (info === null) return null;
+  if (info === null) {
+    return null;
+  }
+
   const directory = await lstat(dirname(path));
 
   if (
@@ -46,10 +52,11 @@ export const requestWorker = async (
     directory.isSymbolicLink() ||
     directory.uid !== process.getuid?.() ||
     (directory.mode & 0o077) !== 0
-  )
+  ) {
     throw new WorkerRequestError({
       message: "The worker socket or its directory is not protected.",
     });
+  }
 
   const response = await fetch(`http://localhost${route}`, {
     unix: path,
@@ -58,15 +65,19 @@ export const requestWorker = async (
     headers: { "content-type": "application/json" },
     signal,
   }).catch((cause: unknown) => {
-    if (Schema.is(UnavailableSocket)(cause)) return null;
+    if (Schema.is(UnavailableSocket)(cause)) {
+      return null;
+    }
+
     throw cause;
   });
 
-  if (response?.status === 413)
+  if (response?.status === 413) {
     throw new WorkerRequestError({
       message:
         "The worker request exceeds the 32 MiB size limit. Shorten it; the command was not retried.",
     });
+  }
 
   return response;
 };
@@ -92,16 +103,22 @@ export const requestWorkerReply = (
         timeout === undefined ? signal : AbortSignal.any([signal, AbortSignal.timeout(timeout)]),
       );
 
-      if (response === null) return null;
+      if (response === null) {
+        return null;
+      }
 
-      if (response.status === 404)
+      if (response.status === 404) {
         throw new WorkerRequestError({
           message:
             "The worker rejected this command. Restart the worker to load the current protocol. The command was not retried.",
         });
+      }
+
       const reply = Schema.decodeUnknownSync(Reply)(await response.json());
 
-      if (!reply.ok) throw new WorkerRequestError({ message: reply.message });
+      if (!reply.ok) {
+        throw new WorkerRequestError({ message: reply.message });
+      }
 
       return { value: reply.value };
     },
@@ -147,7 +164,9 @@ const scopedBody = (
         if (chunk.done) {
           controller.close();
           await finish(Exit.void);
-        } else controller.enqueue(chunk.value);
+        } else {
+          controller.enqueue(chunk.value);
+        }
       } catch (cause) {
         controller.error(cause);
         await finish(Exit.die(cause));
@@ -192,20 +211,25 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
           });
 
           const info = await lstat(path).catch((cause: unknown) => {
-            if (isMissingFile(cause)) return null;
+            if (isMissingFile(cause)) {
+              return null;
+            }
+
             throw cause;
           });
 
           if (info) {
-            if (!info.isSocket())
+            if (!info.isSocket()) {
               throw new WorkerRequestError({
                 message: "Refusing to replace a non-socket worker endpoint.",
               });
+            }
 
-            if (await isSocketLive(path))
+            if (await isSocketLive(path)) {
               throw new WorkerRequestError({
                 message: "Another worker is already listening on this socket.",
               });
+            }
 
             await unlink(path);
           }
@@ -217,20 +241,24 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
               listener.timeout(request, 10);
 
               const reply = Effect.gen(function* () {
-                if (request.method !== "POST") return new Response("Not found", { status: 404 });
+                if (request.method !== "POST") {
+                  return new Response("Not found", { status: 404 });
+                }
 
                 const body = yield* decodeRequestBody(request);
 
-                if (Option.isNone(body))
+                if (Option.isNone(body)) {
                   return Response.json(
                     { ok: false, message: "Invalid or timed-out request body." },
                     { status: 400, headers: { connection: "close" } },
                   );
+                }
 
                 const response = yield* handle(request, body.value);
 
-                if (response.headers.get("content-type") === "application/x-ndjson")
+                if (response.headers.get("content-type") === "application/x-ndjson") {
                   listener.timeout(request, 0);
+                }
 
                 return response;
               });
@@ -271,8 +299,11 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
                 return response;
               }
 
-              if (request.signal.aborted) abort();
-              else request.signal.addEventListener("abort", abort, { once: true });
+              if (request.signal.aborted) {
+                abort();
+              } else {
+                request.signal.addEventListener("abort", abort, { once: true });
+              }
 
               return new Response(
                 scopedBody(response.body, (outcome) => {
@@ -314,13 +345,19 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
         await server.stop(true);
 
         const current = await lstat(path).catch((cause: unknown) => {
-          if (isMissingFile(cause)) return null;
+          if (isMissingFile(cause)) {
+            return null;
+          }
+
           throw cause;
         });
 
-        if (current !== null && current.dev === bound.dev && current.ino === bound.ino)
+        if (current !== null && current.dev === bound.dev && current.ino === bound.ino) {
           await unlink(path).catch((cause: unknown) => {
-            if (!isMissingFile(cause)) throw cause;
+            if (!isMissingFile(cause)) {
+              throw cause;
+            }
           });
+        }
       }),
   );

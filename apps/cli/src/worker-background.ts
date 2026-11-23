@@ -42,7 +42,9 @@ export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirect
             log = openWorkerLog(directory);
             const activeLog = log;
 
-            if (pendingSignal !== null) return pendingSignal === "SIGINT" ? 130 : 143;
+            if (pendingSignal !== null) {
+              return pendingSignal === "SIGINT" ? 130 : 143;
+            }
 
             child = Bun.spawn([...command], {
               stdin: "ignore",
@@ -60,7 +62,9 @@ export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirect
                 for (;;) {
                   const { done, value } = await reader.read();
 
-                  if (done) break;
+                  if (done) {
+                    break;
+                  }
 
                   if (!failed) {
                     try {
@@ -82,7 +86,9 @@ export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirect
             try {
               const [exitCode] = await Promise.all([child.exited, Promise.all(copies)]);
 
-              if (failed) throw writeError;
+              if (failed) {
+                throw writeError;
+              }
 
               return exitCode;
             } catch (error) {
@@ -107,7 +113,10 @@ if (import.meta.main) {
   try {
     const directory = process.env.POPPET_DATA_DIR;
 
-    if (!directory) throw new Error("The background worker requires POPPET_DATA_DIR.");
+    if (!directory) {
+      throw new Error("The background worker requires POPPET_DATA_DIR.");
+    }
+
     process.exitCode = await runLoggedWorker(
       [
         process.execPath,

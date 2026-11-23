@@ -50,7 +50,9 @@ export const discord = {
     const { dataDirectory } = yield* ChannelEnvironment;
     const settings = yield* loadDiscordSettings(dataDirectory);
 
-    if (settings === null) return null;
+    if (settings === null) {
+      return null;
+    }
 
     return Layer.unwrap(
       Effect.tryPromise({

@@ -17,7 +17,7 @@ const download = (
   attachment: IncomingAttachment = file,
   maxBytes = 1024 * 1024,
 ) => {
-  const requests: { url: string; redirect: RequestInit["redirect"] }[] = [];
+  const requests: Array<{ url: string; redirect: RequestInit["redirect"] }> = [];
 
   const result = Effect.runPromise(
     downloadAttachment(async (url, init) => {

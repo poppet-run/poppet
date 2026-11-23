@@ -12,7 +12,7 @@ export const readBounded = async (
   };
 
   signal?.addEventListener("abort", abort, { once: true });
-  const chunks: Uint8Array[] = [];
+  const chunks: Array<Uint8Array> = [];
   let bytes = 0;
 
   try {
@@ -21,10 +21,16 @@ export const readBounded = async (
 
       signal?.throwIfAborted();
 
-      if (item.done) break;
+      if (item.done) {
+        break;
+      }
+
       bytes += item.value.byteLength;
 
-      if (bytes > maxBytes) throw tooLarge();
+      if (bytes > maxBytes) {
+        throw tooLarge();
+      }
+
       chunks.push(item.value);
     }
 
@@ -32,7 +38,10 @@ export const readBounded = async (
   } finally {
     signal?.removeEventListener("abort", abort);
 
-    if (!signal?.aborted) await reader.cancel().catch(() => undefined);
+    if (!signal?.aborted) {
+      await reader.cancel().catch(() => undefined);
+    }
+
     reader.releaseLock();
   }
 };
@@ -75,7 +84,9 @@ export const runBounded = async (
   }, timeout);
 
   try {
-    if (signal.aborted) abort();
+    if (signal.aborted) {
+      abort();
+    }
 
     const [stdout, , code] = await Promise.all([
       readBoundedText(child.stdout, maxBytes, tooLarge),

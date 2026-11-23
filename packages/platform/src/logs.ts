@@ -7,12 +7,16 @@ import { WorkerError } from "#src/contract";
 
 export const regularFileInfo = async (path: string) => {
   const info = await lstat(path).catch((cause: unknown) => {
-    if (isMissingFile(cause)) return null;
+    if (isMissingFile(cause)) {
+      return null;
+    }
+
     throw cause;
   });
 
-  if (info !== null && (!info.isFile() || info.isSymbolicLink()))
+  if (info !== null && (!info.isFile() || info.isSymbolicLink())) {
     throw new WorkerError({ message: `Expected a regular file at ${path}.` });
+  }
 
   return info;
 };
@@ -36,7 +40,7 @@ export const prepareWorkerLog = async (directory: string, log: string) => {
 };
 
 export const readWorkerLogs = async (log: string) => {
-  const chunks: Buffer[] = [];
+  const chunks: Array<Buffer> = [];
   const seen = new Set<string>();
   let remaining = 65_536;
   let truncated = false;
@@ -44,20 +48,30 @@ export const readWorkerLogs = async (log: string) => {
   for (const path of [log, `${log}.1`, `${log}.2`, `${log}.3`]) {
     const handle = await openNoFollow(path);
 
-    if (handle === null) continue;
+    if (handle === null) {
+      continue;
+    }
 
     try {
       const info = await handle.stat();
 
-      if (!info.isFile() || info.nlink !== 1)
+      if (!info.isFile() || info.nlink !== 1) {
         throw new WorkerError({ message: "Expected a regular worker log without links." });
+      }
+
       const identity = `${info.dev}:${info.ino}`;
 
-      if (seen.has(identity)) continue;
+      if (seen.has(identity)) {
+        continue;
+      }
+
       seen.add(identity);
 
       if (remaining === 0) {
-        if (info.size > 0) truncated = true;
+        if (info.size > 0) {
+          truncated = true;
+        }
+
         break;
       }
 
@@ -69,7 +83,10 @@ export const readWorkerLogs = async (log: string) => {
       while (read < target) {
         const { bytesRead } = await handle.read(buffer, read, target - read, start + read);
 
-        if (bytesRead === 0) break;
+        if (bytesRead === 0) {
+          break;
+        }
+
         read += bytesRead;
       }
 

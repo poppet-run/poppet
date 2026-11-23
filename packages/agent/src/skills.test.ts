@@ -99,22 +99,30 @@ describe.concurrent("Skills", () => {
         if (kind === "root-link") {
           await rm(state.root, { recursive: true });
           await symlink(outside, state.root);
-        } else if (kind === "directory-link") await symlink(outside, join(state.root, "review"));
-        else {
+        } else if (kind === "directory-link") {
+          await symlink(outside, join(state.root, "review"));
+        } else {
           await mkdir(join(state.root, "review"));
           const target = join(state.root, "review", "SKILL.md");
 
-          if (kind === "file-link") await symlink(join(outside, "SKILL.md"), target);
+          if (kind === "file-link") {
+            await symlink(join(outside, "SKILL.md"), target);
+          }
 
-          if (kind === "hard-link") await link(join(outside, "SKILL.md"), target);
+          if (kind === "hard-link") {
+            await link(join(outside, "SKILL.md"), target);
+          }
 
-          if (kind === "directory-file") await mkdir(target);
+          if (kind === "directory-file") {
+            await mkdir(target);
+          }
         }
 
         await expect(state.load("review")).rejects.toMatchObject({ reason: "invalid-request" });
 
-        if (kind === "root-link")
+        if (kind === "root-link") {
           await expect(state.list()).rejects.toMatchObject({ reason: "invalid-request" });
+        }
       } finally {
         await state.close();
       }

@@ -21,8 +21,10 @@ export const taskResponse = <E extends { readonly message: string }>(
       Schema.decodeUnknownOption(TaskCommand, { onExcessProperty: "error" })(body),
     );
 
-    if (command === null)
+    if (command === null) {
       return Response.json({ ok: false, message: "Invalid task command." }, { status: 400 });
+    }
+
     const operation = handle(command);
 
     return yield* workerReply(

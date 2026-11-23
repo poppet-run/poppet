@@ -84,9 +84,14 @@ describe("runLoggedWorker", () => {
               (await Bun.file(path).exists()) ? readFile(path, "utf8") : "",
             );
 
-            if (content.includes("Worker running.")) return true;
+            if (content.includes("Worker running.")) {
+              return true;
+            }
 
-            if (child.exitCode !== null) return false;
+            if (child.exitCode !== null) {
+              return false;
+            }
+
             yield* Effect.sleep("10 millis");
           }
 

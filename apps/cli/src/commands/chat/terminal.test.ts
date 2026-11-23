@@ -106,11 +106,11 @@ describe("ChatTerminal", () => {
 
   test("service diagnostics enter the conversation without writing over the input cursor", () => {
     const { terminal, frame, screen } = fixture(true);
-    const directWrites: unknown[][] = [];
+    const directWrites: Array<Array<unknown>> = [];
 
     const base = {
       ...console,
-      error: (...values: unknown[]) => {
+      error: (...values: Array<unknown>) => {
         directWrites.push(values);
       },
     };
@@ -178,7 +178,7 @@ describe("ChatTerminal", () => {
       const started = Array.from({ length: 4 }, () => Promise.withResolvers<void>());
       const release = Array.from({ length: 4 }, () => Promise.withResolvers<void>());
       const failed = Promise.withResolvers<void>();
-      const commands: ChatCommand[] = [];
+      const commands: Array<ChatCommand> = [];
       const total = action === "retry" ? 4 : 3;
 
       const program = interactiveChat(
@@ -191,8 +191,10 @@ describe("ChatTerminal", () => {
             started[index]!.resolve();
             yield* Effect.promise(() => release[index]!.promise);
 
-            if (index === 0)
+            if (index === 0) {
               return yield* Effect.fail(new WorkerRequestError({ message: "Try again later" }));
+            }
+
             yield* terminal.answer(`Answer ${index}`);
           }),
         Effect.suspend(() => (commands.length === total ? Effect.succeed(null) : terminal.read)),
@@ -536,7 +538,9 @@ test.each(["cancel", "exit", "eof", "empty", "raw mode restore error"])(
       if (mode === "empty") {
         expect(scrollback).toContain("No session was created.");
         expect(scrollback).not.toContain("poppet chat interactive");
-      } else expect(scrollback).toContain("poppet chat interactive saved-session");
+      } else {
+        expect(scrollback).toContain("poppet chat interactive saved-session");
+      }
     } catch (error) {
       process.stderr.write(`${transcript}\n`);
       throw error;

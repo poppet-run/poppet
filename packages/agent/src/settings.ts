@@ -30,12 +30,12 @@ export class ChatSettings extends Context.Service<ChatSettings, ChatPolicy>()(
 export const defaultPolicy: ChatPolicy = {
   logReasoning: false,
   logTimings: false,
-  contextBytes: 262144,
+  contextBytes: 262_144,
   historyTurns: 20,
   outputTokens: 2048,
   modelTurns: 16,
   toolCalls: 16,
-  toolBytes: 16384,
+  toolBytes: 16_384,
   soulBytes: 8192,
   profileBytes: 8192,
   factsBytes: savedFactsBytes,
@@ -60,7 +60,7 @@ export const ChatSettingsLive = Layer.effect(
           Config.withDefault(defaultPolicy.logReasoning),
         ),
         logTimings: Config.Boolean("logTimings").pipe(Config.withDefault(defaultPolicy.logTimings)),
-        outputTokens: Config.schema(bounded(32768), "outputTokens").pipe(
+        outputTokens: Config.schema(bounded(32_768), "outputTokens").pipe(
           Config.withDefault(defaultPolicy.outputTokens),
         ),
         runDeadlineSeconds: Config.schema(

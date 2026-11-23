@@ -34,13 +34,15 @@ const fixture = () => {
   const login = spyOn(client, "login").mockImplementation(async () => {
     await client.guilds.fetch("500");
 
-    if (client.isReady()) client.emit(Events.ClientReady, client);
+    if (client.isReady()) {
+      client.emit(Events.ClientReady, client);
+    }
 
     return "logged-in";
   });
 
   const destroy = spyOn(client, "destroy").mockResolvedValue();
-  const operations: string[] = [];
+  const operations: Array<string> = [];
 
   const prompt = {
     id: "600",
@@ -59,9 +61,11 @@ const fixture = () => {
   const get = spyOn(client.rest, "get").mockImplementation(async (route) => {
     operations.push(`GET ${route}`);
 
-    if (route === "/guilds/500") return { id: "500", name: "Test", roles: [], members: [] };
+    if (route === "/guilds/500") {
+      return { id: "500", name: "Test", roles: [], members: [] };
+    }
 
-    if (route === "/channels/400")
+    if (route === "/channels/400") {
       return {
         id: "400",
         guild_id: "500",
@@ -75,19 +79,30 @@ const fixture = () => {
           archive_timestamp: new Date().toISOString(),
         },
       };
+    }
 
-    if (route === "/channels/400/messages/600") return prompt;
+    if (route === "/channels/400/messages/600") {
+      return prompt;
+    }
+
     throw new Error(`Unexpected GET ${route}`);
   });
 
   const post = spyOn(client.rest, "post").mockImplementation(async (route) => {
     operations.push(`POST ${route}`);
 
-    if (route === "/channels/400/messages") return prompt;
+    if (route === "/channels/400/messages") {
+      return prompt;
+    }
 
-    if (route === "/interactions/7008/token/callback") throw new Error("Lost acknowledgement");
+    if (route === "/interactions/7008/token/callback") {
+      throw new Error("Lost acknowledgement");
+    }
 
-    if (route.startsWith("/interactions/")) return {};
+    if (route.startsWith("/interactions/")) {
+      return {};
+    }
+
     throw new Error(`Unexpected POST ${route}`);
   });
 
@@ -103,7 +118,7 @@ const fixture = () => {
       readonly guild_id?: string;
       readonly member?: {
         readonly user: typeof owner;
-        readonly roles: readonly string[];
+        readonly roles: ReadonlyArray<string>;
         readonly permissions: string;
       };
       readonly message?: typeof prompt & { readonly webhook_id?: string };
@@ -250,8 +265,9 @@ describe("Discord approval components", () => {
             ["7004", { message: { ...f.prompt, author: owner } }],
             ["7005", { message: { ...f.prompt, webhook_id: "800" } }],
             ["7006", { data: { custom_id: "unrelated", component_type: ComponentType.Button } }],
-          ] as const)
+          ] as const) {
             f.client.emit(Events.InteractionCreate, f.interaction(interactionId, overrides));
+          }
 
           f.client.emit(Events.InteractionCreate, f.interaction("7008"));
           yield* Effect.promise(() => setImmediate());
@@ -284,7 +300,7 @@ describe("Discord approval components", () => {
             f.operations.indexOf("GET /channels/400"),
           );
 
-          for (const interactionId of ["7001", "7002", "7003", "7004", "7005"])
+          for (const interactionId of ["7001", "7002", "7003", "7004", "7005"]) {
             expect(f.post).toHaveBeenCalledWith(
               `/interactions/${interactionId}/token/callback`,
               expect.objectContaining({
@@ -294,6 +310,8 @@ describe("Discord approval components", () => {
                 }),
               }),
             );
+          }
+
           expect(f.operations).not.toContain("POST /interactions/7006/token/callback");
           expect(f.post).toHaveBeenCalledWith(
             "/interactions/7009/token/callback",

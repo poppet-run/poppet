@@ -19,8 +19,9 @@ const listen = async (server: ReturnType<typeof createServer>) => {
   });
   const address = server.address();
 
-  if (address === null || !Schema.is(Schema.Struct({ port: Schema.Number }))(address))
+  if (address === null || !Schema.is(Schema.Struct({ port: Schema.Number }))(address)) {
     throw new Error("No local listener");
+  }
 
   return address.port;
 };
@@ -113,12 +114,12 @@ describe.concurrent("page-network.ts", () => {
 
 describe.concurrent("requestPage", () => {
   test("when connecting to a pinned IP, retains the original Host without credentials or implicit redirects", async () => {
-    const received: {
+    const received: Array<{
       host: string | undefined;
       authorization: string | undefined;
       cookie: string | undefined;
       path: string | undefined;
-    }[] = [];
+    }> = [];
 
     const server = createServer((request, response) => {
       received.push({
@@ -247,7 +248,7 @@ describe.concurrent("requestPage", () => {
   });
 
   test("when TLS uses a pinned connection, verifies the hostname and SNI despite ambient bypass settings", async () => {
-    const seen: string[] = [];
+    const seen: Array<string> = [];
 
     const server = createTLSServer(
       { key: await Bun.file(key).text(), cert: await Bun.file(certificate).text() },
@@ -258,7 +259,7 @@ describe.concurrent("requestPage", () => {
       },
     );
 
-    const sni: string[] = [];
+    const sni: Array<string> = [];
     server.on("secureConnection", (socket) => {
       sni.push(socket.servername || "");
     });

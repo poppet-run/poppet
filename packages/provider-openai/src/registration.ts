@@ -83,7 +83,10 @@ export const chatGPT: ProviderRegistration = {
     Effect.gen(function* () {
       const text = yield* Effect.tryPromise(() => readCredentialFile(directory, "connection.json"));
 
-      if (text === null) return { connected: false, expiresAt: null, source: "saved" as const };
+      if (text === null) {
+        return { connected: false, expiresAt: null, source: "saved" as const };
+      }
+
       const saved = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Connection))(text);
 
       return {

@@ -53,7 +53,7 @@ export const ChatSubmission = Schema.Union([
   }),
 ]);
 
-export const PruneDays = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 36500 }));
+export const PruneDays = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 36_500 }));
 
 export const ChatInspection = Schema.Union([
   Schema.Struct({ action: Schema.Literal("rename"), id: Session.fields.id, text: MessageText }),
@@ -163,8 +163,9 @@ export const inspectChat = (command: ChatInspection, toolBytes = defaultPolicy.t
   Effect.gen(function* () {
     const store = yield* Store;
 
-    if (command.action === "delete")
+    if (command.action === "delete") {
       return yield* removeSessions(store.deleteSessions(command.ids));
+    }
 
     if (command.action === "prune") {
       const before = (yield* Clock.currentTimeMillis) - command.days * dayMs;
@@ -173,12 +174,17 @@ export const inspectChat = (command: ChatInspection, toolBytes = defaultPolicy.t
       return yield* command.dryRun ? prune : removeSessions(prune);
     }
 
-    if (command.action === "search") return yield* store.searchSessions(command.query, toolBytes);
+    if (command.action === "search") {
+      return yield* store.searchSessions(command.query, toolBytes);
+    }
 
-    if (command.action === "rename")
+    if (command.action === "rename") {
       return yield* store.renameSession(command.id, sessionTitle(command.text));
+    }
 
-    if (command.action === "sessions") return yield* store.sessions;
+    if (command.action === "sessions") {
+      return yield* store.sessions;
+    }
 
     return yield* showSession(command.id);
   });
@@ -188,10 +194,12 @@ const showSession = (id: string) =>
     const store = yield* Store;
     const session = yield* store.session(id);
 
-    if (session === null)
+    if (session === null) {
       return yield* Effect.fail(
         new AgentError({ reason: "invalid-request", message: "The session does not exist." }),
       );
+    }
+
     const messages = yield* store.messages(session.id);
     const runs = yield* store.runs(session.id);
     const toolCalls = (yield* Effect.forEach(runs, (run) => store.toolCalls(run.id))).flat();
@@ -212,11 +220,12 @@ const readAttachment = (path: string) =>
       const name = basename(path);
       await using handle = await open(resolve(path), constants.O_RDONLY | constants.O_NONBLOCK);
 
-      if (!(await handle.stat()).isFile())
+      if (!(await handle.stat()).isFile()) {
         throw new AgentError({
           reason: "attachment",
           message: `Cannot attach ${JSON.stringify(name)}: it is not a regular file.`,
         });
+      }
 
       const body = await readFileBounded(
         handle,
@@ -243,30 +252,34 @@ export const prepareChat = (
   command: Extract<ChatCommand, { action: "new" | "send" }>,
 ): Effect.Effect<ChatSubmission, AgentError, AppConfig> =>
   Effect.gen(function* () {
-    if ((command.attachments?.length ?? 0) > defaultPolicy.attachmentsPerMessage)
+    if ((command.attachments?.length ?? 0) > defaultPolicy.attachmentsPerMessage) {
       return yield* Effect.fail(
         new AgentError({
           reason: "attachment",
           message: `Attach at most ${defaultPolicy.attachmentsPerMessage} files to one message.`,
         }),
       );
+    }
 
     const read = command.attachments ?? [];
     const attachments = yield* Effect.forEach(read, readAttachment);
     const attached = attachments.length === 0 ? {} : { attachments };
 
-    if (command.action === "send")
+    if (command.action === "send") {
       return { action: "send", id: command.id, text: command.text, ...attached };
+    }
+
     const config = yield* AppConfig;
     const model = config.model;
 
-    if (model === null)
+    if (model === null) {
       return yield* Effect.fail(
         new AgentError({
           reason: "invalid-request",
           message: "Set model in config.json before starting a session.",
         }),
       );
+    }
 
     const request: ChatSubmission = {
       action: "new",
@@ -323,12 +336,17 @@ export const sendChat = (
     });
 
     yield* Stream.runForEach(reply, (event) => {
-      if (event.type === "started") return announce(`Run: ${event.run.id}`);
+      if (event.type === "started") {
+        return announce(`Run: ${event.run.id}`);
+      }
 
-      if (event.type === "text-delta") return write(event.text);
+      if (event.type === "text-delta") {
+        return write(event.text);
+      }
 
-      if (event.type === "reasoning-delta" || event.type === "reasoning-end")
+      if (event.type === "reasoning-delta" || event.type === "reasoning-end") {
         return reasoning.write?.(event) ?? Effect.void;
+      }
 
       return Effect.void;
     });

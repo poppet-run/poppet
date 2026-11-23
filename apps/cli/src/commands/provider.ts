@@ -67,12 +67,13 @@ export const providerCommand = (context: CLIContext) => {
       const selected = command.provider ?? config.provider;
       const entry = yield* findProvider(selected, registered);
 
-      if ((!command.openBrowser || command.callbackPort !== null) && entry.authentication.apiKey)
+      if ((!command.openBrowser || command.callbackPort !== null) && entry.authentication.apiKey) {
         return yield* Effect.fail(
           new UsageError({
             message: `${entry.name} does not use browser sign-in. ${entry.authentication.help}`,
           }),
         );
+      }
 
       return yield* Effect.gen(function* () {
         if (command.action === "models") {
@@ -83,10 +84,11 @@ export const providerCommand = (context: CLIContext) => {
 
         const connection = yield* ProviderConnection;
 
-        if (command.action === "login") yield* Console.log(yield* connection.login(command));
-        else if (command.action === "status")
+        if (command.action === "login") {
+          yield* Console.log(yield* connection.login(command));
+        } else if (command.action === "status") {
           yield* printResult(command.json, yield* connection.status, tree);
-        else if (command.action === "logout") {
+        } else if (command.action === "logout") {
           const logout = (command.forget ? connection.forget : undefined) ?? connection.logout;
 
           yield* Console.log(yield* logout);
@@ -116,22 +118,28 @@ export const providerCommand = (context: CLIContext) => {
       const target = Option.getOrNull(input.target);
       const provider = Option.getOrNull(input.provider);
 
-      if (target !== null && provider !== null)
+      if (target !== null && provider !== null) {
         return yield* Effect.fail(
           new UsageError({
             message: "Choose a provider either positionally or with --provider, not both.",
           }),
         );
+      }
+
       const selected = provider ?? target;
 
-      if (selected !== null && !Schema.is(ProviderId)(selected))
+      if (selected !== null && !Schema.is(ProviderId)(selected)) {
         return yield* Effect.fail(new UsageError({ message: "Invalid provider ID." }));
+      }
+
       const callbackPort = input.callbackPort ?? null;
 
-      if (callbackPort !== null && (callbackPort < 1 || callbackPort > 65535))
+      if (callbackPort !== null && (callbackPort < 1 || callbackPort > 65_535)) {
         return yield* Effect.fail(
           new UsageError({ message: "Choose a callback port from 1 to 65535." }),
         );
+      }
+
       yield* runProvider({
         action,
         provider: selected,

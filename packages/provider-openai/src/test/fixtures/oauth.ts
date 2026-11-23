@@ -11,8 +11,8 @@ export const makeOAuthProvider = async (controls: Controls) => {
   const keys = await signingKeys;
   const publicKey = { ...(await exportJWK(keys.publicKey)), kid: "test-key", alg: "RS256" };
 
-  const authorizations: URL[] = [];
-  const grants: URLSearchParams[] = [];
+  const authorizations: Array<URL> = [];
+  const grants: Array<URLSearchParams> = [];
   let nonce = "";
   let tokenCount = 0;
   let revokedToken: string | null = null;
@@ -20,7 +20,7 @@ export const makeOAuthProvider = async (controls: Controls) => {
   const handle = async (request: Request, origin: string) => {
     const url = new URL(request.url);
 
-    if (url.pathname === "/.well-known/openid-configuration")
+    if (url.pathname === "/.well-known/openid-configuration") {
       return Response.json({
         issuer: origin,
         authorization_endpoint: controls.discoveryEndpoint ?? `${origin}/authorize`,
@@ -28,6 +28,7 @@ export const makeOAuthProvider = async (controls: Controls) => {
         revocation_endpoint: `${origin}/revoke`,
         jwks_uri: `${origin}/jwks`,
       });
+    }
 
     if (url.pathname === "/jwks") {
       await controls.beforeJwks?.();
@@ -47,8 +48,11 @@ export const makeOAuthProvider = async (controls: Controls) => {
       );
       callback.searchParams.set("client_id", "oaiapp_test");
 
-      if (controls.denied) callback.searchParams.set("error", "access_denied");
-      else callback.searchParams.set("code", "test-code");
+      if (controls.denied) {
+        callback.searchParams.set("error", "access_denied");
+      } else {
+        callback.searchParams.set("code", "test-code");
+      }
 
       return Response.redirect(callback.toString());
     }
@@ -59,8 +63,9 @@ export const makeOAuthProvider = async (controls: Controls) => {
       const refresh = body.get("grant_type") === "refresh_token";
       const error = refresh ? controls.refreshError : controls.tokenError;
 
-      if (error !== null)
+      if (error !== null) {
         return Response.json({ error }, { status: error === "temporary_error" ? 503 : 400 });
+      }
 
       if (!refresh) {
         const attempt = authorizations.at(-1);
@@ -88,8 +93,9 @@ export const makeOAuthProvider = async (controls: Controls) => {
         .setExpirationTime(controls.identityFailure === "expiry" ? "-1 minute" : "1 hour")
         .sign(keys.privateKey);
 
-      if (controls.identityFailure === "signature")
+      if (controls.identityFailure === "signature") {
         idToken = `${idToken.slice(0, idToken.lastIndexOf(".") + 1)}invalid`;
+      }
 
       return Response.json({
         access_token: `test-access-${tokenCount}`,

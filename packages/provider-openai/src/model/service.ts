@@ -82,10 +82,11 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
               entry?.credential === credential &&
               entry.expiresAt > now &&
               entry.models.some((model) => model.slug === requested)
-            )
+            ) {
               return yield* measureTiming("model-catalog", Effect.succeed(entry.models), {
                 cached: true,
               });
+            }
 
             catalogCache.entry = null;
 
@@ -146,13 +147,15 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
             ? catalog[0]
             : catalog.find((model) => model.slug === requestedModel);
 
-        if (!entry)
+        if (!entry) {
           return yield* Effect.fail(
             new ConnectionError({
               reason: "unsupported",
               message: "Choose a model from poppet provider models.",
             }),
           );
+        }
+
         yield* verifyModel(selectedModel(entry)).pipe(Effect.mapError(connectionFailure));
         yield* auth.recordVerification(entry.slug);
 
@@ -164,10 +167,11 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
         const catalog = yield* readCatalog(model).pipe(Effect.mapError(providerFailure));
         const entry = catalog.find((candidate) => candidate.slug === model);
 
-        if (!entry)
+        if (!entry) {
           return yield* Effect.fail(
             invalidRequest("openai-chatgpt", "Choose a model from the ChatGPT catalog."),
           );
+        }
 
         return selectedModel(entry);
       });

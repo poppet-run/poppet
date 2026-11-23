@@ -101,12 +101,15 @@ export const MCPSignInsLive = Layer.effect(
 const resourceMetadata = (config: MCPOAuthServer, advertised: URL | undefined) => {
   const explicit = config.oauth.resourceMetadataUrl;
 
-  if (explicit !== undefined) return new URL(explicit);
+  if (explicit !== undefined) {
+    return new URL(explicit);
+  }
 
-  if (advertised !== undefined && advertised.origin !== new URL(config.url).origin)
+  if (advertised !== undefined && advertised.origin !== new URL(config.url).origin) {
     throw new MCPSignInError({
       message: `MCP ${config.id}: the OAuth resource metadata must use the MCP server origin.`,
     });
+  }
 
   return advertised;
 };
@@ -173,17 +176,22 @@ const makeProvider = (
       token_endpoint_auth_method: options.secret === undefined ? "none" : "client_secret_basic",
     },
     clientInformation: () => {
-      if (configured === undefined)
+      if (configured === undefined) {
         // SAFETY: saveClientInformation stores only SDK-validated registrations.
         return record.client as StoredOAuthClientInformation | undefined;
+      }
 
       const information: StoredOAuthClientInformation = { client_id: configured };
       const saved = Option.getOrUndefined(Schema.decodeUnknownOption(Stamped)(record.client));
       const issuer = saved?.client_id === configured ? saved.issuer : undefined;
 
-      if (options.secret !== undefined) information.client_secret = options.secret;
+      if (options.secret !== undefined) {
+        information.client_secret = options.secret;
+      }
 
-      if (issuer !== undefined) information.issuer = issuer;
+      if (issuer !== undefined) {
+        information.issuer = issuer;
+      }
 
       return information;
     },
@@ -206,7 +214,9 @@ const makeProvider = (
       session.verifier = verifier;
     },
     codeVerifier: () => {
-      if (session.verifier === undefined) throw new Error("No sign-in is in progress.");
+      if (session.verifier === undefined) {
+        throw new Error("No sign-in is in progress.");
+      }
 
       return session.verifier;
     },
@@ -216,22 +226,30 @@ const makeProvider = (
     // SAFETY: saveDiscoveryState stores only SDK-validated discovery results.
     discoveryState: () => record.discovery as OAuthDiscoveryState | undefined,
     invalidateCredentials: (scope) => {
-      if (scope === "all" || scope === "client") delete record.client;
+      if (scope === "all" || scope === "client") {
+        delete record.client;
+      }
 
       if (scope === "all" || scope === "tokens") {
         delete record.tokens;
         delete record.tokensSavedAt;
       }
 
-      if (scope === "all" || scope === "discovery") delete record.discovery;
+      if (scope === "all" || scope === "discovery") {
+        delete record.discovery;
+      }
 
-      if (scope === "all" || scope === "verifier") delete session.verifier;
+      if (scope === "all" || scope === "verifier") {
+        delete session.verifier;
+      }
     },
   };
 
   const state = options.state;
 
-  if (state !== undefined) provider.state = () => state;
+  if (state !== undefined) {
+    provider.state = () => state;
+  }
 
   return provider;
 };
@@ -240,7 +258,9 @@ const clientSecret = (config: MCPOAuthServer) =>
   Effect.gen(function* () {
     const reference = config.oauth.clientSecret;
 
-    if (reference === undefined) return undefined;
+    if (reference === undefined) {
+      return undefined;
+    }
 
     const key = yield* ApiKeyStore.use((store) => store.read(reference.credential)).pipe(
       Effect.mapError(
@@ -248,12 +268,13 @@ const clientSecret = (config: MCPOAuthServer) =>
       ),
     );
 
-    if (key === null)
+    if (key === null) {
       return yield* Effect.fail(
         new MCPSignInError({
           message: `MCP ${config.id}: the client secret credential ${reference.credential} is missing.`,
         }),
       );
+    }
 
     return Redacted.value(key);
   });
@@ -261,10 +282,13 @@ const clientSecret = (config: MCPOAuthServer) =>
 const authOptions = (config: MCPOAuthServer, fetchFn: FetchLike) => {
   const options: AuthOptions = { serverUrl: config.url, fetchFn };
 
-  if (config.oauth.resourceMetadataUrl !== undefined)
+  if (config.oauth.resourceMetadataUrl !== undefined) {
     options.resourceMetadataUrl = new URL(config.oauth.resourceMetadataUrl);
+  }
 
-  if (config.oauth.scopes !== undefined) options.scope = config.oauth.scopes.join(" ");
+  if (config.oauth.scopes !== undefined) {
+    options.scope = config.oauth.scopes.join(" ");
+  }
 
   return options;
 };
@@ -317,10 +341,13 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
       });
 
       const failure = (cause: unknown) => {
-        if (cause instanceof MCPSignInError) return cause;
+        if (cause instanceof MCPSignInError) {
+          return cause;
+        }
 
-        if (cause instanceof Error && cause.message === "OAuth endpoints must use https.")
+        if (cause instanceof Error && cause.message === "OAuth endpoints must use https.") {
           return new MCPSignInError({ message: `MCP ${config.id}: ${cause.message}` });
+        }
 
         const errorCodeSchema = Schema.Struct({
           errorCode: Schema.String.check(Schema.isPattern(/^[a-z0-9_]{1,64}$/)),
@@ -372,33 +399,39 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
 
       const target = yield* Effect.tryPromise({
         try: async (signal) => {
-          const deadline = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
+          const deadline = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
           const authorization = authOptions(config, oauthFetch(server, deadline));
           const advertised = challenge.resourceMetadataUrl?.href;
 
-          if (record.discovery?.resourceMetadataUrl !== advertised) delete record.discovery;
+          if (record.discovery?.resourceMetadataUrl !== advertised) {
+            delete record.discovery;
+          }
 
           if (
             config.oauth.clientId === undefined &&
             registeredRedirect(record) !== callback.redirectUri
-          )
+          ) {
             delete record.client;
+          }
 
-          if (challenge.resourceMetadataUrl !== undefined)
+          if (challenge.resourceMetadataUrl !== undefined) {
             authorization.resourceMetadataUrl = challenge.resourceMetadataUrl;
+          }
 
-          if (authorization.scope === undefined && challenge.scope !== undefined)
+          if (authorization.scope === undefined && challenge.scope !== undefined) {
             authorization.scope = challenge.scope;
+          }
 
           const result = await auth(provider(record), {
             ...authorization,
             forceReauthorization: true,
           });
 
-          if (result !== "REDIRECT" || authorizationURL === undefined)
+          if (result !== "REDIRECT" || authorizationURL === undefined) {
             throw new MCPSignInError({
               message: `MCP ${config.id}: the authorization server did not start a browser sign-in.`,
             });
+          }
 
           await oauthAddress(server, authorizationURL, deadline);
 
@@ -419,7 +452,7 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
               try: async (signal) => {
                 const fetchFn = oauthFetch(
                   server,
-                  AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+                  AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
                 );
 
                 const exchange: AuthOptions = {
@@ -427,14 +460,17 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
                   authorizationCode: code,
                 };
 
-                if (iss !== undefined) exchange.iss = iss;
+                if (iss !== undefined) {
+                  exchange.iss = iss;
+                }
 
                 await auth(provider(record), exchange);
 
-                if (accessToken(record) === null)
+                if (accessToken(record) === null) {
                   throw new MCPSignInError({
                     message: `MCP ${config.id}: no access token was issued.`,
                   });
+                }
               },
               catch: failure,
             }),
@@ -457,7 +493,9 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
 export const signOut = (id: string) =>
   MCPSignIns.use((signIns) =>
     signIns.update(id, (saved) => {
-      if (saved === null) return Effect.succeed(null);
+      if (saved === null) {
+        return Effect.succeed(null);
+      }
 
       const { tokens: _tokens, tokensSavedAt: _savedAt, refreshLease: _lease, ...rest } = saved;
 
@@ -475,13 +513,17 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
     const read = signIns.read(config.id);
     const initial = tokenForServer(yield* read, config);
 
-    if (initial === null) return yield* Effect.fail(required(config.id, "sign-in required."));
+    if (initial === null) {
+      return yield* Effect.fail(required(config.id, "sign-in required."));
+    }
 
     let token = initial.access_token;
     const seenSecrets = new Set<string>();
 
     const track = (value: string | undefined) => {
-      if (value !== undefined && value.length > 0) seenSecrets.add(value);
+      if (value !== undefined && value.length > 0) {
+        seenSecrets.add(value);
+      }
     };
 
     track(secret);
@@ -523,9 +565,14 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
 
           const advertised = record.discovery?.resourceMetadataUrl;
 
-          if (Schema.is(Schema.String)(advertised)) resourceMetadata(config, new URL(advertised));
+          if (Schema.is(Schema.String)(advertised)) {
+            resourceMetadata(config, new URL(advertised));
+          }
 
-          const fetchFn = oauthFetch(server, AbortSignal.any([signal, AbortSignal.timeout(15000)]));
+          const fetchFn = oauthFetch(
+            server,
+            AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+          );
 
           const provider = makeProvider(
             config,
@@ -545,7 +592,9 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
           try {
             await auth(provider, authOptions(config, fetchFn));
           } catch (cause) {
-            if (accessToken(record) !== null) throw cause;
+            if (accessToken(record) !== null) {
+              throw cause;
+            }
           }
 
           const refreshed = accessToken(record);
@@ -565,7 +614,9 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
           Effect.gen(function* () {
             let claimed = false;
             yield* signIns.update(config.id, (previous) => {
-              if (!isDeepStrictEqual(previous, current)) return Effect.succeed(previous);
+              if (!isDeepStrictEqual(previous, current)) {
+                return Effect.succeed(previous);
+              }
 
               claimed = true;
 
@@ -575,7 +626,9 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
               });
             });
 
-            if (!claimed) return false;
+            if (!claimed) {
+              return false;
+            }
 
             const { refreshLease: _lease, ...original } = current;
             const record = { ...original };
@@ -612,7 +665,9 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
             const current = yield* read;
             const latest = tokenForServer(current, config);
 
-            if (current === null || latest === null) break;
+            if (current === null || latest === null) {
+              break;
+            }
 
             if (latest.access_token !== rejected) {
               track(latest.access_token);
@@ -622,15 +677,20 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
               return;
             }
 
-            if (Date.now() >= limit)
+            if (Date.now() >= limit) {
               return yield* new MCPSignInError({ message: "MCP OAuth refresh timed out." });
+            }
 
             if (
               current.refreshLease === undefined ||
               current.refreshLease.expiresAt <= Date.now()
             ) {
-              if (yield* renew(current, latest.refresh_token)) return;
-            } else yield* Effect.sleep("50 millis");
+              if (yield* renew(current, latest.refresh_token)) {
+                return;
+              }
+            } else {
+              yield* Effect.sleep("50 millis");
+            }
           }
 
           loginRequired = true;

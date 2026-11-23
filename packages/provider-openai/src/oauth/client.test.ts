@@ -13,7 +13,9 @@ describe("client.ts", () => {
     let requests = 0;
 
     const http: HttpFetch = async () => {
-      if (++requests === 1) return new Response(null, { status: 503 });
+      if (++requests === 1) {
+        return new Response(null, { status: 503 });
+      }
 
       return Response.json({
         issuer,
@@ -45,7 +47,10 @@ describe("client.ts", () => {
       new Promise((_resolve, reject) => {
         const signal = init?.signal;
 
-        if (!signal) throw new Error("Missing request cancellation");
+        if (!signal) {
+          throw new Error("Missing request cancellation");
+        }
+
         signal.addEventListener(
           "abort",
           () => {
@@ -87,7 +92,7 @@ describe("client.ts", () => {
     async (operation) => {
       const reading = Promise.withResolvers<void>();
       const cancelled = Promise.withResolvers<void>();
-      const signals: AbortSignal[] = [];
+      const signals: Array<AbortSignal> = [];
       const issuer = "https://oauth.invalid";
 
       const discovery = {
@@ -101,12 +106,16 @@ describe("client.ts", () => {
       const http: HttpFetch = async (input, init) => {
         const url = input.toString();
 
-        if (operation !== "discovery" && url.endsWith("openid-configuration"))
+        if (operation !== "discovery" && url.endsWith("openid-configuration")) {
           return Response.json(discovery);
+        }
 
         const signal = init?.signal;
 
-        if (!signal) throw new Error("Missing request cancellation");
+        if (!signal) {
+          throw new Error("Missing request cancellation");
+        }
+
         signals.push(signal);
 
         return new Response(
@@ -122,7 +131,9 @@ describe("client.ts", () => {
             cancel() {
               cancelled.resolve();
 
-              if (operation === "stalled revoke") return new Promise<void>(() => {});
+              if (operation === "stalled revoke") {
+                return new Promise<void>(() => {});
+              }
             },
           }),
           { status: operation === "token-error" ? 400 : 200 },
@@ -146,7 +157,9 @@ describe("client.ts", () => {
           if (operation.endsWith("revoke")) {
             yield* Effect.promise(() => cancelled.promise);
 
-            if (operation === "stalled revoke") yield* TestClock.adjust("20 seconds");
+            if (operation === "stalled revoke") {
+              yield* TestClock.adjust("20 seconds");
+            }
           } else {
             yield* Effect.promise(() => reading.promise);
             yield* TestClock.adjust("20 seconds");
@@ -156,8 +169,12 @@ describe("client.ts", () => {
         }).pipe(Effect.provide(TestClock.layer())),
       );
 
-      if (operation === "revoke") expect(result).toHaveProperty("success");
-      else expect(result).toHaveProperty("failure.reason", "temporary");
+      if (operation === "revoke") {
+        expect(result).toHaveProperty("success");
+      } else {
+        expect(result).toHaveProperty("failure.reason", "temporary");
+      }
+
       expect(signals).toHaveLength(1);
       expect(signals[0]?.aborted).toBe(true);
     },

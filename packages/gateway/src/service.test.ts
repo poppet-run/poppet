@@ -84,9 +84,9 @@ const fixture = async (
 ) => {
   const harness = await agentHarness(policy);
   const { directory } = harness;
-  const requests: ModelRequest[] = [];
-  const sent: { destination: string; text: string; nonce: string }[] = [];
-  const marks: { messageId: string; state: string }[] = [];
+  const requests: Array<ModelRequest> = [];
+  const sent: Array<{ destination: string; text: string; nonce: string }> = [];
+  const marks: Array<{ messageId: string; state: string }> = [];
 
   const channel = Layer.succeed(MessagingChannel, {
     id: "discord",
@@ -350,9 +350,9 @@ describe.concurrent("Gateway", () => {
       const requested = Effect.runSync(Deferred.make<string>());
       let executed = 0;
       let revoked = false;
-      const updates: ApprovalState[] = [];
-      const replies: string[] = [];
-      const prompts: string[] = [];
+      const updates: Array<ApprovalState> = [];
+      const replies: Array<string> = [];
+      const prompts: Array<string> = [];
       const args = { target: "Services/42", message: "Restart after deploy " + "`😀`".repeat(400) };
 
       const definition = {
@@ -367,7 +367,9 @@ describe.concurrent("Gateway", () => {
           prompts.push(text);
           const id = /\/approve ([a-f0-9-]{36})/.exec(text)?.[1];
 
-          if (id) yield* Deferred.succeed(requested, id);
+          if (id) {
+            yield* Deferred.succeed(requested, id);
+          }
 
           return "approval-message";
         });
@@ -376,14 +378,16 @@ describe.concurrent("Gateway", () => {
         {
           checkAccess: (input) =>
             Effect.suspend(() => {
-              if (revoked)
+              if (revoked) {
                 return Effect.fail(new ChannelError({ reason: "permission", message: "Revoked" }));
+              }
 
               if (
                 action === "revoked" &&
                 input.messageId === (transport === "button" ? "approval-message" : "decision")
-              )
+              ) {
                 revoked = true;
+              }
 
               return Effect.void;
             }),
@@ -395,22 +399,26 @@ describe.concurrent("Gateway", () => {
               Effect.gen(function* () {
                 updates.push(resultState);
 
-                if (action === "update-failed")
+                if (action === "update-failed") {
                   return yield* Effect.fail(
                     new ChannelError({ reason: "unavailable", message: "Lost update" }),
                   );
+                }
               }),
           },
         },
         (request) => {
-          if (request.settings.toolChoice === "none")
+          if (request.settings.toolChoice === "none") {
             return response(
               kind === "bash"
                 ? '{"decision":"needs_approval","reason":"Restart a service"}'
                 : '{"decision":"needs_approval","reason":"Restart a service","target":"Services/42","effects":"Interrupt service while it restarts"}',
             );
+          }
 
-          if (request.messages.at(-1)?.role === "tool") return response("Done");
+          if (request.messages.at(-1)?.role === "tool") {
+            return response("Done");
+          }
 
           return Stream.make({
             type: "completed",
@@ -533,8 +541,9 @@ describe.concurrent("Gateway", () => {
                 { ...message("approval-message", "thread"), parentId: "other-parent" },
                 message("approval-message", "other-thread"),
                 message("other-message", "thread"),
-              ])
+              ]) {
                 yield* gateway.answerApproval(click(source));
+              }
 
               expect(replies).toHaveLength(5);
               expect(replies.every((text) => !text.startsWith("Approved"))).toBe(true);
@@ -542,12 +551,13 @@ describe.concurrent("Gateway", () => {
 
             expect(executed).toBe(0);
 
-            if (action === "timeout") yield* TestClock.adjust("2 minutes");
-            else if (transport === "button" && action !== "cancel")
+            if (action === "timeout") {
+              yield* TestClock.adjust("2 minutes");
+            } else if (transport === "button" && action !== "cancel") {
               yield* gateway.answerApproval(
                 click(undefined, action === "deny" ? "deny" : "approve"),
               );
-            else
+            } else {
               yield* gateway.accept(
                 message(
                   "decision",
@@ -557,6 +567,8 @@ describe.concurrent("Gateway", () => {
                     : `  /${action === "revoked" || action === "update-failed" ? "approve" : action} ${id}  `,
                 ),
               );
+            }
+
             yield* Fiber.join(running);
             const approved = action === "approve" || action === "update-failed";
             expect(executed).toBe(approved ? 1 : 0);
@@ -580,17 +592,21 @@ describe.concurrent("Gateway", () => {
               const answered = approved || action === "deny" || action === "revoked";
               expect(call?.review?.decision).toBe("needs_approval");
 
-              if (answered)
+              if (answered) {
                 expect(call?.review?.approval).toMatchObject({
                   decision: action === "deny" ? "denied" : "approved",
                   adapter: "discord",
                   senderId: "owner",
                 });
-              else expect(call?.review?.approval).toBeUndefined();
+              } else {
+                expect(call?.review?.approval).toBeUndefined();
+              }
 
-              if (approved)
+              if (approved) {
                 expect(JSON.parse(call!.output!)).toMatchObject({ approvedBy: "owner" });
-              else expect(call?.startedAt).toBeNull();
+              } else {
+                expect(call?.startedAt).toBeNull();
+              }
             }
 
             revoked = false;
@@ -694,20 +710,23 @@ describe.concurrent("Gateway", () => {
     async (queuedNotice) => {
       let executed = 0;
       let allow = false;
-      const errors: string[] = [];
+      const errors: Array<string> = [];
 
       const state = await fixture(
         {},
         (request) => {
-          if (request.settings.toolChoice === "none")
+          if (request.settings.toolChoice === "none") {
             return response(
               JSON.stringify({
                 decision: allow ? "allow" : "needs_approval",
                 reason: "Needs owner confirmation",
               }),
             );
+          }
 
-          if (request.messages.at(-1)?.role === "tool") return response("Service restarted");
+          if (request.messages.at(-1)?.role === "tool") {
+            return response("Service restarted");
+          }
 
           return Stream.make({
             type: "completed",
@@ -774,7 +793,7 @@ describe.concurrent("Gateway", () => {
               ),
             );
 
-            if (queuedNotice)
+            if (queuedNotice) {
               yield* (yield* GatewayRepository).scheduleResult(
                 item.id,
                 item.runId!,
@@ -782,6 +801,8 @@ describe.concurrent("Gateway", () => {
                 ["Saved failure notification"],
                 true,
               );
+            }
+
             yield* gateway.deliverNext;
 
             return item.id;
@@ -912,7 +933,10 @@ describe.concurrent("Gateway", () => {
             : Effect.void,
       },
       () => {
-        if (++calls > 1) return response("Task saved");
+        if (++calls > 1) {
+          return response("Task saved");
+        }
+
         denied = blocked === "access";
 
         return Stream.make({
@@ -970,7 +994,7 @@ describe.concurrent("Gateway", () => {
             expect(yield* store.toolCalls(run.id)).toMatchObject([
               { status: "failed", failureReason: "agent:tool-permission" },
             ]);
-          } else
+          } else {
             expect(tasks[0]).toMatchObject({
               name: "Weekly review",
               provider: "test-provider",
@@ -984,6 +1008,7 @@ describe.concurrent("Gateway", () => {
                 conversationId,
               },
             });
+          }
         }),
       );
       expect(calls).toBe(blocked !== null ? 1 : 2);
@@ -1275,7 +1300,7 @@ describe.concurrent("Gateway", () => {
     "when scheduled delivery is %s, keeps its state separate from execution across restart",
     async (reason) => {
       let attempts = 0;
-      const destinations: string[] = [];
+      const destinations: Array<string> = [];
 
       const state = await fixture({
         send: (destination) => {
@@ -1488,7 +1513,9 @@ describe.concurrent("Gateway", () => {
           const task = yield* recurring(yield* gateway.resolveDestination("saved-thread"));
 
           const deliver = Effect.gen(function* () {
-            while (yield* gateway.deliverNext);
+            while (yield* gateway.deliverNext) {
+              // Drain queued deliveries.
+            }
 
             return state.sent.map((part) => part.text);
           });
@@ -1550,7 +1577,9 @@ describe.concurrent("Gateway", () => {
 
             expect(item.status).toBe(condition === "interrupted" ? "interrupted" : "failed");
 
-            if (condition === "older than a day") yield* TestClock.adjust("25 hours");
+            if (condition === "older than a day") {
+              yield* TestClock.adjust("25 hours");
+            }
 
             expect(yield* gateway.deliverNext).toBe(false);
             expect(
@@ -1888,7 +1917,7 @@ describe.concurrent("Gateway", () => {
 
   test("when a message carries an image and no text, downloads it and sends it to the model", async () => {
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    const downloads: { ref: string; maxBytes: number }[] = [];
+    const downloads: Array<{ ref: string; maxBytes: number }> = [];
 
     const state = await fixture({
       download: (attachment, maxBytes) =>
@@ -2111,7 +2140,10 @@ describe.concurrent("Gateway", () => {
           const session = (yield* Store).sessions;
           const saved = (yield* session)[0];
 
-          if (saved === undefined) throw new Error("Missing session");
+          if (saved === undefined) {
+            throw new Error("Missing session");
+          }
+
           expect(
             (yield* (yield* Store).runs(saved.id)).filter((run) => run.status === "interrupted"),
           ).toHaveLength(1);
@@ -2137,8 +2169,10 @@ describe.concurrent("Gateway", () => {
             { ...message("unmentioned"), mentioned: false },
             { ...message("stranger-thread", "existing-thread"), senderId: "stranger" },
             { ...message("unmentioned-thread", "existing-thread"), mentioned: false },
-          ])
+          ]) {
             yield* gateway.accept(input);
+          }
+
           expect(yield* (yield* Store).sessions).toHaveLength(0);
           expect(yield* (yield* GatewayRepository).status()).toMatchObject({ queued: 0 });
           expect(state.marks).toEqual([]);
@@ -2221,10 +2255,16 @@ describe.concurrent("Gateway", () => {
           const pending = yield* repo.next("discord", "bot", Date.now());
           expect(pending).not.toBeNull();
 
-          if (pending === null) return;
+          if (pending === null) {
+            return;
+          }
+
           const id = yield* repo.binding("discord", "bot", "guild", "thread-first");
 
-          if (id === null) throw new Error("Missing session");
+          if (id === null) {
+            throw new Error("Missing session");
+          }
+
           yield* repo.attach(pending.id, "thread-first", id);
           yield* repo.state(pending.id, "executing");
           yield* (yield* Store).queueRun(
@@ -2340,7 +2380,11 @@ describe.concurrent("Gateway", () => {
         send: () =>
           ++attempts === 1
             ? Effect.fail(
-                new ChannelError({ reason, message: "Injected send failure", retryAfterMs: 60000 }),
+                new ChannelError({
+                  reason,
+                  message: "Injected send failure",
+                  retryAfterMs: 60_000,
+                }),
               )
             : Effect.succeed("sent"),
       });
@@ -2464,7 +2508,10 @@ describe.concurrent("Gateway", () => {
             "thread-first",
           );
 
-          if (firstSession === null) throw new Error("Missing session");
+          if (firstSession === null) {
+            throw new Error("Missing session");
+          }
+
           expect((yield* store.runs(firstSession)).map((run) => run.status).toSorted()).toEqual([
             "completed",
             "interrupted",
@@ -2493,8 +2540,9 @@ describe.concurrent("Gateway", () => {
           yield* gateway.accept(message("first"));
           yield* gateway.processNext;
 
-          for (let index = 0; index < 64; index++)
+          for (let index = 0; index < 64; index++) {
             yield* gateway.accept(message(`pending-${index}`, "thread-first"));
+          }
 
           const result = yield* gateway
             .accept(message("overflow", "thread-first"))
@@ -2517,7 +2565,7 @@ describe("conversationNaming", () => {
   test("when a session binding is replaced, skips naming the old session", async () => {
     const started = Deferred.makeUnsafe<void>();
     const release = Deferred.makeUnsafe<void>();
-    const renames: string[] = [];
+    const renames: Array<string> = [];
     let first = true;
     let current = "Original";
 
@@ -2605,7 +2653,7 @@ describe("conversationNaming", () => {
     "when names are %s after answer delivery, handles them without repeating inference",
     async (mode) => {
       let current = "First question";
-      const renames: string[] = [];
+      const renames: Array<string> = [];
       let titleRequests = 0;
 
       const naming: MessagingChannel["Service"]["naming"] = {
@@ -2619,17 +2667,22 @@ describe("conversationNaming", () => {
         current: () => Effect.succeed(current),
         rename: (_input, _id, expected, title) =>
           Effect.suspend(() => {
-            if (current !== expected) return Effect.succeed(null);
+            if (current !== expected) {
+              return Effect.succeed(null);
+            }
+
             renames.push(title);
 
-            if (mode === "permission" || mode === "rate-limit")
+            if (mode === "permission" || mode === "rate-limit") {
               return Effect.fail(
                 new ChannelError({
                   reason: mode === "permission" ? "permission" : "unavailable",
                   message: "Cannot rename",
-                  retryAfterMs: 60000,
+                  retryAfterMs: 60_000,
                 }),
               );
+            }
+
             current = title;
 
             return mode === "uncertain"
@@ -2663,13 +2716,21 @@ describe("conversationNaming", () => {
             expect(titleRequests).toBe(0);
             const session = (yield* store.sessions)[0];
 
-            if (!session) throw new Error("Missing session");
+            if (!session) {
+              throw new Error("Missing session");
+            }
+
             expect(session.title).toBe("First question");
             yield* gateway.deliverNext;
 
-            if (mode === "manual") yield* store.renameSession(session.id, "My manual title");
+            if (mode === "manual") {
+              yield* store.renameSession(session.id, "My manual title");
+            }
 
-            if (mode === "external-edit") current = "User's thread name";
+            if (mode === "external-edit") {
+              current = "User's thread name";
+            }
+
             yield* gateway.nameNext;
             yield* gateway.nameNext;
             expect((yield* store.runs(session.id))[0]?.status).toBe("completed");
@@ -2721,7 +2782,7 @@ describe("conversationNaming", () => {
 
   test("when a pending rename survives restart, reconciles it without issuing it again", async () => {
     let current = "Original";
-    const renames: string[] = [];
+    const renames: Array<string> = [];
 
     const state = await fixture({
       naming: {
@@ -2747,7 +2808,10 @@ describe("conversationNaming", () => {
           yield* gateway.deliverNext;
           const session = (yield* (yield* Store).sessions)[0];
 
-          if (!session) throw new Error("Missing session");
+          if (!session) {
+            throw new Error("Missing session");
+          }
+
           yield* (yield* Store).renameSession(session.id, "Pending title");
           yield* (yield* GatewayRepository).namePending(
             {
@@ -2843,7 +2907,10 @@ const pause = (millis: number) =>
 const until = <E, R>(check: Effect.Effect<boolean, E, R>) =>
   Effect.gen(function* () {
     for (let attempt = 0; attempt < 600; attempt++) {
-      if (yield* check) return;
+      if (yield* check) {
+        return;
+      }
+
       yield* pause(5);
     }
 
@@ -3037,10 +3104,11 @@ describe.concurrent("Gateway concurrent requests", () => {
           expect(yield* inboxStates).toEqual({ a1: "failed", b1: "failed" });
           const store = yield* Store;
 
-          for (const session of yield* store.sessions)
+          for (const session of yield* store.sessions) {
             expect((yield* store.runs(session.id)).map((run) => run.status)).toEqual([
               "interrupted",
             ]);
+          }
         }),
       );
     } finally {
@@ -3050,7 +3118,7 @@ describe.concurrent("Gateway concurrent requests", () => {
 
   test("when two threads wait for approval, settles each only from its own thread", async () => {
     const prompts = new Map<string, string>();
-    const executed: string[] = [];
+    const executed: Array<string> = [];
 
     const state = await fixture(
       {
@@ -3058,18 +3126,23 @@ describe.concurrent("Gateway concurrent requests", () => {
           Effect.sync(() => {
             const id = /\/approve ([a-f0-9-]{36})/.exec(text)?.[1];
 
-            if (id) prompts.set(conversation, id);
+            if (id) {
+              prompts.set(conversation, id);
+            }
 
             return "sent";
           }),
       },
       (request) => {
-        if (request.settings.toolChoice === "none")
+        if (request.settings.toolChoice === "none") {
           return response(JSON.stringify({ decision: "needs_approval", reason: "Restart" }));
+        }
 
         const last = request.messages.at(-1);
 
-        if (last?.role === "tool") return response("Done");
+        if (last?.role === "tool") {
+          return response("Done");
+        }
 
         return Stream.make({
           type: "completed",

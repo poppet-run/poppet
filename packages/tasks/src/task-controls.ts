@@ -35,23 +35,25 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
 
         const job = yield* task(command.id);
 
-        if ((yield* activeOccurrence(job.id, "running")) !== null)
+        if ((yield* activeOccurrence(job.id, "running")) !== null) {
           return yield* reject("Cancel the running occurrence before changing this task.");
+        }
 
         const pending = yield* activeOccurrence(job.id, "pending");
         let selected: Occurrence | null = null;
-        let replacedOccurrenceIds: string[] = [];
-        let changedFields: string[] = [];
+        let replacedOccurrenceIds: Array<string> = [];
+        let changedFields: Array<string> = [];
         let snoozeCleared = false;
 
         if (command.action === "edit") {
           const patch = command.patch;
           const schedule = patch.schedule ?? job.schedule;
 
-          if (patch.endAt !== null && patch.endAt !== undefined && schedule.type === "once")
+          if (patch.endAt !== null && patch.endAt !== undefined && schedule.type === "once") {
             return yield* reject(
               "An end time applies only to recurring tasks. Use it with a cron schedule.",
             );
+          }
 
           const endAt =
             patch.endAt !== undefined ? patch.endAt : schedule.type === "once" ? null : job.endAt;
@@ -68,11 +70,13 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
             const revised = fields.length > 0;
             const scheduleChanged = fields.includes("schedule");
 
-            if (scheduleChanged && schedule.type === "once" && schedule.at <= now)
+            if (scheduleChanged && schedule.type === "once" && schedule.at <= now) {
               return yield* reject("Choose a future one-off time with an explicit UTC offset.");
+            }
 
-            if (endChanged && endAt !== null && endAt <= now)
+            if (endChanged && endAt !== null && endAt <= now) {
               return yield* reject("Choose a future end time with an explicit UTC offset.");
+            }
 
             const nextAt = scheduleChanged
               ? schedule.type === "once"
@@ -114,17 +118,19 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
             }
           }
         } else {
-          if (job.paused)
+          if (job.paused) {
             return yield* reject("Resume the task before changing its next execution.");
+          }
 
           const target = yield* nextTarget(job.id);
 
-          if (target === null)
+          if (target === null) {
             return yield* reject(
               job.endAt === null
                 ? "This task has no upcoming execution. Edit its schedule to rearm it."
                 : `This task ended at ${new Date(job.endAt).toISOString()}. Set a later end time or clear it to resume.`,
             );
+          }
 
           const advance = (after: number) =>
             Effect.flatMap(
@@ -151,8 +157,9 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
 
             changedFields = ["skip-next"];
           } else if (command.action === "snooze") {
-            if (command.until <= now || command.until < target.availableAt)
+            if (command.until <= now || command.until < target.availableAt) {
               return yield* reject("Snooze until a future time later than the current ready time.");
+            }
 
             if (command.until === target.availableAt) {
               selected = pending;
@@ -171,18 +178,21 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
               changedFields = ["availableAt"];
             }
           } else if (pending !== null) {
-            if (pending.availableAt > now)
+            if (pending.availableAt > now) {
               return yield* reject(
                 "The next occurrence is held until a future time. Run-now cannot undo a hold.",
               );
+            }
 
             if (
               pending.definition.schedule.type === "cron" &&
               pending.availableAt <= now - recurringExpiry
-            )
+            ) {
               return yield* reject(
                 "This pending summary expired. Skip it or wait for reconciliation before running current work.",
               );
+            }
+
             selected = pending;
           } else {
             const due = target.scheduledAt <= now;
@@ -191,10 +201,11 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
             const collision = yield* sql`SELECT id FROM job_occurrences
               WHERE job_id = ${job.id} AND revision = ${job.revision} AND scheduled_at = ${logical}`;
 
-            if (collision.length > 0)
+            if (collision.length > 0) {
               return yield* reject(
                 "An occurrence already exists at this time. Review it with tasks show before retrying.",
               );
+            }
 
             selected = yield* occurrence(
               yield* insertOccurrence(job, logical, {
@@ -207,9 +218,10 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
               yield* advance(now);
               const following = yield* nextTime(job.schedule, logical, job.endAt);
 
-              if (following !== null && following <= now)
+              if (following !== null && following <= now) {
                 yield* sql`INSERT INTO job_skips (job_id, first_at, last_at, reason)
                   VALUES (${job.id}, ${following}, ${now}, 'worker-delayed')`;
+              }
             }
 
             changedFields = ["run-now"];

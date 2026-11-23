@@ -11,8 +11,11 @@ const field = (key: string, value: LogValue) =>
 
 // Bun colours the global console.error red on a terminal, so plain lines bypass it.
 const writeLine = (output: Console.Console, line: string) => {
-  if (output === globalThis.console) process.stderr.write(`${line}\n`);
-  else output.error(line);
+  if (output === globalThis.console) {
+    process.stderr.write(`${line}\n`);
+  } else {
+    output.error(line);
+  }
 };
 
 /** Writes one diagnostic line to standard error through the current console. */

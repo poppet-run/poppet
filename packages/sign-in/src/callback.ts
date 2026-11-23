@@ -30,14 +30,17 @@ export const startCallback = <A>(options: CallbackOptions<A>) =>
     let consumed = false;
 
     const submit = (callback: URL, origin: string): CallbackOutcome => {
-      if (callback.pathname !== "/auth/callback")
+      if (callback.pathname !== "/auth/callback") {
         return { completed: false, status: 404, message: "Not found" };
+      }
 
-      if (callback.origin !== origin)
+      if (callback.origin !== origin) {
         return { completed: false, status: 400, message: "Invalid callback host." };
+      }
 
-      if (consumed)
+      if (consumed) {
         return { completed: false, status: 410, message: "Sign-in attempt already completed." };
+      }
 
       const reject = (message: string, reason: "callback" | "denied" = "callback") => {
         consumed = true;
@@ -49,14 +52,16 @@ export const startCallback = <A>(options: CallbackOptions<A>) =>
       if (
         callback.searchParams.getAll("state").length !== 1 ||
         callback.searchParams.get("state") !== state
-      )
+      ) {
         return { completed: false, status: 400, message: "Invalid sign-in state." };
+      }
 
-      if (callback.searchParams.has("error"))
+      if (callback.searchParams.has("error")) {
         return reject(
           `${options.service} sign-in was declined or could not be completed.`,
           "denied",
         );
+      }
 
       const code = callback.searchParams.get("code");
 
@@ -65,8 +70,9 @@ export const startCallback = <A>(options: CallbackOptions<A>) =>
           ? options.accept(code, callback.searchParams, `${origin}/auth/callback`)
           : null;
 
-      if (accepted === null)
+      if (accepted === null) {
         return reject("The sign-in callback had an invalid code or registration.");
+      }
 
       consumed = true;
       Deferred.doneUnsafe(result, Effect.succeed(accepted));
@@ -88,8 +94,9 @@ export const startCallback = <A>(options: CallbackOptions<A>) =>
                 "Content-Type": "text/plain; charset=utf-8",
               };
 
-              if (httpRequest.method !== "GET")
+              if (httpRequest.method !== "GET") {
                 return new Response("Not found", { status: 404, headers });
+              }
 
               const outcome = submit(new URL(httpRequest.url), `http://127.0.0.1:${listener.port}`);
 

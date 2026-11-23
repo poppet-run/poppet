@@ -22,8 +22,9 @@ const failure = (cause: unknown) => (cause instanceof AgentError ? cause : inval
 const directoryInfo = async (path: string) => {
   const info = await lstat(path);
 
-  if (!info.isDirectory() || info.isSymbolicLink() || (await realpath(path)) !== path)
+  if (!info.isDirectory() || info.isSymbolicLink() || (await realpath(path)) !== path) {
     throw invalid();
+  }
 
   return info;
 };
@@ -45,12 +46,17 @@ export const contextFiles = Effect.gen(function* () {
 
         const handle = await openNoFollow(path);
 
-        if (handle === null) throw invalid();
+        if (handle === null) {
+          throw invalid();
+        }
 
         try {
           const info = await handle.stat();
 
-          if (!info.isFile() || info.nlink !== 1 || info.size > maxBytes) throw invalid();
+          if (!info.isFile() || info.nlink !== 1 || info.size > maxBytes) {
+            throw invalid();
+          }
+
           const buffer = await readFileBounded(handle, maxBytes, invalid, signal);
           await directoryInfo(root);
           const current = await directoryInfo(parent);
@@ -63,8 +69,10 @@ export const contextFiles = Effect.gen(function* () {
             target.ino !== info.ino ||
             target.nlink !== 1 ||
             target.isSymbolicLink()
-          )
+          ) {
             throw invalid();
+          }
+
           signal.throwIfAborted();
 
           return Schema.decodeUnknownSync(SkillSnapshot.fields.content)(
@@ -80,33 +88,46 @@ export const contextFiles = Effect.gen(function* () {
   const list = Effect.tryPromise({
     try: async (signal) => {
       const root = await rootPath().catch((cause: unknown) => {
-        if (isMissingFile(cause)) return null;
+        if (isMissingFile(cause)) {
+          return null;
+        }
+
         throw cause;
       });
 
-      if (root === null) return [];
+      if (root === null) {
+        return [];
+      }
 
       const info = await lstat(root).catch((cause: unknown) => {
-        if (isMissingFile(cause)) return null;
+        if (isMissingFile(cause)) {
+          return null;
+        }
+
         throw cause;
       });
 
-      if (info === null) return [];
+      if (info === null) {
+        return [];
+      }
+
       await directoryInfo(root);
-      const names: string[] = [];
+      const names: Array<string> = [];
       let visited = 0;
 
       for await (const entry of await opendir(root)) {
         signal.throwIfAborted();
 
-        if (++visited > 1000)
+        if (++visited > 1000) {
           throw new AgentError({
             reason: "invalid-request",
             message: "The context directory exceeds the 1000 entry listing limit.",
           });
+        }
 
-        if (entry.isDirectory() && !entry.isSymbolicLink() && Schema.is(SkillName)(entry.name))
+        if (entry.isDirectory() && !entry.isSymbolicLink() && Schema.is(SkillName)(entry.name)) {
           names.push(entry.name);
+        }
       }
 
       return names.toSorted();

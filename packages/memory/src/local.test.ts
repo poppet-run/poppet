@@ -244,13 +244,21 @@ describe.concurrent("LocalMemoryLive", () => {
     const path = join(saved.directory, file);
 
     try {
-      if (kind === "file bytes") await writeFile(path, "😀".repeat(16));
+      if (kind === "file bytes") {
+        await writeFile(path, "😀".repeat(16));
+      }
 
-      if (kind === "invalid UTF-8") await writeFile(path, Buffer.from([0xff]));
+      if (kind === "invalid UTF-8") {
+        await writeFile(path, Buffer.from([0xff]));
+      }
 
-      if (kind === "NUL") await writeFile(path, "Invalid\0text");
+      if (kind === "NUL") {
+        await writeFile(path, "Invalid\0text");
+      }
 
-      if (kind === "directory") await mkdir(path);
+      if (kind === "directory") {
+        await mkdir(path);
+      }
 
       if (kind === "symlink") {
         const outside = join(saved.directory, "outside.md");
@@ -262,11 +270,13 @@ describe.concurrent("LocalMemoryLive", () => {
         Effect.gen(function* () {
           const memory = yield* Memory;
 
-          if (kind === "facts bytes")
+          if (kind === "facts bytes") {
             yield* memory.remember(
               "long",
               "A preference that exceeds the small serialized facts budget",
             );
+          }
+
           yield* reject(
             memory.snapshot({ soulBytes: 63, profileBytes: 63, factsBytes: 40 }),
             reason,

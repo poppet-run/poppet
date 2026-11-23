@@ -13,7 +13,10 @@ export const parseSetupFlags = (
 ) =>
   Effect.try({
     try: () => {
-      if (args[0] !== "setup") throw new Error("Expected setup");
+      if (args[0] !== "setup") {
+        throw new Error("Expected setup");
+      }
+
       const allowed = [...names, ...optional];
 
       const options = Object.fromEntries(
@@ -31,8 +34,9 @@ export const parseSetupFlags = (
       const supplied = tokens.filter((token) => token.kind === "option").map((token) => token.name);
       const unique = new Set(supplied);
 
-      if (unique.size !== supplied.length || names.some((name) => !unique.has(name)))
+      if (unique.size !== supplied.length || names.some((name) => !unique.has(name))) {
         throw new Error("Expected each required setup flag once without duplicates");
+      }
 
       return values;
     },

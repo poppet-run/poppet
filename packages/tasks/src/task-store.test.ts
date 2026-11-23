@@ -1295,8 +1295,10 @@ describe.concurrent("TaskRepository", () => {
           expect(yield* repo.claim(start + 30_000)).not.toBeNull();
           expect((yield* repo.occurrences(first.id))[0]?.status).toBe("failed");
 
-          for (let attempt = 0; attempt < 10; attempt++)
+          for (let attempt = 0; attempt < 10; attempt++) {
             yield* repo.blockProvider("test-provider", "rate-limit", start);
+          }
+
           expect((yield* repo.providers())[0]?.resumeAt).toBe(start + 300_000);
         }),
       );
@@ -1364,10 +1366,11 @@ describe.concurrent("TaskRepository", () => {
           expect(yield* repo.skips(job.id)).toEqual([]);
           expect((yield* repo.status()).nextScheduledAt).toBeNull();
 
-          for (const action of ["run-now", "skip-next"] as const)
+          for (const action of ["run-now", "skip-next"] as const) {
             expect(
               (yield* Effect.flip(repo.control({ action, id: job.id }, end + 240_000))).message,
             ).toContain("ended at 2026-10-14T09:02:00.000Z");
+          }
         }),
       );
     } finally {
@@ -1438,10 +1441,11 @@ describe.concurrent("TaskRepository", () => {
             [once, start + day, "only to recurring"],
             [recurring, start, "future end time"],
             [morning, start + 3_600_000, "before the first occurrence"],
-          ] as const)
+          ] as const) {
             expect(
               (yield* Effect.flip(repo.add(task, start, null, null, endAt))).message,
             ).toContain(message);
+          }
 
           const job = yield* repo.add(morning, start, null, null, start + 3 * day);
 

@@ -27,7 +27,7 @@ const create: ChatTaskAction = {
   endAt: null,
 };
 
-const fixture = async (toolBytes = 16384) => {
+const fixture = async (toolBytes = 16_384) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-chat-tasks-"));
 
   const config = Layer.succeed(AppConfig, {
@@ -150,7 +150,7 @@ describe("ChatTasks", () => {
           const delivered = yield* repo.add(input, now, null, destination);
 
           for (const job of [manual, delivered]) {
-            const actions: ChatTaskAction[] = [
+            const actions: Array<ChatTaskAction> = [
               {
                 action: "edit",
                 id: job.id,
@@ -756,13 +756,16 @@ describe("ChatTasks", () => {
             prompt: "🙂".repeat(4000),
             provider: "test-provider",
             model: "test-model",
-            schedule: { type: "once" as const, at: now + 60000 },
+            schedule: { type: "once" as const, at: now + 60_000 },
           };
 
-          for (let i = 0; i < 15; i++) yield* repo.add(input, now);
+          for (let i = 0; i < 15; i++) {
+            yield* repo.add(input, now);
+          }
+
           const first = yield* recorded({ action: "list", after: null });
           let cursor: string | null = null;
-          const ids: string[] = [];
+          const ids: Array<string> = [];
           let index = 0;
 
           do {

@@ -56,22 +56,27 @@ export const makeTool = (
   secrets: () => ReadonlyArray<string>,
   toolBytes: number,
 ): MCPTool => {
-  if ((tool.description?.length ?? 0) > 4096 || tool.execution?.taskSupport === "required")
+  if ((tool.description?.length ?? 0) > 4096 || tool.execution?.taskSupport === "required") {
     throw new UnsupportedTool({
       message: `Tool ${JSON.stringify(tool.name)} has a description over 4096 characters or requires unsupported task execution.`,
     });
+  }
 
   if (
     secrets().length > 0 &&
     containsSecret(Schema.decodeUnknownSync(Schema.JsonObject)(tool), secrets())
-  )
+  ) {
     throw new MCPDiagnostic({ message: "Tool definition contains a selected credential." });
+  }
+
   const schema = Schema.decodeUnknownSync(Schema.JsonObject)(tool.inputSchema);
 
-  if (schema.type !== "object")
+  if (schema.type !== "object") {
     throw new UnsupportedTool({
       message: `Tool ${JSON.stringify(tool.name)} input must be an object schema.`,
     });
+  }
+
   const validate = compile(schema, tool.name, "input");
 
   const output =
@@ -94,17 +99,18 @@ export const makeTool = (
 
   const execute = (args: Schema.JsonObject, token?: string) =>
     Effect.gen(function* () {
-      if (Ref.getUnsafe(connection.state).status !== "connected")
+      if (Ref.getUnsafe(connection.state).status !== "connected") {
         return yield* Effect.fail(
           failed(diagnostic(connection) ?? `MCP ${config.id} is unavailable.`),
         );
+      }
 
       const result = yield* Effect.tryPromise({
         try: (signal) => {
           const send = () =>
             connection.client.request(
               { method: "tools/call", params: { name: tool.name, arguments: args } },
-              { signal, timeout: 10000 },
+              { signal, timeout: 10_000 },
             );
 
           return reviewed && endpoint !== null
@@ -112,14 +118,17 @@ export const makeTool = (
             : send();
         },
         catch: (cause) => {
-          if (cause instanceof ReviewedAccountChanged)
+          if (cause instanceof ReviewedAccountChanged) {
             return new MCPError({
               reason: "tool-permission",
               message:
                 "The MCP sign-in changed after preparation. Nothing was sent. Request the action again.",
             });
+          }
 
-          if (connection.signIn?.required() === true) return failed(connection.signIn.message);
+          if (connection.signIn?.required() === true) {
+            return failed(connection.signIn.message);
+          }
 
           if (cause instanceof InsufficientScopeError) {
             const scope =
@@ -141,8 +150,9 @@ export const makeTool = (
 
       return yield* Effect.try({
         try: () => {
-          if (!result.isError && output !== null && !output(result.structuredContent))
+          if (!result.isError && output !== null && !output(result.structuredContent)) {
             throw new Error("Invalid structured output.");
+          }
 
           return toolResult(result, reviewed ? toolBytes - 128 : toolBytes, secrets());
         },
@@ -170,17 +180,22 @@ export const makeTool = (
         try: () => {
           const args = decodeArguments(argumentsJSON);
 
-          if (!validate(args)) throw new Error("Arguments do not match schema.");
+          if (!validate(args)) {
+            throw new Error("Arguments do not match schema.");
+          }
 
-          if (!reviewed) return { execute: execute(args) };
+          if (!reviewed) {
+            return { execute: execute(args) };
+          }
 
           if (
             containsSecret(
               args,
               secrets().filter((secret) => secret.length > 0),
             )
-          )
+          ) {
             throw new Error("Reviewed arguments contain a selected credential.");
+          }
 
           return {
             validatedArguments: JSON.stringify(args),
@@ -203,7 +218,7 @@ export const buildTools = (
   secrets: () => ReadonlyArray<string>,
   toolBytes: number,
 ) => {
-  const skipped: string[] = [];
+  const skipped: Array<string> = [];
 
   return Effect.try({
     try: () => {
@@ -213,7 +228,10 @@ export const buildTools = (
           try {
             return [makeTool(config, tool, connection, secrets, toolBytes)];
           } catch (cause) {
-            if (!(cause instanceof UnsupportedTool)) throw cause;
+            if (!(cause instanceof UnsupportedTool)) {
+              throw cause;
+            }
+
             skipped.push(cause.message);
 
             return [];

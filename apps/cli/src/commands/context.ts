@@ -60,7 +60,9 @@ export const createCLIContext = (
         output?.announce,
       );
 
-      if (!handled) yield* local;
+      if (!handled) {
+        yield* local;
+      }
     }).pipe(Effect.provide(runtime.config));
 
   const queryWorker = <A, E>(query: WorkerQuery, local: Effect.Effect<A, E>) =>

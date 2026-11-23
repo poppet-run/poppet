@@ -38,10 +38,13 @@ export const decodeMemoryCall = (call: ToolCall): Effect.Effect<MemoryCall, Agen
   Effect.gen(function* () {
     const args = yield* toolArguments(memoryDefinition, Arguments)(call.arguments);
 
-    if (args.action === "forget" && args.value === null) return { action: "forget", key: args.key };
+    if (args.action === "forget" && args.value === null) {
+      return { action: "forget", key: args.key };
+    }
 
-    if (args.action !== "forget" && args.value !== null)
+    if (args.action !== "forget" && args.value !== null) {
       return { action: args.action, key: args.key, value: args.value };
+    }
 
     return yield* Effect.fail(invalid());
   });
@@ -53,19 +56,22 @@ export const executeMemoryCall = (
   factsBytes: number,
 ): Effect.Effect<string, AgentError> =>
   Effect.gen(function* () {
-    if (call.action === "forget") yield* memory.forget(call.key, runId);
-    else {
+    if (call.action === "forget") {
+      yield* memory.forget(call.key, runId);
+    } else {
       const facts = (yield* memory.list).map(({ key, value }) => ({ key, value }));
       const next = facts.filter((fact) => fact.key !== call.key);
       next.push({ key: call.key, value: call.value });
 
-      if (byteSize(JSON.stringify(next)) > factsBytes)
+      if (byteSize(JSON.stringify(next)) > factsBytes) {
         return yield* Effect.fail(
           new AgentError({
             reason: "memory-limit",
             message: `This change would exceed this run's ${factsBytes}-byte fact budget. Shorten or forget a fact before adding it.`,
           }),
         );
+      }
+
       yield* memory[call.action](call.key, call.value, runId);
     }
 

@@ -21,10 +21,13 @@ export const skillDescription = (content: string) => {
 
   const heading = lines.find((line) => line.startsWith("#"))?.replace(/^#+\s*/u, "") ?? "";
   const start = lines.findIndex((line) => line.length > 0 && !line.startsWith("#"));
-  const paragraph: string[] = [];
+  const paragraph: Array<string> = [];
 
   for (const line of start < 0 ? [] : lines.slice(start)) {
-    if (line.length === 0 || line.startsWith("#")) break;
+    if (line.length === 0 || line.startsWith("#")) {
+      break;
+    }
+
     paragraph.push(line);
   }
 
@@ -65,19 +68,25 @@ export const skillIndex = (
 
     const entries = loaded.flatMap((entry) => (entry === null ? [] : [entry]));
 
-    if (entries.length === 0) return null;
+    if (entries.length === 0) {
+      return null;
+    }
 
     const truncated = names.length > maxIndexSkills;
     const full = { skills: entries, truncated };
 
-    if (fits(full, bytes)) return full;
+    if (fits(full, bytes)) {
+      return full;
+    }
 
     const bare = entries.map(({ name }) => ({ name }));
 
     for (let count = bare.length; count > 0; count--) {
       const index = { skills: bare.slice(0, count), truncated: true };
 
-      if (fits(index, bytes)) return index;
+      if (fits(index, bytes)) {
+        return index;
+      }
     }
 
     return null;

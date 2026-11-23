@@ -147,8 +147,8 @@ describe.concurrent("pages.ts", () => {
   });
 
   test("when a redirect changes destination, revalidates DNS and pins the address without another lookup", async () => {
-    const resolutions: string[] = [];
-    const requests: string[] = [];
+    const resolutions: Array<string> = [];
+    const requests: Array<string> = [];
 
     const result = await Effect.runPromise(
       fetch("https://first.example/start#fragment", {

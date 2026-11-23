@@ -37,7 +37,7 @@ const serve = (
     | "call-redirect"
     | "call-unauthorized" = "json",
 ) => {
-  const events: Event[] = [];
+  const events: Array<Event> = [];
   let sessions = 0;
   const elsewhere = { requests: 0 };
 
@@ -54,7 +54,7 @@ const serve = (
   const respond = (message: Schema.JsonObject, headers: Record<string, string> = {}) => {
     const body = JSON.stringify(message);
 
-    const padding = mode === "sse" ? `: ${"x".repeat(200000)}\n\n`.repeat(2) : "";
+    const padding = mode === "sse" ? `: ${"x".repeat(200_000)}\n\n`.repeat(2) : "";
 
     return mode === "sse" || mode === "oversized-sse"
       ? new Response(`${padding}event: message\ndata: ${body}\n\n`, {
@@ -87,18 +87,21 @@ const serve = (
 
       record(message.method);
 
-      if (mode === "redirect")
+      if (mode === "redirect") {
         return new Response(null, {
           status: 307,
           headers: { location: `http://localhost:${other.port}/mcp` },
         });
+      }
 
-      if (message.id === undefined) return new Response(null, { status: 202 });
+      if (message.id === undefined) {
+        return new Response(null, { status: 202 });
+      }
 
       const reply = (result: Schema.JsonObject, headers?: Record<string, string>) =>
         respond({ jsonrpc: "2.0", id: message.id!, result }, headers);
 
-      if (message.method === "initialize")
+      if (message.method === "initialize") {
         return reply(
           {
             protocolVersion: "2025-11-25",
@@ -107,10 +110,11 @@ const serve = (
           },
           { "mcp-session-id": `session-${++sessions}` },
         );
+      }
 
-      if (message.method === "tools/list")
+      if (message.method === "tools/list") {
         return mode === "oversized" || mode === "oversized-sse"
-          ? reply({ tools: [], padding: "x".repeat(300000) })
+          ? reply({ tools: [], padding: "x".repeat(300_000) })
           : reply({
               tools: ["read", "fail"].map((name) => ({
                 name,
@@ -118,13 +122,19 @@ const serve = (
                 inputSchema,
               })),
             });
+      }
 
-      if (request.url.endsWith("/redirected")) elsewhere.requests++;
-      else if (mode === "call-redirect")
+      if (request.url.endsWith("/redirected")) {
+        elsewhere.requests++;
+      } else if (mode === "call-redirect") {
         return new Response(null, { status: 307, headers: { location: "/redirected" } });
-      else if (mode === "call-unauthorized") return new Response(null, { status: 401 });
+      } else if (mode === "call-unauthorized") {
+        return new Response(null, { status: 401 });
+      }
 
-      if (message.params?.name === "fail") return new Response("failed", { status: 500 });
+      if (message.params?.name === "fail") {
+        return new Response("failed", { status: 500 });
+      }
 
       return reply({
         content: [{ type: "text", text: `seen ${request.headers.get("x-selected")}` }],
@@ -151,11 +161,11 @@ const layer = (
   url: string,
   headers: MCPHTTPServer["headers"] = {},
   tools = ["read"],
-  reviewedTools: string[] = [],
+  reviewedTools: Array<string> = [],
 ) => {
   const server: MCPHTTPServer = { id: "remote", enabled: true, url, headers, tools, reviewedTools };
 
-  return makeMCPLive(16384).pipe(
+  return makeMCPLive(16_384).pipe(
     Layer.provide([
       NoSignInsLive,
       Layer.succeed(ApiKeyStore, {
@@ -232,8 +242,12 @@ describe("MCP over HTTP", () => {
         expect(posts.slice(1).every((event) => event.session === "session-1")).toBe(true);
         expect(server.events.at(-1)).toMatchObject({ http: "DELETE", session: "session-1" });
       } finally {
-        if (previous === undefined) delete process.env.POPPET_MCP_SELECTED;
-        else process.env.POPPET_MCP_SELECTED = previous;
+        if (previous === undefined) {
+          delete process.env.POPPET_MCP_SELECTED;
+        } else {
+          process.env.POPPET_MCP_SELECTED = previous;
+        }
+
         await server.stop();
       }
     },

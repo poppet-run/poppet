@@ -47,11 +47,16 @@ export const dueOccurrences = (
     if (candidate <= cutoff) {
       latest = candidate;
       next = Cron.next(cron, latest).getTime();
-    } else next = candidate;
+    } else {
+      next = candidate;
+    }
   }
 
   while (next <= cutoff) {
-    if (next <= latest) throw new Error("Cron did not advance.");
+    if (next <= latest) {
+      throw new Error("Cron did not advance.");
+    }
+
     latest = next;
     next = Cron.next(cron, latest).getTime();
   }
@@ -64,12 +69,15 @@ export const dueOccurrences = (
 };
 
 export const nextOccurrence = (schedule: Schedule, after: number): number | null => {
-  if (schedule.type === "once") return null;
+  if (schedule.type === "once") {
+    return null;
+  }
 
-  if (schedule.expression.split(/\s+/).length !== 5)
+  if (schedule.expression.split(/\s+/).length !== 5) {
     throw new TaskError({
       message: "Use a five-field cron expression: minute hour day month weekday.",
     });
+  }
 
   try {
     return Cron.next(Cron.parseUnsafe(schedule.expression, schedule.timezone), after).getTime();
@@ -96,18 +104,21 @@ export const checkEndTime = (
   now: number,
   needsSlot = false,
 ): void => {
-  if (schedule.type === "once")
+  if (schedule.type === "once") {
     throw new TaskError({
       message: "An end time applies only to recurring tasks. Use it with a cron schedule.",
     });
+  }
 
-  if (endAt <= now)
+  if (endAt <= now) {
     throw new TaskError({ message: "Choose a future end time with an explicit UTC offset." });
+  }
 
-  if (needsSlot && nextSlot(schedule, now, endAt) === null)
+  if (needsSlot && nextSlot(schedule, now, endAt) === null) {
     throw new TaskError({
       message: "The end time is before the first occurrence. Choose a later end time.",
     });
+  }
 };
 
 export const parseTimestamp = (text: string): number => {
@@ -124,11 +135,12 @@ export const parseTimestamp = (text: string): number => {
     at < 0 ||
     Number(parts[3]) > new Date(Date.UTC(Number(parts[1]), Number(parts[2]), 0)).getUTCDate() ||
     Number(parts[4]) > 23
-  )
+  ) {
     throw new TaskError({
       message:
         "Use an ISO timestamp with Z or an explicit offset, such as 2026-10-15T09:00:00+01:00.",
     });
+  }
 
   return at;
 };

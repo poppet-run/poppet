@@ -33,7 +33,9 @@ export const credentialsFor = (
 ): Credentials | null => {
   const idToken = reply.id_token ?? previous?.idToken;
 
-  if (!idToken) return null;
+  if (!idToken) {
+    return null;
+  }
 
   return {
     accessToken: reply.access_token ?? null,

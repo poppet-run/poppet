@@ -16,8 +16,10 @@ export const gatewayObservation = (status: Schema.JsonObject) => {
     }),
   )(status);
 
-  if (Option.isNone(decoded))
+  if (Option.isNone(decoded)) {
     return { enabled: 0, disconnected: 0, unknown: 1, configurationErrors: 0 };
+  }
+
   const channels = decoded.value.channels;
 
   return {
@@ -38,8 +40,8 @@ export const doctorSnapshot = (identity: string) =>
     const observedAt = Date.now();
 
     const counts = yield* sql`SELECT
-    (SELECT COUNT(*) FROM job_occurrences WHERE status = 'failed' AND finished_at >= ${observedAt - 86400000}) AS failed,
-    (SELECT COUNT(*) FROM job_occurrences WHERE status = 'interrupted' AND finished_at >= ${observedAt - 86400000}) AS interrupted,
+    (SELECT COUNT(*) FROM job_occurrences WHERE status = 'failed' AND finished_at >= ${observedAt - 86_400_000}) AS failed,
+    (SELECT COUNT(*) FROM job_occurrences WHERE status = 'interrupted' AND finished_at >= ${observedAt - 86_400_000}) AS interrupted,
     (SELECT COUNT(*) FROM job_occurrences WHERE status = 'running') AS running,
     (SELECT MIN(at) FROM (
       SELECT available_at AS at FROM job_occurrences WHERE status = 'pending'
@@ -48,7 +50,7 @@ export const doctorSnapshot = (identity: string) =>
     )) AS next_at`;
 
     const recent = yield* sql`SELECT id, job_id, status FROM job_occurrences
-      WHERE status IN ('failed', 'interrupted') AND finished_at >= ${observedAt - 86400000}
+      WHERE status IN ('failed', 'interrupted') AND finished_at >= ${observedAt - 86_400_000}
       ORDER BY finished_at DESC, id DESC LIMIT 5`;
 
     const holds = yield* sql`SELECT provider, CASE WHEN reason = 'quota' THEN 'quota'

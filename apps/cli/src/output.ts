@@ -102,7 +102,10 @@ export const sections = (blocks: ReadonlyArray<readonly [string | null, string] 
 const two = (value: number) => String(value).padStart(2, "0");
 
 export const time = (ms: number | null | undefined) => {
-  if (ms === null || ms === undefined) return "-";
+  if (ms === null || ms === undefined) {
+    return "-";
+  }
+
   const date = new Date(ms);
 
   return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`;
@@ -165,9 +168,13 @@ export const tree = (value: Schema.Json, indent = 0): string => {
       .join("\n");
   }
 
-  if (!isList(value)) return `${prefix}${scalar(value)}`;
+  if (!isList(value)) {
+    return `${prefix}${scalar(value)}`;
+  }
 
-  if (!nested(value)) return `${prefix}${value.length === 0 ? "-" : value.map(scalar).join(", ")}`;
+  if (!nested(value)) {
+    return `${prefix}${value.length === 0 ? "-" : value.map(scalar).join(", ")}`;
+  }
 
   return value.map((item) => `${prefix}-\n${tree(item, indent + 2)}`).join("\n");
 };

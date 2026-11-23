@@ -8,8 +8,9 @@ export const makeFIFO = (path: string) => {
   try {
     const name = Buffer.from(`${path}\0`);
 
-    if (libc.symbols.mkfifo(ptr(name), 0o600) !== 0)
+    if (libc.symbols.mkfifo(ptr(name), 0o600) !== 0) {
       throw new Error("Could not create FIFO fixture");
+    }
   } finally {
     libc.close();
   }

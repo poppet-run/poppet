@@ -7,7 +7,10 @@ import wrapAnsi from "wrap-ansi";
 const plain = (text: string) => text;
 
 const style = (open: number, close: number, color: boolean) => (text: string) => {
-  if (!color) return text;
+  if (!color) {
+    return text;
+  }
+
   const start = `\u001b[${open}m`;
   const end = `\u001b[${close}m`;
 
@@ -23,7 +26,9 @@ const safeOutput = (text: string) => {
       // oxlint-disable-next-line no-control-regex
       .split(/(\u001b\[[\d;]*m)/g)
       .map((part, index) => {
-        if (index % 2 === 1) return part;
+        if (index % 2 === 1) {
+          return part;
+        }
 
         return stripVTControlCharacters(part).replaceAll(
           // oxlint-disable-next-line no-control-regex
@@ -46,14 +51,20 @@ const independentLines = (text: string) => {
       // oxlint-disable-next-line no-control-regex
       for (const match of line.matchAll(/\u001b\[([\d;]*)m/g)) {
         for (const code of match[1]!.split(";").map(Number)) {
-          if (code === 0) active.clear();
-          else if (code === 22) {
+          if (code === 0) {
+            active.clear();
+          } else if (code === 22) {
             active.delete(1);
             active.delete(2);
-          } else if ([23, 24, 29].includes(code)) active.delete(code - 20);
-          else if (code === 39) active.delete(39);
-          else if (code >= 30 && code <= 37) active.set(39, code);
-          else if ([1, 2, 3, 4, 9].includes(code)) active.set(code, code);
+          } else if ([23, 24, 29].includes(code)) {
+            active.delete(code - 20);
+          } else if (code === 39) {
+            active.delete(39);
+          } else if (code >= 30 && code <= 37) {
+            active.set(39, code);
+          } else if ([1, 2, 3, 4, 9].includes(code)) {
+            active.set(code, code);
+          }
         }
       }
 
@@ -63,16 +74,21 @@ const independentLines = (text: string) => {
 };
 
 export class ChatMarkdown {
-  private cache = new WeakMap<{ text: string }, { text: string; width: number; rows: string[] }>();
+  private cache = new WeakMap<
+    { text: string },
+    { text: string; width: number; rows: Array<string> }
+  >();
   private parser: Marked | undefined;
   private width = 0;
 
   constructor(private readonly color: boolean) {}
 
-  render(message: { text: string }, width: number): string[] {
+  render(message: { text: string }, width: number): Array<string> {
     const cached = this.cache.get(message);
 
-    if (cached?.text === message.text && cached.width === width) return cached.rows;
+    if (cached?.text === message.text && cached.width === width) {
+      return cached.rows;
+    }
 
     if (this.width !== width || !this.parser) {
       const cyan = style(36, 39, this.color);

@@ -65,7 +65,9 @@ const renderSessions = (sessions: ReadonlyArray<SessionRow>) =>
   );
 
 const renderSearch = (result: typeof SearchResult.Type) => {
-  if (result.matches.length === 0) return "No matching messages.";
+  if (result.matches.length === 0) {
+    return "No matching messages.";
+  }
 
   const rows = table(
     ["SESSION", "CREATED", "ROLE", "TITLE", "EXCERPT"],

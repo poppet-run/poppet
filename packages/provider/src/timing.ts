@@ -23,12 +23,13 @@ export const recordTiming = (
   Effect.gen(function* () {
     const timing = yield* Effect.serviceOption(RequestTiming);
 
-    if (Option.isSome(timing))
+    if (Option.isSome(timing)) {
       yield* timing.value.record({
         stage,
         durationMs: Math.max(0, (yield* Clock.currentTimeMillis) - startedAt),
         ...details,
       });
+    }
   });
 
 export const measureTiming = <A, E, R>(

@@ -54,7 +54,9 @@ export const executeBash = (
     const limit = Math.max(1, Math.floor((maxBytes - 128) / 12));
 
     const killGroup = () => {
-      if (child.pid === undefined) return;
+      if (child.pid === undefined) {
+        return;
+      }
 
       try {
         process.kill(-child.pid, "SIGKILL");
@@ -67,7 +69,10 @@ export const executeBash = (
       const available = limit - output.bytes.length;
       output.truncated ||= chunk.length > available;
 
-      if (available <= 0) return;
+      if (available <= 0) {
+        return;
+      }
+
       output.bytes = Buffer.concat([output.bytes, chunk.subarray(0, available)]);
     };
 
@@ -85,7 +90,9 @@ export const executeBash = (
       child.stdout.destroy();
       child.stderr.destroy();
 
-      if (exited) settle(null);
+      if (exited) {
+        settle(null);
+      }
     };
 
     signal.addEventListener("abort", stop, { once: true });
@@ -137,11 +144,15 @@ export const executeBash = (
       exited = true;
       killGroup();
 
-      if (expired || signal.aborted) settle(null);
+      if (expired || signal.aborted) {
+        settle(null);
+      }
     });
     child.once("close", settle);
 
-    if (signal.aborted) stop();
+    if (signal.aborted) {
+      stop();
+    }
   });
 
 export const BashLive = Layer.succeed(Bash, {

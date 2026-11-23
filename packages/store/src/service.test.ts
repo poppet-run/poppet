@@ -92,11 +92,11 @@ describe("Store", () => {
           ]);
 
           yield* store.startRun(run.id);
-          expect((yield* store.searchSessions("Orchard", 16384)).matches).toEqual([]);
+          expect((yield* store.searchSessions("Orchard", 16_384)).matches).toEqual([]);
           expect(
             (yield* store.readSession(
               { sessionId: session.id, aroundMessageId: null, afterMessageId: null },
-              16384,
+              16_384,
             )).messages,
           ).toEqual([]);
           yield* store.recordToolCalls(run.id, {
@@ -126,7 +126,7 @@ describe("Store", () => {
             },
           });
           yield* store.renameSession(session.id, "The orchard");
-          const matches = yield* store.searchSessions("Orchard", 16384);
+          const matches = yield* store.searchSessions("Orchard", 16_384);
           expect(matches).toMatchObject({
             truncated: false,
             matches: [
@@ -157,7 +157,7 @@ describe("Store", () => {
             "provider-continuation",
             "preserve",
           ]) {
-            expect((yield* store.searchSessions(query, 16384)).matches).toEqual([]);
+            expect((yield* store.searchSessions(query, 16_384)).matches).toEqual([]);
           }
 
           const failed = yield* store.queueRun(session.id, [{ role: "user", text: "failedonly" }]);
@@ -175,13 +175,13 @@ describe("Store", () => {
             FROM messages WHERE session_id = ${session.id}`;
 
           for (const query of ["failedonly", "interruptedonly", "unownedonly"]) {
-            expect((yield* store.searchSessions(query, 16384)).matches).toEqual([]);
+            expect((yield* store.searchSessions(query, 16_384)).matches).toEqual([]);
           }
 
           const history = yield* store.messages(session.id);
           const metadata = yield* store.session(session.id);
           const read = { sessionId: session.id, aroundMessageId: null, afterMessageId: null };
-          const recalled = yield* store.readSession(read, 16384);
+          const recalled = yield* store.readSession(read, 16_384);
           expect(recalled).toEqual({
             sessionId: session.id,
             title: "The orchard",
@@ -197,13 +197,16 @@ describe("Store", () => {
           });
 
           for (const entry of history) {
-            if (recalled.messages.some((message) => message.messageId === entry.id)) continue;
+            if (recalled.messages.some((message) => message.messageId === entry.id)) {
+              continue;
+            }
+
             yield* reject(
-              store.readSession({ ...read, aroundMessageId: entry.id }, 16384),
+              store.readSession({ ...read, aroundMessageId: entry.id }, 16_384),
               "invalid-request",
             );
             yield* reject(
-              store.readSession({ ...read, afterMessageId: entry.id }, 16384),
+              store.readSession({ ...read, afterMessageId: entry.id }, 16_384),
               "invalid-request",
             );
           }
@@ -218,11 +221,11 @@ describe("Store", () => {
       await saved.run(
         Store.use((store) =>
           Effect.gen(function* () {
-            const result = yield* store.searchSessions("東京", 16384);
+            const result = yield* store.searchSessions("東京", 16_384);
             expect(result.matches).toMatchObject([
               { sessionId: savedSession.id, title: "The orchard", role: "user" },
             ]);
-            expect((yield* store.searchSessions("résumé", 16384)).matches).toHaveLength(1);
+            expect((yield* store.searchSessions("résumé", 16_384)).matches).toHaveLength(1);
           }),
         ),
       );
@@ -263,9 +266,12 @@ describe("Store", () => {
                 });
               });
 
-            for (let number = 0; number < 20; number++) yield* complete(number);
+            for (let number = 0; number < 20; number++) {
+              yield* complete(number);
+            }
+
             const history = yield* store.messages(session.id);
-            const first = yield* store.readSession(query, 16384);
+            const first = yield* store.readSession(query, 16_384);
             expect(first.messages.map((message) => message.messageId)).toEqual(
               history.slice(0, 10).map((message) => message.id),
             );
@@ -273,7 +279,7 @@ describe("Store", () => {
 
             const around = yield* store.readSession(
               { ...query, aroundMessageId: history[12]!.id },
-              16384,
+              16_384,
             );
 
             expect(around.messages.map((message) => message.messageId)).toEqual(
@@ -285,7 +291,7 @@ describe("Store", () => {
             let cursor = first.nextAfterMessageId;
 
             while (cursor !== null) {
-              const page = yield* store.readSession({ ...query, afterMessageId: cursor }, 16384);
+              const page = yield* store.readSession({ ...query, afterMessageId: cursor }, 16_384);
               ids.push(...page.messages.map((message) => message.messageId));
               cursor = page.nextAfterMessageId;
             }
@@ -298,11 +304,13 @@ describe("Store", () => {
 
             for (const invalid of [
               { ...query, sessionId: empty.id, aroundMessageId: ids[0]! },
-              { ...query, aroundMessageId: 999999 },
+              { ...query, aroundMessageId: 999_999 },
               { ...query, aroundMessageId: ids[0]!, afterMessageId: ids[1]! },
               { ...query, afterMessageId: -1 },
-            ])
+            ]) {
               yield* reject(store.readSession(invalid, 1024), "invalid-request");
+            }
+
             yield* reject(store.readSession(query, 100), "invalid-request");
           }),
         ),
@@ -312,7 +320,7 @@ describe("Store", () => {
     }
   });
 
-  test.each([1024, 65536])(
+  test.each([1024, 65_536])(
     "when recall has a %i-byte budget, preserves Unicode and advances past oversized messages",
     async (maxBytes) => {
       const saved = await fixture();
@@ -326,7 +334,7 @@ describe("Store", () => {
               });
 
               yield* store.renameSession(session.id, "🙂".repeat(80));
-              const texts = ['🙂東京\n"\t'.repeat(20000), "before\0after", "Final discussion"];
+              const texts = ['🙂東京\n"\t'.repeat(20_000), "before\0after", "Final discussion"];
 
               for (let index = 0; index < 7; index++) {
                 const run = yield* store.queueRun(session.id, [
@@ -343,7 +351,7 @@ describe("Store", () => {
               const history = yield* store.messages(session.id);
               const query = { sessionId: session.id, aroundMessageId: null, afterMessageId: null };
               let cursor: number | null = null;
-              const ids: number[] = [];
+              const ids: Array<number> = [];
 
               do {
                 const page: SessionReadResult = yield* store.readSession(
@@ -359,7 +367,9 @@ describe("Store", () => {
                 for (const message of page.messages) {
                   const original = history.find((entry) => entry.id === message.messageId)!.message;
 
-                  if (original.role === "tool") throw new Error("Recalled a tool result");
+                  if (original.role === "tool") {
+                    throw new Error("Recalled a tool result");
+                  }
 
                   const text =
                     original.role === "user"
@@ -433,7 +443,7 @@ describe("Store", () => {
               "café",
               "東京",
             ]) {
-              expect((yield* store.searchSessions(query, 16384)).matches).toHaveLength(1);
+              expect((yield* store.searchSessions(query, 16_384)).matches).toHaveLength(1);
             }
 
             for (const query of [
@@ -444,22 +454,25 @@ describe("Store", () => {
               "text:alpha",
               "alph*",
             ]) {
-              const result = yield* store.searchSessions(query, 16384);
+              const result = yield* store.searchSessions(query, 16_384);
               expect(result.matches).toEqual([]);
             }
 
             for (const query of ["", " ", " leading", "x".repeat(257)]) {
-              yield* reject(store.searchSessions(query, 16384), "invalid-request");
+              yield* reject(store.searchSessions(query, 16_384), "invalid-request");
             }
 
-            for (let index = 0; index < 12; index++) yield* complete("equalrank");
-            const first = yield* store.searchSessions("equalrank", 16384);
+            for (let index = 0; index < 12; index++) {
+              yield* complete("equalrank");
+            }
+
+            const first = yield* store.searchSessions("equalrank", 16_384);
             expect(first.matches).toHaveLength(10);
             expect(first.truncated).toBe(true);
             expect(first.matches.map((match) => match.messageId)).toEqual(
               first.matches.map((match) => match.messageId).toSorted((a, b) => a - b),
             );
-            expect(yield* store.searchSessions("equalrank", 16384)).toEqual(first);
+            expect(yield* store.searchSessions("equalrank", 16_384)).toEqual(first);
             const small = yield* store.searchSessions("equalrank", 1024);
             expect(small.truncated).toBe(true);
             expect(small.matches.length).toBeGreaterThan(0);
@@ -475,7 +488,7 @@ describe("Store", () => {
             yield* complete("nebula " + "padding ".repeat(100));
             yield* complete("nebula");
             expect(
-              (yield* store.searchSessions("nebula", 16384)).matches.map((match) => match.excerpt),
+              (yield* store.searchSessions("nebula", 16_384)).matches.map((match) => match.excerpt),
             ).toMatchObject(["nebula", expect.any(String)]);
           }),
         ),
@@ -489,7 +502,7 @@ describe("Store", () => {
     {
       text: "https://example.test/" + "x".repeat(1200) + " timeout",
       query: "timeout",
-      maxBytes: 16384,
+      maxBytes: 16_384,
     },
     {
       text: "implementation ".repeat(47) + "cobalt",
@@ -555,7 +568,7 @@ describe("Store", () => {
               });
 
             yield* save("alpha middle beta trailing context");
-            const multi = yield* store.searchSessions("alpha beta", 16384);
+            const multi = yield* store.searchSessions("alpha beta", 16_384);
             expect(multi.matches).toHaveLength(1);
             expect(multi.matches[0]?.excerpt).toBe("alpha middle beta trailing context");
             expect(multi.truncated).toBe(false);
@@ -569,7 +582,7 @@ describe("Store", () => {
             expectNearBudget(oversized, 1024);
 
             yield* save("astral 🙂🙂🙂 marker");
-            const astral = yield* store.searchSessions("astral", 16384);
+            const astral = yield* store.searchSessions("astral", 16_384);
             expect(astral.matches).toHaveLength(1);
             expect(astral.matches[0]?.excerpt).toBe("astral 🙂🙂🙂 marker");
             expect(astral.truncated).toBe(false);
@@ -609,7 +622,7 @@ describe("Store", () => {
               status: "completed",
               response: responseFor("new-provider"),
             });
-            expect((yield* store.searchSessions("recoverable", 16384)).matches).toHaveLength(1);
+            expect((yield* store.searchSessions("recoverable", 16_384)).matches).toHaveLength(1);
           }),
         ),
       );
@@ -651,7 +664,9 @@ describe("Store", () => {
               ],
             });
 
-            if (state === "running") yield* store.startToolCall(pending.id, "write");
+            if (state === "running") {
+              yield* store.startToolCall(pending.id, "write");
+            }
 
             return pending;
           }),
@@ -883,8 +898,8 @@ describe("Store", () => {
             removed.id,
           ]);
           expect((yield* store.sessions).map((session) => session.id)).toEqual([kept.id]);
-          expect((yield* store.searchSessions("orchard", 16384)).matches).toEqual([]);
-          expect((yield* store.searchSessions("meadow", 16384)).matches).toHaveLength(2);
+          expect((yield* store.searchSessions("orchard", 16_384)).matches).toEqual([]);
+          expect((yield* store.searchSessions("meadow", 16_384)).matches).toHaveLength(2);
 
           const counts = yield* sql<Record<string, number>>`SELECT
             (SELECT COUNT(*) FROM runs) AS runs, (SELECT COUNT(*) FROM messages) AS messages,
@@ -954,12 +969,13 @@ describe("Store", () => {
           yield* store.recordToolCalls(first.id, request);
           yield* store.startToolCall(first.id, "reported");
 
-          for (const callId of ["reported", "skipped"])
+          for (const callId of ["reported", "skipped"]) {
             yield* store.finishToolCall(first.id, callId, {
               status: "failed",
               reason: "agent:tool-arguments",
               output: `{"error":"${callId}"}`,
             });
+          }
 
           expect(yield* store.toolCalls(first.id)).toMatchObject([
             { status: "failed", failureReason: "agent:tool-arguments", output: null },
@@ -1077,11 +1093,12 @@ describe("Store", () => {
 
           expect(finished.map((run) => run.status)).toEqual(Array(4).fill("completed"));
 
-          for (const session of sessions)
+          for (const session of sessions) {
             expect((yield* store.messages(session.id)).map(({ message }) => message.role)).toEqual([
               "user",
               "assistant",
             ]);
+          }
         }),
       );
     } finally {
@@ -1160,7 +1177,9 @@ describe("Store", () => {
             const session = yield* store.createSession("new-provider", "selected-model");
             const run = yield* store.queueRun(session.id, [user]);
 
-            if (state === "running") yield* store.startRun(run.id);
+            if (state === "running") {
+              yield* store.startRun(run.id);
+            }
 
             return run;
           }),

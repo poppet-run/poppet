@@ -78,33 +78,39 @@ const mergeItems = (
   completed: ReadonlyMap<number, typeof Item.Type>,
   terminalOutput: ReadonlyArray<typeof Item.Type>,
 ): ReadonlyArray<typeof Item.Type> => {
-  if (terminalOutput.length === 0)
+  if (terminalOutput.length === 0) {
     return inIndexOrder(completed, () =>
       interrupted(provider, "The stream omitted an output item."),
     );
+  }
 
   for (const index of completed.keys()) {
-    if (index >= terminalOutput.length)
+    if (index >= terminalOutput.length) {
       throw interrupted(provider, "The terminal response omitted streamed output items.");
+    }
   }
 
   return terminalOutput.map((item, index) => {
     const streamed = completed.get(index);
 
-    if (streamed === undefined) return item;
+    if (streamed === undefined) {
+      return item;
+    }
 
-    if (streamed.type !== item.type)
+    if (streamed.type !== item.type) {
       throw interrupted(provider, "The terminal response conflicted with a streamed output item.");
+    }
 
     if (streamed.type === "message" && item.type === "message") {
       if (
         streamed.id !== item.id ||
         JSON.stringify(streamed.content) !== JSON.stringify(item.content)
-      )
+      ) {
         throw interrupted(
           provider,
           "The terminal response conflicted with a streamed output item.",
         );
+      }
 
       return item;
     }
@@ -115,11 +121,12 @@ const mergeItems = (
         streamed.name !== item.name ||
         (streamed.namespace ?? null) !== (item.namespace ?? null) ||
         streamed.arguments !== item.arguments
-      )
+      ) {
         throw interrupted(
           provider,
           "The terminal response conflicted with a streamed output item.",
         );
+      }
 
       return item;
     }
@@ -132,11 +139,12 @@ const mergeItems = (
           item.encrypted_content !== null &&
           item.encrypted_content !== undefined &&
           streamed.encrypted_content !== item.encrypted_content)
-      )
+      ) {
         throw interrupted(
           provider,
           "The terminal response conflicted with a streamed output item.",
         );
+      }
 
       const encrypted = streamed.encrypted_content ?? item.encrypted_content;
 
@@ -152,26 +160,30 @@ const normalizedOutput = (
   items: ReadonlyArray<typeof Item.Type>,
   validation?: { readonly allowTools: boolean; readonly declaredTools: ReadonlySet<string> },
 ) => {
-  const output: Output[] = [];
+  const output: Array<Output> = [];
   const calls = new Set<string>();
 
   for (const item of items) {
     if (item.type === "message") {
-      for (const content of item.content)
+      for (const content of item.content) {
         output.push({
           type: "text",
           text: content.type === "output_text" ? content.text : content.refusal,
         });
+      }
     } else if (item.type === "function_call") {
       if (
         validation !== undefined &&
         (!validation.allowTools ||
           !validation.declaredTools.has(toolIdentity(item.namespace ?? null, item.name)))
-      )
+      ) {
         throw interrupted(description.provider, "The model returned an invalid tool call.");
+      }
 
-      if (calls.has(item.call_id))
+      if (calls.has(item.call_id)) {
         throw interrupted(description.provider, "The model returned duplicate tool calls.");
+      }
+
       Schema.decodeUnknownSync(Schema.fromJsonString(Schema.JsonObject))(item.arguments);
       calls.add(item.call_id);
       output.push({
@@ -189,7 +201,7 @@ const normalizedOutput = (
 
 const inputItems = (items: ReadonlyArray<typeof Item.Type>): ResponseInput =>
   items.map((item) => {
-    if (item.type === "message")
+    if (item.type === "message") {
       return {
         type: "message",
         id: item.id,
@@ -201,6 +213,7 @@ const inputItems = (items: ReadonlyArray<typeof Item.Type>): ResponseInput =>
             : { type: "refusal", refusal: content.refusal },
         ),
       };
+    }
 
     if (item.type === "reasoning") {
       const reasoning: ResponseReasoningItem = {
@@ -209,8 +222,9 @@ const inputItems = (items: ReadonlyArray<typeof Item.Type>): ResponseInput =>
         summary: item.summary.map((part) => ({ ...part })),
       };
 
-      if (item.encrypted_content !== undefined)
+      if (item.encrypted_content !== undefined) {
         reasoning.encrypted_content = item.encrypted_content;
+      }
 
       return reasoning;
     }
@@ -222,7 +236,7 @@ const responseInput = (description: ModelDescription, request: ModelRequest) => 
   const input: ResponseInput = [];
 
   for (const message of request.messages) {
-    if (message.role === "user")
+    if (message.role === "user") {
       input.push({
         role: "user",
         content: !message.attachments?.length
@@ -233,9 +247,9 @@ const responseInput = (description: ModelDescription, request: ModelRequest) => 
                 : { type: "input_image", image_url: part.url, detail: "auto" },
             ),
       });
-    else if (message.role === "tool")
+    } else if (message.role === "tool") {
       input.push({ type: "function_call_output", call_id: message.callId, output: message.output });
-    else if (message.continuation !== null) {
+    } else if (message.continuation !== null) {
       const saved = Schema.decodeUnknownSync(Continuation, { onExcessProperty: "error" })(
         message.continuation.data,
       );
@@ -243,16 +257,19 @@ const responseInput = (description: ModelDescription, request: ModelRequest) => 
       if (
         JSON.stringify(normalizedOutput(description, saved.items)) !==
         JSON.stringify(message.output)
-      )
+      ) {
         throw invalidRequest(
           description.provider,
           "Assistant output does not match its saved continuation.",
         );
+      }
+
       input.push(...inputItems(saved.items));
     } else {
       for (const part of message.output) {
-        if (part.type === "text") input.push({ role: "assistant", content: part.text });
-        else {
+        if (part.type === "text") {
+          input.push({ role: "assistant", content: part.text });
+        } else {
           const call: ResponseFunctionToolCall = {
             type: "function_call",
             call_id: part.callId,
@@ -260,7 +277,10 @@ const responseInput = (description: ModelDescription, request: ModelRequest) => 
             arguments: part.arguments,
           };
 
-          if (part.namespace !== null) call.namespace = part.namespace;
+          if (part.namespace !== null) {
+            call.namespace = part.namespace;
+          }
+
           input.push(call);
         }
       }
@@ -270,9 +290,9 @@ const responseInput = (description: ModelDescription, request: ModelRequest) => 
   return input;
 };
 
-const responseTools = (request: ModelRequest): Tool[] => {
-  const tools: Tool[] = [];
-  const namespaces = new Map<string, FunctionTool[]>();
+const responseTools = (request: ModelRequest): Array<Tool> => {
+  const tools: Array<Tool> = [];
+  const namespaces = new Map<string, Array<FunctionTool>>();
 
   for (const tool of request.tools) {
     const definition: FunctionTool = {
@@ -283,8 +303,9 @@ const responseTools = (request: ModelRequest): Tool[] => {
       strict: true,
     };
 
-    if (tool.namespace === null) tools.push(definition);
-    else {
+    if (tool.namespace === null) {
+      tools.push(definition);
+    } else {
       let definitions = namespaces.get(tool.namespace);
 
       if (!definitions) {
@@ -349,13 +370,17 @@ export const responsesModel = (
               include: ["reasoning.encrypted_content"],
             };
 
-            if (decoded.settings.temperature !== undefined)
+            if (decoded.settings.temperature !== undefined) {
               parameters.temperature = decoded.settings.temperature;
+            }
 
-            if (decoded.settings.maxOutputTokens !== undefined)
+            if (decoded.settings.maxOutputTokens !== undefined) {
               parameters.max_output_tokens = decoded.settings.maxOutputTokens;
+            }
 
-            if (decoded.settings.reasoningSummary) parameters.reasoning = { summary: "auto" };
+            if (decoded.settings.reasoningSummary) {
+              parameters.reasoning = { summary: "auto" };
+            }
 
             const stream = yield* Effect.tryPromise({
               try: () =>
@@ -374,11 +399,12 @@ export const responsesModel = (
 
               try {
                 for await (const event of stream) {
-                  if (terminal !== null)
+                  if (terminal !== null) {
                     throw interrupted(
                       description.provider,
                       "The stream continued after its terminal response.",
                     );
+                  }
 
                   if (event.type === "response.output_text.delta") {
                     const delta = Schema.decodeUnknownSync(Schema.Struct({ delta: Schema.String }))(
@@ -398,13 +424,16 @@ export const responsesModel = (
                       }),
                     )(event);
 
-                    if (delta.delta.length === 0) continue;
+                    if (delta.delta.length === 0) {
+                      continue;
+                    }
 
                     if (
                       reasoningItem !== null &&
                       (reasoningItem !== delta.item_id || reasoningSummary !== delta.summary_index)
-                    )
+                    ) {
                       yield { type: "reasoning-delta", text: "\n\n" };
+                    }
 
                     reasoningItem = delta.item_id;
                     reasoningSummary = delta.summary_index;
@@ -414,32 +443,36 @@ export const responsesModel = (
                       !Number.isSafeInteger(event.output_index) ||
                       event.output_index < 0 ||
                       completedItems.has(event.output_index)
-                    )
+                    ) {
                       throw interrupted(
                         description.provider,
                         "The stream returned an invalid output index.",
                       );
+                    }
+
                     completedItems.set(
                       event.output_index,
                       Schema.decodeUnknownSync(Item)(event.item),
                     );
-                  } else if (event.type === "response.completed")
+                  } else if (event.type === "response.completed") {
                     terminal = Schema.decodeUnknownSync(Terminal)(event.response);
-                  else if (event.type === "response.failed" || event.type === "error") {
+                  } else if (event.type === "response.failed" || event.type === "error") {
                     const code = event.type === "error" ? event.code : event.response.error?.code;
                     throw remote(undefined, code, undefined);
-                  } else if (event.type === "response.incomplete")
+                  } else if (event.type === "response.incomplete") {
                     throw interrupted(
                       description.provider,
                       "The model reported incomplete inference.",
                     );
+                  }
                 }
 
-                if (!terminal)
+                if (!terminal) {
                   throw interrupted(
                     description.provider,
                     "The stream ended without completed inference.",
                   );
+                }
 
                 const items = mergeItems(description.provider, completedItems, terminal.output);
 
@@ -480,11 +513,13 @@ export const responsesModel = (
                   response: Schema.decodeUnknownSync(Completion)(response),
                 };
               } catch (cause) {
-                if (cause instanceof Schema.SchemaError || cause instanceof SyntaxError)
+                if (cause instanceof Schema.SchemaError || cause instanceof SyntaxError) {
                   throw interrupted(
                     description.provider,
                     "The model returned a malformed Responses stream.",
                   );
+                }
+
                 throw cause;
               } finally {
                 stream.controller.abort();

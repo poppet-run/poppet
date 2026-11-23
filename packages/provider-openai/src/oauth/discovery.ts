@@ -18,7 +18,9 @@ export const discoverIssuer = (http: HttpFetch, expectedIssuer: string) =>
   Effect.gen(function* () {
     const response = yield* request(http, `${expectedIssuer}/.well-known/openid-configuration`);
 
-    if (!response.ok) return yield* Effect.fail(requestFailure(response.status));
+    if (!response.ok) {
+      return yield* Effect.fail(requestFailure(response.status));
+    }
 
     const metadata = yield* Effect.tryPromise({
       try: () => response.json(),

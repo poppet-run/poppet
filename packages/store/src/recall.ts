@@ -33,11 +33,12 @@ export const readSession = Effect.fn(function* (
     decodeRow(Schema.Struct({ id: Session.fields.id, title: Session.fields.title })),
   );
 
-  if (session === null)
+  if (session === null) {
     return yield* new StoreError({
       reason: "not-found",
       message: "The recalled session does not exist.",
     });
+  }
 
   const anchorId = aroundMessageId ?? afterMessageId;
 
@@ -50,11 +51,12 @@ export const readSession = Effect.fn(function* (
           decodeRow(Schema.Struct({ position: Schema.Natural })),
         );
 
-  if (anchorId !== null && anchor === null)
+  if (anchorId !== null && anchor === null) {
     return yield* new StoreError({
       reason: "invalid-request",
       message: "The recall anchor is not an eligible message in this session.",
     });
+  }
 
   const window = (before: boolean, position: number, limit: number) => {
     const comparison = sql.literal(before ? "<=" : ">");

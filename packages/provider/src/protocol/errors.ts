@@ -22,21 +22,32 @@ const sharedReason = (
   status: number | undefined,
   code: string | undefined,
 ): ProviderError["reason"] => {
-  if (status === 401) return "authentication";
+  if (status === 401) {
+    return "authentication";
+  }
 
-  if (status === 403) return "permission";
+  if (status === 403) {
+    return "permission";
+  }
 
-  if (["insufficient_quota", "usage_limit_exceeded"].includes(code ?? "")) return "quota";
+  if (["insufficient_quota", "usage_limit_exceeded"].includes(code ?? "")) {
+    return "quota";
+  }
 
-  if (status === 429 || code === "rate_limit_exceeded") return "rate-limit";
+  if (status === 429 || code === "rate_limit_exceeded") {
+    return "rate-limit";
+  }
 
-  if (code === "context_length_exceeded") return "context-limit";
+  if (code === "context_length_exceeded") {
+    return "context-limit";
+  }
 
   if (
     (status ?? 0) >= 500 ||
     ["server_error", "internal_error", "service_unavailable"].includes(code ?? "")
-  )
+  ) {
     return "temporary";
+  }
 
   return "invalid-request";
 };
@@ -66,21 +77,25 @@ export const inferenceFailure = (
   cause: unknown,
   classify?: RemoteReason,
 ): ProviderError => {
-  if (cause instanceof ProviderError) return cause;
+  if (cause instanceof ProviderError) {
+    return cause;
+  }
 
-  if (cause instanceof APIConnectionTimeoutError || cause instanceof APIUserAbortError)
+  if (cause instanceof APIConnectionTimeoutError || cause instanceof APIUserAbortError) {
     return new ProviderError({
       provider,
       reason: "interrupted",
       message: "The inference request timed out or was interrupted.",
     });
+  }
 
-  if (cause instanceof APIConnectionError)
+  if (cause instanceof APIConnectionError) {
     return new ProviderError({
       provider,
       reason: "temporary",
       message: `The ${provider} connection failed. No automatic retry was attempted.`,
     });
+  }
 
   if (cause instanceof APIError) {
     return remoteFailure(provider, cause.status, cause.code, cause.requestID, classify);

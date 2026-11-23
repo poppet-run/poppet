@@ -65,11 +65,15 @@ export const LocalMemoryLive = Layer.effect(
 
     const requireSource = (sourceRunId: string | null) =>
       Effect.gen(function* () {
-        if (sourceRunId === null) return;
+        if (sourceRunId === null) {
+          return;
+        }
 
         const source = yield* sql`SELECT id FROM runs WHERE id = ${sourceRunId}`;
 
-        if (source.length === 0) return yield* fail("not-found", "The source run does not exist.");
+        if (source.length === 0) {
+          return yield* fail("not-found", "The source run does not exist.");
+        }
       });
 
     const requireRoom = Effect.gen(function* () {
@@ -77,11 +81,12 @@ export const LocalMemoryLive = Layer.effect(
         decodeRow(Schema.Struct({ count: Schema.Natural })),
       );
 
-      if ((saved?.count ?? 0) >= 128)
+      if ((saved?.count ?? 0) >= 128) {
         return yield* fail(
           "conflict",
           "Memory holds at most 128 facts. Forget a fact before adding another.",
         );
+      }
     });
 
     const commit = (
@@ -115,8 +120,9 @@ export const LocalMemoryLive = Layer.effect(
             (existing === undefined ||
               Buffer.byteLength(JSON.stringify(value)) >=
                 Buffer.byteLength(JSON.stringify(existing.value)))
-          )
+          ) {
             return yield* Effect.fail(memoryLimit("saved facts", savedFactsBytes));
+          }
         }
 
         yield* sql`INSERT INTO memory_revisions (key, revision, action, value, origin, source_run_id, created_at)
@@ -148,21 +154,25 @@ export const LocalMemoryLive = Layer.effect(
           yield* requireSource(sourceRunId);
           const existing = yield* current(key);
 
-          if (mode === "replace" && existing === null)
+          if (mode === "replace" && existing === null) {
             return yield* fail(
               "not-found",
               "The fact does not exist. Remember it as a new fact instead.",
             );
+          }
 
-          if (mode === "remember" && existing !== null)
+          if (mode === "remember" && existing !== null) {
             return yield* fail(
               "conflict",
               "The fact already exists. Replace it to change its value.",
             );
+          }
 
           const action = mode === "set" ? (existing === null ? "remember" : "replace") : mode;
 
-          if (action === "remember") yield* requireRoom;
+          if (action === "remember") {
+            yield* requireRoom;
+          }
 
           return (yield* commit(
             key,
@@ -186,8 +196,9 @@ export const LocalMemoryLive = Layer.effect(
             yield* input(MemoryFact.fields.key, key);
             yield* requireSource(sourceRunId);
 
-            if ((yield* current(key)) === null)
+            if ((yield* current(key)) === null) {
               return yield* fail("not-found", "The fact does not exist.");
+            }
 
             yield* commit(
               key,
@@ -218,22 +229,27 @@ export const LocalMemoryLive = Layer.effect(
             const target = yield* sql`SELECT * FROM memory_revisions
               WHERE key = ${key} AND revision = ${revision}`.pipe(decodeRow(MemoryRevision));
 
-            if (target === null)
+            if (target === null) {
               return yield* fail("not-found", "The fact revision does not exist.");
+            }
 
             const existing = yield* current(key);
 
             if (target.value === null) {
-              if (existing === null)
+              if (existing === null) {
                 return yield* fail("conflict", "The fact is already forgotten.");
+              }
 
               return yield* commit(key, "forget", null, null, "cli", at);
             }
 
-            if (existing?.value === target.value)
+            if (existing?.value === target.value) {
               return yield* fail("conflict", "The fact already has this value.");
+            }
 
-            if (existing === null) yield* requireRoom;
+            if (existing === null) {
+              yield* requireRoom;
+            }
 
             return yield* commit(key, "revert", target.value, null, "cli", at);
           }),
@@ -253,8 +269,9 @@ export const LocalMemoryLive = Layer.effect(
           if (
             facts.length > 0 &&
             Buffer.byteLength(JSON.stringify(facts), "utf8") > budget.factsBytes
-          )
+          ) {
             return yield* Effect.fail(memoryLimit("saved facts", budget.factsBytes));
+          }
 
           return { soul, profile, facts };
         }),

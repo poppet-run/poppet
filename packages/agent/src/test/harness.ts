@@ -27,7 +27,7 @@ export const reportedError = (request: ModelRequest) => {
 export const testModel = (options: {
   readonly stream: ModelOperations["stream"];
   readonly answer: ModelOperations["stream"];
-  readonly requests?: ModelRequest[];
+  readonly requests?: Array<ModelRequest>;
   readonly capabilities?: Partial<ModelOperations["description"]["capabilities"]>;
 }): ModelOperations => ({
   description: {
@@ -59,7 +59,10 @@ export const gatedStream = (answer: (prompt: string) => Stream.Stream<ModelEvent
   const gate = (prompt: string) => {
     const existing = gates.get(prompt);
 
-    if (existing !== undefined) return existing;
+    if (existing !== undefined) {
+      return existing;
+    }
+
     const created = { entered: Deferred.makeUnsafe<void>(), release: Deferred.makeUnsafe<void>() };
     gates.set(prompt, created);
 

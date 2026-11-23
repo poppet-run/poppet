@@ -17,7 +17,9 @@ const id = (message: string, value: string | undefined) =>
   });
 
 export const promptDiscordSetup = Effect.gen(function* () {
-  if (!(yield* Prompt.Confirm({ message: "Configure Discord?", initial: false }))) return null;
+  if (!(yield* Prompt.Confirm({ message: "Configure Discord?", initial: false }))) {
+    return null;
+  }
 
   const { dataDirectory } = yield* ChannelEnvironment;
   const saved = yield* loadDiscordSettings(dataDirectory);

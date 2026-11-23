@@ -9,7 +9,7 @@ import { SessionSearchMatch, SessionSearchQuery } from "#src/schema";
 import type { SessionSearchResult } from "#src/schema";
 import { decodeRows } from "#src/sql";
 
-export const MaxBytes = Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 }));
+export const MaxBytes = Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65_536 }));
 
 const overhead = 250;
 
@@ -26,7 +26,9 @@ export const searchSessions = Effect.fn(function* (
     .filter((term) => /[\p{L}\p{N}]/u.test(term))
     .map((term) => `"${term.replaceAll('"', '""')}"`);
 
-  if (terms.length === 0) return { matches: [], truncated: false } satisfies SessionSearchResult;
+  if (terms.length === 0) {
+    return { matches: [], truncated: false } satisfies SessionSearchResult;
+  }
 
   const limit = Math.min(10, Math.max(1, Math.floor(maxBytes / 400)));
   const excerptBytes = Math.min(4000, Math.floor(maxBytes / limit) - overhead);
@@ -55,8 +57,9 @@ export const searchSessions = Effect.fn(function* (
 
       let excerpt: string;
 
-      if (hitBytes >= excerptBytes) excerpt = clip(firstHit, excerptBytes);
-      else {
+      if (hitBytes >= excerptBytes) {
+        excerpt = clip(firstHit, excerptBytes);
+      } else {
         const side = Math.floor((excerptBytes - hitBytes) / 2);
         const lead = [...clip([...before].toReversed().join(""), side)].toReversed().join("");
         excerpt = `${lead}${firstHit}${clip(after, side)}`;

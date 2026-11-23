@@ -41,17 +41,20 @@ export const parseTaskSchedule = (
   delay: Option.Option<string> = Option.none(),
 ): Schedule => {
   if (Option.isSome(delay)) {
-    if (Option.isSome(at) || Option.isSome(cron) || Option.isSome(tz))
+    if (Option.isSome(at) || Option.isSome(cron) || Option.isSome(tz)) {
       throw new TaskError({ message: "Use --in alone, without --at, --cron, or --tz." });
+    }
 
     return { type: "once", at: parseRelativeTime(delay.value) };
   }
 
-  if (Option.isSome(at) && Option.isNone(cron) && Option.isNone(tz))
+  if (Option.isSome(at) && Option.isNone(cron) && Option.isNone(tz)) {
     return { type: "once", at: parseTimestamp(at.value) };
+  }
 
-  if (Option.isNone(at) && Option.isSome(cron) && Option.isSome(tz))
+  if (Option.isNone(at) && Option.isSome(cron) && Option.isSome(tz)) {
     return { type: "cron", expression: cron.value, timezone: tz.value };
+  }
 
   throw new TaskError({
     message: "Use --in <duration>, --at <timestamp>, or --cron <expression> --tz <timezone>.",
@@ -59,7 +62,10 @@ export const parseTaskSchedule = (
 };
 
 export const parseTaskEnd = (until: Option.Option<string>, schedule: Schedule) => {
-  if (Option.isNone(until)) return undefined;
+  if (Option.isNone(until)) {
+    return undefined;
+  }
+
   const endAt = parseTimestamp(until.value);
 
   checkEndTime(schedule, endAt, Date.now(), true);
@@ -81,12 +87,13 @@ export const prepareTask = (
     });
     const config = yield* AppConfig;
 
-    if (config.model === null)
+    if (config.model === null) {
       return yield* Effect.fail(
         new TaskError({
           message: "Set model in config.json before adding a task.",
         }),
       );
+    }
 
     const command = {
       action: "add",
@@ -116,7 +123,10 @@ export const prepareTask = (
   });
 
 export const parseTaskDestination = (text: string | undefined) => {
-  if (text === undefined) return undefined;
+  if (text === undefined) {
+    return undefined;
+  }
+
   const separator = text.indexOf(":");
   const adapter = separator < 0 ? text : text.slice(0, separator);
   const conversationId = separator < 0 ? null : text.slice(separator + 1);
@@ -125,8 +135,9 @@ export const parseTaskDestination = (text: string | undefined) => {
     !Schema.is(DeliveryDestination.fields.adapter)(adapter) ||
     (conversationId !== null &&
       (conversationId.length === 0 || conversationId.trim() !== conversationId))
-  )
+  ) {
     throw new TaskError({ message: "Use --to <gateway> or --to <gateway>:<conversation-id>." });
+  }
 
   return { adapter, conversationId };
 };
@@ -134,14 +145,17 @@ export const parseTaskDestination = (text: string | undefined) => {
 export const parseRelativeTime = (text: string, now = Date.now()): number => {
   const match = /^([1-9][0-9]*)(s|m|h|d)$/.exec(text);
 
-  if (match === null)
+  if (match === null) {
     throw new TaskError({ message: "Use a positive whole duration such as 30s, 10m, 2h, or 1d." });
+  }
+
   const units = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
   // SAFETY: The regex above restricts the unit to exactly s, m, h, or d.
   const at = now + Number(match[1]) * units[match[2] as keyof typeof units];
 
-  if (!Number.isSafeInteger(at) || at > 8_640_000_000_000_000 || at <= now)
+  if (!Number.isSafeInteger(at) || at > 8_640_000_000_000_000 || at <= now) {
     throw new TaskError({ message: "The duration is too large." });
+  }
 
   return at;
 };

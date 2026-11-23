@@ -5,7 +5,10 @@ export const clip = (text: string, bytes: number) => {
   for (const character of text) {
     used += Buffer.byteLength(character);
 
-    if (used > bytes) break;
+    if (used > bytes) {
+      break;
+    }
+
     end += character.length;
   }
 
@@ -13,15 +16,21 @@ export const clip = (text: string, bytes: number) => {
 };
 
 export const longestFit = (max: number, fits: (count: number) => boolean) => {
-  if (!fits(0)) return -1;
+  if (!fits(0)) {
+    return -1;
+  }
+
   let low = 0;
   let high = max;
 
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
 
-    if (fits(middle)) low = middle;
-    else high = middle - 1;
+    if (fits(middle)) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
   }
 
   return low;
@@ -42,7 +51,10 @@ export const fitText = (
   const fits = (output: string) => Buffer.byteLength(output) <= limit;
   const whole = render(text, false);
 
-  if (fits(whole)) return whole;
+  if (fits(whole)) {
+    return whole;
+  }
+
   const shown = fitPrefix(text, (prefix) => fits(render(prefix, true)));
 
   return shown === null ? null : render(shown, true);

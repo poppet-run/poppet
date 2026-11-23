@@ -18,9 +18,11 @@ const settingsError = () =>
 
 const filesFor = (dataDirectory: string, adapter: string) =>
   Effect.gen(function* () {
-    if (!/^[a-z][a-z0-9-]{0,63}$/.test(adapter)) return yield* Effect.fail(settingsError());
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(adapter)) {
+      return yield* Effect.fail(settingsError());
+    }
 
-    return protectedFiles(join(dataDirectory, "channels"), settingsError, 16384);
+    return protectedFiles(join(dataDirectory, "channels"), settingsError, 16_384);
   });
 
 export const loadChannelSettings = (dataDirectory: string, adapter: string) =>
@@ -29,7 +31,10 @@ export const loadChannelSettings = (dataDirectory: string, adapter: string) =>
 export const saveChannelSettings = (dataDirectory: string, adapter: string, contents: string) =>
   Effect.scoped(
     Effect.gen(function* () {
-      if (Buffer.byteLength(contents) > 16384) return yield* Effect.fail(settingsError());
+      if (Buffer.byteLength(contents) > 16_384) {
+        return yield* Effect.fail(settingsError());
+      }
+
       const files = yield* filesFor(dataDirectory, adapter);
 
       yield* files.lock(adapter).pipe(Effect.mapError(settingsError));
@@ -54,7 +59,9 @@ export const channelSettings = <S extends Schema.Top>(
     Effect.gen(function* () {
       const contents = yield* loadChannelSettings(dataDirectory, adapter);
 
-      if (contents === null) return null;
+      if (contents === null) {
+        return null;
+      }
 
       return yield* Schema.decodeUnknownEffect(SavedSettings, { onExcessProperty: "error" })(
         contents,
@@ -73,7 +80,9 @@ export const channelSettings = <S extends Schema.Top>(
         const { dataDirectory } = yield* ChannelEnvironment;
         const settings = yield* load(dataDirectory);
 
-        if (settings === null) return null;
+        if (settings === null) {
+          return null;
+        }
 
         return Layer.unwrap(
           Effect.tryPromise({
@@ -131,10 +140,16 @@ export const configuredChannelSettings = <
       Effect.gen(function* () {
         const saved = yield* credentials.load(directory);
 
-        if (saved === null) return null;
+        if (saved === null) {
+          return null;
+        }
+
         const { file } = yield* readConfigFile(directory);
 
-        if (file[adapter] === undefined) return null;
+        if (file[adapter] === undefined) {
+          return null;
+        }
+
         const policy = yield* Schema.decodeUnknownEffect(policySchema)(file[adapter]);
 
         return { ...policy, ...saved };

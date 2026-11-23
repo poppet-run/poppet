@@ -25,7 +25,7 @@ const catalogEntry = (
 ) => ({
   id,
   name: id,
-  context_length: 10000,
+  context_length: 10_000,
   architecture: { input_modalities: inputs, output_modalities: outputs, tokenizer },
   supported_parameters: parameters,
   top_provider: { max_completion_tokens: 2000 },
@@ -73,7 +73,7 @@ const toolResponse = (body: Schema.JsonObject) => {
   const json = JSON.stringify(body);
   const proof = json.match(/poppet_verified_[a-f0-9]+/)?.[0];
 
-  if (proof)
+  if (proof) {
     return sse([
       { choices: [{ index: 0, delta: { content: proof }, finish_reason: "stop" }] },
       {
@@ -81,6 +81,7 @@ const toolResponse = (body: Schema.JsonObject) => {
         usage: { prompt_tokens: 12, completion_tokens: 3 },
       },
     ]);
+  }
 
   const args = JSON.stringify({ challenge: json.match(/challenge ([a-f0-9]+)/)?.[1] ?? "" });
 
@@ -173,7 +174,7 @@ const fixture = (
 describe("makeOpenRouterProvider", () => {
   test("when catalog discovery times out, aborts its stalled body", async () => {
     const reading = Promise.withResolvers<void>();
-    const signals: AbortSignal[] = [];
+    const signals: Array<AbortSignal> = [];
 
     const http: HttpFetch = async (input, init) => {
       const incoming =
@@ -243,7 +244,7 @@ describe("makeOpenRouterProvider", () => {
           tools: true,
           images: true,
           generationSettings: ["temperature", "maxOutputTokens"],
-          contextWindow: 10000,
+          contextWindow: 10_000,
           maxOutputTokens: 2000,
         },
       ],
@@ -253,7 +254,7 @@ describe("makeOpenRouterProvider", () => {
           tools: false,
           images: false,
           generationSettings: ["maxOutputTokens"],
-          contextWindow: 10000,
+          contextWindow: 10_000,
           maxOutputTokens: 2000,
         },
       ],
@@ -415,7 +416,7 @@ describe("makeOpenRouterProvider", () => {
     );
 
     const model = await Effect.runPromise(harness.provider.resolve("vendor/model"));
-    const events: string[] = [];
+    const events: Array<string> = [];
     await expect(
       Effect.runPromise(
         Stream.runForEach(model.stream(request), (event) =>
@@ -468,7 +469,7 @@ describe("makeOpenRouterProvider", () => {
       );
 
       const model = await Effect.runPromise(harness.provider.resolve("vendor/model"));
-      const events: string[] = [];
+      const events: Array<string> = [];
       await expect(
         Effect.runPromise(
           Stream.runForEach(model.stream(request), (event) =>

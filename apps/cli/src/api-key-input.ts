@@ -18,7 +18,9 @@ export const readHiddenKey = (
   provider: ProviderId,
   unattendedMessage = "API-key login needs an interactive terminal to enter the key with hidden input.",
 ) => {
-  if (!process.stdin.isTTY) return Effect.fail(inputError(provider, unattendedMessage));
+  if (!process.stdin.isTTY) {
+    return Effect.fail(inputError(provider, unattendedMessage));
+  }
 
   return promptSecret(`${provider} API key (input masked)`).pipe(
     Effect.mapError(() => inputError(provider, "API-key login cancelled.")),
@@ -27,7 +29,9 @@ export const readHiddenKey = (
 };
 
 export const readVisibleLine = (provider: ProviderId, prompt: string) => {
-  if (!process.stdin.isTTY) return Effect.never;
+  if (!process.stdin.isTTY) {
+    return Effect.never;
+  }
 
   return Effect.scoped(
     Effect.gen(function* () {
@@ -42,8 +46,12 @@ export const readVisibleLine = (provider: ProviderId, prompt: string) => {
           Effect.mapError(() => inputError(provider, "Sign-in cancelled.")),
         );
 
-        if (event.key.name === "escape" || (event.key.ctrl && ["c", "d"].includes(event.key.name)))
+        if (
+          event.key.name === "escape" ||
+          (event.key.ctrl && ["c", "d"].includes(event.key.name))
+        ) {
           return yield* Effect.fail(inputError(provider, "Sign-in cancelled."));
+        }
 
         if (event.key.name === "return" || event.key.name === "enter") {
           yield* display("\n");
@@ -52,7 +60,10 @@ export const readVisibleLine = (provider: ProviderId, prompt: string) => {
         }
 
         if (event.key.name === "backspace") {
-          if (value !== "") yield* display("\b \b");
+          if (value !== "") {
+            yield* display("\b \b");
+          }
+
           value = value.slice(0, -1);
         } else if (event.key.ctrl && event.key.name === "u") {
           yield* display(`\r\u001b[2K${prompt}`);
@@ -62,8 +73,9 @@ export const readVisibleLine = (provider: ProviderId, prompt: string) => {
           value += event.input.value;
         }
 
-        if (value.length > 8192)
+        if (value.length > 8192) {
           return yield* Effect.fail(inputError(provider, "The pasted text is too long."));
+        }
       }
     }).pipe(Effect.provide(BunTerminal.layer)),
   );

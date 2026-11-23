@@ -26,7 +26,7 @@ const enter = key("enter");
 
 const answer = (text = "") => (text === "" ? [enter] : [key(text, text), enter]);
 
-const directories: string[] = [];
+const directories: Array<string> = [];
 
 afterEach(async () => {
   await Promise.all(
@@ -38,8 +38,8 @@ const fixture = async (includeSlack = false) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-setup-"));
   directories.push(directory);
   const path = join(directory, "config.json");
-  const output: string[] = [];
-  const actions: string[] = [];
+  const output: Array<string> = [];
+  const actions: Array<string> = [];
 
   const state = {
     connected: false,
@@ -83,7 +83,10 @@ const fixture = async (includeSlack = false) => {
         status: Effect.sync(() => ({ connected: state.connected, source: state.source })),
         login: () =>
           Effect.gen(function* () {
-            if (state.failLogin) return yield* Effect.fail(invalidRequest(id, "Login failed."));
+            if (state.failLogin) {
+              return yield* Effect.fail(invalidRequest(id, "Login failed."));
+            }
+
             yield* (yield* CredentialInput).readKey(id);
             state.connected = true;
             state.logins++;
@@ -133,7 +136,10 @@ const fixture = async (includeSlack = false) => {
       readInput: Effect.gen(function* () {
         const inputs = remaining.shift();
 
-        if (inputs === undefined) return yield* Effect.die("Unexpected setup prompt");
+        if (inputs === undefined) {
+          return yield* Effect.die("Unexpected setup prompt");
+        }
+
         const queue = yield* Queue.unbounded<Terminal.UserInput, Cause.Done>();
         yield* Queue.offerAll(queue, inputs);
         yield* Queue.end(queue);
@@ -394,7 +400,9 @@ describe("setup", () => {
 
       expect(f.actions).toEqual(expectedActions[mode]);
 
-      if (mode === "foreground") expect(f.output.join("\n")).toContain("poppet worker run");
+      if (mode === "foreground") {
+        expect(f.output.join("\n")).toContain("poppet worker run");
+      }
     },
   );
 });

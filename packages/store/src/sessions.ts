@@ -43,7 +43,10 @@ export const sessionOperations = (sql: SqlClient.SqlClient, records: StoreRecord
 
   const removeRows = (ids: ReadonlyArray<string>) =>
     Effect.gen(function* () {
-      if (ids.length === 0) return;
+      if (ids.length === 0) {
+        return;
+      }
+
       const sessions = sql.in("session_id", ids);
       const runs = sql`SELECT id FROM runs WHERE ${sessions}`;
 
@@ -70,10 +73,12 @@ export const sessionOperations = (sql: SqlClient.SqlClient, records: StoreRecord
           const busy =
             yield* sql`SELECT id FROM sessions WHERE ${sql.in("id", selected)} AND NOT ${idle}`;
 
-          if (busy.length > 0)
+          if (busy.length > 0) {
             return yield* conflict(
               "A reply is in progress in this session. Stop it before deleting the session.",
             );
+          }
+
           yield* removeRows(selected);
 
           return sessions;
@@ -86,7 +91,9 @@ export const sessionOperations = (sql: SqlClient.SqlClient, records: StoreRecord
             WHERE updated_at < ${yield* decodeInput(Schema.Int, before)} AND ${idle}
             ORDER BY updated_at, id`.pipe(decodeRows(SessionRow));
 
-          if (!dryRun) yield* removeRows(sessions.map((session) => session.id));
+          if (!dryRun) {
+            yield* removeRows(sessions.map((session) => session.id));
+          }
 
           return sessions;
         }),

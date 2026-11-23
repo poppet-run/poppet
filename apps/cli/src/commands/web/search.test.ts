@@ -53,7 +53,7 @@ describe.each(["brave", "kagi"])("WebSearchLive", (provider) => {
   );
 });
 
-const run = (action: "login" | "status" | "logout", output: string[]) =>
+const run = (action: "login" | "status" | "logout", output: Array<string>) =>
   manageWebSearch(action, "test-key", true).pipe(
     Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
     Effect.provideService(Console.Console, {
@@ -71,7 +71,7 @@ const run = (action: "login" | "status" | "logout", output: string[]) =>
 
 describe("manageWebSearch without a provider", () => {
   test("status reports disabled without inspecting stored credentials", async () => {
-    const output: string[] = [];
+    const output: Array<string> = [];
     await Effect.runPromise(run("status", output));
     expect(JSON.parse(output.join(""))).toEqual({
       provider: null,

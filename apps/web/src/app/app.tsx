@@ -44,9 +44,11 @@ export const App = () => {
     composer.current?.focus();
   };
 
-  if (authenticated === null) return <Connecting error={error} onRetry={store.refresh} />;
+  if (authenticated === null) {
+    return <Connecting error={error} onRetry={store.refresh} />;
+  }
 
-  if (!authenticated)
+  if (!authenticated) {
     return (
       <Login
         accessKey={key}
@@ -56,6 +58,7 @@ export const App = () => {
         onSignIn={() => store.login(key)}
       />
     );
+  }
 
   return (
     <div class="flex h-dvh overflow-hidden">
@@ -99,7 +102,9 @@ export const App = () => {
           onSend={store.send}
           onStop={store.stop}
           onRecover={() => {
-            if (pending) void store.deliver(pending);
+            if (pending) {
+              void store.deliver(pending);
+            }
           }}
           onForget={store.forget}
           onLatest={() => store.set("atBottom", true)}

@@ -27,7 +27,7 @@ const answer = () => Stream.make({ type: "completed" as const, response });
 
 const fixture = async (images: boolean, policy: Partial<ChatPolicy> = {}) => {
   const harness = await agentHarness(policy);
-  const requests: ModelRequest[] = [];
+  const requests: Array<ModelRequest> = [];
 
   const layer = harness.agent(() =>
     Effect.succeed(testModel({ stream: answer, answer, requests, capabilities: { images } })),
@@ -187,12 +187,13 @@ describe("Agent attachments", () => {
           const agent = yield* Agent;
           const session = yield* store.createSession("test-provider", "test-model");
 
-          for (const prompt of ["First", "Second"])
+          for (const prompt of ["First", "Second"]) {
             yield* Stream.runDrain(
               agent.send(session.id, prompt, {
                 attachments: [{ name: `${prompt}.png`, body: png }],
               }),
             );
+          }
         }),
       );
 

@@ -46,9 +46,13 @@ describe("CredentialStore", () => {
         await writeFile(target, "keep this file", { mode: 0o644 });
         await unlink(path);
 
-        if (kind === "symlink") await symlink(target, path);
-        else if (kind === "hardlink") await link(target, path);
-        else makeFIFO(path);
+        if (kind === "symlink") {
+          await symlink(target, path);
+        } else if (kind === "hardlink") {
+          await link(target, path);
+        } else {
+          makeFIFO(path);
+        }
 
         await expect(harness.run(status)).rejects.toMatchObject({ reason: "storage" });
         expect(await readFile(target, "utf8")).toBe("keep this file");

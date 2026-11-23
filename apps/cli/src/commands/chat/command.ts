@@ -77,7 +77,10 @@ export const chatCommand = (context: CLIContext) => {
             output?.answer ?? write,
             (text, sessionId) =>
               Effect.gen(function* () {
-                if (sessionId !== undefined) yield* onSession(sessionId);
+                if (sessionId !== undefined) {
+                  yield* onSession(sessionId);
+                }
+
                 yield* output?.announce(text) ?? logChatDiagnostic(text);
               }),
             output === undefined ? {} : { write: output.reasoning, log: () => Effect.void },
@@ -98,14 +101,16 @@ export const chatCommand = (context: CLIContext) => {
       const inspection = yield* inspect({ action: "show", id });
       const messages = yield* readChatHistory(inspection, id);
 
-      if (terminal) yield* terminal.showHistory(messages);
-      else
+      if (terminal) {
+        yield* terminal.showHistory(messages);
+      } else {
         yield* Effect.forEach(
           messages,
           (message) =>
             Console.log(`\n${message.role === "user" ? "You" : "Poppet"}\n\n${message.text}\n`),
           { discard: true },
         );
+      }
     });
 
   return Command.make("chat").pipe(
@@ -131,7 +136,7 @@ export const chatCommand = (context: CLIContext) => {
                 process.stdout.isTTY &&
                 process.env.TERM !== "dumb";
 
-              if (!rich)
+              if (!rich) {
                 return yield* interactiveChat(
                   options,
                   (command, onSession) => runChat(command, onSession, true),
@@ -139,6 +144,8 @@ export const chatCommand = (context: CLIContext) => {
                   undefined,
                   (sessionId) => loadHistory(sessionId),
                 );
+              }
+
               const { terminal, stopped } = yield* openChatTerminal;
 
               const chat = interactiveChat(

@@ -14,13 +14,16 @@ import { workerLaunch } from "#src/commands/worker/service";
 
 export const fileInfo = (path: string) =>
   lstat(path).catch((cause: unknown) => {
-    if (isMissingFile(cause)) return null;
+    if (isMissingFile(cause)) {
+      return null;
+    }
+
     throw cause;
   });
 
 export const inspectAuthentication = (directory: string, provider: ProviderRegistration) =>
   Effect.gen(function* () {
-    if (provider.inspectSaved === undefined)
+    if (provider.inspectSaved === undefined) {
       return finding(
         "authentication",
         "error",
@@ -29,9 +32,11 @@ export const inspectAuthentication = (directory: string, provider: ProviderRegis
         "Run poppet provider status.",
         true,
       );
+    }
+
     const saved = yield* provider.inspectSaved(directory);
 
-    if (!saved.connected)
+    if (!saved.connected) {
       return finding(
         "authentication",
         "warning",
@@ -39,8 +44,9 @@ export const inspectAuthentication = (directory: string, provider: ProviderRegis
         "No usable sign-in details were found for this provider.",
         `Run poppet provider login ${provider.id}.`,
       );
+    }
 
-    if (saved.expiresAt !== null && saved.expiresAt <= Date.now())
+    if (saved.expiresAt !== null && saved.expiresAt <= Date.now()) {
       return finding(
         "authentication",
         "warning",
@@ -48,6 +54,7 @@ export const inspectAuthentication = (directory: string, provider: ProviderRegis
         "Your saved access token has expired. Poppet may renew it automatically when you next use it.",
         `If your next request fails to sign in, run poppet provider login ${provider.id}.`,
       );
+    }
 
     return finding(
       "authentication",
@@ -65,18 +72,21 @@ export const inspectService = (directory: string) =>
     const mac = macPaths(launch, homedir());
     const linux = linuxPaths(launch, userConfigHome(homedir(), process.env.XDG_CONFIG_HOME));
 
-    if (process.platform !== "darwin" && process.platform !== "linux")
+    if (process.platform !== "darwin" && process.platform !== "linux") {
       return finding(
         "worker.service",
         "skipped",
         "not-checked",
         "Doctor cannot check background services on this operating system.",
       );
+    }
+
     const darwin = process.platform === "darwin";
     const info = await fileInfo(darwin ? mac.plist : linux.file);
 
-    if (info !== null && (!info.isFile() || info.isSymbolicLink()))
+    if (info !== null && (!info.isFile() || info.isSymbolicLink())) {
       throw new Error("Invalid service file");
+    }
 
     const args = darwin
       ? ["/bin/launchctl", "print", `gui/${process.getuid?.()}/${mac.label}`]
@@ -87,19 +97,20 @@ export const inspectService = (directory: string) =>
       {
         signal,
         timeout: 1800,
-        maxBytes: 65536,
+        maxBytes: 65_536,
         tooLarge: () => new Error("Service output limit"),
       },
     );
 
-    if (run.expired || run.aborted || (run.code !== 0 && !(darwin && run.code === 113)))
+    if (run.expired || run.aborted || (run.code !== 0 && !(darwin && run.code === 113))) {
       throw new Error("Service inspection failed");
+    }
 
     const active = darwin
       ? run.code === 0
       : /^ActiveState=(active|activating|reloading)$/m.test(run.stdout);
 
-    if (info === null)
+    if (info === null) {
       return finding(
         "worker.service",
         "skipped",
@@ -108,6 +119,7 @@ export const inspectService = (directory: string) =>
           ? "The service manager knows about Poppet, but its service file is missing. Check Worker connection to see whether Poppet is responding."
           : "No background service is installed. You can still run Poppet in a terminal.",
       );
+    }
 
     return finding(
       "worker.service",

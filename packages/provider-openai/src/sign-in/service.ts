@@ -58,8 +58,9 @@ export const makeBrowserSignIn = (
               !clientId ||
               clientId === "dynamic_agent_client" ||
               (selected !== null && clientId !== selected)
-            )
+            ) {
               return null;
+            }
 
             return {
               code: Redacted.make(code),
@@ -85,10 +86,13 @@ export const makeBrowserSignIn = (
           code_challenge: createHash("sha256").update(verifier).digest("base64url"),
         }).toString();
 
-        if (request.clientId === null)
+        if (request.clientId === null) {
           url.searchParams.set("agent_name_hint", request.applicationName);
+        }
 
-        if (request.consent) url.searchParams.set("prompt", "consent");
+        if (request.consent) {
+          url.searchParams.set("prompt", "consent");
+        }
 
         return yield* authorizeInBrowser(callback, url.toString(), {
           service: "ChatGPT",

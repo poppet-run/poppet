@@ -44,24 +44,31 @@ export const tasksCommand = (context: CLIContext) => {
             const patch = yield* taskOperation(() => {
               const fields: Record<string, Schema.Json> = {};
 
-              if (name[0] !== undefined) fields.name = name[0];
+              if (name[0] !== undefined) {
+                fields.name = name[0];
+              }
 
-              if (prompt[0] !== undefined) fields.prompt = prompt[0];
+              if (prompt[0] !== undefined) {
+                fields.prompt = prompt[0];
+              }
 
-              if (at.length + cron.length + tz.length > 0)
+              if (at.length + cron.length + tz.length > 0) {
                 fields.schedule = parseTaskSchedule(
                   Option.fromUndefinedOr(at[0]),
                   Option.fromUndefinedOr(cron[0]),
                   Option.fromUndefinedOr(tz[0]),
                 );
+              }
 
-              if (until[0] !== undefined)
+              if (until[0] !== undefined) {
                 fields.endAt = until[0] === "none" ? null : parseTimestamp(until[0]);
+              }
 
-              if (Object.keys(fields).length === 0)
+              if (Object.keys(fields).length === 0) {
                 throw new TaskError({
                   message: "Supply --name, --prompt, --at, --cron with --tz, or --until.",
                 });
+              }
 
               return Schema.decodeUnknownSync(TaskPatch)(fields);
             });

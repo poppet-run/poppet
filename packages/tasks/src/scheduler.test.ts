@@ -63,8 +63,8 @@ const fixture = async (
 ) => {
   const harness = await agentHarness();
   const { directory, config, store, settings } = harness;
-  const requests: ModelRequest[] = [];
-  const lines: string[] = [];
+  const requests: Array<ModelRequest> = [];
+  const lines: Array<string> = [];
 
   const output: Console.Console = {
     ...console,
@@ -209,7 +209,7 @@ describe.concurrent("makeTaskWorker", () => {
       const state = await fixture((request) => {
         const result = request.messages.at(-1);
 
-        if (result?.role !== "tool")
+        if (result?.role !== "tool") {
           return response([
             {
               type: "tool-call",
@@ -220,6 +220,7 @@ describe.concurrent("makeTaskWorker", () => {
                 '{"session_id":"earlier","around_message_id":null,"after_message_id":null}',
             },
           ]);
+        }
 
         const page = Schema.decodeUnknownSync(Schema.fromJsonString(SessionReadResult))(
           result.output,
@@ -334,8 +335,9 @@ describe.concurrent("makeTaskWorker", () => {
         request.messages[0]?.role !== "user" ||
         request.messages[0].text !== "Pause the scheduled task" ||
         request.messages.some((message) => message.role === "tool")
-      )
+      ) {
         return final();
+      }
 
       return Stream.fromEffect(
         Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))),
@@ -382,13 +384,17 @@ describe.concurrent("makeTaskWorker", () => {
             yield* Deferred.await(entered);
             const background = yield* worker.run.pipe(Effect.forkChild);
 
-            while ((yield* repo.occurrences(jobId))[0]?.status !== "running")
+            while ((yield* repo.occurrences(jobId))[0]?.status !== "running") {
               yield* Effect.sleep("1 millis");
+            }
+
             yield* Deferred.succeed(release, undefined);
             yield* Fiber.join(interactive);
 
-            while ((yield* repo.occurrences(jobId))[0]?.status !== "completed")
+            while ((yield* repo.occurrences(jobId))[0]?.status !== "completed") {
               yield* Effect.sleep("1 millis");
+            }
+
             expect((yield* repo.task(jobId)).paused).toBe(1);
             yield* Fiber.interrupt(background);
           }),
@@ -528,13 +534,13 @@ describe.concurrent("makeTaskWorker", () => {
 
   test("when a scheduled prompt contains a saved URL, permits its retrieval without enabling memory writes", async () => {
     let turns = 0;
-    const fetched: string[] = [];
+    const fetched: Array<string> = [];
 
     const state = await fixture(
       (request) => {
         expect(request.tools.some((tool) => tool.name === "memory")).toBe(false);
 
-        if (++turns === 1)
+        if (++turns === 1) {
           return response([
             {
               type: "tool-call",
@@ -544,6 +550,8 @@ describe.concurrent("makeTaskWorker", () => {
               arguments: '{"url":"https://example.com/article"}',
             },
           ]);
+        }
+
         expect(request.messages.at(-1)).toMatchObject({
           role: "tool",
           callId: "page",
@@ -587,7 +595,7 @@ describe.concurrent("makeTaskWorker", () => {
       (request) => {
         expect(request.tools.some((tool) => tool.name === "memory")).toBe(false);
 
-        if (++turns === 1)
+        if (++turns === 1) {
           return response([
             {
               type: "tool-call",
@@ -597,8 +605,9 @@ describe.concurrent("makeTaskWorker", () => {
               arguments: '{"query":"current topic"}',
             },
           ]);
+        }
 
-        if (turns === 2)
+        if (turns === 2) {
           return response([
             {
               type: "tool-call",
@@ -608,6 +617,7 @@ describe.concurrent("makeTaskWorker", () => {
               arguments: '{"url":"https://example.com/source"}',
             },
           ]);
+        }
 
         return final();
       },
@@ -988,7 +998,10 @@ describe.concurrent("makeTaskWorker", () => {
             titleUsage: null,
           });
 
-          if (!titled) throw new Error("Missing task session");
+          if (!titled) {
+            throw new Error("Missing task session");
+          }
+
           yield* (yield* Agent).nameSession(titled.id);
 
           yield* memory.replace("style", "Detailed");
@@ -1052,7 +1065,7 @@ describe.concurrent("makeTaskWorker", () => {
         Effect.gen(function* () {
           const repo = yield* TaskRepository;
           const store = yield* Store;
-          const shown: unknown[] = [];
+          const shown: Array<unknown> = [];
 
           for (const _ of [1, 2]) {
             const job = yield* repo.add(state.task, 0);
@@ -1300,16 +1313,20 @@ describe.concurrent("makeTaskWorker", () => {
 
           yield* Deferred.await(started);
 
-          while ((yield* repo.occurrences(initial.id))[0]?.status !== "completed")
+          while ((yield* repo.occurrences(initial.id))[0]?.status !== "completed") {
             yield* Effect.yieldNow;
+          }
+
           wallTime = 3_600_000;
           yield* TestClock.adjust("1 second");
 
           while (
             (yield* repo.occurrences(once.id))[0]?.status !== "completed" ||
             (yield* repo.occurrences(recurring.id))[0]?.status !== "completed"
-          )
+          ) {
             yield* Effect.yieldNow;
+          }
+
           yield* TestClock.adjust("1 second");
           expect(yield* repo.occurrences(recurring.id)).toHaveLength(1);
           expect(yield* repo.occurrences(once.id)).toHaveLength(1);
@@ -1527,11 +1544,15 @@ describe.concurrent("executeOccurrence", () => {
       const state = await fixture((request) => {
         turns++;
 
-        if (turns === 1) return response([noteCall('{"text":"kept"}')]);
+        if (turns === 1) {
+          return response([noteCall('{"text":"kept"}')]);
+        }
 
-        if (turns === 3) return response([noteCall('{"text":"discarded"}')]);
+        if (turns === 3) {
+          return response([noteCall('{"text":"discarded"}')]);
+        }
 
-        if (turns === 4)
+        if (turns === 4) {
           return Stream.fail(
             new ProviderError({
               provider: "test-provider",
@@ -1539,6 +1560,7 @@ describe.concurrent("executeOccurrence", () => {
               message: "The model stopped.",
             }),
           );
+        }
 
         expect(offersNote(request)).toBe(true);
 
@@ -1570,9 +1592,13 @@ describe.concurrent("executeOccurrence", () => {
     const state = await fixture(() => {
       turns++;
 
-      if (turns === 1) return response([noteCall('{"text":"kept"}')]);
+      if (turns === 1) {
+        return response([noteCall('{"text":"kept"}')]);
+      }
 
-      if (turns === 3) return response([noteCall(JSON.stringify({ text: "é".repeat(2049) }))]);
+      if (turns === 3) {
+        return response([noteCall(JSON.stringify({ text: "é".repeat(2049) }))]);
+      }
 
       return final();
     });
@@ -1606,13 +1632,15 @@ describe.concurrent("executeOccurrence", () => {
 
   test("when a note is saved after a page was read, keeps the note tool and its URLs do not authorize later fetches", async () => {
     let turns = 0;
-    const fetched: string[] = [];
+    const fetched: Array<string> = [];
 
     const state = await fixture(
       (request) => {
         turns++;
 
-        if (turns === 1) return page("https://example.com/status");
+        if (turns === 1) {
+          return page("https://example.com/status");
+        }
 
         if (turns === 2) {
           expect(offersNote(request)).toBe(true);
@@ -1620,7 +1648,9 @@ describe.concurrent("executeOccurrence", () => {
           return response([noteCall('{"text":"Moved to https://example.com/private"}')]);
         }
 
-        if (turns === 4) return page("https://example.com/private");
+        if (turns === 4) {
+          return page("https://example.com/private");
+        }
 
         return final();
       },
@@ -1668,7 +1698,9 @@ describe.concurrent("executeOccurrence", () => {
 
       expect(offersNote(request)).toBe(!chat);
 
-      if (chat) expect(request.instructions).not.toContain("This task keeps one note");
+      if (chat) {
+        expect(request.instructions).not.toContain("This task keeps one note");
+      }
 
       return response([
         noteCall(

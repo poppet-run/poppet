@@ -123,14 +123,17 @@ const fixture = (catalogIds = ["gpt-6-luna", "glm-5.3", "minimax-m3"]) => {
 describe("makeOpenCodeProvider", () => {
   test("when catalog discovery times out, aborts its stalled body", async () => {
     const reading = Promise.withResolvers<void>();
-    const signals: AbortSignal[] = [];
+    const signals: Array<AbortSignal> = [];
 
     const provider = makeOpenCodeProvider(
       Effect.die("Key must not be read"),
       async (_input, init) => {
         const signal = init?.signal;
 
-        if (!signal) throw new Error("Missing request cancellation");
+        if (!signal) {
+          throw new Error("Missing request cancellation");
+        }
+
         signals.push(signal);
 
         return new Response(

@@ -46,9 +46,14 @@ export const authorizeInBrowser = <A, E>(
       while (true) {
         const line = yield* options.paste;
 
-        if (line.trim() === "") continue;
+        if (line.trim() === "") {
+          continue;
+        }
 
-        if (callback.submitPasted(line).completed) return;
+        if (callback.submitPasted(line).completed) {
+          return;
+        }
+
         yield* Console.error(
           "That address does not match this sign-in. Paste the full address from the browser after signing in.",
         );

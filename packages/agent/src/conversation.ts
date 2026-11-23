@@ -124,13 +124,15 @@ export const conversation = Effect.gen(function* () {
       for (const tool of tools) {
         const identity = JSON.stringify([tool.definition.namespace, tool.definition.name]);
 
-        if (identities.has(identity))
+        if (identities.has(identity)) {
           return yield* Effect.fail(
             new AgentError({
               reason: "tool-permission",
               message: "External tool identity collides with another tool.",
             }),
           );
+        }
+
         identities.add(identity);
       }
 
@@ -156,8 +158,9 @@ export const conversation = Effect.gen(function* () {
         ? baseInstructions
         : `${baseInstructions}\n\n${taskNoteGuidance(taskNote.text)}`;
 
-    if (origin === "scheduled")
+    if (origin === "scheduled") {
       return `${scheduledInstructions}\nThis is a scheduled run. If the task prompt makes reporting conditional and the condition is not met, reply with exactly ${noReply} and nothing else. Otherwise answer normally.`;
+    }
 
     return task !== null
       ? `${baseInstructions}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
@@ -200,16 +203,18 @@ export const conversation = Effect.gen(function* () {
           Effect.gen(function* () {
             const tool = findTool(call);
 
-            if (tool === undefined)
+            if (tool === undefined) {
               return yield* Effect.fail(
                 new AgentError({
                   reason: "tool-permission",
                   message: "The requested tool is not allowed in this run.",
                 }),
               );
+            }
 
-            if (untrusted && tool.withdrawnWhenUntrusted)
+            if (untrusted && tool.withdrawnWhenUntrusted) {
               return yield* Effect.fail(withdrawnError(tool));
+            }
 
             return {
               callId: call.callId,
@@ -218,7 +223,7 @@ export const conversation = Effect.gen(function* () {
             } satisfies PlannedCall;
           });
 
-        const current: Message[] = [
+        const current: Array<Message> = [
           withMentionedSkills({
             role: "user",
             text,
@@ -240,21 +245,23 @@ export const conversation = Effect.gen(function* () {
             for (const saved of yield* store.attachments(
               run.sessionId,
               missing.map((reference) => reference.id),
-            ))
+            )) {
               contents.set(
                 saved.id,
                 saved.mediaType === "text/plain"
                   ? { id: saved.id, text: new TextDecoder().decode(saved.body) }
                   : { id: saved.id, base64: Buffer.from(saved.body).toString("base64") },
               );
+            }
 
-            if (references.some((reference) => !contents.has(reference.id)))
+            if (references.some((reference) => !contents.has(reference.id))) {
               return yield* Effect.fail(
                 new AgentError({
                   reason: "history",
                   message: "A saved attachment is missing. Start a new session.",
                 }),
               );
+            }
 
             return references.map((reference) => contents.get(reference.id)!);
           });
@@ -269,13 +276,14 @@ export const conversation = Effect.gen(function* () {
         const turn = (): ConversationStream =>
           Stream.unwrap(
             Effect.gen(function* () {
-              if (++turns > policy.modelTurns)
+              if (++turns > policy.modelTurns) {
                 return yield* Effect.fail(
                   new AgentError({
                     reason: "budget",
                     message: "The run exhausted its model-turn budget.",
                   }),
                 );
+              }
 
               const messages = yield* Effect.try({
                 try: () =>
@@ -321,7 +329,10 @@ export const conversation = Effect.gen(function* () {
                 run,
               ).pipe(
                 Stream.tap((event) => {
-                  if (event.type !== "completed") return Effect.void;
+                  if (event.type !== "completed") {
+                    return Effect.void;
+                  }
+
                   modelFinished = true;
 
                   return recordTiming("model-turn", modelStartedAt, { outcome: "completed" });
@@ -343,17 +354,20 @@ export const conversation = Effect.gen(function* () {
 
         const handleEvent = (event: ModelEvent): ConversationStream => {
           if (event.type === "reasoning-delta") {
-            if (!policy.logReasoning) return Stream.empty;
+            if (!policy.logReasoning) {
+              return Stream.empty;
+            }
 
             reasoningBytes += byteSize(event.text);
 
-            if (reasoningBytes > maxTextBytes)
+            if (reasoningBytes > maxTextBytes) {
               return Stream.fail(
                 new AgentError({
                   reason: "output-limit",
                   message: "The run exceeded the reasoning size limit.",
                 }),
               );
+            }
 
             return Stream.make(event);
           }
@@ -384,11 +398,12 @@ export const conversation = Effect.gen(function* () {
             part.type === "tool-call" ? [part] : [],
           );
 
-          if (calls.length === 0)
+          if (calls.length === 0) {
             return Stream.make({
               type: "completed" as const,
               response: { ...response, usage },
             });
+          }
 
           return Stream.concat(
             Stream.make({ type: "reasoning-end" as const }),
@@ -409,21 +424,23 @@ export const conversation = Effect.gen(function* () {
                 }),
               );
 
-              if (callsUsed + calls.length > policy.toolCalls)
+              if (callsUsed + calls.length > policy.toolCalls) {
                 return yield* Effect.fail(
                   new AgentError({
                     reason: "budget",
                     message: "The run exhausted its tool-call budget.",
                   }),
                 );
+              }
 
-              if (turns === policy.modelTurns)
+              if (turns === policy.modelTurns) {
                 return yield* Effect.fail(
                   new AgentError({
                     reason: "budget",
                     message: "The run has no model turn left to use tool results.",
                   }),
                 );
+              }
 
               const planned = yield* Effect.forEach(calls, (call) =>
                 prepareTool(call).pipe(Effect.result),
@@ -442,12 +459,16 @@ export const conversation = Effect.gen(function* () {
               if (rejected.length > 0) {
                 const fatal = rejected.find((error) => !preflightReported(error));
 
-                if (fatal !== undefined) return yield* Effect.fail(fatal);
+                if (fatal !== undefined) {
+                  return yield* Effect.fail(fatal);
+                }
+
                 yield* rejectBatch(calls, planned);
-              } else
+              } else {
                 yield* executeBatch(
                   planned.flatMap((entry) => (Result.isSuccess(entry) ? [entry.success] : [])),
                 );
+              }
 
               return turn();
             }),
@@ -497,7 +518,9 @@ export const conversation = Effect.gen(function* () {
                   output,
                 });
 
-                if (tool.external?.reviewed === true) return yield* Effect.fail(error);
+                if (tool.external?.reviewed === true) {
+                  return yield* Effect.fail(error);
+                }
 
                 current.push({ role: "tool", callId, output });
                 callsUsed++;
@@ -524,9 +547,14 @@ export const conversation = Effect.gen(function* () {
 
               const { output, urls } = yield* executeTool(run, callId, tool, prepared, guard);
 
-              for (const url of urls) allowedURLs.add(url);
+              for (const url of urls) {
+                allowedURLs.add(url);
+              }
 
-              if (tool.untrustedResult) untrusted = true;
+              if (tool.untrustedResult) {
+                untrusted = true;
+              }
+
               current.push({ role: "tool", callId, output });
               callsUsed++;
             }

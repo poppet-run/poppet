@@ -130,9 +130,13 @@ describe("runBounded", () => {
       let timer: ReturnType<typeof setTimeout> | undefined;
 
       try {
-        if (mode === "already aborted") controller.abort();
+        if (mode === "already aborted") {
+          controller.abort();
+        }
 
-        if (mode === "abort") timer = setTimeout(() => controller.abort(), 30);
+        if (mode === "abort") {
+          timer = setTimeout(() => controller.abort(), 30);
+        }
 
         const result = await runBounded(child, {
           ...options(controller.signal),

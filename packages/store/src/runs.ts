@@ -45,8 +45,9 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
         const active = yield* sql`SELECT id FROM runs WHERE session_id = ${sessionId}
           AND status IN ('pending', 'running')`;
 
-        if (active.length > 0)
+        if (active.length > 0) {
           return yield* conflict("This session already has a pending or running run.");
+        }
 
         const createdAt = Math.max(at, session.createdAt);
 
@@ -85,13 +86,14 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
               reference.size !== attachment.body.length
             );
           })
-        )
+        ) {
           return yield* new StoreError({
             reason: "invalid-request",
             message: "Attachments must match the references in the queued messages.",
           });
+        }
 
-        if (Array.isReadonlyArrayNonEmpty(attachments))
+        if (Array.isReadonlyArrayNonEmpty(attachments)) {
           yield* sql`INSERT INTO attachments ${sql.insert(
             Array.map(attachments, (attachment) => ({
               id: attachment.id,
@@ -103,6 +105,7 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
               body: attachment.body,
             })),
           )}`;
+        }
 
         yield* append(session, runId, messages, createdAt);
 
@@ -116,7 +119,9 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
         const at = yield* Clock.currentTimeMillis;
         const run = yield* requireRun(yield* decodeInput(Id, id));
 
-        if (run.status !== "pending") return yield* conflict("Only a pending run can be started.");
+        if (run.status !== "pending") {
+          return yield* conflict("Only a pending run can be started.");
+        }
 
         yield* sql`UPDATE runs SET status = 'running', started_at = ${Math.max(at, run.createdAt)}
             WHERE id = ${id}`;
@@ -135,10 +140,11 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
         if (
           run.status !== "running" &&
           !(run.status === "pending" && terminal.status !== "completed")
-        )
+        ) {
           return yield* conflict(
             "Only an active run can be finished; completion requires a running run.",
           );
+        }
 
         const finishedAt = Math.max(at, run.createdAt, run.startedAt ?? 0);
 
@@ -159,10 +165,11 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
               call.status !== "completed" &&
               !(call.status === "failed" && replied.has(call.callId)),
           )
-        )
+        ) {
           return yield* conflict(
             "All tool calls must complete or report their failure before the run succeeds.",
           );
+        }
 
         const { output, continuation } = terminal.response;
 
@@ -196,7 +203,9 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
       Effect.gen(function* () {
         yield* decodeInput(Id, sessionId);
 
-        if (ids.length === 0) return [];
+        if (ids.length === 0) {
+          return [];
+        }
 
         return yield* sql`SELECT id, media_type, body FROM attachments
             WHERE session_id = ${sessionId} AND ${sql.in("id", ids)}`.pipe(

@@ -38,7 +38,7 @@ const Arguments = Schema.Struct({
   ]),
   id: Schema.NullOr(Session.fields.id),
   name: Schema.NullOr(BoundedText(128)),
-  prompt: Schema.NullOr(BoundedText(16384)),
+  prompt: Schema.NullOr(BoundedText(16_384)),
   schedule: Schema.NullOr(TaskSchedule),
   delivery: Schema.NullOr(Delivery),
   skill: Schema.NullOr(SkillName),
@@ -119,30 +119,38 @@ export const decodeTaskCall = (call: ToolCall): Effect.Effect<ChatTaskAction, Ag
     const { id, name, prompt, schedule, delivery, until, endAt } = args;
 
     if (args.action === "create") {
-      if (name === null || prompt === null || schedule === null || delivery === null)
+      if (name === null || prompt === null || schedule === null || delivery === null) {
         return yield* missing({ name, prompt, schedule, delivery });
+      }
 
       return { action: "create", name, prompt, schedule, delivery, skill: args.skill, endAt };
     }
 
-    if (args.action === "list") return { action: "list", after: args.after };
+    if (args.action === "list") {
+      return { action: "list", after: args.after };
+    }
 
-    if (id === null) return yield* missing({ id });
+    if (id === null) {
+      return yield* missing({ id });
+    }
 
     if (args.action === "edit") {
-      if (name === null && prompt === null && schedule === null && endAt === null)
+      if (name === null && prompt === null && schedule === null && endAt === null) {
         return yield* Effect.fail(
           new AgentError({
             reason: "tool-arguments",
             message: "The edit action needs at least one of name, prompt, schedule, or endAt.",
           }),
         );
+      }
 
       return { action: "edit", id, name, prompt, schedule, endAt };
     }
 
     if (args.action === "snooze") {
-      if (until === null) return yield* missing({ until });
+      if (until === null) {
+        return yield* missing({ until });
+      }
 
       return { action: "snooze", id, until };
     }
@@ -162,7 +170,9 @@ export const taskFailures: FailurePolicy = {
 export const taskTool = Effect.gen(function* () {
   const tasks = Option.getOrNull(yield* Effect.serviceOption(ChatTasks));
 
-  if (tasks === null) return null;
+  if (tasks === null) {
+    return null;
+  }
 
   return {
     definition: taskDefinition,

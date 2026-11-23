@@ -16,7 +16,7 @@ const labels: Record<ApprovalState, string> = {
 };
 
 // Escaping can grow text fivefold, so 600 characters keep each section under Slack's 3000 limit.
-const sections = (text: string): KnownBlock[] =>
+const sections = (text: string): Array<KnownBlock> =>
   Array.from({ length: Math.ceil(text.length / 600) || 1 }, (_, index) => ({
     type: "section",
     text: {
@@ -26,7 +26,11 @@ const sections = (text: string): KnownBlock[] =>
     },
   }));
 
-export const approvalBlocks = (text: string, id: string, state?: ApprovalState): KnownBlock[] => [
+export const approvalBlocks = (
+  text: string,
+  id: string,
+  state?: ApprovalState,
+): Array<KnownBlock> => [
   ...sections(text),
   state
     ? { type: "context", elements: [{ type: "mrkdwn", text: labels[state] }] }
@@ -87,7 +91,10 @@ export const approvalClick = (
 ): ApprovalClick => {
   const action = body.actions.length === 1 ? body.actions[0]!.action_id : "";
 
-  if (!action.startsWith(prefix)) return { kind: "ignored" };
+  if (!action.startsWith(prefix)) {
+    return { kind: "ignored" };
+  }
+
   const match = /^poppet:approval:(approve|deny):([a-f0-9-]{36})$/.exec(action);
   const { channel, message, team, user } = body;
   const thread = message.thread_ts;
@@ -98,8 +105,9 @@ export const approvalClick = (
     team.id !== settings.teamId ||
     user.id !== settings.ownerId ||
     message.user !== botId
-  )
+  ) {
     return { kind: "rejected", channel: channel.id, user: user.id, ...(thread && { thread }) };
+  }
 
   return {
     kind: "accepted",

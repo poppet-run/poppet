@@ -205,7 +205,9 @@ const repository = Effect.gen(function* () {
               decodeRow(Schema.Struct({ id: Schema.Natural })),
             );
 
-            if (inserted === null) return;
+            if (inserted === null) {
+              return;
+            }
 
             yield* insertDeliveries(inserted.id, chunks, enabled ? "pending" : "failed");
           }),
@@ -274,7 +276,9 @@ const repository = Effect.gen(function* () {
           const duplicate = yield* sql`SELECT id FROM gateway_inbox WHERE adapter = ${adapter}
             AND account = ${account} AND external_id = ${message.messageId}`;
 
-          if (duplicate.length > 0) return null;
+          if (duplicate.length > 0) {
+            return null;
+          }
 
           const queued = yield* sql`SELECT COUNT(*) AS count FROM gateway_inbox
             WHERE adapter = ${adapter} AND account = ${account}
@@ -284,11 +288,12 @@ const repository = Effect.gen(function* () {
 
           const control = isControl(message.text);
 
-          if ((queued?.count ?? 0) >= 64 && !control)
+          if ((queued?.count ?? 0) >= 64 && !control) {
             return yield* new ChannelError({
               reason: "overloaded",
               message: "Messaging queue is full. Try again later.",
             });
+          }
 
           const inserted = yield* sql`INSERT INTO gateway_inbox ${sql.insert({
             adapter,
@@ -349,12 +354,13 @@ const repository = Effect.gen(function* () {
               creationMessageId: managedName === null ? null : entry.message.messageId,
             })} ON CONFLICT DO NOTHING`;
 
-            if (replace)
+            if (replace) {
               yield* sql`UPDATE gateway_bindings SET session_id = ${session}, synced_title = NULL,
                 pending_name = NULL
               WHERE adapter = ${entry.adapter} AND account = ${entry.account}
                 AND scope_id = ${entry.message.scopeId} AND conversation_id = ${conversation}
                 AND session_id != ${session}`;
+            }
 
             const bound = yield* binding(
               entry.adapter,
@@ -363,7 +369,9 @@ const repository = Effect.gen(function* () {
               conversation,
             );
 
-            if (bound !== session) return yield* Effect.fail(conflictingSession());
+            if (bound !== session) {
+              return yield* Effect.fail(conflictingSession());
+            }
 
             yield* sql`UPDATE gateway_inbox SET conversation_id = ${conversation},
             session_id = ${session} WHERE id = ${id}`;
@@ -428,10 +436,11 @@ const repository = Effect.gen(function* () {
               retry_at = ${retryAt} WHERE inbox_id = ${entry.inboxId}
                 AND position = ${entry.position}`;
 
-            if (state === "failed" || state === "uncertain")
+            if (state === "failed" || state === "uncertain") {
               yield* sql`UPDATE gateway_deliveries SET state = 'failed'
                 WHERE inbox_id = ${entry.inboxId} AND position > ${entry.position}
                   AND state = 'pending'`;
+            }
           }),
         ),
     ),

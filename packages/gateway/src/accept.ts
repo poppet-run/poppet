@@ -40,7 +40,7 @@ const controlReply = (
         Effect.gen(function* () {
           yield* repo.cancel(channel.id, entry.account, message.scopeId, conversation);
 
-          for (const request of requests.values())
+          for (const request of requests.values()) {
             if (
               request.entry.account === entry.account &&
               request.entry.message.scopeId === message.scopeId &&
@@ -49,6 +49,7 @@ const controlReply = (
               yield* repo.state(request.entry.id, "cancelled");
               yield* Fiber.interrupt(request.fiber);
             }
+          }
         }),
       );
 
@@ -82,8 +83,10 @@ const handleControl = (
     ).pipe(Effect.result);
 
     if (Result.isFailure(outcome)) {
-      if (outcome.failure instanceof ChannelError)
+      if (outcome.failure instanceof ChannelError) {
         yield* finish(context, entry.id, outcome.failure.message, "failed");
+      }
+
       yield* mark(context, message, "stopped");
 
       return yield* Effect.fail(outcome.failure);
@@ -107,8 +110,10 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
     if (
       !authorized(channel.policy, message) ||
       (!message.text.trim() && (message.attachments ?? []).length === 0)
-    )
+    ) {
       return;
+    }
+
     const conversation = message.conversationId;
 
     const session =
@@ -116,17 +121,28 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
         ? null
         : yield* repo.binding(channel.id, account, message.scopeId, conversation);
 
-    if (session === null && !message.mentioned) return;
+    if (session === null && !message.mentioned) {
+      return;
+    }
 
     const entry = yield* repo.accept(channel.id, account, message);
 
-    if (entry === null) return;
+    if (entry === null) {
+      return;
+    }
+
     yield* wake(context.wakes.inbox);
 
-    if (!isControl(message.text)) return;
+    if (!isControl(message.text)) {
+      return;
+    }
+
     yield* repo.state(entry.id, "cancelled");
 
-    if (conversation === null || session === null) return;
+    if (conversation === null || session === null) {
+      return;
+    }
+
     const control = handleControl(context, controls, entry, message, conversation, session);
 
     yield* controls.scheduleControl ? controls.scheduleControl(control) : control;

@@ -11,8 +11,10 @@ export const publicHttpURL = (value: string, forbidden: () => Error) => {
     url.username !== "" ||
     url.password !== "" ||
     url.port !== ""
-  )
+  ) {
     throw forbidden();
+  }
+
   url.hash = "";
 
   return url;
@@ -35,8 +37,9 @@ for (const [address, prefix] of [
   ["198.51.100.0", 24],
   ["203.0.113.0", 24],
   ["224.0.0.0", 3],
-] as const)
+] as const) {
   privateV4.addSubnet(address, prefix, "ipv4");
+}
 
 const globalV6 = new BlockList();
 
@@ -49,8 +52,9 @@ for (const [address, prefix] of [
   ["2001:db8::", 32],
   ["2002::", 16],
   ["3fff::", 20],
-] as const)
+] as const) {
   specialV6.addSubnet(address, prefix, "ipv6");
+}
 
 export const publicAddress = (address: string) => {
   switch (isIP(address)) {
@@ -68,14 +72,20 @@ export const urlHostname = (url: URL) => url.hostname.replaceAll(/^\[|\]$/g, "")
 const noRecords = new Set(["ENODATA", "ENOTFOUND"]);
 
 const missingAddress = (error: NodeJS.ErrnoException) => {
-  if (noRecords.has(error.code ?? "")) return [];
+  if (noRecords.has(error.code ?? "")) {
+    return [];
+  }
+
   throw error;
 };
 
 export const resolveAddresses = async (hostname: string, signal: AbortSignal) => {
   signal.throwIfAborted();
 
-  if (isIP(hostname)) return [hostname];
+  if (isIP(hostname)) {
+    return [hostname];
+  }
+
   const resolver = new Resolver();
   const cancel = () => resolver.cancel();
   signal.addEventListener("abort", cancel, { once: true });

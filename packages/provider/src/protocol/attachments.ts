@@ -12,13 +12,15 @@ export const userParts = (
   request: ModelRequest,
   message: UserMessage,
 ): ReadonlyArray<UserPart> => {
-  const parts: UserPart[] = message.text.length > 0 ? [{ type: "text", text: message.text }] : [];
+  const parts: Array<UserPart> =
+    message.text.length > 0 ? [{ type: "text", text: message.text }] : [];
 
   for (const reference of message.attachments ?? []) {
     const content = request.attachments?.find((entry) => entry.id === reference.id);
 
-    if (content === undefined)
+    if (content === undefined) {
       throw invalidRequest(description.provider, "An attachment's contents are missing.");
+    }
 
     parts.push(
       "base64" in content

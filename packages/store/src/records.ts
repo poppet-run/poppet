@@ -71,8 +71,9 @@ export const storeRecords = (sql: SqlClient.SqlClient) => {
         run.status !== "running" ||
         !call ||
         (call.status !== "pending" && call.status !== "running")
-      )
+      ) {
         return yield* conflict("The tool call must belong to the running run and be active.");
+      }
 
       return { run, call };
     });
@@ -100,16 +101,18 @@ export const storeRecords = (sql: SqlClient.SqlClient) => {
     at: number,
   ) =>
     Effect.gen(function* () {
-      for (const message of messages)
+      for (const message of messages) {
         if (
           message.role === "assistant" &&
           message.continuation !== null &&
           !continuationMatches(session, message.continuation)
-        )
+        ) {
           return yield* new StoreError({
             reason: "invalid-request",
             message: "Continuation belongs to another provider or model. Start a new session.",
           });
+        }
+      }
 
       const next = yield* sql`SELECT COALESCE(MAX(position) + 1, 0) AS position
           FROM messages WHERE session_id = ${session.id}`.pipe(
@@ -118,7 +121,7 @@ export const storeRecords = (sql: SqlClient.SqlClient) => {
 
       const start = next?.position ?? 0;
 
-      if (Array.isReadonlyArrayNonEmpty(messages))
+      if (Array.isReadonlyArrayNonEmpty(messages)) {
         yield* sql`INSERT INTO messages ${sql.insert(
           Array.map(messages, (message, index) => ({
             sessionId: session.id,
@@ -128,6 +131,7 @@ export const storeRecords = (sql: SqlClient.SqlClient) => {
             payload: encodeMessage(message),
           })),
         )}`;
+      }
 
       yield* touch(session.id, at);
     });

@@ -78,7 +78,9 @@ export const CredentialStoreLive = Layer.effect(
         catch: storageError,
       });
 
-      if (contents === null) return null;
+      if (contents === null) {
+        return null;
+      }
 
       return yield* Schema.decodeUnknownEffect(ConnectionJson)(contents).pipe(
         Effect.mapError(storageError),
@@ -88,7 +90,9 @@ export const CredentialStoreLive = Layer.effect(
     const initialize = Effect.gen(function* () {
       const saved = yield* read;
 
-      if (saved !== null) return saved;
+      if (saved !== null) {
+        return saved;
+      }
 
       const connection: Connection = {
         version: 1,

@@ -6,9 +6,9 @@ import { Effect, Schema, Stream } from "effect";
 import { byteSize } from "#src/context";
 import { AgentError } from "#src/errors";
 
-export const maxTextBytes = 131072;
+export const maxTextBytes = 131_072;
 
-const maxCompletionBytes = 1048576;
+const maxCompletionBytes = 1_048_576;
 
 const protocolFailure = () =>
   new AgentError({
@@ -28,21 +28,35 @@ const validateCompletion = (
   run: Pick<Run, "provider" | "model">,
   streamed: string,
 ) => {
-  if (response === null) throw protocolFailure();
+  if (response === null) {
+    throw protocolFailure();
+  }
 
   const hasCalls = response.output.some((part) => part.type === "tool-call");
 
-  if (hasCalls !== (response.finishReason === "tool-calls")) throw protocolFailure();
-
-  if (response.continuation.provider !== run.provider || response.continuation.model !== run.model)
+  if (hasCalls !== (response.finishReason === "tool-calls")) {
     throw protocolFailure();
+  }
+
+  if (
+    response.continuation.provider !== run.provider ||
+    response.continuation.model !== run.model
+  ) {
+    throw protocolFailure();
+  }
 
   const finalText = outputText(response.output);
 
-  if (!finalText.startsWith(streamed)) throw protocolFailure();
+  if (!finalText.startsWith(streamed)) {
+    throw protocolFailure();
+  }
 
-  if (byteSize(finalText) > maxTextBytes || byteSize(JSON.stringify(response)) > maxCompletionBytes)
+  if (
+    byteSize(finalText) > maxTextBytes ||
+    byteSize(JSON.stringify(response)) > maxCompletionBytes
+  ) {
     throw outputLimit();
+  }
 
   return { response, remaining: finalText.slice(streamed.length) };
 };
@@ -64,7 +78,9 @@ export const streamReply = (
             onExcessProperty: "error",
           })(event).pipe(Effect.mapError(protocolFailure));
 
-          if (completed !== null) return yield* Effect.fail(protocolFailure());
+          if (completed !== null) {
+            return yield* Effect.fail(protocolFailure());
+          }
 
           if (decoded.type === "completed") {
             completed = decoded.response;
@@ -72,11 +88,16 @@ export const streamReply = (
             return null;
           }
 
-          if (decoded.type === "reasoning-delta") return decoded;
+          if (decoded.type === "reasoning-delta") {
+            return decoded;
+          }
 
           streamedBytes += byteSize(decoded.text);
 
-          if (streamedBytes > maxTextBytes) return yield* Effect.fail(outputLimit());
+          if (streamedBytes > maxTextBytes) {
+            return yield* Effect.fail(outputLimit());
+          }
+
           streamed += decoded.text;
 
           return decoded;

@@ -24,7 +24,7 @@ const ReasoningDetail = Schema.StructWithRest(
 
 type ReasoningDetail = typeof ReasoningDetail.Type;
 
-const mergeDetail = (details: ReasoningDetail[], fragment: ReasoningDetail) => {
+const mergeDetail = (details: Array<ReasoningDetail>, fragment: ReasoningDetail) => {
   const fields = ["index", "id", "format"] as const;
 
   let index = details.findIndex(
@@ -56,7 +56,9 @@ const mergeDetail = (details: ReasoningDetail[], fragment: ReasoningDetail) => {
         : [],
     );
 
-    if (matches.length === 1) index = matches[0]!;
+    if (matches.length === 1) {
+      index = matches[0]!;
+    }
   }
 
   const previous = details[index];
@@ -105,8 +107,9 @@ export const routerFailure = (cause: unknown): ProviderError => {
     !(cause instanceof APIError) ||
     cause instanceof APIConnectionError ||
     cause instanceof APIUserAbortError
-  )
+  ) {
     return inferenceFailure("openrouter", cause);
+  }
 
   const numeric = Option.getOrUndefined(
     Schema.decodeUnknownOption(Schema.Int.check(Schema.isBetween({ minimum: 400, maximum: 599 })))(
@@ -130,9 +133,13 @@ export const routerOptions: ChatOptions = {
       choice !== undefined &&
       choice.finish_reason === finishReason &&
       Object.entries(choice.delta).every(([key, value]) => {
-        if (key === "role") return value === "assistant" || value === null;
+        if (key === "role") {
+          return value === "assistant" || value === null;
+        }
 
-        if (key === "content") return value === null || value === "";
+        if (key === "content") {
+          return value === null || value === "";
+        }
 
         return value === null;
       })
@@ -152,7 +159,7 @@ export const routerOptions: ChatOptions = {
   },
   continuation: () => {
     let reasoning = "";
-    const details: ReasoningDetail[] = [];
+    const details: Array<ReasoningDetail> = [];
 
     return {
       restore: (data, message) => {
@@ -163,8 +170,11 @@ export const routerOptions: ChatOptions = {
           reasoning_details?: ReadonlyArray<typeof ReasoningDetail.Type>;
         } = { ...message };
 
-        if (saved.reasoningDetails.length > 0) restored.reasoning_details = saved.reasoningDetails;
-        else if (saved.reasoningContent !== null) restored.reasoning = saved.reasoningContent;
+        if (saved.reasoningDetails.length > 0) {
+          restored.reasoning_details = saved.reasoningDetails;
+        } else if (saved.reasoningContent !== null) {
+          restored.reasoning = saved.reasoningContent;
+        }
 
         return restored;
       },
@@ -172,7 +182,9 @@ export const routerOptions: ChatOptions = {
         const value = Schema.decodeUnknownSync(Delta)(delta);
         reasoning += value.reasoning ?? value.reasoning_content ?? "";
 
-        for (const detail of value.reasoning_details ?? []) mergeDetail(details, detail);
+        for (const detail of value.reasoning_details ?? []) {
+          mergeDetail(details, detail);
+        }
 
         const readable = (value.reasoning_details ?? [])
           .flatMap((detail) =>

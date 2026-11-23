@@ -34,8 +34,11 @@ beforeAll(() => {
 
 afterAll(() => {
   for (const [key, descriptor] of previous) {
-    if (descriptor) Object.defineProperty(globalThis, key, descriptor);
-    else Reflect.deleteProperty(globalThis, key);
+    if (descriptor) {
+      Object.defineProperty(globalThis, key, descriptor);
+    } else {
+      Reflect.deleteProperty(globalThis, key);
+    }
   }
 
   dom.window.close();
@@ -98,7 +101,7 @@ test("when Markdown contains links and interactive HTML, renders safe links and 
 test("when a conversation link is clicked with a modifier or a nonprimary button, leaves navigation to the browser", async () => {
   const { ConversationLink } = await import("../components/chat/sidebar/conversation-link");
   const root = document.createElement("div");
-  const navigated: string[] = [];
+  const navigated: Array<string> = [];
 
   try {
     render(
@@ -117,7 +120,7 @@ test("when a conversation link is clicked with a modifier or a nonprimary button
     );
 
     const link = root.querySelector("a")!;
-    const intercepted: boolean[] = [];
+    const intercepted: Array<boolean> = [];
     link.addEventListener("click", (event) => {
       intercepted.push(event.defaultPrevented);
       event.preventDefault();
@@ -147,7 +150,7 @@ test("when a conversation link is clicked with a modifier or a nonprimary button
 test("preserves ambiguous submissions and recovers with the same identifier without auto-resending", async () => {
   const { App } = await import("./app");
   const originalFetch = globalThis.fetch;
-  const submissions: Submission[] = [];
+  const submissions: Array<Submission> = [];
   const root = document.createElement("div");
   document.body.append(root);
   sessionStorage.clear();
@@ -156,7 +159,9 @@ test("preserves ambiguous submissions and recovers with the same identifier with
     input: Parameters<typeof fetch>[0],
     init?: Parameters<typeof fetch>[1],
   ) => {
-    if (input === "/api/session-list?source=chat") return sessionList();
+    if (input === "/api/session-list?source=chat") {
+      return sessionList();
+    }
 
     if (input === "/api/submissions" && init?.body) {
       submissions.push(JSON.parse(String(init.body)));
@@ -289,7 +294,7 @@ test("when switching sidebar filters, keeps the open chat and ignores late resul
   const originalFetch = globalThis.fetch;
   const originalEvents = Object.getOwnPropertyDescriptor(globalThis, "EventSource");
   history.replaceState(null, "", "/chat/direct");
-  const streams: string[] = [];
+  const streams: Array<string> = [];
 
   class FakeEvents extends dom.window.EventTarget {
     constructor(url: string) {
@@ -302,16 +307,20 @@ test("when switching sidebar filters, keeps the open chat and ignores late resul
   let finishTasks!: (response: Response) => void;
 
   const fakeFetch = async (input: Parameters<typeof fetch>[0]) => {
-    if (input === "/api/session-list?source=scheduled")
+    if (input === "/api/session-list?source=scheduled") {
       return new Promise<Response>((resolve) => {
         finishTasks = resolve;
       });
+    }
 
-    if (input === "/api/session-list?source=gateway%3Aslack")
+    if (input === "/api/session-list?source=gateway%3Aslack") {
       return sessionList([chatSession("Slack thread")], ["slack"]);
+    }
 
-    if (input === "/api/session-list?source=chat")
+    if (input === "/api/session-list?source=chat") {
       return sessionList([chatSession("direct")], ["slack"]);
+    }
+
     throw new Error("Unexpected session list request");
   };
 
@@ -364,8 +373,12 @@ test("when switching sidebar filters, keeps the open chat and ignores late resul
     render(null, root);
     globalThis.fetch = originalFetch;
 
-    if (originalEvents) Object.defineProperty(globalThis, "EventSource", originalEvents);
-    else Reflect.deleteProperty(globalThis, "EventSource");
+    if (originalEvents) {
+      Object.defineProperty(globalThis, "EventSource", originalEvents);
+    } else {
+      Reflect.deleteProperty(globalThis, "EventSource");
+    }
+
     history.replaceState(null, "", "/");
   }
 });
@@ -380,10 +393,11 @@ test("sign-out ignores a late session query and sign-in fetches fresh history", 
     if (input === "/api/session-list?source=chat") {
       requests++;
 
-      if (requests === 1)
+      if (requests === 1) {
         return new Promise<Response>((resolve) => {
           resolveSessions = resolve;
         });
+      }
 
       return sessionList([
         { id: "fresh", title: "Fresh", provider: "test", model: "test", updatedAt: 0 },
@@ -424,7 +438,7 @@ test("duplicate sends are throttled and navigation closes streams without stoppi
   const { createChatStore } = await import("../stores/chat-store");
   const originalFetch = globalThis.fetch;
   const originalEvents = Object.getOwnPropertyDescriptor(globalThis, "EventSource");
-  const streams: FakeEvents[] = [];
+  const streams: Array<FakeEvents> = [];
   let didReconnect!: () => void;
 
   const reconnected = new Promise<void>((resolve) => {
@@ -438,7 +452,9 @@ test("duplicate sends are throttled and navigation closes streams without stoppi
       super();
       streams.push(this);
 
-      if (streams.length === 3) didReconnect();
+      if (streams.length === 3) {
+        didReconnect();
+      }
     }
     close() {
       this.readyState = FakeEvents.CLOSED;
@@ -454,26 +470,32 @@ test("duplicate sends are throttled and navigation closes streams without stoppi
 
   Object.defineProperty(globalThis, "EventSource", { configurable: true, value: FakeEvents });
   let resolveSubmission!: (response: Response) => void;
-  const requests: string[] = [];
+  const requests: Array<string> = [];
   const probes: Array<(response: Response) => void> = [];
 
   const fakeFetch = async (input: Parameters<typeof fetch>[0]) => {
     requests.push(String(input));
 
-    if (input === "/api/session-list?source=chat") return sessionList();
+    if (input === "/api/session-list?source=chat") {
+      return sessionList();
+    }
 
-    if (String(input).startsWith("/api/submissions/"))
+    if (String(input).startsWith("/api/submissions/")) {
       return Response.json({ sessionId: "second", status: "accepted", error: null });
+    }
 
-    if (input === "/api/sessions/second")
+    if (input === "/api/sessions/second") {
       return new Promise<Response>((resolve) => {
         probes.push(resolve);
       });
+    }
 
-    if (input === "/api/submissions")
+    if (input === "/api/submissions") {
       return new Promise<Response>((resolve) => {
         resolveSubmission = resolve;
       });
+    }
+
     throw new Error(`Unexpected request ${input}`);
   };
 
@@ -533,8 +555,12 @@ test("duplicate sends are throttled and navigation closes streams without stoppi
     dispose();
     globalThis.fetch = originalFetch;
 
-    if (originalEvents) Object.defineProperty(globalThis, "EventSource", originalEvents);
-    else Reflect.deleteProperty(globalThis, "EventSource");
+    if (originalEvents) {
+      Object.defineProperty(globalThis, "EventSource", originalEvents);
+    } else {
+      Reflect.deleteProperty(globalThis, "EventSource");
+    }
+
     history.replaceState(null, "", "/");
     sessionStorage.clear();
   }
@@ -548,7 +574,9 @@ test("submission rejection and explicit recovery forgetting unlock the composer 
   const submission = { id: crypto.randomUUID(), sessionId: null, text: "Keep my draft" };
 
   const fakeFetch = async (input: Parameters<typeof fetch>[0]) => {
-    if (input === "/api/session-list?source=chat") return sessionList();
+    if (input === "/api/session-list?source=chat") {
+      return sessionList();
+    }
 
     return Response.json(
       { message: "Unavailable" },
@@ -590,9 +618,13 @@ test("successful polling clears only refresh errors and expired sign-out clears 
   let failRefresh = true;
 
   const fakeFetch = async (input: Parameters<typeof fetch>[0]) => {
-    if (input === "/api/logout") return Response.json({ message: "Sign in" }, { status: 401 });
+    if (input === "/api/logout") {
+      return Response.json({ message: "Sign in" }, { status: 401 });
+    }
 
-    if (failRefresh) return Response.json({ message: "Offline" }, { status: 502 });
+    if (failRefresh) {
+      return Response.json({ message: "Offline" }, { status: 502 });
+    }
 
     return sessionList();
   };
@@ -627,8 +659,8 @@ test("deleting a conversation asks first, keeps it on refusal and leaves it afte
   const originalFetch = globalThis.fetch;
   const originalEvents = Object.getOwnPropertyDescriptor(globalThis, "EventSource");
   const originalConfirm = Object.getOwnPropertyDescriptor(globalThis, "confirm");
-  const streams: FakeEvents[] = [];
-  const deletes: string[] = [];
+  const streams: Array<FakeEvents> = [];
+  const deletes: Array<string> = [];
   const answers = [false, true, true];
   let deleteStatus = 409;
 
@@ -656,8 +688,10 @@ test("deleting a conversation asks first, keeps it on refusal and leaves it afte
       return Response.json({ message: "Stop the current reply first." }, { status: deleteStatus });
     }
 
-    if (input === "/api/session-list?source=chat")
+    if (input === "/api/session-list?source=chat") {
       return sessionList(deleteStatus === 200 ? [] : [session]);
+    }
+
     throw new Error(`Unexpected request ${input}`);
   };
 
@@ -707,9 +741,14 @@ test("deleting a conversation asks first, keeps it on refusal and leaves it afte
     for (const [key, descriptor] of [
       ["EventSource", originalEvents],
       ["confirm", originalConfirm],
-    ] as const)
-      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
-      else Reflect.deleteProperty(globalThis, key);
+    ] as const) {
+      if (descriptor) {
+        Object.defineProperty(globalThis, key, descriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, key);
+      }
+    }
+
     history.replaceState(null, "", "/");
   }
 });
@@ -718,7 +757,7 @@ test("when navigating to the current session, avoids duplicate history entries a
   const { createChatStore } = await import("../stores/chat-store");
   const originalFetch = globalThis.fetch;
   const originalEvents = Object.getOwnPropertyDescriptor(globalThis, "EventSource");
-  const streams: FakeEvents[] = [];
+  const streams: Array<FakeEvents> = [];
 
   class FakeEvents extends dom.window.EventTarget {
     static CLOSED = 2;
@@ -735,10 +774,13 @@ test("when navigating to the current session, avoids duplicate history entries a
   Object.defineProperty(globalThis, "EventSource", { configurable: true, value: FakeEvents });
   globalThis.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0]) => {
-      if (input === "/api/session-list?source=chat") return sessionList();
+      if (input === "/api/session-list?source=chat") {
+        return sessionList();
+      }
 
-      if (String(input).endsWith("/stop"))
+      if (String(input).endsWith("/stop")) {
         return Response.json({ message: "Sign in" }, { status: 401 });
+      }
 
       return Response.json({});
     },
@@ -763,8 +805,12 @@ test("when navigating to the current session, avoids duplicate history entries a
     dispose();
     globalThis.fetch = originalFetch;
 
-    if (originalEvents) Object.defineProperty(globalThis, "EventSource", originalEvents);
-    else Reflect.deleteProperty(globalThis, "EventSource");
+    if (originalEvents) {
+      Object.defineProperty(globalThis, "EventSource", originalEvents);
+    } else {
+      Reflect.deleteProperty(globalThis, "EventSource");
+    }
+
     history.replaceState(null, "", "/");
   }
 });

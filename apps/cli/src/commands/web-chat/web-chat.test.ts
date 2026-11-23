@@ -149,7 +149,10 @@ const fixture = async (
         for (;;) {
           const receipt = yield* chat.receipt(id);
 
-          if (receipt?.status !== "accepted") return receipt;
+          if (receipt?.status !== "accepted") {
+            return receipt;
+          }
+
           yield* Effect.sleep("5 millis");
         }
       }).pipe(Effect.timeout("3 seconds")),
@@ -276,7 +279,7 @@ describe("web chat", () => {
   test("when all event stream slots are in use, refuses another until a stream closes", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-web-stream-cap-"));
     const app = await fixture(directory);
-    const streams: Response[] = [];
+    const streams: Array<Response> = [];
 
     try {
       const cookie = await app.login();
@@ -312,8 +315,10 @@ describe("web chat", () => {
 
     const assets = new Map<string, Blob>();
 
-    for (const name of await readdir(join(web, "dist")))
+    for (const name of await readdir(join(web, "dist"))) {
       assets.set(`/${name}`, Bun.file(join(web, "dist", name)));
+    }
+
     const directory = await mkdtemp(join(tmpdir(), "poppet-web-assets-"));
     const app = await fixture(directory, assets);
 
@@ -384,7 +389,7 @@ describe("web chat", () => {
         (
           await app.send(
             "/api/submissions",
-            { id: randomUUID(), sessionId: null, text: "x".repeat(300000) },
+            { id: randomUUID(), sessionId: null, text: "x".repeat(300_000) },
             cookie,
           )
         ).status,
@@ -573,10 +578,11 @@ describe("web chat", () => {
           ).toBe(200);
         }
 
-        if (mode !== "shutdown")
+        if (mode !== "shutdown") {
           expect((await app.settled(submission.id))?.status).toBe(
             mode === "failure" ? "failed" : "interrupted",
           );
+        }
       } finally {
         await app.runtime.dispose();
       }

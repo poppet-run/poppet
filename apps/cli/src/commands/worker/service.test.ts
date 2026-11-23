@@ -29,11 +29,17 @@ describe("workerLaunch", () => {
 
       expect(launch.environment).toEqual(new Map([["POPPET_DATA_DIR", "/tmp/data"]]));
     } finally {
-      if (previous === undefined) delete process.env.POPPET_OPENROUTER_API_KEY;
-      else process.env.POPPET_OPENROUTER_API_KEY = previous;
+      if (previous === undefined) {
+        delete process.env.POPPET_OPENROUTER_API_KEY;
+      } else {
+        process.env.POPPET_OPENROUTER_API_KEY = previous;
+      }
 
-      if (previousSoulBytes === undefined) delete process.env.POPPET_SOUL_BYTES;
-      else process.env.POPPET_SOUL_BYTES = previousSoulBytes;
+      if (previousSoulBytes === undefined) {
+        delete process.env.POPPET_SOUL_BYTES;
+      } else {
+        process.env.POPPET_SOUL_BYTES = previousSoulBytes;
+      }
     }
   });
 });
@@ -87,8 +93,9 @@ describe("runWorker", () => {
     const output: Console.Console = {
       ...console,
       error: (...values) => {
-        if (values.join(" ").includes('msg="worker started"'))
+        if (values.join(" ").includes('msg="worker started"')) {
           Effect.runSync(Deferred.succeed(ready, undefined));
+        }
       },
     };
 

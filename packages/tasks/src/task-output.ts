@@ -31,7 +31,7 @@ export const bounded = (output: string, limit: number) =>
     : Effect.succeed(output);
 
 export const listOutput = (rows: ReadonlyArray<Task>, limit: number) => {
-  const tasks: ReturnType<typeof summary>[] = [];
+  const tasks: Array<ReturnType<typeof summary>> = [];
 
   for (const task of rows.slice(0, 10)) {
     const result = summary(task);
@@ -40,16 +40,20 @@ export const listOutput = (rows: ReadonlyArray<Task>, limit: number) => {
       Buffer.byteLength(
         JSON.stringify({ tasks: [...tasks, result], nextCursor: task.id, truncated: true }),
       ) > limit
-    )
+    ) {
       break;
+    }
+
     tasks.push(result);
   }
 
-  if (tasks.length === 0 && rows.length > 0)
+  if (tasks.length === 0 && rows.length > 0) {
     return bounded(
       JSON.stringify({ tasks: [summary(rows[0]!)], nextCursor: rows[0]!.id, truncated: true }),
       limit,
     );
+  }
+
   const truncated = rows.length > tasks.length;
 
   return Effect.succeed(
@@ -90,11 +94,15 @@ export const detailsOutput = (
   const fits = (text: string) => Buffer.byteLength(text) <= limit;
   const whole = output(task.prompt, occurrences, rows.length > 5);
 
-  if (fits(whole)) return Effect.succeed(whole);
+  if (fits(whole)) {
+    return Effect.succeed(whole);
+  }
 
   const prompt = fitPrefix(task.prompt, (prefix) => fits(output(prefix, occurrences, true)));
 
-  if (prompt !== null) return Effect.succeed(output(prompt, occurrences, true));
+  if (prompt !== null) {
+    return Effect.succeed(output(prompt, occurrences, true));
+  }
 
   const shown = longestFit(occurrences.length, (count) =>
     fits(output("", occurrences.slice(0, count), true)),

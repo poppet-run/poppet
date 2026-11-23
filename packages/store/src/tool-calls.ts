@@ -25,15 +25,17 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
           run.status !== "running" ||
           decoded.finishReason !== "tool-calls" ||
           !Array.isReadonlyArrayNonEmpty(calls)
-        )
+        ) {
           return yield* conflict("Only completed tool requests in a running run can be recorded.");
+        }
 
         const saved = yield* toolCallsFor(runId);
 
         const ids = new Set([...saved, ...calls].map((call) => call.callId));
 
-        if (ids.size !== saved.length + calls.length)
+        if (ids.size !== saved.length + calls.length) {
           return yield* conflict("Tool call IDs cannot be reused within a run.");
+        }
 
         const createdAt = Math.max(at, run.startedAt ?? run.createdAt);
 
@@ -81,16 +83,18 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
       const decoded = yield* decodeInput(ToolOutcome, outcome, { onExcessProperty: "error" });
       const finishedAt = Math.max(at, call.startedAt ?? call.createdAt);
 
-      if (decoded.status === "completed" && call.status !== "running")
+      if (decoded.status === "completed" && call.status !== "running") {
         return yield* conflict("Only a started tool call can complete.");
+      }
 
-      if ("output" in decoded)
+      if ("output" in decoded) {
         yield* append(
           yield* requireSession(run.sessionId),
           runId,
           [{ role: "tool", callId, output: decoded.output }],
           finishedAt,
         );
+      }
 
       const completed = decoded.status === "completed";
 
@@ -107,8 +111,9 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
         Effect.gen(function* () {
           const { call } = yield* activeTool(runId, callId);
 
-          if (call.status !== "pending" || call.serverId === null)
+          if (call.status !== "pending" || call.serverId === null) {
             return yield* conflict("Only a pending MCP call can record review.");
+          }
 
           const decoded = yield* decodeInput(ToolReview, review, { onExcessProperty: "error" });
           const { approval } = decoded;
@@ -125,8 +130,9 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
                 previous.reason !== decoded.reason ||
                 previous.target !== decoded.target ||
                 previous.effects !== decoded.effects
-          )
+          ) {
             return yield* conflict("A saved tool review only accepts one owner decision.");
+          }
 
           yield* sql`UPDATE tool_calls SET review = ${JSON.stringify(decoded)}
               WHERE run_id = ${runId} AND call_id = ${callId}`;
@@ -138,8 +144,9 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
           const at = yield* Clock.currentTimeMillis;
           const { call } = yield* activeTool(runId, callId);
 
-          if (call.status !== "pending")
+          if (call.status !== "pending") {
             return yield* conflict("The tool call has already started.");
+          }
 
           if (
             call.review !== null &&
@@ -148,8 +155,9 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
               call.review.decision === "needs_approval" &&
               call.review.approval?.decision === "approved"
             )
-          )
+          ) {
             return yield* conflict("The tool call requires an allowed review before dispatch.");
+          }
 
           yield* sql`UPDATE tool_calls SET status = 'running',
               started_at = ${Math.max(at, call.createdAt)}
@@ -166,12 +174,15 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
               reportAs(storeFailure),
             );
 
-            if (saved?.status === "completed") return saved.output!;
+            if (saved?.status === "completed") {
+              return saved.output!;
+            }
 
             const { call } = yield* activeTool(runId, callId).pipe(reportAs(storeFailure));
 
-            if (call.status !== "running")
+            if (call.status !== "running") {
               return yield* conflict("Only a started tool call can commit a mutation.");
+            }
 
             const output = yield* operation;
 

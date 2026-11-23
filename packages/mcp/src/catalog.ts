@@ -65,7 +65,10 @@ const regExp = Object.assign((pattern: string, flags: string) => new RE2(pattern
 });
 
 export const compileSchema = (input: Schema.JsonObject) => {
-  if (Buffer.byteLength(JSON.stringify(input)) > 16384) throw invalid();
+  if (Buffer.byteLength(JSON.stringify(input)) > 16_384) {
+    throw invalid();
+  }
+
   let nodes = 0;
   let modern = false;
 
@@ -74,32 +77,50 @@ export const compileSchema = (input: Schema.JsonObject) => {
     depth: number,
     position: "schema" | "map" | "data",
   ): Schema.Json => {
-    if (++nodes > 1024 || depth > 32) throw invalid();
+    if (++nodes > 1024 || depth > 32) {
+      throw invalid();
+    }
 
-    if (Array.isArray(value)) return value.map((item) => visit(item, depth + 1, position));
+    if (Array.isArray(value)) {
+      return value.map((item) => visit(item, depth + 1, position));
+    }
 
-    if (!Schema.is(Schema.ObjectKeyword)(value)) return value;
+    if (!Schema.is(Schema.ObjectKeyword)(value)) {
+      return value;
+    }
+
     const entries: Array<[string, Schema.Json]> = [];
 
     for (const [key, item] of Object.entries(value)) {
-      if (position === "schema" && key.startsWith("x-")) continue;
+      if (position === "schema" && key.startsWith("x-")) {
+        continue;
+      }
 
-      if (position === "schema" && modernKeywords.has(key)) modern = true;
+      if (position === "schema" && modernKeywords.has(key)) {
+        modern = true;
+      }
 
-      if (position === "schema" && key === "pattern" && Schema.is(Schema.String)(item))
+      if (position === "schema" && key === "pattern" && Schema.is(Schema.String)(item)) {
         regExp(item, "u").dispose();
+      }
 
       if (
         position === "schema" &&
         ["$ref", "$dynamicRef", "$recursiveRef", "patternProperties"].includes(key)
-      )
+      ) {
         throw invalid();
+      }
+
       let child: "schema" | "map" | "data" = "data";
 
-      if (position === "map") child = "schema";
-      else if (position === "schema") {
-        if (schemaMaps.has(key)) child = "map";
-        else if (schemaValues.has(key)) child = "schema";
+      if (position === "map") {
+        child = "schema";
+      } else if (position === "schema") {
+        if (schemaMaps.has(key)) {
+          child = "map";
+        } else if (schemaValues.has(key)) {
+          child = "schema";
+        }
       }
 
       entries.push([key, visit(item, depth + 1, child)]);
@@ -146,7 +167,9 @@ export const definition = (
 });
 
 export const decodeArguments = (json: string) => {
-  if (Buffer.byteLength(json) > 65536) throw new Error("Arguments exceed 64 KiB.");
+  if (Buffer.byteLength(json) > 65_536) {
+    throw new Error("Arguments exceed 64 KiB.");
+  }
 
   const wrapper = Schema.decodeUnknownSync(
     Schema.fromJsonString(Schema.Struct({ input: Schema.String })),
@@ -157,15 +180,20 @@ export const decodeArguments = (json: string) => {
 };
 
 export const containsSecret = (value: Schema.Json, secrets: ReadonlyArray<string>): boolean => {
-  if (Schema.is(Schema.String)(value)) return secrets.some((secret) => value.includes(secret));
+  if (Schema.is(Schema.String)(value)) {
+    return secrets.some((secret) => value.includes(secret));
+  }
 
-  if (Array.isArray(value)) return value.some((item) => containsSecret(item, secrets));
+  if (Array.isArray(value)) {
+    return value.some((item) => containsSecret(item, secrets));
+  }
 
-  if (Schema.is(Schema.ObjectKeyword)(value))
+  if (Schema.is(Schema.ObjectKeyword)(value)) {
     return Object.entries(value).some(
       ([key, item]) =>
         secrets.some((secret) => key.includes(secret)) || containsSecret(item, secrets),
     );
+  }
 
   return false;
 };
@@ -201,24 +229,30 @@ export const toolResult = (
         });
 
   const redact = (value: Schema.Json): Schema.Json => {
-    if (Schema.is(Schema.String)(value)) return redactText(value);
+    if (Schema.is(Schema.String)(value)) {
+      return redactText(value);
+    }
 
-    if (Array.isArray(value)) return value.map(redact);
+    if (Array.isArray(value)) {
+      return value.map(redact);
+    }
 
-    if (Schema.is(Schema.ObjectKeyword)(value))
+    if (Schema.is(Schema.ObjectKeyword)(value)) {
       return Object.fromEntries(
         Object.entries(value).map(([key, item]) => [redactText(key), redact(item)]),
       );
+    }
 
     return value;
   };
 
-  if (result.isError)
+  if (result.isError) {
     throw new MCPError({
       reason: "tool-reported",
       message:
         "The MCP tool reported an error. Its operation did not complete successfully; inspect the server before trying again.",
     });
+  }
 
   const content = result.content.flatMap((part) =>
     part.type === "text" ? [redactText(part.text)] : [],
@@ -244,7 +278,10 @@ export const toolResult = (
 
   let output = serialize(content);
 
-  if (Buffer.byteLength(output) <= limit) return output;
+  if (Buffer.byteLength(output) <= limit) {
+    return output;
+  }
+
   truncated = true;
 
   if (structuredContent !== null) {
@@ -252,14 +289,19 @@ export const toolResult = (
     omittedStructuredContent = true;
     output = serialize(content);
 
-    if (Buffer.byteLength(output) <= limit) return output;
+    if (Buffer.byteLength(output) <= limit) {
+      return output;
+    }
   }
 
   const fits = (texts: ReadonlyArray<string>) => Buffer.byteLength(serialize(texts)) <= limit;
   // "true" is one byte shorter than "false". Require an actual omission.
   const kept = longestFit(content.length - 1, (count) => fits(content.slice(0, count)));
 
-  if (kept < 0 || content.length === 0) throw new Error("MCP result budget is too small.");
+  if (kept < 0 || content.length === 0) {
+    throw new Error("MCP result budget is too small.");
+  }
+
   const retained = content.slice(0, kept);
   const remaining = content[kept]!;
 

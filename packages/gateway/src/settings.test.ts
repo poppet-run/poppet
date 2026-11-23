@@ -47,10 +47,15 @@ describe.concurrent("settings.ts", () => {
         await writeFile(other, "channel-secret", { mode: 0o644 });
         await rm(path);
 
-        if (kind === "symlink") await symlink(other, path);
-        else if (kind === "hardlink") await link(other, path);
-        else if (kind === "fifo") makeFIFO(path);
-        else await writeFile(path, "channel-secret".repeat(2000));
+        if (kind === "symlink") {
+          await symlink(other, path);
+        } else if (kind === "hardlink") {
+          await link(other, path);
+        } else if (kind === "fifo") {
+          makeFIFO(path);
+        } else {
+          await writeFile(path, "channel-secret".repeat(2000));
+        }
 
         const result = await Effect.runPromise(
           loadChannelSettings(directory, "test-channel").pipe(Effect.result),

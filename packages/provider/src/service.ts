@@ -47,92 +47,106 @@ export const validateRequest = (description: ModelDescription, request: ModelReq
       Effect.mapError(() => invalidRequest(description.provider, "The model request is invalid.")),
     );
 
-    if (decoded.tools.length > 0 && !description.capabilities.tools)
+    if (decoded.tools.length > 0 && !description.capabilities.tools) {
       return yield* Effect.fail(
         invalidRequest(description.provider, "This model does not support tools."),
       );
+    }
 
     for (const setting of ["temperature", "maxOutputTokens"] as const) {
       if (
         decoded.settings[setting] !== undefined &&
         !description.capabilities.generationSettings.includes(setting)
-      )
+      ) {
         return yield* Effect.fail(
           invalidRequest(description.provider, `This model does not accept ${setting}.`),
         );
+      }
     }
 
     if (
       decoded.settings.maxOutputTokens !== undefined &&
       description.capabilities.maxOutputTokens !== null &&
       decoded.settings.maxOutputTokens > description.capabilities.maxOutputTokens
-    )
+    ) {
       return yield* Effect.fail(
         invalidRequest(
           description.provider,
           "The output token limit exceeds this model's capacity.",
         ),
       );
+    }
 
-    if (decoded.settings.toolChoice === "required" && decoded.tools.length === 0)
+    if (decoded.settings.toolChoice === "required" && decoded.tools.length === 0) {
       return yield* Effect.fail(
         invalidRequest(description.provider, "A required tool choice needs at least one tool."),
       );
+    }
 
     const names = new Set<string>();
 
     for (const tool of decoded.tools) {
       const name = JSON.stringify([tool.namespace, tool.name]);
 
-      if (names.has(name))
+      if (names.has(name)) {
         return yield* Effect.fail(
           invalidRequest(description.provider, "Tool names must be unique within a namespace."),
         );
+      }
+
       names.add(name);
     }
 
     const contents = new Map(decoded.attachments?.map((content) => [content.id, content]));
 
-    if (contents.size !== (decoded.attachments?.length ?? 0))
+    if (contents.size !== (decoded.attachments?.length ?? 0)) {
       return yield* Effect.fail(
         invalidRequest(description.provider, "Attachment content IDs must be unique."),
       );
+    }
 
     for (const message of decoded.messages) {
-      if (message.role !== "user") continue;
+      if (message.role !== "user") {
+        continue;
+      }
 
       for (const reference of message.attachments ?? []) {
         const content = contents.get(reference.id);
         const image = reference.mediaType !== "text/plain";
 
-        if (content === undefined || "base64" in content !== image)
+        if (content === undefined || "base64" in content !== image) {
           return yield* Effect.fail(
             invalidRequest(description.provider, "An attachment's contents are missing."),
           );
+        }
 
-        if (image && !description.capabilities.images)
+        if (image && !description.capabilities.images) {
           return yield* Effect.fail(
             invalidRequest(
               description.provider,
               `${description.name} does not accept images. Start a new session with a model that does.`,
             ),
           );
+        }
       }
     }
 
     for (const message of decoded.messages) {
-      if (message.role !== "assistant" || message.continuation === null) continue;
+      if (message.role !== "assistant" || message.continuation === null) {
+        continue;
+      }
 
       if (
         message.continuation.provider !== description.provider ||
         message.continuation.model !== description.id
-      )
+      ) {
         return yield* Effect.fail(
           invalidRequest(
             description.provider,
             "Continuation belongs to another provider or model. Start a new session.",
           ),
         );
+      }
     }
 
     return decoded;
@@ -144,22 +158,24 @@ export const completeModel = (model: ModelOperations, request: ModelRequest) =>
       model.stream(request),
       (): Completion | null => null,
       (completed, event) => {
-        if (completed !== null)
+        if (completed !== null) {
           return Effect.fail(
             interrupted(
               model.description.provider,
               "The stream has an invalid completion sequence.",
             ),
           );
+        }
 
         return Effect.succeed(event.type === "completed" ? event.response : null);
       },
     );
 
-    if (response === null)
+    if (response === null) {
       return yield* Effect.fail(
         interrupted(model.description.provider, "The stream ended without completed inference."),
       );
+    }
 
     return response;
   });

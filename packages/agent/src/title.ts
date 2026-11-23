@@ -15,7 +15,10 @@ export const sessionTitle = (text: string) => {
 
   const characters = [...clean];
 
-  if (characters.length <= 80) return clean || "New conversation";
+  if (characters.length <= 80) {
+    return clean || "New conversation";
+  }
+
   const prefix = characters.slice(0, 80).join("");
   const boundary = prefix.lastIndexOf(" ");
 
@@ -24,13 +27,15 @@ export const sessionTitle = (text: string) => {
 
 export const generateTitle = (model: ModelOperations, session: Session, prompt: string) =>
   Effect.gen(function* () {
-    if (model.description.provider !== session.provider || model.description.id !== session.model)
+    if (model.description.provider !== session.provider || model.description.id !== session.model) {
       return yield* Effect.fail(
         new AgentError({
           reason: "invalid-request",
           message: "The title model does not match the session.",
         }),
       );
+    }
+
     const supported = model.description.capabilities.generationSettings.includes("maxOutputTokens");
     let bytes = 0;
 
@@ -56,20 +61,24 @@ export const generateTitle = (model: ModelOperations, session: Session, prompt: 
           if (event.type === "text-delta") {
             bytes += byteSize(event.text);
 
-            if (bytes > 1024)
+            if (bytes > 1024) {
               return yield* Effect.fail(
                 new AgentError({
                   reason: "output-limit",
                   message: "The title response exceeded its size limit.",
                 }),
               );
+            }
           }
         }),
       ),
       Stream.runLast,
     );
 
-    if (Option.isNone(last) || last.value.type !== "completed") return { title: null, usage: null };
+    if (Option.isNone(last) || last.value.type !== "completed") {
+      return { title: null, usage: null };
+    }
+
     const result = last.value.response;
 
     const text = outputText(result.output);

@@ -23,7 +23,7 @@ describe("discordChannelLayer", () => {
   test.each(["completed", "stopped"] as const)(
     "when marking %s is rate limited, retries removal without replaying completed reactions",
     async (state) => {
-      const writes: string[] = [];
+      const writes: Array<string> = [];
       let removals = 0;
       const ready = spyOn(Client.prototype, "isReady").mockReturnValue(true);
 
@@ -36,18 +36,20 @@ describe("discordChannelLayer", () => {
           const path = new URL(url).pathname.replace("/api/v10", "");
 
           if (options.method === "GET") {
-            if (path === "/guilds/500")
+            if (path === "/guilds/500") {
               return Response.json({ id: "500", name: "Test", roles: [], members: [] });
+            }
 
-            if (path === "/channels/300")
+            if (path === "/channels/300") {
               return Response.json({
                 id: "300",
                 guild_id: "500",
                 type: ChannelType.GuildText,
                 permission_overwrites: [],
               });
+            }
 
-            if (path === "/channels/300/messages/400")
+            if (path === "/channels/300/messages/400") {
               return Response.json({
                 id: "400",
                 channel_id: "300",
@@ -60,6 +62,7 @@ describe("discordChannelLayer", () => {
                 embeds: [],
                 type: 0,
               });
+            }
           }
 
           if (path.startsWith("/channels/300/messages/400/reactions/")) {
@@ -81,7 +84,9 @@ describe("discordChannelLayer", () => {
         });
         await this.guilds.fetch("500");
 
-        if (this.isReady()) this.emit(Events.ClientReady, this);
+        if (this.isReady()) {
+          this.emit(Events.ClientReady, this);
+        }
 
         return "logged-in";
       });
@@ -129,7 +134,9 @@ describe("discordChannelLayer", () => {
     });
 
     const login = spyOn(client, "login").mockImplementation(async () => {
-      if (client.isReady()) client.emit(Events.ClientReady, client);
+      if (client.isReady()) {
+        client.emit(Events.ClientReady, client);
+      }
 
       return "logged-in";
     });
@@ -185,7 +192,7 @@ describe("discordChannelLayer", () => {
     });
 
     const get = spyOn(client.rest, "get").mockImplementation(async (route) => {
-      if (route === "/guilds/500")
+      if (route === "/guilds/500") {
         return {
           id: "500",
           name: "Test",
@@ -193,20 +200,33 @@ describe("discordChannelLayer", () => {
           roles: [{ id: "500", name: "@everyone", permissions: "0", position: 0 }],
           members: [{ user, roles: [], joined_at: new Date().toISOString() }],
         };
+      }
 
-      if (route === "/channels/300") return parent;
+      if (route === "/channels/300") {
+        return parent;
+      }
 
-      if (route === "/channels/900") return { ...parent, id: "900" };
+      if (route === "/channels/900") {
+        return { ...parent, id: "900" };
+      }
 
-      if (route === "/channels/999") return { ...parent, id: "999", guild_id: "999" };
+      if (route === "/channels/999") {
+        return { ...parent, id: "999", guild_id: "999" };
+      }
 
-      if (route === "/channels/900/messages/400") return { ...source(), channel_id: "900" };
+      if (route === "/channels/900/messages/400") {
+        return { ...source(), channel_id: "900" };
+      }
 
-      if (route === "/channels/400") return thread;
+      if (route === "/channels/400") {
+        return thread;
+      }
 
-      if (route === "/channels/300/messages/400") return source();
+      if (route === "/channels/300/messages/400") {
+        return source();
+      }
 
-      if (route === "/channels/400/messages/401")
+      if (route === "/channels/400/messages/401") {
         return {
           ...source(),
           id: "401",
@@ -215,18 +235,22 @@ describe("discordChannelLayer", () => {
           mentions: [],
           flags: 0,
         };
+      }
+
       throw new Error(`Unexpected read: ${route}`);
     });
 
     const post = spyOn(client.rest, "post").mockImplementation(async (route) => {
-      if (route === "/channels/400/typing") return;
+      if (route === "/channels/400/typing") {
+        return;
+      }
 
       if (route === "/channels/300/messages/400/threads") {
         created = true;
         throw new Error("Lost creation acknowledgement");
       }
 
-      if (route === "/channels/300/messages")
+      if (route === "/channels/300/messages") {
         return {
           ...source(),
           id: "601",
@@ -234,9 +258,12 @@ describe("discordChannelLayer", () => {
           author: user,
           content: "Scheduled result",
         };
+      }
 
       if (route === "/channels/400/messages") {
-        if (loseSend) throw new Error("Lost send acknowledgement");
+        if (loseSend) {
+          throw new Error("Lost send acknowledgement");
+        }
 
         return { ...source(), id: "600", channel_id: "400", author: user, content: "Reply" };
       }
@@ -247,21 +274,29 @@ describe("discordChannelLayer", () => {
     let loseRename = false;
 
     const patch = spyOn(client.rest, "patch").mockImplementation(async (route) => {
-      if (route !== "/channels/400") throw new Error(`Unexpected rename: ${route}`);
+      if (route !== "/channels/400") {
+        throw new Error(`Unexpected rename: ${route}`);
+      }
+
       thread.name = "😀".repeat(50);
 
-      if (loseRename) throw new Error("Lost rename acknowledgement");
+      if (loseRename) {
+        throw new Error("Lost rename acknowledgement");
+      }
 
       return thread;
     });
 
     const put = spyOn(client.rest, "put").mockImplementation(async (route) => {
-      if (route.endsWith(`/${encodeURIComponent("👀")}/@me`)) botReacted = true;
+      if (route.endsWith(`/${encodeURIComponent("👀")}/@me`)) {
+        botReacted = true;
+      }
     });
 
     const remove = spyOn(client.rest, "delete").mockImplementation(async (route) => {
-      if (!route.endsWith(`/${encodeURIComponent("👀")}/@me`))
+      if (!route.endsWith(`/${encodeURIComponent("👀")}/@me`)) {
         throw new Error(`Unexpected reaction removal: ${route}`);
+      }
 
       botReacted = false;
     });
@@ -303,7 +338,10 @@ describe("discordChannelLayer", () => {
 
           const naming = channel.naming;
 
-          if (!naming) throw new Error("Missing naming capability");
+          if (!naming) {
+            throw new Error("Missing naming capability");
+          }
+
           expect(yield* naming.conversation(incoming, "Hello")).toEqual({
             id: "400",
             managedName: null,
@@ -374,7 +412,10 @@ describe("discordChannelLayer", () => {
           );
           const fetched = yield* Effect.promise(() => client.channels.fetch("300"));
 
-          if (fetched?.type !== ChannelType.GuildText) throw new Error("Missing parent");
+          if (fetched?.type !== ChannelType.GuildText) {
+            throw new Error("Missing parent");
+          }
+
           const message = yield* Effect.promise(() => fetched.messages.fetch("400"));
           message.webhookId = "700";
           client.emit(Events.MessageCreate, message);
@@ -384,7 +425,10 @@ describe("discordChannelLayer", () => {
           expect(Option.getOrNull(received)).toEqual(incoming);
           const other = yield* Effect.promise(() => client.channels.fetch("900"));
 
-          if (other?.type !== ChannelType.GuildText) throw new Error("Missing other channel");
+          if (other?.type !== ChannelType.GuildText) {
+            throw new Error("Missing other channel");
+          }
+
           const otherMessage = yield* Effect.promise(() => other.messages.fetch("400"));
           client.emit(Events.MessageCreate, otherMessage);
           expect(Option.getOrNull(yield* Stream.runHead(channel.messages))).toEqual({
@@ -393,7 +437,10 @@ describe("discordChannelLayer", () => {
           });
           const threadChannel = yield* Effect.promise(() => client.channels.fetch("400"));
 
-          if (!threadChannel?.isThread()) throw new Error("Missing thread");
+          if (!threadChannel?.isThread()) {
+            throw new Error("Missing thread");
+          }
+
           const after = Object.assign({}, threadChannel, { name: "New title" });
           const foreign = Object.assign({}, after, { id: "999", guildId: "999" });
           client.emit(Events.ThreadUpdate, threadChannel, foreign);
@@ -499,7 +546,9 @@ describe("discordChannelLayer", () => {
         Object.defineProperty(client, "user", { value: user });
         ready.mockReturnValue(true);
 
-        if (client.isReady()) client.emit(Events.ClientReady, client);
+        if (client.isReady()) {
+          client.emit(Events.ClientReady, client);
+        }
 
         return "logged-in";
       });
