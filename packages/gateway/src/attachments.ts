@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 
-import { ChannelError, type IncomingAttachment } from "#src/channel";
+import { ChannelError } from "#src/channel";
+import type { IncomingAttachment } from "#src/channel";
 
 export type AttachmentFetch = (input: URL, init: RequestInit) => Promise<Response>;
 

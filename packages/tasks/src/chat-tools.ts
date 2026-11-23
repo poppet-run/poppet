@@ -7,10 +7,10 @@ import {
   Skills,
   isManualOnly,
   ownerOnlySkill,
-  type ChatTaskAction,
-  type ChatTaskContext,
 } from "@poppet/agent";
-import { Store, StoreError, type Run } from "@poppet/store";
+import type { ChatTaskAction, ChatTaskContext } from "@poppet/agent";
+import { Store, StoreError } from "@poppet/store";
+import type { Run } from "@poppet/store";
 import { Clock, Effect, Layer, Match, Schema } from "effect";
 
 import { bounded, detailsOutput, listOutput, summary } from "#src/task-output";
@@ -22,10 +22,8 @@ import {
   parseTimestamp,
   TaskError,
   TaskPatch,
-  type Schedule,
-  type Task,
-  type TaskControl,
 } from "#src/task-schema";
+import type { Schedule, Task, TaskControl } from "#src/task-schema";
 import { maxTasks, TaskRepository } from "#src/task-store";
 
 const maxChatCreatesPerRun = 5;

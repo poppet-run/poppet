@@ -5,7 +5,8 @@ import { join } from "node:path";
 
 import { Effect, Fiber } from "effect";
 
-import { manageWorker, type SystemctlRun, userConfigHome, workerPaths } from "#src/linux";
+import { manageWorker, userConfigHome, workerPaths } from "#src/linux";
+import type { SystemctlRun } from "#src/linux";
 
 const ok = (stdout = ""): SystemctlRun => ({ code: 0, stdout, stderr: "" });
 

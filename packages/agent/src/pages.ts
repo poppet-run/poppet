@@ -1,7 +1,9 @@
-import { toolParameters, type Tool } from "@poppet/provider";
+import { toolParameters } from "@poppet/provider";
+import type { Tool } from "@poppet/provider";
 import { Context, Effect, Layer, Schema } from "effect";
 
-import { contextTool, type ToolCall } from "#src/agent-tool";
+import { contextTool } from "#src/agent-tool";
+import type { ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import {
   PageTransport,

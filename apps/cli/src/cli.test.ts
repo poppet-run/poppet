@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
 import { serveWorker, workerSocketPath } from "@poppet/worker";
-import { ConfigProvider, Console, Effect, type Schema } from "effect";
+import { ConfigProvider, Console, Effect } from "effect";
+import type { Schema } from "effect";
 
 import { makeCLI } from "#src/cli";
 import type { manageWorker } from "#src/commands/worker/service";

@@ -1,28 +1,32 @@
-import { Completion, ProviderId, type Message as ModelMessage } from "@poppet/provider";
+import type { Completion, ProviderId } from "@poppet/provider";
+import type { Message as ModelMessage } from "@poppet/provider";
 import { Clock, Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { StoreDatabase, StoreDatabaseLive } from "#src/database";
-import { StoreError, reportAs, storeFailure } from "#src/errors";
+import type { StoreError } from "#src/errors";
+import { reportAs, storeFailure } from "#src/errors";
 import { storeSchema } from "#src/migrations";
 import { readSession } from "#src/recall";
 import { storeRecords } from "#src/records";
 import { runOperations } from "#src/runs";
-import {
-  type NewAttachment,
+import type {
   Run,
   RunOutcome,
-  type SavedAttachment,
   Session,
   SkillSnapshot,
-  type SessionSearchResult,
-  type SessionReadQuery,
-  type SessionReadResult,
   StoredMessage,
   ToolCall,
   ToolOutcome,
-  type ToolReview,
-  type StoreStatus,
+} from "#src/schema";
+import type {
+  NewAttachment,
+  SavedAttachment,
+  SessionSearchResult,
+  SessionReadQuery,
+  SessionReadResult,
+  ToolReview,
+  StoreStatus,
 } from "#src/schema";
 import { searchSessions } from "#src/search";
 import { sessionOperations } from "#src/sessions";

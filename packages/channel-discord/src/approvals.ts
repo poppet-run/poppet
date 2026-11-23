@@ -1,4 +1,5 @@
-import { ChannelError, type ApprovalAction, type ApprovalState } from "@poppet/gateway";
+import { ChannelError } from "@poppet/gateway";
+import type { ApprovalAction, ApprovalState } from "@poppet/gateway";
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -6,9 +7,8 @@ import {
   ChannelType,
   Events,
   MessageFlags,
-  type Client,
-  type Interaction,
 } from "discord.js";
+import type { Client, Interaction } from "discord.js";
 import { Effect, Queue, Stream } from "effect";
 
 import type { DiscordSettings } from "#src/settings";

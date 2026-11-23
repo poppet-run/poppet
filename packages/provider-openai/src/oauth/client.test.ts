@@ -4,7 +4,8 @@ import { Effect, Fiber, Match, Redacted } from "effect";
 import { TestClock } from "effect/testing";
 
 import { makeOAuthClient } from "#src/oauth/client";
-import { request as httpRequest, type HttpFetch } from "#src/oauth/http";
+import { request as httpRequest } from "#src/oauth/http";
+import type { HttpFetch } from "#src/oauth/http";
 
 describe("client.ts", () => {
   test("when discovery fails temporarily, retries and caches the successful response", async () => {

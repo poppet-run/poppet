@@ -10,22 +10,14 @@ import {
   logChatDiagnostic,
   Skills,
   sessionTitle,
-  type ChatEvent,
-  type SendOptions,
 } from "@poppet/agent";
+import type { ChatEvent, SendOptions } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { gatewaySchema } from "@poppet/gateway";
 import { readFileBounded } from "@poppet/io";
 import { memorySchema } from "@poppet/memory";
-import {
-  migrate,
-  Session,
-  SessionSearchQuery,
-  SkillName,
-  Store,
-  type StoredMessage,
-  type Run,
-} from "@poppet/store";
+import { migrate, Session, SessionSearchQuery, SkillName, Store } from "@poppet/store";
+import type { StoredMessage, Run } from "@poppet/store";
 import { taskSchema } from "@poppet/tasks";
 import { Clock, Effect, Schema, Stream } from "effect";
 

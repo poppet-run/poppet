@@ -4,7 +4,8 @@ import { startCallback } from "@poppet/sign-in";
 import { Console, Effect, Fiber, Queue } from "effect";
 
 import { ConnectionError } from "#src/connection";
-import { makeBrowserSignIn, type SignInRequest } from "#src/sign-in/service";
+import { makeBrowserSignIn } from "#src/sign-in/service";
+import type { SignInRequest } from "#src/sign-in/service";
 
 const request: SignInRequest = {
   endpoint: "https://auth.openai.com/api/accounts/authorize",

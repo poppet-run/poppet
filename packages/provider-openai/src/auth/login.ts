@@ -5,7 +5,8 @@ import { CredentialStore } from "#src/auth/credentials";
 import { credentialsFor, statusFor } from "#src/auth/state";
 import { ConnectionError, planScope, resource } from "#src/connection";
 import { OAuthClient } from "#src/oauth/client";
-import { BrowserSignIn, type SignInOptions } from "#src/sign-in/service";
+import { BrowserSignIn } from "#src/sign-in/service";
+import type { SignInOptions } from "#src/sign-in/service";
 
 export const loginWorkflow = Effect.gen(function* () {
   const config = yield* ProviderEnvironment;

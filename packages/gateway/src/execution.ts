@@ -1,22 +1,18 @@
-import { AgentError, type Agent, type ChatFailure } from "@poppet/agent";
+import { AgentError } from "@poppet/agent";
+import type { Agent, ChatFailure } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
 import { Cause, Deferred, Effect, Exit, Fiber, FiberSet, Option, Stream } from "effect";
 
 import type { ActionApprovals } from "#src/approvals";
 import type { ChannelError } from "#src/channel";
-import {
-  authorized,
-  finish,
-  mark,
-  wake,
-  type GatewayContext,
-  type RunningRequest,
-} from "#src/context";
+import { authorized, finish, mark, wake } from "#src/context";
+import type { GatewayContext, RunningRequest } from "#src/context";
 import { resolveDestination } from "#src/destination";
 import { failureDecision } from "#src/failure";
 import { answer } from "#src/replies";
 import type { Inbox } from "#src/repository";
-import { prepareSession, type SessionSetup } from "#src/session";
+import { prepareSession } from "#src/session";
+import type { SessionSetup } from "#src/session";
 
 export interface Execution {
   readonly agent: Agent["Service"];

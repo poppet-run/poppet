@@ -1,15 +1,10 @@
 import { styleText } from "node:util";
 
 import { formatLogLine, writeDiagnostic } from "@poppet/io";
-import {
-  ProviderError,
-  RequestTiming,
-  measureTiming,
-  recordTiming,
-  type ModelOperations,
-  type ProviderId,
-} from "@poppet/provider";
-import { Store, StoreError, type Run, type RunOutcome } from "@poppet/store";
+import { ProviderError, RequestTiming, measureTiming, recordTiming } from "@poppet/provider";
+import type { ModelOperations, ProviderId } from "@poppet/provider";
+import { Store, StoreError } from "@poppet/store";
+import type { Run, RunOutcome } from "@poppet/store";
 import {
   Cause,
   Clock,
@@ -21,12 +16,13 @@ import {
   Option,
   Semaphore,
   Stream,
-  type Scope,
 } from "effect";
+import type { Scope } from "effect";
 
 import type { ApproveAction } from "#src/action-approval";
 import type { RunContext } from "#src/agent-tool";
-import { prepareAttachments, type AttachmentInput } from "#src/attachments";
+import { prepareAttachments } from "#src/attachments";
+import type { AttachmentInput } from "#src/attachments";
 import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
 import { memoryPrompt } from "#src/memory";

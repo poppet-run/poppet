@@ -1,13 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { Memory } from "@poppet/memory";
-import {
-  ProviderError,
-  type Completion,
-  type ModelOperations,
-  type ModelRequest,
-  type Output,
-} from "@poppet/provider";
+import { ProviderError } from "@poppet/provider";
+import type { Completion, ModelOperations, ModelRequest, Output } from "@poppet/provider";
 import { responsesModel } from "@poppet/provider/protocol";
 import { SessionReadResult, SessionSearchMatch, Store } from "@poppet/store";
 import { WebSearch, WebSearchError, makeBraveSearch } from "@poppet/web-search";
@@ -16,7 +11,8 @@ import OpenAI from "openai";
 
 import { Bash, commandReviewInstructions } from "#src/bash";
 import { AgentError } from "#src/errors";
-import { ExternalTools, type ExternalTool } from "#src/external-tools";
+import { ExternalTools } from "#src/external-tools";
+import type { ExternalTool } from "#src/external-tools";
 import { Pages, fetchPageDefinition } from "#src/pages";
 import { Agent } from "#src/service";
 import type { ChatPolicy } from "#src/settings";

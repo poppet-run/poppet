@@ -1,5 +1,6 @@
 import { AgentError, ExternalTools } from "@poppet/agent";
-import { MCP, MCPError, mcpInstructions } from "@poppet/mcp";
+import type { MCPError } from "@poppet/mcp";
+import { MCP, mcpInstructions } from "@poppet/mcp";
 import { Effect, Layer } from "effect";
 
 const agentFailure = (error: MCPError) =>

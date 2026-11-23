@@ -1,4 +1,5 @@
-import { Context, Data, Effect, Schema, Stream } from "effect";
+import type { Effect, Stream } from "effect";
+import { Context, Data, Schema } from "effect";
 
 export class ChannelError extends Data.TaggedError("ChannelError")<{
   readonly reason: "unavailable" | "permission" | "uncertain" | "configuration" | "overloaded";

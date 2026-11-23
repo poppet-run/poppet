@@ -1,8 +1,10 @@
 import { Context, Effect, Exit, Layer, Redacted, Schema } from "effect";
 
-import { ConnectionError, type Identity, issuer, requestFailure } from "#src/connection";
+import { ConnectionError, issuer, requestFailure } from "#src/connection";
+import type { Identity } from "#src/connection";
 import { discoverIssuer } from "#src/oauth/discovery";
-import { type HttpFetch, networkError, request } from "#src/oauth/http";
+import { networkError, request } from "#src/oauth/http";
+import type { HttpFetch } from "#src/oauth/http";
 import { identityVerifier } from "#src/oauth/identity";
 import { TokenReply } from "#src/oauth/tokens";
 

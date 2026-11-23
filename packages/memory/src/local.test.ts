@@ -12,7 +12,8 @@ import { TestClock } from "effect/testing";
 
 import { LocalMemoryLive } from "#src/local";
 import { memoryMigrations } from "#src/migrations";
-import { Memory, MemoryError } from "#src/service";
+import type { MemoryError } from "#src/service";
+import { Memory } from "#src/service";
 
 const fixture = async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-local-memory-"));

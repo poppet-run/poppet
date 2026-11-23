@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 
-import { sessionTitle, type AttachmentInput, type Skills } from "@poppet/agent";
+import { sessionTitle } from "@poppet/agent";
+import type { AttachmentInput, Skills } from "@poppet/agent";
 import type { AppConfig } from "@poppet/config";
 import { Effect, Result } from "effect";
 
 import { ChannelError } from "#src/channel";
-import { finish, mark, type GatewayContext } from "#src/context";
+import { finish, mark } from "#src/context";
+import type { GatewayContext } from "#src/context";
 import { failureDecision } from "#src/failure";
 import type { Inbox } from "#src/repository";
 import { messagingRequest } from "#src/request";

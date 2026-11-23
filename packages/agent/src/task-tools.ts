@@ -1,16 +1,11 @@
-import { toolParameters, type Tool } from "@poppet/provider";
+import { toolParameters } from "@poppet/provider";
+import type { Tool } from "@poppet/provider";
 import type { DeliveryDestination, StoreError } from "@poppet/store";
 import { Session, SkillName } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
-import {
-  builtinFailures,
-  reportedStoreReasons,
-  type AgentTool,
-  type FailurePolicy,
-  type PreparedCall,
-  type ToolCall,
-} from "#src/agent-tool";
+import { builtinFailures, reportedStoreReasons } from "#src/agent-tool";
+import type { AgentTool, FailurePolicy, PreparedCall, ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import { BoundedText, toolArguments } from "#src/tool-schema";
 

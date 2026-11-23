@@ -1,7 +1,10 @@
-import { Agent, ChatSettings, logChatDiagnostic, Skills, type AgentError } from "@poppet/agent";
-import { AppConfig } from "@poppet/config";
-import { MCP, MCPCommand, inspectMCP } from "@poppet/mcp";
-import { Memory } from "@poppet/memory";
+import type { Agent, Skills } from "@poppet/agent";
+import { ChatSettings, logChatDiagnostic } from "@poppet/agent";
+import type { AgentError } from "@poppet/agent";
+import type { AppConfig } from "@poppet/config";
+import type { MCP } from "@poppet/mcp";
+import { MCPCommand, inspectMCP } from "@poppet/mcp";
+import type { Memory } from "@poppet/memory";
 import { Session, Store } from "@poppet/store";
 import {
   WorkerRequests,
@@ -10,18 +13,12 @@ import {
   requestWorkerReply,
   workerReply,
 } from "@poppet/worker";
-import { Cause, Effect, Exit, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
-import { SqlClient } from "effect/sql";
+import type { Cause } from "effect";
+import { Effect, Exit, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
+import type { SqlClient } from "effect/sql";
 
-import {
-  ChatInspection,
-  ChatSubmission,
-  inspectChat,
-  sendChat,
-  type ChatWriter,
-  type ChatReasoning,
-  type ChatReasoningWriter,
-} from "#src/commands/chat/chat";
+import { ChatInspection, ChatSubmission, inspectChat, sendChat } from "#src/commands/chat/chat";
+import type { ChatWriter, ChatReasoning, ChatReasoningWriter } from "#src/commands/chat/chat";
 import { MemoryCommand, manageMemory } from "#src/commands/memory/memory";
 
 const WorkerChat = Schema.Struct({

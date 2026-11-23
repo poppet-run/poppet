@@ -1,5 +1,6 @@
 import type { SkillSnapshot } from "@poppet/store";
-import { Context, type Effect, Layer } from "effect";
+import { Context, Layer } from "effect";
+import type { Effect } from "effect";
 
 import { contextFiles } from "#src/context-files";
 import type { AgentError } from "#src/errors";

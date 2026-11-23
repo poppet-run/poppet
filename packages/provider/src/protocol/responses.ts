@@ -9,19 +9,17 @@ import type {
   Tool,
 } from "openai/resources/responses/responses";
 
-import {
-  Completion,
-  ProviderError,
-  invalidRequest,
-  interrupted,
-  type ModelDescription,
-  type ModelEvent,
-  type ModelOperations,
-  type ModelRequest,
-  type Output,
+import { Completion, ProviderError, invalidRequest, interrupted } from "#src/index";
+import type {
+  ModelDescription,
+  ModelEvent,
+  ModelOperations,
+  ModelRequest,
+  Output,
 } from "#src/index";
 import { userParts } from "#src/protocol/attachments";
-import { inferenceFailure, remoteFailure, type InferenceOptions } from "#src/protocol/errors";
+import { inferenceFailure, remoteFailure } from "#src/protocol/errors";
+import type { InferenceOptions } from "#src/protocol/errors";
 import { inIndexOrder, modelStream } from "#src/protocol/scoped-stream";
 
 const Content = Schema.Union([

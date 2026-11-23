@@ -1,9 +1,10 @@
 import { Completion } from "@poppet/provider";
 import { Array, Clock, Effect } from "effect";
-import { SqlClient } from "effect/sql";
+import type { SqlClient } from "effect/sql";
 
 import { decodeInput, logStorageCause, reportAs, storageFailure, storeFailure } from "#src/errors";
-import { conflict, type StoreRecords } from "#src/records";
+import { conflict } from "#src/records";
+import type { StoreRecords } from "#src/records";
 import { Id, ToolOutcome, ToolReview } from "#src/schema";
 import type { StoreOperations } from "#src/service";
 

@@ -1,7 +1,8 @@
 import { DeliveryDestination } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
-import { ChannelError, type MessagingChannel } from "#src/channel";
+import { ChannelError } from "#src/channel";
+import type { MessagingChannel } from "#src/channel";
 
 export const resolveDestination = (
   channel: MessagingChannel["Service"],

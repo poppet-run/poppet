@@ -1,16 +1,21 @@
-import { Agent, ChatSettings, Skills, type ChatFailure } from "@poppet/agent";
+import { Agent, ChatSettings, Skills } from "@poppet/agent";
+import type { ChatFailure } from "@poppet/agent";
 import { AppConfig, quietHours } from "@poppet/config";
-import { Store, type StoreError } from "@poppet/store";
+import { Store } from "@poppet/store";
+import type { StoreError } from "@poppet/store";
 import { Clock, Context, Effect, FiberSet, Layer, Queue, Stream } from "effect";
 
 import { accept } from "#src/accept";
 import { actionApprovals } from "#src/approvals";
-import { MessagingChannel, type ChannelError, type IncomingMessage } from "#src/channel";
-import { loop, runningRequests, type GatewayContext } from "#src/context";
+import { MessagingChannel } from "#src/channel";
+import type { ChannelError, IncomingMessage } from "#src/channel";
+import { loop, runningRequests } from "#src/context";
+import type { GatewayContext } from "#src/context";
 import { conversationNaming } from "#src/conversation-naming";
 import { deliverNext } from "#src/delivery";
 import { resolveDestination } from "#src/destination";
-import { dispatchNext, processNext, recover, type Execution } from "#src/execution";
+import { dispatchNext, processNext, recover } from "#src/execution";
+import type { Execution } from "#src/execution";
 import { GatewayRepository } from "#src/repository";
 
 const gateway = Effect.gen(function* () {

@@ -1,4 +1,5 @@
-import { outputText, type ModelOperations } from "@poppet/provider";
+import { outputText } from "@poppet/provider";
+import type { ModelOperations } from "@poppet/provider";
 import type { Run } from "@poppet/store";
 import { Effect, Option, Schema, Stream } from "effect";
 

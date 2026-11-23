@@ -7,21 +7,10 @@ import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 
 import { AgentError } from "@poppet/agent";
-import {
-  ChannelEnvironment,
-  ChannelError,
-  MessagingChannel,
-  type ChannelRegistration,
-  type IncomingMessage,
-} from "@poppet/gateway";
-import {
-  Provider,
-  ProviderConnection,
-  invalidRequest,
-  type ModelDescription,
-  type ModelRequest,
-  type ProviderRegistration,
-} from "@poppet/provider";
+import { ChannelEnvironment, ChannelError, MessagingChannel } from "@poppet/gateway";
+import type { ChannelRegistration, IncomingMessage } from "@poppet/gateway";
+import { Provider, ProviderConnection, invalidRequest } from "@poppet/provider";
+import type { ModelDescription, ModelRequest, ProviderRegistration } from "@poppet/provider";
 import { requestWorker, workerSocketPath } from "@poppet/worker";
 import {
   ConfigProvider,
@@ -32,8 +21,8 @@ import {
   ManagedRuntime,
   Queue,
   Stream,
-  type Schema,
 } from "effect";
+import type { Schema } from "effect";
 import { TestClock } from "effect/testing";
 
 import { makeCLI } from "#src/cli";

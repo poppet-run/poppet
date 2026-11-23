@@ -5,16 +5,16 @@ import { workerSocketPath } from "@poppet/worker";
 import { Effect, Layer } from "effect";
 
 import type { ChatSubmission, ChatWriter, ChatReasoningWriter } from "#src/commands/chat/chat";
-import { readChatLine } from "#src/commands/chat/prompt";
+import type { readChatLine } from "#src/commands/chat/prompt";
 import { MessagingWorkerLive, validateChannels } from "#src/commands/gateway/channels";
 import { runWorker } from "#src/commands/worker/host";
 import {
   remoteWorkerCommand,
   remoteWorkerQuery,
   WorkerRequestsLive,
-  type WorkerQuery,
 } from "#src/commands/worker/requests";
-import { manageWorker } from "#src/commands/worker/service";
+import type { WorkerQuery } from "#src/commands/worker/requests";
+import type { manageWorker } from "#src/commands/worker/service";
 import { runtimeLayers } from "#src/runtime";
 
 export const createCLIContext = (

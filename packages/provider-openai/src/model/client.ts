@@ -1,6 +1,6 @@
 import { userAgent } from "@poppet/provider";
 import { openAIClient } from "@poppet/provider/protocol";
-import { Redacted } from "effect";
+import type { Redacted } from "effect";
 import { APIConnectionError, APIError, APIUserAbortError } from "openai";
 
 import { ConnectionError, requestFailure, resource } from "#src/connection";

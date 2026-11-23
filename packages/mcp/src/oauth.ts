@@ -1,26 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
-import {
-  auth,
-  extractWWWAuthenticateParams,
-  type AuthOptions,
-  type FetchLike,
-  type OAuthClientProvider,
-  type OAuthDiscoveryState,
-  type StoredOAuthClientInformation,
-  type StoredOAuthTokens,
+import { auth, extractWWWAuthenticateParams } from "@modelcontextprotocol/client";
+import type {
+  AuthOptions,
+  FetchLike,
+  OAuthClientProvider,
+  OAuthDiscoveryState,
+  StoredOAuthClientInformation,
+  StoredOAuthTokens,
 } from "@modelcontextprotocol/client";
 import { ApiKeyStore } from "@poppet/credentials";
 import { makeRecordStore, RecordStoreError } from "@poppet/credentials/records";
 import { ProviderEnvironment } from "@poppet/provider";
-import {
-  authorizeInBrowser,
-  startCallback,
-  type BrowserOptions,
-  type SignInError,
-} from "@poppet/sign-in";
-import { Context, Data, Effect, Layer, Option, Redacted, Schema, type Types } from "effect";
+import { authorizeInBrowser, startCallback } from "@poppet/sign-in";
+import type { BrowserOptions, SignInError } from "@poppet/sign-in";
+import { Context, Data, Effect, Layer, Option, Redacted, Schema } from "effect";
+import type { Types } from "effect";
 
 import type { MCPHTTPServer, MCPOAuth } from "#src/config";
 import { oauthAddress, oauthFetch } from "#src/oauth-network";

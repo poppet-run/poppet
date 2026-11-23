@@ -1,4 +1,5 @@
-import { boundedAttachment, type IncomingAttachment } from "@poppet/gateway";
+import { boundedAttachment } from "@poppet/gateway";
+import type { IncomingAttachment } from "@poppet/gateway";
 import type { Attachment } from "discord.js";
 
 const hosts = new Set(["cdn.discordapp.com", "media.discordapp.net"]);

@@ -1,4 +1,4 @@
-import { type Message, type ModelDescription, type Tool } from "@poppet/provider";
+import type { Message, ModelDescription, Tool } from "@poppet/provider";
 import type { Run, StoredMessage } from "@poppet/store";
 
 import { AgentError } from "#src/errors";

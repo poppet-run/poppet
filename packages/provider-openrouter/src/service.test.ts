@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { completeModel, verifyModel, type ModelRequest } from "@poppet/provider";
+import { completeModel, verifyModel } from "@poppet/provider";
+import type { ModelRequest } from "@poppet/provider";
 import { Effect, Fiber, Redacted, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
-import { makeOpenRouterProvider, type HttpFetch } from "#src/service";
+import { makeOpenRouterProvider } from "#src/service";
+import type { HttpFetch } from "#src/service";
 
 const request: ModelRequest = {
   sessionId: "router-session",

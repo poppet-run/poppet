@@ -6,7 +6,8 @@ import type {
   ModelEvent,
   ProviderError,
 } from "@poppet/provider";
-import { Store, StoreError } from "@poppet/store";
+import type { StoreError } from "@poppet/store";
+import { Store } from "@poppet/store";
 import { Cause, Clock, Effect, Exit, Option, Result, Stream } from "effect";
 
 import type {
@@ -33,7 +34,8 @@ import { fetchPageTool, suppliedPageURLs } from "#src/pages";
 import { maxTextBytes, streamReply } from "#src/reply";
 import { sessionReadTool, sessionSearchTool } from "#src/search";
 import { ChatSettings } from "#src/settings";
-import { skillIndex, skillIndexGuidance, type SkillIndex } from "#src/skill-index";
+import { skillIndex, skillIndexGuidance } from "#src/skill-index";
+import type { SkillIndex } from "#src/skill-index";
 import { withMentionedSkills } from "#src/skill-mentions";
 import { skillViewTool } from "#src/skill-tools";
 import { Skills } from "#src/skills";

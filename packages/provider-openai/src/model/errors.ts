@@ -1,8 +1,7 @@
-import { ProviderError, type ProviderId } from "@poppet/provider";
-import {
-  inferenceFailure as sharedInferenceFailure,
-  type RemoteReason,
-} from "@poppet/provider/protocol";
+import { ProviderError } from "@poppet/provider";
+import type { ProviderId } from "@poppet/provider";
+import { inferenceFailure as sharedInferenceFailure } from "@poppet/provider/protocol";
+import type { RemoteReason } from "@poppet/provider/protocol";
 
 import { classifyChatGPTError, ConnectionError } from "#src/connection";
 

@@ -9,11 +9,14 @@ import {
   ProviderError,
   verifyModel,
   invalidRequest,
-  type ConnectionOperations,
-  type ProviderOperations,
-  type ProviderRegistration,
 } from "@poppet/provider";
-import { Config, Context, Effect, Layer, Option, Redacted, Schedule, Schema } from "effect";
+import type {
+  ConnectionOperations,
+  ProviderOperations,
+  ProviderRegistration,
+} from "@poppet/provider";
+import type { Redacted } from "effect";
+import { Config, Context, Effect, Layer, Option, Schedule, Schema } from "effect";
 
 import { readCredentialFile } from "#src/inspection";
 

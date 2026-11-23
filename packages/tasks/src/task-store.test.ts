@@ -12,8 +12,10 @@ import { TestClock } from "effect/testing";
 
 import { taskSchema } from "#src/migrations";
 import { recurringExpiry } from "#src/task-records";
-import { nextOccurrence, parseTimestamp, type NewTask } from "#src/task-schema";
-import { makeTaskStore, type TaskStore } from "#src/task-store";
+import { nextOccurrence, parseTimestamp } from "#src/task-schema";
+import type { NewTask } from "#src/task-schema";
+import { makeTaskStore } from "#src/task-store";
+import type { TaskStore } from "#src/task-store";
 
 const start = Date.parse("2026-10-14T09:00:00Z");
 

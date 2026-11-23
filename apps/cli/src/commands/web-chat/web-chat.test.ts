@@ -16,7 +16,8 @@ import {
 import { AppConfig } from "@poppet/config";
 import { gatewaySchema } from "@poppet/gateway";
 import { LocalMemoryLive } from "@poppet/memory";
-import { invalidRequest, type ModelOperations } from "@poppet/provider";
+import { invalidRequest } from "@poppet/provider";
+import type { ModelOperations } from "@poppet/provider";
 import { Store, StoreLive, migrate } from "@poppet/store";
 import { taskSchema } from "@poppet/tasks";
 import type { SessionList } from "@poppet/web/protocol";

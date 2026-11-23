@@ -1,11 +1,10 @@
 import { apiKeyProvider } from "@poppet/credentials";
-import {
-  invalidRequest,
-  userAgent,
-  type HttpFetch,
-  type ProviderError,
-  type ModelDescription,
-  type ProviderOperations,
+import { invalidRequest, userAgent } from "@poppet/provider";
+import type {
+  HttpFetch,
+  ProviderError,
+  ModelDescription,
+  ProviderOperations,
 } from "@poppet/provider";
 import {
   openAIClient,
@@ -13,7 +12,8 @@ import {
   createCatalogCache,
   chatCompletionsModel,
 } from "@poppet/provider/protocol";
-import { Effect, Option, Redacted, Schema } from "effect";
+import type { Redacted } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import { routerFailure, routerOptions } from "#src/protocol";
 

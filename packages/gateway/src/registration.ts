@@ -1,4 +1,5 @@
-import { Context, type Effect, type Layer, type Redacted, type Terminal } from "effect";
+import { Context } from "effect";
+import type { Effect, Layer, Redacted, Terminal } from "effect";
 import type { Prompt } from "effect/cli";
 
 import type { ChannelError, MessagingChannel } from "#src/channel";

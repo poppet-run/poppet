@@ -1,10 +1,5 @@
-import {
-  ChannelEnvironment,
-  ChannelError,
-  ChannelInput,
-  parseSetupFlags,
-  type ChannelRegistration,
-} from "@poppet/gateway";
+import { ChannelEnvironment, ChannelError, ChannelInput, parseSetupFlags } from "@poppet/gateway";
+import type { ChannelRegistration } from "@poppet/gateway";
 import { Effect, Layer, Redacted, Schema } from "effect";
 
 import { SlackSettings, loadSlackSettings, saveSlackSettings } from "#src/settings";

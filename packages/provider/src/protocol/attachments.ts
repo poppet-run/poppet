@@ -1,4 +1,5 @@
-import { invalidRequest, type ModelDescription, type ModelRequest } from "#src/index";
+import { invalidRequest } from "#src/index";
+import type { ModelDescription, ModelRequest } from "#src/index";
 
 export type UserPart =
   | { readonly type: "text"; readonly text: string }

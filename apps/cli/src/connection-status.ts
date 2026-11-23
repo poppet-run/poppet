@@ -1,4 +1,5 @@
-import { invalidRequest, type ProviderError, type ProviderId } from "@poppet/provider";
+import { invalidRequest } from "@poppet/provider";
+import type { ProviderError, ProviderId } from "@poppet/provider";
 import { Effect, Schema } from "effect";
 
 const ConnectionMetadata = Schema.Struct({

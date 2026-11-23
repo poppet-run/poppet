@@ -3,13 +3,9 @@ import { describe, expect, test } from "bun:test";
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { Memory, MemoryError, type MemoryFact } from "@poppet/memory";
-import {
-  type Completion,
-  type ModelOperations,
-  type ModelRequest,
-  type Output,
-} from "@poppet/provider";
+import { Memory, MemoryError } from "@poppet/memory";
+import type { MemoryFact } from "@poppet/memory";
+import type { Completion, ModelOperations, ModelRequest, Output } from "@poppet/provider";
 import { Store } from "@poppet/store";
 import { Effect, Fiber, Layer, Stream } from "effect";
 

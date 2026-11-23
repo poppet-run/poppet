@@ -1,4 +1,5 @@
-import { decodeToolArguments, type Tool } from "@poppet/provider";
+import { decodeToolArguments } from "@poppet/provider";
+import type { Tool } from "@poppet/provider";
 import { Effect, Schema } from "effect";
 
 import { AgentError } from "#src/errors";

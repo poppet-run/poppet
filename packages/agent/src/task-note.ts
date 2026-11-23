@@ -1,7 +1,9 @@
-import { toolParameters, type Tool } from "@poppet/provider";
+import { toolParameters } from "@poppet/provider";
+import type { Tool } from "@poppet/provider";
 import { Effect, Schema } from "effect";
 
-import { builtinFailures, type AgentTool } from "#src/agent-tool";
+import { builtinFailures } from "#src/agent-tool";
+import type { AgentTool } from "#src/agent-tool";
 import { byteSize } from "#src/context";
 import { AgentError } from "#src/errors";
 import { toolArguments } from "#src/tool-schema";

@@ -1,13 +1,8 @@
 import { Clock, Effect, Redacted, Schema, Semaphore } from "effect";
 import OpenAI, { APIError } from "openai";
 
-import {
-  type HttpFetch,
-  type ProviderId,
-  ProviderError,
-  invalidRequest,
-  measureTiming,
-} from "#src/index";
+import { ProviderError, invalidRequest, measureTiming } from "#src/index";
+import type { HttpFetch, ProviderId } from "#src/index";
 
 export const openAIClient = (options: {
   readonly key: Redacted.Redacted<string>;

@@ -15,10 +15,11 @@ import {
   runtimeAuthorization,
   signIn,
   signOut,
-  type MCPOAuthServer,
 } from "#src/oauth";
+import type { MCPOAuthServer } from "#src/oauth";
 import { MCP, makeMCPLive } from "#src/service";
-import { serveOAuth, type OAuthFixtureOptions } from "#src/test/oauth-server";
+import { serveOAuth } from "#src/test/oauth-server";
+import type { OAuthFixtureOptions } from "#src/test/oauth-server";
 
 const quiet = Effect.provideService(Console.Console, {
   ...console,

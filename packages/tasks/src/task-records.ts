@@ -4,15 +4,8 @@ import { decodeRow } from "@poppet/store";
 import { Effect, Schema } from "effect";
 import type { SqlClient } from "effect/sql";
 
-import {
-  Task,
-  Occurrence,
-  TaskError,
-  TaskDefinition,
-  nextSlot,
-  type Schedule,
-  type TaskTarget,
-} from "#src/task-schema";
+import { Task, Occurrence, TaskError, TaskDefinition, nextSlot } from "#src/task-schema";
+import type { Schedule, TaskTarget } from "#src/task-schema";
 
 export const recurringExpiry = 24 * 60 * 60 * 1000;
 

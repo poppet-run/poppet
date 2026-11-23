@@ -2,19 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import {
-  Agent,
-  Bash,
-  type ChatPolicy,
-  ExternalTools,
-  Pages,
-  Skills,
-  SkillsLive,
-} from "@poppet/agent";
+import { Agent, Bash, ExternalTools, Pages, Skills, SkillsLive } from "@poppet/agent";
+import type { ChatPolicy } from "@poppet/agent";
 import { agentHarness, gatedStream, optionalService, testModel } from "@poppet/agent/test";
 import { LogfmtLoggerLive } from "@poppet/io";
-import { ProviderError, type ModelOperations, type ModelRequest } from "@poppet/provider";
-import { DeliveryDestination, Store } from "@poppet/store";
+import { ProviderError } from "@poppet/provider";
+import type { ModelOperations, ModelRequest } from "@poppet/provider";
+import type { DeliveryDestination } from "@poppet/store";
+import { Store } from "@poppet/store";
 import {
   ChatTasksLive,
   TaskRepository,
@@ -39,13 +34,8 @@ import {
 import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
-import {
-  ChannelError,
-  MessagingChannel,
-  type ApprovalAction,
-  type ApprovalState,
-  type IncomingMessage,
-} from "#src/channel";
+import { ChannelError, MessagingChannel } from "#src/channel";
+import type { ApprovalAction, ApprovalState, IncomingMessage } from "#src/channel";
 import { deliverNext } from "#src/delivery";
 import { chunks } from "#src/replies";
 import { GatewayRepository, GatewayRepositoryLive, TaskDeliveriesLive } from "#src/repository";

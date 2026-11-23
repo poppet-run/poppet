@@ -8,12 +8,12 @@ import {
   probeServer,
   signIn,
   signOut,
-  type MCPHTTPServer,
-  type MCPOAuthServer,
 } from "@poppet/mcp";
+import type { MCPHTTPServer, MCPOAuthServer } from "@poppet/mcp";
 import { CredentialInput } from "@poppet/provider";
 import { openBrowser, remoteSession } from "@poppet/sign-in";
-import { Clock, Console, Effect, Option, Schema, type Types } from "effect";
+import { Clock, Console, Effect, Option, Schema } from "effect";
+import type { Types } from "effect";
 
 import { readVisibleLine } from "#src/api-key-input";
 import { UsageError } from "#src/commands/errors";

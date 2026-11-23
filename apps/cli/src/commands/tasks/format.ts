@@ -1,5 +1,6 @@
 import { Output, outputText } from "@poppet/provider";
-import { ProviderPause, Schedule, type TaskCommand } from "@poppet/tasks";
+import { ProviderPause, Schedule } from "@poppet/tasks";
+import type { TaskCommand } from "@poppet/tasks";
 import { Schema } from "effect";
 
 import { ReviewedCall, renderReviewedCall } from "#src/commands/tool-review";

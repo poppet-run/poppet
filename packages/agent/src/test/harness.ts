@@ -6,11 +6,13 @@ import { AppConfig } from "@poppet/config";
 import { LocalMemoryLive } from "@poppet/memory";
 import type { ModelEvent, ModelOperations, ModelRequest } from "@poppet/provider";
 import { StoreLive } from "@poppet/store";
-import { Deferred, Effect, Layer, Stream, type Context } from "effect";
+import { Deferred, Effect, Layer, Stream } from "effect";
+import type { Context } from "effect";
 
 import { Pages } from "#src/pages";
 import { AgentLive, ModelResolver } from "#src/service";
-import { ChatSettings, defaultPolicy, type ChatPolicy } from "#src/settings";
+import { ChatSettings, defaultPolicy } from "#src/settings";
+import type { ChatPolicy } from "#src/settings";
 import { WebSearch } from "#src/web-search";
 
 export const optionalService = <I, S>(tag: Context.Key<I, S>, value: S | undefined) =>

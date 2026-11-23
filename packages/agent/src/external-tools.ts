@@ -1,5 +1,6 @@
 import type { Tool } from "@poppet/provider";
-import { Context, Effect, type Scope } from "effect";
+import { Context, Effect } from "effect";
+import type { Scope } from "effect";
 
 import { escapedApprovalJSON } from "#src/action-approval";
 import { MCPReview, reviewAction } from "#src/action-review";

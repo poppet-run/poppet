@@ -1,7 +1,8 @@
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { type WorkerAction, WorkerError, type WorkerLaunch } from "@poppet/platform";
+import { WorkerError } from "@poppet/platform";
+import type { WorkerAction, WorkerLaunch } from "@poppet/platform";
 import {
   manageWorker as manageLinuxWorker,
   userConfigHome as linuxConfigHome,

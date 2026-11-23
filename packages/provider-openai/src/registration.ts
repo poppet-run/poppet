@@ -1,10 +1,6 @@
 import { readCredentialFile } from "@poppet/credentials";
-import {
-  CredentialInput,
-  ProviderConnection,
-  ProviderError,
-  type ProviderRegistration,
-} from "@poppet/provider";
+import { CredentialInput, ProviderConnection, ProviderError } from "@poppet/provider";
+import type { ProviderRegistration } from "@poppet/provider";
 import { Effect, Layer, Schema } from "effect";
 
 import { CredentialStoreLive } from "#src/auth/credentials";

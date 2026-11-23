@@ -6,21 +6,18 @@ import type {
   ChatCompletionCreateParamsStreaming,
 } from "openai/resources/chat/completions";
 
-import {
-  Completion,
-  ProviderError,
-  invalidRequest,
-  interrupted,
-  outputText,
-  type ModelDescription,
-  type ModelEvent,
-  type ModelOperations,
-  type ModelRequest,
-  type Output,
-  type Tool,
+import { Completion, ProviderError, invalidRequest, interrupted, outputText } from "#src/index";
+import type {
+  ModelDescription,
+  ModelEvent,
+  ModelOperations,
+  ModelRequest,
+  Output,
+  Tool,
 } from "#src/index";
 import { userParts } from "#src/protocol/attachments";
-import { inferenceFailure, type InferenceOptions } from "#src/protocol/errors";
+import { inferenceFailure } from "#src/protocol/errors";
+import type { InferenceOptions } from "#src/protocol/errors";
 import { inIndexOrder, modelStream } from "#src/protocol/scoped-stream";
 
 const Chunk = Schema.Struct({

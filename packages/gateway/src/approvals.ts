@@ -1,12 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import {
-  AgentError,
-  escapedApprovalJSON,
-  type ActionApproval,
-  type ApproveAction,
-} from "@poppet/agent";
-import { StoreError, type ToolApproval } from "@poppet/store";
+import { AgentError, escapedApprovalJSON } from "@poppet/agent";
+import type { ActionApproval, ApproveAction } from "@poppet/agent";
+import { StoreError } from "@poppet/store";
+import type { ToolApproval } from "@poppet/store";
 import { Cause, Clock, Deferred, Effect, Exit } from "effect";
 
 import type {

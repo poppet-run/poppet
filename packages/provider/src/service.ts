@@ -1,12 +1,7 @@
 import { Context, Data, Effect, Schema, Stream } from "effect";
 
-import {
-  ModelRequest,
-  type Completion,
-  type ModelDescription,
-  type ModelEvent,
-  type ProviderId,
-} from "#src/schema";
+import { ModelRequest } from "#src/schema";
+import type { Completion, ModelDescription, ModelEvent, ProviderId } from "#src/schema";
 
 export class ProviderError extends Data.TaggedError("ProviderError")<{
   readonly provider: ProviderId;

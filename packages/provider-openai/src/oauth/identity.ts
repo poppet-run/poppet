@@ -3,7 +3,8 @@ import { createRemoteJWKSet, customFetch, errors, jwtVerify } from "jose";
 
 import { ConnectionError } from "#src/connection";
 import type { Discovery } from "#src/oauth/discovery";
-import { type HttpFetch, networkError } from "#src/oauth/http";
+import { networkError } from "#src/oauth/http";
+import type { HttpFetch } from "#src/oauth/http";
 
 const Claims = Schema.Struct({
   sub: Schema.NonEmptyString,

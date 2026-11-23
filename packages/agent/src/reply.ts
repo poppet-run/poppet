@@ -1,11 +1,5 @@
-import {
-  ModelEvent,
-  outputText,
-  type Completion,
-  type ModelOperations,
-  type ModelRequest,
-  type ProviderError,
-} from "@poppet/provider";
+import { ModelEvent, outputText } from "@poppet/provider";
+import type { Completion, ModelOperations, ModelRequest, ProviderError } from "@poppet/provider";
 import type { Run } from "@poppet/store";
 import { Effect, Schema, Stream } from "effect";
 

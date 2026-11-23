@@ -1,4 +1,5 @@
-import { inspectMCP, type MCPCommand } from "@poppet/mcp";
+import { inspectMCP } from "@poppet/mcp";
+import type { MCPCommand } from "@poppet/mcp";
 import { CredentialInput } from "@poppet/provider";
 import { Effect, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";

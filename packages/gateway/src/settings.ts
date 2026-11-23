@@ -6,7 +6,8 @@ import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { protectedFiles } from "@poppet/credentials/records";
 import { Effect, Layer, Schema } from "effect";
 
-import { ChannelError, type MessagingChannel } from "#src/channel";
+import { ChannelError } from "#src/channel";
+import type { MessagingChannel } from "#src/channel";
 import { ChannelEnvironment } from "#src/registration";
 
 const settingsError = () =>

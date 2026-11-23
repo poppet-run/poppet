@@ -3,7 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { Effect, Stream } from "effect";
 
 import type { ModelRequest, Completion, ModelEvent } from "#src/schema";
-import { completeModel, validateRequest, type ModelOperations } from "#src/service";
+import { completeModel, validateRequest } from "#src/service";
+import type { ModelOperations } from "#src/service";
 
 const request: ModelRequest = {
   sessionId: "test",

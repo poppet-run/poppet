@@ -2,7 +2,8 @@ import type { Agent } from "@poppet/agent";
 import { Effect, Result } from "effect";
 
 import { ChannelError } from "#src/channel";
-import { authorized, type GatewayContext } from "#src/context";
+import { authorized } from "#src/context";
+import type { GatewayContext } from "#src/context";
 import type { Inbox } from "#src/repository";
 
 const definitiveNamingFailure = (cause: unknown) =>
