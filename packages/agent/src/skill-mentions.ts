@@ -12,7 +12,11 @@ const code = /```[\s\S]*?(?:```|$)|`[^`\n]*`/gu;
 const mention = /(?<=^|[\s("'[])\$([A-Za-z0-9_-]{1,128})(?=[.,;:!?)"'\]]*(?:\s|$))/gu;
 
 export const mentionedSkills = (text: string) => [
-  ...new Set(Array.from(text.replaceAll(code, " ").matchAll(mention), (match) => match[1]!)),
+  ...new Set(
+    Array.from(text.replaceAll(code, " ").matchAll(mention), (match) => match[1] ?? "").filter(
+      Boolean,
+    ),
+  ),
 ];
 
 export const loadMentionedSkills = (

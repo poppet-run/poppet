@@ -43,13 +43,19 @@ export const openWorkerLog = (directory: string) => {
     handle = -1;
 
     for (let index = paths.length - 1; index >= 0; index--) {
-      const file = paths[index]!;
+      const file = paths[index];
+
+      if (file === undefined) {
+        continue;
+      }
 
       try {
-        if (index === paths.length - 1) {
+        const next = paths[index + 1];
+
+        if (next === undefined) {
           unlinkSync(file);
         } else {
-          renameSync(file, paths[index + 1]!);
+          renameSync(file, next);
         }
       } catch (error) {
         if (!isMissingFile(error)) {

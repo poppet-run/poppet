@@ -254,7 +254,13 @@ export const conversation = Effect.gen(function* () {
               );
             }
 
-            if (references.some((reference) => !contents.has(reference.id))) {
+            const loaded = references.flatMap((reference) => {
+              const item = contents.get(reference.id);
+
+              return item === undefined ? [] : [item];
+            });
+
+            if (loaded.length !== references.length) {
               return yield* Effect.fail(
                 new AgentError({
                   reason: "history",
@@ -263,7 +269,7 @@ export const conversation = Effect.gen(function* () {
               );
             }
 
-            return references.map((reference) => contents.get(reference.id)!);
+            return loaded;
           });
 
         const available = contextAvailable(model.description, policy);
@@ -480,7 +486,11 @@ export const conversation = Effect.gen(function* () {
         ) =>
           Effect.gen(function* () {
             for (const [index, call] of calls.entries()) {
-              const entry = planned[index]!;
+              const entry = planned[index];
+
+              if (entry === undefined) {
+                continue;
+              }
 
               const [reason, output] = Result.isFailure(entry)
                 ? [

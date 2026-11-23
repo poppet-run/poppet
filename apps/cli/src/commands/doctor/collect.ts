@@ -323,15 +323,22 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
           `Using ${source.configFile.exists ? "valid settings from config.json" : "default settings because config.json is absent"}. Provider: ${config.provider}.`,
         ),
       );
-      basic.push(
-        inspectCheck(
-          "authentication",
-          "Check that the auth directory and credential files belong to you and are private. Use poppet provider login if you need to sign in again.",
-          inspectAuthentication(
-            directory,
-            context.registered.find((provider) => provider.id === config.provider)!,
+
+      const registeredProvider = context.registered.find(
+        (provider) => provider.id === config.provider,
+      );
+
+      if (registeredProvider !== undefined) {
+        basic.push(
+          inspectCheck(
+            "authentication",
+            "Check that the auth directory and credential files belong to you and are private. Use poppet provider login if you need to sign in again.",
+            inspectAuthentication(directory, registeredProvider),
           ),
-        ),
+        );
+      }
+
+      basic.push(
         inspectCheck(
           "mcp",
           "Run poppet mcp servers and check enabled commands and permissions.",

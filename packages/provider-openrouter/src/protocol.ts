@@ -56,8 +56,8 @@ const mergeDetail = (details: Array<ReasoningDetail>, fragment: ReasoningDetail)
         : [],
     );
 
-    if (matches.length === 1) {
-      index = matches[0]!;
+    if (matches.length === 1 && matches[0] !== undefined) {
+      index = matches[0];
     }
   }
 

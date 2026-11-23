@@ -145,7 +145,7 @@ export class ChatTerminal {
     const details = `${this.attachments.length ? ` · ${this.attachments.length} attached` : ""}${this.offset ? " · History" : ""}`;
 
     if (this.activityTimer === undefined) {
-      return this.style(wrapChatText(this.status + details, width)[0]!, "2");
+      return this.style(wrapChatText(this.status + details, width)[0] ?? "", "2");
     }
 
     const label = activityIndicator(
@@ -156,7 +156,7 @@ export class ChatTerminal {
     );
 
     const remaining = width - Bun.stringWidth(stripVTControlCharacters(label));
-    const suffix = remaining > 0 ? wrapChatText(details, remaining)[0]! : "";
+    const suffix = remaining > 0 ? (wrapChatText(details, remaining)[0] ?? "") : "";
 
     return label + this.style(suffix, "2");
   }
@@ -219,7 +219,7 @@ export class ChatTerminal {
     const inputRows = wrapChatText(this.draft.join(""), inner);
     const before = wrapChatText(this.draft.slice(0, this.cursor).join(""), inner);
 
-    if (Bun.stringWidth(before.at(-1)!) === inner) {
+    if (Bun.stringWidth(before.at(-1) ?? "") === inner) {
       before.push("");
     }
 
@@ -277,12 +277,12 @@ export class ChatTerminal {
         wrapChatText(
           "Enter send/queue · Shift+Enter newline · ↑↓ history · PgUp/PgDn scroll · Ctrl-C exit",
           width,
-        )[0]!,
+        )[0] ?? "",
         "2",
       ),
     );
     const row = Math.min(height, inputTop + before.length - 1 - start);
-    const column = Math.min(width, 3 + Bun.stringWidth(before.at(-1)!));
+    const column = Math.min(width, 3 + Bun.stringWidth(before.at(-1) ?? ""));
 
     const screen = lines
       .slice(-height)
@@ -316,15 +316,20 @@ export class ChatTerminal {
       rows.push(controls);
     }
 
-    return rows.map((row) => this.style(wrapChatText(row, width)[0]!, "2;36"));
+    return rows.map((row) => this.style(wrapChatText(row, width)[0] ?? "", "2;36"));
   }
 
   private dispatch() {
-    if (this.closed || this.busy || this.paused || !this.reader || !this.queue.length) {
+    if (this.closed || this.busy || this.paused || !this.reader) {
       return;
     }
 
-    const message = this.queue.shift()!;
+    const message = this.queue.shift();
+
+    if (message === undefined) {
+      return;
+    }
+
     const reader = this.reader;
     this.reader = undefined;
     this.busy = true;
@@ -495,8 +500,8 @@ export class ChatTerminal {
 
     const attach = /^\/attach\s+(.+)$/.exec(command);
 
-    if (attach) {
-      this.attachments = [...this.attachments, attach[1]!];
+    if (attach?.[1] !== undefined) {
+      this.attachments = [...this.attachments, attach[1]];
 
       return true;
     }
@@ -585,7 +590,12 @@ export class ChatTerminal {
         break;
       }
 
-      const key = sequence ?? characters(this.pending)[0]!;
+      const key = sequence ?? characters(this.pending)[0];
+
+      if (key === undefined) {
+        break;
+      }
+
       this.pending = this.pending.slice(key.length);
 
       switch (chatKey(key)) {

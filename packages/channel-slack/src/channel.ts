@@ -14,14 +14,14 @@ export const escapeSlackText = (text: string) =>
 export const parseConversation = (id: string) => {
   const match = /^([CG][A-Z0-9]+)(?::(\d+\.\d+))?$/.exec(id);
 
-  if (!match) {
+  if (!match?.[1]) {
     throw new ChannelError({
       reason: "configuration",
       message: "Use a Slack channel ID or channel:thread-timestamp.",
     });
   }
 
-  return { channel: match[1]!, ts: match[2] };
+  return { channel: match[1], ts: match[2] };
 };
 
 export const EventBody = Schema.Struct({
@@ -466,9 +466,18 @@ export const slackChannelLayer = (settings: SlackSettings) =>
         mark: (message, state) =>
           Effect.tryPromise({
             try: async () => {
+              const timestamp = parseConversation(message.messageId).ts;
+
+              if (timestamp === undefined) {
+                throw new ChannelError({
+                  reason: "configuration",
+                  message: "Missing Slack message timestamp.",
+                });
+              }
+
               const args = {
                 channel: message.parentId,
-                timestamp: parseConversation(message.messageId).ts!,
+                timestamp,
               };
 
               if (state === "working") {

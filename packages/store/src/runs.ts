@@ -77,9 +77,10 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
         if (
           references.length !== attachments.length ||
           references.some((reference, index) => {
-            const attachment = attachments[index]!;
+            const attachment = attachments[index];
 
             return (
+              attachment === undefined ||
               reference.id !== attachment.id ||
               reference.name !== attachment.name ||
               reference.mediaType !== attachment.mediaType ||

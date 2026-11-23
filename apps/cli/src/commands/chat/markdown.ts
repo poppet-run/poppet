@@ -50,7 +50,7 @@ const independentLines = (text: string) => {
 
       // oxlint-disable-next-line no-control-regex
       for (const match of line.matchAll(/\u001b\[([\d;]*)m/g)) {
-        for (const code of match[1]!.split(";").map(Number)) {
+        for (const code of (match[1] ?? "").split(";").map(Number)) {
           if (code === 0) {
             active.clear();
           } else if (code === 22) {

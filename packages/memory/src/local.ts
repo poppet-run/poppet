@@ -174,14 +174,20 @@ export const LocalMemoryLive = Layer.effect(
             yield* requireRoom;
           }
 
-          return (yield* commit(
+          const saved = yield* commit(
             key,
             action,
             value,
             sourceRunId,
             sourceRunId === null ? "cli" : "turn",
             at,
-          ))!;
+          );
+
+          if (saved === null) {
+            return yield* Effect.die(new Error("Memory commit returned no fact."));
+          }
+
+          return saved;
         }),
       );
 

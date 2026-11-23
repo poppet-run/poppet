@@ -60,15 +60,22 @@ export const table = (
 
   const last = headers.length - 1;
   const fixed = widths.slice(0, last).reduce((total, size) => total + size + 2, 0);
-  widths[last] = Math.min(widths[last]!, Math.max(headers[last]!.length, columns - fixed));
+  const lastWidth = widths[last];
+  const lastHeader = headers[last];
+
+  if (lastWidth !== undefined && lastHeader !== undefined) {
+    widths[last] = Math.min(lastWidth, Math.max(lastHeader.length, columns - fixed));
+  }
 
   const line = (row: ReadonlyArray<string>, style = (text: string) => text) =>
     row
-      .map((value, index) =>
-        index === last
-          ? style(truncate(value, widths[index]!))
-          : pad(style(truncate(value, widths[index]!)), widths[index]!),
-      )
+      .map((value, index) => {
+        const width = widths[index] ?? 0;
+
+        return index === last
+          ? style(truncate(value, width))
+          : pad(style(truncate(value, width)), width);
+      })
       .join("  ")
       .trimEnd();
 

@@ -79,7 +79,9 @@ export const readSession = Effect.fn(function* (
     aroundMessageId === null ? 0 : Math.min(pageSize, Math.max(2, Math.ceil(pageSize / 2)));
 
   const before =
-    leading === 0 ? [] : (yield* window(true, anchor!.position, leading + 1)).toReversed();
+    leading === 0 || anchor === null
+      ? []
+      : (yield* window(true, anchor.position, leading + 1)).toReversed();
 
   const kept = before.slice(-leading);
 

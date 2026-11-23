@@ -111,12 +111,14 @@ category defaults and enables rules explicitly as errors. Type checking also cov
 configuration files.
 
 Oxlint runs type-aware rules through `oxlint-tsgolint`, using each workspace's
-`tsconfig.json`. Rules from `@cloudflare/oxlint-config` that still have findings in existing code
-are temporarily turned off in `oxlint.config.ts` while they are evaluated one rule at a time.
-`react/no-unknown-property` stays off because `apps/web` uses Preact HTML attributes such as
-`class`, and `react-hooks/rules-of-hooks` is scoped to `apps/web` so it does not flag Effect
-`.use()` calls elsewhere. Test files turn off `typescript/await-thenable` because Bun types async
-matchers such as `expect(...).rejects` as returning `void`.
+`tsconfig.json`. A few preset rules are adjusted for this stack: `react/no-unknown-property` and
+`react/immutability` stay off because `apps/web` uses Preact without React Compiler,
+`react-hooks/rules-of-hooks` and JSX attribute `typescript/no-misused-promises` are scoped to
+`apps/web`, `unicorn/prefer-top-level-await` stays off because it flags `Effect.catch()`,
+`@nkzw/no-instanceof` stays off for Web API and error/transport narrowing, and
+`unicorn/catch-error-name` allows `cause` alongside `error`. Test files turn off
+`typescript/await-thenable` (Bun types async matchers as returning `void`) and the remaining
+`typescript/no-unsafe-*` rules.
 
 Oxlint also enforces the generic and Effect rules from
 [anti-slop](https://github.com/dmmulroy/anti-slop), vendored under

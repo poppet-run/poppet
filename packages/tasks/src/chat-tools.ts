@@ -372,7 +372,11 @@ export const ChatTasksLive = Layer.effect(
           case "create":
             return yield* prepareCreate(action, run, context);
           case "edit":
-            return yield* prepareEdit(action, current!);
+            if (current === null) {
+              return yield* Effect.die(new Error("Missing task for edit action."));
+            }
+
+            return yield* prepareEdit(action, current);
           case "list":
             yield* repo.listPage(action.after).pipe(Effect.mapError(invalid));
 
@@ -462,8 +466,8 @@ export const ChatTasksLive = Layer.effect(
             );
           }
 
-          if (saved.status === "completed") {
-            return { execute: Effect.succeed(saved.output!) };
+          if (saved.status === "completed" && saved.output !== null) {
+            return { execute: Effect.succeed(saved.output) };
           }
 
           if (run.status !== "running") {

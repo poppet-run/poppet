@@ -199,7 +199,11 @@ export const webHandler = (
       }
 
       if (logins.size >= 32) {
-        logins.delete(logins.keys().next().value!);
+        const oldest = logins.keys().next().value;
+
+        if (oldest !== undefined) {
+          logins.delete(oldest);
+        }
       }
 
       const key = randomBytes(32).toString("hex");

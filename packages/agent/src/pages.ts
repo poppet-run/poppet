@@ -126,12 +126,14 @@ export const PagesLive = Layer.effect(
           const response = yield* transport.request(url, address);
 
           if (isPageRedirect(response.status)) {
-            if (redirects === 3 || response.location === undefined) {
+            const location = response.location;
+
+            if (redirects === 3 || location === undefined) {
               return yield* Effect.fail(pageFailure());
             }
 
             url = yield* Effect.try({
-              try: () => pageURL(new URL(response.location!, url).href),
+              try: () => pageURL(new URL(location, url).href),
               catch: pageFailure,
             });
             continue;

@@ -152,7 +152,12 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       return tool;
     });
 
-    const result = { tools: mode === "duplicate" ? [tools[0]!, tools[0]!] : tools };
+    const firstTool = tools[0];
+
+    const result = {
+      tools: mode === "duplicate" && firstTool !== undefined ? [firstTool, firstTool] : tools,
+    };
+
     const page = request.params?.cursor === "next" ? result : { ...result, nextCursor: "next" };
 
     if (mode === "protocol-startup" && request.params?.cursor === "next") {

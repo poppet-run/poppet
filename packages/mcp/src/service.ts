@@ -243,7 +243,11 @@ export const makeMCPLive = (toolBytes: number) =>
           );
 
           return connection;
-        }).pipe((effect) => locks.get(config.id)!.withPermit(effect));
+        }).pipe((effect) => {
+          const lock = locks.get(config.id);
+
+          return lock === undefined ? effect : lock.withPermit(effect);
+        });
 
       const status = Effect.forEach(servers, (config) =>
         Effect.gen(function* () {
@@ -259,12 +263,12 @@ export const makeMCPLive = (toolBytes: number) =>
 
           if (
             connection !== undefined &&
+            connection.signIn !== null &&
             Ref.getUnsafe(connection.state).status === "connected" &&
             signIn?.signedIn === false
           ) {
-            yield* Effect.promise(() =>
-              requireLogin(connection, connection.signIn!.message).catch(() => {}),
-            );
+            const signInMessage = connection.signIn.message;
+            yield* Effect.promise(() => requireLogin(connection, signInMessage).catch(() => {}));
           }
 
           const state = connection === undefined ? undefined : Ref.getUnsafe(connection.state);

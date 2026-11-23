@@ -89,18 +89,20 @@ export const approvalClick = (
   settings: SlackSettings,
   botId: string,
 ): ApprovalClick => {
-  const action = body.actions.length === 1 ? body.actions[0]!.action_id : "";
+  const action = body.actions.length === 1 ? (body.actions[0]?.action_id ?? "") : "";
 
   if (!action.startsWith(prefix)) {
     return { kind: "ignored" };
   }
 
   const match = /^poppet:approval:(approve|deny):([a-f0-9-]{36})$/.exec(action);
+  const requestId = match?.[2];
   const { channel, message, team, user } = body;
   const thread = message.thread_ts;
 
   if (
     !match ||
+    requestId === undefined ||
     !botId ||
     team.id !== settings.teamId ||
     user.id !== settings.ownerId ||
@@ -111,7 +113,7 @@ export const approvalClick = (
 
   return {
     kind: "accepted",
-    requestId: match[2]!,
+    requestId,
     decision: match[1] === "approve" ? "approve" : "deny",
     source: {
       messageId: message.ts,
