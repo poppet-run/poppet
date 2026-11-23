@@ -55,7 +55,6 @@ export default defineConfig({
     "no-console": "off",
     "no-empty": "off",
     "no-promise-executor-return": "off",
-    "object-shorthand": "off",
     "oxc/bad-bitwise-operator": "off",
     "react/button-has-type": "off",
     "react/immutability": "off",

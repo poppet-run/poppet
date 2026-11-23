@@ -1687,7 +1687,7 @@ describe("makeCLI", () => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-provider-cli-"));
 
       try {
-        await configure(directory, { provider: provider });
+        await configure(directory, { provider });
 
         const environment = {
           POPPET_DATA_DIR: directory,
