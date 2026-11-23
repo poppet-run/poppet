@@ -52,9 +52,7 @@ export default defineConfig({
     "unicorn/prefer-top-level-await": "off",
 
     // Temporarily disabled during @cloudflare/oxlint-config migration; evaluate one rule per commit.
-    "typescript/no-misused-spread": "off",
     "typescript/no-non-null-assertion": "off",
-    "typescript/no-unnecessary-type-assertion": "off",
     "typescript/no-unsafe-argument": "off",
     "typescript/no-unsafe-assignment": "off",
     "typescript/no-unsafe-call": "off",

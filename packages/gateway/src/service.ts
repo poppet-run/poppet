@@ -74,7 +74,7 @@ const gateway = Effect.gen(function* () {
     externalNameChange,
     recover: recover(context),
     connectionStatus: channel.status.pipe(
-      Effect.map((connection) => ({ ...connection, rejected })),
+      Effect.map((connection) => Object.assign({}, connection, { rejected })),
     ),
   };
 

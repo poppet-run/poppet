@@ -165,7 +165,7 @@ describe.concurrent("settings.ts", () => {
                 "400",
                 "--bot-token",
                 "replacement-secret",
-                ...extra!,
+                ...extra,
               ],
             )
             .pipe(

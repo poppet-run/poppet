@@ -135,7 +135,7 @@ describe.each([
   ["Kagi Search", makeKagiSearch],
 ] as const)("web-search.ts", (provider, makeSearch) => {
   const search = (httpFetch: typeof fetch) =>
-    makeSearch(Redacted.make("test-search-key"), 1024, httpFetch).search!("current topic");
+    makeSearch(Redacted.make("test-search-key"), 1024, httpFetch).search("current topic");
 
   const responseFor = (results: Array<{ title: string; url: string; snippet?: string }>) =>
     provider === "Kagi Search"

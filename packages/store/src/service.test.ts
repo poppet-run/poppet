@@ -344,7 +344,7 @@ describe("Store", () => {
                 yield* store.startRun(run.id);
                 yield* store.finishRun(run.id, {
                   status: "completed",
-                  response: responseFor("new-provider", texts[(index + 1) % 3]!),
+                  response: responseFor("new-provider", texts[(index + 1) % 3]),
                 });
               }
 
@@ -536,7 +536,7 @@ describe("Store", () => {
             const excerpt = result.matches[0]!.excerpt;
             expect(excerpt).toContain(input.matched ?? input.query);
             expect(input.text).toContain(excerpt);
-            expect([...excerpt].length).toBeLessThanOrEqual(1000);
+            expect(Array.from(excerpt).length).toBeLessThanOrEqual(1000);
             expect(excerpt).not.toContain("\ufffd");
             expect(result.truncated).toBe(true);
             expectNearBudget(result, input.maxBytes);

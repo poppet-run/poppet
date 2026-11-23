@@ -351,14 +351,13 @@ export class ChatTerminal {
       Effect.runSync(this.info(formatWithOptions({ colors: false }, ...values)));
     };
 
-    return {
-      ...base,
+    return Object.assign({}, base, {
       log: diagnostic,
       info: diagnostic,
       debug: diagnostic,
       warn: diagnostic,
       error: diagnostic,
-    };
+    });
   };
 
   loadingHistory = Effect.sync(() => {
