@@ -24,6 +24,7 @@
     "prepare": "lefthook install"
   },
   "devDependencies": {
+    "@cloudflare/oxlint-config": "0.2.0",
     "@effect/tsgo": "0.73.2",
     "@oxlint/plugins": "1.94.0",
     "@types/bun": "1.4.5",
