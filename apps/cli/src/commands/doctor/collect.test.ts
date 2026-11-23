@@ -75,7 +75,7 @@ describe("doctor", () => {
 
     const before = JSON.stringify(report);
     const plain = renderDoctor(report, false, 64);
-    const normalized = plain.replace(/\s+/gu, " ");
+    const normalized = plain.replaceAll(/\s+/gu, " ");
 
     expect(plain).toContain("1 passed, 1 warning, 0 errors, 1 not checked, 1 skipped");
     expect(plain).toContain("Could not check");

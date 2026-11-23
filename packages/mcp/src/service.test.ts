@@ -201,10 +201,10 @@ describe("MCP", () => {
             yield* read.prepare('{"input":"{}"}').pipe(Effect.flatMap((call) => call.execute)),
           ).toContain('"arguments":{}');
           expect(
-            yield* read.prepare('{"input":"{\\"text\\":4}"}').pipe(Effect.flip),
+            yield* read.prepare(String.raw`{"input":"{\"text\":4}"}`).pipe(Effect.flip),
           ).toHaveProperty("reason", "tool-arguments");
           expect(
-            yield* read.prepare('{"input":"{\\"extra\\":true}"}').pipe(Effect.flip),
+            yield* read.prepare(String.raw`{"input":"{\"extra\":true}"}`).pipe(Effect.flip),
           ).toHaveProperty("reason", "tool-arguments");
           pid = (yield* mcp.status)[0]!.pid!;
           expect(dead(pid)).toBe(false);

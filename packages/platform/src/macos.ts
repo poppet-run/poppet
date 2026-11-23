@@ -24,7 +24,7 @@ const xmlText = (value: string) => {
   if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\ufffe\uffff]/.test(value))
     throw new WorkerError({ message: "Worker settings cannot contain illegal XML characters." });
 
-  return value.replace(/[<>&"']/g, (character) => {
+  return value.replaceAll(/[<>&"']/g, (character) => {
     switch (character) {
       case "<":
         return "&lt;";

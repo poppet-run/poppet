@@ -185,7 +185,9 @@ export const toolResult = (
     selected.length === 0
       ? null
       : new RegExp(
-          selected.map((secret) => secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"),
+          selected
+            .map((secret) => secret.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`))
+            .join("|"),
           "gu",
         );
 

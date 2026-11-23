@@ -51,8 +51,6 @@ export default defineConfig({
     // Temporarily disabled during @cloudflare/oxlint-config migration; evaluate one rule per commit.
     "@nkzw/no-instanceof": "off",
     curly: "off",
-    eqeqeq: "off",
-    "react/button-has-type": "off",
     "typescript/array-type": "off",
     "typescript/no-misused-spread": "off",
     "typescript/no-non-null-assertion": "off",
@@ -64,10 +62,7 @@ export default defineConfig({
     "typescript/no-unsafe-return": "off",
     "typescript/no-unsafe-type-assertion": "off",
     "unicorn/catch-error-name": "off",
-    "unicorn/no-hex-escape": "off",
     "unicorn/numeric-separators-style": "off",
-    "unicorn/prefer-string-raw": "off",
-    "unicorn/prefer-string-replace-all": "off",
 
     // Project anti-slop and Effect rules.
     "anti-slop/no-array-filter-map": "error",

@@ -25,8 +25,11 @@ const safeOutput = (text: string) => {
       .map((part, index) => {
         if (index % 2 === 1) return part;
 
-        // oxlint-disable-next-line no-control-regex
-        return stripVTControlCharacters(part).replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
+        return stripVTControlCharacters(part).replaceAll(
+          // oxlint-disable-next-line no-control-regex
+          /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g,
+          "",
+        );
       })
       .join("")
   );

@@ -42,7 +42,7 @@ const width = (text: string) => stripVTControlCharacters(text).length;
 
 const pad = (text: string, size: number) => text + " ".repeat(Math.max(0, size - width(text)));
 
-const cell = (value: string) => value.replace(/\s+/gu, " ").trim();
+const cell = (value: string) => value.replaceAll(/\s+/gu, " ").trim();
 
 const truncate = (text: string, size: number) =>
   text.length <= size ? text : `${text.slice(0, Math.max(0, size - 1))}…`;
@@ -133,7 +133,7 @@ const acronyms = new Set(["api", "id", "mcp", "pid", "url"]);
 
 const label = (key: string) =>
   key
-    .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
+    .replaceAll(/([a-z0-9])([A-Z])/gu, "$1 $2")
     .toLowerCase()
     .split(" ")
     .map((word, index) =>

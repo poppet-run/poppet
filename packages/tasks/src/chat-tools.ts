@@ -67,7 +67,7 @@ const resolveDelivery = (
     Match.orElse(({ conversationId }) => context.destination?.(conversationId)),
   );
 
-  if (target == null)
+  if (target === null || target === undefined)
     return Effect.fail(
       new AgentError({
         reason: "tool-permission",
@@ -286,7 +286,11 @@ export const ChatTasksLive = Layer.effect(
             const schedule = decoded.schedule;
             const now = clock.currentTimeMillisUnsafe();
 
-            if (decoded.endAt != null && decoded.endAt !== current.endAt)
+            if (
+              decoded.endAt !== null &&
+              decoded.endAt !== undefined &&
+              decoded.endAt !== current.endAt
+            )
               checkEndTime(schedule ?? current.schedule, decoded.endAt, now);
 
             if (schedule !== undefined) {

@@ -34,6 +34,7 @@ export const Login = ({ accessKey, sending, error, onAccessKeyChange, onSignIn }
         required
       />
       <button
+        type="submit"
         class="border-transparent bg-accent font-[650] text-navy hover:bg-accent-hover"
         disabled={sending || !accessKey}
       >

@@ -12,7 +12,9 @@ export const Connecting = ({ error, onRetry }: ConnectingProps) => (
         <p class="text-[0.85rem] text-error" role="alert">
           {error}
         </p>
-        <button onClick={onRetry}>Try connecting again</button>
+        <button type="button" onClick={onRetry}>
+          Try connecting again
+        </button>
       </>
     )}
   </main>

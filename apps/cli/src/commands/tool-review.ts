@@ -17,7 +17,7 @@ export const ReviewedCall = Schema.Struct({
 export const renderReviewedCall = (call: typeof ReviewedCall.Type) => {
   const { review } = call;
 
-  if (review == null) return [];
+  if (review === null || review === undefined) return [];
 
   return [
     fields([

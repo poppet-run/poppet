@@ -79,7 +79,8 @@ const schedule = (value: Schedule) =>
 
 type Timing = Pick<TaskRow, "nextAt" | "endAt" | "paused">;
 
-const ended = (task: Timing) => task.nextAt === null && task.endAt != null;
+const ended = (task: Timing) =>
+  task.nextAt === null && task.endAt !== null && task.endAt !== undefined;
 
 const nextRun = (task: Timing) =>
   task.paused
@@ -105,7 +106,11 @@ const deliveries = (
   const counts = new Map<string, number>();
 
   for (const row of rows) {
-    const label = row.heldUntil == null ? row.state : `held until ${time(row.heldUntil)}`;
+    const label =
+      row.heldUntil === null || row.heldUntil === undefined
+        ? row.state
+        : `held until ${time(row.heldUntil)}`;
+
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
 
@@ -133,7 +138,7 @@ const taskFields = (task: TaskRow) =>
     ["Schedule", schedule(task.schedule)],
     ["State", state(task)],
     ["Next run", nextRun(task)],
-    task.endAt == null ? null : ["Until", time(task.endAt)],
+    task.endAt === null || task.endAt === undefined ? null : ["Until", time(task.endAt)],
     ["Model", `${task.provider} ${task.model}`],
     task.skill === null ? null : ["Skill", task.skill.name],
     ["Delivery", destination(task)],
@@ -143,7 +148,7 @@ const noteWriter = (note: typeof NoteRow.Type) =>
   note.occurrenceId === null ? note.origin : `occurrence ${note.occurrenceId}`;
 
 const showNote = (note: typeof NoteRow.Type | null | undefined) =>
-  note == null
+  note === null || note === undefined
     ? "None."
     : [
         note.text ?? "None.",

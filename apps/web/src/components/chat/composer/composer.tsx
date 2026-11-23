@@ -39,7 +39,7 @@ export const Composer = ({
 }: ComposerProps) => (
   <div class="w-full max-w-[800px] self-center px-8 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] mobile:px-[0.7rem]">
     {!atBottom && (
-      <button class="mx-auto mb-[0.6rem] block" onClick={onLatest}>
+      <button type="button" class="mx-auto mb-[0.6rem] block" onClick={onLatest}>
         ↓ Latest messages
       </button>
     )}

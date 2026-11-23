@@ -108,7 +108,7 @@ describe("manageWorker", () => {
     const launch = {
       dataDirectory: join(home, "data 100%"),
       executable: "/custom path/poppet",
-      arguments: ["worker", "run", '$HOME "quoted" \\ 50%'],
+      arguments: ["worker", "run", String.raw`$HOME "quoted" \ 50%`],
       workingDirectory: join(home, "work 100%"),
       environment: new Map([["POPPET_APP_NAME", 'Poppet "$Acorn" 100%']]),
     };
