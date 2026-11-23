@@ -322,33 +322,35 @@ export const createChatStore = () => {
           set("connected", false);
         }
       });
-      source.addEventListener("error", async () => {
-        if (!listening || source !== events) return;
-        set("connected", false);
-
-        try {
-          await api.snapshot(sessionId);
-        } catch (cause) {
+      source.addEventListener("error", () => {
+        void (async () => {
           if (!listening || source !== events) return;
+          set("connected", false);
 
-          if (cause instanceof ApiError && cause.status === 401) return unauthenticate();
+          try {
+            await api.snapshot(sessionId);
+          } catch (cause) {
+            if (!listening || source !== events) return;
 
-          if (cause instanceof ApiError && cause.status === 404) {
-            listening = false;
-            clearTimeout(retry);
-            source.close();
+            if (cause instanceof ApiError && cause.status === 401) return unauthenticate();
 
-            return set("error", cause.message);
+            if (cause instanceof ApiError && cause.status === 404) {
+              listening = false;
+              clearTimeout(retry);
+              source.close();
+
+              return set("error", cause.message);
+            }
           }
-        }
 
-        if (
-          listening &&
-          source === events &&
-          retry === undefined &&
-          source.readyState === EventSource.CLOSED
-        )
-          retry = setTimeout(connect, 2000);
+          if (
+            listening &&
+            source === events &&
+            retry === undefined &&
+            source.readyState === EventSource.CLOSED
+          )
+            retry = setTimeout(connect, 2000);
+        })();
       });
     };
 

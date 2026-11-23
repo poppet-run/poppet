@@ -426,7 +426,7 @@ export const AgentLive = Layer.effect(
 
         yield* store.finishTitle(session.id, result.title, result.usage);
       }).pipe(
-        naming.withPermit,
+        (effect) => naming.withPermit(effect),
         Effect.provideService(RequestTiming, {
           record: (timing) =>
             policy.logTimings ? timingLog(timingLine(sessionId, undefined, timing)) : Effect.void,

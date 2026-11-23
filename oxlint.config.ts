@@ -52,10 +52,8 @@ export default defineConfig({
     "@nkzw/no-instanceof": "off",
     curly: "off",
     eqeqeq: "off",
-    "no-promise-executor-return": "off",
     "react/button-has-type": "off",
     "typescript/array-type": "off",
-    "typescript/no-misused-promises": "off",
     "typescript/no-misused-spread": "off",
     "typescript/no-non-null-assertion": "off",
     "typescript/no-unnecessary-type-assertion": "off",
@@ -65,8 +63,6 @@ export default defineConfig({
     "typescript/no-unsafe-member-access": "off",
     "typescript/no-unsafe-return": "off",
     "typescript/no-unsafe-type-assertion": "off",
-    "typescript/unbound-method": "off",
-    "typescript/use-unknown-in-catch-callback-variable": "off",
     "unicorn/catch-error-name": "off",
     "unicorn/no-hex-escape": "off",
     "unicorn/numeric-separators-style": "off",
@@ -106,8 +102,12 @@ export default defineConfig({
     },
     {
       // Enforce hook rules in the Preact web app without triggering on Effect `.use()` elsewhere.
+      // Allow async store handlers on JSX attributes (errors are handled inside the store).
       files: ["apps/web/**/*.{ts,tsx}"],
-      rules: { "react-hooks/rules-of-hooks": "error" },
+      rules: {
+        "react-hooks/rules-of-hooks": "error",
+        "typescript/no-misused-promises": ["error", { checksVoidReturn: { attributes: false } }],
+      },
     },
     {
       // Bun types its async matchers, such as `expect(...).rejects`, as returning void.

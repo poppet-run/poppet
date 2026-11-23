@@ -233,7 +233,7 @@ export const makeMCPLive = (toolBytes: number) =>
           );
 
           return connection;
-        }).pipe(locks.get(config.id)!.withPermit);
+        }).pipe((effect) => locks.get(config.id)!.withPermit(effect));
 
       const status = Effect.forEach(servers, (config) =>
         Effect.gen(function* () {

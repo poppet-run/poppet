@@ -275,7 +275,7 @@ const makeWebChat = Effect.gen(function* () {
       running.fiber = yield* execute.pipe(Effect.interruptible, Effect.forkIn(scope));
 
       return accepted;
-    }).pipe(submissions.withPermit, Effect.uninterruptible);
+    }).pipe((effect) => submissions.withPermit(effect), Effect.uninterruptible);
 
   const stop = (id: string) =>
     submissions
@@ -298,7 +298,7 @@ const makeWebChat = Effect.gen(function* () {
         Effect.provideService(SqlClient.SqlClient, sql),
         Effect.mapError((error) => (error.reason === "conflict" ? busy : error)),
       );
-    }).pipe(submissions.withPermit);
+    }).pipe((effect) => submissions.withPermit(effect));
 
   const sessions = (source: string) =>
     sql<ChatSession>`SELECT id, title, provider, model, updated_at FROM sessions

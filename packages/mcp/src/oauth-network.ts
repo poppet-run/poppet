@@ -38,8 +38,11 @@ const pinnedRequest = (url: URL, address: string, init: RequestInit, signal: Abo
   new Promise<Response>((resolve, reject) => {
     const body = init.body;
 
-    if (body != null && !Schema.is(Schema.String)(body) && !(body instanceof URLSearchParams))
-      return reject(new Error("Unsupported OAuth request body."));
+    if (body != null && !Schema.is(Schema.String)(body) && !(body instanceof URLSearchParams)) {
+      reject(new Error("Unsupported OAuth request body."));
+
+      return;
+    }
 
     const content = body?.toString();
     const headers = new Headers(init.headers);

@@ -998,7 +998,12 @@ const gatedModel = () => {
   return { gate, resolve: () => Effect.succeed({ description, stream }) };
 };
 
-const settle = Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 50)));
+const settle = Effect.promise(
+  () =>
+    new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    }),
+);
 
 describe.concurrent("Agent request permits", () => {
   test("when sessions differ, runs up to the limit at once and starts a waiter when a slot frees", async () => {

@@ -146,10 +146,10 @@ describe("MCP OAuth", () => {
 
       const runtime = await state.run(runtimeAuthorization(state.config, Date.now));
 
-      const refreshing = runtime.refresh(runtime.token(), new Response(null, { status: 401 })).then(
-        () => false,
-        (error) => error instanceof MCPLoginRequired,
-      );
+      const refreshing = runtime
+        .refresh(runtime.token(), new Response(null, { status: 401 }))
+        .then(() => false)
+        .catch((cause: unknown) => cause instanceof MCPLoginRequired);
 
       await entered.promise;
       await state.run(signOut(state.config.id));

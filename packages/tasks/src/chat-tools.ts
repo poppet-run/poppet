@@ -443,7 +443,7 @@ export const ChatTasksLive = Layer.effect(
               context.callId,
               operation.pipe(Effect.mapError(committedFailure)),
             )
-            .pipe(repo.commandLock.withPermit);
+            .pipe((effect) => repo.commandLock.withPermit(effect));
 
           return { execute };
         }),

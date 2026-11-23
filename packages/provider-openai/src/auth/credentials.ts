@@ -114,7 +114,7 @@ export const CredentialStoreLive = Layer.effect(
       initialize,
       write,
       remove,
-      withPermit: permit.withPermit,
+      withPermit: (effect) => permit.withPermit(effect),
     } satisfies StoreOperations;
   }),
 );
