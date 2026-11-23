@@ -26,10 +26,9 @@ const listen = async (server: ReturnType<typeof createServer>) => {
 };
 
 const failedRequest = (request: Promise<unknown>) =>
-  request.then(
-    () => null,
-    (error: Error) => error,
-  );
+  request
+    .then(() => null)
+    .catch((cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause))));
 
 const close = (server: ReturnType<typeof createServer>) =>
   new Promise<void>((resolve) => {
@@ -236,10 +235,7 @@ describe.concurrent("requestPage", () => {
         controller.signal,
       );
 
-      const outcome = pending.then(
-        () => null,
-        (error: Error) => error,
-      );
+      const outcome = pending.then(() => null).catch((cause: unknown) => cause);
 
       await received.promise;
       controller.abort();

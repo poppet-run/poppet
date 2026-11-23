@@ -2833,7 +2833,12 @@ describe("conversationNaming", () => {
 });
 
 const pause = (millis: number) =>
-  Effect.promise(() => new Promise((resolve) => setTimeout(resolve, millis)));
+  Effect.promise(
+    () =>
+      new Promise((resolve) => {
+        setTimeout(resolve, millis);
+      }),
+  );
 
 const until = <E, R>(check: Effect.Effect<boolean, E, R>) =>
   Effect.gen(function* () {

@@ -74,7 +74,9 @@ describe("task-socket.ts", () => {
       expect(result).toMatchObject({ message: expect.stringContaining("was not retried") });
       expect(delivered).toBe(1);
     } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
       await rm(directory, { recursive: true, force: true });
     }
   });

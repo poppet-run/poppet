@@ -80,7 +80,7 @@ const body = async <A>(request: Request, schema: Schema.Codec<A, string | object
           maxBodyBytes,
           () => new WebChatError({ status: 413, message: "Request too large." }),
           signal,
-        ).catch((cause) => {
+        ).catch((cause: unknown) => {
           if (deadline.aborted)
             throw new WebChatError({ status: 408, message: "Request timed out." });
           throw cause;
@@ -258,7 +258,10 @@ export const webHandler = (
 
         const stream = new ReadableStream<Uint8Array>({
           async pull(controller) {
-            if (!first) await new Promise((resolve) => setTimeout(resolve, 500));
+            if (!first)
+              await new Promise((resolve) => {
+                setTimeout(resolve, 500);
+              });
 
             if (closed || !authenticated() || request.signal.aborted) {
               release();

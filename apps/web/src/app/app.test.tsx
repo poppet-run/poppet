@@ -56,7 +56,9 @@ const sessionList = (
 
 const flush = () =>
   act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 5);
+    });
   });
 
 test("when Markdown contains links and interactive HTML, renders safe links and removes controls", async () => {
@@ -464,7 +466,9 @@ test("duplicate sends are throttled and navigation closes streams without stoppi
       return Response.json({ sessionId: "second", status: "accepted", error: null });
 
     if (input === "/api/sessions/second")
-      return new Promise<Response>((resolve) => probes.push(resolve));
+      return new Promise<Response>((resolve) => {
+        probes.push(resolve);
+      });
 
     if (input === "/api/submissions")
       return new Promise<Response>((resolve) => {

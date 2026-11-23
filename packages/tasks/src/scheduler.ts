@@ -311,7 +311,7 @@ export const makeTaskWorker = Effect.gen(function* () {
 
       return result;
     }).pipe(
-      commands.withPermit,
+      (effect) => commands.withPermit(effect),
       Effect.provideService(Console.Console, output),
       Effect.provideService(Logger.CurrentLoggers, loggers),
       Effect.provideService(Skills, skills),

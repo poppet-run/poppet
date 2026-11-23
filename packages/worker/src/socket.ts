@@ -295,7 +295,7 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
             return { dev: stat.dev, ino: stat.ino };
           };
 
-          const bound = await bind().catch(async (cause) => {
+          const bound = await bind().catch(async (cause: unknown) => {
             await server.stop(true);
             await unlink(path).catch(() => {});
             throw cause;

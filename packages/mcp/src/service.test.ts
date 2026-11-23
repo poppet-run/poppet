@@ -144,7 +144,12 @@ const expireRequest = async <A>(
 const reaped = (pid: number) =>
   Effect.gen(function* () {
     while (!dead(pid))
-      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 5)));
+      yield* Effect.promise(
+        () =>
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, 5);
+          }),
+      );
   });
 
 describe("MCP", () => {
