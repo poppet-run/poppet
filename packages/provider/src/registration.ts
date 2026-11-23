@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Redacted, Schema } from "effect";
+import type { Effect, Layer, Redacted, Schema } from "effect";
+import { Context } from "effect";
 
 import type { ProviderId } from "#src/schema";
 import type { Provider, ProviderError } from "#src/service";

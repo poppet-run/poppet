@@ -1,7 +1,9 @@
 import { BunServices, BunTerminal } from "@effect/platform-bun";
 import { ApiKey } from "@poppet/credentials";
 import { promptSecret } from "@poppet/credentials/input";
-import { CredentialInput, ProviderError, type ProviderId } from "@poppet/provider";
+import type { CredentialInput } from "@poppet/provider";
+import { ProviderError } from "@poppet/provider";
+import type { ProviderId } from "@poppet/provider";
 import { Effect, Option, Queue, Schema, Terminal } from "effect";
 
 const inputError = (provider: ProviderId, message: string) =>

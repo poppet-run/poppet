@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { ProviderEnvironment } from "@poppet/provider";
 import { Console, Effect, Layer, Schema } from "effect";
 
-import { CredentialStore, CredentialStoreLive } from "#src/auth/credentials";
+import type { CredentialStore } from "#src/auth/credentials";
+import { CredentialStoreLive } from "#src/auth/credentials";
 import { ChatGPTAuth, ChatGPTAuthLive } from "#src/auth/service";
 import { Connection, ConnectionError } from "#src/connection";
 import { ChatGPTModel, makeChatGPTModel } from "#src/model/service";

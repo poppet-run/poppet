@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 
-import { AgentError, Bash, type BashArguments, type BashResult } from "@poppet/agent";
+import { AgentError, Bash } from "@poppet/agent";
+import type { BashArguments, BashResult } from "@poppet/agent";
 import { Effect, Layer } from "effect";
 
 export const executeBash = (

@@ -1,12 +1,8 @@
-import {
-  boundedAttachment,
-  ChannelError,
-  MessagingChannel,
-  type ApprovalAction,
-  type IncomingMessage,
-} from "@poppet/gateway";
+import { boundedAttachment, ChannelError, MessagingChannel } from "@poppet/gateway";
+import type { ApprovalAction, IncomingMessage } from "@poppet/gateway";
 import { SocketModeClient } from "@slack/socket-mode";
-import { ErrorCode, WebClient, type ChatPostMessageArguments } from "@slack/web-api";
+import { ErrorCode, WebClient } from "@slack/web-api";
+import type { ChatPostMessageArguments } from "@slack/web-api";
 import { Deferred, Effect, Exit, Layer, Queue, Redacted, Schema, Stream } from "effect";
 
 import { ActionBody, approvalBlocks, approvalClick } from "#src/approvals";

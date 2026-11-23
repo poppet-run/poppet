@@ -1,4 +1,5 @@
-import { ChannelError, MessagingChannel, type IncomingMessage } from "@poppet/gateway";
+import { ChannelError, MessagingChannel } from "@poppet/gateway";
+import type { IncomingMessage } from "@poppet/gateway";
 import {
   ChannelType,
   Client,
@@ -9,9 +10,8 @@ import {
   PermissionFlagsBits,
   Options,
   RateLimitError,
-  type Message,
-  type MessageCreateOptions,
 } from "discord.js";
+import type { Message, MessageCreateOptions } from "discord.js";
 import { Deferred, Effect, Layer, Queue, Redacted, Stream } from "effect";
 
 import { approvalActions, approvalComponents } from "#src/approvals";

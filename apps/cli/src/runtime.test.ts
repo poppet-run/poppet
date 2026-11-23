@@ -9,11 +9,9 @@ import {
   ProviderConnection,
   ProviderEnvironment,
   ProviderError,
-  type ProviderRegistration,
   completeModel,
-  type ModelOperations,
-  type ProviderId,
 } from "@poppet/provider";
+import type { ProviderRegistration, ModelOperations, ProviderId } from "@poppet/provider";
 import { Store } from "@poppet/store";
 import { WorkerConnections } from "@poppet/tasks";
 import { ConfigProvider, Context, Effect, Layer, Stream } from "effect";

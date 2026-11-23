@@ -1,13 +1,7 @@
 import { Effect, Stream } from "effect";
 
-import {
-  interrupted,
-  validateRequest,
-  type ModelDescription,
-  type ModelEvent,
-  type ModelRequest,
-  type ProviderError,
-} from "#src/index";
+import { interrupted, validateRequest } from "#src/index";
+import type { ModelDescription, ModelEvent, ModelRequest, ProviderError } from "#src/index";
 import { inferenceFailure } from "#src/protocol/errors";
 
 export const modelStream = (

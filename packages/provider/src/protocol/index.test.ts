@@ -4,14 +4,8 @@ import { Effect, Fiber, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import OpenAI from "openai";
 
-import {
-  completeModel,
-  ProviderError,
-  verifyModel,
-  type ModelDescription,
-  type ModelRequest,
-  type ProviderId,
-} from "#src/index";
+import { completeModel, ProviderError, verifyModel } from "#src/index";
+import type { ModelDescription, ModelRequest, ProviderId } from "#src/index";
 import { chatCompletionsModel, responsesModel } from "#src/protocol/index";
 
 type HttpFetch = (input: Request | string | URL, init?: RequestInit) => Promise<Response>;

@@ -1,11 +1,7 @@
-import {
-  Completion,
-  Message,
-  type Continuation,
-  type Message as ModelMessage,
-} from "@poppet/provider";
+import { Completion, Message } from "@poppet/provider";
+import type { Continuation, Message as ModelMessage } from "@poppet/provider";
 import { Array, Effect, Schema } from "effect";
-import { SqlClient } from "effect/sql";
+import type { SqlClient } from "effect/sql";
 
 import { StoreError, decodeInput, reportAs, storeFailure } from "#src/errors";
 import { Id, Run, Session, SkillSnapshot, StoredMessage, ToolCall } from "#src/schema";

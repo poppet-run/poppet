@@ -18,9 +18,8 @@ import {
   ProviderConnection,
   ProviderId,
   invalidRequest,
-  type ProviderRegistration,
-  type ProviderError,
 } from "@poppet/provider";
+import type { ProviderRegistration, ProviderError } from "@poppet/provider";
 import { StoreLive } from "@poppet/store";
 import { ChatTasksLive, TaskRepositoryLive, WorkerConnections } from "@poppet/tasks";
 import { Context, Effect, Layer, Schema } from "effect";

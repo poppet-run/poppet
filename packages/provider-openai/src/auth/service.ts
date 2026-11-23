@@ -1,9 +1,11 @@
-import { Context, DateTime, Effect, Layer, Redacted, Result } from "effect";
+import type { Redacted } from "effect";
+import { Context, DateTime, Effect, Layer, Result } from "effect";
 
 import { CredentialStore } from "#src/auth/credentials";
 import { loginWorkflow } from "#src/auth/login";
 import { accessTokenWorkflow } from "#src/auth/refresh";
-import { type ConnectionStatus, statusFor, reconnect } from "#src/auth/state";
+import { statusFor, reconnect } from "#src/auth/state";
+import type { ConnectionStatus } from "#src/auth/state";
 import type { ConnectionError } from "#src/connection";
 import { OAuthClient } from "#src/oauth/client";
 import type { SignInOptions } from "#src/sign-in/service";

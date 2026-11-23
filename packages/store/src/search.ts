@@ -5,7 +5,8 @@ import { Effect, Schema } from "effect";
 import type { SqlClient } from "effect/sql";
 
 import { decodeInput } from "#src/errors";
-import { SessionSearchMatch, SessionSearchQuery, type SessionSearchResult } from "#src/schema";
+import { SessionSearchMatch, SessionSearchQuery } from "#src/schema";
+import type { SessionSearchResult } from "#src/schema";
 import { decodeRows } from "#src/sql";
 
 export const MaxBytes = Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65536 }));

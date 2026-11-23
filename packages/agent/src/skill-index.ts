@@ -3,7 +3,8 @@ import { Effect } from "effect";
 
 import { byteSize } from "#src/context";
 import type { AgentError } from "#src/errors";
-import { isManualOnly, type Skills } from "#src/skills";
+import { isManualOnly } from "#src/skills";
+import type { Skills } from "#src/skills";
 
 const maxIndexSkills = 64;
 

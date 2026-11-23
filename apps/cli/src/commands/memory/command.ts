@@ -4,7 +4,8 @@ import { Argument, Command } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
 import { jsonFlag, textArgument } from "#src/commands/flags";
-import { manageMemory, type MemoryCommand } from "#src/commands/memory/memory";
+import { manageMemory } from "#src/commands/memory/memory";
+import type { MemoryCommand } from "#src/commands/memory/memory";
 import { fields, printParsed, table, tableOr, time } from "#src/output";
 
 const Forgotten = Schema.Struct({ key: Schema.String, forgotten: Schema.Literal(true) });

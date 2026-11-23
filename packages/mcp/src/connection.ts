@@ -1,22 +1,18 @@
-import {
-  Client,
-  type AuthProvider,
-  type FetchLike,
-  type StreamableHTTPClientTransportOptions,
-  type Tool as ServerTool,
+import { Client } from "@modelcontextprotocol/client";
+import type {
+  AuthProvider,
+  FetchLike,
+  StreamableHTTPClientTransportOptions,
+  Tool as ServerTool,
 } from "@modelcontextprotocol/client";
 import { ApiKeyStore } from "@poppet/credentials";
 import { Data, Effect, Redacted, Ref } from "effect";
 
-import { isHTTPServer, type MCPReference, type MCPServer } from "#src/config";
+import { isHTTPServer } from "#src/config";
+import type { MCPReference, MCPServer } from "#src/config";
 import { MCPError } from "#src/errors";
-import {
-  isOAuthServer,
-  MCPLoginRequired,
-  MCPSignIns,
-  runtimeAuthorization,
-  type RuntimeAuthorization,
-} from "#src/oauth";
+import { isOAuthServer, MCPLoginRequired, MCPSignIns, runtimeAuthorization } from "#src/oauth";
+import type { RuntimeAuthorization } from "#src/oauth";
 import {
   boundedFetch,
   checkReviewedToken,

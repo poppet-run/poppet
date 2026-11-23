@@ -2,20 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 
 import { LogfmtLoggerLive } from "@poppet/io";
-import {
-  ProviderError,
-  type Completion,
-  type ModelEvent,
-  type ModelOperations,
-  type ModelRequest,
-} from "@poppet/provider";
+import { ProviderError } from "@poppet/provider";
+import type { Completion, ModelEvent, ModelOperations, ModelRequest } from "@poppet/provider";
 import { Store } from "@poppet/store";
 import { Console, Deferred, Effect, Fiber, Match, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
-import { AgentError } from "#src/errors";
-import { Agent, type ChatEvent, type ModelResolver } from "#src/service";
-import { defaultPolicy, type ChatPolicy } from "#src/settings";
+import type { AgentError } from "#src/errors";
+import { Agent } from "#src/service";
+import type { ChatEvent, ModelResolver } from "#src/service";
+import { defaultPolicy } from "#src/settings";
+import type { ChatPolicy } from "#src/settings";
 import { agentHarness, gatedStream } from "#src/test/harness";
 
 const thinkingText = (line: string): string => {

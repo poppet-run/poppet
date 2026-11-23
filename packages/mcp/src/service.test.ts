@@ -9,7 +9,7 @@ import { LogfmtLoggerLive } from "@poppet/io";
 import { Clock, ConfigProvider, Console, Effect, Fiber, Layer, Redacted, Schema } from "effect";
 import { TestClock } from "effect/testing";
 
-import { type MCPStdioServer } from "#src/config";
+import type { MCPStdioServer } from "#src/config";
 import { MCP, makeMCPLive } from "#src/service";
 import { NoSignInsLive } from "#src/test/sign-ins";
 

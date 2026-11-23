@@ -1,15 +1,10 @@
 import { measureTiming } from "@poppet/provider";
-import { Store, StoreError, type Run } from "@poppet/store";
+import { Store, StoreError } from "@poppet/store";
+import type { Run } from "@poppet/store";
 import { Effect } from "effect";
 
-import {
-  reportedReasons,
-  reportedStoreReasons,
-  type AgentTool,
-  type FailurePolicy,
-  type PreparedCall,
-  type ReviewableCall,
-} from "#src/agent-tool";
+import { reportedReasons, reportedStoreReasons } from "#src/agent-tool";
+import type { AgentTool, FailurePolicy, PreparedCall, ReviewableCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 
 export const failureReason = (error: AgentError | StoreError) =>

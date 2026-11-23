@@ -2,15 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { TaskNoteArguments, taskNoteBytes, taskNoteDefinition } from "@poppet/agent";
 import { taskCatchUpMinutes } from "@poppet/config";
-import {
-  DeliveryDestination,
-  Run,
-  SkillSnapshot,
-  decodeRow,
-  decodeRows,
-  migrate,
-  reportAs,
-} from "@poppet/store";
+import type { SkillSnapshot } from "@poppet/store";
+import { DeliveryDestination, Run, decodeRow, decodeRows, migrate, reportAs } from "@poppet/store";
 import { Clock, Context, Effect, Layer, Option, Result, Schema, Semaphore } from "effect";
 import { SqlClient } from "effect/sql";
 

@@ -3,12 +3,8 @@ import { createInterface } from "node:readline";
 import { AgentError, logChatDiagnostic } from "@poppet/agent";
 import { Console, Effect, Result, Semaphore } from "effect";
 
-import {
-  writeChatText,
-  type ChatCommand,
-  type ChatWriter,
-  type ChatReasoningWriter,
-} from "#src/commands/chat/chat";
+import { writeChatText } from "#src/commands/chat/chat";
+import type { ChatCommand, ChatWriter, ChatReasoningWriter } from "#src/commands/chat/chat";
 
 const inputFailure = () =>
   new AgentError({ reason: "interrupted", message: "Could not read the interactive chat prompt." });

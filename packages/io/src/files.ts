@@ -7,9 +7,10 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
-  type Stats,
 } from "node:fs";
-import { chmod, lstat, mkdir, open, rename, unlink, type FileHandle } from "node:fs/promises";
+import type { Stats } from "node:fs";
+import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import { Schema } from "effect";

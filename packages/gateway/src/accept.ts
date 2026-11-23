@@ -3,14 +3,8 @@ import { Effect, Fiber, Result, Schema } from "effect";
 
 import type { ActionApprovals } from "#src/approvals";
 import { ChannelError, IncomingMessage } from "#src/channel";
-import {
-  authorized,
-  finish,
-  mark,
-  wake,
-  type GatewayContext,
-  type RunningRequest,
-} from "#src/context";
+import { authorized, finish, mark, wake } from "#src/context";
+import type { GatewayContext, RunningRequest } from "#src/context";
 import type { Inbox } from "#src/repository";
 import { isApprovalReply, isControl } from "#src/request";
 

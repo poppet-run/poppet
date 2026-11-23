@@ -3,13 +3,14 @@ import { describe, expect, test } from "bun:test";
 import { Deferred, Effect, Fiber, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
-import { actionApprovals, type ActionApprovals } from "#src/approvals";
-import {
-  ChannelError,
-  type ApprovalAction,
-  type ApprovalState,
-  type IncomingMessage,
-  type MessagingChannel,
+import { actionApprovals } from "#src/approvals";
+import type { ActionApprovals } from "#src/approvals";
+import { ChannelError } from "#src/channel";
+import type {
+  ApprovalAction,
+  ApprovalState,
+  IncomingMessage,
+  MessagingChannel,
 } from "#src/channel";
 
 const message: IncomingMessage = {

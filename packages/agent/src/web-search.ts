@@ -1,8 +1,10 @@
-import { toolParameters, type Tool } from "@poppet/provider";
+import { toolParameters } from "@poppet/provider";
+import type { Tool } from "@poppet/provider";
 import { WebSearch } from "@poppet/web-search";
 import { Effect, Schema } from "effect";
 
-import { contextTool, type ToolCall } from "#src/agent-tool";
+import { contextTool } from "#src/agent-tool";
+import type { ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import { BoundedText, toolArguments } from "#src/tool-schema";
 

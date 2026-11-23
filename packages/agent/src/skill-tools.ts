@@ -1,8 +1,10 @@
-import { toolParameters, type Tool } from "@poppet/provider";
+import { toolParameters } from "@poppet/provider";
+import type { Tool } from "@poppet/provider";
 import { SkillName } from "@poppet/store";
 import { Effect, Option, Schema } from "effect";
 
-import { contextTool, type ToolCall } from "#src/agent-tool";
+import { contextTool } from "#src/agent-tool";
+import type { ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import { isManualOnly, Skills } from "#src/skills";
 import { toolArguments } from "#src/tool-schema";

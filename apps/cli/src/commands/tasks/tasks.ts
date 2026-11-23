@@ -9,8 +9,8 @@ import {
   nextOccurrence,
   parseTimestamp,
   taskOperation,
-  type Schedule,
 } from "@poppet/tasks";
+import type { Schedule } from "@poppet/tasks";
 import { workerSocketPath } from "@poppet/worker";
 import { Effect, Option, Schema } from "effect";
 

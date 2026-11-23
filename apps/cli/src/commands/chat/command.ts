@@ -5,14 +5,12 @@ import { Argument, Command, Flag } from "effect/cli";
 
 import {
   inspectChat,
-  type ChatCommand,
-  type ChatInspection,
   MessageText,
   PruneDays,
   prepareChat,
   sendChat,
-  type ChatWriter,
 } from "#src/commands/chat/chat";
+import type { ChatCommand, ChatInspection, ChatWriter } from "#src/commands/chat/chat";
 import { printChatInspection } from "#src/commands/chat/format";
 import { readChatHistory } from "#src/commands/chat/history";
 import {
@@ -21,7 +19,8 @@ import {
   interactiveChat,
   interactiveChatOutput,
 } from "#src/commands/chat/prompt";
-import { openChatTerminal, type ChatTerminal } from "#src/commands/chat/terminal";
+import { openChatTerminal } from "#src/commands/chat/terminal";
+import type { ChatTerminal } from "#src/commands/chat/terminal";
 import type { CLIContext } from "#src/commands/context";
 import { attachFlag, booleanFlag, jsonFlag, skillFlag, textArgument } from "#src/commands/flags";
 

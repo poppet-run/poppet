@@ -4,25 +4,16 @@ import {
   ChannelEnvironment,
   ChannelError,
   ChannelInput,
-  type ChannelRegistration,
   Gateway,
   GatewayLive,
   GatewayRepository,
   GatewayRepositoryLive,
 } from "@poppet/gateway";
-import { DeliveryDestination, StoreError } from "@poppet/store";
-import {
-  Cause,
-  Clock,
-  Console,
-  Context,
-  Effect,
-  Layer,
-  Option,
-  Redacted,
-  Result,
-  Schema,
-} from "effect";
+import type { ChannelRegistration } from "@poppet/gateway";
+import type { DeliveryDestination } from "@poppet/store";
+import { StoreError } from "@poppet/store";
+import type { Schema } from "effect";
+import { Cause, Clock, Console, Context, Effect, Layer, Option, Redacted, Result } from "effect";
 
 export class MessagingWorker extends Context.Service<
   MessagingWorker,

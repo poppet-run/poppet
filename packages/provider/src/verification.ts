@@ -2,8 +2,10 @@ import { randomBytes, randomUUID } from "node:crypto";
 
 import { Effect, Schema } from "effect";
 
-import { outputText, type ModelRequest, type Tool } from "#src/schema";
-import { completeModel, invalidRequest, type ModelOperations } from "#src/service";
+import { outputText } from "#src/schema";
+import type { ModelRequest, Tool } from "#src/schema";
+import { completeModel, invalidRequest } from "#src/service";
+import type { ModelOperations } from "#src/service";
 
 const Arguments = Schema.fromJsonString(Schema.Struct({ challenge: Schema.NonEmptyString }));
 

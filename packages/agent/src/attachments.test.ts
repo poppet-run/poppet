@@ -6,7 +6,8 @@ import { Effect, Stream } from "effect";
 
 import { identifyAttachment } from "#src/attachments";
 import { Agent } from "#src/service";
-import { defaultPolicy, type ChatPolicy } from "#src/settings";
+import { defaultPolicy } from "#src/settings";
+import type { ChatPolicy } from "#src/settings";
 import { agentHarness, testModel } from "#src/test/harness";
 
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2]);

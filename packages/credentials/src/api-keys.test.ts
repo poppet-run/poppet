@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { ProviderError } from "@poppet/provider";
 import {
   CredentialInput,
   Provider,
@@ -40,11 +41,7 @@ const harness = async () => {
 
   return {
     directory,
-    run: <A>(
-      operation: (
-        store: ApiKeyStore["Service"],
-      ) => Effect.Effect<A, import("@poppet/provider").ProviderError>,
-    ) =>
+    run: <A>(operation: (store: ApiKeyStore["Service"]) => Effect.Effect<A, ProviderError>) =>
       Effect.runPromise(
         Effect.gen(function* () {
           return yield* operation(yield* ApiKeyStore);

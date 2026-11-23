@@ -2,17 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { Agent, Pages, WebSearch, Skills, SkillsLive } from "@poppet/agent";
+import type { Skills } from "@poppet/agent";
+import { Agent, Pages, WebSearch, SkillsLive } from "@poppet/agent";
 import { agentHarness, testModel } from "@poppet/agent/test";
 import { AppConfig } from "@poppet/config";
 import { LogfmtLoggerLive } from "@poppet/io";
 import { Memory } from "@poppet/memory";
-import {
-  ProviderError,
-  type ModelOperations,
-  type ModelRequest,
-  type Output,
-} from "@poppet/provider";
+import { ProviderError } from "@poppet/provider";
+import type { ModelOperations, ModelRequest, Output } from "@poppet/provider";
 import { SessionReadResult, Store } from "@poppet/store";
 import { WebSearchError } from "@poppet/web-search";
 import { serveWorker, workerSocketPath } from "@poppet/worker";
@@ -23,7 +20,8 @@ import { TestClock } from "effect/testing";
 import { ChatTasksLive } from "#src/chat-tools";
 import { TaskDestinations, executeTaskCommand } from "#src/commands";
 import { executeOccurrence, reconcileTasks, makeTaskWorker } from "#src/scheduler";
-import { TaskError, type NewTask } from "#src/task-schema";
+import { TaskError } from "#src/task-schema";
+import type { NewTask } from "#src/task-schema";
 import { remoteTaskCommand, taskResponse } from "#src/task-socket";
 import { TaskRepository, TaskRepositoryLive } from "#src/task-store";
 

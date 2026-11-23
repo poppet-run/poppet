@@ -23,13 +23,8 @@ import {
   inspectService,
   fileInfo,
 } from "#src/commands/doctor/local";
-import {
-  DoctorSnapshot,
-  doctorReport,
-  finding,
-  unavailable,
-  type DoctorCheck,
-} from "#src/commands/doctor/report";
+import { DoctorSnapshot, doctorReport, finding, unavailable } from "#src/commands/doctor/report";
+import type { DoctorCheck } from "#src/commands/doctor/report";
 
 export const inspectCheck = <E, R>(
   id: string,

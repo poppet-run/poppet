@@ -1,4 +1,5 @@
-import { Context, Data, type Effect } from "effect";
+import { Context, Data } from "effect";
+import type { Effect } from "effect";
 
 import type { MemoryFact, MemoryRevision, MemorySnapshot, SnapshotLimits } from "#src/schema";
 

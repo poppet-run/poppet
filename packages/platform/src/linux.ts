@@ -5,15 +5,8 @@ import { isAbsolute, join } from "node:path";
 import { readBoundedText } from "@poppet/io";
 import { Effect } from "effect";
 
-import {
-  prepareWorkerLog,
-  readWorkerLogs,
-  regularFileInfo,
-  WorkerError,
-  type WorkerAction,
-  type WorkerLaunch,
-  type WorkerStatus,
-} from "#src/index";
+import { prepareWorkerLog, readWorkerLogs, regularFileInfo, WorkerError } from "#src/index";
+import type { WorkerAction, WorkerLaunch, WorkerStatus } from "#src/index";
 
 export interface SystemctlRun {
   readonly code: number;

@@ -1,7 +1,8 @@
 import type { ChatFailure } from "@poppet/agent";
 import type { QuietHours } from "@poppet/config";
 import type { Store } from "@poppet/store";
-import { type Clock, type Duration, Effect, type Fiber, Queue, Semaphore } from "effect";
+import { Effect, Queue, Semaphore } from "effect";
+import type { Clock, Duration, Fiber } from "effect";
 
 import type { ChannelError, ChannelPolicy, IncomingMessage, MessagingChannel } from "#src/channel";
 import { chunks } from "#src/replies";

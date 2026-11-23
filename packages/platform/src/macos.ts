@@ -4,15 +4,8 @@ import { join } from "node:path";
 
 import { Effect } from "effect";
 
-import {
-  prepareWorkerLog,
-  readWorkerLogs,
-  regularFileInfo,
-  WorkerError,
-  type WorkerAction,
-  type WorkerLaunch,
-  type WorkerStatus,
-} from "#src/index";
+import { prepareWorkerLog, readWorkerLogs, regularFileInfo, WorkerError } from "#src/index";
+import type { WorkerAction, WorkerLaunch, WorkerStatus } from "#src/index";
 
 export const workerPaths = (launch: WorkerLaunch, home: string) => {
   const id = createHash("sha256").update(launch.dataDirectory).digest("hex").slice(0, 12);

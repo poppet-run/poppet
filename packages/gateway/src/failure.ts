@@ -1,4 +1,5 @@
-import { AgentError, type ChatFailure } from "@poppet/agent";
+import { AgentError } from "@poppet/agent";
+import type { ChatFailure } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
 import { Match } from "effect";
 

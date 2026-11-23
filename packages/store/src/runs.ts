@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { Message } from "@poppet/provider";
 import { Array, Clock, Effect, Schema } from "effect";
-import { SqlClient } from "effect/sql";
+import type { SqlClient } from "effect/sql";
 
 import { StoreError, decodeInput, reportAs, storeFailure } from "#src/errors";
-import { RunRow, conflict, type StoreRecords } from "#src/records";
+import { RunRow, conflict } from "#src/records";
+import type { StoreRecords } from "#src/records";
 import { Id, NewAttachment, RunOutcome, SavedAttachment, SessionTitle } from "#src/schema";
 import type { StoreOperations } from "#src/service";
 import { decodeRows } from "#src/sql";

@@ -2,7 +2,8 @@ import { Agent, AgentError, Skills, sessionTitle } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import type { LogValue } from "@poppet/io";
 import { ProviderError } from "@poppet/provider";
-import { Store, type StoreError } from "@poppet/store";
+import { Store } from "@poppet/store";
+import type { StoreError } from "@poppet/store";
 import {
   Cause,
   Clock,
@@ -19,14 +20,10 @@ import {
 } from "effect";
 
 import { executeTaskCommand, noAction } from "#src/commands";
-import {
-  isTaskControl,
-  type Occurrence,
-  type ProviderPause,
-  type TaskError,
-  type TaskCommand,
-} from "#src/task-schema";
-import { TaskRepository, type TaskStore } from "#src/task-store";
+import { isTaskControl } from "#src/task-schema";
+import type { Occurrence, ProviderPause, TaskError, TaskCommand } from "#src/task-schema";
+import { TaskRepository } from "#src/task-store";
+import type { TaskStore } from "#src/task-store";
 
 export class WorkerConnections extends Context.Service<
   WorkerConnections,

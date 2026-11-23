@@ -7,13 +7,8 @@ import { SqlClient } from "effect/sql";
 
 import { memoryLimit, readContextFile } from "#src/context-file";
 import { memorySchema } from "#src/migrations";
-import {
-  MemoryFact,
-  MemoryRevision,
-  SnapshotLimits,
-  savedFactsBytes,
-  type MemoryOrigin,
-} from "#src/schema";
+import { MemoryFact, MemoryRevision, SnapshotLimits, savedFactsBytes } from "#src/schema";
+import type { MemoryOrigin } from "#src/schema";
 import { Memory, MemoryError } from "#src/service";
 
 const invalid = () =>

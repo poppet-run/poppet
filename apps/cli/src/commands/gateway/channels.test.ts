@@ -6,7 +6,8 @@ import { StoreError } from "@poppet/store";
 import { Clock, Console, Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 
-import { superviseAdapter, type AdapterHealth } from "#src/commands/gateway/channels";
+import { superviseAdapter } from "#src/commands/gateway/channels";
+import type { AdapterHealth } from "#src/commands/gateway/channels";
 
 const quiet: Console.Console = { ...console, error: () => {} };
 

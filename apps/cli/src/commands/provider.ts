@@ -1,12 +1,6 @@
 import { AppConfig } from "@poppet/config";
-import {
-  CredentialInput,
-  type ModelDescription,
-  Provider,
-  ProviderConnection,
-  ProviderId,
-  type ProviderRegistration,
-} from "@poppet/provider";
+import { CredentialInput, Provider, ProviderConnection, ProviderId } from "@poppet/provider";
+import type { ModelDescription, ProviderRegistration } from "@poppet/provider";
 import { Console, Effect, Option, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 

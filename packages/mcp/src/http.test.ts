@@ -4,7 +4,7 @@ import { ApiKeyStore } from "@poppet/credentials";
 import { Clock, ConfigProvider, Console, Effect, Layer, Redacted, Schema } from "effect";
 import { TestClock } from "effect/testing";
 
-import { type MCPHTTPServer } from "#src/config";
+import type { MCPHTTPServer } from "#src/config";
 import { MCP, makeMCPLive } from "#src/service";
 import { NoSignInsLive } from "#src/test/sign-ins";
 

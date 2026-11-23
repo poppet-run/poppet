@@ -2,7 +2,8 @@ import { isNoReply } from "@poppet/agent";
 import { quietHoursEnd } from "@poppet/config";
 import { Effect } from "effect";
 
-import { authorized, wake, type GatewayContext } from "#src/context";
+import { authorized, wake } from "#src/context";
+import type { GatewayContext } from "#src/context";
 import { channelRetryDelay } from "#src/failure";
 import { answer, chunks } from "#src/replies";
 

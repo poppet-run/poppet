@@ -1,4 +1,5 @@
-import { type Connection, ConnectionError, type Credentials, planScope } from "#src/connection";
+import { ConnectionError, planScope } from "#src/connection";
+import type { Connection, Credentials } from "#src/connection";
 import type { TokenReply } from "#src/oauth/tokens";
 
 export interface ConnectionStatus {

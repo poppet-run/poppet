@@ -1,7 +1,8 @@
 import { Schema } from "effect";
 import { APIError, APIConnectionError, APIConnectionTimeoutError, APIUserAbortError } from "openai";
 
-import { ProviderError, type ProviderId, type ModelRequest } from "#src/index";
+import { ProviderError } from "#src/index";
+import type { ProviderId, ModelRequest } from "#src/index";
 
 export type RemoteReason = (
   status: number | undefined,

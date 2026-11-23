@@ -5,25 +5,11 @@ import { join } from "node:path";
 
 import { BunServices } from "@effect/platform-bun";
 import { ChannelEnvironment, ChannelInput } from "@poppet/gateway";
-import {
-  CredentialInput,
-  Provider,
-  ProviderConnection,
-  invalidRequest,
-  type ProviderRegistration,
-} from "@poppet/provider";
+import { CredentialInput, Provider, ProviderConnection, invalidRequest } from "@poppet/provider";
+import type { ProviderRegistration } from "@poppet/provider";
 import { serveWorker, workerSocketPath } from "@poppet/worker";
-import {
-  type Cause,
-  ConfigProvider,
-  Console,
-  Effect,
-  Layer,
-  Option,
-  Queue,
-  Redacted,
-  Terminal,
-} from "effect";
+import { ConfigProvider, Console, Effect, Layer, Option, Queue, Redacted, Terminal } from "effect";
+import type { Cause } from "effect";
 
 import { readChatLine } from "#src/commands/chat/prompt";
 import { createCLIContext } from "#src/commands/context";

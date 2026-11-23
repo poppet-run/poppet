@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppConfig } from "@poppet/config";
-import { type Completion, type Message, type ProviderId } from "@poppet/provider";
+import type { Completion, Message, ProviderId } from "@poppet/provider";
 import { Effect, Fiber, Layer } from "effect";
 import { SqlClient } from "effect/sql";
 
-import { StoreDatabase } from "#src/database";
-import { StoreError } from "#src/errors";
+import type { StoreDatabase } from "#src/database";
+import type { StoreError } from "#src/errors";
 import type { SessionReadResult, SessionSearchResult } from "#src/schema";
 import { Store, StoreLive } from "#src/service";
 

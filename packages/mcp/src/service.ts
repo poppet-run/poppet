@@ -1,9 +1,11 @@
-import { InsufficientScopeError, type FetchLike } from "@modelcontextprotocol/client";
+import { InsufficientScopeError } from "@modelcontextprotocol/client";
+import type { FetchLike } from "@modelcontextprotocol/client";
 import { ApiKeyStore } from "@poppet/credentials";
 import { Clock, Context, Effect, Layer, Ref, Semaphore } from "effect";
 
 import { containsSecret } from "#src/catalog";
-import { isHTTPServer, mcpServers, type MCPServer } from "#src/config";
+import { isHTTPServer, mcpServers } from "#src/config";
+import type { MCPServer } from "#src/config";
 import {
   closeConnection,
   diagnostic,
@@ -18,12 +20,12 @@ import {
   requireLogin,
   retryAt,
   startupFailure,
-  type Connection,
-  type ConnectionState,
 } from "#src/connection";
+import type { Connection, ConnectionState } from "#src/connection";
 import { MCPError } from "#src/errors";
 import { isOAuthServer, MCPSignIns, signInStatus } from "#src/oauth";
-import { buildTools, type MCPTool } from "#src/tools";
+import { buildTools } from "#src/tools";
+import type { MCPTool } from "#src/tools";
 import { ReviewedAccountChanged, ScopedStdioTransport } from "#src/transport";
 
 export type { MCPTool } from "#src/tools";

@@ -2,12 +2,14 @@ import { StringDecoder } from "node:string_decoder";
 import { formatWithOptions, stripVTControlCharacters } from "node:util";
 
 import { AgentError } from "@poppet/agent";
-import { Console, Deferred, Effect } from "effect";
+import type { Console } from "effect";
+import { Deferred, Effect } from "effect";
 
 import type { ChatReasoningWriter, ChatWriter } from "#src/commands/chat/chat";
 import type { ChatHistoryMessage } from "#src/commands/chat/history";
 import { ChatMarkdown } from "#src/commands/chat/markdown";
-import { activityIndicator, type ChatInput } from "#src/commands/chat/prompt";
+import { activityIndicator } from "#src/commands/chat/prompt";
+import type { ChatInput } from "#src/commands/chat/prompt";
 
 const escape = "\u001b[";
 const segments = new Intl.Segmenter(undefined, { granularity: "grapheme" });

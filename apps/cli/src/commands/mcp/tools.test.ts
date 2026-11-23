@@ -5,14 +5,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Agent } from "@poppet/agent";
-import { type MCPServer } from "@poppet/mcp";
-import {
-  Provider,
-  ProviderConnection,
-  type ModelRequest,
-  type Output,
-  type ProviderRegistration,
-} from "@poppet/provider";
+import type { MCPServer } from "@poppet/mcp";
+import { Provider, ProviderConnection } from "@poppet/provider";
+import type { ModelRequest, Output, ProviderRegistration } from "@poppet/provider";
 import { Store } from "@poppet/store";
 import { TaskRepository, executeOccurrence } from "@poppet/tasks";
 import { Clock, ConfigProvider, Console, Deferred, Effect, Fiber, Layer, Stream } from "effect";

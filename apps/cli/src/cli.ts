@@ -6,7 +6,8 @@ import { Effect } from "effect";
 import { CliConfig, CliOutput, Command, GlobalFlag } from "effect/cli";
 
 import { commandArgs } from "#src/command-args";
-import { type ChatWriter, writeChatText, writeChatThinking } from "#src/commands/chat/chat";
+import { writeChatText, writeChatThinking } from "#src/commands/chat/chat";
+import type { ChatWriter } from "#src/commands/chat/chat";
 import { chatCommand } from "#src/commands/chat/command";
 import { readChatLine } from "#src/commands/chat/prompt";
 import { configCommand } from "#src/commands/config";

@@ -1,6 +1,7 @@
 import { isAbsolute } from "node:path";
 
-import { toolParameters, type ModelOperations } from "@poppet/provider";
+import { toolParameters } from "@poppet/provider";
+import type { ModelOperations } from "@poppet/provider";
 import type { Run, StoreError } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 

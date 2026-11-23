@@ -1,4 +1,5 @@
-import { InsufficientScopeError, type Tool as ServerTool } from "@modelcontextprotocol/client";
+import { InsufficientScopeError } from "@modelcontextprotocol/client";
+import type { Tool as ServerTool } from "@modelcontextprotocol/client";
 import type { Tool } from "@poppet/provider";
 import { Effect, Ref, Schema } from "effect";
 
@@ -9,7 +10,8 @@ import {
   definition,
   toolResult,
 } from "#src/catalog";
-import { isHTTPServer, type MCPServer } from "#src/config";
+import { isHTTPServer } from "#src/config";
+import type { MCPServer } from "#src/config";
 import {
   diagnostic,
   failed,
@@ -17,8 +19,8 @@ import {
   MCPDiagnostic,
   startupFailure,
   UnsupportedTool,
-  type Connection,
 } from "#src/connection";
+import type { Connection } from "#src/connection";
 import { MCPError } from "#src/errors";
 import { ReviewedAccountChanged, reviewedHTTPRequest } from "#src/transport";
 

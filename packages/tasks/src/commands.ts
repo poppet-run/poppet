@@ -1,10 +1,14 @@
 import { Skills, isNoReply } from "@poppet/agent";
 import { outputText } from "@poppet/provider";
-import { DeliveryDestination, Store, type Run } from "@poppet/store";
+import type { DeliveryDestination } from "@poppet/store";
+import { Store } from "@poppet/store";
+import type { Run } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
-import { TaskCommand, TaskError, isTaskControl } from "#src/task-schema";
-import { TaskRepository, type TaskStore } from "#src/task-store";
+import type { TaskCommand } from "#src/task-schema";
+import { TaskError, isTaskControl } from "#src/task-schema";
+import { TaskRepository } from "#src/task-store";
+import type { TaskStore } from "#src/task-store";
 
 export class TaskDestinations extends Context.Service<
   TaskDestinations,
