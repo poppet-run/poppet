@@ -16,7 +16,7 @@ export const sessionOperations = (sql: SqlClient.SqlClient, records: StoreRecord
   const createSession: StoreOperations["createSession"] = (
     provider,
     model,
-    { id = randomUUID(), taskTitle, skill = null } = {},
+    { id = randomUUID(), taskTitle, origin = "chat", skill = null } = {},
   ) =>
     Effect.gen(function* () {
       const at = yield* Clock.currentTimeMillis;
@@ -31,6 +31,7 @@ export const sessionOperations = (sql: SqlClient.SqlClient, records: StoreRecord
         createdAt: at,
         updatedAt: at,
         title,
+        origin,
         titleSource: taskTitle === undefined ? "fallback" : "task",
         titleAttempted: taskTitle === undefined ? 0 : 1,
         skill: skill === null ? null : JSON.stringify(yield* decodeInput(SkillSnapshot, skill)),

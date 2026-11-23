@@ -111,6 +111,15 @@ Poppet also keeps at most 32 logins. A new login then replaces the oldest one.
 
 ## Conversation behavior
 
+The sidebar opens on **Chats**, which includes web and CLI conversations. Use
+**Show** to see **Scheduled tasks**, a gateway such as **Slack** or **Discord**,
+or **All sessions**. Each view shows the most recently active sessions first.
+A task that sends its result to a gateway stays under **Scheduled tasks**.
+
+Changing the filter keeps the open conversation and draft in place. Direct
+links open sessions in any category. **+ New conversation** returns the sidebar
+to **Chats**.
+
 - Enter sends; Shift+Enter inserts a newline. Enter does not send while you are composing text with an IME.
 - You can draft the next message while a reply runs. Send becomes available when it
   finishes. There is no message queue yet.

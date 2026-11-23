@@ -12,6 +12,8 @@ type ChatState = {
   authenticated: boolean | null;
   key: string;
   sessions: ReadonlyArray<ChatSession>;
+  source: string;
+  gateways: ReadonlyArray<string>;
   sessionId: string | null;
   snapshot: ChatSnapshot | null;
   drafts: Record<string, string>;
@@ -45,6 +47,8 @@ export const createChatStore = () => {
     authenticated: null,
     key: "",
     sessions: [],
+    source: "chat",
+    gateways: [],
     sessionId: sessionFromUrl(),
     snapshot: null,
     drafts: {},
@@ -62,6 +66,7 @@ export const createChatStore = () => {
   };
 
   let generation = 0;
+  let listGeneration = 0;
   let deliveryLock = false;
   let removing = false;
 
@@ -69,26 +74,47 @@ export const createChatStore = () => {
     generation++;
     set("refreshError", "");
     set("authenticated", false);
+    set("source", "chat");
+    set("gateways", []);
     set("sessions", []);
     set("snapshot", null);
   };
 
   const refresh = async () => {
     const requestGeneration = generation;
+    const requestList = listGeneration;
+    const stale = () => requestGeneration !== generation || requestList !== listGeneration;
 
     try {
-      const sessions = await api.sessions();
+      const { sessions, gateways } = await api.sessions($state.get().source);
 
-      if (requestGeneration !== generation) return;
+      if (stale()) return;
+      set("gateways", gateways);
+      const { source } = $state.get();
+
+      if (source.startsWith("gateway:") && !gateways.includes(source.slice("gateway:".length))) {
+        filterSessions("chat");
+
+        return;
+      }
+
       set("refreshError", "");
       set("sessions", sessions);
       set("authenticated", true);
     } catch (cause) {
-      if (requestGeneration !== generation) return;
+      if (stale()) return;
 
       if (cause instanceof ApiError && cause.status === 401) unauthenticate();
       else set("refreshError", errorMessage(cause));
     }
+  };
+
+  const filterSessions = (source: string) => {
+    if ($state.get().source === source) return;
+    listGeneration++;
+    set("source", source);
+    set("sessions", []);
+    void refresh();
   };
 
   const navigate = (id: string | null) => {
@@ -396,6 +422,7 @@ export const createChatStore = () => {
     start,
     refresh,
     navigate,
+    filterSessions,
     send,
   };
 };

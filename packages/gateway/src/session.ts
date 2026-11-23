@@ -118,6 +118,7 @@ export const prepareSession = (
 
       session = yield* store.createSession(config.provider, config.model, {
         id,
+        origin: `gateway:${channel.id}`,
         skill: selected.success,
       });
     }

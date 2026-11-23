@@ -1,4 +1,4 @@
-import type { ChatSession, ChatSnapshot, Receipt, Submission } from "./protocol";
+import type { SessionList, ChatSnapshot, Receipt, Submission } from "./protocol";
 
 export class ApiError extends Error {
   constructor(
@@ -39,7 +39,8 @@ const request = async <T>(
 
 export const api = {
   snapshot: (id: string) => request<ChatSnapshot>(`/api/sessions/${encodeURIComponent(id)}`),
-  sessions: () => request<ReadonlyArray<ChatSession>>("/api/sessions"),
+  sessions: (source: string) =>
+    request<SessionList>(`/api/session-list?source=${encodeURIComponent(source)}`),
   login: (key: string) => request("/api/login", { key }),
   logout: () => request("/api/logout", {}),
   receipt: (id: string) => request<Receipt>(`/api/submissions/${encodeURIComponent(id)}`),

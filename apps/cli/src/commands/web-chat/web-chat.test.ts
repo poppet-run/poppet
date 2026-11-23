@@ -14,9 +14,12 @@ import {
   WebSearch,
 } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
+import { gatewaySchema } from "@poppet/gateway";
 import { LocalMemoryLive } from "@poppet/memory";
 import { invalidRequest, type ModelOperations } from "@poppet/provider";
-import { Store, StoreLive } from "@poppet/store";
+import { Store, StoreLive, migrate } from "@poppet/store";
+import { taskSchema } from "@poppet/tasks";
+import type { SessionList } from "@poppet/web/protocol";
 import { Deferred, Effect, Layer, ManagedRuntime, Schema, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 
@@ -30,6 +33,17 @@ const settings: WebSettings = {
   hostname: "127.0.0.1",
   port: 8080,
   accessKeyHash: createHash("sha256").update(accessKey).digest("hex"),
+};
+
+const storeLayer = (directory: string) => {
+  const config = Layer.succeed(AppConfig, {
+    applicationName: "Test",
+    dataDirectory: directory,
+    provider: "test-provider",
+    model: "test-model",
+  });
+
+  return StoreLive.pipe(Layer.provideMerge(config));
 };
 
 const fixture = async (
@@ -89,14 +103,7 @@ const fixture = async (
       ),
   };
 
-  const config = Layer.succeed(AppConfig, {
-    applicationName: "Test",
-    dataDirectory: directory,
-    provider: "test-provider",
-    model: "test-model",
-  });
-
-  const store = StoreLive.pipe(Layer.provideMerge(config));
+  const store = storeLayer(directory);
 
   const agent = AgentLive.pipe(
     Layer.provideMerge([
@@ -151,6 +158,88 @@ const fixture = async (
 };
 
 describe("web chat", () => {
+  test("when browsing mixed session history after upgrading, filters by the original source", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-origins-"));
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          for (const [schema, version] of [
+            [taskSchema, 5],
+            [gatewaySchema, 2],
+          ] as const) {
+            yield* migrate({
+              ...schema,
+              version,
+              loader: schema.loader.pipe(
+                Effect.map((entries) => entries.filter(([id]) => id <= version)),
+              ),
+            });
+          }
+
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`INSERT INTO sessions (id, provider, model, created_at, updated_at, title_source) VALUES
+          ('direct', 'test', 'test', 1, 1, 'fallback'),
+          ('renamed-task', 'test', 'test', 2, 5, 'manual'),
+          ('old-thread', 'test', 'test', 3, 3, 'generated'),
+          ('bound', 'test', 'test', 4, 4, 'generated')`;
+          yield* sql`INSERT INTO jobs (id, name, prompt, provider, model, schedule, created_at)
+          VALUES ('job', 'Summary', 'Summarise', 'test', 'test', '{}', 0)`;
+          yield* sql`INSERT INTO job_occurrences
+          (id, job_id, revision, definition, scheduled_at, available_at, status, session_id)
+          VALUES ('occ', 'job', 0, '{}', 0, 0, 'completed', 'renamed-task')`;
+          yield* sql`INSERT INTO gateway_bindings (adapter, account, scope_id, conversation_id, session_id)
+          VALUES ('discord', 'account', 'scope', 'thread', 'bound')`;
+          yield* sql`INSERT INTO gateway_inbox (adapter, account, external_id, payload, session_id, run_id, state, occurrence_id) VALUES
+          ('slack', 'account', 'reply', '{}', 'old-thread', 'first', 'completed', NULL),
+          ('slack', 'account', 'delivery', '{}', 'renamed-task', 'second', 'completed', 'occ')`;
+        }).pipe(Effect.provide(storeLayer(directory))),
+      );
+
+      const app = await fixture(directory);
+
+      try {
+        const cookie = await app.login();
+
+        const list = async (source?: string) => {
+          const query = source ? `?source=${encodeURIComponent(source)}` : "";
+          const response = await app.send(`/api/session-list${query}`, undefined, cookie);
+          expect(response.status).toBe(200);
+          const { sessions, gateways }: SessionList = await response.json();
+          expect(gateways).toEqual(["discord", "slack"]);
+
+          return sessions.map(({ id }) => id);
+        };
+
+        await app.runtime.runPromise(
+          Store.use((store) =>
+            store.createSession("test", "test", {
+              id: "new-task",
+              origin: "scheduled",
+              taskTitle: "Today's summary",
+            }),
+          ),
+        );
+        expect(await list()).toEqual(["direct"]);
+        expect(await list("scheduled")).toEqual(["new-task", "renamed-task"]);
+        expect(await list("gateway:slack")).toEqual(["old-thread"]);
+        expect(await list("gateway:discord")).toEqual(["bound"]);
+        expect(await list("all")).toEqual([
+          "new-task",
+          "renamed-task",
+          "bound",
+          "old-thread",
+          "direct",
+        ]);
+        expect((await app.send("/api/sessions/renamed-task", undefined, cookie)).status).toBe(200);
+      } finally {
+        await app.runtime.dispose();
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test.each([false, true])(
     "when proxy trust is %j, enforces the applicable login throttle",
     async (trustProxy) => {

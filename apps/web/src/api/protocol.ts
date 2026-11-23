@@ -6,6 +6,11 @@ export interface ChatSession {
   readonly updatedAt: number;
 }
 
+export interface SessionList {
+  readonly sessions: ReadonlyArray<ChatSession>;
+  readonly gateways: ReadonlyArray<string>;
+}
+
 export interface Submission {
   readonly id: string;
   readonly sessionId: string | null;

@@ -187,6 +187,9 @@ export const webHandler = (
     if (request.method === "GET" && url.pathname === "/api/sessions")
       return Response.json(await run(chat.sessions));
 
+    if (request.method === "GET" && url.pathname === "/api/session-list")
+      return Response.json(await run(chat.sessionList(url.searchParams.get("source") ?? "chat")));
+
     if (request.method === "POST" && url.pathname === "/api/submissions")
       return Response.json(await run(chat.submit(await body(request, SubmissionBody))), {
         status: 202,

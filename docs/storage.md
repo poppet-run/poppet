@@ -66,6 +66,12 @@ attachment ID and session. Messages hold only each attachment's ID, name, type,
 and size. Attachments stay in the database with their session, so backups and
 the permissions below cover them.
 
+Store migration 6 records where each session started for the web sidebar.
+Existing sessions are classified from task title metadata, task occurrences,
+gateway bindings, and gateway inbox history. A legacy session with no surviving
+evidence of a task or gateway origin appears under Chats. New sessions keep
+their origin through renames, job deletion, and gateway thread resets.
+
 ## Task revisions and timing
 
 Jobs carry a monotonically increasing definition revision. Occurrences save that

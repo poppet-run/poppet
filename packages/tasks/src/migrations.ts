@@ -66,4 +66,8 @@ export const taskSchema = packageSchema("task_migrations", {
   "3_task_end": taskEnd,
   "4_task_notes": taskNotes,
   "5_session_removal": sessionRemoval,
+  "6_session_origin": [
+    `UPDATE sessions SET origin = 'scheduled'
+      WHERE id IN (SELECT session_id FROM job_occurrences WHERE session_id IS NOT NULL)`,
+  ],
 });

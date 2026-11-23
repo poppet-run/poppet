@@ -5,7 +5,7 @@ import { JSDOM } from "jsdom";
 import { render } from "preact";
 import { act } from "preact/test-utils";
 
-import type { ChatSnapshot, Submission } from "../api/protocol";
+import type { ChatSession, ChatSnapshot, Submission } from "../api/protocol";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost:8080",
@@ -40,6 +40,19 @@ afterAll(() => {
 
   dom.window.close();
 });
+
+const chatSession = (id: string): ChatSession => ({
+  id,
+  title: id,
+  provider: "test",
+  model: "test",
+  updatedAt: 0,
+});
+
+const sessionList = (
+  sessions: ReadonlyArray<ChatSession> = [],
+  gateways: ReadonlyArray<string> = [],
+) => Response.json({ sessions, gateways });
 
 const flush = () =>
   act(async () => {
@@ -141,7 +154,7 @@ test("preserves ambiguous submissions and recovers with the same identifier with
     input: Parameters<typeof fetch>[0],
     init?: Parameters<typeof fetch>[1],
   ) => {
-    if (input === "/api/sessions") return Response.json([]);
+    if (input === "/api/session-list?source=chat") return sessionList();
 
     if (input === "/api/submissions" && init?.body) {
       submissions.push(JSON.parse(String(init.body)));
@@ -268,6 +281,93 @@ test("streaming preserves the reading position and settles into one saved answer
   }
 });
 
+test("when switching sidebar filters, keeps the open chat and ignores late results", async () => {
+  const { App } = await import("./app");
+  const root = document.createElement("div");
+  const originalFetch = globalThis.fetch;
+  const originalEvents = Object.getOwnPropertyDescriptor(globalThis, "EventSource");
+  history.replaceState(null, "", "/chat/direct");
+  const streams: string[] = [];
+
+  class FakeEvents extends dom.window.EventTarget {
+    constructor(url: string) {
+      super();
+      streams.push(url);
+    }
+    close() {}
+  }
+
+  let finishTasks!: (response: Response) => void;
+
+  const fakeFetch = async (input: Parameters<typeof fetch>[0]) => {
+    if (input === "/api/session-list?source=scheduled")
+      return new Promise<Response>((resolve) => {
+        finishTasks = resolve;
+      });
+
+    if (input === "/api/session-list?source=gateway%3Aslack")
+      return sessionList([chatSession("Slack thread")], ["slack"]);
+
+    if (input === "/api/session-list?source=chat")
+      return sessionList([chatSession("direct")], ["slack"]);
+    throw new Error("Unexpected session list request");
+  };
+
+  Object.defineProperty(globalThis, "EventSource", { configurable: true, value: FakeEvents });
+  globalThis.fetch = Object.assign(fakeFetch, { preconnect: originalFetch.preconnect });
+
+  try {
+    await act(() => render(<App />, root));
+    await flush();
+    const select = root.querySelector("select")!;
+    expect(select.value).toBe("chat");
+    expect([...select.options].map((option) => option.text)).toEqual([
+      "Chats",
+      "Scheduled tasks",
+      "Slack",
+      "All sessions",
+    ]);
+    const composer = root.querySelector("textarea")!;
+    await act(() => {
+      composer.value = "Draft for direct";
+      composer.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const choose = (value: string) =>
+      act(() => {
+        select.value = value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+
+    await choose("scheduled");
+    await choose("gateway:slack");
+    await flush();
+    finishTasks(sessionList([chatSession("Late task")], ["slack"]));
+    await flush();
+    expect(root.querySelector("nav")?.textContent).toBe("Slack thread");
+    expect(location.pathname).toBe("/chat/direct");
+    expect(composer.value).toBe("Draft for direct");
+    expect(streams).toEqual(["/api/sessions/direct/events"]);
+
+    const newChat = [...root.querySelectorAll("button")].find(
+      (button) => button.textContent === "+ New conversation",
+    )!;
+
+    await act(() => newChat.click());
+    await flush();
+    expect(select.value).toBe("chat");
+    expect(location.pathname).toBe("/");
+    expect(root.querySelector("nav")?.textContent).toBe("direct");
+  } finally {
+    render(null, root);
+    globalThis.fetch = originalFetch;
+
+    if (originalEvents) Object.defineProperty(globalThis, "EventSource", originalEvents);
+    else Reflect.deleteProperty(globalThis, "EventSource");
+    history.replaceState(null, "", "/");
+  }
+});
+
 test("sign-out ignores a late session query and sign-in fetches fresh history", async () => {
   const { createChatStore } = await import("../stores/chat-store");
   const originalFetch = globalThis.fetch;
@@ -275,7 +375,7 @@ test("sign-out ignores a late session query and sign-in fetches fresh history", 
   let requests = 0;
 
   const fakeFetch = async (input: Parameters<typeof fetch>[0]) => {
-    if (input === "/api/sessions") {
+    if (input === "/api/session-list?source=chat") {
       requests++;
 
       if (requests === 1)
@@ -283,7 +383,7 @@ test("sign-out ignores a late session query and sign-in fetches fresh history", 
           resolveSessions = resolve;
         });
 
-      return Response.json([
+      return sessionList([
         { id: "fresh", title: "Fresh", provider: "test", model: "test", updatedAt: 0 },
       ]);
     }
@@ -298,7 +398,11 @@ test("sign-out ignores a late session query and sign-in fetches fresh history", 
 
   try {
     await store.logout();
-    resolveSessions(Response.json([{ id: "private", title: "Old history" }]));
+    resolveSessions(
+      sessionList([
+        { id: "private", title: "Old history", provider: "test", model: "test", updatedAt: 0 },
+      ]),
+    );
     await flush();
     expect(store.$state.get().authenticated).toBe(false);
     expect(store.$state.get().sessions).toEqual([]);
@@ -354,7 +458,7 @@ test("duplicate sends are throttled and navigation closes streams without stoppi
   const fakeFetch = async (input: Parameters<typeof fetch>[0]) => {
     requests.push(String(input));
 
-    if (input === "/api/sessions") return Response.json([]);
+    if (input === "/api/session-list?source=chat") return sessionList();
 
     if (String(input).startsWith("/api/submissions/"))
       return Response.json({ sessionId: "second", status: "accepted", error: null });
@@ -440,7 +544,7 @@ test("submission rejection and explicit recovery forgetting unlock the composer 
   const submission = { id: crypto.randomUUID(), sessionId: null, text: "Keep my draft" };
 
   const fakeFetch = async (input: Parameters<typeof fetch>[0]) => {
-    if (input === "/api/sessions") return Response.json([]);
+    if (input === "/api/session-list?source=chat") return sessionList();
 
     return Response.json(
       { message: "Unavailable" },
@@ -486,7 +590,7 @@ test("successful polling clears only refresh errors and expired sign-out clears 
 
     if (failRefresh) return Response.json({ message: "Offline" }, { status: 502 });
 
-    return Response.json([]);
+    return sessionList();
   };
 
   globalThis.fetch = Object.assign(fakeFetch, { preconnect: originalFetch.preconnect });
@@ -548,7 +652,8 @@ test("deleting a conversation asks first, keeps it on refusal and leaves it afte
       return Response.json({ message: "Stop the current reply first." }, { status: deleteStatus });
     }
 
-    if (input === "/api/sessions") return Response.json(deleteStatus === 200 ? [] : [session]);
+    if (input === "/api/session-list?source=chat")
+      return sessionList(deleteStatus === 200 ? [] : [session]);
     throw new Error(`Unexpected request ${input}`);
   };
 
@@ -626,7 +731,7 @@ test("when navigating to the current session, avoids duplicate history entries a
   Object.defineProperty(globalThis, "EventSource", { configurable: true, value: FakeEvents });
   globalThis.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0]) => {
-      if (input === "/api/sessions") return Response.json([]);
+      if (input === "/api/session-list?source=chat") return sessionList();
 
       if (String(input).endsWith("/stop"))
         return Response.json({ message: "Sign in" }, { status: 401 });
