@@ -1,20 +1,16 @@
+import cloudflare from "@cloudflare/oxlint-config";
 import { defineConfig } from "oxlint";
 
 export default defineConfig({
-  plugins: ["eslint", "typescript", "unicorn", "oxc", "import", "promise"],
-  categories: {
-    correctness: "error",
-    suspicious: "error",
-    perf: "warn",
-  },
+  extends: [cloudflare],
+  env: cloudflare.env,
   options: {
+    // Temporarily off until stale disables from previous categories are cleaned up.
+    reportUnusedDisableDirectives: "off",
     typeAware: true,
   },
-  env: {
-    builtin: true,
-    es2020: true,
-  },
   ignorePatterns: [
+    ...(cloudflare.ignorePatterns ?? []),
     ".agent/**",
     ".agents/**",
     ".claude/**",
@@ -33,20 +29,65 @@ export default defineConfig({
     { name: "anti-slop-effect", specifier: "./tools/oxlint/anti-slop/effect/index.ts" },
   ],
   rules: {
-    // Type-aware rules with existing findings stay visible until they are cleaned up.
-    "typescript/consistent-return": "warn",
-    "typescript/no-base-to-string": "warn",
-    "typescript/no-misused-spread": "warn",
-    "typescript/no-unnecessary-boolean-literal-compare": "warn",
-    "typescript/no-unnecessary-type-arguments": "warn",
-    "typescript/no-unnecessary-type-assertion": "warn",
-    "typescript/no-unnecessary-type-conversion": "warn",
-    "typescript/no-unnecessary-type-parameters": "warn",
-    "typescript/no-unsafe-enum-assignment": "warn",
-    "typescript/no-unsafe-type-assertion": "warn",
-    "typescript/restrict-template-expressions": "warn",
-    "typescript/unbound-method": "warn",
-    "oxc/no-accumulating-spread": "error",
+    // Deduplicate rules already enforced by the vendored anti-slop plugin below.
+    "quality/no-array-filter-map": "off",
+    "quality/no-chained-type-assertions": "off",
+    "quality/no-conditional-empty-object-spread": "off",
+    "quality/no-known-value-widening": "off",
+    "quality/no-object-parameters": "off",
+    "quality/no-reduce-accumulator-copy": "off",
+    "quality/no-reflect-apply": "off",
+    "quality/no-reflect-get": "off",
+    "quality/no-unknown-returns": "off",
+    "quality/no-unknown-type-aliases": "off",
+    "quality/no-unsafe-dictionary-type": "off",
+    "quality/no-widen-then-assert": "off",
+
+    // apps/web uses Preact (HTML attributes like `class`), and non-web Effect code uses `.use()`.
+    "react/no-unknown-property": "off",
+    "react-hooks/rules-of-hooks": "off",
+
+    // Temporarily disabled during @cloudflare/oxlint-config migration; evaluate one rule per commit.
+    "@nkzw/no-instanceof": "off",
+    curly: "off",
+    eqeqeq: "off",
+    "import/consistent-type-specifier-style": "off",
+    "import/no-namespace": "off",
+    "no-console": "off",
+    "no-empty": "off",
+    "no-promise-executor-return": "off",
+    "object-shorthand": "off",
+    "oxc/bad-bitwise-operator": "off",
+    "react/button-has-type": "off",
+    "react/immutability": "off",
+    "typescript/array-type": "off",
+    "typescript/consistent-type-imports": "off",
+    "typescript/no-explicit-any": "off",
+    "typescript/no-import-type-side-effects": "off",
+    "typescript/no-misused-promises": "off",
+    "typescript/no-misused-spread": "off",
+    "typescript/no-non-null-assertion": "off",
+    "typescript/no-unnecessary-type-assertion": "off",
+    "typescript/no-unsafe-argument": "off",
+    "typescript/no-unsafe-assignment": "off",
+    "typescript/no-unsafe-call": "off",
+    "typescript/no-unsafe-member-access": "off",
+    "typescript/no-unsafe-return": "off",
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/switch-exhaustiveness-check": "off",
+    "typescript/unbound-method": "off",
+    "typescript/use-unknown-in-catch-callback-variable": "off",
+    "unicorn/catch-error-name": "off",
+    "unicorn/no-hex-escape": "off",
+    "unicorn/no-useless-promise-resolve-reject": "off",
+    "unicorn/numeric-separators-style": "off",
+    "unicorn/prefer-import-meta-properties": "off",
+    "unicorn/prefer-single-call": "off",
+    "unicorn/prefer-string-raw": "off",
+    "unicorn/prefer-string-replace-all": "off",
+    "unicorn/prefer-top-level-await": "off",
+
+    // Project anti-slop and Effect rules.
     "anti-slop/no-array-filter-map": "error",
     "anti-slop/no-reduce-accumulator-copy": "error",
     "anti-slop/no-chained-type-assertions": "error",
@@ -72,6 +113,11 @@ export default defineConfig({
     "anti-slop-effect/prefer-effect-match": "error",
   },
   overrides: [
+    {
+      // Enforce hook rules in the Preact web app without triggering on Effect `.use()` elsewhere.
+      files: ["apps/web/**/*.{ts,tsx}"],
+      rules: { "react-hooks/rules-of-hooks": "error" },
+    },
     {
       // Bun types its async matchers, such as `expect(...).rejects`, as returning void.
       files: ["**/*.test.ts", "**/*.test.tsx"],

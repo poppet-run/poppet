@@ -104,20 +104,26 @@ data directory. See [storage](storage.md#schema-and-saved-records).
 
 ## Lint rules
 
-The Oxfmt and Oxlint configs are based on
-[Memoir's configuration](https://github.com/tombell/memoir-app), with React and JSX
-lint plugins removed for this CLI project. Type checking also covers the configuration files.
+The Oxfmt config is based on
+[Memoir's configuration](https://github.com/tombell/memoir-app). Oxlint extends
+[`@cloudflare/oxlint-config`](https://github.com/cloudflare/oxlint-config), which disables
+category defaults and enables rules explicitly as errors. Type checking also covers the
+configuration files.
 
 Oxlint runs type-aware rules through `oxlint-tsgolint`, using each workspace's
-`tsconfig.json`. Type-aware rules that still have findings are warnings until they are
-cleaned up; the rest, including `no-floating-promises`, are errors. Test files turn off
-`await-thenable` because Bun types async matchers such as `expect(...).rejects` as
-returning `void`.
+`tsconfig.json`. Rules from `@cloudflare/oxlint-config` that still have findings in existing code
+are temporarily turned off in `oxlint.config.ts` while they are evaluated one rule at a time.
+`react/no-unknown-property` stays off because `apps/web` uses Preact HTML attributes such as
+`class`, and `react-hooks/rules-of-hooks` is scoped to `apps/web` so it does not flag Effect
+`.use()` calls elsewhere. Test files turn off `typescript/await-thenable` because Bun types async
+matchers such as `expect(...).rejects` as returning `void`.
 
 Oxlint also enforces the generic and Effect rules from
 [anti-slop](https://github.com/dmmulroy/anti-slop), vendored under
-`tools/oxlint/anti-slop/`. These rules are errors. Keep `@oxlint/plugins` and Oxlint
-at the same pinned version. See the [upstream record](../tools/oxlint/anti-slop/UPSTREAM.md)
+`tools/oxlint/anti-slop/`. These rules are errors, and the overlapping `quality/*` rules
+inherited from `@nkzw/oxlint-config` are turned off to avoid running them twice. Keep
+`@oxlint/plugins` and Oxlint at the same pinned version. See the
+[upstream record](../tools/oxlint/anti-slop/UPSTREAM.md)
 for the source revision and update notes. Vendored code and agent tooling are
 excluded from linting and formatting.
 
