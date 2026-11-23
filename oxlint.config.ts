@@ -53,12 +53,6 @@ export default defineConfig({
 
     // Temporarily disabled during @cloudflare/oxlint-config migration; evaluate one rule per commit.
     "typescript/no-non-null-assertion": "off",
-    "typescript/no-unsafe-argument": "off",
-    "typescript/no-unsafe-assignment": "off",
-    "typescript/no-unsafe-call": "off",
-    "typescript/no-unsafe-member-access": "off",
-    "typescript/no-unsafe-return": "off",
-    "typescript/no-unsafe-type-assertion": "off",
 
     // Project anti-slop and Effect rules.
     "anti-slop/no-array-filter-map": "error",
@@ -102,8 +96,26 @@ export default defineConfig({
     },
     {
       // Bun types its async matchers, such as `expect(...).rejects`, as returning void.
+      // Match @cloudflare/oxlint-config's relaxed test overrides for JSON.parse and test doubles.
       files: ["**/*.test.ts", "**/*.test.tsx"],
-      rules: { "typescript/await-thenable": "off" },
+      rules: {
+        "typescript/await-thenable": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-return": "off",
+        "typescript/no-unsafe-type-assertion": "off",
+      },
+    },
+    {
+      // Proxy wrapper around Bun.spawn / Bun.spawnSync overloads.
+      files: ["tools/testing/setup.ts"],
+      rules: {
+        "typescript/no-unsafe-argument": "off",
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-return": "off",
+        "typescript/no-unsafe-type-assertion": "off",
+      },
     },
     {
       files: ["packages/**/*.ts", "apps/cli/src/**/*.ts"],

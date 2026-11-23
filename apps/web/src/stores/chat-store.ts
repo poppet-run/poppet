@@ -396,6 +396,7 @@ export const createChatStore = () => {
         }
 
         try {
+          // oxlint-disable-next-line typescript/no-unsafe-assignment, typescript/no-unsafe-argument -- Server-sent event payload matches ChatSnapshot.
           const value: ChatSnapshot = JSON.parse(event.data);
           set("snapshot", value);
           set("connected", true);
@@ -459,6 +460,7 @@ export const createChatStore = () => {
       const saved = sessionStorage.getItem("poppet-submission");
 
       if (saved) {
+        // oxlint-disable-next-line typescript/no-unsafe-assignment -- Session storage holds serialized Submission.
         const value: Submission = JSON.parse(saved);
 
         if (value.id && value.text && (value.sessionId === null || value.sessionId)) {

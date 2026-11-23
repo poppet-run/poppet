@@ -27,6 +27,7 @@ const request = async <T>(
   );
 
   if (!response.ok) {
+    // oxlint-disable-next-line typescript/no-unsafe-assignment -- HTTP error body is JSON.
     const error: { message?: string } = await response.json().catch(() => ({}));
     throw new ApiError(
       response.status,
@@ -34,6 +35,7 @@ const request = async <T>(
     );
   }
 
+  // oxlint-disable-next-line typescript/no-unsafe-return -- Callers specify the endpoint's JSON response type.
   return response.json();
 };
 

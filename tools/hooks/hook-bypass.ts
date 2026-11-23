@@ -303,6 +303,7 @@ type ShellCommand = string | Array<string>;
 
 // Claude Code and Codex send `tool_input.command`; Cursor sends `command`.
 const commandFrom = (input: string) => {
+  // oxlint-disable-next-line typescript/no-unsafe-assignment -- Hook stdin is JSON from the agent harness.
   const payload: { tool_input?: { command?: ShellCommand }; command?: ShellCommand } =
     JSON.parse(input);
 

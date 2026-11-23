@@ -19,7 +19,9 @@ export const modelFailure = (cause: unknown): ConnectionError => {
   }
 
   if (cause instanceof APIError && !(cause instanceof APIConnectionError)) {
-    return requestFailure(cause.status ?? 0, cause.code, cause.requestID);
+    const status = Number.isInteger(cause.status) ? Number(cause.status) : 0;
+
+    return requestFailure(status, cause.code, cause.requestID);
   }
 
   return new ConnectionError({

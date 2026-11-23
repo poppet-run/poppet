@@ -58,7 +58,9 @@ const readResponse = async (response: IncomingMessage): Promise<PageResponse> =>
   const chunks: Array<Buffer> = [];
   let size = 0;
 
-  for await (const chunk of response) {
+  // SAFETY: Node IncomingMessage is an AsyncIterable of Buffer/string chunks.
+  for await (const raw of response as AsyncIterable<unknown>) {
+    const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw));
     size += chunk.length;
 
     if (size > maxPageBytes) {

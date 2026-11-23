@@ -119,7 +119,9 @@ export const routerFailure = (cause: unknown): ProviderError => {
 
   const code = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(cause.code));
 
-  return remoteFailure("openrouter", cause.status ?? numeric, code, cause.requestID, routerReason);
+  const status = Number.isInteger(cause.status) ? Number(cause.status) : numeric;
+
+  return remoteFailure("openrouter", status, code, cause.requestID, routerReason);
 };
 
 export const routerOptions: ChatOptions = {
