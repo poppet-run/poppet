@@ -83,6 +83,7 @@ export const openProtectedFile = async (
     readonly makePrivate?: boolean;
   } = {},
 ): Promise<FileHandle> => {
+  // oxlint-disable-next-line oxc/bad-bitwise-operator -- POSIX open() flags are combined with bitwise OR.
   const handle = await open(path, flags | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
 
   try {
@@ -109,6 +110,7 @@ export const openProtectedFileSync = (
     readonly makePrivate?: boolean;
   } = {},
 ): number => {
+  // oxlint-disable-next-line oxc/bad-bitwise-operator -- POSIX open() flags are combined with bitwise OR.
   const handle = openSync(path, flags | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
 
   try {

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
 import { LogfmtLoggerLive } from "@poppet/io";
@@ -45,7 +44,7 @@ describe("logChatDiagnostic", () => {
     `,
         ],
         {
-          cwd: fileURLToPath(new URL(".", import.meta.url)),
+          cwd: import.meta.dirname,
           env: disabled ? { FORCE_COLOR: "1", NO_COLOR: "1" } : { FORCE_COLOR: "1" },
           stdout: "pipe",
           stderr: "pipe",

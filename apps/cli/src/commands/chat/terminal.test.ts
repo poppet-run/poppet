@@ -1,5 +1,4 @@
 import { describe, expect, jest, test } from "bun:test";
-import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
 import { WorkerRequestError } from "@poppet/worker";
@@ -476,7 +475,7 @@ test.each(["cancel", "exit", "eof", "empty", "raw mode restore error"])(
     `,
       ],
       {
-        cwd: fileURLToPath(new URL(".", import.meta.url)),
+        cwd: import.meta.dirname,
         env: { PATH: process.env.PATH ?? "", TERM: "xterm-256color", NO_COLOR: "1" },
         terminal: {
           cols: 60,
@@ -539,7 +538,7 @@ test.each(["cancel", "exit", "eof", "empty", "raw mode restore error"])(
         expect(scrollback).not.toContain("poppet chat interactive");
       } else expect(scrollback).toContain("poppet chat interactive saved-session");
     } catch (error) {
-      console.error(transcript);
+      process.stderr.write(`${transcript}\n`);
       throw error;
     } finally {
       child.kill("SIGKILL");

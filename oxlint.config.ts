@@ -42,25 +42,21 @@ export default defineConfig({
     "quality/no-unsafe-dictionary-type": "off",
     "quality/no-widen-then-assert": "off",
 
-    // apps/web uses Preact (HTML attributes like `class`), and non-web Effect code uses `.use()`.
+    // apps/web uses Preact (HTML attributes like `class`, no React Compiler), and Effect code uses `.use()` / `.catch()`.
+    "react/immutability": "off",
     "react/no-unknown-property": "off",
     "react-hooks/rules-of-hooks": "off",
+    "unicorn/prefer-top-level-await": "off",
 
     // Temporarily disabled during @cloudflare/oxlint-config migration; evaluate one rule per commit.
     "@nkzw/no-instanceof": "off",
     curly: "off",
     eqeqeq: "off",
     "import/consistent-type-specifier-style": "off",
-    "import/no-namespace": "off",
-    "no-console": "off",
-    "no-empty": "off",
     "no-promise-executor-return": "off",
-    "oxc/bad-bitwise-operator": "off",
     "react/button-has-type": "off",
-    "react/immutability": "off",
     "typescript/array-type": "off",
     "typescript/consistent-type-imports": "off",
-    "typescript/no-explicit-any": "off",
     "typescript/no-import-type-side-effects": "off",
     "typescript/no-misused-promises": "off",
     "typescript/no-misused-spread": "off",
@@ -72,18 +68,13 @@ export default defineConfig({
     "typescript/no-unsafe-member-access": "off",
     "typescript/no-unsafe-return": "off",
     "typescript/no-unsafe-type-assertion": "off",
-    "typescript/switch-exhaustiveness-check": "off",
     "typescript/unbound-method": "off",
     "typescript/use-unknown-in-catch-callback-variable": "off",
     "unicorn/catch-error-name": "off",
     "unicorn/no-hex-escape": "off",
-    "unicorn/no-useless-promise-resolve-reject": "off",
     "unicorn/numeric-separators-style": "off",
-    "unicorn/prefer-import-meta-properties": "off",
-    "unicorn/prefer-single-call": "off",
     "unicorn/prefer-string-raw": "off",
     "unicorn/prefer-string-replace-all": "off",
-    "unicorn/prefer-top-level-await": "off",
 
     // Project anti-slop and Effect rules.
     "anti-slop/no-array-filter-map": "error",
@@ -111,6 +102,11 @@ export default defineConfig({
     "anti-slop-effect/prefer-effect-match": "error",
   },
   overrides: [
+    {
+      // Standalone hook scripts write protocol JSON and refusal messages to stdio.
+      files: ["tools/hooks/**/*.ts"],
+      rules: { "no-console": "off" },
+    },
     {
       // Enforce hook rules in the Preact web app without triggering on Effect `.use()` elsewhere.
       files: ["apps/web/**/*.{ts,tsx}"],
