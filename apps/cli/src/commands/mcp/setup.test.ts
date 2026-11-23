@@ -344,7 +344,6 @@ describe("mcp add and remove", () => {
         { args: ["--auth", "api-key"], message: "interactive terminal or --api-key" },
         { args: ["--auth", "api-key", "--key-stdin"], message: "Unrecognized flag: --key-stdin" },
       ]) {
-        // oxlint-disable-next-line no-await-in-loop
         const result = await invoke(
           state.directory,
           ["mcp", "add", "remote", "https://mcp.example/mcp", ...args],
@@ -400,7 +399,6 @@ describe("mcp add and remove", () => {
       const reader = subprocess.stdout.getReader();
 
       while (true) {
-        // oxlint-disable-next-line no-await-in-loop
         const { done, value } = await reader.read();
 
         if (done) break;
@@ -409,7 +407,6 @@ describe("mcp add and remove", () => {
 
         if (link !== undefined && !approved) {
           approved = true;
-          // oxlint-disable-next-line no-await-in-loop
           await fetch(await server.approve(new URL(link)));
         }
       }

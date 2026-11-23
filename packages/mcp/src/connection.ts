@@ -333,7 +333,6 @@ export const listTools = async (client: Client, signal: AbortSignal) => {
   for (let page = 0; ; page++) {
     if (page === 8) throw new MCPDiagnostic({ message: "Discovery exceeds 8 pages." });
 
-    // eslint-disable-next-line no-await-in-loop
     const result = await client.request(
       { method: "tools/list", params: cursor === undefined ? {} : { cursor } },
       { signal, timeout: 5000 },

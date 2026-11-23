@@ -165,7 +165,6 @@ export const manageWorker = (
         await command(["bootout", target]);
         const deadline = performance.now() + 35_000;
 
-        /* eslint-disable no-await-in-loop */
         while (true) {
           const removal = await launchctl(["print", target]);
 
@@ -183,7 +182,6 @@ export const manageWorker = (
             });
           await Bun.sleep(100);
         }
-        /* eslint-enable no-await-in-loop */
       }
 
       if (!active || action === "restart" || action === "install")

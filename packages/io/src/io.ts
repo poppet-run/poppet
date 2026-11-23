@@ -17,7 +17,6 @@ export const readBounded = async (
 
   try {
     while (true) {
-      // eslint-disable-next-line no-await-in-loop -- Count streamed bytes before requesting another chunk.
       const item = await reader.read();
 
       signal?.throwIfAborted();

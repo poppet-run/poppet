@@ -144,7 +144,6 @@ export const readFileBounded = async (
 
   while (length < buffer.length) {
     signal?.throwIfAborted();
-    // eslint-disable-next-line no-await-in-loop -- Short reads must advance the offset before reading again.
     const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
 
     if (bytesRead === 0) break;
