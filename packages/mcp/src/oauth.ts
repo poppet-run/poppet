@@ -178,6 +178,7 @@ const makeProvider = (
     clientInformation: () => {
       if (configured === undefined) {
         // SAFETY: saveClientInformation stores only SDK-validated registrations.
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
         return record.client as StoredOAuthClientInformation | undefined;
       }
 
@@ -204,6 +205,7 @@ const makeProvider = (
       },
     }),
     // SAFETY: saveTokens stores only SDK-validated token responses.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     tokens: () => record.tokens as StoredOAuthTokens | undefined,
     saveTokens: (tokens) => {
       record.tokens = json(tokens);
@@ -224,6 +226,7 @@ const makeProvider = (
       record.discovery = json(state);
     },
     // SAFETY: saveDiscoveryState stores only SDK-validated discovery results.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     discoveryState: () => record.discovery as OAuthDiscoveryState | undefined,
     invalidateCredentials: (scope) => {
       if (scope === "all" || scope === "client") {

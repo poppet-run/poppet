@@ -11,7 +11,7 @@ import {
 import type { ChatTaskAction, ChatTaskContext } from "@poppet/agent";
 import { Store, StoreError } from "@poppet/store";
 import type { Run } from "@poppet/store";
-import { Clock, Effect, Layer, Match, Schema } from "effect";
+import { Clock, Effect, Layer, Match, Option, Schema } from "effect";
 
 import { bounded, detailsOutput, listOutput, summary } from "#src/task-output";
 import {
@@ -231,12 +231,14 @@ export const ChatTasksLive = Layer.effect(
             continue;
           }
 
-          try {
-            if (JSON.parse(call.arguments)?.action === "create") {
-              createsInRun++;
-            }
-          } catch {
-            // Ignore malformed calls handled by preflight.
+          const parsed = Option.getOrUndefined(
+            Schema.decodeUnknownOption(
+              Schema.fromJsonString(Schema.Struct({ action: Schema.String })),
+            )(call.arguments),
+          );
+
+          if (parsed?.action === "create") {
+            createsInRun++;
           }
 
           if (call.callId === context.callId) {

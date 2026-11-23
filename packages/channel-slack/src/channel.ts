@@ -287,9 +287,12 @@ export const slackChannelLayer = (settings: SlackSettings) =>
               ),
           );
 
-          socket.on("slack_event", (event) => {
-            void handleEvent(event);
-          });
+          socket.on(
+            "slack_event",
+            (event: { type: string; body: unknown; ack: () => Promise<void> }) => {
+              void handleEvent(event);
+            },
+          );
           yield* slackSocketSession(socket, (online) => {
             connected = online;
             error = online ? null : "Slack connection interrupted.";

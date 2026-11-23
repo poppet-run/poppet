@@ -149,9 +149,16 @@ export const parseRelativeTime = (text: string, now = Date.now()): number => {
     throw new TaskError({ message: "Use a positive whole duration such as 30s, 10m, 2h, or 1d." });
   }
 
-  const units = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
-  // SAFETY: The regex above restricts the unit to exactly s, m, h, or d.
-  const at = now + Number(match[1]) * units[match[2] as keyof typeof units];
+  const units = new Map([
+    ["s", 1000],
+    ["m", 60_000],
+    ["h", 3_600_000],
+    ["d", 86_400_000],
+  ]);
+
+  const unit = units.get(match[2] ?? "") ?? 86_400_000;
+
+  const at = now + Number(match[1]) * unit;
 
   if (!Number.isSafeInteger(at) || at > 8_640_000_000_000_000 || at <= now) {
     throw new TaskError({ message: "The duration is too large." });

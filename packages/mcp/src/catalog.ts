@@ -81,7 +81,7 @@ export const compileSchema = (input: Schema.JsonObject) => {
       throw invalid();
     }
 
-    if (Array.isArray(value)) {
+    if (Schema.is(Schema.Array(Schema.Json))(value)) {
       return value.map((item) => visit(item, depth + 1, position));
     }
 
@@ -129,8 +129,11 @@ export const compileSchema = (input: Schema.JsonObject) => {
     return Object.fromEntries(entries);
   };
 
-  // SAFETY: visit maps an object to an object, and input is an object.
-  const schema = visit(input, 0, "schema") as Schema.JsonObject;
+  const schema = visit(input, 0, "schema");
+
+  if (!Schema.is(Schema.JsonObject)(schema)) {
+    throw invalid();
+  }
 
   const options = {
     strict: true,
@@ -184,7 +187,7 @@ export const containsSecret = (value: Schema.Json, secrets: ReadonlyArray<string
     return secrets.some((secret) => value.includes(secret));
   }
 
-  if (Array.isArray(value)) {
+  if (Schema.is(Schema.Array(Schema.Json))(value)) {
     return value.some((item) => containsSecret(item, secrets));
   }
 

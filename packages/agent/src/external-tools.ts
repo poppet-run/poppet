@@ -1,5 +1,5 @@
 import type { Tool } from "@poppet/provider";
-import { Context, Effect } from "effect";
+import { Context, Effect, Schema } from "effect";
 import type { Scope } from "effect";
 
 import { escapedApprovalJSON } from "#src/action-approval";
@@ -81,7 +81,10 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
             server: entry.serverId,
             tool: entry.toolName,
             origin: review.origin,
-            arguments: args === undefined ? null : JSON.parse(args),
+            arguments:
+              args === undefined
+                ? null
+                : Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(args),
           };
 
           const exactInvocation = escapedApprovalJSON(invocation);
@@ -166,7 +169,7 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
                 JSON.stringify({
                   status: "completed",
                   approvedBy: result.decision === "needs_approval" ? "owner" : "reviewer",
-                  result: JSON.parse(output),
+                  result: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(output),
                 }),
               ),
             ),

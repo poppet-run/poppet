@@ -65,15 +65,30 @@ export const boundedAttachment =
 
         const chunks: Array<Uint8Array> = [];
         let received = 0;
+        const reader = response.body.getReader();
 
-        for await (const chunk of response.body) {
-          received += chunk.length;
+        try {
+          while (true) {
+            const result: { done: boolean; value?: unknown } = await reader.read();
 
-          if (received > maxBytes) {
-            throw tooLarge(maxBytes);
+            if (result.done) {
+              break;
+            }
+
+            if (!(result.value instanceof Uint8Array)) {
+              continue;
+            }
+
+            received += result.value.length;
+
+            if (received > maxBytes) {
+              throw tooLarge(maxBytes);
+            }
+
+            chunks.push(result.value);
           }
-
-          chunks.push(chunk);
+        } finally {
+          reader.releaseLock();
         }
 
         return Buffer.concat(chunks);

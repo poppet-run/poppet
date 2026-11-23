@@ -98,7 +98,9 @@ export const inferenceFailure = (
   }
 
   if (cause instanceof APIError) {
-    return remoteFailure(provider, cause.status, cause.code, cause.requestID, classify);
+    const status = Number.isInteger(cause.status) ? Number(cause.status) : undefined;
+
+    return remoteFailure(provider, status, cause.code, cause.requestID, classify);
   }
 
   return new ProviderError({
