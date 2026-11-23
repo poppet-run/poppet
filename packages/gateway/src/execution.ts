@@ -50,7 +50,9 @@ const settleFailure = (
     const { repo, store, clock } = context;
     yield* mark(context, entry.message, "stopped");
 
-    if (Cause.hasInterrupts(cause)) return;
+    if (Cause.hasInterrupts(cause)) {
+      return;
+    }
 
     const { retryAfterMs, reply } = failureDecision(
       Option.getOrNull(Cause.findErrorOption(cause)),
@@ -65,9 +67,11 @@ const settleFailure = (
 
     const saved = yield* repo.item(entry.id);
 
-    if (reply !== null && saved.conversationId !== null)
+    if (reply !== null && saved.conversationId !== null) {
       yield* finish(context, entry.id, reply, "failed");
-    else yield* repo.state(entry.id, "failed");
+    } else {
+      yield* repo.state(entry.id, "failed");
+    }
   });
 
 const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
@@ -83,27 +87,32 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
       (conversation, sessionId) => {
         const own = running.requests.get(entry.id);
 
-        if (own !== undefined)
+        if (own !== undefined) {
           own.entry = {
             ...own.entry,
             conversationId: conversation,
             ...(sessionId !== undefined && { sessionId }),
           };
+        }
       },
     );
 
-    if (prepared === null) return;
+    if (prepared === null) {
+      return;
+    }
+
     const { conversation, session, prompt, attachments } = prepared;
 
     const taskDestination = (requested: string | null = null) =>
       Effect.gen(function* () {
-        if (!authorized(channel.policy, entry.message))
+        if (!authorized(channel.policy, entry.message)) {
           return yield* Effect.fail(
             new AgentError({
               reason: "tool-permission",
               message: "The current messaging owner is no longer authorized.",
             }),
           );
+        }
 
         return yield* resolveDestination(channel, requested).pipe(
           Effect.mapError(
@@ -147,10 +156,16 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
 
 const outcome = (exit: Exit.Exit<void, ChatFailure | ChannelError>) =>
   Effect.gen(function* () {
-    if (Exit.isSuccess(exit)) return;
+    if (Exit.isSuccess(exit)) {
+      return;
+    }
+
     const failure = Option.getOrNull(Cause.findErrorOption(exit.cause));
 
-    if (Cause.hasDies(exit.cause) || failure instanceof StoreError) return yield* exit;
+    if (Cause.hasDies(exit.cause) || failure instanceof StoreError) {
+      return yield* exit;
+    }
+
     yield* Effect.logWarning("messaging request failed or was cancelled");
   });
 
@@ -169,7 +184,9 @@ const claimNext = (
 
       const entry = yield* repo.next(channel.id, account, clock.currentTimeMillisUnsafe());
 
-      if (entry === null) return null;
+      if (entry === null) {
+        return null;
+      }
 
       if (!authorized(channel.policy, entry.message)) {
         yield* repo.state(entry.id, "cancelled");
@@ -177,7 +194,10 @@ const claimNext = (
         return "skipped" as const;
       }
 
-      if (!(yield* repo.claim(entry.id))) return "skipped" as const;
+      if (!(yield* repo.claim(entry.id))) {
+        return "skipped" as const;
+      }
+
       const registered = yield* Deferred.make<void>();
 
       const request = Deferred.await(registered).pipe(
@@ -201,9 +221,13 @@ export const processNext = (context: GatewayContext, execution: Execution) =>
   Effect.gen(function* () {
     const fiber = yield* claimNext(context, execution, Effect.forkChild);
 
-    if (fiber === null) return false;
+    if (fiber === null) {
+      return false;
+    }
 
-    if (fiber !== "skipped") yield* Fiber.await(fiber).pipe(Effect.flatMap(outcome));
+    if (fiber !== "skipped") {
+      yield* Fiber.await(fiber).pipe(Effect.flatMap(outcome));
+    }
 
     return true;
   });
@@ -215,7 +239,9 @@ export const dispatchNext = (
   limit: number,
 ) =>
   Effect.gen(function* () {
-    if (execution.running.requests.size >= limit) return false;
+    if (execution.running.requests.size >= limit) {
+      return false;
+    }
 
     const claimed = yield* claimNext(context, execution, (request) =>
       FiberSet.run(

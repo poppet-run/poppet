@@ -133,7 +133,7 @@ test.each(["is_im", "is_mpim", "is_org_shared", "is_pending_ext_shared"] as cons
 
 test("when a Slack socket closes, reports it offline and releases its connection attempt", async () => {
   const socket = Object.assign(new EventEmitter(), { start: async () => ({ ok: true }) });
-  const changes: boolean[] = [];
+  const changes: Array<boolean> = [];
 
   await Effect.runPromise(
     Effect.gen(function* () {
@@ -142,7 +142,9 @@ test("when a Slack socket closes, reports it offline and releases its connection
       const fiber = yield* slackSocketSession(socket, (connected) => {
         changes.push(connected);
 
-        if (connected) Deferred.doneUnsafe(online, Effect.void);
+        if (connected) {
+          Deferred.doneUnsafe(online, Effect.void);
+        }
       }).pipe(Effect.forkChild);
 
       yield* Deferred.await(online);
@@ -159,7 +161,9 @@ describe("slackChannelLayer", () => {
     const started = Promise.withResolvers<SocketModeClient>();
 
     const api = spyOn(WebClient.prototype, "apiCall").mockImplementation(async (method) => {
-      if (method !== "auth.test") throw new Error("Unexpected Slack request");
+      if (method !== "auth.test") {
+        throw new Error("Unexpected Slack request");
+      }
 
       return { ok: true, team_id: settings.teamId, user_id: "U999" };
     });
@@ -208,10 +212,11 @@ describe("slackChannelLayer", () => {
 });
 
 test("when Slack reports transient platform errors, classifies them as retryable unavailable", () => {
-  for (const code of ["internal_error", "service_unavailable", "fatal_error", "request_timeout"])
+  for (const code of ["internal_error", "service_unavailable", "fatal_error", "request_timeout"]) {
     expect(slackFailure({ code: ErrorCode.PlatformError, data: { error: code } }).reason).toBe(
       "unavailable",
     );
+  }
 
   expect(
     slackFailure({ code: ErrorCode.PlatformError, data: { error: "not_in_channel" } }).reason,

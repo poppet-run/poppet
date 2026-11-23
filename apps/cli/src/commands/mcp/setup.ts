@@ -49,11 +49,13 @@ export const addMCPServer = (options: AddServer) =>
     const existing = file.mcpServers ?? [];
     const credential = credentialName(options.id);
 
-    if (options.auth === "api-key" && credential.length > 64)
+    if (options.auth === "api-key" && credential.length > 64) {
       return yield* invalid("Use a server ID of at most 60 characters with --auth api-key.");
+    }
 
-    if (options.auth !== "api-key" && Option.isSome(options.apiKey))
+    if (options.auth !== "api-key" && Option.isSome(options.apiKey)) {
       return yield* invalid("--api-key applies only to --auth api-key.");
+    }
 
     const entry: Types.Mutable<MCPHTTPServer> = {
       id: options.id,
@@ -62,13 +64,18 @@ export const addMCPServer = (options: AddServer) =>
       tools: [],
     };
 
-    if (options.auth === "api-key")
+    if (options.auth === "api-key") {
       entry.headers = { Authorization: { credential, prefix: "Bearer " } };
+    }
 
-    if (options.auth === "oauth") entry.oauth = {};
+    if (options.auth === "oauth") {
+      entry.oauth = {};
+    }
 
-    if (existing.some((server) => server.id === options.id))
+    if (existing.some((server) => server.id === options.id)) {
       return yield* invalid(`MCP server ${options.id} already exists. Remove it first.`);
+    }
+
     yield* checkServers([...existing, entry]);
 
     if (options.auth === "api-key") {
@@ -108,40 +115,50 @@ export const changeMCPPermissions = (options: {
   readonly scheduled: boolean;
 }) =>
   Effect.gen(function* () {
-    if (options.all && options.tools.length > 0)
+    if (options.all && options.tools.length > 0) {
       return yield* invalid("Use either tool names or --all.");
+    }
 
-    if (!options.all && options.tools.length === 0)
+    if (!options.all && options.tools.length === 0) {
       return yield* invalid("Specify at least one tool name or use allow --all.");
+    }
 
-    if (options.all && options.scheduled)
+    if (options.all && options.scheduled) {
       return yield* invalid(
         "Name reviewed tools explicitly with --scheduled; --all grants interactive access only.",
       );
+    }
 
     const { dataDirectory } = yield* AppConfig;
     const { file } = yield* readConfigFile(dataDirectory);
     const server = file.mcpServers?.find((entry) => entry.id === options.id);
 
-    if (server === undefined)
+    if (server === undefined) {
       return yield* invalid(`Unknown MCP server ${options.id}. Use mcp servers to find its ID.`);
+    }
 
     let names = [...new Set(options.tools)];
 
     if (options.action === "allow") {
-      if (!server.enabled) return yield* invalid(`MCP server ${options.id} is disabled.`);
+      if (!server.enabled) {
+        return yield* invalid(`MCP server ${options.id} is disabled.`);
+      }
 
-      if (options.scheduled && names.some((name) => server.reviewedTools?.includes(name)))
+      if (options.scheduled && names.some((name) => server.reviewedTools?.includes(name))) {
         return yield* invalid(
           "List scheduled reviewed MCP tools in scheduledReviewedTools in config.json.",
         );
+      }
+
       const discovered = yield* probeServer(server);
 
-      if (options.all) names = [...discovered];
-      else if (names.some((name) => !discovered.includes(name)))
+      if (options.all) {
+        names = [...discovered];
+      } else if (names.some((name) => !discovered.includes(name))) {
         return yield* invalid(
           "One or more requested tools were not discovered; no permissions changed.",
         );
+      }
     }
 
     let changed = false;
@@ -150,7 +167,10 @@ export const changeMCPPermissions = (options: {
       const index = servers.findIndex((entry) => entry.id === options.id);
       const entry = servers[index];
 
-      if (entry === undefined || JSON.stringify(entry) !== JSON.stringify(server)) return current;
+      if (entry === undefined || JSON.stringify(entry) !== JSON.stringify(server)) {
+        return current;
+      }
+
       const scheduled = entry.scheduledTools ?? [];
 
       const updated =
@@ -170,21 +190,25 @@ export const changeMCPPermissions = (options: {
               scheduledTools: scheduled.filter((name) => !names.includes(name)),
             };
 
-      if (options.action === "deny" && !options.scheduled && entry.reviewedTools !== undefined)
+      if (options.action === "deny" && !options.scheduled && entry.reviewedTools !== undefined) {
         updated.reviewedTools = entry.reviewedTools.filter((name) => !names.includes(name));
+      }
 
-      if (options.action === "deny" && entry.scheduledReviewedTools !== undefined)
+      if (options.action === "deny" && entry.scheduledReviewedTools !== undefined) {
         updated.scheduledReviewedTools = entry.scheduledReviewedTools.filter(
           (name) => !names.includes(name),
         );
+      }
 
       changed = true;
 
       return { ...current, mcpServers: servers.with(index, updated) };
     });
 
-    if (!changed)
+    if (!changed) {
       return yield* invalid("The server configuration changed. Retry the permission command.");
+    }
+
     yield* Console.log(`Updated permissions for MCP server ${options.id}. ${restart}`);
   });
 
@@ -209,19 +233,22 @@ const oauthServer = (id: string) =>
     const { file } = yield* readConfigFile(dataDirectory);
     const server = (file.mcpServers ?? []).find((candidate) => candidate.id === id);
 
-    if (server === undefined)
+    if (server === undefined) {
       return yield* invalid(`Unknown MCP server ${id}. Use mcp servers to find its ID.`);
+    }
 
-    if (!isHTTPServer(server) || !isOAuthServer(server))
+    if (!isHTTPServer(server) || !isOAuthServer(server)) {
       return yield* invalid(`MCP server ${id} does not use OAuth.`);
+    }
 
     return server;
   });
 
 export const loginMCPServer = (id: string, browser: boolean, callbackPort: Option.Option<number>) =>
   Effect.gen(function* () {
-    if (Option.isSome(callbackPort) && (callbackPort.value < 1024 || callbackPort.value > 65535))
+    if (Option.isSome(callbackPort) && (callbackPort.value < 1024 || callbackPort.value > 65_535)) {
       return yield* invalid("--callback-port must be between 1024 and 65535.");
+    }
 
     const server = yield* oauthServer(id);
 
@@ -247,16 +274,19 @@ export const removeMCPServer = (id: string) =>
     const { dataDirectory } = yield* AppConfig;
     const { file } = yield* readConfigFile(dataDirectory);
 
-    if (!(file.mcpServers ?? []).some((server) => server.id === id))
+    if (!(file.mcpServers ?? []).some((server) => server.id === id)) {
       return yield* invalid(`Unknown MCP server ${id}. Use mcp servers to find its ID.`);
+    }
 
     yield* updateConfigFile(dataDirectory, (current) => ({
       ...current,
       mcpServers: (current.mcpServers ?? []).filter((server) => server.id !== id),
     }));
 
-    if (credentialName(id).length <= 64)
+    if (credentialName(id).length <= 64) {
       yield* ApiKeyStore.use((store) => store.remove(credentialName(id)));
+    }
+
     yield* forgetSignIn(id);
     yield* Console.log(`Removed MCP server ${id}. ${restart}`);
   });

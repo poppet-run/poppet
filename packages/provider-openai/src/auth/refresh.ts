@@ -13,13 +13,18 @@ export const accessTokenWorkflow = Effect.gen(function* () {
   return Effect.gen(function* () {
     const connection = yield* store.read;
 
-    if (connection === null) return yield* Effect.fail(reconnect());
+    if (connection === null) {
+      return yield* Effect.fail(reconnect());
+    }
+
     const credentials = connection.credentials;
     const clientId = connection.clientId;
 
-    if (!credentials || !clientId || !connection.identity) return yield* Effect.fail(reconnect());
+    if (!credentials || !clientId || !connection.identity) {
+      return yield* Effect.fail(reconnect());
+    }
 
-    if (!credentials.scopes.includes(planScope))
+    if (!credentials.scopes.includes(planScope)) {
       return yield* Effect.fail(
         new ConnectionError({
           reason: "plan_disabled",
@@ -27,6 +32,8 @@ export const accessTokenWorkflow = Effect.gen(function* () {
             "ChatGPT plan usage was not granted. Run provider login openai-chatgpt to enable it.",
         }),
       );
+    }
+
     const now = (yield* DateTime.nowAsDate).getTime();
 
     if (
@@ -34,8 +41,9 @@ export const accessTokenWorkflow = Effect.gen(function* () {
       credentials.accessToken &&
       credentials.expiresAt !== null &&
       credentials.expiresAt > now + 60_000
-    )
+    ) {
       return credentials.accessToken;
+    }
 
     const { pendingRefresh, ...confirmed } = connection;
 
@@ -44,13 +52,17 @@ export const accessTokenWorkflow = Effect.gen(function* () {
         let replacement = pendingRefresh;
 
         if (replacement === undefined) {
-          if (!credentials.refreshToken) return yield* Effect.fail(reconnect());
+          if (!credentials.refreshToken) {
+            return yield* Effect.fail(reconnect());
+          }
 
           const refreshed = yield* restore(
             oauth.exchange(refreshBody(credentials.refreshToken, clientId)),
           ).pipe(
             Effect.catchTag("ConnectionError", (error) => {
-              if (error.reason !== "reconnect") return Effect.fail(error);
+              if (error.reason !== "reconnect") {
+                return Effect.fail(error);
+              }
 
               return store
                 .write({ ...confirmed, credentials: null, verification: null })
@@ -64,13 +76,14 @@ export const accessTokenWorkflow = Effect.gen(function* () {
             credentials,
           );
 
-          if (!renewed?.accessToken || !renewed.expiresAt || refreshed.token_type !== "Bearer")
+          if (!renewed?.accessToken || !renewed.expiresAt || refreshed.token_type !== "Bearer") {
             return yield* Effect.fail(
               new ConnectionError({
                 reason: "reconnect",
                 message: "OpenAI returned incomplete renewed credentials. Sign in again.",
               }),
             );
+          }
 
           replacement = renewed;
         }
@@ -78,15 +91,18 @@ export const accessTokenWorkflow = Effect.gen(function* () {
         if (pendingRefresh !== undefined || replacement.idToken !== credentials.idToken) {
           const identity = yield* oauth.verifyIdentity(replacement.idToken, clientId, null).pipe(
             Effect.tapError((error) => {
-              if (error.reason === "temporary")
+              if (error.reason === "temporary") {
                 return store.write({ ...confirmed, pendingRefresh: replacement });
+              }
 
               return pendingRefresh === undefined ? Effect.void : store.write(confirmed);
             }),
           );
 
           if (identity.subject !== connection.identity?.subject) {
-            if (pendingRefresh !== undefined) yield* store.write(confirmed);
+            if (pendingRefresh !== undefined) {
+              yield* store.write(confirmed);
+            }
 
             return yield* Effect.fail(
               new ConnectionError({
@@ -105,7 +121,7 @@ export const accessTokenWorkflow = Effect.gen(function* () {
 
     const replacement = yield* renew;
 
-    if (!replacement.scopes.includes(planScope))
+    if (!replacement.scopes.includes(planScope)) {
       return yield* Effect.fail(
         new ConnectionError({
           reason: "plan_disabled",
@@ -113,8 +129,11 @@ export const accessTokenWorkflow = Effect.gen(function* () {
             "The renewed connection no longer permits ChatGPT plan usage. Run provider login openai-chatgpt to enable it.",
         }),
       );
+    }
 
-    if (!replacement.accessToken) return yield* Effect.fail(reconnect());
+    if (!replacement.accessToken) {
+      return yield* Effect.fail(reconnect());
+    }
 
     return replacement.accessToken;
   });

@@ -76,9 +76,9 @@ const fixture = (
   errorCode = "request_failed",
   images = false,
 ) => {
-  const requests: Schema.JsonObject[] = [];
-  const headers: Headers[] = [];
-  const signals: AbortSignal[] = [];
+  const requests: Array<Schema.JsonObject> = [];
+  const headers: Array<Headers> = [];
+  const signals: Array<AbortSignal> = [];
   const reading = Promise.withResolvers<void>();
 
   const http: HttpFetch = async (input, init) => {
@@ -90,13 +90,15 @@ const fixture = (
     headers.push(incoming.headers);
     signals.push(incoming.signal);
 
-    if (mode === "network-failure")
+    if (mode === "network-failure") {
       throw new TypeError("Test network failure with secret-test-message");
+    }
 
-    if (mode === "invalid-json")
+    if (mode === "invalid-json") {
       return new Response("data: {\n\n", { headers: { "Content-Type": "text/event-stream" } });
+    }
 
-    if (httpStatus !== 200)
+    if (httpStatus !== 200) {
       return Response.json(
         {
           error: {
@@ -106,6 +108,7 @@ const fixture = (
         },
         { status: httpStatus, headers: { "x-request-id": "req_test" } },
       );
+    }
 
     const serialized = JSON.stringify(body);
     const challenge = serialized.match(/challenge ([a-f0-9]+)/)?.[1] ?? "";
@@ -116,10 +119,10 @@ const fixture = (
       mode !== "text" && mode !== "reasoning-parts" && mode !== "stall" && proof === undefined;
 
     const args = mode === "bad-arguments" ? "{" : JSON.stringify({ challenge });
-    const events: Schema.JsonObject[] = [];
+    const events: Array<Schema.JsonObject> = [];
 
     if (adapter.protocol === "responses") {
-      const output: Schema.JsonObject[] = toolTurn
+      const output: Array<Schema.JsonObject> = toolTurn
         ? [
             {
               type: "reasoning",
@@ -174,7 +177,7 @@ const fixture = (
         output[1] = call;
       }
 
-      if (mode === "reasoning-parts")
+      if (mode === "reasoning-parts") {
         for (const part of [
           { item_id: "reason-1", summary_index: 0, delta: "**Checking " },
           { item_id: "reason-1", summary_index: 0, delta: "27-unit feasibility**" },
@@ -183,38 +186,43 @@ const fixture = (
           { item_id: "reason-1", summary_index: 1, delta: "\nAlready on another line." },
           { item_id: "reason-2", summary_index: 0, delta: "**Validating " },
           { item_id: "reason-2", summary_index: 0, delta: "a 28-unit schedule**" },
-        ])
+        ]) {
           events.push({ type: "response.reasoning_summary_text.delta", ...part });
-      else if (toolTurn)
+        }
+      } else if (toolTurn) {
         events.push({
           type: "response.reasoning_summary_text.delta",
           item_id: "reason-1",
           summary_index: 0,
           delta: "Plan first",
         });
+      }
 
-      if (!toolTurn) events.push({ type: "response.output_text.delta", delta: "Hello " });
+      if (!toolTurn) {
+        events.push({ type: "response.output_text.delta", delta: "Hello " });
+      }
 
-      for (const [output_index, item] of output.entries())
+      for (const [output_index, item] of output.entries()) {
         events.unshift({
           type: "response.output_item.done",
           output_index: mode === "gap" ? output_index + 1 : output_index,
           item,
         });
+      }
 
-      if (mode === "malformed")
+      if (mode === "malformed") {
         events.push({
           type: "response.completed",
           response: { status: "completed", output: [{ type: "message", content: null }] },
         });
-      else if (mode === "failed")
+      } else if (mode === "failed") {
         events.push({
           type: "response.failed",
           response: { error: { code: errorCode } },
         });
-      else if (mode === "incomplete")
+      } else if (mode === "incomplete") {
         events.push({ type: "response.incomplete", response: { status: "incomplete" } });
-      else if (mode !== "truncated" && mode !== "stall")
+      } else if (mode !== "truncated" && mode !== "stall") {
         events.push({
           type: "response.completed",
           response: {
@@ -223,6 +231,7 @@ const fixture = (
             usage: { input_tokens: 11, output_tokens: 3 },
           },
         });
+      }
     } else {
       const delta =
         mode === "ordered"
@@ -253,7 +262,7 @@ const fixture = (
 
       events.push({ choices: [{ index: 0, delta, finish_reason: null }] });
 
-      if (toolTurn && mode !== "ordered")
+      if (toolTurn && mode !== "ordered") {
         events.push({
           choices: [
             {
@@ -267,12 +276,13 @@ const fixture = (
             },
           ],
         });
+      }
 
-      if (mode === "malformed")
+      if (mode === "malformed") {
         events.push({ choices: [{ index: 0, delta: { content: 42 }, finish_reason: "stop" }] });
-      else if (mode === "failed")
+      } else if (mode === "failed") {
         events.push({ error: { message: "Test failure", code: errorCode } });
-      else if (mode !== "truncated" && mode !== "stall")
+      } else if (mode !== "truncated" && mode !== "stall") {
         events.push({
           choices: [
             {
@@ -283,15 +293,17 @@ const fixture = (
           ],
           usage: { prompt_tokens: 11, completion_tokens: 3 },
         });
+      }
     }
 
-    if (mode === "trailing-usage")
+    if (mode === "trailing-usage") {
       events.push({
         choices: [
           { index: 0, delta: { role: "assistant", content: "" }, finish_reason: "tool_calls" },
         ],
         usage: { prompt_tokens: 11, completion_tokens: 3 },
       });
+    }
 
     if (mode === "stall") {
       const first =
@@ -404,7 +416,7 @@ for (const adapter of cases) {
       });
 
       test("when temperature is supported, forwards it and rejects undeclared tools, toolChoice=none calls, or conflicting terminal output", async () => {
-        const sent: Schema.JsonObject[] = [];
+        const sent: Array<Schema.JsonObject> = [];
 
         const makeModel = (events: ReadonlyArray<Schema.JsonObject>) =>
           responsesModel(
@@ -558,8 +570,9 @@ for (const adapter of cases) {
         harness.headers.every((header) => header.get("authorization") === "Bearer test-secret"),
       ).toBe(true);
 
-      if (adapter.protocol === "responses")
+      if (adapter.protocol === "responses") {
         expect(JSON.stringify(harness.requests[1])).toContain("encrypted-test-reasoning");
+      }
 
       expect(harness.signals.every((signal) => signal.aborted)).toBe(true);
     });
@@ -738,12 +751,14 @@ for (const adapter of cases) {
       const harness = fixture(adapter, "ordered");
       const completed = await Effect.runPromise(completeModel(harness.model, toolRequest));
 
-      if (adapter.protocol === "responses")
+      if (adapter.protocol === "responses") {
         expect(completed.output).toEqual([
           { type: "text", text: "first" },
           { type: "text", text: "second" },
         ]);
-      else expect(completed.output).toMatchObject([{ callId: "call-1" }, { callId: "call-2" }]);
+      } else {
+        expect(completed.output).toMatchObject([{ callId: "call-1" }, { callId: "call-2" }]);
+      }
     });
 
     test.each([
@@ -755,7 +770,7 @@ for (const adapter of cases) {
       "invalid-json",
     ] as const)("when output is %s, rejects it without completing", async (mode) => {
       const harness = fixture(adapter, mode);
-      const events: string[] = [];
+      const events: Array<string> = [];
 
       await expect(
         Effect.runPromise(
@@ -798,12 +813,13 @@ for (const adapter of cases) {
       expect(harness.requests).toHaveLength(1);
     });
 
-    if (adapter.protocol === "responses")
+    if (adapter.protocol === "responses") {
       test("when completed function calls omit optional SDK status, accepts them", async () => {
         const harness = fixture(adapter, "missing-status");
         await Effect.runPromise(verifyModel(harness.model));
         expect(harness.requests).toHaveLength(2);
       });
+    }
 
     test.each([
       ["401", 401, "request_failed", "authentication"],

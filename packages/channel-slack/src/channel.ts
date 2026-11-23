@@ -14,11 +14,12 @@ export const escapeSlackText = (text: string) =>
 export const parseConversation = (id: string) => {
   const match = /^([CG][A-Z0-9]+)(?::(\d+\.\d+))?$/.exec(id);
 
-  if (!match)
+  if (!match) {
     throw new ChannelError({
       reason: "configuration",
       message: "Use a Slack channel ID or channel:thread-timestamp.",
     });
+  }
 
   return { channel: match[1]!, ts: match[2] };
 };
@@ -59,8 +60,10 @@ export const incomingMessage = (
     event.user !== settings.ownerId ||
     event.bot_id ||
     (event.subtype !== undefined && event.subtype !== "file_share")
-  )
+  ) {
     return null;
+  }
+
   const content = event.text ?? "";
 
   const text = content
@@ -74,7 +77,9 @@ export const incomingMessage = (
     .slice(0, 10)
     .map((file) => Object.assign({}, file, { ref: file.id, name: file.name.slice(0, 1024) }));
 
-  if ((!text && !attachments.length) || text.length > 8192) return null;
+  if ((!text && !attachments.length) || text.length > 8192) {
+    return null;
+  }
 
   return {
     messageId: `${event.channel}:${event.ts}`,
@@ -108,7 +113,9 @@ const transientPlatformErrors = new Set([
 ]);
 
 export const slackFailure = (cause: unknown, sending = false) => {
-  if (cause instanceof ChannelError) return cause;
+  if (cause instanceof ChannelError) {
+    return cause;
+  }
 
   const decoded = Schema.decodeUnknownExit(
     Schema.Struct({
@@ -195,7 +202,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
       const web = new WebClient(Redacted.value(settings.token), {
         retryConfig: { retries: 0 },
         rejectRateLimitedCalls: true,
-        timeout: 10000,
+        timeout: 10_000,
       });
 
       let connected = false;
@@ -215,10 +222,11 @@ export const slackChannelLayer = (settings: SlackSettings) =>
         if (type === "interactive") {
           const action = Schema.decodeUnknownExit(ActionBody)(body);
 
-          if (Exit.isSuccess(action))
+          if (Exit.isSuccess(action)) {
             await approvalAction(action.value).catch(() => {
               error = "Slack approval interaction failed.";
             });
+          }
         } else {
           const decoded = Schema.decodeUnknownExit(EventBody)(body);
 
@@ -236,7 +244,9 @@ export const slackChannelLayer = (settings: SlackSettings) =>
         try {
           await ack();
 
-          if (connected) error = null;
+          if (connected) {
+            error = null;
+          }
         } catch {
           error = "Slack event acknowledgement failed.";
         }
@@ -246,13 +256,14 @@ export const slackChannelLayer = (settings: SlackSettings) =>
         Effect.gen(function* () {
           const auth = yield* Effect.tryPromise({ try: () => web.auth.test(), catch: failure });
 
-          if (auth.team_id !== settings.teamId || !auth.user_id)
+          if (auth.team_id !== settings.teamId || !auth.user_id) {
             return yield* Effect.fail(
               new ChannelError({
                 reason: "configuration",
                 message: "Slack token belongs to another workspace.",
               }),
             );
+          }
 
           botId = auth.user_id;
 
@@ -265,7 +276,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
                   clientOptions: {
                     retryConfig: { retries: 0 },
                     rejectRateLimitedCalls: true,
-                    timeout: 10000,
+                    timeout: 10_000,
                   },
                 }),
             ),
@@ -283,7 +294,9 @@ export const slackChannelLayer = (settings: SlackSettings) =>
             connected = online;
             error = online ? null : "Slack connection interrupted.";
 
-            if (online) Deferred.doneUnsafe(identity, Effect.succeed(botId));
+            if (online) {
+              Deferred.doneUnsafe(identity, Effect.succeed(botId));
+            }
           });
         }),
       );
@@ -311,7 +324,9 @@ export const slackChannelLayer = (settings: SlackSettings) =>
       const approvalAction = async (body: typeof ActionBody.Type) => {
         const click = approvalClick(body, settings, botId);
 
-        if (click.kind === "ignored") return;
+        if (click.kind === "ignored") {
+          return;
+        }
 
         if (click.kind === "rejected") {
           await ephemeral(
@@ -337,10 +352,11 @@ export const slackChannelLayer = (settings: SlackSettings) =>
             source: click.source,
             reply,
           })
-        )
+        ) {
           await Effect.runPromise(
             reply("Poppet is busy. Try this approval again before it expires."),
           );
+        }
       };
 
       const send = (id: string, text: string, requestId?: string) =>
@@ -357,15 +373,21 @@ export const slackChannelLayer = (settings: SlackSettings) =>
               unfurl_media: false,
             };
 
-            if (target.ts) args.thread_ts = target.ts;
+            if (target.ts) {
+              args.thread_ts = target.ts;
+            }
 
             const reply = await web.chat.postMessage(
               requestId ? { ...args, blocks: approvalBlocks(text, requestId) } : args,
             );
 
-            if (!reply.ts) throw new Error("Missing message timestamp");
+            if (!reply.ts) {
+              throw new Error("Missing message timestamp");
+            }
 
-            if (requestId) prompts.set(requestId, text);
+            if (requestId) {
+              prompts.set(requestId, text);
+            }
 
             return reply.ts;
           },
@@ -377,25 +399,29 @@ export const slackChannelLayer = (settings: SlackSettings) =>
           try: async () => {
             const target = parseConversation(id);
 
-            if (!connected)
+            if (!connected) {
               throw new ChannelError({ reason: "unavailable", message: "Slack is disconnected." });
+            }
 
             if (
               message.senderId !== settings.ownerId ||
               message.scopeId !== settings.teamId ||
               message.parentId !== target.channel
-            )
+            ) {
               throw new ChannelError({
                 reason: "permission",
                 message: "Slack destination is outside the authorized conversation.",
               });
+            }
+
             const info = await web.conversations.info({ channel: target.channel });
 
-            if (!allowedSlackChannel(info.channel))
+            if (!allowedSlackChannel(info.channel)) {
               throw new ChannelError({
                 reason: "permission",
                 message: "Use an unshared Slack channel containing the bot.",
               });
+            }
 
             if (target.ts) {
               const history = await web.conversations.history({
@@ -405,11 +431,12 @@ export const slackChannelLayer = (settings: SlackSettings) =>
                 limit: 1,
               });
 
-              if (history.messages?.[0]?.ts !== target.ts)
+              if (history.messages?.[0]?.ts !== target.ts) {
                 throw new ChannelError({
                   reason: "permission",
                   message: "Slack thread no longer exists.",
                 });
+              }
             }
           },
           catch: failure,
@@ -441,10 +468,13 @@ export const slackChannelLayer = (settings: SlackSettings) =>
                 timestamp: parseConversation(message.messageId).ts!,
               };
 
-              if (state === "working") await web.reactions.add({ ...args, name: "eyes" });
-              else {
-                if (state === "completed")
+              if (state === "working") {
+                await web.reactions.add({ ...args, name: "eyes" });
+              } else {
+                if (state === "completed") {
                   await web.reactions.add({ ...args, name: "white_check_mark" });
+                }
+
                 await web.reactions.remove({ ...args, name: "eyes" });
               }
             },

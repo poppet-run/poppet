@@ -21,8 +21,9 @@ export const workerPaths = (launch: WorkerLaunch, home: string) => {
 
 const xmlText = (value: string) => {
   // eslint-disable-next-line no-control-regex -- XML 1.0 forbids these control characters.
-  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\ufffe\uffff]/.test(value))
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\ufffe\uffff]/.test(value)) {
     throw new WorkerError({ message: "Worker settings cannot contain illegal XML characters." });
+  }
 
   return value.replaceAll(/[<>&"']/g, (character) => {
     switch (character) {
@@ -44,8 +45,9 @@ export const workerPlist = (launch: WorkerLaunch, home: string) => {
   const paths = workerPaths(launch, home);
 
   const environment = Array.from(launch.environment, ([key, value]) => {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
       throw new WorkerError({ message: `Invalid worker environment name: ${key}.` });
+    }
 
     return `<key>${xmlText(key)}</key><string>${xmlText(value)}</string>`;
   }).join("");
@@ -90,17 +92,21 @@ export const manageWorker = (
     try: async () => {
       const paths = workerPaths(launch, home);
 
-      if (action === "logs") return await readWorkerLogs(paths.log);
+      if (action === "logs") {
+        return await readWorkerLogs(paths.log);
+      }
 
       const domain = `gui/${process.getuid?.()}`;
       const target = `${domain}/${paths.label}`;
       const installed = (await regularFileInfo(paths.plist)) !== null;
       const inspection = await launchctl(["print", target]);
 
-      if (inspection !== 0 && inspection !== 113)
+      if (inspection !== 0 && inspection !== 113) {
         throw new WorkerError({
           message: `launchctl print failed (exit ${inspection}). The worker state could not be checked; its registration was retained.`,
         });
+      }
+
       const active = inspection === 0;
 
       if (action === "status") {
@@ -112,16 +118,21 @@ export const manageWorker = (
       const command = async (args: ReadonlyArray<string>) => {
         const exitCode = await launchctl(args);
 
-        if (exitCode !== 0 && !(args[0] === "bootout" && exitCode === 113))
+        if (exitCode !== 0 && !(args[0] === "bootout" && exitCode === 113)) {
           throw new WorkerError({
             message: `launchctl ${args[0]} failed (exit ${exitCode}). Check worker status and worker logs. The service file is ${paths.plist}.`,
           });
+        }
       };
 
       if (action === "stop" || action === "uninstall") {
-        if (active) await command(["bootout", target]);
+        if (active) {
+          await command(["bootout", target]);
+        }
 
-        if (action === "uninstall" && installed) await unlink(paths.plist);
+        if (action === "uninstall" && installed) {
+          await unlink(paths.plist);
+        }
 
         return action === "stop"
           ? "Worker stopped. It will start again at login; worker uninstall disables that."
@@ -129,11 +140,13 @@ export const manageWorker = (
       }
 
       if (action === "install") {
-        if (installed)
+        if (installed) {
           throw new WorkerError({
             message:
               "This worker is already installed. Uninstall it before changing its saved settings.",
           });
+        }
+
         const contents = workerPlist(launch, home);
         const directory = join(home, "Library", "LaunchAgents");
         await mkdir(directory, { recursive: true });
@@ -161,27 +174,36 @@ export const manageWorker = (
         while (true) {
           const removal = await launchctl(["print", target]);
 
-          if (removal === 113) break;
+          if (removal === 113) {
+            break;
+          }
 
-          if (removal !== 0)
+          if (removal !== 0) {
             throw new WorkerError({
               message: `launchctl print failed (exit ${removal}) while waiting for the worker to stop. Its installed configuration was retained.`,
             });
+          }
 
-          if (performance.now() >= deadline)
+          if (performance.now() >= deadline) {
             throw new WorkerError({
               message:
                 "Timed out waiting for launchd to remove the worker. Check worker status and worker logs before starting it again. Its installed configuration was retained.",
             });
+          }
+
           await Bun.sleep(100);
         }
       }
 
-      if (!active || action === "restart" || action === "install")
+      if (!active || action === "restart" || action === "install") {
         await command(["bootstrap", domain, paths.plist]);
-      else await command(["kickstart", target]);
+      } else {
+        await command(["kickstart", target]);
+      }
 
-      if (action === "restart") return "Worker restarted. Check worker status for readiness.";
+      if (action === "restart") {
+        return "Worker restarted. Check worker status for readiness.";
+      }
 
       return "Worker started. It will run at login while this user is logged in. Check worker status for readiness.";
     },

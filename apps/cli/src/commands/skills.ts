@@ -18,8 +18,9 @@ export const skillsCommand = (context: CLIContext) => {
           const skills = yield* Skills;
           const names = yield* skills.list;
 
-          if (json || names.length === 0)
+          if (json || names.length === 0) {
             return yield* printResult(json, names, () => "No local skills.");
+          }
 
           const lines = yield* Effect.forEach(names, (name) =>
             skills.load(name).pipe(

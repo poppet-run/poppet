@@ -99,18 +99,29 @@ export const classifyChatGPTError = (
 ): ChatGPTClassification | null => {
   const normalized = code ?? "";
 
-  if (normalized === "subscription_sharing_usage_limit_exceeded") return "usage_limit";
+  if (normalized === "subscription_sharing_usage_limit_exceeded") {
+    return "usage_limit";
+  }
 
-  if (normalized === "subscription_sharing_user_not_eligible") return "ineligible";
+  if (normalized === "subscription_sharing_user_not_eligible") {
+    return "ineligible";
+  }
 
-  if (status === 401 || authenticationCodes.has(normalized)) return "reconnect";
+  if (status === 401 || authenticationCodes.has(normalized)) {
+    return "reconnect";
+  }
 
-  if ((status !== undefined && status >= 500) || status === 429 || temporaryCodes.has(normalized))
+  if ((status !== undefined && status >= 500) || status === 429 || temporaryCodes.has(normalized)) {
     return "temporary";
+  }
 
-  if (normalized === "context_length_exceeded") return "context_limit";
+  if (normalized === "context_length_exceeded") {
+    return "context_limit";
+  }
 
-  if (status === 403) return "permission";
+  if (status === 403) {
+    return "permission";
+  }
 
   return null;
 };

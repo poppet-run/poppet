@@ -81,7 +81,9 @@ export const inIndexOrder = <A>(entries: ReadonlyMap<number, A>, omitted: () => 
   [...entries.entries()]
     .toSorted(([left], [right]) => left - right)
     .map(([index, value], position) => {
-      if (index !== position) throw omitted();
+      if (index !== position) {
+        throw omitted();
+      }
 
       return value;
     });

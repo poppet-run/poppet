@@ -55,7 +55,10 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
       let expired = false;
 
       return yield* Effect.gen(function* () {
-        if (!authorized(channel.policy, message)) return false;
+        if (!authorized(channel.policy, message)) {
+          return false;
+        }
+
         yield* channel.checkAccess(message, conversation);
 
         const invocation =
@@ -107,7 +110,9 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
             ? channel.approvals.send(conversation, part, nonce, id)
             : channel.send(conversation, part, nonce);
 
-          if (last) entry.promptId = sent;
+          if (last) {
+            entry.promptId = sent;
+          }
         }
 
         entry.expiresAt = (yield* Clock.currentTimeMillis) + 120_000;
@@ -122,9 +127,13 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
           ),
         );
 
-        if (recordAnswer !== undefined) yield* recordAnswer(answer);
+        if (recordAnswer !== undefined) {
+          yield* recordAnswer(answer);
+        }
 
-        if (answer.decision === "approved") yield* channel.checkAccess(message, conversation);
+        if (answer.decision === "approved") {
+          yield* channel.checkAccess(message, conversation);
+        }
 
         return answer.decision === "approved" && authorized(channel.policy, message);
       }).pipe(
@@ -142,7 +151,9 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
             pending.delete(id);
             yield* Deferred.succeed(entry.ready, undefined);
 
-            if (entry.promptId === null || !channel.approvals) return;
+            if (entry.promptId === null || !channel.approvals) {
+              return;
+            }
 
             const state: ApprovalState = Exit.isSuccess(exit)
               ? exit.value
@@ -167,8 +178,9 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
 
-      if (pending.get(id) !== entry || entry.promptId === null || now >= entry.expiresAt)
+      if (pending.get(id) !== entry || entry.promptId === null || now >= entry.expiresAt) {
         return missing;
+      }
 
       pending.delete(id);
       yield* Deferred.succeed(entry.decision, {
@@ -178,8 +190,9 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
         at: now,
       } satisfies ToolApproval);
 
-      if (entry.kind === "mcp")
+      if (entry.kind === "mcp") {
         return approved ? "Approved this exact MCP action once." : "MCP action denied.";
+      }
 
       return approved ? "Approved this exact command once." : "Command denied.";
     }).pipe(Effect.uninterruptible, (effect) =>
@@ -188,8 +201,9 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
 
   const answer = (conversation: string, source: IncomingMessage) =>
     Effect.gen(function* () {
-      if (!authorized(channel.policy, source))
+      if (!authorized(channel.policy, source)) {
         return "Only the configured owner can answer this approval.";
+      }
 
       const reply = /^\/(approve|deny) ([a-f0-9-]{36})$/.exec(source.text.trim());
       const match = reply === null ? undefined : pending.get(reply[2]!);
@@ -199,8 +213,9 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
         match.conversation !== conversation ||
         source.conversationId !== conversation ||
         source.parentId !== match.source.parentId
-      )
+      ) {
         return missing;
+      }
 
       return yield* settle(reply![2]!, match, source, reply![1] === "approve");
     });
@@ -209,20 +224,25 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
     Effect.gen(function* () {
       const { source, requestId } = action;
 
-      if (!authorized(channel.policy, source))
+      if (!authorized(channel.policy, source)) {
         return "Only the configured owner can answer this approval.";
+      }
+
       const entry = pending.get(requestId);
 
       if (
         entry === undefined ||
         source.conversationId !== entry.conversation ||
         source.parentId !== entry.source.parentId
-      )
+      ) {
         return missing;
+      }
 
       yield* Deferred.await(entry.ready);
 
-      if (source.messageId !== entry.promptId) return missing;
+      if (source.messageId !== entry.promptId) {
+        return missing;
+      }
 
       yield* channel.checkAccess(source, entry.conversation);
 

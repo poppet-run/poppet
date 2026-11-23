@@ -10,7 +10,7 @@ import { Context, Effect, Layer } from "effect";
 
 import { AgentError } from "#src/errors";
 
-export const maxPageBytes = 1048576;
+export const maxPageBytes = 1_048_576;
 
 export const pageFailure = () =>
   new AgentError({ reason: "tool-network", message: "Could not read the supplied public page." });
@@ -47,25 +47,34 @@ const readResponse = async (response: IncomingMessage): Promise<PageResponse> =>
     contentType: response.headers["content-type"],
   };
 
-  if (isPageRedirect(status)) return { ...metadata, body: new Uint8Array() };
+  if (isPageRedirect(status)) {
+    return { ...metadata, body: new Uint8Array() };
+  }
 
-  if (status < 200 || status >= 300)
+  if (status < 200 || status >= 300) {
     throw new AgentError({ reason: "tool-network", message: `The page returned HTTP ${status}.` });
-  const chunks: Buffer[] = [];
+  }
+
+  const chunks: Array<Buffer> = [];
   let size = 0;
 
   for await (const chunk of response) {
     size += chunk.length;
 
-    if (size > maxPageBytes)
+    if (size > maxPageBytes) {
       throw new AgentError({
         reason: "tool-limit",
         message: "The page exceeds the 1 MiB body limit.",
       });
+    }
+
     chunks.push(chunk);
   }
 
-  if (!response.complete) throw pageFailure();
+  if (!response.complete) {
+    throw pageFailure();
+  }
+
   const body = Buffer.concat(chunks);
   const options = { maxOutputLength: maxPageBytes };
 
@@ -102,7 +111,7 @@ export const requestPage = (
       method: "GET",
       agent: false,
       signal,
-      maxHeaderSize: 16384,
+      maxHeaderSize: 16_384,
       servername: isIP(hostname) ? "" : hostname,
       rejectUnauthorized: true,
       checkServerIdentity: (_name, certificate) => checkServerIdentity(hostname, certificate),
@@ -123,7 +132,10 @@ export const requestPage = (
       const cancel = () => response.destroy();
       signal.addEventListener("abort", cancel, { once: true });
 
-      if (signal.aborted) cancel();
+      if (signal.aborted) {
+        cancel();
+      }
+
       void readResponse(response)
         .then(resolve, reject)
         .finally(() => {

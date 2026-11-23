@@ -29,7 +29,9 @@ export const goOptions: ChatOptions = {
           ...message,
         };
 
-        if (saved.reasoningContent !== null) restored.reasoning_content = saved.reasoningContent;
+        if (saved.reasoningContent !== null) {
+          restored.reasoning_content = saved.reasoningContent;
+        }
 
         return restored;
       },

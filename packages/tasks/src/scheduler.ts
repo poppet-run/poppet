@@ -171,7 +171,7 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
           const quiet =
             status === "completed" && runId !== null && noAction(yield* store.run(runId));
 
-          if (status !== "cancelled")
+          if (status !== "cancelled") {
             yield* log(
               "task occurrence finished",
               {
@@ -183,10 +183,15 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
               },
               status === "failed" ? "error" : "info",
             );
+          }
 
-          if (outcome.pause !== null) yield* logProviderPause(outcome.pause);
+          if (outcome.pause !== null) {
+            yield* logProviderPause(outcome.pause);
+          }
 
-          if (outcome.providerResumed) yield* log("provider resumed", { provider: job.provider });
+          if (outcome.providerResumed) {
+            yield* log("provider resumed", { provider: job.provider });
+          }
         }),
       ),
     );
@@ -242,18 +247,24 @@ export const makeTaskWorker = Effect.gen(function* () {
     Effect.gen(function* () {
       const now = clock.currentTimeMillisUnsafe();
 
-      if (command.action === "status") return yield* readStatus;
+      if (command.action === "status") {
+        return yield* readStatus;
+      }
 
-      if (command.action === "clear")
+      if (command.action === "clear") {
         return yield* Effect.uninterruptible(
           Effect.gen(function* () {
-            if (active !== null) yield* Fiber.interrupt(active.fiber);
+            if (active !== null) {
+              yield* Fiber.interrupt(active.fiber);
+            }
+
             const result = yield* executeTaskCommand(repo, store, command, now);
             yield* log("tasks cleared", {});
 
             return result;
           }),
         );
+      }
 
       const pending =
         command.action === "pause"
@@ -267,8 +278,13 @@ export const makeTaskWorker = Effect.gen(function* () {
 
       const result = yield* executeTaskCommand(repo, store, command, now);
 
-      if (isTaskControl(command) || command.action === "delete" || command.action === "clear-note")
+      if (
+        isTaskControl(command) ||
+        command.action === "delete" ||
+        command.action === "clear-note"
+      ) {
         yield* log("task updated", { task: command.id, action: command.action });
+      }
 
       if (command.action === "pause" || command.action === "resume") {
         const job = yield* repo.task(command.id);
@@ -287,8 +303,9 @@ export const makeTaskWorker = Effect.gen(function* () {
       if (before !== null && before.nextAt !== null) {
         const job = yield* repo.task(before.id);
 
-        if (job.nextAt === null && job.endAt !== null)
+        if (job.nextAt === null && job.endAt !== null) {
           yield* logTaskEnd({ name: job.name, jobId: job.id, endAt: job.endAt });
+        }
       }
 
       if (command.action === "retry-task" || command.action === "cancel-task") {
@@ -296,7 +313,10 @@ export const makeTaskWorker = Effect.gen(function* () {
         const item = yield* repo.occurrence(id);
         const cancelling = command.action === "cancel-task";
 
-        if (cancelling && active?.id === item.id) yield* Fiber.interrupt(active.fiber);
+        if (cancelling && active?.id === item.id) {
+          yield* Fiber.interrupt(active.fiber);
+        }
+
         const job = yield* repo.task(item.jobId);
         yield* log(
           cancelling ? "task occurrence cancelled" : "task occurrence queued for retry",
@@ -304,8 +324,9 @@ export const makeTaskWorker = Effect.gen(function* () {
         );
       }
 
-      if (command.action === "resume-provider")
+      if (command.action === "resume-provider") {
         yield* log("provider resumed", { provider: command.provider, by: "request" });
+      }
 
       yield* Queue.offer(wake, undefined);
 
@@ -342,7 +363,9 @@ export const makeTaskWorker = Effect.gen(function* () {
               Effect.gen(function* () {
                 const next = yield* repo.claim(clock.currentTimeMillisUnsafe());
 
-                if (next === null) return null;
+                if (next === null) {
+                  return null;
+                }
 
                 const fiber = yield* restore(executeOccurrence(repo, next)).pipe(Effect.forkChild);
 
@@ -362,7 +385,9 @@ export const makeTaskWorker = Effect.gen(function* () {
             ),
           );
 
-        if (claimed === null) return;
+        if (claimed === null) {
+          return;
+        }
 
         const exit = yield* Fiber.await(claimed.fiber).pipe(
           Effect.ensuring(
@@ -373,7 +398,9 @@ export const makeTaskWorker = Effect.gen(function* () {
         );
 
         if (Exit.isFailure(exit) && !Cause.hasInterrupts(exit.cause)) {
-          if (Cause.hasDies(exit.cause)) return yield* exit;
+          if (Cause.hasDies(exit.cause)) {
+            return yield* exit;
+          }
 
           const error = Option.getOrNull(Cause.findErrorOption(exit.cause));
 

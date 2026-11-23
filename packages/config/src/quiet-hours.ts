@@ -8,7 +8,9 @@ const formatters = new Map<string, Intl.DateTimeFormat>();
 const formatter = (timeZone: string) => {
   const cached = formatters.get(timeZone);
 
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    return cached;
+  }
 
   const created = new Intl.DateTimeFormat("en-US", {
     timeZone,
@@ -27,7 +29,9 @@ const formatter = (timeZone: string) => {
 };
 
 const knownZone = (timeZone: string) => {
-  if (/^[+-]/.test(timeZone)) return false;
+  if (/^[+-]/.test(timeZone)) {
+    return false;
+  }
 
   try {
     formatter(timeZone);
@@ -91,7 +95,9 @@ const resolve = (local: number, timeZone: string) => {
   const candidates = [local - day, local + day].map((at) => local - offset(at, timeZone));
   const exact = candidates.filter((at) => wall(at, timeZone) === local);
 
-  if (exact.length > 0) return Math.min(...exact);
+  if (exact.length > 0) {
+    return Math.min(...exact);
+  }
 
   let low = Math.min(...candidates);
   let high = Math.max(...candidates);
@@ -99,8 +105,11 @@ const resolve = (local: number, timeZone: string) => {
   while (high - low > 1000) {
     const middle = low + Math.floor((high - low) / 2000) * 1000;
 
-    if (wall(middle, timeZone) >= local) high = middle;
-    else low = middle;
+    if (wall(middle, timeZone) >= local) {
+      high = middle;
+    } else {
+      low = middle;
+    }
   }
 
   return high;
@@ -118,7 +127,9 @@ export const quietHoursEnd = (window: QuietHours, at: number): number | null => 
   for (const date of [today - day, today]) {
     const until = resolve(date + end, window.timeZone);
 
-    if (resolve(date + start, window.timeZone) <= at && at < until) return until;
+    if (resolve(date + start, window.timeZone) <= at && at < until) {
+      return until;
+    }
   }
 
   return null;

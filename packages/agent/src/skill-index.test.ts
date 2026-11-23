@@ -87,7 +87,7 @@ describe("skill-index.ts", () => {
 
   test("when more than 64 skills exist, limits the index and marks it truncated", async () => {
     const names = Array.from({ length: 70 }, (_, i) => `s${String(i).padStart(2, "0")}`);
-    const result = await index(names, 65536);
+    const result = await index(names, 65_536);
     expect(result?.skills).toHaveLength(64);
     expect(result?.truncated).toBe(true);
   });

@@ -64,7 +64,10 @@ describe("compileSchema", () => {
     let nested: Schema.JsonObject = { type: "object" };
 
     // 15 wrappers put the innermost "type" at depth 31; one more exceeds the limit of 32.
-    for (let i = 0; i < 15; i++) nested = { type: "object", properties: { nested } };
+    for (let i = 0; i < 15; i++) {
+      nested = { type: "object", properties: { nested } };
+    }
+
     expect(compileSchema(nested)({})).toBe(true);
     nested = { type: "object", properties: { nested } };
     expect(() => compileSchema(nested)).toThrow("Unsupported MCP schema");
@@ -109,14 +112,15 @@ describe("compileSchema", () => {
   });
 
   test("when patterns require backtracking-only features, rejects discovery", () => {
-    for (const pattern of ["(?=a)", String.raw`(a)\1`, "["])
+    for (const pattern of ["(?=a)", String.raw`(a)\1`, "["]) {
       expect(() => compileSchema({ type: "string", pattern })).toThrow();
+    }
   });
 
   test("when a named group has nested repetition, validates long inputs without backtracking", () => {
     const validate = compileSchema({ type: "string", pattern: "^(?<letters>a+)+$" });
-    expect(validate("a".repeat(64000))).toBe(true);
-    expect(validate("a".repeat(64000) + "!")).toBe(false);
+    expect(validate("a".repeat(64_000))).toBe(true);
+    expect(validate("a".repeat(64_000) + "!")).toBe(false);
   });
 
   test("when executor skills omit the dialect, preserves patterns and dependent requirements", () => {
@@ -134,8 +138,10 @@ describe("compileSchema", () => {
       { app: "ok", file: "README.md" },
       { app: "ok", version: "dpl_" },
       { app: "ok", revision: "g".repeat(64) },
-    ])
+    ]) {
       expect(validate(args)).toBe(false);
+    }
+
     expect(validate({ app: "a".repeat(63), name: "read", file: "README.md" })).toBe(true);
   });
 
@@ -158,8 +164,9 @@ describe("compileSchema", () => {
       { requestId: "elc_123", response: { action: "unknown" } },
       { requestId: "elc_123", response: { action: "accept", content: { choices: [1] } } },
       { requestId: "elc_123" },
-    ])
+    ]) {
       expect(validate(args)).toBe(false);
+    }
   });
 
   test("when dialects are explicit or use legacy tuple items, preserves their semantics", () => {
@@ -264,7 +271,7 @@ describe("toolResult", () => {
     const output = toolResult({ content }, 1024);
     const result = JSON.parse(output);
 
-    expect(Buffer.byteLength(JSON.stringify({ content }))).toBeLessThan(262144);
+    expect(Buffer.byteLength(JSON.stringify({ content }))).toBeLessThan(262_144);
     expect(Buffer.byteLength(output)).toBeLessThanOrEqual(1024);
     expect(result.truncated).toBe(true);
     expect(result.content.length).toBeGreaterThan(100);

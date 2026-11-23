@@ -151,7 +151,7 @@ describe("loadConfigSource", () => {
     ["empty setting", '{"model":""}'],
     ["null setting", '{"model":null}'],
     ["non-object settings", "[]"],
-    ["oversized file", " ".repeat(65537)],
+    ["oversized file", " ".repeat(65_537)],
   ])(
     "when configuration contains %s, rejects it without printing file contents",
     async (_, contents) => {

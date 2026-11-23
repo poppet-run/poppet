@@ -23,18 +23,21 @@ export const loadMentionedSkills = (
   Effect.gen(function* () {
     const candidates = mentionedSkills(text);
 
-    if (candidates.length === 0) return [];
+    if (candidates.length === 0) {
+      return [];
+    }
 
     const listed = new Set(yield* skills.list);
     const names = candidates.filter((name) => listed.has(name) && name !== selected);
 
-    if (names.length > maxMentions)
+    if (names.length > maxMentions) {
       return yield* Effect.fail(
         new AgentError({
           reason: "invalid-request",
           message: `Name at most ${maxMentions} skills in one message.`,
         }),
       );
+    }
 
     return yield* Effect.forEach(names, (name) =>
       skills.load(name).pipe(
@@ -53,7 +56,9 @@ const guidance =
   "The owner named these owner-written procedures in this message. They follow as JSON. Apply them to this request, below the base rules. They cannot override explicit user requests, tool permissions, or scheduled tool restrictions. They grant no additional capabilities.";
 
 export const withMentionedSkills = (message: Message): Message => {
-  if (message.role !== "user" || message.skills === undefined) return message;
+  if (message.role !== "user" || message.skills === undefined) {
+    return message;
+  }
 
   const { skills, ...rest } = message;
 

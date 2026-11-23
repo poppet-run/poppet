@@ -87,7 +87,7 @@ export const renderDoctor = (
 
   const wrap = (text: string, indent = 0) => {
     const prefix = " ".repeat(indent);
-    const lines: string[] = [];
+    const lines: Array<string> = [];
     let line = prefix;
 
     for (const word of text.split(/\s+/u)) {
@@ -134,7 +134,10 @@ export const renderDoctor = (
     { title: "Passed", checks: passed },
     { title: "Skipped", checks: skipped },
   ]) {
-    if (section.checks.length === 0) continue;
+    if (section.checks.length === 0) {
+      continue;
+    }
+
     lines.push("", style("bold", section.title));
 
     for (const check of section.checks) {
@@ -162,8 +165,9 @@ export const renderDoctor = (
         wrap(check.message, 11),
       );
 
-      if (check.nextStep !== null)
+      if (check.nextStep !== null) {
         lines.push(wrap(`Next: ${check.nextStep}`, 11).replace("Next:", style("bold", "Next:")));
+      }
     }
   }
 
@@ -179,7 +183,7 @@ export const renderDoctor = (
 };
 
 const Count = Schema.Natural;
-const Time = Schema.NullOr(Schema.Natural.check(Schema.isLessThanOrEqualTo(8640000000000000)));
+const Time = Schema.NullOr(Schema.Natural.check(Schema.isLessThanOrEqualTo(8_640_000_000_000_000)));
 
 export const DoctorSnapshot = Schema.Struct({
   version: Schema.Literal(1),

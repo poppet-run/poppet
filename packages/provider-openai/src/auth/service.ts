@@ -43,7 +43,9 @@ export const ChatGPTAuthLive = Layer.effect(
 
           const connection = saved.success;
 
-          if (connection === null) return true;
+          if (connection === null) {
+            return true;
+          }
 
           const { pendingRefresh, ...confirmed } = connection;
 
@@ -53,11 +55,12 @@ export const ChatGPTAuthLive = Layer.effect(
 
           const refreshToken = pendingRefresh?.refreshToken ?? connection.credentials?.refreshToken;
 
-          if (refreshToken && connection.clientId)
+          if (refreshToken && connection.clientId) {
             return yield* oauth.revoke(refreshToken, connection.clientId).pipe(
               Effect.isSuccess,
               Effect.onExit(() => clear),
             );
+          }
 
           yield* clear;
 
@@ -70,7 +73,10 @@ export const ChatGPTAuthLive = Layer.effect(
         Effect.gen(function* () {
           const connection = yield* store.read;
 
-          if (!connection?.credentials) return yield* Effect.fail(reconnect());
+          if (!connection?.credentials) {
+            return yield* Effect.fail(reconnect());
+          }
+
           yield* store.write({
             ...connection,
             verification: { model, at: (yield* DateTime.nowAsDate).getTime() },

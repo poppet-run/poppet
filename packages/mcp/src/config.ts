@@ -46,14 +46,19 @@ const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const Endpoint = Schema.String.check(
   Schema.isMaxLength(2048),
   Schema.makeFilter((value) => {
-    if (!URL.canParse(value)) return "MCP server URLs must be absolute.";
+    if (!URL.canParse(value)) {
+      return "MCP server URLs must be absolute.";
+    }
+
     const url = new URL(value);
 
-    if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback.has(url.hostname)))
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback.has(url.hostname))) {
       return "MCP server URLs must use https, or http to a loopback address.";
+    }
 
-    if (url.username !== "" || url.password !== "" || url.hash !== "")
+    if (url.username !== "" || url.password !== "" || url.hash !== "") {
       return "MCP server URLs cannot contain credentials or fragments.";
+    }
 
     return true;
   }),
@@ -85,7 +90,7 @@ const OAuth = Schema.Struct({
   clientSecret: Schema.optionalKey(Schema.Struct({ credential: Id })),
   scopes: Schema.optionalKey(Schema.Array(Scope).check(Schema.isMaxLength(32))),
   callbackPort: Schema.optionalKey(
-    Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65535 })),
+    Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65_535 })),
   ),
 });
 
@@ -111,48 +116,58 @@ export const isHTTPServer = (server: MCPServer): server is MCPHTTPServer => "url
 export const MCPServers = Schema.Array(MCPServer).check(
   Schema.isMaxLength(8),
   Schema.makeFilter((servers) => {
-    if (new Set(servers.map((server) => server.id)).size !== servers.length)
+    if (new Set(servers.map((server) => server.id)).size !== servers.length) {
       return "MCP server IDs must be unique.";
+    }
 
     for (const server of servers) {
       if (
         new Set(server.tools).size !== server.tools.length ||
         new Set(server.scheduledTools ?? []).size !== (server.scheduledTools ?? []).length ||
         server.scheduledTools?.some((name) => !server.tools.includes(name))
-      )
+      ) {
         return "Scheduled MCP tools must be a unique, owner-reviewed read-only subset of tools.";
+      }
 
       const reviewed = server.reviewedTools ?? [];
 
       if (
         new Set(reviewed).size !== reviewed.length ||
         reviewed.some((name) => !server.tools.includes(name))
-      )
+      ) {
         return "Reviewed MCP tools must be a unique subset of tools.";
+      }
 
-      if (server.scheduledTools?.some((name) => reviewed.includes(name)))
+      if (server.scheduledTools?.some((name) => reviewed.includes(name))) {
         return "Reviewed MCP tools cannot appear in the read-only scheduledTools list.";
+      }
 
       const scheduledReviewed = server.scheduledReviewedTools ?? [];
 
       if (
         new Set(scheduledReviewed).size !== scheduledReviewed.length ||
         scheduledReviewed.some((name) => !reviewed.includes(name))
-      )
+      ) {
         return "Scheduled reviewed MCP tools must be a unique subset of reviewedTools.";
+      }
 
       if (isHTTPServer(server)) {
         const names = Object.keys(server.headers ?? {}).map((name) => name.toLowerCase());
 
-        if (new Set(names).size !== names.length) return "MCP header names must be unique.";
+        if (new Set(names).size !== names.length) {
+          return "MCP header names must be unique.";
+        }
 
-        if (server.oauth !== undefined && names.includes("authorization"))
+        if (server.oauth !== undefined && names.includes("authorization")) {
           return "OAuth servers cannot also configure an Authorization header.";
+        }
 
-        if (server.oauth?.clientSecret !== undefined && server.oauth.clientId === undefined)
+        if (server.oauth?.clientSecret !== undefined && server.oauth.clientId === undefined) {
           return "An OAuth client secret needs its client ID.";
-      } else if (server.args.some((arg) => arg.includes("\0")) || server.command.includes("\0"))
+        }
+      } else if (server.args.some((arg) => arg.includes("\0")) || server.command.includes("\0")) {
         return "MCP commands and arguments cannot contain NUL.";
+      }
     }
 
     return true;

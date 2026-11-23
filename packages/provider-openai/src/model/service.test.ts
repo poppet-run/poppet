@@ -50,7 +50,7 @@ const catalogFixture = () => {
 describe("makeChatGPTModel", () => {
   test("when services rebuild or resolve concurrently, shares cached lookups and refreshes explicit listings or unknown models", async () => {
     const { state, http, auth } = catalogFixture();
-    const timings: { cached?: boolean }[] = [];
+    const timings: Array<{ cached?: boolean }> = [];
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -189,11 +189,12 @@ describe("ChatGPTModel", () => {
         expect(failure).toBeInstanceOf(ConnectionError);
         expect((await harness.saved()).verification).toBeNull();
 
-        if (mode === "failed")
+        if (mode === "failed") {
           expect(failure).toMatchObject({
             reason: "usage_limit",
             code: "subscription_sharing_usage_limit_exceeded",
           });
+        }
       } finally {
         await harness.close();
       }
@@ -259,10 +260,12 @@ describe("makeChatGPTProvider", () => {
       const http: HttpFetch = async (input) => {
         const url = input instanceof Request ? input.url : input.toString();
 
-        if (url.endsWith("/models"))
+        if (url.endsWith("/models")) {
           return Response.json({
             models: [{ slug: "test-model", display_name: "Test model", visibility: "list" }],
           });
+        }
+
         inferenceRequests++;
 
         return Response.json(

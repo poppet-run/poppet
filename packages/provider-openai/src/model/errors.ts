@@ -57,15 +57,25 @@ export const connectionFailure = (error: ProviderError) => {
 export const chatGPTReason: RemoteReason = (status, code) => {
   const classified = classifyChatGPTError(status, code);
 
-  if (classified === "usage_limit") return "quota";
+  if (classified === "usage_limit") {
+    return "quota";
+  }
 
-  if (classified === "ineligible" || classified === "permission") return "permission";
+  if (classified === "ineligible" || classified === "permission") {
+    return "permission";
+  }
 
-  if (classified === "reconnect") return "authentication";
+  if (classified === "reconnect") {
+    return "authentication";
+  }
 
-  if (classified === "temporary") return status === 429 ? "rate-limit" : "temporary";
+  if (classified === "temporary") {
+    return status === 429 ? "rate-limit" : "temporary";
+  }
 
-  if (classified === "context_limit") return "context-limit";
+  if (classified === "context_limit") {
+    return "context-limit";
+  }
 
   return undefined;
 };

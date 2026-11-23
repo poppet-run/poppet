@@ -39,7 +39,7 @@ export const SubmissionBody = Schema.Struct({
   sessionId: Schema.NullOr(Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/))),
   text: Schema.String.check(
     Schema.isMinLength(1),
-    Schema.isMaxLength(32768),
+    Schema.isMaxLength(32_768),
     Schema.makeFilter((text) => text.trim().length > 0),
   ),
 });
@@ -118,8 +118,10 @@ const makeWebChat = Effect.gen(function* () {
     Effect.gen(function* () {
       const session = yield* store.session(id);
 
-      if (!session)
+      if (!session) {
         return yield* new WebChatError({ status: 404, message: "Conversation not found." });
+      }
+
       const messages = yield* store.messages(id);
 
       const receipts =
@@ -132,17 +134,22 @@ const makeWebChat = Effect.gen(function* () {
       return {
         session: summary(session),
         messages: messages.flatMap<ChatSnapshot["messages"][number]>((entry) => {
-          if (entry.message.role === "user")
+          if (entry.message.role === "user") {
             return [
               { id: entry.id, runId: entry.runId, role: "user" as const, text: entry.message.text },
             ];
+          }
 
           if (entry.message.role === "assistant") {
-            if (entry.runId === running?.id) return [];
+            if (entry.runId === running?.id) {
+              return [];
+            }
 
             const text = outputText(entry.message.output);
 
-            if (!text.trim()) return [];
+            if (!text.trim()) {
+              return [];
+            }
 
             return [{ id: entry.id, runId: entry.runId, role: "assistant", text }];
           }
@@ -190,32 +197,36 @@ const makeWebChat = Effect.gen(function* () {
       const existing = yield* receipt(input.id);
 
       if (existing) {
-        if (existing.fingerprint !== fingerprint)
+        if (existing.fingerprint !== fingerprint) {
           return yield* new WebChatError({
             status: 409,
             message: "This submission ID already belongs to another message.",
           });
+        }
 
         return toReceipt(existing);
       }
 
-      if (input.sessionId && active.has(input.sessionId))
+      if (input.sessionId && active.has(input.sessionId)) {
         return yield* new WebChatError({
           status: 409,
           message: "Wait for the current reply or stop it before sending.",
         });
+      }
 
-      if (active.size >= 16)
+      if (active.size >= 16) {
         return yield* new WebChatError({
           status: 429,
           message: "Too many active conversations. Wait for a reply to finish.",
         });
+      }
 
-      if (!input.sessionId && !config.model)
+      if (!input.sessionId && !config.model) {
         return yield* new WebChatError({
           status: 409,
           message: "Set a model in Poppet's config.json first.",
         });
+      }
 
       const accepted = yield* sql.withTransaction(
         Effect.gen(function* () {
@@ -223,15 +234,19 @@ const makeWebChat = Effect.gen(function* () {
             ? yield* store.session(input.sessionId)
             : yield* store.createSession(config.provider, config.model!);
 
-          if (!session)
+          if (!session) {
             return yield* new WebChatError({ status: 404, message: "Conversation not found." });
+          }
+
           const runs = yield* store.runs(session.id);
 
-          if (runs.some((run) => run.status === "pending" || run.status === "running"))
+          if (runs.some((run) => run.status === "pending" || run.status === "running")) {
             return yield* new WebChatError({
               status: 409,
               message: "This conversation already has a reply in progress.",
             });
+          }
+
           yield* sql`INSERT INTO web_chat_submissions (id, session_id, fingerprint, status) VALUES (${input.id}, ${session.id}, ${fingerprint}, 'accepted')`;
 
           return {
@@ -249,7 +264,9 @@ const makeWebChat = Effect.gen(function* () {
       const execute = agent.send(accepted.sessionId, input.text, { runId: input.id }).pipe(
         Stream.runForEach((event) =>
           Effect.sync(() => {
-            if (event.type === "text-delta") running.text += event.text;
+            if (event.type === "text-delta") {
+              running.text += event.text;
+            }
           }),
         ),
         Effect.onExit((exit) =>
@@ -262,10 +279,14 @@ const makeWebChat = Effect.gen(function* () {
 
             let error: string | null = null;
 
-            if (status === "interrupted")
+            if (status === "interrupted") {
               error = "Reply stopped. It will not restart automatically.";
+            }
 
-            if (status === "failed") error = "The reply failed. Run poppet chat show for details.";
+            if (status === "failed") {
+              error = "The reply failed. Run poppet chat show for details.";
+            }
+
             yield* sql`UPDATE web_chat_submissions SET status = ${status}, error = ${error} WHERE id = ${input.id}`;
           }).pipe(Effect.ensuring(Effect.sync(() => active.delete(accepted.sessionId)))),
         ),
@@ -289,10 +310,13 @@ const makeWebChat = Effect.gen(function* () {
         message: "Stop the current reply before deleting this conversation.",
       });
 
-      if (!(yield* store.session(id)))
+      if (!(yield* store.session(id))) {
         return yield* new WebChatError({ status: 404, message: "Conversation not found." });
+      }
 
-      if (active.has(id)) return yield* busy;
+      if (active.has(id)) {
+        return yield* busy;
+      }
 
       yield* removeSessions(store.deleteSessions([id])).pipe(
         Effect.provideService(SqlClient.SqlClient, sql),

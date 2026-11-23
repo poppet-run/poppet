@@ -82,24 +82,26 @@ export const makeOpenCodeProvider = (
     Effect.gen(function* () {
       const supported = supportedModels.find((model) => model.id === modelId);
 
-      if (!supported)
+      if (!supported) {
         return yield* Effect.fail(
           invalidRequest(
             "opencode-go",
             "This OpenCode Go model is not supported yet. Choose gpt-6-luna or glm-5.3.",
           ),
         );
+      }
 
       const catalog = yield* readCatalog(modelId);
       const description = catalog.find((model) => model.id === modelId);
 
-      if (!description)
+      if (!description) {
         return yield* Effect.fail(
           invalidRequest(
             "opencode-go",
             "The selected model is absent from the OpenCode Go catalog.",
           ),
         );
+      }
 
       const client = key.pipe(
         Effect.map((token) =>

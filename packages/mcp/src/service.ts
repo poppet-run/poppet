@@ -98,8 +98,10 @@ export const makeMCPLive = (toolBytes: number) =>
             if (
               state.status !== "needs-login" &&
               (state.status !== "unavailable" || clock.currentTimeMillisUnsafe() < retryAt(state))
-            )
+            ) {
               return prior;
+            }
+
             yield* Effect.promise(() => closeConnection(prior).catch(() => {}));
             connections.delete(config.id);
             retries = state.status === "unavailable" ? state.retries + 1 : 0;
@@ -142,13 +144,16 @@ export const makeMCPLive = (toolBytes: number) =>
           resources.client.onerror = (error) => {
             if (
               !(error instanceof ReviewedAccountChanged || error instanceof InsufficientScopeError)
-            )
+            ) {
               disconnected();
+            }
           };
 
           connections.set(config.id, connection);
 
-          if (!config.enabled) return connection;
+          if (!config.enabled) {
+            return connection;
+          }
 
           const startup = Effect.gen(function* () {
             const current = yield* hydrateConnection(
@@ -181,13 +186,15 @@ export const makeMCPLive = (toolBytes: number) =>
 
             const currentState = Ref.getUnsafe(connection.state);
 
-            if (currentState.status === "unavailable")
+            if (currentState.status === "unavailable") {
               return yield* Effect.fail(failed(currentState.diagnostic));
+            }
 
-            if (discovered.some((tool) => containsSecret(tool.name, current())))
+            if (discovered.some((tool) => containsSecret(tool.name, current()))) {
               return yield* Effect.fail(
                 failed(`MCP ${config.id}: tool names contain credentials.`),
               );
+            }
 
             const skippedMessage =
               skipped.length === 0
@@ -201,7 +208,9 @@ export const makeMCPLive = (toolBytes: number) =>
               diagnostic: skippedMessage,
             });
 
-            if (skippedMessage !== null) yield* logDiagnostic(config.id, skippedMessage);
+            if (skippedMessage !== null) {
+              yield* logDiagnostic(config.id, skippedMessage);
+            }
           }).pipe(Effect.timeout("8 seconds"));
 
           yield* startup.pipe(
@@ -218,8 +227,9 @@ export const makeMCPLive = (toolBytes: number) =>
                   prior === undefined ||
                   Ref.getUnsafe(prior.state).status !== "needs-login" ||
                   Ref.getUnsafe(connection.state).status !== "needs-login"
-                )
+                ) {
                   yield* logDiagnostic(config.id, diagnostic(connection));
+                }
               }),
             ),
             Effect.onInterrupt(() =>
@@ -251,10 +261,11 @@ export const makeMCPLive = (toolBytes: number) =>
             connection !== undefined &&
             Ref.getUnsafe(connection.state).status === "connected" &&
             signIn?.signedIn === false
-          )
+          ) {
             yield* Effect.promise(() =>
               requireLogin(connection, connection.signIn!.message).catch(() => {}),
             );
+          }
 
           const state = connection === undefined ? undefined : Ref.getUnsafe(connection.state);
 
@@ -284,15 +295,18 @@ export const makeMCPLive = (toolBytes: number) =>
         Effect.gen(function* () {
           const config = servers.find((server) => server.id === id);
 
-          if (config === undefined)
+          if (config === undefined) {
             return yield* Effect.fail(
               failed("Unknown MCP server. Use mcp servers to find its ID."),
             );
+          }
+
           const connection = yield* connect(config);
           const state = Ref.getUnsafe(connection.state);
 
-          if (state.status !== "connected")
+          if (state.status !== "connected") {
             return yield* Effect.fail(failed(diagnostic(connection) ?? `MCP ${id} is disabled.`));
+          }
 
           return state.discovered.map((name) => ({
             serverId: config.id,
@@ -352,8 +366,9 @@ export const probeServer = (config: MCPServer) =>
       if (
         response.status === 401 &&
         /resource_metadata=/i.test(response.headers.get("www-authenticate") ?? "")
-      )
+      ) {
         challenged = true;
+      }
 
       return response;
     };

@@ -5,8 +5,9 @@ import { bashFixtures } from "./bash-fixtures";
 
 const home = process.env.POPPET_TEST_HOME;
 
-if (home === undefined || homedir() !== home)
+if (home === undefined || homedir() !== home) {
   throw new Error("Use bun run test so tests start with an isolated home and environment.");
+}
 
 const network = globalThis.fetch;
 
@@ -14,8 +15,9 @@ globalThis.fetch = Object.assign(
   (input: string | URL | Request, init?: BunFetchRequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input.toString());
 
-    if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))
+    if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
       throw new Error(`Tests cannot contact external services: ${url.origin}`);
+    }
 
     return network(input, { ...init, redirect: init?.redirect === "manual" ? "manual" : "error" });
   },
@@ -42,19 +44,23 @@ const protectSpawn = <T extends typeof Bun.spawn | typeof Bun.spawnSync>(spawn: 
             JSON.stringify(["/bin/bash", "--noprofile", "--norc", "-o", "pipefail", "-c"]) ||
           settings.cmd.length !== 7 ||
           !Object.values(bashFixtures).includes(settings.cmd[6])
-        )
+        ) {
           throw new Error("Tests may only run fixed Bash fixtures inside their isolated home.");
+        }
 
         // SAFETY: the validated options match both native spawn overloads.
         return (target as typeof Bun.spawn)(settings);
       }
 
-      if (settings?.cmd?.[0] !== process.execPath)
+      if (settings?.cmd?.[0] !== process.execPath) {
         throw new Error("Tests may only launch guarded Bun subprocesses.");
+      }
+
       const [entry] = settings.cmd.slice(1);
 
-      if (entry !== "--eval" && entry !== "-e" && !entry?.endsWith(".ts"))
+      if (entry !== "--eval" && entry !== "-e" && !entry?.endsWith(".ts")) {
         throw new Error("Test subprocesses must run a TypeScript entry point or --eval directly.");
+      }
 
       // SAFETY: both native spawn APIs accept this options object; the Proxy preserves their overloads.
       return (target as typeof Bun.spawn)({

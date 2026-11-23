@@ -30,15 +30,18 @@ const maxChatCreatesPerRun = 5;
 const minChatCronIntervalMs = 5 * 60_000;
 
 const checkChatCronCadence = (schedule: Schedule, now: number) => {
-  if (schedule.type !== "cron") return;
+  if (schedule.type !== "cron") {
+    return;
+  }
 
   const first = nextOccurrence(schedule, now);
   const second = first === null ? null : nextOccurrence(schedule, first);
 
-  if (first !== null && second !== null && second - first < minChatCronIntervalMs)
+  if (first !== null && second !== null && second - first < minChatCronIntervalMs) {
     throw new TaskError({
       message: "Recurring tasks created or edited in chat must run at least 5 minutes apart.",
     });
+  }
 };
 
 const committedFailure = (cause: StoreError | TaskError) =>
@@ -59,7 +62,9 @@ const resolveDelivery = (
   delivery: Extract<ChatTaskAction, { action: "create" }>["delivery"],
   context: ChatTaskContext,
 ) => {
-  if (delivery === "local") return Effect.succeed(null);
+  if (delivery === "local") {
+    return Effect.succeed(null);
+  }
 
   const target = Match.value(delivery).pipe(
     Match.when("here", () => context.here),
@@ -67,7 +72,7 @@ const resolveDelivery = (
     Match.orElse(({ conversationId }) => context.destination?.(conversationId)),
   );
 
-  if (target === null || target === undefined)
+  if (target === null || target === undefined) {
     return Effect.fail(
       new AgentError({
         reason: "tool-permission",
@@ -75,6 +80,7 @@ const resolveDelivery = (
           "This destination requires an authorized messaging gateway. Use local in CLI chat.",
       }),
     );
+  }
 
   return target.pipe(
     Effect.timeoutOrElse({
@@ -92,17 +98,20 @@ const resolveDelivery = (
 
 const authorizeControl = (task: Task, context: ChatTaskContext) =>
   Effect.gen(function* () {
-    if (task.skill !== null && isManualOnly(task.skill.content))
+    if (task.skill !== null && isManualOnly(task.skill.content)) {
       return yield* Effect.fail(ownerOnlySkill(task.skill.name));
+    }
 
-    if (task.destination === null) return;
+    if (task.destination === null) {
+      return;
+    }
 
     const authorized = yield* resolveDelivery(
       { conversationId: task.destination.conversationId },
       context,
     );
 
-    if (!isDeepStrictEqual(authorized, task.destination))
+    if (!isDeepStrictEqual(authorized, task.destination)) {
       return yield* Effect.fail(
         new AgentError({
           reason: "tool-permission",
@@ -110,6 +119,7 @@ const authorizeControl = (task: Task, context: ChatTaskContext) =>
             "This chat is not authorized to schedule or run work for the saved messaging destination.",
         }),
       );
+    }
   });
 
 export const ChatTasksLive = Layer.effect(
@@ -169,16 +179,20 @@ export const ChatTasksLive = Layer.effect(
 
             const now = clock.currentTimeMillisUnsafe();
 
-            if (schedule.type === "once" && schedule.at <= now)
+            if (schedule.type === "once" && schedule.at <= now) {
               throw new TaskError({
                 message: "Choose a future one-off time with an explicit UTC offset.",
               });
+            }
+
             nextOccurrence(schedule, now);
             checkChatCronCadence(schedule, now);
 
             const endAt = action.endAt === null ? null : parseTimestamp(action.endAt);
 
-            if (endAt !== null) checkEndTime(schedule, endAt, now, true);
+            if (endAt !== null) {
+              checkEndTime(schedule, endAt, now, true);
+            }
 
             return {
               endAt,
@@ -196,13 +210,14 @@ export const ChatTasksLive = Layer.effect(
 
         const existingCount = (yield* repo.list().pipe(Effect.mapError(invalid))).length;
 
-        if (existingCount >= maxTasks)
+        if (existingCount >= maxTasks) {
           return yield* Effect.fail(
             new AgentError({
               reason: "tool-arguments",
               message: `Cannot add more than ${maxTasks} tasks. Delete an unused task first.`,
             }),
           );
+        }
 
         const priorCalls = yield* store.toolCalls(context.runId).pipe(Effect.mapError(invalid));
         let createsInRun = 0;
@@ -212,46 +227,56 @@ export const ChatTasksLive = Layer.effect(
             call.name !== "manage_tasks" ||
             call.namespace !== "poppet_tasks" ||
             call.status === "failed"
-          )
+          ) {
             continue;
+          }
 
           try {
-            if (JSON.parse(call.arguments)?.action === "create") createsInRun++;
+            if (JSON.parse(call.arguments)?.action === "create") {
+              createsInRun++;
+            }
           } catch {
             // Ignore malformed calls handled by preflight.
           }
 
-          if (call.callId === context.callId) break;
+          if (call.callId === context.callId) {
+            break;
+          }
         }
 
-        if (createsInRun > maxChatCreatesPerRun)
+        if (createsInRun > maxChatCreatesPerRun) {
           return yield* Effect.fail(
             new AgentError({
               reason: "tool-arguments",
               message: `At most ${maxChatCreatesPerRun} tasks can be created in one chat run.`,
             }),
           );
+        }
 
         const skill = action.skill === null ? null : yield* skills.load(action.skill);
 
-        if (skill !== null && isManualOnly(skill.content))
+        if (skill !== null && isManualOnly(skill.content)) {
           return yield* Effect.fail(ownerOnlySkill(skill.name));
+        }
+
         const destination = yield* resolveDelivery(action.delivery, context);
 
         return Effect.gen(function* () {
           const now = clock.currentTimeMillisUnsafe();
 
-          if (input.task.schedule.type === "once" && input.task.schedule.at <= now)
+          if (input.task.schedule.type === "once" && input.task.schedule.at <= now) {
             return yield* new StoreError({
               reason: "invalid-request",
               message: "The requested one-off time has passed. Choose a future time.",
             });
+          }
 
-          if (input.endAt !== null && nextSlot(input.task.schedule, now, input.endAt) === null)
+          if (input.endAt !== null && nextSlot(input.task.schedule, now, input.endAt) === null) {
             return yield* new StoreError({
               reason: "invalid-request",
               message: "The requested end time leaves no occurrence. Choose a later end time.",
             });
+          }
 
           return yield* taskOutput(
             action.action,
@@ -266,18 +291,24 @@ export const ChatTasksLive = Layer.effect(
           try: () => {
             const fields: Record<string, Schema.Json> = {};
 
-            if (action.name !== null) fields.name = action.name;
+            if (action.name !== null) {
+              fields.name = action.name;
+            }
 
-            if (action.prompt !== null) fields.prompt = action.prompt;
+            if (action.prompt !== null) {
+              fields.prompt = action.prompt;
+            }
 
-            if (action.schedule !== null)
+            if (action.schedule !== null) {
               fields.schedule =
                 action.schedule.type === "once"
                   ? { type: "once", at: parseTimestamp(action.schedule.at) }
                   : action.schedule;
+            }
 
-            if (action.endAt !== null)
+            if (action.endAt !== null) {
               fields.endAt = action.endAt === "none" ? null : parseTimestamp(action.endAt);
+            }
 
             const decoded = Schema.decodeUnknownSync(TaskPatch, { onExcessProperty: "error" })(
               fields,
@@ -290,8 +321,9 @@ export const ChatTasksLive = Layer.effect(
               decoded.endAt !== null &&
               decoded.endAt !== undefined &&
               decoded.endAt !== current.endAt
-            )
+            ) {
               checkEndTime(schedule ?? current.schedule, decoded.endAt, now);
+            }
 
             if (schedule !== undefined) {
               nextOccurrence(schedule, now);
@@ -301,10 +333,11 @@ export const ChatTasksLive = Layer.effect(
                 schedule.type === "once" &&
                 schedule.at <= now &&
                 !isDeepStrictEqual(schedule, current.schedule)
-              )
+              ) {
                 throw new TaskError({
                   message: "Choose a future one-off time with an explicit UTC offset.",
                 });
+              }
             }
 
             return decoded;
@@ -329,8 +362,9 @@ export const ChatTasksLive = Layer.effect(
           action.action !== "show" &&
           action.action !== "pause" &&
           action.action !== "delete"
-        )
+        ) {
           yield* authorizeControl(current, context);
+        }
 
         switch (action.action) {
           case "create":
@@ -398,46 +432,57 @@ export const ChatTasksLive = Layer.effect(
     return {
       prepare: (action, context) =>
         Effect.gen(function* () {
-          if (context.origin !== "interactive")
+          if (context.origin !== "interactive") {
             return yield* Effect.fail(
               new AgentError({
                 reason: "tool-permission",
                 message: "Scheduled runs cannot manage tasks.",
               }),
             );
+          }
+
           const run = yield* store.run(context.runId);
 
           const saved = (yield* store.toolCalls(context.runId)).find(
             (call) => call.callId === context.callId,
           );
 
-          if (run === null || saved?.name !== "manage_tasks" || saved.namespace !== "poppet_tasks")
+          if (
+            run === null ||
+            saved?.name !== "manage_tasks" ||
+            saved.namespace !== "poppet_tasks"
+          ) {
             return yield* Effect.fail(
               new AgentError({
                 reason: "tool-permission",
                 message: "Task tools require the current run's recorded call.",
               }),
             );
+          }
 
-          if (saved.status === "completed") return { execute: Effect.succeed(saved.output!) };
+          if (saved.status === "completed") {
+            return { execute: Effect.succeed(saved.output!) };
+          }
 
-          if (run.status !== "running")
+          if (run.status !== "running") {
             return yield* Effect.fail(
               new AgentError({
                 reason: "tool-permission",
                 message: "The task request is no longer active.",
               }),
             );
+          }
 
           const session = yield* store.session(run.sessionId);
 
-          if (session === null)
+          if (session === null) {
             return yield* Effect.fail(
               new AgentError({
                 reason: "tool-permission",
                 message: "The owning session no longer exists.",
               }),
             );
+          }
 
           const operation = yield* prepareAction(action, run, context);
 

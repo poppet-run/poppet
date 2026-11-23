@@ -37,19 +37,29 @@ export const ensurePrivateDirectory = async (
   path: string,
   options: { readonly create?: boolean; readonly strict?: boolean } = {},
 ): Promise<boolean> => {
-  if (options.create ?? true) await mkdir(path, { recursive: true, mode: 0o700 });
+  if (options.create ?? true) {
+    await mkdir(path, { recursive: true, mode: 0o700 });
+  }
 
   const info = await lstat(path).catch((cause: unknown) => {
-    if (isMissingFile(cause)) return null;
+    if (isMissingFile(cause)) {
+      return null;
+    }
+
     throw cause;
   });
 
-  if (info === null) return false;
+  if (info === null) {
+    return false;
+  }
 
-  if (!isOwnedPrivateDirectory(info, options.strict === true))
+  if (!isOwnedPrivateDirectory(info, options.strict === true)) {
     throw new Error("Expected a private directory owned by the current user.");
+  }
 
-  if (options.strict !== true) await chmod(path, 0o700);
+  if (options.strict !== true) {
+    await chmod(path, 0o700);
+  }
 
   return true;
 };
@@ -58,19 +68,25 @@ export const ensurePrivateDirectorySync = (path: string): void => {
   mkdirSync(path, { recursive: true, mode: 0o700 });
   const info = lstatSync(path);
 
-  if (!isOwnedPrivateDirectory(info, true))
+  if (!isOwnedPrivateDirectory(info, true)) {
     throw new Error("Expected a private directory owned by the current user.");
+  }
 };
 
 export const unlinkIfPresent = (path: string): Promise<void> =>
   unlink(path).catch((cause: unknown) => {
-    if (!isMissingFile(cause)) throw cause;
+    if (!isMissingFile(cause)) {
+      throw cause;
+    }
   });
 
 export const openNoFollow = (path: string): Promise<FileHandle | null> =>
   open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(
     (cause: unknown) => {
-      if (isMissingFile(cause)) return null;
+      if (isMissingFile(cause)) {
+        return null;
+      }
+
       throw cause;
     },
   );
@@ -90,10 +106,13 @@ export const openProtectedFile = async (
   try {
     const info = await handle.stat();
 
-    if (!isOwnedProtectedFile(info, options))
+    if (!isOwnedProtectedFile(info, options)) {
       throw new Error("Expected a private regular file owned by the current user.");
+    }
 
-    if (options.makePrivate) await handle.chmod(0o600);
+    if (options.makePrivate) {
+      await handle.chmod(0o600);
+    }
 
     return handle;
   } catch (cause) {
@@ -117,10 +136,13 @@ export const openProtectedFileSync = (
   try {
     const info = fstatSync(handle);
 
-    if (!isOwnedProtectedFile(info, options))
+    if (!isOwnedProtectedFile(info, options)) {
       throw new Error("Expected a private regular file owned by the current user.");
+    }
 
-    if (options.makePrivate) fchmodSync(handle, 0o600);
+    if (options.makePrivate) {
+      fchmodSync(handle, 0o600);
+    }
 
     return handle;
   } catch (cause) {
@@ -149,13 +171,18 @@ export const readFileBounded = async (
     signal?.throwIfAborted();
     const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
 
-    if (bytesRead === 0) break;
+    if (bytesRead === 0) {
+      break;
+    }
+
     length += bytesRead;
   }
 
   signal?.throwIfAborted();
 
-  if (length > maxBytes) throw tooLarge();
+  if (length > maxBytes) {
+    throw tooLarge();
+  }
 
   return buffer.subarray(0, length);
 };
@@ -184,17 +211,24 @@ export const readProtectedFile = async (
 
   const handle = await openNoFollow(path);
 
-  if (handle === null) return null;
+  if (handle === null) {
+    return null;
+  }
 
   try {
     const info = await handle.stat();
 
-    if (!isOwnedProtectedFile(info, { ownerWriteOnly, privateOnly }))
+    if (!isOwnedProtectedFile(info, { ownerWriteOnly, privateOnly })) {
       throw new Error("Expected a private regular file owned by the current user.");
+    }
 
-    if (info.size > maxBytes) throw onTooLarge();
+    if (info.size > maxBytes) {
+      throw onTooLarge();
+    }
 
-    if (makePrivate) await handle.chmod(0o600);
+    if (makePrivate) {
+      await handle.chmod(0o600);
+    }
 
     const bytes =
       maxBytes === Infinity
@@ -205,7 +239,9 @@ export const readProtectedFile = async (
       ? new TextDecoder("utf-8", { fatal: true }).decode(bytes)
       : bytes.toString("utf8");
 
-    if (disallowNul && text.includes("\0")) throw new Error("Protected file must be UTF-8 text.");
+    if (disallowNul && text.includes("\0")) {
+      throw new Error("Protected file must be UTF-8 text.");
+    }
 
     return text;
   } finally {

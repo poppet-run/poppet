@@ -50,16 +50,20 @@ const supportsText = (model: typeof CatalogModel.Type) =>
   model.architecture.output_modalities[0] === "text";
 
 const describeModel = (model: typeof CatalogModel.Type): ModelDescription => {
-  const generationSettings: ModelDescription["capabilities"]["generationSettings"][number][] = [];
+  const generationSettings: Array<ModelDescription["capabilities"]["generationSettings"][number]> =
+    [];
 
-  if (model.supported_parameters.includes("temperature")) generationSettings.push("temperature");
+  if (model.supported_parameters.includes("temperature")) {
+    generationSettings.push("temperature");
+  }
 
   if (
     model.supported_parameters.some(
       (parameter) => parameter === "max_tokens" || parameter === "max_completion_tokens",
     )
-  )
+  ) {
     generationSettings.push("maxOutputTokens");
+  }
 
   return {
     provider: "openrouter",
@@ -118,13 +122,14 @@ export const makeOpenRouterProvider = (
         const models = yield* readCatalog(modelId);
         const selected = models.find((model) => model.id === modelId);
 
-        if (!selected)
+        if (!selected) {
           return yield* Effect.fail(
             invalidRequest(
               "openrouter",
               "Choose a concrete text model ID from the OpenRouter catalog. No model fallback is allowed.",
             ),
           );
+        }
 
         const client = key.pipe(
           Effect.map((token) => openAIClient({ key: token, baseUrl, http, headers })),

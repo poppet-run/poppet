@@ -49,8 +49,9 @@ export const suppliedPageURLs = (text: string) => {
         ["[", "]"],
         ["{", "}"],
       ] as const) {
-        while (value.endsWith(close) && value.split(close).length > value.split(open).length)
+        while (value.endsWith(close) && value.split(close).length > value.split(open).length) {
           value = value.slice(0, -1);
+        }
       }
     }
 
@@ -74,12 +75,13 @@ export const decodeFetchPageCall = (call: ToolCall, allowed: ReadonlySet<string>
         try: () => {
           const normalized = pageURL(url).href;
 
-          if (!allowed.has(normalized))
+          if (!allowed.has(normalized)) {
             throw new AgentError({
               reason: "tool-permission",
               message:
                 "The URL was not supplied in this request or returned by a completed search in this run.",
             });
+          }
 
           return normalized;
         },
@@ -112,18 +114,22 @@ export const PagesLive = Layer.effect(
           const addresses = yield* transport.resolve(pageHostname(url));
           const address = addresses[0];
 
-          if (address === undefined || !addresses.every(publicAddress))
+          if (address === undefined || !addresses.every(publicAddress)) {
             return yield* Effect.fail(
               new AgentError({
                 reason: "tool-permission",
                 message: "The page destination must resolve only to public addresses.",
               }),
             );
+          }
+
           const response = yield* transport.request(url, address);
 
           if (isPageRedirect(response.status)) {
-            if (redirects === 3 || response.location === undefined)
+            if (redirects === 3 || response.location === undefined) {
               return yield* Effect.fail(pageFailure());
+            }
+
             url = yield* Effect.try({
               try: () => pageURL(new URL(response.location!, url).href),
               catch: pageFailure,
@@ -131,8 +137,9 @@ export const PagesLive = Layer.effect(
             continue;
           }
 
-          if (response.status < 200 || response.status >= 300)
+          if (response.status < 200 || response.status >= 300) {
             return yield* Effect.fail(pageFailure());
+          }
 
           return yield* Effect.try({
             try: () => pageResult(url, response.body, response.contentType, toolBytes),

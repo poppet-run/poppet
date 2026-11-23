@@ -30,7 +30,7 @@ const Request = Schema.Struct({ id: Schema.optionalKey(Schema.Json), method: Sch
 
 const serve = (key: string | null, beforeList?: () => Promise<void>) => {
   const tools = ["read", "write"];
-  const authorizations: (string | null)[] = [];
+  const authorizations: Array<string | null> = [];
 
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -39,26 +39,33 @@ const serve = (key: string | null, beforeList?: () => Promise<void>) => {
       const authorization = request.headers.get("authorization");
       authorizations.push(authorization);
 
-      if (key === null || authorization !== `Bearer ${key}`)
+      if (key === null || authorization !== `Bearer ${key}`) {
         return new Response(null, {
           status: 401,
           headers: {
             "www-authenticate": `Bearer resource_metadata="${new URL(request.url).origin}/.well-known/oauth-protected-resource"`,
           },
         });
+      }
 
-      if (request.method !== "POST") return new Response(null, { status: 405 });
+      if (request.method !== "POST") {
+        return new Response(null, { status: 405 });
+      }
 
       const message = Schema.decodeUnknownSync(Schema.fromJsonString(Request))(
         await request.text(),
       );
 
-      if (message.id === undefined) return new Response(null, { status: 202 });
+      if (message.id === undefined) {
+        return new Response(null, { status: 202 });
+      }
 
       const reply = (result: Schema.JsonObject) =>
         Response.json({ jsonrpc: "2.0", id: message.id!, result });
 
-      if (message.method === "tools/list") await beforeList?.();
+      if (message.method === "tools/list") {
+        await beforeList?.();
+      }
 
       return message.method === "initialize"
         ? reply({
@@ -138,7 +145,7 @@ describe("mcp add and remove", () => {
   test.concurrent("when permissions change, discovers blocked tools and keeps scheduled access an explicit subset", async () => {
     const state = await harness();
     const server = serve("mcp-flag-secret");
-    const run = (...args: string[]) => invoke(state.directory, ["mcp", ...args], null);
+    const run = (...args: Array<string>) => invoke(state.directory, ["mcp", ...args], null);
 
     try {
       expect(
@@ -401,7 +408,10 @@ describe("mcp add and remove", () => {
       while (true) {
         const { done, value } = await reader.read();
 
-        if (done) break;
+        if (done) {
+          break;
+        }
+
         output += decoder.decode(value);
         const link = /http:\/\/127\.0\.0\.1:\d+\/authorize\?\S+/.exec(output)?.[0];
 

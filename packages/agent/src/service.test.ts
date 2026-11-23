@@ -111,11 +111,12 @@ describe.concurrent("Agent", () => {
       Effect.succeed({
         description,
         stream: (request) => {
-          if (request.settings.toolChoice === "none")
+          if (request.settings.toolChoice === "none") {
             return Stream.make({
               type: "completed" as const,
               response: response("A concise conversation title"),
             });
+          }
 
           const last = request.messages.at(-1);
 
@@ -197,8 +198,8 @@ describe.concurrent("Agent", () => {
   test.each([false, true])(
     "when reasoning logging is enabled=%j, requests saved reasoning and logs it only when enabled",
     async (enabled) => {
-      const requests: ModelRequest[] = [];
-      const logs: string[] = [];
+      const requests: Array<ModelRequest> = [];
+      const logs: Array<string> = [];
       const thinking = "Check the notes\nThen answer.\u001b[31m";
 
       const state = await fixture(
@@ -208,7 +209,7 @@ describe.concurrent("Agent", () => {
             stream: (request) => {
               requests.push(request);
 
-              return Stream.make<ModelEvent[]>(
+              return Stream.make<Array<ModelEvent>>(
                 { type: "reasoning-delta", text: thinking.slice(0, 5) },
                 { type: "reasoning-delta", text: thinking.slice(5) },
                 { type: "text-delta", text: "Hel" },
@@ -266,7 +267,7 @@ describe.concurrent("Agent", () => {
   test.each(["failed", "interrupted"])(
     "when a run is %s, flushes remaining reasoning logs",
     async (status) => {
-      const logs: string[] = [];
+      const logs: Array<string> = [];
       const thinking = "x".repeat(4097);
 
       const state = await fixture(
@@ -295,11 +296,13 @@ describe.concurrent("Agent", () => {
             const session = yield* store.createSession("test-provider", "test-model");
             const stream = (yield* Agent).send(session.id, "Hello");
 
-            if (status === "interrupted") yield* Stream.runDrain(stream.pipe(Stream.take(2)));
-            else
+            if (status === "interrupted") {
+              yield* Stream.runDrain(stream.pipe(Stream.take(2)));
+            } else {
               expect(yield* failure(Stream.runDrain(stream))).toMatchObject({
                 reason: "temporary",
               });
+            }
 
             expect(logs.map(thinkingText).join("")).toBe(thinking);
             expect((yield* store.runs(session.id))[0]?.status).toBe(status);
@@ -319,15 +322,15 @@ describe.concurrent("Agent", () => {
   );
 
   test("when a session reopens, resumes streaming with its saved identity and continuation", async () => {
-    const requests: ModelRequest[] = [];
-    const events: ChatEvent[] = [];
+    const requests: Array<ModelRequest> = [];
+    const events: Array<ChatEvent> = [];
 
     const model: ModelOperations = {
       description,
       stream: (request) => {
         requests.push(request);
 
-        return Stream.make<ModelEvent[]>(
+        return Stream.make<Array<ModelEvent>>(
           { type: "text-delta", text: "Hel" },
           { type: "completed", response: response() },
         );
@@ -406,7 +409,7 @@ describe.concurrent("Agent", () => {
     "when the provider fails with %s, persists the failure without retry or partial answers in later context",
     async (reason) => {
       let calls = 0;
-      const requests: ModelRequest[] = [];
+      const requests: Array<ModelRequest> = [];
 
       const model: ModelOperations = {
         description,
@@ -584,7 +587,7 @@ describe.concurrent("Agent", () => {
     },
     {
       name: "oversize",
-      events: [{ type: "completed", response: response("x".repeat(131073)) }],
+      events: [{ type: "completed", response: response("x".repeat(131_073)) }],
       reason: "output-limit",
     },
     {
@@ -594,7 +597,7 @@ describe.concurrent("Agent", () => {
           type: "completed",
           response: {
             ...response(),
-            continuation: { ...response().continuation, data: { opaque: "x".repeat(1048576) } },
+            continuation: { ...response().continuation, data: { opaque: "x".repeat(1_048_576) } },
           },
         },
       ],
@@ -648,8 +651,8 @@ describe.concurrent("Agent", () => {
           Effect.succeed({
             description,
             stream: () =>
-              Stream.make<ModelEvent[]>(
-                { type: "reasoning-delta", text: "x".repeat(131073) },
+              Stream.make<Array<ModelEvent>>(
+                { type: "reasoning-delta", text: "x".repeat(131_073) },
                 { type: "completed", response: response() },
               ),
           }),
@@ -663,8 +666,11 @@ describe.concurrent("Agent", () => {
             const session = yield* store.createSession("test-provider", "test-model");
             const sent = Stream.runDrain((yield* Agent).send(session.id, "Hello"));
 
-            if (enabled) expect(yield* failure(sent)).toMatchObject({ reason: "output-limit" });
-            else yield* sent;
+            if (enabled) {
+              expect(yield* failure(sent)).toMatchObject({ reason: "output-limit" });
+            } else {
+              yield* sent;
+            }
 
             expect((yield* store.runs(session.id))[0]?.status).toBe(
               enabled ? "failed" : "completed",
@@ -736,7 +742,7 @@ describe.concurrent("Agent", () => {
 
 describe("Agent.nameSession", () => {
   test("when naming spans a restart, claims once and isolates title input, continuation, tools, and usage", async () => {
-    const requests: ModelRequest[] = [];
+    const requests: Array<ModelRequest> = [];
 
     const state = await fixture(() =>
       Effect.succeed({
@@ -855,21 +861,24 @@ describe("Agent.nameSession", () => {
     "when naming is %s, preserves the successful answer and fallback title without retrying",
     async (mode) => {
       let names = 0;
-      const errors: string[] = [];
+      const errors: Array<string> = [];
       const started = Deferred.makeUnsafe<void>();
 
       const state = await fixture(() =>
         Effect.succeed({
           description,
           stream: (request) => {
-            if (request.settings.toolChoice !== "none")
+            if (request.settings.toolChoice !== "none") {
               return Stream.make({ type: "completed" as const, response: response() });
+            }
+
             names++;
 
-            if (mode === "deadline" || mode === "cancelled")
+            if (mode === "deadline" || mode === "cancelled") {
               return Stream.fromEffect(
                 Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
               );
+            }
 
             return Stream.make({
               type: "completed" as const,
@@ -912,8 +921,13 @@ describe("Agent.nameSession", () => {
               if (mode === "deadline") {
                 yield* TestClock.adjust("10 seconds");
                 yield* Fiber.join(fiber);
-              } else yield* Fiber.interrupt(fiber);
-            } else yield* agent.nameSession(session.id);
+              } else {
+                yield* Fiber.interrupt(fiber);
+              }
+            } else {
+              yield* agent.nameSession(session.id);
+            }
+
             yield* agent.nameSession(session.id);
             expect(yield* store.session(session.id)).toMatchObject({
               title: "Keep this fallback",
@@ -942,7 +956,7 @@ describe("Agent.nameSession", () => {
 
   test("when earlier exchanges fail, keeps naming eligible and uses the first original prompt", async () => {
     let fail = true;
-    const requests: ModelRequest[] = [];
+    const requests: Array<ModelRequest> = [];
 
     const state = await fixture(() =>
       Effect.succeed({
@@ -950,7 +964,7 @@ describe("Agent.nameSession", () => {
         stream: (request) => {
           requests.push(request);
 
-          if (fail)
+          if (fail) {
             return Stream.fail(
               new ProviderError({
                 provider: description.provider,
@@ -958,6 +972,7 @@ describe("Agent.nameSession", () => {
                 message: "Try later",
               }),
             );
+          }
 
           return Stream.make({
             type: "completed" as const,
@@ -1036,8 +1051,9 @@ describe.concurrent("Agent request permits", () => {
           yield* Deferred.succeed(model.gate("C").release, undefined);
           yield* Fiber.joinAll(fibers);
 
-          for (const session of sessions)
+          for (const session of sessions) {
             expect((yield* store.runs(session.id)).map((run) => run.status)).toEqual(["completed"]);
+          }
         }),
       );
     } finally {

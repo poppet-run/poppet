@@ -127,8 +127,9 @@ export const invalidateConnection = <ToolEntry>(
   const state = Ref.getUnsafe(connection.state);
 
   if (state.status !== "unavailable" && state.status !== "needs-login") {
-    if (connection.signIn?.required() === true)
+    if (connection.signIn?.required() === true) {
       return requireLogin(connection, connection.signIn.message);
+    }
 
     Effect.runSync(
       Ref.set(connection.state, {
@@ -158,12 +159,13 @@ const resolveReference = (
             Effect.mapError(() => failed(`MCP ${config.id}: cannot read selected credential.`)),
           );
 
-    if (value === undefined || value.length > 8192 || invalid(value))
+    if (value === undefined || value.length > 8192 || invalid(value)) {
       return yield* Effect.fail(
         failed(
           `MCP ${config.id}: a selected environment, credential or header reference is missing or invalid.`,
         ),
       );
+    }
 
     return value;
   });
@@ -171,7 +173,7 @@ const resolveReference = (
 const resolveReferences = (config: MCPServer, credentials: ApiKeyStore["Service"]) =>
   Effect.gen(function* () {
     const values: Record<string, string> = {};
-    const secrets: string[] = [];
+    const secrets: Array<string> = [];
 
     if (isHTTPServer(config)) {
       for (const [name, reference] of Object.entries(config.headers ?? {})) {
@@ -193,7 +195,9 @@ const resolveReferences = (config: MCPServer, credentials: ApiKeyStore["Service"
 
         values[name] = value;
 
-        if ("credential" in reference) secrets.push(value);
+        if ("credential" in reference) {
+          secrets.push(value);
+        }
       }
     }
 
@@ -213,8 +217,9 @@ const delegate = (
   onUnauthorized: async ({ response }) => {
     const request = rejected.get(response);
 
-    if (authorization.current === null || request === undefined)
+    if (authorization.current === null || request === undefined) {
       throw new Error("Sign-in required.");
+    }
 
     await authorization.current.refresh(request.token, response, request.signal);
   },
@@ -223,7 +228,7 @@ const delegate = (
 const makeClient = () =>
   new Client({ name: "poppet", version: "0.0.0" }, { capabilities: {}, listMaxPages: 8 });
 
-export const fetchHTTP = boundedFetch(262144, (url, init) => fetch(url, init), 16 * 1024 * 1024);
+export const fetchHTTP = boundedFetch(262_144, (url, init) => fetch(url, init), 16 * 1024 * 1024);
 
 const makeTransport = (
   config: MCPServer,
@@ -231,15 +236,16 @@ const makeTransport = (
   fetchFn: FetchLike = fetchHTTP,
   authorization: AuthorizationSlot = { current: null },
 ) => {
-  if (!isHTTPServer(config))
+  if (!isHTTPServer(config)) {
     return new ScopedStdioTransport({
       command: config.command,
       args: [...config.args],
       cwd: config.cwd ?? process.cwd(),
       env: references,
       stderr: "ignore",
-      maxBufferSize: 262144,
+      maxBufferSize: 262_144,
     });
+  }
 
   const rejected = new WeakMap<Response, RejectedRequest>();
 
@@ -249,8 +255,9 @@ const makeTransport = (
     if (response.status === 401) {
       const bearer = new Headers(init?.headers).get("authorization");
 
-      if (bearer?.startsWith("Bearer "))
+      if (bearer?.startsWith("Bearer ")) {
         rejected.set(response, { token: bearer.slice(7), signal: init?.signal ?? undefined });
+      }
     }
 
     return response;
@@ -262,13 +269,15 @@ const makeTransport = (
     redirectPolicy: "same-origin",
     reconnectionOptions: {
       initialReconnectionDelay: 1000,
-      maxReconnectionDelay: 30000,
+      maxReconnectionDelay: 30_000,
       reconnectionDelayGrowFactor: 1.5,
       maxRetries: 0,
     },
   };
 
-  if (isOAuthServer(config)) options.authProvider = delegate(authorization, rejected);
+  if (isOAuthServer(config)) {
+    options.authProvider = delegate(authorization, rejected);
+  }
 
   return new ScopedHTTPTransport(new URL(config.url), options);
 };
@@ -299,7 +308,7 @@ export const hydrateConnection = (
 
     const oauth = isHTTPServer(config) && isOAuthServer(config) ? config : null;
 
-    if (oauth !== null)
+    if (oauth !== null) {
       resources.authorization.current = yield* runtimeAuthorization(oauth, now).pipe(
         Effect.provideService(MCPSignIns, signIns),
         Effect.provideService(ApiKeyStore, credentials),
@@ -310,6 +319,7 @@ export const hydrateConnection = (
         }),
         Effect.mapError((error) => authorizationFailure(config, error)),
       );
+    }
 
     return () =>
       resources.authorization.current === null
@@ -318,16 +328,20 @@ export const hydrateConnection = (
   });
 
 export const listTools = async (client: Client, signal: AbortSignal) => {
-  if (!client.getServerCapabilities()?.tools)
+  if (!client.getServerCapabilities()?.tools) {
     throw new MCPDiagnostic({ message: "Server does not advertise tools capability." });
-  const discovered: ServerTool[] = [];
+  }
+
+  const discovered: Array<ServerTool> = [];
   const names = new Set<string>();
   const cursors = new Set<string>();
   let cursor: string | undefined;
   let bytes = 0;
 
   for (let page = 0; ; page++) {
-    if (page === 8) throw new MCPDiagnostic({ message: "Discovery exceeds 8 pages." });
+    if (page === 8) {
+      throw new MCPDiagnostic({ message: "Discovery exceeds 8 pages." });
+    }
 
     const result = await client.request(
       { method: "tools/list", params: cursor === undefined ? {} : { cursor } },
@@ -336,22 +350,29 @@ export const listTools = async (client: Client, signal: AbortSignal) => {
 
     bytes += Buffer.byteLength(JSON.stringify(result));
 
-    if (bytes > 262144 || discovered.length + result.tools.length > 128)
+    if (bytes > 262_144 || discovered.length + result.tools.length > 128) {
       throw new MCPDiagnostic({ message: "Discovery exceeds 128 tools or 256 KiB." });
+    }
 
     for (const tool of result.tools) {
-      if (names.has(tool.name) || tool.name.length > 256)
+      if (names.has(tool.name) || tool.name.length > 256) {
         throw new MCPDiagnostic({ message: "Duplicate or oversized tool name." });
+      }
+
       names.add(tool.name);
       discovered.push(tool);
     }
 
     cursor = result.nextCursor;
 
-    if (cursor === undefined) break;
+    if (cursor === undefined) {
+      break;
+    }
 
-    if (cursor.length > 1024 || cursors.has(cursor))
+    if (cursor.length > 1024 || cursors.has(cursor)) {
       throw new MCPDiagnostic({ message: "Invalid discovery cursor." });
+    }
+
     cursors.add(cursor);
   }
 
@@ -361,10 +382,11 @@ export const listTools = async (client: Client, signal: AbortSignal) => {
 export const discoverTools = async (config: MCPServer, client: Client, signal: AbortSignal) => {
   const discovered = await listTools(client, signal);
 
-  if (config.tools.some((name) => !discovered.some((tool) => tool.name === name)))
+  if (config.tools.some((name) => !discovered.some((tool) => tool.name === name))) {
     throw new MCPDiagnostic({
       message: "An allowlisted tool was not discovered. Check tools in config.json.",
     });
+  }
 
   return discovered;
 };

@@ -103,7 +103,9 @@ export const makeOAuthClient = (http: HttpFetch = fetch, expectedIssuer = issuer
           await response.body?.cancel().catch(() => undefined);
         });
 
-        if (response.status !== 200) return yield* Effect.fail(requestFailure(response.status));
+        if (response.status !== 200) {
+          return yield* Effect.fail(requestFailure(response.status));
+        }
       }).pipe(
         Effect.scoped,
         Effect.timeoutOrElse({

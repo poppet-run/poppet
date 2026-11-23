@@ -19,7 +19,9 @@ const exited = async (pid: number, deadline = Date.now() + 2000): Promise<boolea
     return true;
   }
 
-  if (Date.now() >= deadline) return false;
+  if (Date.now() >= deadline) {
+    return false;
+  }
 
   await Bun.sleep(10);
 
@@ -57,11 +59,17 @@ describe("executeBash", () => {
 
       expect(result.stdout).toBe("||present");
     } finally {
-      if (POPPET_TEST_KEY === undefined) delete process.env.POPPET_TEST_KEY;
-      else process.env.POPPET_TEST_KEY = POPPET_TEST_KEY;
+      if (POPPET_TEST_KEY === undefined) {
+        delete process.env.POPPET_TEST_KEY;
+      } else {
+        process.env.POPPET_TEST_KEY = POPPET_TEST_KEY;
+      }
 
-      if (CDPATH === undefined) delete process.env.CDPATH;
-      else process.env.CDPATH = CDPATH;
+      if (CDPATH === undefined) {
+        delete process.env.CDPATH;
+      } else {
+        process.env.CDPATH = CDPATH;
+      }
     }
   });
 });
@@ -143,8 +151,9 @@ describe("Bash execution", () => {
             .pipe(Effect.forkChild);
 
           yield* Effect.gen(function* () {
-            while (!(yield* Effect.promise(() => Bun.file(join(cwd, "pid")).exists())))
+            while (!(yield* Effect.promise(() => Bun.file(join(cwd, "pid")).exists()))) {
               yield* Effect.sleep("10 millis");
+            }
           }).pipe(Effect.timeout("2 seconds"));
           const pid = Number(yield* Effect.promise(() => readFile(join(cwd, "pid"), "utf8")));
           yield* Fiber.interrupt(fiber);

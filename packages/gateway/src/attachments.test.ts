@@ -5,7 +5,7 @@ import { Effect } from "effect";
 import { boundedAttachment } from "#src/attachments";
 
 test("authenticated downloads keep credentials on the approved host and refuse redirects", async () => {
-  const requests: RequestInit[] = [];
+  const requests: Array<RequestInit> = [];
 
   const download = boundedAttachment(
     async (_url, init) => {

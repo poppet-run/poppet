@@ -42,7 +42,9 @@ export const fetchModelCatalog = <S extends Schema.Top>(options: {
         try {
           return await response.json();
         } catch (cause) {
-          if (!(cause instanceof SyntaxError)) throw cause;
+          if (!(cause instanceof SyntaxError)) {
+            throw cause;
+          }
 
           throw invalidRequest(
             options.provider,
@@ -94,7 +96,10 @@ export const createCatalogCache = <A extends { readonly id: string }>(ttlMs = 60
     let slot = perKey.get(options.key);
 
     if (slot === undefined) {
-      if (perKey.size >= 32) perKey.delete(perKey.keys().next().value!);
+      if (perKey.size >= 32) {
+        perKey.delete(perKey.keys().next().value!);
+      }
+
       slot = { lock: Semaphore.makeUnsafe(1), entry: null };
       perKey.set(options.key, slot);
     }
@@ -112,10 +117,11 @@ export const createCatalogCache = <A extends { readonly id: string }>(ttlMs = 60
             entry !== null &&
             entry.expiresAt > now &&
             entry.models.some((model) => model.id === requested)
-          )
+          ) {
             return yield* measureTiming("model-catalog", Effect.succeed(entry.models), {
               cached: true,
             });
+          }
 
           active.entry = null;
 

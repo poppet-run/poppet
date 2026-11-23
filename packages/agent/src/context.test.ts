@@ -71,9 +71,9 @@ const toolExchange = [
 
 describe("context.ts", () => {
   test("when older images become notes, retains the surrounding exchanges within budget", () => {
-    const history: Message[] = [];
+    const history: Array<Message> = [];
 
-    for (let turn = 0; turn < 20; turn++)
+    for (let turn = 0; turn < 20; turn++) {
       history.push(
         {
           role: "user",
@@ -87,6 +87,7 @@ describe("context.ts", () => {
         },
         assistant,
       );
+    }
 
     const result = assembleContext(stored(history), [], [incoming], model, defaultPolicy);
     const users = result.filter((message) => message.role === "user");

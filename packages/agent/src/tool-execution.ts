@@ -16,7 +16,9 @@ export const toolFailureKind = (
 ): "reported" | "uncertain" | "fatal" => {
   const reason = failureReason(error);
 
-  if (failures.reported.has(reason)) return "reported";
+  if (failures.reported.has(reason)) {
+    return "reported";
+  }
 
   return failures.uncertain.has(reason) ? "uncertain" : failures.otherwise;
 };
@@ -55,7 +57,7 @@ export const toolExecution = Effect.gen(function* () {
             .pipe(Effect.as({ output, reported: true }));
         }
 
-        if (tool.failures.journalFatalReply === true && kind === "fatal")
+        if (tool.failures.journalFatalReply === true && kind === "fatal") {
           return store
             .finishToolCall(run.id, callId, {
               status: "failed",
@@ -63,6 +65,7 @@ export const toolExecution = Effect.gen(function* () {
               output: failureReply(error.reason, error.message),
             })
             .pipe(Effect.andThen(Effect.fail(error)));
+        }
 
         return store
           .finishToolCall(run.id, callId, {
@@ -99,11 +102,12 @@ export const toolExecution = Effect.gen(function* () {
         Effect.catch(failCall),
       );
 
-      if (!outcome.reported && tool.recordsOwnResult !== true)
+      if (!outcome.reported && tool.recordsOwnResult !== true) {
         yield* store.finishToolCall(run.id, callId, {
           status: "completed",
           output: outcome.output,
         });
+      }
 
       return {
         output: outcome.output,

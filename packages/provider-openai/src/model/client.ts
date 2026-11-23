@@ -7,16 +7,20 @@ import { ConnectionError, requestFailure, resource } from "#src/connection";
 import type { HttpFetch } from "#src/oauth/http";
 
 export const modelFailure = (cause: unknown): ConnectionError => {
-  if (cause instanceof ConnectionError) return cause;
+  if (cause instanceof ConnectionError) {
+    return cause;
+  }
 
-  if (cause instanceof APIUserAbortError)
+  if (cause instanceof APIUserAbortError) {
     return new ConnectionError({
       reason: "interrupted",
       message: "The OpenAI request was interrupted.",
     });
+  }
 
-  if (cause instanceof APIError && !(cause instanceof APIConnectionError))
+  if (cause instanceof APIError && !(cause instanceof APIConnectionError)) {
     return requestFailure(cause.status ?? 0, cause.code, cause.requestID);
+  }
 
   return new ConnectionError({
     reason: "temporary",

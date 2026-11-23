@@ -195,7 +195,7 @@ describe("ApiKeyStore", () => {
         Effect.runPromise(registration.inspectSaved(store.directory)),
       ).rejects.toMatchObject({ reason: "authentication" });
 
-      await writeFile(path, " ".repeat(65537));
+      await writeFile(path, " ".repeat(65_537));
       await chmod(path, 0o600);
 
       await expect(store.run((keys) => keys.read("test-provider"))).rejects.toMatchObject({
@@ -259,8 +259,11 @@ describe("ApiKeyStore", () => {
         await writeFile(target, "leave this alone", { mode: 0o644 });
         await rm(path);
 
-        if (kind === "hardlink") await link(target, path);
-        else makeFIFO(path);
+        if (kind === "hardlink") {
+          await link(target, path);
+        } else {
+          makeFIFO(path);
+        }
 
         await expect(store.run((keys) => keys.read("test-provider"))).rejects.toMatchObject({
           reason: "authentication",
@@ -277,7 +280,7 @@ describe("ApiKeyStore", () => {
 describe("apiKeyProvider", () => {
   test("when login saves a key and logout follows, enables then removes inference access", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-api-key-provider-"));
-    const keys: string[] = [];
+    const keys: Array<string> = [];
 
     const { registration } = apiKeyProvider({
       id: "test-provider",

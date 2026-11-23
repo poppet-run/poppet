@@ -62,9 +62,9 @@ describe("runtimeLayers", () => {
   test.each(["first-provider", "second-provider"] as const)(
     "when %s is selected, builds only that provider and resolves the explicit model",
     async (selected) => {
-      const built: ProviderId[] = [];
-      const closed: ProviderId[] = [];
-      const resolved: string[] = [];
+      const built: Array<ProviderId> = [];
+      const closed: Array<ProviderId> = [];
+      const resolved: Array<string> = [];
 
       const layer = (id: ProviderId) =>
         Layer.effect(

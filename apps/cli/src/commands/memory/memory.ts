@@ -29,21 +29,25 @@ export const manageMemory = (command: MemoryCommand) =>
   Effect.gen(function* () {
     const memory = yield* Memory;
 
-    if (command.action === "list") return yield* memory.list;
+    if (command.action === "list") {
+      return yield* memory.list;
+    }
 
     if (command.action === "history") {
       const history = yield* memory.history(command.key);
 
-      if (history.length === 0)
+      if (history.length === 0) {
         return yield* Effect.fail(
           new MemoryError({ reason: "not-found", message: "The fact has no saved history." }),
         );
+      }
 
       return history;
     }
 
-    if (command.action === "revert")
+    if (command.action === "revert") {
       return (yield* memory.revert(command.key, command.revision)) ?? forgotten(command.key);
+    }
 
     if (command.action === "forget") {
       yield* memory.forget(command.key);

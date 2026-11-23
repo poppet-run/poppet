@@ -10,8 +10,8 @@ describe("renderWorkerStatus", () => {
       service: { installed: true, active: true, file: "worker.plist", log: "worker.log" },
       worker: {
         running: true,
-        pid: 44065,
-        startedAt: 1794223726871,
+        pid: 44_065,
+        startedAt: 1_794_223_726_871,
         activeOccurrence: null,
         taskCount: 0,
         pausedTaskCount: 0,

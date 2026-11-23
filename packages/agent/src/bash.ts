@@ -91,30 +91,33 @@ const prepareBash = (
         Effect.gen(function* () {
           const review = yield* reviewCommand(model, run, ownerRequest, request);
 
-          if (review.decision === "deny")
+          if (review.decision === "deny") {
             return yield* Effect.fail(
               new AgentError({
                 reason: "command-denied",
                 message: `Command denied: ${review.reason}`,
               }),
             );
+          }
 
           if (review.decision === "needs_approval") {
-            if (origin === "scheduled" || approve === null)
+            if (origin === "scheduled" || approve === null) {
               return yield* Effect.fail(
                 new AgentError({
                   reason: "command-approval-required",
                   message: `Command needs approval: ${review.reason}. Nothing was executed. ${origin === "scheduled" ? "This occurrence has stopped." : "Request this operation in Discord or Slack to approve it."}`,
                 }),
               );
+            }
 
-            if (!(yield* approve({ kind: "bash", ...request, reason: review.reason })))
+            if (!(yield* approve({ kind: "bash", ...request, reason: review.reason }))) {
               return yield* Effect.fail(
                 new AgentError({
                   reason: "command-denied",
                   message: "The owner did not approve this command. Nothing was executed.",
                 }),
               );
+            }
           }
 
           return {
@@ -144,7 +147,9 @@ export const bashTool = Effect.gen(function* () {
   const runner = Option.getOrNull(yield* Effect.serviceOption(Bash));
   const { toolBytes } = yield* ChatSettings;
 
-  if (runner === null) return null;
+  if (runner === null) {
+    return null;
+  }
 
   return {
     definition: bashDefinition,

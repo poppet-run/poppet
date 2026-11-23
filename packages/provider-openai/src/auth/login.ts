@@ -33,13 +33,15 @@ export const loginWorkflow = Effect.gen(function* () {
         Effect.gen(function* () {
           const current = (yield* store.read) ?? saved;
 
-          if (current.clientId !== null && current.clientId !== authorization.clientId)
+          if (current.clientId !== null && current.clientId !== authorization.clientId) {
             return yield* Effect.fail(
               new ConnectionError({
                 reason: "identity",
                 message: "The callback did not match the saved registration.",
               }),
             );
+          }
+
           const registered = { ...current, clientId: authorization.clientId };
           yield* store.write(registered);
 
@@ -54,13 +56,14 @@ export const loginWorkflow = Effect.gen(function* () {
             }),
           );
 
-          if (!tokens.id_token)
+          if (!tokens.id_token) {
             return yield* Effect.fail(
               new ConnectionError({
                 reason: "identity",
                 message: "OpenAI did not return an identity token.",
               }),
             );
+          }
 
           const identity = yield* oauth.verifyIdentity(
             tokens.id_token,
@@ -68,7 +71,7 @@ export const loginWorkflow = Effect.gen(function* () {
             authorization.nonce,
           );
 
-          if (current.identity !== null && current.identity.subject !== identity.subject)
+          if (current.identity !== null && current.identity.subject !== identity.subject) {
             return yield* Effect.fail(
               new ConnectionError({
                 reason: "identity",
@@ -76,19 +79,22 @@ export const loginWorkflow = Effect.gen(function* () {
                   "The signed-in account did not match the saved registration. Existing credentials were retained.",
               }),
             );
+          }
 
           const credentials = credentialsFor(tokens, (yield* DateTime.nowAsDate).getTime(), null);
 
           if (
             credentials?.scopes.includes(planScope) &&
             (!credentials.accessToken || !credentials.expiresAt || tokens.token_type !== "Bearer")
-          )
+          ) {
             return yield* Effect.fail(
               new ConnectionError({
                 reason: "identity",
                 message: "OpenAI granted plan usage without complete bearer credentials.",
               }),
             );
+          }
+
           const { pendingRefresh: _pendingRefresh, ...confirmed } = registered;
           const connection = { ...confirmed, identity, credentials, verification: null };
           yield* store.write(connection);

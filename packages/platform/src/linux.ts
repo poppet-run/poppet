@@ -37,8 +37,9 @@ export const workerPaths = (launch: WorkerLaunch, configHome: string) => {
 
 const plainText = (value: string) => {
   // eslint-disable-next-line no-control-regex -- The check targets control characters.
-  if (/[\u0000-\u001f\u007f]/.test(value))
+  if (/[\u0000-\u001f\u007f]/.test(value)) {
     throw new WorkerError({ message: "Worker settings cannot contain control characters." });
+  }
 
   return value;
 };
@@ -56,16 +57,18 @@ export const workerUnit = (launch: WorkerLaunch) => {
     .join(" ");
 
   const environment = Array.from(launch.environment, ([key, value]) => {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
       throw new WorkerError({ message: `Invalid worker environment name: ${key}.` });
+    }
 
     return `Environment=${quotedText(`${key}=${value}`)}\n`;
   }).join("");
 
-  if (!isAbsolute(launch.workingDirectory) || launch.workingDirectory.endsWith("\\"))
+  if (!isAbsolute(launch.workingDirectory) || launch.workingDirectory.endsWith("\\")) {
     throw new WorkerError({
       message: "Worker working directory must be an absolute path without a trailing backslash.",
     });
+  }
 
   return `[Unit]
 Description=Poppet worker
@@ -100,7 +103,9 @@ export const runSystemctl: Systemctl = async (args, signal) => {
   signal?.addEventListener("abort", abort, { once: true });
 
   try {
-    if (signal?.aborted) abort();
+    if (signal?.aborted) {
+      abort();
+    }
 
     const [stdout, stderr, code] = await Promise.all([
       readBoundedText(subprocess.stdout, 65_536, outputTooLarge),
@@ -145,18 +150,21 @@ export const manageWorker = (
     try: async (signal) => {
       const paths = workerPaths(launch, configHome);
 
-      if (action === "logs") return await readWorkerLogs(paths.log);
+      if (action === "logs") {
+        return await readWorkerLogs(paths.log);
+      }
 
       const installed = (await regularFileInfo(paths.file)) !== null;
       const inspectArgs = ["show", "--property=LoadState,ActiveState", paths.unit];
       const inspection = await systemctl(inspectArgs, signal);
 
-      if (inspection.code !== 0)
+      if (inspection.code !== 0) {
         throw failure(
           inspectArgs,
           inspection,
           "The worker state could not be checked; its registration was retained.",
         );
+      }
 
       const state = properties(inspection.stdout);
       const loaded = state.get("LoadState") === "loaded";
@@ -172,20 +180,22 @@ export const manageWorker = (
       const command = async (args: ReadonlyArray<string>) => {
         const run = await systemctl(args);
 
-        if (run.code !== 0)
+        if (run.code !== 0) {
           throw failure(
             args,
             run,
             `Check worker status and worker logs. The service file is ${paths.file}.`,
           );
+        }
       };
 
       if (
         installed &&
         !loaded &&
         (action === "start" || action === "restart" || action === "uninstall")
-      )
+      ) {
         await command(["daemon-reload"]);
+      }
 
       if (action === "stop" || action === "uninstall") {
         if (action === "uninstall" && installed) {
@@ -202,11 +212,13 @@ export const manageWorker = (
       }
 
       if (action === "install") {
-        if (installed)
+        if (installed) {
           throw new WorkerError({
             message:
               "This worker is already installed. Uninstall it before changing its saved settings.",
           });
+        }
+
         const contents = workerUnit(launch);
         await mkdir(paths.units, { recursive: true });
         await prepareWorkerLog(paths.logs, paths.log);
@@ -231,7 +243,9 @@ export const manageWorker = (
         await command([action === "restart" ? "restart" : "start", paths.unit]);
       }
 
-      if (action === "restart") return "Worker restarted. Check worker status for readiness.";
+      if (action === "restart") {
+        return "Worker restarted. Check worker status for readiness.";
+      }
 
       return "Worker started. It will run at login while this user is logged in. Check worker status for readiness.";
     },

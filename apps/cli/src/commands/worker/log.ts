@@ -22,7 +22,9 @@ export const openWorkerLog = (directory: string) => {
       try {
         closeSync(openFile(file, constants.O_RDONLY));
       } catch (error) {
-        if (!isMissingFile(error)) throw error;
+        if (!isMissingFile(error)) {
+          throw error;
+        }
       }
     }
   };
@@ -32,7 +34,10 @@ export const openWorkerLog = (directory: string) => {
   let size = fstatSync(handle).size;
 
   const rotate = () => {
-    if (handle === -1) throw new Error("The worker log is closed.");
+    if (handle === -1) {
+      throw new Error("The worker log is closed.");
+    }
+
     validate();
     closeSync(handle);
     handle = -1;
@@ -41,10 +46,15 @@ export const openWorkerLog = (directory: string) => {
       const file = paths[index]!;
 
       try {
-        if (index === paths.length - 1) unlinkSync(file);
-        else renameSync(file, paths[index + 1]!);
+        if (index === paths.length - 1) {
+          unlinkSync(file);
+        } else {
+          renameSync(file, paths[index + 1]!);
+        }
       } catch (error) {
-        if (!isMissingFile(error)) throw error;
+        if (!isMissingFile(error)) {
+          throw error;
+        }
       }
     }
 
@@ -54,11 +64,16 @@ export const openWorkerLog = (directory: string) => {
 
   return {
     write: (chunk: Uint8Array) => {
-      if (handle === -1) throw new Error("The worker log is closed.");
+      if (handle === -1) {
+        throw new Error("The worker log is closed.");
+      }
+
       let offset = 0;
 
       while (offset < chunk.length) {
-        if (size >= workerLogBytes) rotate();
+        if (size >= workerLogBytes) {
+          rotate();
+        }
 
         const written = writeSync(
           handle,
@@ -67,13 +82,19 @@ export const openWorkerLog = (directory: string) => {
           Math.min(chunk.length - offset, workerLogBytes - size),
         );
 
-        if (written === 0) throw new Error("Could not write the worker log.");
+        if (written === 0) {
+          throw new Error("Could not write the worker log.");
+        }
+
         offset += written;
         size += written;
       }
     },
     close: () => {
-      if (handle !== -1) closeSync(handle);
+      if (handle !== -1) {
+        closeSync(handle);
+      }
+
       handle = -1;
     },
   };

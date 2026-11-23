@@ -31,10 +31,14 @@ export const validateChannels = (registered: ReadonlyArray<ChannelRegistration>)
   const ids = new Set<string>();
 
   for (const entry of registered) {
-    if (!/^[a-z][a-z0-9-]{0,63}$/.test(entry.id))
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(entry.id)) {
       throw new Error(`Invalid channel ID: ${entry.id}`);
+    }
 
-    if (ids.has(entry.id)) throw new Error(`Duplicate channel registration: ${entry.id}`);
+    if (ids.has(entry.id)) {
+      throw new Error(`Duplicate channel registration: ${entry.id}`);
+    }
+
     ids.add(entry.id);
   }
 };
@@ -98,8 +102,9 @@ export const superviseAdapter = <E>(
           onFailure: (cause) => {
             const error = Option.getOrNull(Cause.findErrorOption(cause));
 
-            if (Cause.hasInterrupts(cause) || error instanceof StoreError)
+            if (Cause.hasInterrupts(cause) || error instanceof StoreError) {
               return Effect.failCause(cause);
+            }
 
             return restart(
               error instanceof Error ? error.message : "The adapter stopped unexpectedly.",
@@ -132,15 +137,21 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
 
       const workers = yield* Effect.forEach(configured, ({ entry, loaded }) =>
         Effect.gen(function* () {
-          if (Result.isFailure(loaded)) return disabledWorker(entry, loaded.failure.message);
+          if (Result.isFailure(loaded)) {
+            return disabledWorker(entry, loaded.failure.message);
+          }
 
-          if (loaded.success === null) return disabledWorker(entry);
+          if (loaded.success === null) {
+            return disabledWorker(entry);
+          }
 
           const context = yield* Layer.build(
             GatewayLive.pipe(Layer.provide(loaded.success), Layer.fresh),
           ).pipe(Effect.result);
 
-          if (Result.isFailure(context)) return disabledWorker(entry, context.failure.message);
+          if (Result.isFailure(context)) {
+            return disabledWorker(entry, context.failure.message);
+          }
 
           const gateway = Context.get(context.success, Gateway);
           const health: AdapterHealth = { restarts: 0, lastError: null };
@@ -223,7 +234,9 @@ const readSecret = Effect.tryPromise({
     for await (const part of Bun.stdin.stream()) {
       value += new TextDecoder().decode(part);
 
-      if (value.length > 8194) throw new Error("Secret too long");
+      if (value.length > 8194) {
+        throw new Error("Secret too long");
+      }
     }
 
     return Redacted.make(value.replace(/\r?\n$/, ""));
@@ -242,13 +255,15 @@ export const setupChannel = (
   Effect.gen(function* () {
     const entry = registered.find((candidate) => candidate.id === args[0]);
 
-    if (entry === undefined)
+    if (entry === undefined) {
       return yield* Effect.fail(
         new ChannelError({
           reason: "configuration",
           message: `Choose a registered channel: ${registered.map((candidate) => candidate.id).join(", ")}.`,
         }),
       );
+    }
+
     const config = yield* AppConfig;
 
     const message = yield* entry

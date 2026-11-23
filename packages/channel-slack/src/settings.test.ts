@@ -14,7 +14,7 @@ test("setup protects both tokens and keeps them out of configuration", async () 
   const directory = await mkdtemp(join(tmpdir(), "poppet-slack-"));
 
   try {
-    const setup = (args: string[], secret?: string) =>
+    const setup = (args: Array<string>, secret?: string) =>
       Effect.runPromise(
         slack.setup(args).pipe(
           Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
@@ -67,6 +67,7 @@ test("destinations preserve channel and thread identity and reject malformed IDs
   expect(parseConversation("C123:12345.000001")).toEqual({ channel: "C123", ts: "12345.000001" });
   expect(parseConversation("G123").channel).toBe("G123");
 
-  for (const id of ["D123", "C123:bad", "C123:123.456:789", "C123\n"])
+  for (const id of ["D123", "C123:bad", "C123:123.456:789", "C123\n"]) {
     expect(() => parseConversation(id)).toThrow();
+  }
 });

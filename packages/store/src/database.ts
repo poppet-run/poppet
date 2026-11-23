@@ -23,12 +23,13 @@ const checkOrigin = Effect.gen(function* () {
   const ledger = yield* sql`SELECT name FROM sqlite_master WHERE name = ${storeSchema.table}`;
   const tables = yield* sql`SELECT name FROM sqlite_master WHERE type = 'table'`;
 
-  if (ledger.length === 0 && tables.length > 0)
+  if (ledger.length === 0 && tables.length > 0) {
     return yield* new StoreError({
       reason: "migration",
       message:
         "The conversation database was not created by this version of Poppet. Move it aside to start a new store.",
     });
+  }
 });
 
 export const StoreDatabaseLive = Layer.effectContext(
@@ -59,12 +60,16 @@ export const StoreDatabaseLive = Layer.effectContext(
         await Promise.all(
           [path, `${path}-wal`, `${path}-shm`].map(async (candidate) => {
             const info = await lstat(candidate).catch((cause: unknown) => {
-              if (isMissingFile(cause)) return null;
+              if (isMissingFile(cause)) {
+                return null;
+              }
+
               throw cause;
             });
 
-            if (info && (!info.isFile() || info.isSymbolicLink()))
+            if (info && (!info.isFile() || info.isSymbolicLink())) {
               throw new Error("Invalid database file");
+            }
           }),
         );
 
@@ -75,7 +80,10 @@ export const StoreDatabaseLive = Layer.effectContext(
         );
 
         try {
-          if (!(await handle.stat()).isFile()) throw new Error("Invalid database file");
+          if (!(await handle.stat()).isFile()) {
+            throw new Error("Invalid database file");
+          }
+
           await handle.chmod(0o600);
         } finally {
           await handle.close();
@@ -105,7 +113,9 @@ export const StoreDatabaseLive = Layer.effectContext(
         Promise.all(
           [`${path}-wal`, `${path}-shm`].map((candidate) =>
             chmod(candidate, 0o600).catch((cause: unknown) => {
-              if (!isMissingFile(cause)) throw cause;
+              if (!isMissingFile(cause)) {
+                throw cause;
+              }
             }),
           ),
         ),

@@ -80,13 +80,17 @@ export const identityVerifier = (
 
       const { aud, azp, iat } = verified.payload;
 
-      if ((azp !== undefined || (Array.isArray(aud) && aud.length > 1)) && azp !== clientId)
+      if ((azp !== undefined || (Array.isArray(aud) && aud.length > 1)) && azp !== clientId) {
         return yield* Effect.fail(invalidIdentity());
+      }
 
-      if ((iat ?? 0) > currentDate.getTime() / 1000 + 5)
+      if ((iat ?? 0) > currentDate.getTime() / 1000 + 5) {
         return yield* Effect.fail(invalidIdentity());
+      }
 
-      if (nonce !== null && claims.nonce !== nonce) return yield* Effect.fail(invalidIdentity());
+      if (nonce !== null && claims.nonce !== nonce) {
+        return yield* Effect.fail(invalidIdentity());
+      }
 
       return { subject: claims.sub, email: claims.email ?? null };
     }).pipe(

@@ -29,10 +29,12 @@ export interface ChatHistoryMessage {
 }
 
 export const chatHistory = (messages: typeof HistoryMessages.Type) => {
-  const history: ChatHistoryMessage[] = [];
+  const history: Array<ChatHistoryMessage> = [];
 
   for (const { message } of messages) {
-    if (message.role === "tool") continue;
+    if (message.role === "tool") {
+      continue;
+    }
 
     if (message.role === "user") {
       const attachments = message.attachments?.map(({ name }) => name) ?? [];
@@ -49,7 +51,9 @@ export const chatHistory = (messages: typeof HistoryMessages.Type) => {
 
     const text = outputText(message.output);
 
-    if (text) history.push({ role: "assistant", text });
+    if (text) {
+      history.push({ role: "assistant", text });
+    }
   }
 
   return history;
@@ -67,13 +71,14 @@ export const readChatHistory = <A>(value: A, sessionId: string) =>
       ),
     );
 
-    if (inspection.session.id !== sessionId)
+    if (inspection.session.id !== sessionId) {
       return yield* Effect.fail(
         new AgentError({
           reason: "invalid-request",
           message: "The history returned a different session.",
         }),
       );
+    }
 
     return chatHistory(inspection.messages);
   });

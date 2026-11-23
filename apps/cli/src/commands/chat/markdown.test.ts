@@ -3,7 +3,7 @@ import { stripVTControlCharacters } from "node:util";
 
 import { ChatMarkdown } from "#src/commands/chat/markdown";
 
-const visible = (rows: string[]) => rows.map(stripVTControlCharacters).join("\n");
+const visible = (rows: Array<string>) => rows.map(stripVTControlCharacters).join("\n");
 
 test.each([false, true])("renders Markdown with colour=%j while fitting the viewport", (color) => {
   const renderer = new ChatMarkdown(color);

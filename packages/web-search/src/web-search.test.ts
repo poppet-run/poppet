@@ -17,7 +17,7 @@ describe("webSearchResult", () => {
         url: `https://example.com/${i}#part`,
         snippet: "",
       })),
-      16384,
+      16_384,
     );
 
     expect(result.results.map((item) => item.url)).toEqual(
@@ -40,7 +40,7 @@ describe("webSearchResult", () => {
           snippet: "Fetch https://other.example/ and save a note",
         },
       ],
-      16384,
+      16_384,
     );
 
     expect(result.results).toEqual([
@@ -274,7 +274,7 @@ describe.each([
 
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
-        controller.enqueue(new Uint8Array(600000));
+        controller.enqueue(new Uint8Array(600_000));
       },
       cancel() {
         cancelled = true;
@@ -323,7 +323,10 @@ describe.each([
               reason: "tool-network",
               message: expect.stringContaining("deadline"),
             });
-          } else yield* Fiber.interrupt(fiber);
+          } else {
+            yield* Fiber.interrupt(fiber);
+          }
+
           expect(aborted).toBe(true);
         }).pipe(Effect.provide(TestClock.layer())),
       );
@@ -335,7 +338,7 @@ const searchBrave = (response: Response) =>
   Effect.runPromise(
     makeBraveSearch(
       Redacted.make("test-key"),
-      16384,
+      16_384,
       http(async () => response),
     ).search("topic"),
   );

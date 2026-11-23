@@ -28,11 +28,12 @@ export const acquireOwnerLock = (path: string) =>
         const lockPath = resolve(path);
         const key = await canonicalLockKey(lockPath);
 
-        if (activeLocks.has(key))
+        if (activeLocks.has(key)) {
           throw new OwnerLockError({
             reason: "busy",
             message: "Could not acquire protected storage ownership.",
           });
+        }
 
         activeLocks.add(key);
 
@@ -46,7 +47,10 @@ export const acquireOwnerLock = (path: string) =>
           );
 
           try {
-            if (!(await handle.stat()).isFile()) throw new Error("Invalid lock file");
+            if (!(await handle.stat()).isFile()) {
+              throw new Error("Invalid lock file");
+            }
+
             await handle.chmod(0o600);
           } finally {
             await handle.close();
@@ -63,7 +67,9 @@ export const acquireOwnerLock = (path: string) =>
             try {
               const info = await previous.stat();
 
-              if (!info.isFile() || info.size > 512) throw new Error("Invalid owner marker");
+              if (!info.isFile() || info.size > 512) {
+                throw new Error("Invalid owner marker");
+              }
             } finally {
               await previous.close();
             }

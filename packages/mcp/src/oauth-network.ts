@@ -16,20 +16,28 @@ const blocked = () =>
 export const oauthAddress = async (server: URL, endpoint: URL, signal: AbortSignal) => {
   signal.throwIfAborted();
 
-  if (endpoint.username || endpoint.password) throw blocked();
+  if (endpoint.username || endpoint.password) {
+    throw blocked();
+  }
 
   if (
     loopback.has(server.hostname) &&
     loopback.has(endpoint.hostname) &&
     (endpoint.protocol === "http:" || endpoint.protocol === "https:")
-  )
+  ) {
     return null;
+  }
 
-  if (endpoint.protocol !== "https:" || loopback.has(endpoint.hostname)) throw blocked();
+  if (endpoint.protocol !== "https:" || loopback.has(endpoint.hostname)) {
+    throw blocked();
+  }
+
   const addresses = await resolveAddresses(urlHostname(endpoint), signal);
   const address = addresses[0];
 
-  if (address === undefined || !addresses.every(publicAddress)) throw blocked();
+  if (address === undefined || !addresses.every(publicAddress)) {
+    throw blocked();
+  }
 
   return address;
 };
@@ -54,10 +62,13 @@ const pinnedRequest = (url: URL, address: string, init: RequestInit, signal: Abo
     headers.set("host", url.host);
     headers.set("accept-encoding", "identity");
 
-    if (content !== undefined) headers.set("content-length", String(Buffer.byteLength(content)));
+    if (content !== undefined) {
+      headers.set("content-length", String(Buffer.byteLength(content)));
+    }
 
-    if (body instanceof URLSearchParams && !headers.has("content-type"))
+    if (body instanceof URLSearchParams && !headers.has("content-type")) {
       headers.set("content-type", "application/x-www-form-urlencoded");
+    }
 
     const hostname = urlHostname(url);
 
@@ -84,7 +95,9 @@ const pinnedRequest = (url: URL, address: string, init: RequestInit, signal: Abo
       const responseHeaders = new Headers();
 
       for (const [header, values] of Object.entries(incoming.headersDistinct)) {
-        for (const value of values ?? []) responseHeaders.append(header, value);
+        for (const value of values ?? []) {
+          responseHeaders.append(header, value);
+        }
       }
 
       if (status === 204 || status === 205 || status === 304 || init.method === "HEAD") {
@@ -97,8 +110,11 @@ const pinnedRequest = (url: URL, address: string, init: RequestInit, signal: Abo
           async pull(controller) {
             const chunk = await chunks.next();
 
-            if (chunk.done) controller.close();
-            else controller.enqueue(chunk.value);
+            if (chunk.done) {
+              controller.close();
+            } else {
+              controller.enqueue(chunk.value);
+            }
           },
           cancel() {
             incoming.destroy();
@@ -112,11 +128,14 @@ const pinnedRequest = (url: URL, address: string, init: RequestInit, signal: Abo
   });
 
 export const oauthFetch = (server: URL, operationSignal: AbortSignal): FetchLike =>
-  boundedFetch(262144, async (input, init = {}) => {
+  boundedFetch(262_144, async (input, init = {}) => {
     const endpoint = new URL(input);
     const signals = [operationSignal, AbortSignal.timeout(5000)];
 
-    if (init.signal !== null && init.signal !== undefined) signals.push(init.signal);
+    if (init.signal !== null && init.signal !== undefined) {
+      signals.push(init.signal);
+    }
+
     const signal = AbortSignal.any(signals);
     const address = await oauthAddress(server, endpoint, signal);
 

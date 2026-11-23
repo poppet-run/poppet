@@ -33,7 +33,7 @@ export const runWorker = Effect.scoped(
     };
 
     yield* serveWorker(workerSocketPath(config.dataDirectory), (request, body) => {
-      if (new URL(request.url).pathname === "/v1/doctor")
+      if (new URL(request.url).pathname === "/v1/doctor") {
         return Effect.fromNullishOr(identity).pipe(
           Effect.flatMap(doctorSnapshot),
           Effect.provideService(SqlClient.SqlClient, sql),
@@ -48,14 +48,19 @@ export const runWorker = Effect.scoped(
             onFailure: () => Response.json({ version: 1, unavailable: true }, { status: 503 }),
           }),
         );
+      }
 
-      if (new URL(request.url).pathname !== "/v1/tasks") return commands.handle(request, body);
+      if (new URL(request.url).pathname !== "/v1/tasks") {
+        return commands.handle(request, body);
+      }
 
       return taskResponse(body, (command) =>
         Effect.gen(function* () {
           const value = yield* tasks.handle(command);
 
-          if (command.action !== "status") return value;
+          if (command.action !== "status") {
+            return value;
+          }
 
           const messagingStatus = {
             running: true,

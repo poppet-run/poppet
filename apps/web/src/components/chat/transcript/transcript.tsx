@@ -22,8 +22,9 @@ export const Transcript = ({
   const latest = snapshot?.receipts.at(-1);
 
   useLayoutEffect(() => {
-    if (atBottom && transcript.current)
+    if (atBottom && transcript.current) {
       transcript.current.scrollTop = transcript.current.scrollHeight;
+    }
   }, [snapshot, atBottom]);
 
   return (

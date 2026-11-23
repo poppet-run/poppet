@@ -54,7 +54,9 @@ const toolCount = (server: (typeof MCPServers.Type)[number]) => {
 };
 
 const renderServers = (servers: typeof MCPServers.Type) => {
-  if (servers.length === 0) return "No MCP servers. Add one with poppet mcp add.";
+  if (servers.length === 0) {
+    return "No MCP servers. Add one with poppet mcp add.";
+  }
 
   const notes = servers.flatMap((server) => [
     ...(server.diagnostic === null ? [] : [`${server.id}: ${server.diagnostic}`]),

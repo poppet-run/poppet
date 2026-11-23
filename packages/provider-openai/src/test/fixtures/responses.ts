@@ -53,7 +53,9 @@ export const makeResponsesProvider = (controls: Controls) => {
       });
     }
 
-    if (url.pathname !== "/v1/responses") return new Response(null, { status: 404 });
+    if (url.pathname !== "/v1/responses") {
+      return new Response(null, { status: 404 });
+    }
 
     const body = Schema.decodeUnknownSync(ModelRequest)(await request.json());
     requests.push(body);

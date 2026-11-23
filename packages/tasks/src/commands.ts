@@ -113,12 +113,13 @@ export const executeTaskCommand = (
       let destination: DeliveryDestination | null = null;
 
       if (command.delivery) {
-        if (resolver === null)
+        if (resolver === null) {
           return yield* Effect.fail(
             new TaskError({
               message: "Start worker run before selecting a messaging destination.",
             }),
           );
+        }
 
         destination = yield* resolver.resolve(
           command.delivery.adapter,
@@ -129,7 +130,9 @@ export const executeTaskCommand = (
       return yield* repo.add(command.task, now, skill, destination, command.endAt ?? null);
     }
 
-    if (isTaskControl(command)) return yield* repo.control(command, now);
+    if (isTaskControl(command)) {
+      return yield* repo.control(command, now);
+    }
 
     switch (command.action) {
       case "list":

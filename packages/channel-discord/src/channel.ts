@@ -42,7 +42,10 @@ const threadName = (title: string) => {
   let name = "";
 
   for (const character of title) {
-    if (name.length + character.length > 100) break;
+    if (name.length + character.length > 100) {
+      break;
+    }
+
     name += character;
   }
 
@@ -62,7 +65,7 @@ export const discordChannelLayer = (
       makeCache: Options.cacheWithLimits({ MessageManager: 0 }),
       rest: {
         retries: 0,
-        timeout: 10000,
+        timeout: 10_000,
         rejectOnRateLimit: ({ route }) => !route.includes("/reactions/"),
       },
     }),
@@ -95,11 +98,12 @@ export const discordChannelLayer = (
       });
 
       const requireReady = () => {
-        if (!client.isReady())
+        if (!client.isReady()) {
           throw new ChannelError({
             reason: "unavailable",
             message: "Discord is disconnected.",
           });
+        }
 
         return client.user.id;
       };
@@ -113,14 +117,22 @@ export const discordChannelLayer = (
           message.author.id !== settings.ownerId ||
           message.guildId !== settings.guildId ||
           ![MessageType.Default, MessageType.Reply].includes(message.type)
-        )
+        ) {
           return;
+        }
+
         const thread = message.channel.isThread();
 
-        if (!thread && message.channel.type !== ChannelType.GuildText) return;
+        if (!thread && message.channel.type !== ChannelType.GuildText) {
+          return;
+        }
+
         const parentId = thread ? message.channel.parentId : message.channelId;
 
-        if (parentId === null) return;
+        if (parentId === null) {
+          return;
+        }
+
         const botId = client.user.id;
         const mentioned = message.mentions.users.has(botId);
 
@@ -131,7 +143,9 @@ export const discordChannelLayer = (
 
         const attachments = incomingAttachments(message.attachments.values());
 
-        if ((!text && attachments.length === 0) || text.length > 8192) return;
+        if ((!text && attachments.length === 0) || text.length > 8192) {
+          return;
+        }
 
         if (
           !Queue.offerUnsafe(messages, {
@@ -144,14 +158,16 @@ export const discordChannelLayer = (
             mentioned,
             ...(attachments.length > 0 && { attachments }),
           })
-        )
+        ) {
           dropped++;
+        }
       };
 
       client.on(Events.MessageCreate, incoming);
       client.on(Events.ThreadUpdate, (before, after) => {
-        if (after.guildId === settings.guildId && before.name !== after.name)
+        if (after.guildId === settings.guildId && before.name !== after.name) {
           Queue.offerUnsafe(nameChanges, after.id);
+        }
       });
       client.on(Events.Error, () => {
         connectionError = "Discord connection failed. Check credentials and intents.";
@@ -190,8 +206,9 @@ export const discordChannelLayer = (
       const guildChannel = async (id: string, force = false) => {
         const channel = await client.channels.fetch(id, { force });
 
-        if (channel === null || (channel.type !== ChannelType.GuildText && !channel.isThread()))
+        if (channel === null || (channel.type !== ChannelType.GuildText && !channel.isThread())) {
           return null;
+        }
 
         return channel.guildId === settings.guildId ? channel : null;
       };
@@ -225,11 +242,12 @@ export const discordChannelLayer = (
                     ? PermissionFlagsBits.SendMessagesInThreads
                     : PermissionFlagsBits.SendMessages,
                 ])
-            )
+            ) {
               throw new ChannelError({
                 reason: "permission",
                 message: "Discord channel access is missing or the thread is locked.",
               });
+            }
           },
           catch: discordFailure,
         }).pipe(
@@ -242,8 +260,10 @@ export const discordChannelLayer = (
           try: async () => {
             const botId = requireReady();
 
-            if (message.conversationId !== null)
+            if (message.conversationId !== null) {
               return { id: message.conversationId, managedName: null };
+            }
+
             const parent = await client.channels.fetch(message.parentId, { force: true });
 
             if (
@@ -256,32 +276,35 @@ export const discordChannelLayer = (
                   PermissionFlagsBits.ReadMessageHistory,
                   PermissionFlagsBits.CreatePublicThreads,
                 ])
-            )
+            ) {
               throw new ChannelError({
                 reason: "permission",
                 message: "Discord needs permission to create and read threads.",
               });
+            }
 
             const source = await parent.messages.fetch({
               message: message.messageId,
               force: true,
             });
 
-            if (source.author.id !== settings.ownerId || source.webhookId !== null)
+            if (source.author.id !== settings.ownerId || source.webhookId !== null) {
               throw new ChannelError({
                 reason: "permission",
                 message: "Cannot create a thread for this message.",
               });
+            }
 
             const thread = source.hasThread
               ? await client.channels.fetch(source.id, { force: true })
               : await source.startThread({ name: threadName(title), autoArchiveDuration: 1440 });
 
-            if (!thread?.isThread())
+            if (!thread?.isThread()) {
               throw new ChannelError({
                 reason: "unavailable",
                 message: "Cannot find the Discord thread.",
               });
+            }
 
             return {
               id: thread.id,
@@ -301,11 +324,12 @@ export const discordChannelLayer = (
             requireReady();
             const target = await guildChannel(conversationId);
 
-            if (target === null)
+            if (target === null) {
               throw new ChannelError({
                 reason: "permission",
                 message: "Discord text channel or thread is unavailable.",
               });
+            }
 
             const options: MessageCreateOptions = {
               content: text,
@@ -314,7 +338,9 @@ export const discordChannelLayer = (
               allowedMentions: { parse: [], repliedUser: false },
             };
 
-            if (requestId) options.components = approvalComponents(requestId);
+            if (requestId) {
+              options.components = approvalComponents(requestId);
+            }
 
             return (await target.send(options)).id;
           },
@@ -343,21 +369,23 @@ export const discordChannelLayer = (
         destination: (conversationId) =>
           Effect.tryPromise({
             try: async () => {
-              if (!/^[0-9]{1,20}$/.test(conversationId))
+              if (!/^[0-9]{1,20}$/.test(conversationId)) {
                 throw new ChannelError({
                   reason: "configuration",
                   message: "Choose a numeric Discord channel or thread ID of at most 20 digits.",
                 });
+              }
 
               requireReady();
               const target = await guildChannel(conversationId, true);
 
-              if (target === null || (target.isThread() && !target.parentId))
+              if (target === null || (target.isThread() && !target.parentId)) {
                 throw new ChannelError({
                   reason: "permission",
                   message:
                     "Choose an existing text channel or thread in the configured Discord server.",
                 });
+              }
 
               return target.isThread() ? target.parentId! : target.id;
             },
@@ -370,27 +398,32 @@ export const discordChannelLayer = (
 
               const channel = await guildChannel(message.conversationId ?? message.parentId);
 
-              if (channel === null)
+              if (channel === null) {
                 throw new ChannelError({
                   reason: "permission",
                   message: "Cannot mark this message.",
                 });
+              }
 
               const source = await channel.messages.fetch({
                 message: message.messageId,
                 force: true,
               });
 
-              if (source.author.id !== settings.ownerId || source.webhookId !== null)
+              if (source.author.id !== settings.ownerId || source.webhookId !== null) {
                 throw new ChannelError({
                   reason: "permission",
                   message: "Cannot mark this message.",
                 });
+              }
 
               if (state === "working") {
                 await source.react("👀");
               } else {
-                if (state === "completed") await source.react("✅");
+                if (state === "completed") {
+                  await source.react("✅");
+                }
+
                 await client.rest.delete(
                   `/channels/${source.channelId}/messages/${source.id}/reactions/${encodeURIComponent("👀")}/@me`,
                 );
@@ -404,7 +437,9 @@ export const discordChannelLayer = (
               requireReady();
               const thread = await client.channels.fetch(conversationId);
 
-              if (thread?.isThread()) await thread.sendTyping();
+              if (thread?.isThread()) {
+                await thread.sendTyping();
+              }
             },
             catch: discordFailure,
           }),
@@ -419,11 +454,12 @@ export const discordChannelLayer = (
                   try: async () => {
                     const thread = await client.channels.fetch(id, { force: true });
 
-                    if (!thread?.isThread())
+                    if (!thread?.isThread()) {
                       throw new ChannelError({
                         reason: "permission",
                         message: "Discord thread no longer exists.",
                       });
+                    }
 
                     return thread.name;
                   },
@@ -439,13 +475,16 @@ export const discordChannelLayer = (
                     const botId = requireReady();
                     const thread = await client.channels.fetch(id, { force: true });
 
-                    if (!thread?.isThread() || thread.ownerId !== botId || thread.locked)
+                    if (!thread?.isThread() || thread.ownerId !== botId || thread.locked) {
                       throw new ChannelError({
                         reason: "permission",
                         message: "Cannot rename this Discord thread.",
                       });
+                    }
 
-                    if (thread.name !== expected) return null;
+                    if (thread.name !== expected) {
+                      return null;
+                    }
 
                     return (await thread.setName(threadName(title))).name;
                   },
@@ -464,18 +503,21 @@ export const discordChannelLayer = (
                 const botId = requireReady();
                 const target = await guildChannel(conversationId);
 
-                if (target === null)
+                if (target === null) {
                   throw new ChannelError({
                     reason: "permission",
                     message: "Approval conversation is unavailable.",
                   });
+                }
+
                 const prompt = await target.messages.fetch({ message: messageId, force: true });
 
-                if (prompt.author.id !== botId || prompt.webhookId !== null)
+                if (prompt.author.id !== botId || prompt.webhookId !== null) {
                   throw new ChannelError({
                     reason: "permission",
                     message: "Cannot update this approval message.",
                   });
+                }
 
                 await prompt.edit({
                   components: approvalComponents(requestId, state),

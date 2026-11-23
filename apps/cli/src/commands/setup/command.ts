@@ -92,8 +92,9 @@ export const runSetup = (context: CLIContext) =>
 
       const models = yield* (yield* Provider).models;
 
-      if (models.length === 0)
+      if (models.length === 0) {
         return yield* Effect.fail(invalidRequest(selected, "The provider returned no models."));
+      }
 
       return yield* Prompt.AutoComplete({
         message: "Model (type to filter)",
@@ -108,7 +109,9 @@ export const runSetup = (context: CLIContext) =>
     const saves = [];
 
     for (const channel of context.channels) {
-      if (channel.promptSetup === undefined) continue;
+      if (channel.promptSetup === undefined) {
+        continue;
+      }
 
       const save = yield* channel.promptSetup.pipe(
         Effect.provideService(ChannelEnvironment, { dataDirectory: config.dataDirectory }),
@@ -125,8 +128,11 @@ export const runSetup = (context: CLIContext) =>
     yield* Console.log(`Saved provider ${selected} and model ${model} to ${path}.`);
 
     for (const { name, save } of saves) {
-      if (save !== null) yield* Console.log(yield* save);
-      else yield* Console.log(`${name} configuration left unchanged.`);
+      if (save !== null) {
+        yield* Console.log(yield* save);
+      } else {
+        yield* Console.log(`${name} configuration left unchanged.`);
+      }
     }
 
     yield* Console.log("Setup has not tested live inference or messaging connections.");

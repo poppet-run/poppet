@@ -19,7 +19,10 @@ export const activityIndicator = (
   glow: boolean,
   columns = terminalColumns(),
 ) => {
-  if (!glow) return `${activity}${".".repeat((Math.floor(frame / 3) % 3) + 1)}`.slice(0, columns);
+  if (!glow) {
+    return `${activity}${".".repeat((Math.floor(frame / 3) % 3) + 1)}`.slice(0, columns);
+  }
+
   const label = `${activity}...`.slice(0, columns);
   const center = ((frame / 2) % (label.length + 6)) - 3;
 
@@ -36,7 +39,7 @@ export const activityIndicator = (
 };
 
 export const readChatLine = Effect.suspend(() => {
-  if (!process.stdin.isTTY || !process.stdout.isTTY)
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
     return Effect.fail(
       new AgentError({
         reason: "invalid-request",
@@ -44,6 +47,7 @@ export const readChatLine = Effect.suspend(() => {
           "Interactive chat requires a terminal. Use chat new or chat send for one-shot requests.",
       }),
     );
+  }
 
   return Effect.acquireUseRelease(
     Effect.try({
@@ -82,7 +86,7 @@ export interface InteractiveChatOptions {
 
 export interface ChatInput {
   readonly text: string;
-  readonly attachments?: readonly string[];
+  readonly attachments?: ReadonlyArray<string>;
 }
 
 export const readChatInput = (read = readChatLine): Effect.Effect<ChatInput | null, AgentError> =>
@@ -129,7 +133,10 @@ export const interactiveChatOutput = (
     };
 
     const clear = Effect.suspend(() => {
-      if (!visible) return Effect.void;
+      if (!visible) {
+        return Effect.void;
+      }
+
       visible = false;
 
       return thinking(`\r\u001b[2K${open ? `\u001b[1A\r\u001b[2K${line}` : ""}`);
@@ -150,7 +157,10 @@ export const interactiveChatOutput = (
     });
 
     const render = Effect.suspend(() => {
-      if (!animate || !waiting) return Effect.void;
+      if (!animate || !waiting) {
+        return Effect.void;
+      }
+
       const prefix = !visible && open ? "\r\n" : "\r\u001b[2K";
       visible = true;
       const label = activityIndicator("Thinking", frame++, glow);
@@ -161,14 +171,18 @@ export const interactiveChatOutput = (
     const close = terminal.withPermit(stop);
     yield* Effect.addFinalizer(() => close.pipe(Effect.ignore));
 
-    if (animate)
+    if (animate) {
       yield* Effect.gen(function* () {
         for (;;) {
-          if (!waiting) return;
+          if (!waiting) {
+            return;
+          }
+
           yield* terminal.withPermit(render);
           yield* Effect.sleep("100 millis");
         }
       }).pipe(Effect.ignore, Effect.forkScoped({ startImmediately: true }));
+    }
 
     const reasoning: ChatReasoningWriter = (event) =>
       terminal.withPermit(
@@ -183,7 +197,10 @@ export const interactiveChatOutput = (
             return;
           }
 
-          if (event.text.length === 0) return;
+          if (event.text.length === 0) {
+            return;
+          }
+
           yield* clear;
 
           if (!open) {
@@ -193,7 +210,10 @@ export const interactiveChatOutput = (
 
           yield* thinking(event.text);
 
-          if (animate) rememberLine(event.text);
+          if (animate) {
+            rememberLine(event.text);
+          }
+
           yield* render;
         }),
       );
@@ -216,7 +236,7 @@ export interface ChatPresentation {
   readonly error: (text: string) => Effect.Effect<void, AgentError>;
   readonly begin: (text: string) => Effect.Effect<void, AgentError>;
   readonly finish: Effect.Effect<void, AgentError>;
-  readonly attachments?: (paths: readonly string[]) => Effect.Effect<void, AgentError>;
+  readonly attachments?: (paths: ReadonlyArray<string>) => Effect.Effect<void, AgentError>;
 }
 
 const plainPresentation: ChatPresentation = {
@@ -239,25 +259,28 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
   loadHistory: (id: string) => Effect.Effect<void, E, R> = () => Effect.void,
 ) =>
   Effect.gen(function* () {
-    if (options.sessionId !== undefined && options.skill !== undefined)
+    if (options.sessionId !== undefined && options.skill !== undefined) {
       return yield* Effect.fail(
         new AgentError({
           reason: "invalid-request",
           message: "A resumed session keeps its saved skill. Omit --skill.",
         }),
       );
+    }
 
     let sessionId = options.sessionId;
 
     const acknowledgeSession: ChatWriter = (id) =>
       Effect.suspend(() => {
-        if (sessionId !== undefined && sessionId !== id)
+        if (sessionId !== undefined && sessionId !== id) {
           return Effect.fail(
             new AgentError({
               reason: "interrupted",
               message: "The chat returned a different session. The prompt has stopped.",
             }),
           );
+        }
+
         const isNew = sessionId === undefined;
         sessionId = id;
 
@@ -273,17 +296,24 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
       yield* loadHistory(sessionId);
     }
 
-    let attachments: string[] = [];
+    let attachments: Array<string> = [];
 
     for (;;) {
       const input = yield* read;
 
-      if (input === null) return;
+      if (input === null) {
+        return;
+      }
+
       const { text } = input;
 
-      if (text.trim() === "/exit") return;
+      if (text.trim() === "/exit") {
+        return;
+      }
 
-      if (text.trim().length === 0) continue;
+      if (text.trim().length === 0) {
+        continue;
+      }
 
       const attach = /^\/attach\s+(.+)$/.exec(text.trim());
 
@@ -314,10 +344,12 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
         if (
           sessionId === undefined ||
           (result.failure instanceof AgentError && result.failure.reason === "interrupted")
-        )
+        ) {
           return yield* Effect.fail(result.failure);
+        }
+
         yield* presentation.error(`\n${result.failure.message}`);
-      } else if (sessionId === undefined)
+      } else if (sessionId === undefined) {
         return yield* Effect.fail(
           new AgentError({
             reason: "invalid-request",
@@ -325,5 +357,6 @@ export const interactiveChat = <E extends { readonly message: string }, R>(
               "The worker did not return a session identity. Inspect the printed session ID and restart the worker before continuing. The request was not retried.",
           }),
         );
+      }
     }
   });

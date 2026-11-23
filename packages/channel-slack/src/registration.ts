@@ -35,8 +35,11 @@ export const slack = {
         if (token === undefined && appToken === undefined) {
           token = lines[0];
           appToken = lines[1];
-        } else if (token === undefined) token = lines[0];
-        else appToken = lines[0];
+        } else if (token === undefined) {
+          token = lines[0];
+        } else {
+          appToken = lines[0];
+        }
       }
 
       const settings = yield* Schema.decodeUnknownEffect(SlackSettings)({
@@ -63,7 +66,9 @@ export const slack = {
     const { dataDirectory } = yield* ChannelEnvironment;
     const settings = yield* loadSlackSettings(dataDirectory);
 
-    if (settings === null) return null;
+    if (settings === null) {
+      return null;
+    }
 
     return Layer.unwrap(
       Effect.tryPromise({

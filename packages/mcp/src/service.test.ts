@@ -16,12 +16,12 @@ import { NoSignInsLive } from "#src/test/sign-ins";
 const fixture = async (
   mode = "normal",
   tools = ["read", "write"],
-  scheduledTools: string[] = [],
+  scheduledTools: Array<string> = [],
   environment: MCPStdioServer["environment"] = {},
   copies = 1,
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-"));
-  const errors: string[] = [];
+  const errors: Array<string> = [];
 
   const serverDirectories = [
     directory,
@@ -30,7 +30,7 @@ const fixture = async (
 
   await Promise.all(serverDirectories.slice(1).map((path) => mkdir(path)));
 
-  const servers: MCPStdioServer[] = serverDirectories.map((path, index) => ({
+  const servers: Array<MCPStdioServer> = serverDirectories.map((path, index) => ({
     id: index === 0 ? "fixture" : `fixture-${index}`,
     enabled: true,
     command: process.execPath,
@@ -117,9 +117,14 @@ const expireRequest = async <A>(
     await Effect.runPromise(
       Effect.gen(function* () {
         for (;;) {
-          if (settled || expired) break;
+          if (settled || expired) {
+            break;
+          }
 
-          if (!(yield* Effect.promise(() => readdir(state.directory))).includes("events")) continue;
+          if (!(yield* Effect.promise(() => readdir(state.directory))).includes("events")) {
+            continue;
+          }
+
           const events = yield* Effect.promise(() => state.events());
 
           if (events.some((event) => event.method === method)) {
@@ -143,13 +148,14 @@ const expireRequest = async <A>(
 
 const reaped = (pid: number) =>
   Effect.gen(function* () {
-    while (!dead(pid))
+    while (!dead(pid)) {
       yield* Effect.promise(
         () =>
           new Promise<void>((resolve) => {
             setTimeout(resolve, 5);
           }),
       );
+    }
   });
 
 describe("MCP", () => {
@@ -372,8 +378,9 @@ describe("MCP", () => {
           yield* Effect.gen(function* () {
             while (
               !(yield* Effect.promise(state.events)).some((event) => event.method === "tools/call")
-            )
+            ) {
               yield* Effect.sleep("5 millis");
+            }
           }).pipe(Effect.timeout("2 seconds"));
           yield* Effect.promise(() =>
             expireRequest(state, "notifications/cancelled", () =>
@@ -398,7 +405,7 @@ describe("MCP", () => {
     } finally {
       await state.close();
     }
-  }, 10000);
+  }, 10_000);
 
   test("when an idle protocol failure occurs, reaps the child and rejects retained catalog calls", async () => {
     const state = await fixture("protocol-idle", ["read"]);
@@ -412,7 +419,9 @@ describe("MCP", () => {
           const pid = (yield* mcp.status)[0]!.pid!;
           process.kill(pid, "SIGUSR1");
           yield* Effect.gen(function* () {
-            while (!dead(pid)) yield* Effect.sleep("5 millis");
+            while (!dead(pid)) {
+              yield* Effect.sleep("5 millis");
+            }
           }).pipe(Effect.timeout("2 seconds"));
           expect((yield* mcp.status)[0]).toMatchObject({
             state: "unavailable",
@@ -531,8 +540,12 @@ describe("MCP", () => {
         );
         expect((await state.events())[0]!.environment).toMatchObject({ SELECTED: value });
       } finally {
-        if (previous === undefined) delete process.env.POPPET_MCP_SELECTED;
-        else process.env.POPPET_MCP_SELECTED = previous;
+        if (previous === undefined) {
+          delete process.env.POPPET_MCP_SELECTED;
+        } else {
+          process.env.POPPET_MCP_SELECTED = previous;
+        }
+
         await state.close();
       }
     },
@@ -579,7 +592,7 @@ describe("MCP", () => {
     process.env.POPPET_OPENROUTER_API_KEY = "unrelated-provider-secret";
     process.env.POPPET_DISCORD_TOKEN = "unrelated-channel-secret";
 
-    const layer = makeMCPLive(16384).pipe(
+    const layer = makeMCPLive(16_384).pipe(
       Layer.provide([
         NoSignInsLive,
         Layer.succeed(ApiKeyStore, {
@@ -636,8 +649,11 @@ describe("MCP", () => {
         ["POPPET_OPENROUTER_API_KEY", previous.provider],
         ["POPPET_DISCORD_TOKEN", previous.channel],
       ]) {
-        if (value === undefined) delete process.env[key!];
-        else process.env[key!] = value;
+        if (value === undefined) {
+          delete process.env[key!];
+        } else {
+          process.env[key!] = value;
+        }
       }
 
       await state.close();
@@ -704,7 +720,7 @@ describe("MCP", () => {
     } finally {
       await state.close();
     }
-  }, 20000);
+  }, 20_000);
 
   test("when startup times out, releases the client and reports an actionable status", async () => {
     const state = await fixture("startup-hang");
@@ -726,7 +742,7 @@ describe("MCP", () => {
     } finally {
       await state.close();
     }
-  }, 10000);
+  }, 10_000);
 
   test("when several servers are slow to start, starts them all at once", async () => {
     const state = await fixture("startup-hang", ["read", "write"], [], {}, 2);
@@ -745,7 +761,10 @@ describe("MCP", () => {
                 Promise.all(state.serverDirectories.map(started)),
               );
 
-              if (ready.every(Boolean)) break;
+              if (ready.every(Boolean)) {
+                break;
+              }
+
               yield* Effect.sleep("20 millis");
             }
 
@@ -759,5 +778,5 @@ describe("MCP", () => {
     } finally {
       await state.close();
     }
-  }, 10000);
+  }, 10_000);
 });

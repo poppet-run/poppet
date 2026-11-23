@@ -7,7 +7,9 @@ export const messagingRequest = (text: string, attached = false) =>
   Effect.gen(function* () {
     const command = text.trim();
 
-    if (!/^\/new(?:\s|$)/.test(command)) return { fresh: false, prompt: text, skill: null };
+    if (!/^\/new(?:\s|$)/.test(command)) {
+      return { fresh: false, prompt: text, skill: null };
+    }
 
     let prompt = command.slice(4).trim();
     let skill: string | null = null;
@@ -19,13 +21,14 @@ export const messagingRequest = (text: string, attached = false) =>
       prompt = selected[2]?.trim() ?? "";
     }
 
-    if (prompt.startsWith("--") || (!prompt && !attached))
+    if (prompt.startsWith("--") || (!prompt && !attached)) {
       return yield* Effect.fail(
         new ChannelError({
           reason: "configuration",
           message: "Use /new [--skill <name>] <message> to start a fresh session.",
         }),
       );
+    }
 
     return { fresh: true, prompt, skill };
   });

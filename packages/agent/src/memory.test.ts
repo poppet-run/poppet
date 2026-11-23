@@ -43,7 +43,7 @@ const fixture = async (overrides: Partial<ChatPolicy> = {}, injectedMemory?: Mem
   const { directory } = harness;
   const profile = join(directory, "profile.md");
   const soul = join(directory, "soul.md");
-  const requests: ModelRequest[] = [];
+  const requests: Array<ModelRequest> = [];
   const state: MemoryFixtureState = { resolved: 0, stream: done };
   const model = testModel({ stream: (request) => state.stream(request), answer: done, requests });
 
@@ -586,7 +586,7 @@ describe.concurrent("memory.ts", () => {
   test("when cancellation occurs during a memory mutation, finishes and journals it once", async () => {
     const started = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const facts: MemoryFact[] = [];
+    const facts: Array<MemoryFact> = [];
 
     const injected: Memory["Service"] = {
       history: () => Effect.die("Unexpected memory history"),

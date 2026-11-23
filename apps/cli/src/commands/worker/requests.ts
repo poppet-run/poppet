@@ -52,11 +52,17 @@ type Frame = typeof Frame.Type;
 
 const answer = (request: WorkerQuery) =>
   Effect.gen(function* () {
-    if (request.kind === "mcp") return yield* inspectMCP(request.command);
+    if (request.kind === "mcp") {
+      return yield* inspectMCP(request.command);
+    }
 
-    if (request.kind === "memory") return yield* manageMemory(request.command);
+    if (request.kind === "memory") {
+      return yield* manageMemory(request.command);
+    }
 
-    if (request.kind === "store") return yield* Store.use((store) => store.status);
+    if (request.kind === "store") {
+      return yield* Store.use((store) => store.status);
+    }
 
     return yield* inspectChat(request.command, (yield* ChatSettings).toolBytes);
   });
@@ -73,7 +79,7 @@ export const WorkerRequestsLive = Layer.effect(
         Effect.gen(function* () {
           const route = new URL(request.url).pathname;
 
-          if (route === "/v1/queries")
+          if (route === "/v1/queries") {
             return yield* workerReply(
               Schema.decodeUnknownEffect(WorkerQuery, { onExcessProperty: "error" })(payload).pipe(
                 Effect.mapError(() => ({ message: "Invalid worker command." })),
@@ -82,20 +88,26 @@ export const WorkerRequestsLive = Layer.effect(
               ),
               "The worker command failed.",
             );
+          }
 
-          if (route !== "/v1/commands") return new Response("Not found", { status: 404 });
+          if (route !== "/v1/commands") {
+            return new Response("Not found", { status: 404 });
+          }
 
           const command = Schema.decodeUnknownOption(WorkerChat, { onExcessProperty: "error" })(
             payload,
           );
 
-          if (Option.isNone(command))
+          if (Option.isNone(command)) {
             return Response.json(
               { ok: false, message: "Invalid worker command." },
               { status: 400 },
             );
+          }
 
-          if (request.signal.aborted) return new Response(null, { status: 499 });
+          if (request.signal.aborted) {
+            return new Response(null, { status: 499 });
+          }
 
           const owned = yield* Scope.fork(yield* Effect.scope);
           const frames = yield* Queue.make<Frame, Cause.Done>({ capacity: 16 });
@@ -198,19 +210,22 @@ export const remoteWorkerCommand = (
         catch: (cause) => (cause instanceof WorkerRequestError ? cause : lostResponse()),
       });
 
-      if (response === null) return false;
+      if (response === null) {
+        return false;
+      }
 
       if (
         !response.ok ||
         response.body === null ||
         response.headers.get("content-type") !== "application/x-ndjson"
-      )
+      ) {
         return yield* Effect.fail(
           new WorkerRequestError({
             message:
               "The worker rejected this command. Check its arguments; if the worker is outdated, restart it to load the current code. The command was not retried.",
           }),
         );
+      }
 
       const body = response.body;
       let done = false;
@@ -224,30 +239,41 @@ export const remoteWorkerCommand = (
           ),
         ),
         Stream.runForEach((frame): Effect.Effect<void, WorkerRequestError | AgentError> => {
-          if (done) return Effect.fail(lostResponse());
+          if (done) {
+            return Effect.fail(lostResponse());
+          }
 
-          if (frame.type === "failed")
+          if (frame.type === "failed") {
             return Effect.fail(new WorkerRequestError({ message: frame.message }));
+          }
 
-          if (frame.type === "done")
+          if (frame.type === "done") {
             return Effect.sync(() => {
               done = true;
             });
+          }
 
-          if (frame.type === "reasoning-delta" || frame.type === "reasoning-end")
+          if (frame.type === "reasoning-delta" || frame.type === "reasoning-end") {
             return writeReasoning?.(frame) ?? Effect.void;
+          }
 
-          if (frame.type === "stderr")
+          if (frame.type === "stderr") {
             return Effect.gen(function* () {
-              if (frame.sessionId !== undefined) yield* onSession(frame.sessionId);
+              if (frame.sessionId !== undefined) {
+                yield* onSession(frame.sessionId);
+              }
+
               yield* announce(frame.text);
             });
+          }
 
           return write(frame.text);
         }),
       );
 
-      if (!done) return yield* Effect.fail(lostResponse());
+      if (!done) {
+        return yield* Effect.fail(lostResponse());
+      }
 
       return true;
     }),

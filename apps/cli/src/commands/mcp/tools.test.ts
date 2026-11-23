@@ -18,9 +18,9 @@ import { runtimeLayers } from "#src/runtime";
 
 const fixture = async (
   name = "read",
-  scheduledTools: string[] = [],
-  reviewedTools: string[] = [],
-  scheduledReviewedTools?: string[],
+  scheduledTools: Array<string> = [],
+  reviewedTools: Array<string> = [],
+  scheduledReviewedTools?: Array<string>,
 ) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-cli-"));
 
@@ -49,7 +49,7 @@ const fixture = async (
     join(directory, "config.json"),
     JSON.stringify({ provider: "fixture", model: "fixture", mcpServers: [configured] }),
   );
-  const requests: ModelRequest[] = [];
+  const requests: Array<ModelRequest> = [];
   let built = 0;
   let review: string | null = null;
   const waitingForReview = Deferred.makeUnsafe<void>();
@@ -111,7 +111,7 @@ const fixture = async (
                     const after = request.messages.some((message) => message.role === "tool");
                     const mcp = request.tools.find((tool) => tool.namespace === "poppet_mcp");
 
-                    if (!after && mcp !== undefined)
+                    if (!after && mcp !== undefined) {
                       output = [
                         {
                           type: "tool-call",
@@ -121,6 +121,7 @@ const fixture = async (
                           arguments: JSON.stringify({ input }),
                         },
                       ];
+                    }
 
                     if (!after && batch && output[0]?.type === "tool-call") {
                       output = [output[0], { ...output[0], callId: "next-call" }];
@@ -184,8 +185,8 @@ const fixture = async (
   };
 
   const runtime = runtimeLayers([registration]);
-  const lines: string[] = [];
-  const errors: string[] = [];
+  const lines: Array<string> = [];
+  const errors: Array<string> = [];
 
   const consoleOutput: Console.Console = {
     ...console,
@@ -247,8 +248,9 @@ const fixture = async (
       try {
         await Effect.runPromise(
           Effect.gen(function* () {
-            while (!errors.some((line) => line.includes('msg="worker started"')))
+            while (!errors.some((line) => line.includes('msg="worker started"'))) {
               yield* Effect.sleep("5 millis");
+            }
           }).pipe(Effect.timeout("2 seconds")),
         );
 
@@ -315,7 +317,10 @@ describe("ExternalAgentToolsLive", () => {
         });
         expect(tools[0]).toMatchObject({ serverId: "fixture", toolName: "read", scheduled: false });
 
-        if (worker) pid = JSON.parse(await state.invoke(["mcp", "servers", "--json"]))[0].pid;
+        if (worker) {
+          pid = JSON.parse(await state.invoke(["mcp", "servers", "--json"]))[0].pid;
+        }
+
         expect(await state.invoke(["chat", "new", "Read the fixture"])).toContain("Done");
         const sessions = JSON.parse(await state.invoke(["chat", "sessions", "--json"]));
         const saved = JSON.parse(await state.invoke(["chat", "show", "--json", sessions[0].id]));
@@ -343,12 +348,18 @@ describe("ExternalAgentToolsLive", () => {
           ),
         ).toBe(true);
 
-        if (worker)
+        if (worker) {
           expect(JSON.parse(await state.invoke(["mcp", "servers", "--json"]))[0].pid).toBe(pid);
+        }
       } finally {
-        if (fiber !== null) await Effect.runPromise(Fiber.interrupt(fiber));
+        if (fiber !== null) {
+          await Effect.runPromise(Fiber.interrupt(fiber));
+        }
 
-        if (pid !== 0) expect(() => process.kill(pid, 0)).toThrow();
+        if (pid !== 0) {
+          expect(() => process.kill(pid, 0)).toThrow();
+        }
+
         await state.close();
       }
     },
@@ -487,7 +498,9 @@ describe("ExternalAgentToolsLive", () => {
             }),
       );
 
-      if (decision === "deny") state.batch();
+      if (decision === "deny") {
+        state.batch();
+      }
 
       try {
         const tools = JSON.parse(await state.invoke(["mcp", "tools", "fixture", "--json"]));
@@ -501,8 +514,11 @@ describe("ExternalAgentToolsLive", () => {
 
         const request = state.invoke(["chat", "new", "Write to record 42"]);
 
-        if (failure === null) expect(await request).toContain("Done");
-        else await expect(request).rejects.toHaveProperty("reason", failure);
+        if (failure === null) {
+          expect(await request).toContain("Done");
+        } else {
+          await expect(request).rejects.toHaveProperty("reason", failure);
+        }
 
         const reviews = state.requests.filter((item) =>
           item.instructions.startsWith("Review this exact MCP invocation"),
@@ -516,7 +532,10 @@ describe("ExternalAgentToolsLive", () => {
           expect(reviews[0].messages[0]).toMatchObject({ role: "user" });
           const message = reviews[0].messages[0];
 
-          if (message?.role !== "user") throw new Error("Expected review input.");
+          if (message?.role !== "user") {
+            throw new Error("Expected review input.");
+          }
+
           expect(JSON.parse(message.text)).toMatchObject({
             ownerRequest: "Write to record 42",
             invocation: { server: "fixture", tool: "write", arguments: args },
@@ -532,11 +551,13 @@ describe("ExternalAgentToolsLive", () => {
         expect(saved.toolCalls[0]).toMatchObject({ status, review: { decision: reviewDecision } });
         expect(await state.invoke(["chat", "show", session])).toContain("Reviewed MCP calls");
 
-        if (status === "completed")
+        if (status === "completed") {
           expect(JSON.parse(saved.toolCalls[0].output)).toMatchObject({
             status: "completed",
             approvedBy: "reviewer",
           });
+        }
+
         const log = await readFile(join(state.directory, "events"), "utf8");
 
         const calls = log
@@ -547,7 +568,9 @@ describe("ExternalAgentToolsLive", () => {
 
         expect(calls).toHaveLength(attempts);
 
-        if (attempts > 0) expect(calls[0].params.arguments).toEqual(args);
+        if (attempts > 0) {
+          expect(calls[0].params.arguments).toEqual(args);
+        }
 
         if (decision === "deny") {
           expect(state.requests).toHaveLength(2);
@@ -564,8 +587,12 @@ describe("ExternalAgentToolsLive", () => {
     async (mode) => {
       const state = await fixture("write", [], ["write"]);
 
-      if (mode === "batch") state.batch();
-      else state.followup("mcp");
+      if (mode === "batch") {
+        state.batch();
+      } else {
+        state.followup("mcp");
+      }
+
       state.review('{"decision":"allow","reason":"The owner specified it."}');
 
       try {
@@ -616,7 +643,9 @@ describe("ExternalAgentToolsLive", () => {
         }),
       );
 
-      if (decision === "timeout") state.review("hang");
+      if (decision === "timeout") {
+        state.review("hang");
+      }
 
       try {
         const jobId = await Effect.runPromise(
@@ -638,14 +667,19 @@ describe("ExternalAgentToolsLive", () => {
             yield* repo.reconcile(now);
             const claimed = yield* repo.claim(now);
 
-            if (claimed === null) throw new Error("Missing occurrence.");
+            if (claimed === null) {
+              throw new Error("Missing occurrence.");
+            }
 
             if (decision === "timeout") {
               const active = yield* executeOccurrence(repo, claimed).pipe(Effect.forkChild);
               yield* Deferred.await(state.waitingForReview);
               yield* TestClock.adjust("30 seconds");
               yield* Fiber.join(active);
-            } else yield* executeOccurrence(repo, claimed);
+            } else {
+              yield* executeOccurrence(repo, claimed);
+            }
+
             expect(yield* repo.claim(now)).toBeNull();
 
             return job.id;
@@ -665,7 +699,9 @@ describe("ExternalAgentToolsLive", () => {
           expect(reviews[0].messages).toHaveLength(1);
           const message = reviews[0].messages[0];
 
-          if (message?.role !== "user") throw new Error("Expected the saved task prompt.");
+          if (message?.role !== "user") {
+            throw new Error("Expected the saved task prompt.");
+          }
 
           expect(JSON.parse(message.text)).toMatchObject({ ownerRequest: prompt });
         }
@@ -673,8 +709,9 @@ describe("ExternalAgentToolsLive", () => {
         const saved = JSON.parse(await state.invoke(["tasks", "show", jobId, "--json"]));
         expect(saved.occurrences[0]).toMatchObject({ status, failureReason });
 
-        if (decision === "excluded") expect(saved.occurrences[0].toolCalls).toEqual([]);
-        else {
+        if (decision === "excluded") {
+          expect(saved.occurrences[0].toolCalls).toEqual([]);
+        } else {
           expect(saved.occurrences[0].toolCalls).toEqual([
             expect.objectContaining({
               toolName: name,
@@ -783,8 +820,9 @@ describe("ExternalAgentToolsLive", () => {
             !state.requests.some((item) =>
               item.instructions.startsWith("Review this exact MCP invocation"),
             )
-          )
+          ) {
             yield* Effect.sleep("5 millis");
+          }
         }).pipe(Effect.timeout("3 seconds")),
       );
       await Effect.runPromise(Fiber.interrupt(fiber));
@@ -818,7 +856,10 @@ describe("ExternalAgentToolsLive", () => {
               readFile(join(state.directory, "events"), "utf8").catch(() => ""),
             );
 
-            if (events.includes('"method":"tools/call"')) return;
+            if (events.includes('"method":"tools/call"')) {
+              return;
+            }
+
             yield* Effect.sleep("5 millis");
           }
         }).pipe(Effect.timeout("3 seconds")),

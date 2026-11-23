@@ -20,8 +20,9 @@ describe("serveWorker", () => {
             const closed = yield* Deferred.make<void>();
 
             yield* serveWorker(path, (request) => {
-              if (new URL(request.url).pathname === "/next")
+              if (new URL(request.url).pathname === "/next") {
                 return Effect.succeed(Response.json({ ok: true }));
+              }
 
               return Effect.gen(function* () {
                 yield* Effect.addFinalizer(() => Deferred.succeed(closed, undefined));
@@ -55,7 +56,7 @@ describe("serveWorker", () => {
   test("when a request finishes, runs its finalizers before daemon shutdown and preserves the console", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-worker-request-"));
     const path = join(directory, "worker.sock");
-    const logs: string[] = [];
+    const logs: Array<string> = [];
 
     try {
       await Effect.runPromise(

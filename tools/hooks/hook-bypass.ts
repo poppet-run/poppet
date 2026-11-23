@@ -59,7 +59,9 @@ const tokenize = (command: string) => {
   let index = 0;
 
   const flush = () => {
-    if (started) tokens.push({ text: current, operator: false });
+    if (started) {
+      tokens.push({ text: current, operator: false });
+    }
 
     current = "";
     started = false;
@@ -80,7 +82,9 @@ const tokenize = (command: string) => {
       started = true;
 
       while (index < command.length && command[index] !== '"') {
-        if (command[index] === "\\" && index + 1 < command.length) index += 1;
+        if (command[index] === "\\" && index + 1 < command.length) {
+          index += 1;
+        }
 
         current += command[index];
         index += 1;
@@ -88,12 +92,16 @@ const tokenize = (command: string) => {
 
       index += 1;
     } else if (char === "\\") {
-      if (command[index + 1] !== "\n") current += command[index + 1] ?? "";
+      if (command[index + 1] !== "\n") {
+        current += command[index + 1] ?? "";
+      }
 
       started = command[index + 1] !== "\n" || started;
       index += 2;
     } else if (char === "#" && !started) {
-      while (index < command.length && command[index] !== "\n") index += 1;
+      while (index < command.length && command[index] !== "\n") {
+        index += 1;
+      }
     } else if (operators.has(pair)) {
       flush();
       tokens.push({ text: pair, operator: true });
@@ -121,8 +129,11 @@ const segments = (command: string) => {
   const result: Array<Array<string>> = [[]];
 
   for (const token of tokenize(command)) {
-    if (token.operator) result.push([]);
-    else result.at(-1)!.push(token.text);
+    if (token.operator) {
+      result.push([]);
+    } else {
+      result.at(-1)!.push(token.text);
+    }
   }
 
   return result.filter((words) => words.length > 0);
@@ -131,11 +142,17 @@ const segments = (command: string) => {
 const assignment = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s;
 
 const bypassingVariable = (name: string, value: string) => {
-  if (name === "LEFTHOOK" || name === "HUSKY") return /^(0|false|off|no)$/i.test(value);
+  if (name === "LEFTHOOK" || name === "HUSKY") {
+    return /^(0|false|off|no)$/i.test(value);
+  }
 
-  if (name === "LEFTHOOK_EXCLUDE") return value !== "";
+  if (name === "LEFTHOOK_EXCLUDE") {
+    return value !== "";
+  }
 
-  if (name === "GIT_CONFIG_PARAMETERS") return /hookspath/i.test(value);
+  if (name === "GIT_CONFIG_PARAMETERS") {
+    return /hookspath/i.test(value);
+  }
 
   return /^GIT_CONFIG_KEY_\d+$/.test(name) && /^core\.hookspath$/i.test(value);
 };
@@ -149,16 +166,22 @@ const commitSkipsHooks = (args: ReadonlyArray<string>) => {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
 
-    if (arg === "--") return false;
+    if (arg === "--") {
+      return false;
+    }
 
     if (arg.startsWith("-") && !arg.startsWith("--")) {
       for (let position = 1; position < arg.length; position += 1) {
         const flag = arg[position]!;
 
-        if (flag === "n") return true;
+        if (flag === "n") {
+          return true;
+        }
 
         if (valueOptions.has(flag)) {
-          if (position === arg.length - 1) index += 1;
+          if (position === arg.length - 1) {
+            index += 1;
+          }
 
           break;
         }
@@ -176,20 +199,30 @@ const gitBypasses = (args: ReadonlyArray<string>) => {
     const option = args[index]!;
 
     if (option === "-c" || option === "--config-env") {
-      if (/^core\.hookspath=/i.test(args[index + 1] ?? "")) return true;
+      if (/^core\.hookspath=/i.test(args[index + 1] ?? "")) {
+        return true;
+      }
 
       index += 2;
-    } else if (/^--config-env=core\.hookspath=/i.test(option)) return true;
-    else if (option === "-C" || option === "--git-dir" || option === "--work-tree") index += 2;
-    else index += 1;
+    } else if (/^--config-env=core\.hookspath=/i.test(option)) {
+      return true;
+    } else if (option === "-C" || option === "--git-dir" || option === "--work-tree") {
+      index += 2;
+    } else {
+      index += 1;
+    }
   }
 
   const subcommand = args[index];
   const rest = args.slice(index + 1);
 
-  if (rest.some(skipsVerification)) return true;
+  if (rest.some(skipsVerification)) {
+    return true;
+  }
 
-  if (subcommand === "commit" && commitSkipsHooks(rest)) return true;
+  if (subcommand === "commit" && commitSkipsHooks(rest)) {
+    return true;
+  }
 
   return (
     subcommand === "config" &&
@@ -207,9 +240,13 @@ const wordsBypass = (input: ReadonlyArray<string>, depth: number): boolean => {
   while (words.length > 0) {
     const match = assignment.exec(words[0]!);
 
-    if (match === null) break;
+    if (match === null) {
+      break;
+    }
 
-    if (bypassingVariable(match[1]!, match[2]!)) return true;
+    if (bypassingVariable(match[1]!, match[2]!)) {
+      return true;
+    }
 
     words.shift();
   }
@@ -218,14 +255,17 @@ const wordsBypass = (input: ReadonlyArray<string>, depth: number): boolean => {
   const args = words.slice(1);
 
   // Wrapper options vary, so check every possible start of the wrapped command.
-  if (wrappers.has(program)) return args.some((_, index) => wordsBypass(args.slice(index), depth));
+  if (wrappers.has(program)) {
+    return args.some((_, index) => wordsBypass(args.slice(index), depth));
+  }
 
-  if (program === "export" || program === "declare" || program === "typeset")
+  if (program === "export" || program === "declare" || program === "typeset") {
     return args.some((arg) => {
       const match = assignment.exec(arg);
 
       return match !== null && bypassingVariable(match[1]!, match[2]!);
     });
+  }
 
   if (program === "set") {
     const [name, value = ""] = args.filter((arg) => !arg.startsWith("-"));
@@ -233,15 +273,21 @@ const wordsBypass = (input: ReadonlyArray<string>, depth: number): boolean => {
     return name !== undefined && bypassingVariable(name, value);
   }
 
-  if (program === "git" && gitBypasses(args)) return true;
-
-  if (words.some((word) => basename(word) === "lefthook") && args.includes("uninstall"))
+  if (program === "git" && gitBypasses(args)) {
     return true;
+  }
 
-  if (mutators.has(program) && touchesHooksDirectory(args)) return true;
+  if (words.some((word) => basename(word) === "lefthook") && args.includes("uninstall")) {
+    return true;
+  }
 
-  if ((shells.has(program) || program === "eval") && depth < 4)
+  if (mutators.has(program) && touchesHooksDirectory(args)) {
+    return true;
+  }
+
+  if ((shells.has(program) || program === "eval") && depth < 4) {
     return args.some((arg) => commandBypassesHooks(arg, depth + 1));
+  }
 
   return depth < 4 && args.some((arg) => /\s/.test(arg) && commandBypassesHooks(arg, depth + 1));
 };
@@ -271,7 +317,7 @@ if (import.meta.main) {
   const cursor = Bun.argv[2] === "cursor";
   const refused = commandBypassesHooks(commandFrom(await Bun.stdin.text()));
 
-  if (cursor)
+  if (cursor) {
     console.log(
       JSON.stringify(
         refused
@@ -279,6 +325,7 @@ if (import.meta.main) {
           : { permission: "allow" },
       ),
     );
+  }
 
   if (refused) {
     console.error(blockedMessage);

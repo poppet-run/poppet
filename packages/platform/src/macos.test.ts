@@ -22,20 +22,28 @@ describe("manageWorker", () => {
     const paths = workerPaths(launch, home);
     const domain = `gui/${process.getuid?.()}`;
     const target = `${domain}/${paths.label}`;
-    const calls: ReadonlyArray<string>[] = [];
+    const calls: Array<ReadonlyArray<string>> = [];
     let active = false;
     let failed = "";
 
     const launchctl = async (args: ReadonlyArray<string>) => {
       calls.push(args);
 
-      if (args[0] === "print") return active ? 0 : 113;
+      if (args[0] === "print") {
+        return active ? 0 : 113;
+      }
 
-      if (args[0] === failed) return 1;
+      if (args[0] === failed) {
+        return 1;
+      }
 
-      if (args[0] === "bootstrap") active = true;
+      if (args[0] === "bootstrap") {
+        active = true;
+      }
 
-      if (args[0] === "bootout") active = false;
+      if (args[0] === "bootout") {
+        active = false;
+      }
 
       return 0;
     };
@@ -112,20 +120,31 @@ describe("manageWorker", () => {
         clock?.mockReturnValueOnce(0).mockReturnValue(35_000);
 
         const launchctl = async (args: ReadonlyArray<string>) => {
-          if (args[0] === "bootout") stopping = true;
+          if (args[0] === "bootout") {
+            stopping = true;
+          }
 
           if (args[0] === "print") {
-            if (!stopping) return 0;
+            if (!stopping) {
+              return 0;
+            }
 
-            if (outcome === "inspection error") return 1;
+            if (outcome === "inspection error") {
+              return 1;
+            }
 
-            if (pending-- > 0) return 0;
+            if (pending-- > 0) {
+              return 0;
+            }
 
             return 113;
           }
 
           if (args[0] === "bootstrap") {
-            if (pending >= 0) return 5;
+            if (pending >= 0) {
+              return 5;
+            }
+
             bootstrapped = true;
           }
 
@@ -169,17 +188,23 @@ describe("manageWorker", () => {
     };
 
     const paths = workerPaths(launch, home);
-    const calls: ReadonlyArray<string>[] = [];
+    const calls: Array<ReadonlyArray<string>> = [];
     let loaded = false;
 
     const launchctl = async (args: ReadonlyArray<string>) => {
       calls.push(args);
 
-      if (args[0] === "print") return loaded ? 0 : 113;
+      if (args[0] === "print") {
+        return loaded ? 0 : 113;
+      }
 
-      if (args[0] === "bootstrap" || args[0] === "kickstart") loaded = true;
+      if (args[0] === "bootstrap" || args[0] === "kickstart") {
+        loaded = true;
+      }
 
-      if (args[0] === "bootout") loaded = false;
+      if (args[0] === "bootout") {
+        loaded = false;
+      }
 
       return 0;
     };
@@ -256,9 +281,13 @@ describe("manageWorker", () => {
     let loaded = false;
 
     const successful = async (args: ReadonlyArray<string>) => {
-      if (args[0] === "print") return loaded ? 0 : 113;
+      if (args[0] === "print") {
+        return loaded ? 0 : 113;
+      }
 
-      if (args[0] === "bootstrap") loaded = true;
+      if (args[0] === "bootstrap") {
+        loaded = true;
+      }
 
       return 0;
     };
@@ -266,7 +295,7 @@ describe("manageWorker", () => {
     try {
       await Effect.runPromise(manageWorker("install", launch, home, successful));
       const original = await readFile(paths.plist, "utf8");
-      const calls: ReadonlyArray<string>[] = [];
+      const calls: Array<ReadonlyArray<string>> = [];
 
       const failed = async (args: ReadonlyArray<string>) => {
         calls.push(args);
@@ -302,7 +331,7 @@ describe("manageWorker", () => {
 
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const calls: ReadonlyArray<string>[] = [];
+    const calls: Array<ReadonlyArray<string>> = [];
 
     const launchctl = async (args: ReadonlyArray<string>) => {
       calls.push(args);
@@ -339,7 +368,10 @@ describe("manageWorker", () => {
     } finally {
       release.resolve();
 
-      if (stopped !== null) await stopped;
+      if (stopped !== null) {
+        await stopped;
+      }
+
       await Effect.runPromise(Fiber.interrupt(owner));
       await rm(home, { recursive: true, force: true });
     }
@@ -390,17 +422,23 @@ describe("manageWorker", () => {
       environment: new Map<string, string>(),
     };
 
-    const calls: ReadonlyArray<string>[] = [];
+    const calls: Array<ReadonlyArray<string>> = [];
     let active = true;
 
     const launchctl = async (args: ReadonlyArray<string>) => {
       calls.push(args);
 
-      if (args[0] === "print") return active ? 0 : 113;
+      if (args[0] === "print") {
+        return active ? 0 : 113;
+      }
 
-      if (args[0] === "bootout") active = false;
+      if (args[0] === "bootout") {
+        active = false;
+      }
 
-      if (args[0] === "bootstrap") active = true;
+      if (args[0] === "bootstrap") {
+        active = true;
+      }
 
       return 0;
     };

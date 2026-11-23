@@ -8,8 +8,9 @@ const browserError = () =>
 const validatedURL = (url: string) => {
   const parsed = new URL(url);
 
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("Unsupported browser URL scheme.");
+  }
 
   return parsed.href;
 };
@@ -31,13 +32,17 @@ export const openBrowser = (url: string) =>
         }),
         (process) =>
           Effect.sync(() => {
-            if (process.exitCode === null) process.kill();
+            if (process.exitCode === null) {
+              process.kill();
+            }
           }),
       );
 
       const status = yield* Effect.tryPromise({ try: () => browser.exited, catch: browserError });
 
-      if (status !== 0) return yield* Effect.fail(browserError());
+      if (status !== 0) {
+        return yield* Effect.fail(browserError());
+      }
     }),
   );
 

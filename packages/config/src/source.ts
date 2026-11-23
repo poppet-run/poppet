@@ -76,7 +76,7 @@ export const readConfigFile = (directory: string) =>
     const path = join(directory, "config.json");
 
     const contents = yield* Effect.tryPromise({
-      try: () => readProtectedFile(path, { maxBytes: 65536, ownerWriteOnly: true }),
+      try: () => readProtectedFile(path, { maxBytes: 65_536, ownerWriteOnly: true }),
       catch: () =>
         fileError(
           path,
@@ -173,8 +173,9 @@ export const updateConfigFile = (
         info.isSymbolicLink() ||
         info.uid !== process.getuid?.() ||
         (info.mode & 0o022) !== 0
-      )
+      ) {
         return yield* Effect.fail(fileError(directory, "Unsafe configuration directory."));
+      }
 
       yield* acquireOwnerLock(join(directory, "config.lock")).pipe(
         Effect.retry({
@@ -194,8 +195,10 @@ export const updateConfigFile = (
 
       const contents = JSON.stringify(changed, null, 2) + "\n";
 
-      if (Buffer.byteLength(contents) > 65536)
+      if (Buffer.byteLength(contents) > 65_536) {
         return yield* Effect.fail(fileError(path, "Configuration exceeds 64 KiB."));
+      }
+
       yield* Effect.tryPromise({
         try: () => writeFileAtomic(path, contents),
         catch: () => fileError(path, "Cannot save configuration."),

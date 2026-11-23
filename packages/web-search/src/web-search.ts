@@ -42,8 +42,9 @@ export const webSearchResult = (
         hostname.endsWith(".localhost") ||
         hostname.endsWith(".local") ||
         (isIP(hostname) && !publicAddress(hostname))
-      )
+      ) {
         throw new Error("Non-public address");
+      }
     } catch {
       truncated = true;
       continue;
@@ -76,7 +77,9 @@ export const webSearchResult = (
 
       results[index]![field] = prefix;
 
-      if (prefix !== text) truncated = true;
+      if (prefix !== text) {
+        truncated = true;
+      }
     }
   }
 
@@ -98,7 +101,7 @@ export const searchRequest = (
         const response = await request(query, signal);
 
         try {
-          if (!response.ok)
+          if (!response.ok) {
             throw new WebSearchError({
               reason:
                 response.status === 401 || response.status === 403
@@ -108,15 +111,19 @@ export const searchRequest = (
                     : "tool-network",
               message: `${provider} returned HTTP ${response.status}.`,
             });
+          }
 
-          if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? ""))
+          if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "")) {
             throw searchFailure();
+          }
 
-          if (response.body === null) throw searchFailure();
+          if (response.body === null) {
+            throw searchFailure();
+          }
 
           const text = await readBoundedText(
             response.body,
-            1048576,
+            1_048_576,
             () =>
               new WebSearchError({
                 reason: "tool-limit",

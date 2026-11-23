@@ -79,16 +79,27 @@ export class Agent extends Context.Service<
 >()("poppet/Agent") {}
 
 const failureOutcome = (exit: Exit.Exit<unknown, ChatFailure>): RunOutcome => {
-  if (Exit.isSuccess(exit)) return { status: "interrupted", reason: "consumer-stopped" };
+  if (Exit.isSuccess(exit)) {
+    return { status: "interrupted", reason: "consumer-stopped" };
+  }
 
-  if (Cause.hasInterrupts(exit.cause)) return { status: "interrupted", reason: "cancelled" };
+  if (Cause.hasInterrupts(exit.cause)) {
+    return { status: "interrupted", reason: "cancelled" };
+  }
+
   const error = Option.getOrNull(Cause.findErrorOption(exit.cause));
 
-  if (error === null) return { status: "failed", reason: "internal" };
+  if (error === null) {
+    return { status: "failed", reason: "internal" };
+  }
+
   let source = "agent";
 
-  if (error instanceof ProviderError) source = "provider";
-  else if (error instanceof StoreError) source = "store";
+  if (error instanceof ProviderError) {
+    source = "provider";
+  } else if (error instanceof StoreError) {
+    source = "store";
+  }
 
   return {
     status: error.reason === "interrupted" ? "interrupted" : "failed",
@@ -138,7 +149,9 @@ export const AgentLive = Layer.effect(
         }),
         (entry) =>
           Effect.sync(() => {
-            if (--entry.users === 0) sessions.delete(sessionId);
+            if (--entry.users === 0) {
+              sessions.delete(sessionId);
+            }
           }),
       ).pipe(
         Effect.flatMap((entry) =>
@@ -186,19 +199,22 @@ export const AgentLive = Layer.effect(
                     }),
             });
 
-            if (text.trim().length === 0 && files.references.length === 0)
+            if (text.trim().length === 0 && files.references.length === 0) {
               return yield* Effect.fail(
                 new AgentError({ reason: "invalid-request", message: "Enter a nonempty message." }),
               );
+            }
+
             const session = yield* store.session(sessionId);
 
-            if (session === null)
+            if (session === null) {
               return yield* Effect.fail(
                 new AgentError({
                   reason: "invalid-request",
                   message: "The session does not exist. Use chat sessions to find a session.",
                 }),
               );
+            }
 
             const mentionedSkills =
               skills === null || options.origin === "scheduled"
@@ -244,7 +260,10 @@ export const AgentLive = Layer.effect(
                         ? Math.min(reasoning.length, 2048)
                         : 0;
 
-                  if (length === 0) break;
+                  if (length === 0) {
+                    break;
+                  }
+
                   const chunk = reasoning.slice(0, length);
                   reasoning = reasoning.slice(length);
 
@@ -275,7 +294,7 @@ export const AgentLive = Layer.effect(
                 if (
                   model.description.provider !== session.provider ||
                   model.description.id !== session.model
-                )
+                ) {
                   return yield* Effect.fail(
                     new AgentError({
                       reason: "invalid-request",
@@ -283,17 +302,20 @@ export const AgentLive = Layer.effect(
                         "The resolved model does not match this session. No fallback is allowed.",
                     }),
                   );
+                }
 
                 if (
                   !model.description.capabilities.images &&
                   files.references.some((reference) => reference.mediaType !== "text/plain")
-                )
+                ) {
                   return yield* Effect.fail(
                     new AgentError({
                       reason: "attachment",
                       message: `${model.description.name} does not accept images. Start a new session with a model that does.`,
                     }),
                   );
+                }
+
                 const history = yield* store.messages(sessionId);
                 const runs = yield* store.runs(sessionId);
 
@@ -333,7 +355,9 @@ export const AgentLive = Layer.effect(
                     yield* recordTiming("first-text", requestedAt);
                   }
 
-                  if (event.type === "text-delta" || event.type === "reasoning-end") return event;
+                  if (event.type === "text-delta" || event.type === "reasoning-end") {
+                    return event;
+                  }
 
                   const saved = yield* Effect.uninterruptible(
                     store.finishRun(run.id, { status: "completed", response: event.response }).pipe(
@@ -351,7 +375,7 @@ export const AgentLive = Layer.effect(
               Stream.ensuring(flushReasoning(true)),
             );
 
-            return Stream.concat(Stream.make<ChatEvent[]>({ type: "started", run }), reply);
+            return Stream.concat(Stream.make<Array<ChatEvent>>({ type: "started", run }), reply);
           }),
         ).pipe(
           Stream.interruptWhen(
@@ -403,13 +427,17 @@ export const AgentLive = Layer.effect(
       Effect.gen(function* () {
         const session = yield* store.claimTitle(sessionId);
 
-        if (session === null) return;
+        if (session === null) {
+          return;
+        }
 
         const original = (yield* store.messages(sessionId)).find(
           (entry) => entry.message.role === "user",
         );
 
-        if (original?.message.role !== "user") return;
+        if (original?.message.role !== "user") {
+          return;
+        }
 
         const prompt =
           original.message.text.trim() ||

@@ -16,7 +16,9 @@ export const WebSearchLive = Layer.effect(
   Effect.gen(function* () {
     const provider = yield* searchProvider;
 
-    if (provider === null) return { search: null };
+    if (provider === null) {
+      return { search: null };
+    }
 
     const key = yield* ApiKeyStore.use((store) => store.read(provider.credentialId)).pipe(
       Effect.mapError(

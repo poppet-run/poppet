@@ -55,14 +55,18 @@ export const prepareSession = (
         return null;
       });
 
-    if (Result.isFailure(parsed)) return yield* reject(parsed.failure.message);
+    if (Result.isFailure(parsed)) {
+      return yield* reject(parsed.failure.message);
+    }
+
     const request = parsed.success;
 
-    const attachments: AttachmentInput[] = [];
+    const attachments: Array<AttachmentInput> = [];
 
     for (const attachment of incoming) {
-      if (channel.download === undefined)
+      if (channel.download === undefined) {
         return yield* reject("This messaging channel cannot receive attachments.");
+      }
 
       const downloaded = yield* channel
         .download(attachment, setup.attachmentBytes)
@@ -75,8 +79,9 @@ export const prepareSession = (
 
       const { message } = downloaded.failure;
 
-      if (failureDecision(downloaded.failure, entry.attempts).retryAfterMs !== null)
+      if (failureDecision(downloaded.failure, entry.attempts).retryAfterMs !== null) {
         return yield* Effect.fail(downloaded.failure);
+      }
 
       return yield* reject(`Cannot attach ${JSON.stringify(attachment.name)}: ${message}`);
     }
@@ -101,22 +106,24 @@ export const prepareSession = (
     let session = yield* store.session(id);
 
     if (session === null) {
-      if (config.model === null)
+      if (config.model === null) {
         return yield* Effect.fail(
           new ChannelError({
             reason: "configuration",
             message: "Select a model before starting messaging chat.",
           }),
         );
+      }
 
       const selected = yield* (
         request.skill === null ? Effect.succeed(null) : skills.load(request.skill)
       ).pipe(Effect.result);
 
-      if (Result.isFailure(selected))
+      if (Result.isFailure(selected)) {
         return yield* reject(
           "Could not load the selected skill. Check it with skills list and skills show before starting a new session.",
         );
+      }
 
       session = yield* store.createSession(config.provider, config.model, {
         id,

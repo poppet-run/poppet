@@ -60,13 +60,13 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
     await writeFile(join(directory, "config.json"), JSON.stringify({ ...current, ...settings }));
   };
 
-  const requests: ModelRequest[] = [];
-  const titleRequests: ModelRequest[] = [];
-  const lines: string[] = [];
-  const errors: string[] = [];
-  const chunks: string[] = [];
-  const thinkingChunks: string[] = [];
-  const outputEvents: string[] = [];
+  const requests: Array<ModelRequest> = [];
+  const titleRequests: Array<ModelRequest> = [];
+  const lines: Array<string> = [];
+  const errors: Array<string> = [];
+  const chunks: Array<string> = [];
+  const thinkingChunks: Array<string> = [];
+  const outputEvents: Array<string> = [];
   const clock = ManagedRuntime.make(TestClock.layer());
   await clock.runPromise(TestClock.setTime(Date.now()));
 
@@ -131,7 +131,9 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                         state.active++;
                         state.peak = Math.max(state.peak, state.active);
 
-                        while (state.hold) yield* Effect.sleep("5 millis");
+                        while (state.hold) {
+                          yield* Effect.sleep("5 millis");
+                        }
 
                         if (state.failNext) {
                           state.failNext = false;
@@ -168,7 +170,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
                                     state.taskAction === "create"
                                       ? {
                                           type: "once",
-                                          at: new Date(Date.now() + 3600000).toISOString(),
+                                          at: new Date(Date.now() + 3_600_000).toISOString(),
                                         }
                                       : null,
                                   delivery: state.taskAction === "create" ? "local" : null,
@@ -324,7 +326,10 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
       const watched: Console.Console = {
         ...consoleOutput,
         error: (...values) => {
-          if (values.join(" ").includes('msg="worker started"')) started.resolve();
+          if (values.join(" ").includes('msg="worker started"')) {
+            started.resolve();
+          }
+
           consoleOutput.error(...values);
         },
       };
@@ -352,7 +357,7 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
 
 const exampleChannel = (id: string) => {
   const incoming = Effect.runSync(Queue.make<IncomingMessage>());
-  const sent: string[] = [];
+  const sent: Array<string> = [];
   const replies = Effect.runSync(Queue.make<string>());
   const state = { configured: false, built: 0, closed: 0, directory: "", sent };
 
@@ -371,7 +376,10 @@ const exampleChannel = (id: string) => {
     load: Effect.gen(function* () {
       const environment = yield* ChannelEnvironment;
 
-      if (!state.configured) return null;
+      if (!state.configured) {
+        return null;
+      }
+
       expect(environment.dataDirectory).toBe(state.directory);
 
       return Layer.effect(
@@ -457,7 +465,10 @@ describe.concurrent("chat.ts", () => {
         destination: { adapter: "example-channel", conversationId: "home", parentId: "home" },
       });
     } finally {
-      if (worker) await Effect.runPromise(Fiber.interrupt(worker));
+      if (worker) {
+        await Effect.runPromise(Fiber.interrupt(worker));
+      }
+
       await chat.close();
     }
   });
@@ -471,7 +482,10 @@ describe.concurrent("chat.ts", () => {
       chat.state.taskAction = "create";
 
       try {
-        if (mode === "worker") worker = await chat.startWorker();
+        if (mode === "worker") {
+          worker = await chat.startWorker();
+        }
+
         await chat.invoke(["chat", "new", "Create a local summary task"]);
         await chat.invoke(["tasks", "list", "--json"]);
         const task = JSON.parse(chat.lines.at(-1)!)[0];
@@ -499,7 +513,10 @@ describe.concurrent("chat.ts", () => {
             );
             const reply = chat.requests.at(-1)?.messages.at(-1);
 
-            if (reply?.role !== "tool") throw new Error("Missing task tool reply");
+            if (reply?.role !== "tool") {
+              throw new Error("Missing task tool reply");
+            }
+
             expect(JSON.parse(reply.output)).toMatchObject(
               action === "list"
                 ? { tasks: [{ id: task.id, name: task.name, paused }] }
@@ -511,7 +528,10 @@ describe.concurrent("chat.ts", () => {
           },
         );
       } finally {
-        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== null) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -526,13 +546,13 @@ describe.concurrent("chat.ts", () => {
     "when $mode thinking is enabled=$enabled, streams only the permitted interactive output",
     async ({ mode, enabled }) => {
       const chat = await fixture();
-      const workerLogs: string[] = [];
+      const workerLogs: Array<string> = [];
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
       await chat.configure({ chat: { logReasoning: enabled } });
       chat.state.reasoning = "Checking the notes.";
 
       try {
-        if (mode === "worker")
+        if (mode === "worker") {
           worker = await chat.startWorker({
             ...console,
             log: (...values) => {
@@ -542,6 +562,7 @@ describe.concurrent("chat.ts", () => {
               workerLogs.push(stripVTControlCharacters(values.join(" ")));
             },
           });
+        }
 
         const input = ["First", "Second", "/exit"];
         await Effect.runPromise(
@@ -567,12 +588,16 @@ describe.concurrent("chat.ts", () => {
         expect(chat.errors.some((line) => line.includes("msg=thinking session="))).toBe(false);
         expect(workerLogs.filter((line) => line.includes("msg=thinking session="))).toEqual([]);
 
-        if (enabled)
+        if (enabled) {
           expect(chat.outputEvents.indexOf(`thinking:${chat.state.reasoning}`)).toBeLessThan(
             chat.outputEvents.indexOf("answer:An"),
           );
+        }
       } finally {
-        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== null) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -590,12 +615,16 @@ describe.concurrent("chat.ts", () => {
       chat.state.useTools = true;
 
       try {
-        if (mode === "worker") worker = await chat.startWorker();
+        if (mode === "worker") {
+          worker = await chat.startWorker();
+        }
+
         request = Effect.runFork(chat.program(["chat", "new", "Hello"]));
         await Effect.runPromise(
           Effect.gen(function* () {
-            while (!chat.thinkingChunks.includes(chat.state.reasoning))
+            while (!chat.thinkingChunks.includes(chat.state.reasoning)) {
               yield* Effect.sleep("5 millis");
+            }
           }).pipe(Effect.timeout("2 seconds")),
         );
         expect(chat.thinkingChunks).toEqual(["Thinking:\n", chat.state.reasoning]);
@@ -613,9 +642,14 @@ describe.concurrent("chat.ts", () => {
         ]);
         expect(chat.chunks.join("")).toBe("Answer\n");
       } finally {
-        if (request !== null) await Effect.runPromise(Fiber.interrupt(request));
+        if (request !== null) {
+          await Effect.runPromise(Fiber.interrupt(request));
+        }
 
-        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== null) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -676,7 +710,10 @@ describe.concurrent("chat.ts", () => {
       chat.state.useTools = true;
 
       try {
-        if (mode === "worker") worker = await chat.startWorker();
+        if (mode === "worker") {
+          worker = await chat.startWorker();
+        }
+
         const input = ["First", "/exit"];
         await Effect.runPromise(
           chat.program(
@@ -695,7 +732,10 @@ describe.concurrent("chat.ts", () => {
         ]);
         expect(chat.chunks.join("")).toBe("Answer\n");
       } finally {
-        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== null) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -712,7 +752,10 @@ describe.concurrent("chat.ts", () => {
       chat.state.failNext = true;
 
       try {
-        if (mode === "worker") worker = await chat.startWorker();
+        if (mode === "worker") {
+          worker = await chat.startWorker();
+        }
+
         const input = ["First", "/exit"];
         await Effect.runPromise(
           chat.program(
@@ -724,7 +767,10 @@ describe.concurrent("chat.ts", () => {
         expect(chat.chunks).toEqual([]);
         expect(chat.errors).toContain("\nFixture request failed");
       } finally {
-        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== null) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -743,7 +789,7 @@ describe.concurrent("chat.ts", () => {
         chat.state.reasoning = "Check the notes before answering.";
         chat.state.useTools = true;
 
-        if (mode === "worker")
+        if (mode === "worker") {
           worker = await chat.startWorker({
             ...console,
             log: (...values) => {
@@ -753,6 +799,7 @@ describe.concurrent("chat.ts", () => {
               log.write(Buffer.from(`${values.join(" ")}\n`));
             },
           });
+        }
 
         await chat.invoke(["chat", "new", "Hello"]);
         expect(chat.chunks.join("")).toBe("Answer\n");
@@ -796,7 +843,10 @@ describe.concurrent("chat.ts", () => {
         await chat.invoke(["chat", "show", "--json", chat.requests[0]!.sessionId]);
         expect(chat.chunks.join("")).not.toContain(chat.state.reasoning);
       } finally {
-        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== null) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         log.close();
         await chat.close();
       }
@@ -808,13 +858,13 @@ describe.concurrent("chat.ts", () => {
     async (mode) => {
       const chat = await fixture();
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | null = null;
-      const workerLogs: string[] = [];
+      const workerLogs: Array<string> = [];
       await chat.configure({ chat: {} });
 
       try {
         await chat.configure({ chat: { logTimings: true } });
 
-        if (mode === "worker")
+        if (mode === "worker") {
           worker = await chat.startWorker({
             ...console,
             log: (...values) => {
@@ -824,6 +874,7 @@ describe.concurrent("chat.ts", () => {
               workerLogs.push(stripVTControlCharacters(values.join(" ")));
             },
           });
+        }
 
         await chat.invoke(["chat", "new", "Private prompt"]);
         expect(chat.chunks.join("")).toBe("Answer\n");
@@ -855,10 +906,14 @@ describe.concurrent("chat.ts", () => {
         expect(diagnostics.at(-1)).toContain(" stage=run ");
         expect(diagnostics.at(-1)).toContain(" outcome=failed");
 
-        if (mode === "worker")
+        if (mode === "worker") {
           expect(workerLogs.filter((line) => line.includes("msg=timing"))).toEqual(diagnostics);
+        }
       } finally {
-        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== null) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -906,7 +961,10 @@ describe.concurrent("chat.ts", () => {
         expect(chat.lines.at(-1)).toBe("Original weekly procedure");
         expect(chat.state.built).toBe(0);
 
-        if (remote) worker = await chat.startWorker();
+        if (remote) {
+          worker = await chat.startWorker();
+        }
+
         expect(await inspect(["skills", "list", "--json"])).toEqual(["weekly-review"]);
 
         await chat.invoke(["chat", "new", "--skill", "weekly-review", "Review", "--literal"]);
@@ -983,7 +1041,10 @@ describe.concurrent("chat.ts", () => {
           task: { skill: job.skill },
         });
       } finally {
-        if (worker !== null) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== null) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -996,7 +1057,10 @@ describe.concurrent("chat.ts", () => {
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
 
       try {
-        if (mode === "worker") worker = await chat.startWorker();
+        if (mode === "worker") {
+          worker = await chat.startWorker();
+        }
+
         const path = join(chat.directory, "notes.txt");
         await writeFile(path, "Some notes");
         await chat.invoke(["chat", "new", "--attach", path, "First saved message"]);
@@ -1039,7 +1103,10 @@ describe.concurrent("chat.ts", () => {
         expect(missing).toHaveProperty("failure.message", "The session does not exist.");
         expect(chat.requests).toHaveLength(2);
       } finally {
-        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== undefined) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -1081,7 +1148,10 @@ describe.concurrent("chat.ts", () => {
           "Give a short project review.",
         );
 
-        if (remote) worker = await chat.startWorker();
+        if (remote) {
+          worker = await chat.startWorker();
+        }
+
         const input = ["   ", "  First message  ", "Second --help", "/exit"];
         await Effect.runPromise(
           chat.program(
@@ -1139,7 +1209,10 @@ describe.concurrent("chat.ts", () => {
           "completed",
         ]);
       } finally {
-        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== undefined) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -1153,7 +1226,10 @@ describe.concurrent("chat.ts", () => {
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
 
       try {
-        if (remote) worker = await chat.startWorker();
+        if (remote) {
+          worker = await chat.startWorker();
+        }
+
         chat.state.failNext = true;
         const input = ["First fails", "Next succeeds", "/exit"];
         await Effect.runPromise(
@@ -1181,7 +1257,10 @@ describe.concurrent("chat.ts", () => {
             .toSorted(),
         ).toEqual(["completed", "failed"]);
       } finally {
-        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== undefined) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -1196,7 +1275,10 @@ describe.concurrent("chat.ts", () => {
       let prompt: Fiber.Fiber<void, unknown> | undefined;
 
       try {
-        if (remote) worker = await chat.startWorker();
+        if (remote) {
+          worker = await chat.startWorker();
+        }
+
         chat.state.hold = true;
         let reads = 0;
         prompt = Effect.runFork(
@@ -1211,7 +1293,9 @@ describe.concurrent("chat.ts", () => {
         );
         await Effect.runPromise(
           Effect.gen(function* () {
-            while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
+            while (chat.requests.length === 0) {
+              yield* Effect.sleep("5 millis");
+            }
           }).pipe(Effect.timeout("2 seconds")),
         );
         await Effect.runPromise(Fiber.interrupt(prompt));
@@ -1219,7 +1303,9 @@ describe.concurrent("chat.ts", () => {
         chat.state.hold = false;
         await Effect.runPromise(
           Effect.gen(function* () {
-            while (chat.state.active > 0) yield* Effect.sleep("5 millis");
+            while (chat.state.active > 0) {
+              yield* Effect.sleep("5 millis");
+            }
           }).pipe(Effect.timeout("2 seconds")),
         );
         expect(reads).toBe(1);
@@ -1232,9 +1318,14 @@ describe.concurrent("chat.ts", () => {
         await chat.invoke(["chat", "show", "--json", chat.requests[0]!.sessionId]);
         expect(JSON.parse(chat.lines.at(-1)!).runs).toMatchObject([{ status: "interrupted" }]);
       } finally {
-        if (prompt !== undefined) await Effect.runPromise(Fiber.interrupt(prompt));
+        if (prompt !== undefined) {
+          await Effect.runPromise(Fiber.interrupt(prompt));
+        }
 
-        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== undefined) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -1364,7 +1455,10 @@ describe.concurrent("chat.ts", () => {
         { cause },
       );
     } finally {
-      if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+      if (worker !== undefined) {
+        await Effect.runPromise(Fiber.interrupt(worker));
+      }
+
       await chat.close();
     }
   });
@@ -1413,7 +1507,9 @@ describe.concurrent("chat.ts", () => {
 
       await Effect.runPromise(
         Effect.gen(function* () {
-          while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
+          while (chat.requests.length === 0) {
+            yield* Effect.sleep("5 millis");
+          }
         }).pipe(Effect.timeout("2 seconds")),
       );
       expect(chat.requests).toHaveLength(1);
@@ -1428,7 +1524,10 @@ describe.concurrent("chat.ts", () => {
       expect(await Bun.file(workerSocketPath(chat.directory)).exists()).toBe(false);
       await chat.invoke(["store", "status", "--json"]);
     } finally {
-      if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+      if (worker !== undefined) {
+        await Effect.runPromise(Fiber.interrupt(worker));
+      }
+
       await chat.close();
     }
   });
@@ -1732,7 +1831,10 @@ describe.concurrent("chat.ts", () => {
 
     const queued = Effect.runFork(
       Effect.gen(function* () {
-        while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
+        while (chat.requests.length === 0) {
+          yield* Effect.sleep("5 millis");
+        }
+
         yield* chat.program(["chat", "new", "Cancel before starting"]);
       }),
     );
@@ -1743,8 +1845,9 @@ describe.concurrent("chat.ts", () => {
           while (
             chat.requests.length === 0 ||
             chat.errors.filter((line) => line.startsWith("Session:")).length < 2
-          )
+          ) {
             yield* Effect.sleep("5 millis");
+          }
         }).pipe(Effect.timeout("2 seconds")),
       );
       await Effect.runPromise(Fiber.interrupt(worker));
@@ -1781,7 +1884,9 @@ describe.concurrent("chat.ts", () => {
     try {
       await Effect.runPromise(
         Effect.gen(function* () {
-          while (chat.requests.length === 0) yield* Effect.sleep("5 millis");
+          while (chat.requests.length === 0) {
+            yield* Effect.sleep("5 millis");
+          }
         }).pipe(Effect.timeout("2 seconds")),
       );
       const second = Effect.runFork(chat.program(["chat", "new", "Queued"]));
@@ -1802,7 +1907,9 @@ describe.concurrent("chat.ts", () => {
       await Effect.runPromise(Fiber.interrupt(first));
       await Effect.runPromise(
         Effect.gen(function* () {
-          while (chat.requests.length < 2) yield* Effect.sleep("5 millis");
+          while (chat.requests.length < 2) {
+            yield* Effect.sleep("5 millis");
+          }
         }).pipe(Effect.timeout("2 seconds")),
       );
       expect(chat.state.peak).toBe(1);
@@ -1811,8 +1918,9 @@ describe.concurrent("chat.ts", () => {
       await Effect.runPromise(Fiber.join(second));
       await Effect.runPromise(
         Effect.gen(function* () {
-          while (chat.requests.length < 3 || chat.state.active !== 0)
+          while (chat.requests.length < 3 || chat.state.active !== 0) {
             yield* Effect.sleep("5 millis");
+          }
         }).pipe(Effect.timeout("2 seconds")),
       );
       expect(chat.state.peak).toBe(1);
@@ -1873,7 +1981,7 @@ describe.concurrent("chat.ts", () => {
       const remote = mode === "worker";
       let worker: Awaited<ReturnType<typeof chat.startWorker>> | undefined;
 
-      const inspect = async (args: string[]) => {
+      const inspect = async (args: Array<string>) => {
         chat.chunks.length = 0;
         await chat.invoke(args);
 
@@ -1883,7 +1991,10 @@ describe.concurrent("chat.ts", () => {
       try {
         chat.state.useTools = true;
 
-        if (remote) worker = await chat.startWorker();
+        if (remote) {
+          worker = await chat.startWorker();
+        }
+
         await chat.invoke(["chat", "new", "Remember that I prefer concise answers"]);
 
         const session = chat.errors
@@ -1907,7 +2018,10 @@ describe.concurrent("chat.ts", () => {
           '"key":"answer.style","value":"Keep answers concise"',
         );
       } finally {
-        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== undefined) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },
@@ -2052,7 +2166,10 @@ describe.concurrent("chat.ts", () => {
       expect(chat.titleRequests).toHaveLength(1);
       expect(chat.state.built).toBe(built + 1);
     } finally {
-      if (worker) await Effect.runPromise(Fiber.interrupt(worker));
+      if (worker) {
+        await Effect.runPromise(Fiber.interrupt(worker));
+      }
+
       await chat.close();
     }
   });
@@ -2069,14 +2186,17 @@ describe.concurrent("chat.ts", () => {
         return chat.errors.findLast((line) => line.startsWith("Session: "))!.slice(9);
       };
 
-      const json = async (args: string[]) => {
+      const json = async (args: Array<string>) => {
         await chat.invoke(args);
 
         return JSON.parse(chat.lines.at(-1)!);
       };
 
       try {
-        if (mode === "worker") worker = await chat.startWorker();
+        if (mode === "worker") {
+          worker = await chat.startWorker();
+        }
+
         chat.state.useTools = true;
         const remembered = await start("Remember that I prefer concise answers");
         chat.state.useTools = false;
@@ -2172,7 +2292,10 @@ describe.concurrent("chat.ts", () => {
         expect(chat.lines.at(-1)).toContain("Deleted 1 session:");
         expect(await json(["chat", "sessions", "--json"])).toEqual([]);
       } finally {
-        if (worker !== undefined) await Effect.runPromise(Fiber.interrupt(worker));
+        if (worker !== undefined) {
+          await Effect.runPromise(Fiber.interrupt(worker));
+        }
+
         await chat.close();
       }
     },

@@ -11,13 +11,14 @@ export const resolveDestination = (
   Effect.gen(function* () {
     const conversationId = requested ?? channel.homeConversationId;
 
-    if (conversationId === undefined)
+    if (conversationId === undefined) {
       return yield* Effect.fail(
         new ChannelError({
           reason: "configuration",
           message: "Configure a home channel or select an explicit destination.",
         }),
       );
+    }
 
     const parentId = yield* channel.destination(conversationId);
     const account = yield* channel.accountId;
@@ -42,13 +43,14 @@ export const resolveDestination = (
     if (
       destination.ownerId !== channel.policy.ownerId ||
       destination.scopeId !== channel.policy.scopeId
-    )
+    ) {
       return yield* Effect.fail(
         new ChannelError({
           reason: "permission",
           message: "The destination is outside the authorized messaging server.",
         }),
       );
+    }
 
     yield* channel.checkAccess(
       {

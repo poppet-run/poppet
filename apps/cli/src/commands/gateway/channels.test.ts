@@ -64,14 +64,16 @@ describe("superviseAdapter", () => {
 
   test("when failures persist then recovery lasts ten minutes, caps and resets the restart delay", async () => {
     const health: AdapterHealth = { restarts: 0, lastError: null };
-    const started: number[] = [];
+    const started: Array<number> = [];
 
     await run(
       Effect.gen(function* () {
         const adapter = Effect.gen(function* () {
           started.push(yield* Clock.currentTimeMillis);
 
-          if (started.length === 11) yield* Effect.sleep("10 minutes");
+          if (started.length === 11) {
+            yield* Effect.sleep("10 minutes");
+          }
 
           return yield* Effect.fail(
             new ChannelError({ reason: "unavailable", message: "Disconnected" }),
@@ -84,7 +86,7 @@ describe("superviseAdapter", () => {
         const delays = started.slice(1).map((at, index) => at - started[index]!);
 
         expect(delays.slice(0, 10)).toEqual([
-          1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 300000,
+          1000, 2000, 4000, 8000, 16_000, 32_000, 64_000, 128_000, 256_000, 300_000,
         ]);
         expect(delays[10]).toBe(601_000);
         yield* Fiber.interrupt(fiber);

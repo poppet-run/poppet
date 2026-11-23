@@ -102,7 +102,10 @@ const destination = (task: TaskRow) =>
 const deliveries = (
   rows: ReadonlyArray<{ readonly state: string; readonly heldUntil?: number | null }>,
 ) => {
-  if (rows.length === 0) return "-";
+  if (rows.length === 0) {
+    return "-";
+  }
+
   const counts = new Map<string, number>();
 
   for (const row of rows) {

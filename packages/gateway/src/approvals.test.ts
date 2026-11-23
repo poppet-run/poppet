@@ -31,7 +31,7 @@ const approval = {
   reason: "List files",
 };
 
-const channel = (sent: string[]): MessagingChannel["Service"] => ({
+const channel = (sent: Array<string>): MessagingChannel["Service"] => ({
   id: "discord",
   accountId: Effect.succeed("bot"),
   policy: { ownerId: "owner", scopeId: "guild" },
@@ -57,19 +57,22 @@ const channel = (sent: string[]): MessagingChannel["Service"] => ({
   },
 });
 
-const prompted = (sent: string[], approvals: ActionApprovals) =>
+const prompted = (sent: Array<string>, approvals: ActionApprovals) =>
   Effect.gen(function* () {
     const fiber = yield* approvals.request(message, "thread", approval).pipe(Effect.forkChild);
 
-    while (sent.length === 0) yield* Effect.yieldNow;
+    while (sent.length === 0) {
+      yield* Effect.yieldNow;
+    }
+
     const id = /\/approve ([a-f0-9-]{36})/.exec(sent[0]!)?.[1];
 
     return { fiber, id: id! };
   });
 
 const interactive = () => {
-  const sent: string[] = [];
-  const updates: ApprovalState[] = [];
+  const sent: Array<string> = [];
+  const updates: Array<ApprovalState> = [];
   const base = channel(sent);
 
   const adapter: MessagingChannel["Service"] = {
@@ -89,7 +92,7 @@ const interactive = () => {
 
 const click = (
   id: string,
-  replies: string[],
+  replies: Array<string>,
   decision: "approve" | "deny" = "approve",
 ): ApprovalAction => ({
   requestId: id,
@@ -103,7 +106,7 @@ const click = (
 
 describe("actionApprovals", () => {
   test("when a Bash approval contains control characters and markup, renders both fields as escaped data", async () => {
-    const sent: string[] = [];
+    const sent: Array<string> = [];
     const approvals = actionApprovals(channel(sent));
 
     await Effect.runPromise(
@@ -116,7 +119,10 @@ describe("actionApprovals", () => {
           })
           .pipe(Effect.forkChild);
 
-        while (sent.length === 0) yield* Effect.yieldNow;
+        while (sent.length === 0) {
+          yield* Effect.yieldNow;
+        }
+
         expect(sent[0]).toContain('Review reason: `"\\u0060approve\\u0060\\n\\u2066"`');
         expect(sent[0]).toContain(String.raw`"command":"echo \u202e"`);
         yield* Fiber.interrupt(fiber);
@@ -130,7 +136,7 @@ describe("actionApprovals", () => {
       const { adapter } = interactive();
       const published = Deferred.makeUnsafe<string>();
       const acknowledge = Deferred.makeUnsafe<void>();
-      const replies: string[] = [];
+      const replies: Array<string> = [];
 
       const approvals = actionApprovals({
         ...adapter,
@@ -182,7 +188,7 @@ describe("actionApprovals", () => {
     async (decision) => {
       const { sent, updates, adapter } = interactive();
       const approvals = actionApprovals(adapter);
-      const replies: string[] = [];
+      const replies: Array<string> = [];
 
       await Effect.runPromise(
         Effect.gen(function* () {
@@ -228,7 +234,7 @@ describe("actionApprovals", () => {
           : Effect.void,
     });
 
-    const replies: string[] = [];
+    const replies: Array<string> = [];
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -251,7 +257,7 @@ describe("actionApprovals", () => {
   test("when the worker restarts, the new approval manager rejects old buttons and text IDs", async () => {
     const { sent, adapter } = interactive();
     const original = actionApprovals(adapter);
-    const replies: string[] = [];
+    const replies: Array<string> = [];
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -318,7 +324,7 @@ describe("actionApprovals", () => {
     "when a long prompt has failed delivery=%j, only a complete invocation can get buttons",
     async (fail) => {
       const { sent, adapter } = interactive();
-      const buttons: { text: string; id: string }[] = [];
+      const buttons: Array<{ text: string; id: string }> = [];
       const ready = Deferred.makeUnsafe<void>();
 
       const approvals = actionApprovals({
@@ -391,8 +397,9 @@ describe("actionApprovals", () => {
     const approvals = actionApprovals({
       ...adapter,
       send: (_conversation, part) => {
-        if (part.startsWith("`"))
+        if (part.startsWith("`")) {
           return Effect.fail(new ChannelError({ reason: "unavailable", message: "Send failed" }));
+        }
 
         return adapter.send("thread", part, "summary");
       },
@@ -431,7 +438,7 @@ describe("actionApprovals", () => {
     ["approve", true, "Approved this exact command once."],
     ["deny", false, "Command denied."],
   ])("when the owner replies /%s, settles the request once", async (action, approved, reply) => {
-    const sent: string[] = [];
+    const sent: Array<string> = [];
     const approvals = actionApprovals(channel(sent));
 
     await Effect.runPromise(
@@ -453,7 +460,7 @@ describe("actionApprovals", () => {
   });
 
   test("when a reply comes from another conversation or names no request, leaves it pending", async () => {
-    const sent: string[] = [];
+    const sent: Array<string> = [];
     const approvals = actionApprovals(channel(sent));
 
     await Effect.runPromise(
@@ -464,7 +471,7 @@ describe("actionApprovals", () => {
           ["other", `/approve ${id}`],
           ["thread", "/approve"],
           ["thread", `/approve ${id} now`],
-        ])
+        ]) {
           expect(
             yield* approvals.answer(conversation!, {
               ...message,
@@ -472,6 +479,7 @@ describe("actionApprovals", () => {
               text: text!,
             }),
           ).toStartWith("No matching pending approval");
+        }
 
         expect(yield* approvals.answer("thread", { ...message, text: `/approve ${id}` })).toBe(
           "Approved this exact command once.",

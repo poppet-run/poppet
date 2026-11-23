@@ -48,7 +48,7 @@ const failure = (name: string) =>
 const RecordName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,79}$/));
 
 export const makeRecordStore = (dataDirectory: string) => {
-  const files = protectedFiles(join(dataDirectory, "auth"), failure, 65536);
+  const files = protectedFiles(join(dataDirectory, "auth"), failure, 65_536);
 
   const Saved = Schema.fromJsonString(
     Schema.Struct({ version: Schema.Literal(1), name: RecordName, data: Schema.Json }),
@@ -61,13 +61,17 @@ export const makeRecordStore = (dataDirectory: string) => {
     Effect.gen(function* () {
       const contents = yield* files.read(name);
 
-      if (contents === null) return null;
+      if (contents === null) {
+        return null;
+      }
 
       const saved = yield* Schema.decodeUnknownEffect(Saved, { onExcessProperty: "error" })(
         contents,
       ).pipe(Effect.mapError(() => failure(name)));
 
-      if (saved.name !== name) return yield* Effect.fail(failure(name));
+      if (saved.name !== name) {
+        return yield* Effect.fail(failure(name));
+      }
 
       return saved.data;
     });

@@ -39,27 +39,43 @@ const invalidHistory = () =>
   });
 
 const validateExchange = (messages: ReadonlyArray<Message>) => {
-  if (messages[0]?.role !== "user" || messages.at(-1)?.role !== "assistant") throw invalidHistory();
+  if (messages[0]?.role !== "user" || messages.at(-1)?.role !== "assistant") {
+    throw invalidHistory();
+  }
+
   const pending = new Set<string>();
   const used = new Set<string>();
 
   for (const message of messages) {
     if (message.role === "assistant") {
-      if (pending.size > 0) throw invalidHistory();
+      if (pending.size > 0) {
+        throw invalidHistory();
+      }
 
       for (const part of message.output) {
-        if (part.type !== "tool-call") continue;
+        if (part.type !== "tool-call") {
+          continue;
+        }
 
-        if (used.has(part.callId)) throw invalidHistory();
+        if (used.has(part.callId)) {
+          throw invalidHistory();
+        }
+
         pending.add(part.callId);
         used.add(part.callId);
       }
     } else if (message.role === "tool") {
-      if (!pending.delete(message.callId)) throw invalidHistory();
-    } else if (pending.size > 0) throw invalidHistory();
+      if (!pending.delete(message.callId)) {
+        throw invalidHistory();
+      }
+    } else if (pending.size > 0) {
+      throw invalidHistory();
+    }
   }
 
-  if (pending.size > 0) throw invalidHistory();
+  if (pending.size > 0) {
+    throw invalidHistory();
+  }
 };
 
 export const outputBudget = (model: ModelDescription, policy: ChatPolicy) =>
@@ -93,16 +109,24 @@ const limitImages = (messages: ReadonlyArray<Message>, maximum: number) => {
   return messages
     .toReversed()
     .map((message): Message => {
-      if (message.role !== "user" || message.attachments === undefined) return message;
+      if (message.role !== "user" || message.attachments === undefined) {
+        return message;
+      }
+
       const attachments = [];
       const omitted = [];
 
       for (const reference of message.attachments.toReversed()) {
-        if (reference.mediaType !== "text/plain" && kept++ >= maximum) omitted.unshift(reference);
-        else attachments.unshift(reference);
+        if (reference.mediaType !== "text/plain" && kept++ >= maximum) {
+          omitted.unshift(reference);
+        } else {
+          attachments.unshift(reference);
+        }
       }
 
-      if (omitted.length === 0) return message;
+      if (omitted.length === 0) {
+        return message;
+      }
 
       const notes = omitted.map(
         (reference) =>
@@ -141,12 +165,14 @@ export const assembleContext = (
   prompt: string = instructions,
 ): ReadonlyArray<Message> => {
   const completed = new Set(runs.flatMap((run) => (run.status === "completed" ? [run.id] : [])));
-  const exchanges: Message[][] = [];
-  let current: Message[] = [];
+  const exchanges: Array<Array<Message>> = [];
+  let current: Array<Message> = [];
   let previousRun: string | null = null;
 
   for (const entry of history) {
-    if (entry.runId !== null && !completed.has(entry.runId)) continue;
+    if (entry.runId !== null && !completed.has(entry.runId)) {
+      continue;
+    }
 
     if (
       current.length > 0 &&
@@ -173,17 +199,21 @@ export const assembleContext = (
 
   let selected: ReadonlyArray<Message> = limitImages(incoming, policy.imagesPerRequest);
 
-  if (contextSize(selected, tools, prompt, policy.imageContextBytes) > available)
+  if (contextSize(selected, tools, prompt, policy.imageContextBytes) > available) {
     throw new AgentError({
       reason: "context-limit",
       message:
         "The current exchange exceeds the context budget. Shorten the request or start a new conversation.",
     });
+  }
 
   for (const exchange of exchanges.slice(-policy.historyTurns).toReversed()) {
     const candidate = limitImages([...exchange, ...selected], policy.imagesPerRequest);
 
-    if (contextSize(candidate, tools, prompt, policy.imageContextBytes) > available) break;
+    if (contextSize(candidate, tools, prompt, policy.imageContextBytes) > available) {
+      break;
+    }
+
     selected = candidate;
   }
 

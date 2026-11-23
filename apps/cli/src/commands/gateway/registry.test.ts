@@ -46,7 +46,7 @@ const environment = (directory: string, overrides: Record<string, string> = {}) 
 describe("external gateway registrations", () => {
   test("when an adapter is installed, loads its setup and worker commands without adding it to help", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-external-gateway-"));
-    const lines: string[] = [];
+    const lines: Array<string> = [];
 
     try {
       await install(directory, "@fixture/chat", registration("fixture"));
@@ -65,8 +65,9 @@ describe("external gateway registrations", () => {
               const text = values.join(" ");
               lines.push(text);
 
-              if (text.includes('msg="worker started"'))
+              if (text.includes('msg="worker started"')) {
                 Effect.runSync(Deferred.succeed(ready, undefined));
+              }
             },
           };
 

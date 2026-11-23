@@ -43,13 +43,19 @@ export const verifyModel = (model: ModelOperations) =>
     const calls = first.output.flatMap((item) => (item.type === "tool-call" ? [item] : []));
     const call = calls[0];
 
-    if (calls.length !== 1 || !call || call.name !== tool.name || call.namespace !== tool.namespace)
+    if (
+      calls.length !== 1 ||
+      !call ||
+      call.name !== tool.name ||
+      call.namespace !== tool.namespace
+    ) {
       return yield* Effect.fail(
         invalidRequest(
           model.description.provider,
           "The model did not request the verification tool exactly once.",
         ),
       );
+    }
 
     const args = yield* Schema.decodeUnknownEffect(Arguments, { onExcessProperty: "error" })(
       call.arguments,
@@ -59,10 +65,11 @@ export const verifyModel = (model: ModelOperations) =>
       ),
     );
 
-    if (args.challenge !== challenge)
+    if (args.challenge !== challenge) {
       return yield* Effect.fail(
         invalidRequest(model.description.provider, "The verification challenge did not match."),
       );
+    }
 
     const second = yield* completeModel(model, {
       ...request,
@@ -77,11 +84,12 @@ export const verifyModel = (model: ModelOperations) =>
 
     const text = outputText(second.output);
 
-    if (text.trim() !== proof || second.output.some((item) => item.type === "tool-call"))
+    if (text.trim() !== proof || second.output.some((item) => item.type === "tool-call")) {
       return yield* Effect.fail(
         invalidRequest(
           model.description.provider,
           "The model did not return the verification tool's token.",
         ),
       );
+    }
   });

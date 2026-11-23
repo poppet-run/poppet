@@ -31,7 +31,7 @@ const quiet = Effect.provideService(Console.Console, {
 const harness = async (options: OAuthFixtureOptions = {}, duplicateIssuer = false) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-mcp-oauth-"));
   const server = serveOAuth(options);
-  const opened: string[] = [];
+  const opened: Array<string> = [];
 
   const config: MCPOAuthServer = {
     id: "remote",
@@ -57,7 +57,7 @@ const harness = async (options: OAuthFixtureOptions = {}, duplicateIssuer = fals
   );
 
   const mcp = (servers: ReadonlyArray<MCPHTTPServer> = [config]) =>
-    makeMCPLive(16384).pipe(
+    makeMCPLive(16_384).pipe(
       Layer.provide([
         services,
         ConfigProvider.layer(ConfigProvider.fromUnknown({ mcpServers: JSON.stringify(servers) })),
@@ -189,8 +189,11 @@ describe("MCP OAuth", () => {
               const [tool] = yield* (yield* MCP).snapshot(false);
               const prepared = yield* tool!.prepare('{"input":"{}"}');
 
-              if (mode === "challenge") state.server.options.challengeToolCall = true;
-              else yield* Effect.promise(() => state.login());
+              if (mode === "challenge") {
+                state.server.options.challengeToolCall = true;
+              } else {
+                yield* Effect.promise(() => state.login());
+              }
 
               const initialRequests = state.server.events.length;
               const error = yield* Effect.flip(prepared.execute);

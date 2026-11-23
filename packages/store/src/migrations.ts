@@ -21,7 +21,9 @@ export const migrationStatements = (statements: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
 
-    for (const statement of statements) yield* sql.unsafe(statement);
+    for (const statement of statements) {
+      yield* sql.unsafe(statement);
+    }
   });
 
 export const packageSchema = (
@@ -59,10 +61,11 @@ export const migrate = (schema: PackageSchema) =>
         decodeRow(Schema.Struct({ latest: Schema.NullOr(Schema.Int) })),
       );
 
-      if ((latest?.latest ?? 0) > schema.version)
+      if ((latest?.latest ?? 0) > schema.version) {
         return yield* migrationFailure(
           "The conversation database was created by a newer version of Poppet. Upgrade Poppet to open it.",
         );
+      }
     }
 
     yield* SqliteMigrator.run({ loader: schema.loader, table: schema.table });

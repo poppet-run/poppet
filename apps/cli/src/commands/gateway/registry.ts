@@ -33,12 +33,16 @@ const protectedEntry = async (path: string, directory: boolean) => {
     (directory ? !info.isDirectory() : !info.isFile()) ||
     info.uid !== process.getuid?.() ||
     (info.mode & 0o022) !== 0
-  )
+  ) {
     throw new Error("Gateway package paths must be owner-controlled.");
+  }
 };
 
 const gatewayModule = async (directory: string, entry: string) => {
-  if (!packageEntry.test(entry)) throw new Error("Invalid package entry point");
+  if (!packageEntry.test(entry)) {
+    throw new Error("Invalid package entry point");
+  }
+
   const gateways = join(directory, "gateways");
   await protectedEntry(gateways, true);
   const root = await realpath(gateways);
@@ -50,13 +54,16 @@ const gatewayModule = async (directory: string, entry: string) => {
   const path = await realpath(resolved.startsWith("file:") ? fileURLToPath(resolved) : resolved);
   const entryPath = relative(modules, path);
 
-  if (!entryPath || isAbsolute(entryPath) || entryPath === ".." || entryPath.startsWith("../"))
+  if (!entryPath || isAbsolute(entryPath) || entryPath === ".." || entryPath.startsWith("../")) {
     throw new Error("Gateway package is outside the install directory.");
+  }
 
-  const parents: string[] = [];
+  const parents: Array<string> = [];
 
-  for (let parent = dirname(path); parent !== modules; parent = dirname(parent))
+  for (let parent = dirname(path); parent !== modules; parent = dirname(parent)) {
     parents.push(parent);
+  }
+
   await Promise.all([
     ...parents.map((parent) => protectedEntry(parent, true)),
     protectedEntry(path, false),

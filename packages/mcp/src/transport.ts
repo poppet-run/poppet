@@ -32,7 +32,9 @@ export class ScopedStdioTransport extends StdioClientTransport {
   }
 
   override async start(): Promise<void> {
-    if (this.closedBeforeStart) throw new Error("StdioClientTransport was closed before start.");
+    if (this.closedBeforeStart) {
+      throw new Error("StdioClientTransport was closed before start.");
+    }
 
     let resolveClosed!: () => void;
     this.closed = new Promise<void>((resolve) => {
@@ -40,7 +42,9 @@ export class ScopedStdioTransport extends StdioClientTransport {
     });
     this.markClosed = resolveClosed;
 
-    if (this.onclose === undefined) this.onclose = () => {};
+    if (this.onclose === undefined) {
+      this.onclose = () => {};
+    }
 
     try {
       await super.start();
@@ -73,7 +77,9 @@ export class ScopedStdioTransport extends StdioClientTransport {
 
     await super.close();
 
-    if (closed === null) return;
+    if (closed === null) {
+      return;
+    }
 
     let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -87,7 +93,9 @@ export class ScopedStdioTransport extends StdioClientTransport {
 
     clearTimeout(timer);
 
-    if (!settled) throw new Error("MCP child did not exit after shutdown.");
+    if (!settled) {
+      throw new Error("MCP child did not exit after shutdown.");
+    }
   }
 }
 
@@ -122,9 +130,13 @@ const bounded = (
               return;
             }
 
-            if (byte === LF && previous === LF) size = 0;
+            if (byte === LF && previous === LF) {
+              size = 0;
+            }
 
-            if (byte !== CR) previous = byte;
+            if (byte !== CR) {
+              previous = byte;
+            }
           }
         }
 
@@ -139,7 +151,9 @@ export const boundedFetch =
   async (url, init) => {
     const response = await base(url, init);
 
-    if (response.body === null) return response;
+    if (response.body === null) {
+      return response;
+    }
 
     const mediaType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
     const events = response.status === 200 && mediaType === "text/event-stream";
@@ -170,7 +184,9 @@ export const reviewedHTTPRequest = <A>(
 export const checkReviewedToken = (token: string | undefined) => {
   const request = reviewedRequests.getStore();
 
-  if (request !== undefined && request.token !== token) throw new ReviewedAccountChanged();
+  if (request !== undefined && request.token !== token) {
+    throw new ReviewedAccountChanged();
+  }
 
   return token;
 };
@@ -180,10 +196,13 @@ export const singleReviewedPost =
   async (url, init) => {
     const request = reviewedRequests.getStore();
 
-    if (request === undefined || init?.method !== "POST") return base(url, init);
+    if (request === undefined || init?.method !== "POST") {
+      return base(url, init);
+    }
 
-    if (request.sent || String(url) !== request.endpoint)
+    if (request.sent || String(url) !== request.endpoint) {
       throw new Error("A reviewed MCP call permits one POST to its configured endpoint.");
+    }
 
     request.sent = true;
     const response = await base(url, { ...init, redirect: "manual" });

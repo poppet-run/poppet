@@ -39,11 +39,13 @@ export const createHarness = async () => {
 
     const url = new URL(request.url);
 
-    if (url.origin === "https://api.openai.com")
+    if (url.origin === "https://api.openai.com") {
       return fetch(new Request(new URL(url.pathname, server.url).toString(), request));
+    }
 
-    if (url.origin !== server.url.origin)
+    if (url.origin !== server.url.origin) {
       throw new Error(`Unexpected OAuth fixture request: ${url.origin}`);
+    }
 
     return fetch(request);
   };
@@ -51,13 +53,17 @@ export const createHarness = async () => {
   const browser = makeBrowserSignIn((url) =>
     Effect.tryPromise({
       try: async (signal) => {
-        if (new URL(url).origin !== server.url.origin)
+        if (new URL(url).origin !== server.url.origin) {
           throw new Error("Unexpected test authorization origin.");
+        }
+
         const redirect = await fetch(url, { signal, redirect: "manual" });
         const callback = new URL(redirect.headers.get("location") ?? "");
 
-        if (callback.hostname !== "127.0.0.1" || callback.pathname !== "/auth/callback")
+        if (callback.hostname !== "127.0.0.1" || callback.pathname !== "/auth/callback") {
           throw new Error("Unexpected test callback.");
+        }
+
         await fetch(callback, { signal });
       },
       catch: () => new ConnectionError({ reason: "callback", message: "Test browser failed." }),

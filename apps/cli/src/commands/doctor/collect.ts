@@ -69,7 +69,9 @@ const inspectWorker = (directory: string, identity: string | null) =>
         signal,
       );
 
-      if (reply === null) return null;
+      if (reply === null) {
+        return null;
+      }
 
       if (!reply.ok || reply.body === null) {
         await reply.body?.cancel();
@@ -79,20 +81,21 @@ const inspectWorker = (directory: string, identity: string | null) =>
 
       const text = await readBoundedText(
         reply.body,
-        32768,
+        32_768,
         () => new Error("Worker response limit"),
       );
 
       return Schema.decodeUnknownSync(Schema.fromJsonString(DoctorSnapshot))(text);
     }).pipe(Effect.timeout("2 seconds"), Effect.result);
 
-    if (Result.isFailure(response))
+    if (Result.isFailure(response)) {
       return [
         unavailable("worker.socket", "Run poppet worker status and poppet worker logs."),
         ...noSnapshot(
           "Doctor could not get a report from the worker, so it could not check these saved records.",
         ),
       ];
+    }
 
     if (response.success === null) {
       const database = yield* Effect.tryPromise(() =>
@@ -117,16 +120,18 @@ const inspectWorker = (directory: string, identity: string | null) =>
       ];
     }
 
-    if ("unsupported" in response.success)
+    if ("unsupported" in response.success) {
       return [
         finding("worker.socket", "ok", "local", "The worker is responding."),
         ...noSnapshot(
           "The worker responded but could not provide this report. It may need restarting after an update.",
         ),
       ];
+    }
+
     const snapshot = response.success;
 
-    if (identity === null || identity !== snapshot.identity)
+    if (identity === null || identity !== snapshot.identity) {
       return [
         finding(
           "worker.identity",
@@ -139,6 +144,8 @@ const inspectWorker = (directory: string, identity: string | null) =>
           "Doctor could not confirm which settings the worker is using, so it did not use the worker's report.",
         ),
       ];
+    }
+
     const tasks = snapshot.tasks;
     const problem = tasks.failed + tasks.interrupted > 0;
     const delivery = snapshot.delivery;
@@ -234,7 +241,7 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
   Effect.gen(function* () {
     const selected = yield* dataDirectory.pipe(Effect.result);
 
-    if (Result.isFailure(selected))
+    if (Result.isFailure(selected)) {
       return doctorReport(
         [
           unavailable(
@@ -244,8 +251,10 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
         ],
         null,
       );
+    }
+
     const directory = selected.success;
-    const checks: DoctorCheck[] = [];
+    const checks: Array<DoctorCheck> = [];
 
     const configuration = yield* Effect.gen(function* () {
       const config = yield* AppConfig;
@@ -275,7 +284,7 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
         Effect.tryPromise(async () => {
           const info = await fileInfo(directory);
 
-          if (info === null)
+          if (info === null) {
             return finding(
               "installation",
               "warning",
@@ -283,8 +292,11 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
               "This data directory does not exist yet. Doctor did not create it.",
               "Run poppet setup.",
             );
+          }
 
-          if (!info.isDirectory()) throw new Error("Invalid directory");
+          if (!info.isDirectory()) {
+            throw new Error("Invalid directory");
+          }
 
           return finding("installation", "ok", "local", "Your data directory exists.");
         }),
@@ -326,8 +338,9 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
           Effect.sync(() => {
             const enabled = servers.filter((server) => server.enabled);
 
-            if (enabled.length === 0)
+            if (enabled.length === 0) {
               return finding("mcp", "skipped", "local", "No MCP servers are enabled.");
+            }
 
             const missing = enabled.some(
               (server) =>

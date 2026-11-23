@@ -39,15 +39,18 @@ export const boundedAttachment =
           url.username !== "" ||
           url.password !== "" ||
           !hosts.has(url.hostname)
-        )
+        ) {
           throw refused(`the file is not hosted by ${label}.`);
+        }
 
-        if ((attachment.size ?? 0) > maxBytes) throw tooLarge(maxBytes);
+        if ((attachment.size ?? 0) > maxBytes) {
+          throw tooLarge(maxBytes);
+        }
 
         const response = await fetch(url, {
           headers,
           redirect: "manual",
-          signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]),
+          signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
         });
 
         if (response.status >= 300 && response.status < 400) {
@@ -60,13 +63,16 @@ export const boundedAttachment =
           throw unavailable();
         }
 
-        const chunks: Uint8Array[] = [];
+        const chunks: Array<Uint8Array> = [];
         let received = 0;
 
         for await (const chunk of response.body) {
           received += chunk.length;
 
-          if (received > maxBytes) throw tooLarge(maxBytes);
+          if (received > maxBytes) {
+            throw tooLarge(maxBytes);
+          }
+
           chunks.push(chunk);
         }
 

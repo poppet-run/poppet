@@ -62,7 +62,10 @@ export const approvalActions = (
     let active = true;
 
     const handle = async (interaction: Interaction) => {
-      if (!interaction.isButton() || !interaction.customId.startsWith(prefix)) return;
+      if (!interaction.isButton() || !interaction.customId.startsWith(prefix)) {
+        return;
+      }
+
       const match = /^poppet:approval:(approve|deny):([a-f0-9-]{36})$/.exec(interaction.customId);
 
       if (
@@ -140,8 +143,9 @@ export const approvalActions = (
                   }),
               }),
           })
-        )
+        ) {
           await reply("Poppet is busy. Try this approval again before it expires.");
+        }
       } catch {
         await reply("Approval could not be confirmed. Try again before it expires.");
       }

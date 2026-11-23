@@ -13,8 +13,10 @@ export const ConversationLink = ({ session, active, onNavigate }: ConversationLi
     href={`/chat/${session.id}`}
     aria-current={active ? "page" : undefined}
     onClick={(event) => {
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0)
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
         return;
+      }
+
       event.preventDefault();
       onNavigate(session.id);
     }}

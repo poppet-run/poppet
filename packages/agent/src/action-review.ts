@@ -60,16 +60,20 @@ export const reviewAction = <A>(
     ).pipe(
       Stream.tap((event) =>
         Effect.gen(function* () {
-          if (event.type !== "text-delta") return;
+          if (event.type !== "text-delta") {
+            return;
+          }
+
           bytes += Buffer.byteLength(event.text);
 
-          if (bytes > 4096)
+          if (bytes > 4096) {
             return yield* Effect.fail(
               new AgentError({
                 reason: failureReason,
                 message: `${label} exceeded its output limit. Nothing was executed.`,
               }),
             );
+          }
         }),
       ),
       Stream.runLast,
@@ -88,13 +92,14 @@ export const reviewAction = <A>(
       last.value.type !== "completed" ||
       last.value.response.finishReason !== "stop" ||
       last.value.response.output.some((part) => part.type !== "text")
-    )
+    ) {
       return yield* Effect.fail(
         new AgentError({
           reason: failureReason,
           message: `${label} did not return a decision. Nothing was executed.`,
         }),
       );
+    }
 
     const text = outputText(last.value.response.output);
 

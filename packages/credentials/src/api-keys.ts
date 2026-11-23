@@ -72,7 +72,7 @@ export const ApiKeyStoreLive = Layer.effect(
   ApiKeyStore,
   Effect.gen(function* () {
     const config = yield* ProviderEnvironment;
-    const files = protectedFiles(join(config.dataDirectory, "auth"), storageError, 65536);
+    const files = protectedFiles(join(config.dataDirectory, "auth"), storageError, 65_536);
 
     const checked = (provider: ProviderId) =>
       Schema.decodeUnknownEffect(ProviderId)(provider).pipe(
@@ -100,13 +100,17 @@ export const ApiKeyStoreLive = Layer.effect(
         yield* checked(provider);
         const contents = yield* files.read(provider);
 
-        if (contents === null) return null;
+        if (contents === null) {
+          return null;
+        }
 
         const saved = yield* Schema.decodeUnknownEffect(SavedKey, { onExcessProperty: "error" })(
           contents,
         ).pipe(Effect.mapError(() => storageError(provider)));
 
-        if (saved.provider !== provider) return yield* Effect.fail(storageError(provider));
+        if (saved.provider !== provider) {
+          return yield* Effect.fail(storageError(provider));
+        }
 
         return saved.key;
       });
@@ -127,7 +131,9 @@ export const findApiKey = (provider: ProviderId, environment: string) =>
   Effect.gen(function* () {
     const configured = Option.getOrNull(yield* environmentApiKey(provider, environment));
 
-    if (configured !== null) return { key: configured, source: "environment" as const };
+    if (configured !== null) {
+      return { key: configured, source: "environment" as const };
+    }
 
     const saved = yield* ApiKeyStore.use((store) => store.read(provider));
 
@@ -150,7 +156,9 @@ export const loadApiKey = (provider: ProviderId, environment: string) =>
       Effect.mapError((error) => (error instanceof ProviderError ? error : storageError(provider))),
     );
 
-    if (key !== null) return key;
+    if (key !== null) {
+      return key;
+    }
 
     return yield* Effect.fail(
       new ProviderError({
@@ -185,17 +193,21 @@ export const makeApiKeyConnection = (provider: ProviderOperations, environment: 
         ),
       verify: (modelId) =>
         Effect.gen(function* () {
-          if (modelId === null)
+          if (modelId === null) {
             return yield* Effect.fail(invalidRequest(id, "Choose a model in config.json."));
+          }
+
           const model = yield* provider.resolve(modelId);
 
-          if (model.description.provider !== id || model.description.id !== modelId)
+          if (model.description.provider !== id || model.description.id !== modelId) {
             return yield* Effect.fail(
               invalidRequest(
                 id,
                 "The provider resolved a different model. No fallback is allowed.",
               ),
             );
+          }
+
           yield* verifyModel(model);
 
           return model.description.id;
@@ -239,20 +251,25 @@ export const apiKeyProvider = (options: {
         Effect.gen(function* () {
           const configured = yield* environmentApiKey(options.id, options.environment);
 
-          if (Option.isSome(configured))
+          if (Option.isSome(configured)) {
             return { connected: true, expiresAt: null, source: "local" as const };
+          }
 
           const text = yield* Effect.tryPromise(() =>
             readCredentialFile(directory, `${options.id}.json`),
           );
 
-          if (text === null) return { connected: false, expiresAt: null, source: "saved" as const };
+          if (text === null) {
+            return { connected: false, expiresAt: null, source: "saved" as const };
+          }
 
           const saved = yield* Schema.decodeUnknownEffect(SavedKey, { onExcessProperty: "error" })(
             text,
           );
 
-          if (saved.provider !== options.id) return yield* Effect.fail(storageError(options.id));
+          if (saved.provider !== options.id) {
+            return yield* Effect.fail(storageError(options.id));
+          }
 
           return { connected: true, expiresAt: null, source: "saved" as const };
         }).pipe(Effect.mapError(() => storageError(options.id))),

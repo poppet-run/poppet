@@ -16,7 +16,10 @@ const scheduleResults = (context: GatewayContext) =>
     for (const item of yield* repo.scheduled(channel.id)) {
       const run = yield* store.run(item.runId);
 
-      if (run?.status !== "completed") continue;
+      if (run?.status !== "completed") {
+        continue;
+      }
+
       const destination = item.destination;
 
       const enabled =
@@ -78,13 +81,17 @@ export const deliverNext = (context: GatewayContext) => {
     // During quiet hours scheduled posts sort last, so one only comes back when nothing else is ready.
     const delivery = yield* repo.nextDelivery(channel.id, account, now, heldUntil !== null);
 
-    if (delivery === null) return false;
+    if (delivery === null) {
+      return false;
+    }
 
     if (heldUntil !== null && delivery.scheduled) {
-      if (announcedHold !== heldUntil)
+      if (announcedHold !== heldUntil) {
         yield* Effect.logInfo(
           `Holding scheduled ${channel.id} posts for quiet hours until ${new Date(heldUntil).toISOString()}.`,
         );
+      }
+
       announcedHold = heldUntil;
 
       return false;

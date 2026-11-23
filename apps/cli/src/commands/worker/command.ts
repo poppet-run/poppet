@@ -15,29 +15,33 @@ export const workerCommand = (context: CLIContext) => {
   const { runtime, worker, startWorker, channels } = context;
 
   const runWorkerCommand = (action: WorkerAction, json = false) => {
-    if (action === "stop" || action === "uninstall" || action === "logs")
+    if (action === "stop" || action === "uninstall" || action === "logs") {
       return configuredDataDirectory.pipe(
         Effect.flatMap((directory) => worker(action, directory)),
         Effect.flatMap(Console.log),
       );
+    }
 
     return Effect.gen(function* () {
       const config = yield* AppConfig;
       const managed = yield* worker(action, config.dataDirectory);
 
-      if (action !== "status") return yield* Console.log(managed);
+      if (action !== "status") {
+        return yield* Console.log(managed);
+      }
 
       const reply = yield* remoteTaskCommand(workerSocketPath(config.dataDirectory), {
         action: "status",
       });
 
-      if (reply !== null)
+      if (reply !== null) {
         return yield* printParsed(
           json,
           { service: managed, worker: reply.value },
           WorkerStatusReport,
           renderWorkerStatus,
         );
+      }
 
       const overview = yield* readLocalTaskStatus.pipe(Effect.provide(runtime.tasks));
 

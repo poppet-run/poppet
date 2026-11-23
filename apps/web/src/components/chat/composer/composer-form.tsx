@@ -34,7 +34,7 @@ export const ComposerForm = ({
       placeholder="Message Poppet…"
       value={draft}
       rows={2}
-      maxLength={32768}
+      maxLength={32_768}
       onInput={(event) => onDraftChange(event.currentTarget.value)}
       onKeyDown={(event) => {
         if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {

@@ -50,7 +50,9 @@ export const executeSkillView = (skills: Skills["Service"], name: string) =>
 export const skillViewTool = Effect.gen(function* () {
   const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
 
-  if (skills === null) return null;
+  if (skills === null) {
+    return null;
+  }
 
   return contextTool({
     definition: skillViewDefinition,

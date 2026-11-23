@@ -95,9 +95,13 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         );
 
         for (const { id, runStatus, failureReason } of running) {
-          if (runStatus === "completed") yield* finish(id, "completed", null, now);
-          else if (runStatus === "failed") yield* finish(id, "failed", failureReason, now);
-          else yield* finish(id, "interrupted", "owner-stopped", now);
+          if (runStatus === "completed") {
+            yield* finish(id, "completed", null, now);
+          } else if (runStatus === "failed") {
+            yield* finish(id, "failed", failureReason, now);
+          } else {
+            yield* finish(id, "interrupted", "owner-stopped", now);
+          }
         }
       }),
     );
@@ -112,8 +116,8 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
     sql
       .withTransaction(
         Effect.gen(function* () {
-          const skipped: TaskSkip[] = [];
-          const ended: TaskEnd[] = [];
+          const skipped: Array<TaskSkip> = [];
+          const ended: Array<TaskEnd> = [];
           const failed: Array<{ id: string; name: string; reason: string }> = [];
 
           const recordSkip = (
@@ -130,12 +134,16 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
               skipped.push({ jobId: job.id, name: job.name, firstAt, lastAt, reason });
             });
 
-          if (startup) yield* recover(now);
+          if (startup) {
+            yield* recover(now);
+          }
 
           yield* expire(now);
 
           for (const job of yield* list()) {
-            if (job.paused || job.nextAt === null || job.nextAt > now) continue;
+            if (job.paused || job.nextAt === null || job.nextAt > now) {
+              continue;
+            }
 
             const first = job.nextAt;
 
@@ -156,7 +164,9 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
             const { latest, nextAt, following } = schedule.success;
             const busy = yield* hasActive(job.id);
 
-            if (busy && job.schedule.type === "once") continue;
+            if (busy && job.schedule.type === "once") {
+              continue;
+            }
 
             const stale =
               job.schedule.type === "cron" && catchUpMs === 0 && now - job.nextAt >= 60_000;
@@ -165,11 +175,14 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
             const missed = startup ? "downtime" : "worker-delayed";
 
             if (job.schedule.type === "cron" && !busy && catchUpMs > 0) {
-              if (now - latest > catchUpMs) yield* recordSkip(job, job.nextAt, missed);
-              else {
+              if (now - latest > catchUpMs) {
+                yield* recordSkip(job, job.nextAt, missed);
+              } else {
                 yield* queue(job, latest);
 
-                if (latest > job.nextAt) yield* recordSkip(job, job.nextAt, missed, latest - 1);
+                if (latest > job.nextAt) {
+                  yield* recordSkip(job, job.nextAt, missed, latest - 1);
+                }
               }
             } else if (skip) {
               yield* recordSkip(
@@ -180,14 +193,16 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
             } else {
               yield* queue(job, job.nextAt);
 
-              if (following !== null && following <= now)
+              if (following !== null && following <= now) {
                 yield* recordSkip(job, following, "worker-delayed");
+              }
             }
 
             yield* sql`UPDATE jobs SET next_at = ${nextAt} WHERE id = ${job.id}`;
 
-            if (nextAt === null && job.endAt !== null)
+            if (nextAt === null && job.endAt !== null) {
               ended.push({ jobId: job.id, name: job.name, endAt: job.endAt });
+            }
           }
 
           return { skipped, ended, failed };
@@ -213,23 +228,27 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
   ) =>
     sql.withTransaction(
       Effect.gen(function* () {
-        if (destination !== null)
+        if (destination !== null) {
           yield* Schema.decodeUnknownEffect(DeliveryDestination)(destination);
+        }
+
         const valid = yield* Schema.decodeUnknownEffect(NewTask)(input);
         const existing = yield* sql`SELECT COUNT(*) AS count FROM jobs`.pipe(decodeRow(Count));
 
-        if ((existing?.count ?? 0) >= maxTasks)
+        if ((existing?.count ?? 0) >= maxTasks) {
           return yield* new TaskError({
             message: `Cannot add more than ${maxTasks} tasks. Delete an unused task first.`,
           });
+        }
 
         const id = randomUUID();
 
-        if (endAt !== null)
+        if (endAt !== null) {
           yield* Effect.try({
             try: () => checkEndTime(valid.schedule, endAt, now, true),
             catch: taskFailure,
           });
+        }
 
         yield* sql`INSERT INTO jobs ${sql.insert({
           id,
@@ -269,11 +288,12 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       Effect.gen(function* () {
         const job = yield* task(id);
 
-        if ((yield* activeOccurrence(id, "running")) !== null)
+        if ((yield* activeOccurrence(id, "running")) !== null) {
           return yield* new TaskError({
             message:
               "Wait for the running occurrence to finish or cancel it via CLI before deleting this task.",
           });
+        }
 
         yield* sql`DELETE FROM jobs WHERE id = ${id}`;
 
@@ -286,8 +306,9 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       Effect.gen(function* () {
         const running = yield* sql`SELECT id FROM job_occurrences WHERE status = 'running' LIMIT 1`;
 
-        if (running.length > 0)
+        if (running.length > 0) {
           return yield* new TaskError({ message: "Interrupt active work before clearing tasks." });
+        }
 
         return (yield* sql`DELETE FROM jobs RETURNING id`).length;
       }),
@@ -298,7 +319,9 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       Effect.gen(function* () {
         const job = yield* task(id);
 
-        if (!job.paused) return job;
+        if (!job.paused) {
+          return job;
+        }
 
         const nextAt =
           job.schedule.type === "once" ? job.nextAt : yield* nextTime(job.schedule, now, job.endAt);
@@ -314,10 +337,11 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       Effect.gen(function* () {
         const item = yield* occurrence(id);
 
-        if (item.status !== "pending" && item.status !== "running")
+        if (item.status !== "pending" && item.status !== "running") {
           return yield* new TaskError({
             message: "Only pending or running occurrences can be cancelled.",
           });
+        }
 
         yield* sql`UPDATE job_occurrences SET status = 'cancelled', finished_at = ${now},
         reason = 'cancelled' WHERE id = ${id}`;
@@ -332,27 +356,32 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         const item = yield* occurrence(id);
         const job = yield* task(item.jobId);
 
-        if (job.paused)
+        if (job.paused) {
           return yield* new TaskError({
             message: "Resume the task before retrying an occurrence.",
           });
+        }
 
-        if (!["failed", "interrupted", "cancelled", "expired"].includes(item.status))
+        if (!["failed", "interrupted", "cancelled", "expired"].includes(item.status)) {
           return yield* new TaskError({ message: "Only unsuccessful occurrences can be retried." });
+        }
 
-        if (yield* hasActive(job.id))
+        if (yield* hasActive(job.id)) {
           return yield* new TaskError({ message: "The task already has an active occurrence." });
+        }
 
-        if (job.endAt !== null && item.scheduledAt > job.endAt)
+        if (job.endAt !== null && item.scheduledAt > job.endAt) {
           return yield* new TaskError({
             message:
               "This occurrence is later than the task's end time. Extend or clear the end time first.",
           });
+        }
 
-        if (item.definition.schedule.type === "cron" && item.availableAt <= now - recurringExpiry)
+        if (item.definition.schedule.type === "cron" && item.availableAt <= now - recurringExpiry) {
           return yield* new TaskError({
             message: "This summary expired. Add a new one-off task instead.",
           });
+        }
 
         yield* sql`UPDATE job_occurrences SET status = 'pending', session_id = NULL,
           run_id = NULL, finished_at = NULL, reason = NULL WHERE id = ${id}`;
@@ -382,16 +411,18 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
                   decodeRow(Occurrence),
                 );
 
-        if (item === null)
+        if (item === null) {
           return yield* new TaskError({
             message:
               action === "cancel-task"
                 ? "The task has no pending or running occurrence."
                 : "The task has no occurrence to retry.",
           });
+        }
 
-        if (item.jobId !== id)
+        if (item.jobId !== id) {
           return yield* new TaskError({ message: "The occurrence does not belong to this task." });
+        }
 
         return yield* action === "cancel-task" ? cancel(item.id, now) : retry(item.id, now);
       }),
@@ -408,7 +439,9 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
             (SELECT provider FROM job_provider_pauses WHERE resume_at IS NULL OR resume_at > ${now})
           ORDER BY available_at, scheduled_at, id LIMIT 1`.pipe(decodeRow(Occurrence));
 
-        if (item === null) return null;
+        if (item === null) {
+          return null;
+        }
 
         yield* sql`UPDATE job_occurrences SET status = 'running' WHERE id = ${item.id}`;
 
@@ -429,7 +462,9 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
   const saveNote = (jobId: string, text: string | null, writer: Omit<TaskNote, "text">) =>
     Effect.gen(function* () {
-      if (((yield* note(jobId))?.text ?? null) === text) return false;
+      if (((yield* note(jobId))?.text ?? null) === text) {
+        return false;
+      }
 
       yield* sql`INSERT INTO job_notes ${sql.insert({ jobId, text, ...writer })}`;
 
@@ -438,23 +473,32 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
   const commitNote = (saved: Occurrence, now: number) =>
     Effect.gen(function* () {
-      if (saved.runId === null) return false;
+      if (saved.runId === null) {
+        return false;
+      }
 
       const [call] = yield* sql<{ readonly arguments: string }>`SELECT arguments FROM tool_calls
         WHERE run_id = ${saved.runId} AND namespace = ${taskNoteDefinition.namespace}
           AND name = ${taskNoteDefinition.name} AND server_id IS NULL AND status = 'completed'
         ORDER BY position DESC LIMIT 1`;
 
-      if (call === undefined) return false;
+      if (call === undefined) {
+        return false;
+      }
 
       const args = Schema.decodeUnknownOption(Schema.fromJsonString(TaskNoteArguments))(
         call.arguments,
       );
 
-      if (Option.isNone(args)) return false;
+      if (Option.isNone(args)) {
+        return false;
+      }
+
       const { text } = args.value;
 
-      if (text !== null && Buffer.byteLength(text) > taskNoteBytes) return false;
+      if (text !== null && Buffer.byteLength(text) > taskNoteBytes) {
+        return false;
+      }
 
       return yield* saveNote(saved.jobId, text, {
         origin: "occurrence",
@@ -469,10 +513,11 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
       Effect.gen(function* () {
         const job = yield* task(id);
 
-        if ((yield* activeOccurrence(id, "running")) !== null)
+        if ((yield* activeOccurrence(id, "running")) !== null) {
           return yield* new TaskError({
             message: "Cancel the running occurrence before clearing this task's note.",
           });
+        }
 
         const cleared = yield* saveNote(job.id, null, {
           origin: "cli",
@@ -576,14 +621,20 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         ),
       );
 
-      const upcoming: number[] = [];
+      const upcoming: Array<number> = [];
 
       for (const job of jobs) {
-        if (job.paused) continue;
+        if (job.paused) {
+          continue;
+        }
+
         const queued = yield* activeOccurrence(job.id, "pending");
 
-        if (queued !== null) upcoming.push(queued.availableAt);
-        else if (job.nextAt !== null && !(yield* hasActive(job.id))) upcoming.push(job.nextAt);
+        if (queued !== null) {
+          upcoming.push(queued.availableAt);
+        } else if (job.nextAt !== null && !(yield* hasActive(job.id))) {
+          upcoming.push(job.nextAt);
+        }
       }
 
       return {
@@ -619,7 +670,9 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
   const listPage = (after: string | null) =>
     Effect.gen(function* () {
-      if (after !== null) yield* task(after);
+      if (after !== null) {
+        yield* task(after);
+      }
 
       return yield* sql`${tasks} WHERE id > ${after ?? ""} ORDER BY id LIMIT 11`.pipe(
         decodeRows(Task),

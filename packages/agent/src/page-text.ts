@@ -5,29 +5,36 @@ import { AgentError } from "#src/errors";
 import { maxPageBytes, pageFailure } from "#src/page-network";
 
 const textPage = (body: Uint8Array, contentType: string | undefined) => {
-  if (body.byteLength > maxPageBytes)
+  if (body.byteLength > maxPageBytes) {
     throw new AgentError({ reason: "tool-limit", message: "The decoded page exceeds 1 MiB." });
+  }
+
   const [mime, ...parameters] = (contentType ?? "").toLowerCase().split(";");
 
-  if (!["text/plain", "text/html"].includes(mime?.trim() ?? ""))
+  if (!["text/plain", "text/html"].includes(mime?.trim() ?? "")) {
     throw new AgentError({
       reason: "tool-network",
       message: "Page reading supports only UTF-8 text/plain and static text/html.",
     });
+  }
 
   for (const parameter of parameters) {
     const [name, value] = parameter.split("=").map((part) => part.trim());
 
-    if (name === "charset" && !/^(?:utf-8|utf8|"utf-8"|"utf8")$/.test(value ?? ""))
+    if (name === "charset" && !/^(?:utf-8|utf8|"utf-8"|"utf8")$/.test(value ?? "")) {
       throw new AgentError({
         reason: "tool-network",
         message: "The page declares an unsupported character encoding; only UTF-8 is supported.",
       });
+    }
   }
 
   const source = new TextDecoder("utf-8", { fatal: true }).decode(body);
 
-  if (mime?.trim() === "text/plain") return { text: source.trim(), title: null };
+  if (mime?.trim() === "text/plain") {
+    return { text: source.trim(), title: null };
+  }
+
   let title = "";
 
   const cleaned = new HTMLRewriter()
@@ -37,8 +44,9 @@ const textPage = (body: Uint8Array, contentType: string | undefined) => {
           element.getAttribute("charset") ??
           /charset\s*=\s*["']?([^\s;"']+)/i.exec(element.getAttribute("content") ?? "")?.[1];
 
-        if (charset !== undefined && charset !== null && !/^utf-?8$/i.test(charset.trim()))
+        if (charset !== undefined && charset !== null && !/^utf-?8$/i.test(charset.trim())) {
           throw pageFailure();
+        }
       },
     })
     .on("title", {
@@ -67,7 +75,7 @@ const textPage = (body: Uint8Array, contentType: string | undefined) => {
     })
     .transform(source);
 
-  const parts: string[] = [];
+  const parts: Array<string> = [];
   let text = "";
   let preformatted = false;
 
@@ -124,21 +132,23 @@ export const pageResult = (
 ) => {
   const page = textPage(body, contentType);
 
-  if (page.text.trim().length === 0)
+  if (page.text.trim().length === 0) {
     throw new AgentError({
       reason: "tool-network",
       message: "The page contains no usable static text. JavaScript rendering is unsupported.",
     });
+  }
 
   const output = fitText(page.text, limit, (text, truncated) =>
     JSON.stringify({ url: url.href, title: page.title, text, truncated }),
   );
 
-  if (output === null)
+  if (output === null) {
     throw new AgentError({
       reason: "tool-limit",
       message: "The page metadata exceeds the tool-result budget.",
     });
+  }
 
   return output;
 };

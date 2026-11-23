@@ -198,7 +198,7 @@ describe("main.ts", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  }, 15000);
+  }, 15_000);
 
   test.concurrent("when interactive chat input is redirected, rejects it without creating a session", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-interactive-input-"));

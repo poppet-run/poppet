@@ -24,7 +24,9 @@ const readWorkerLog = (stream: ReadableStream<Uint8Array>) => {
     for await (const chunk of stream) {
       output += decoder.decode(chunk, { stream: true });
 
-      if (output.includes('msg="worker started"')) resolve();
+      if (output.includes('msg="worker started"')) {
+        resolve();
+      }
     }
 
     return output;
@@ -64,7 +66,7 @@ const invoke = async (
     }),
 ) => {
   let stdout = "";
-  const errors: string[] = [];
+  const errors: Array<string> = [];
 
   const output: Console.Console = {
     ...console,
@@ -203,7 +205,7 @@ describe("makeCLI", () => {
     const storeDirectory = join(directory, "store");
     await mkdir(storeDirectory, { mode: 0o700 });
     const path = workerSocketPath(directory);
-    const bodies: Schema.Json[] = [];
+    const bodies: Array<Schema.Json> = [];
 
     try {
       await Effect.runPromise(
@@ -1131,9 +1133,11 @@ describe("makeCLI", () => {
         });
         expect((await invoke(["provider", "logout"], environment)).exitCode).toBe(0);
 
-        if (readable)
+        if (readable) {
           expect(await Bun.file(path).json()).toEqual({ ...registration, verification: null });
-        else expect(await Bun.file(path).exists()).toBe(false);
+        } else {
+          expect(await Bun.file(path).exists()).toBe(false);
+        }
 
         const forget = await invoke(
           ["provider", "logout", "openai-chatgpt", "--forget"],
@@ -1294,7 +1298,7 @@ describe("makeCLI", () => {
 
   test("when restarting a worker, validates configuration before calling the service manager", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-worker-restart-"));
-    const calls: string[] = [];
+    const calls: Array<string> = [];
 
     const worker: typeof manageWorker = (action, selectedDirectory) =>
       Effect.sync(() => {
@@ -1324,7 +1328,7 @@ describe("makeCLI", () => {
     "when worker recovery runs %s, ignores invalid file settings and rejects an empty data directory",
     async (action) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-worker-recovery-"));
-      const calls: string[] = [];
+      const calls: Array<string> = [];
 
       const worker: typeof manageWorker = (requested, selectedDirectory) =>
         Effect.sync(() => {
@@ -1404,8 +1408,9 @@ describe("makeCLI", () => {
       expect(skillsHelp.stdout).toMatch(/list +List local skills/);
       expect(skillsHelp.stdout).toMatch(/show +Show a skill's Markdown instructions/);
 
-      for (const action of ["login", "logout", "status", "models"])
+      for (const action of ["login", "logout", "status", "models"]) {
         expect(providerHelp.stdout).toContain(`  ${action} `);
+      }
 
       const taskHelp = await invoke(["tasks", "add", "--json", "--help"], environment);
       expect(taskHelp.stdout).toContain("--cron");
@@ -1428,8 +1433,9 @@ describe("makeCLI", () => {
         expect(result.exitCode).toBe(0);
         expect(result.stderr).toBe("");
 
-        for (const word of ["tasks", "add", "--json", "--cron", "provider", "login"])
+        for (const word of ["tasks", "add", "--json", "--cron", "provider", "login"]) {
           expect(result.stdout).toContain(word);
+        }
 
         expect(await readdir(directory)).toEqual(["config.json"]);
       } finally {
@@ -1517,7 +1523,7 @@ describe("makeCLI", () => {
         }),
       );
 
-      const edit = (...flags: string[]) =>
+      const edit = (...flags: Array<string>) =>
         invoke(["tasks", "edit", "--json", task.id, ...flags], environment);
 
       expect((await edit("--until", "2020-10-22T09:00:00Z")).exitCode).toBe(1);

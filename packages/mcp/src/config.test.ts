@@ -52,7 +52,7 @@ describe("config.ts", () => {
   test("when an HTTP server is configured, accepts https or loopback http and OAuth, and rejects secrets in the URL, managed headers, OAuth beside an Authorization header, and stdio fields", async () => {
     const server = { id: "remote", enabled: true, url: "https://mcp.example.com/mcp", tools: [] };
 
-    const accepted: object[] = [];
+    const accepted: Array<object> = [];
 
     for (const url of [
       "https://mcp.example.com/mcp?team=1",
@@ -76,7 +76,7 @@ describe("config.ts", () => {
       },
     );
 
-    const rejected: object[] = [];
+    const rejected: Array<object> = [];
 
     for (const url of [
       "http://mcp.example.com/mcp",

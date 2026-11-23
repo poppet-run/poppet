@@ -79,7 +79,7 @@ const fixture = async (
   } = {},
 ) => {
   const harness = await agentHarness(options.policy);
-  const requests: ModelRequest[] = [];
+  const requests: Array<ModelRequest> = [];
   const model = testModel({ stream, answer: final, requests });
 
   const layer = harness.agent(
@@ -152,7 +152,7 @@ describe.concurrent("conversation", () => {
   test.each([false, true])(
     "when scheduled=%j, reviews every Bash invocation independently before executing",
     async (scheduled) => {
-      const executed: string[] = [];
+      const executed: Array<string> = [];
       const args = { command: "printf hello", cwd: "/tmp", timeoutSeconds: 5 };
       let reviews = 0;
 
@@ -259,7 +259,7 @@ describe.concurrent("conversation", () => {
     const state = await fixture(
       (request) => {
         if (request.instructions === commandReviewInstructions) {
-          if (mode === "unavailable")
+          if (mode === "unavailable") {
             return Stream.fail(
               new ProviderError({
                 provider: "test-provider",
@@ -267,6 +267,7 @@ describe.concurrent("conversation", () => {
                 message: "offline",
               }),
             );
+          }
 
           return completed([
             {
@@ -334,8 +335,9 @@ describe.concurrent("conversation", () => {
           expect(calls).toHaveLength(1);
           expect(calls[0]!.status).toBe(approved ? "completed" : "failed");
 
-          if (approved) expect(JSON.parse(calls[0]!.output!)).toEqual(receipt);
-          else {
+          if (approved) {
+            expect(JSON.parse(calls[0]!.output!)).toEqual(receipt);
+          } else {
             expect(calls[0]!.startedAt).toBeNull();
             const messages = yield* store.messages(session.id);
             expect(
@@ -403,8 +405,8 @@ describe.concurrent("conversation", () => {
   test.each([false, true])(
     "when a run finishes with scheduled=%j, closes its external resources",
     async (scheduled) => {
-      const opened: string[] = [];
-      const closed: string[] = [];
+      const opened: Array<string> = [];
+      const closed: Array<string> = [];
 
       const state = await fixture(() => final(), {
         externalTools: {
@@ -511,12 +513,13 @@ describe.concurrent("conversation", () => {
       () => {
         turns++;
 
-        if (turns === 1)
+        if (turns === 1) {
           return completed([
             tool("fetch_page", '{"url":"https://example.com/"}', "page", "poppet_web"),
           ]);
+        }
 
-        if (turns === 2)
+        if (turns === 2) {
           return completed(
             [
               tool(
@@ -529,6 +532,7 @@ describe.concurrent("conversation", () => {
             ],
             turns,
           );
+        }
 
         return final();
       },
@@ -601,7 +605,7 @@ describe.concurrent("conversation", () => {
       () => {
         turns++;
 
-        if (turns === 1)
+        if (turns === 1) {
           return completed([
             tool("fetch_page", '{"url":"https://example.com/"}', "page", "poppet_web"),
             tool(
@@ -612,6 +616,7 @@ describe.concurrent("conversation", () => {
             ),
             tool("server", "{}", "server", "poppet_mcp"),
           ]);
+        }
 
         return final();
       },
@@ -762,16 +767,18 @@ describe.concurrent("conversation", () => {
         () => {
           turns++;
 
-          if (turns === 1)
+          if (turns === 1) {
             return completed([
               tool("fetch_page", '{"url":"https://example.com/"}', "page", "poppet_web"),
             ]);
+          }
 
-          if (turns === 2)
+          if (turns === 2) {
             return completed(
               [tool("view_skill", '{"name":"weekly-review"}', "skill", "poppet_skills")],
               turns,
             );
+          }
 
           return final();
         },
@@ -917,7 +924,7 @@ describe.concurrent("conversation", () => {
     });
 
     test("when a named skill contains a URL, grants no page access", async () => {
-      const fetched: string[] = [];
+      const fetched: Array<string> = [];
       let turns = 0;
 
       const state = await fixture(
@@ -1003,20 +1010,23 @@ describe.concurrent("conversation", () => {
             const store = yield* Store;
             const session = yield* store.createSession("test-provider", "test-model");
 
-            if (mode === "collision")
+            if (mode === "collision") {
               expect(
                 yield* (yield* Agent)
                   .send(session.id, "Run the tool")
                   .pipe(Stream.runDrain, Effect.flip),
               ).toHaveProperty("reason", "tool-permission");
-            else
+            } else {
               expect(yield* reportedFailures(session.id, "Run the tool")).toEqual([
                 "agent:tool-permission",
               ]);
+            }
           }),
         );
 
-        if (mode === "collision") expect(state.requests).toHaveLength(0);
+        if (mode === "collision") {
+          expect(state.requests).toHaveLength(0);
+        }
       } finally {
         await state.close();
       }
@@ -1125,21 +1135,23 @@ describe.concurrent("conversation", () => {
     "when search returns sources with scheduled=%j, authorizes later page reads only in that run",
     async (scheduled) => {
       let turns = 0;
-      const fetched: string[] = [];
+      const fetched: Array<string> = [];
 
       const state = await fixture(
         (request) => {
           expect(request.tools.some((entry) => entry.name === "search_web")).toBe(true);
 
-          if (++turns === 1)
+          if (++turns === 1) {
             return completed([
               tool("search_web", '{"query":"current topic"}', "search", "poppet_web"),
             ]);
+          }
 
-          if (turns === 2 || turns === 4)
+          if (turns === 2 || turns === 4) {
             return completed([
               tool("fetch_page", '{"url":"https://example.com/source#part"}', "page", "poppet_web"),
             ]);
+          }
 
           return final();
         },
@@ -1320,7 +1332,7 @@ describe.concurrent("conversation", () => {
   test.each([false, true])(
     "when a page URL is explicitly supplied with scheduled=%j, reads it and records durable results",
     async (scheduled) => {
-      const fetched: string[] = [];
+      const fetched: Array<string> = [];
       let turns = 0;
 
       const state = await fixture(
@@ -1398,7 +1410,7 @@ describe.concurrent("conversation", () => {
   );
 
   test("when page links appear in an invalid batch, grants no further retrieval or memory-write authority", async () => {
-    const fetched: string[] = [];
+    const fetched: Array<string> = [];
     let turns = 0;
 
     const state = await fixture(
@@ -1540,7 +1552,10 @@ describe.concurrent("conversation", () => {
           if (turn === 3) {
             expect(result).toMatchObject({ role: "tool", callId: "read" });
 
-            if (result?.role !== "tool") throw new Error("Expected read result");
+            if (result?.role !== "tool") {
+              throw new Error("Expected read result");
+            }
+
             expect(Buffer.byteLength(result.output)).toBeLessThanOrEqual(1024);
 
             const page = Schema.decodeUnknownSync(Schema.fromJsonString(SessionReadResult))(
@@ -1576,7 +1591,10 @@ describe.concurrent("conversation", () => {
 
           expect(result).toMatchObject({ role: "tool", callId: "recall" });
 
-          if (result?.role !== "tool") throw new Error("Expected search result");
+          if (result?.role !== "tool") {
+            throw new Error("Expected search result");
+          }
+
           expect(Buffer.byteLength(result.output)).toBeLessThanOrEqual(1024);
           expect(JSON.parse(result.output)).toMatchObject({
             matches: [
@@ -1685,7 +1703,7 @@ describe.concurrent("conversation", () => {
       }),
     );
 
-    const requests: Schema.JsonObject[] = [];
+    const requests: Array<Schema.JsonObject> = [];
 
     const client = new OpenAI({
       apiKey: "test-key",
@@ -1698,7 +1716,7 @@ describe.concurrent("conversation", () => {
         const body = Schema.decodeUnknownSync(Schema.JsonObject)(await incoming.json());
         requests.push(body);
 
-        if (!Schema.is(WireTools)(body.tools))
+        if (!Schema.is(WireTools)(body.tools)) {
           return Response.json(
             {
               error: {
@@ -1708,6 +1726,7 @@ describe.concurrent("conversation", () => {
             },
             { status: 400 },
           );
+        }
 
         const namespaces = Schema.decodeUnknownSync(WireTools)(body.tools);
 
@@ -1719,7 +1738,7 @@ describe.concurrent("conversation", () => {
               entry.parameters.required.includes(key),
             ),
           )
-        )
+        ) {
           return Response.json(
             {
               error: {
@@ -1729,8 +1748,9 @@ describe.concurrent("conversation", () => {
             },
             { status: 400 },
           );
+        }
 
-        const output: Schema.JsonObject[] =
+        const output: Array<Schema.JsonObject> =
           requests.length === 1
             ? [
                 {
@@ -1815,7 +1835,7 @@ describe.concurrent("conversation", () => {
         policy: {
           contextBytes: 8192,
         },
-        pages: { fetch: () => Effect.succeed("x".repeat(12000)) },
+        pages: { fetch: () => Effect.succeed("x".repeat(12_000)) },
       },
     );
 

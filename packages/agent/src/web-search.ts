@@ -31,7 +31,9 @@ export const decodeWebSearchCall = (call: ToolCall) =>
 export const webSearchTool = Effect.gen(function* () {
   const { search } = yield* WebSearch;
 
-  if (search === null) return null;
+  if (search === null) {
+    return null;
+  }
 
   return contextTool({
     definition: webSearchDefinition,

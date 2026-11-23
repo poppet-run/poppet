@@ -104,11 +104,13 @@ const toolNames = (description: ModelDescription, request: ModelRequest) => {
   for (const tool of request.tools) {
     const name = wireName(tool);
 
-    if (name.length > 64 || names.has(name))
+    if (name.length > 64 || names.has(name)) {
       throw invalidRequest(
         description.provider,
         "Tool names are too long or collide in Chat Completions.",
       );
+    }
+
     names.set(name, tool);
   }
 
@@ -119,13 +121,13 @@ const chatMessages = (
   description: ModelDescription,
   request: ModelRequest,
   continuation: ChatContinuation,
-): ChatCompletionMessageParam[] => {
-  const messages: ChatCompletionMessageParam[] = [
+): Array<ChatCompletionMessageParam> => {
+  const messages: Array<ChatCompletionMessageParam> = [
     { role: "system", content: request.instructions },
   ];
 
   for (const message of request.messages) {
-    if (message.role === "user")
+    if (message.role === "user") {
       messages.push({
         role: "user",
         content: !message.attachments?.length
@@ -136,9 +138,9 @@ const chatMessages = (
                 : { type: "image_url", image_url: { url: part.url } },
             ),
       });
-    else if (message.role === "tool")
+    } else if (message.role === "tool") {
       messages.push({ role: "tool", tool_call_id: message.callId, content: message.output });
-    else {
+    } else {
       const toolCalls = message.output.flatMap((part) =>
         part.type === "tool-call"
           ? [
@@ -160,8 +162,9 @@ const chatMessages = (
         ...(toolCalls.length > 0 && { tool_calls: toolCalls }),
       };
 
-      if (message.continuation !== null)
+      if (message.continuation !== null) {
         assistant = continuation.restore(message.continuation.data, assistant);
+      }
 
       messages.push(assistant);
     }
@@ -230,11 +233,13 @@ export const chatCompletionsModel = (
               parameters.tool_choice = decoded.settings.toolChoice ?? "auto";
             }
 
-            if (decoded.settings.temperature !== undefined)
+            if (decoded.settings.temperature !== undefined) {
               parameters.temperature = decoded.settings.temperature;
+            }
 
-            if (decoded.settings.maxOutputTokens !== undefined)
+            if (decoded.settings.maxOutputTokens !== undefined) {
               parameters[outputTokenParameter] = decoded.settings.maxOutputTokens;
+            }
 
             parameters = options.prepareRequest?.(parameters, decoded) ?? parameters;
 
@@ -259,21 +264,25 @@ export const chatCompletionsModel = (
                 for await (const raw of stream) {
                   const chunk = Schema.decodeUnknownSync(Chunk)(raw);
 
-                  if (chunk.usage)
+                  if (chunk.usage) {
                     usage = {
                       inputTokens: chunk.usage.prompt_tokens,
                       outputTokens: chunk.usage.completion_tokens,
                     };
+                  }
 
-                  if (chunk.choices.length === 0) continue;
+                  if (chunk.choices.length === 0) {
+                    continue;
+                  }
 
                   const choice = chunk.choices[0];
 
-                  if (!choice || chunk.choices.length !== 1 || choice.index !== 0)
+                  if (!choice || chunk.choices.length !== 1 || choice.index !== 0) {
                     throw interrupted(
                       description.provider,
                       "The model returned an invalid choice sequence.",
                     );
+                  }
 
                   if (finish !== null) {
                     if (!accountingFrameSeen && options.isAccountingFrame?.(chunk, finish)) {
@@ -289,15 +298,18 @@ export const chatCompletionsModel = (
 
                   const reasoning = continuation.append(choice.delta);
 
-                  if (decoded.settings.reasoningSummary && reasoning)
+                  if (decoded.settings.reasoningSummary && reasoning) {
                     yield { type: "reasoning-delta", text: reasoning };
+                  }
 
                   if (choice.delta.content) {
                     text += choice.delta.content;
                     yield { type: "text-delta", text: choice.delta.content };
                   }
 
-                  if (choice.delta.refusal) refusal += choice.delta.refusal;
+                  if (choice.delta.refusal) {
+                    refusal += choice.delta.refusal;
+                  }
 
                   for (const part of choice.delta.tool_calls ?? []) {
                     let call = calls.get(part.index);
@@ -307,10 +319,14 @@ export const chatCompletionsModel = (
                       calls.set(part.index, call);
                     }
 
-                    if (part.id && call.id !== part.id) call.id += part.id;
+                    if (part.id && call.id !== part.id) {
+                      call.id += part.id;
+                    }
 
-                    if (part.function?.name && call.name !== part.function.name)
+                    if (part.function?.name && call.name !== part.function.name) {
                       call.name += part.function.name;
+                    }
+
                     call.arguments += part.function?.arguments ?? "";
                   }
 
@@ -318,29 +334,33 @@ export const chatCompletionsModel = (
                     choice.finish_reason !== undefined &&
                     choice.finish_reason !== null &&
                     choice.finish_reason !== ""
-                  )
+                  ) {
                     finish = choice.finish_reason;
+                  }
                 }
 
-                if (finish !== "stop" && finish !== "tool_calls")
+                if (finish !== "stop" && finish !== "tool_calls") {
                   throw interrupted(
                     description.provider,
                     "The stream ended without successful completion.",
                   );
+                }
 
-                if ((finish === "tool_calls") !== calls.size > 0)
+                if ((finish === "tool_calls") !== calls.size > 0) {
                   throw interrupted(
                     description.provider,
                     "The completion reason does not match its tool calls.",
                   );
+                }
 
-                if (decoded.settings.toolChoice === "none" && calls.size > 0)
+                if (decoded.settings.toolChoice === "none" && calls.size > 0) {
                   throw interrupted(
                     description.provider,
                     "The model returned an invalid tool call.",
                   );
+                }
 
-                const output: Output[] = [
+                const output: Array<Output> = [
                   ...(text.length === 0 ? [] : [{ type: "text" as const, text }]),
                   ...(refusal.length === 0 ? [] : [{ type: "text" as const, text: refusal }]),
                 ];
@@ -354,11 +374,13 @@ export const chatCompletionsModel = (
                 for (const call of ordered) {
                   const tool = names.get(call.name);
 
-                  if (!tool || !call.id || ids.has(call.id))
+                  if (!tool || !call.id || ids.has(call.id)) {
                     throw interrupted(
                       description.provider,
                       "The model returned an invalid tool call.",
                     );
+                  }
+
                   Schema.decodeUnknownSync(Schema.fromJsonString(Schema.JsonObject))(
                     call.arguments,
                   );
@@ -387,11 +409,13 @@ export const chatCompletionsModel = (
 
                 yield { type: "completed", response };
               } catch (cause) {
-                if (cause instanceof Schema.SchemaError || cause instanceof SyntaxError)
+                if (cause instanceof Schema.SchemaError || cause instanceof SyntaxError) {
                   throw interrupted(
                     description.provider,
                     "The model returned a malformed Chat Completions stream.",
                   );
+                }
+
                 throw cause;
               } finally {
                 stream.controller.abort();

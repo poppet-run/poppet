@@ -23,24 +23,36 @@ const clean = (text: string) =>
     .replaceAll(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
 
 const chatKey = (key: string) => {
-  if (key === `${escape}27;2;13~`) return "newline";
+  if (key === `${escape}27;2;13~`) {
+    return "newline";
+  }
+
   // oxlint-disable-next-line no-control-regex
   const report = /^\u001b\[(\d+)(?:;(\d+))?u$/.exec(key);
 
-  if (!report) return key;
+  if (!report) {
+    return key;
+  }
+
   const code = Number(report[1]);
   const modifiers = (Number(report[2] ?? "1") - 1) & ~192;
 
-  if (code === 13 && (modifiers === 1 || modifiers === 2)) return "newline";
+  if (code === 13 && (modifiers === 1 || modifiers === 2)) {
+    return "newline";
+  }
 
-  if (modifiers === 4 && code >= 97 && code <= 122) return String.fromCharCode(code & 31);
+  if (modifiers === 4 && code >= 97 && code <= 122) {
+    return String.fromCharCode(code & 31);
+  }
 
-  if (modifiers === 0 && (code === 13 || code === 127)) return String.fromCharCode(code);
+  if (modifiers === 0 && (code === 13 || code === 127)) {
+    return String.fromCharCode(code);
+  }
 
   return key;
 };
 
-export const wrapChatText = (text: string, width: number): string[] => {
+export const wrapChatText = (text: string, width: number): Array<string> => {
   const rows = [""];
   let cells = 0;
 
@@ -70,17 +82,17 @@ type Message = {
   text: string;
 };
 
-type QueuedMessage = { text: string; attachments: readonly string[] };
+type QueuedMessage = { text: string; attachments: ReadonlyArray<string> };
 
 type Output = Pick<NodeJS.WriteStream, "write" | "columns" | "rows"> &
   Partial<Pick<NodeJS.WriteStream, "hasColors">>;
 
 export class ChatTerminal {
-  private messages: Message[] = [];
+  private messages: Array<Message> = [];
   private readonly markdown: ChatMarkdown;
-  private draft: string[] = [];
+  private draft: Array<string> = [];
   private cursor = 0;
-  private history: string[] = [];
+  private history: Array<string> = [];
   private historyIndex = 0;
   private savedDraft = "";
   private pending = "";
@@ -90,8 +102,8 @@ export class ChatTerminal {
   private sessionId: string | undefined;
   private activityTimer: ReturnType<typeof setInterval> | undefined;
   private activityFrame = 0;
-  private attachments: readonly string[] = [];
-  private queue: QueuedMessage[] = [];
+  private attachments: ReadonlyArray<string> = [];
+  private queue: Array<QueuedMessage> = [];
   private active: QueuedMessage | undefined;
   private paused = false;
   private offset = 0;
@@ -114,7 +126,10 @@ export class ChatTerminal {
   }
 
   private schedule() {
-    if (this.closed || this.timer !== undefined) return;
+    if (this.closed || this.timer !== undefined) {
+      return;
+    }
+
     this.timer = setTimeout(() => {
       this.timer = undefined;
       this.repaint();
@@ -129,8 +144,9 @@ export class ChatTerminal {
   private statusLine(width: number) {
     const details = `${this.attachments.length ? ` · ${this.attachments.length} attached` : ""}${this.offset ? " · History" : ""}`;
 
-    if (this.activityTimer === undefined)
+    if (this.activityTimer === undefined) {
       return this.style(wrapChatText(this.status + details, width)[0]!, "2");
+    }
 
     const label = activityIndicator(
       this.status === "Responding…" ? "Responding" : "Thinking",
@@ -150,9 +166,14 @@ export class ChatTerminal {
       const { kind, text } = message;
       let labelStyle = "2;36";
 
-      if (kind === "You") labelStyle = "1;33";
-      else if (kind === "Poppet") labelStyle = "1;36";
-      else if (kind === "Error") labelStyle = "31";
+      if (kind === "You") {
+        labelStyle = "1;33";
+      } else if (kind === "Poppet") {
+        labelStyle = "1;36";
+      } else if (kind === "Error") {
+        labelStyle = "31";
+      }
+
       const label = styled ? this.style(kind, labelStyle) : kind;
 
       const rows =
@@ -180,7 +201,10 @@ export class ChatTerminal {
   };
 
   render = () => {
-    if (this.closed) return;
+    if (this.closed) {
+      return;
+    }
+
     const width = Math.max(1, (this.output.columns || 80) - 1);
     const height = Math.max(1, this.output.rows || 24);
 
@@ -195,9 +219,14 @@ export class ChatTerminal {
     const inputRows = wrapChatText(this.draft.join(""), inner);
     const before = wrapChatText(this.draft.slice(0, this.cursor).join(""), inner);
 
-    if (Bun.stringWidth(before.at(-1)!) === inner) before.push("");
+    if (Bun.stringWidth(before.at(-1)!) === inner) {
+      before.push("");
+    }
 
-    if (before.length > inputRows.length) inputRows.push("");
+    if (before.length > inputRows.length) {
+      inputRows.push("");
+    }
+
     const composerHeight = Math.min(inputRows.length, Math.floor(height / 3), height - 6);
     const start = Math.max(0, before.length - composerHeight);
     const visibleInput = inputRows.slice(start, start + composerHeight);
@@ -206,7 +235,10 @@ export class ChatTerminal {
     const room = available - queueRows.length;
     const transcript = this.transcript(width, true);
 
-    if (this.offset > 0) this.offset += Math.max(0, transcript.length - this.renderedRows);
+    if (this.offset > 0) {
+      this.offset += Math.max(0, transcript.length - this.renderedRows);
+    }
+
     this.renderedRows = transcript.length;
     this.offset = Math.min(this.offset, Math.max(0, transcript.length - room));
     const end = Math.max(0, transcript.length - this.offset);
@@ -217,7 +249,10 @@ export class ChatTerminal {
       ...transcript.slice(Math.max(0, end - room), end),
     ];
 
-    while (lines.length < room + 2) lines.push("");
+    while (lines.length < room + 2) {
+      lines.push("");
+    }
+
     lines.push(
       this.statusLine(width),
       ...queueRows,
@@ -225,7 +260,7 @@ export class ChatTerminal {
     );
     const inputTop = lines.length + 1;
 
-    for (const row of visibleInput)
+    for (const row of visibleInput) {
       lines.push(
         this.style("│", "2;36") +
           " " +
@@ -234,6 +269,8 @@ export class ChatTerminal {
           " " +
           this.style("│", "2;36"),
       );
+    }
+
     lines.push(
       this.style("╰" + "─".repeat(Math.max(0, width - 2)) + "╯", "2;36"),
       this.style(
@@ -256,7 +293,10 @@ export class ChatTerminal {
   };
 
   private queueRows(width: number, limit: number) {
-    if ((!this.queue.length && !this.paused) || limit === 0) return [];
+    if ((!this.queue.length && !this.paused) || limit === 0) {
+      return [];
+    }
+
     const heading = `${this.paused ? "Queue paused" : "Queued"} · ${this.queue.length}`;
     const rows = [heading];
     const controls = this.paused ? "/queue retry · /queue resume" : "/queue remove N";
@@ -268,16 +308,22 @@ export class ChatTerminal {
       rows.push(`${index + 1}.${files} ${message.text.replaceAll(/\s+/g, " ")}`);
     }
 
-    if (this.queue.length > shown && slots > 0)
+    if (this.queue.length > shown && slots > 0) {
       rows.push(`+${this.queue.length - shown} more · /queue remove N`);
+    }
 
-    if (limit > 1) rows.push(controls);
+    if (limit > 1) {
+      rows.push(controls);
+    }
 
     return rows.map((row) => this.style(wrapChatText(row, width)[0]!, "2;36"));
   }
 
   private dispatch() {
-    if (this.closed || this.busy || this.paused || !this.reader || !this.queue.length) return;
+    if (this.closed || this.busy || this.paused || !this.reader || !this.queue.length) {
+      return;
+    }
+
     const message = this.queue.shift()!;
     const reader = this.reader;
     this.reader = undefined;
@@ -301,7 +347,7 @@ export class ChatTerminal {
   });
 
   console = (base: Console.Console): Console.Console => {
-    const diagnostic = (...values: readonly unknown[]) => {
+    const diagnostic = (...values: ReadonlyArray<unknown>) => {
       Effect.runSync(this.info(formatWithOptions({ colors: false }, ...values)));
     };
 
@@ -320,15 +366,17 @@ export class ChatTerminal {
     this.schedule();
   });
 
-  showHistory = (messages: readonly ChatHistoryMessage[]) =>
+  showHistory = (messages: ReadonlyArray<ChatHistoryMessage>) =>
     Effect.sync(() => {
       this.status = "Ready";
 
-      for (const message of messages)
+      for (const message of messages) {
         this.messages.push({
           kind: message.role === "user" ? "You" : "Poppet",
           text: clean(message.text),
         });
+      }
+
       this.offset = 0;
       this.schedule();
     });
@@ -382,21 +430,30 @@ export class ChatTerminal {
   private append(kind: "Poppet" | "Thinking", text: string) {
     const last = this.messages.at(-1);
 
-    if (last?.kind === kind) last.text += clean(text);
-    else this.messages.push({ kind, text: clean(text) });
+    if (last?.kind === kind) {
+      last.text += clean(text);
+    } else {
+      this.messages.push({ kind, text: clean(text) });
+    }
+
     this.schedule();
   }
 
   answer: ChatWriter = (text) =>
     Effect.sync(() => {
-      if (!text) return;
+      if (!text) {
+        return;
+      }
+
       this.status = "Responding…";
       this.append("Poppet", text);
     });
 
   reasoning: ChatReasoningWriter = (event) =>
     Effect.sync(() => {
-      if (event.type === "reasoning-delta") this.append("Thinking", event.text);
+      if (event.type === "reasoning-delta") {
+        this.append("Thinking", event.text);
+      }
     });
 
   announce: ChatWriter = (text) => this.info(text);
@@ -408,7 +465,10 @@ export class ChatTerminal {
   }
 
   private historyMove(direction: number) {
-    if (this.historyIndex === this.history.length) this.savedDraft = this.draft.join("");
+    if (this.historyIndex === this.history.length) {
+      this.savedDraft = this.draft.join("");
+    }
+
     this.historyIndex = Math.max(0, Math.min(this.history.length, this.historyIndex + direction));
     this.draft = characters(this.history[this.historyIndex] ?? this.savedDraft);
     this.cursor = this.draft.length;
@@ -418,7 +478,10 @@ export class ChatTerminal {
     const text = this.draft.join("");
     const command = text.trim();
 
-    if (!command) return true;
+    if (!command) {
+      return true;
+    }
+
     this.history.push(text);
     this.historyIndex = this.history.length;
     this.savedDraft = "";
@@ -442,18 +505,22 @@ export class ChatTerminal {
     if (/^\/queue(?:\s|$)/.test(command)) {
       const remove = /^\/queue remove ([1-9]\d*)$/.exec(command);
 
-      if (remove && Number(remove[1]) <= this.queue.length)
+      if (remove && Number(remove[1]) <= this.queue.length) {
         this.queue.splice(Number(remove[1]) - 1, 1);
-      else if (this.paused && (command === "/queue resume" || command === "/queue retry")) {
-        if (command === "/queue retry" && this.active) this.queue.unshift(this.active);
+      } else if (this.paused && (command === "/queue resume" || command === "/queue retry")) {
+        if (command === "/queue retry" && this.active) {
+          this.queue.unshift(this.active);
+        }
+
         this.paused = false;
         this.status = "Ready";
         this.dispatch();
-      } else
+      } else {
         this.messages.push({
           kind: "Info",
           text: "Use /queue remove N for a queued message. After a failed turn, use /queue retry or /queue resume.",
         });
+      }
 
       return true;
     }
@@ -466,7 +533,10 @@ export class ChatTerminal {
   }
 
   input = (text: string) => {
-    if (this.closed) return;
+    if (this.closed) {
+      return;
+    }
+
     this.pending += text;
 
     while (this.pending) {
@@ -474,7 +544,10 @@ export class ChatTerminal {
         const end = this.pending.indexOf(`${escape}201~`);
 
         if (end < 0) {
-          if (!this.pending.includes("\u0003") && !this.pending.includes(`${escape}99;5u`)) break;
+          if (!this.pending.includes("\u0003") && !this.pending.includes(`${escape}99;5u`)) {
+            break;
+          }
+
           this.exit();
 
           return;
@@ -503,10 +576,16 @@ export class ChatTerminal {
       // oxlint-disable-next-line no-control-regex
       const control = /^\u001b(?:\[[0-9;?]*[ -/]*[@-~]|O[A-Z])/.exec(this.pending)?.[0];
 
-      if (!control && (this.pending.startsWith(escape) || this.pending === "\u001bO")) break;
+      if (!control && (this.pending.startsWith(escape) || this.pending === "\u001bO")) {
+        break;
+      }
+
       const sequence = control ?? keys.find((key) => this.pending.startsWith(key));
 
-      if (!sequence && keys.some((key) => key.startsWith(this.pending))) break;
+      if (!sequence && keys.some((key) => key.startsWith(this.pending))) {
+        break;
+      }
+
       const key = sequence ?? characters(this.pending)[0]!;
       this.pending = this.pending.slice(key.length);
 
@@ -527,7 +606,10 @@ export class ChatTerminal {
 
           break;
         case "\r": {
-          if (!this.submit()) return;
+          if (!this.submit()) {
+            return;
+          }
+
           break;
         }
 
@@ -537,7 +619,10 @@ export class ChatTerminal {
           break;
         case "\u007f":
         case "\b":
-          if (this.cursor > 0) this.draft.splice(--this.cursor, 1);
+          if (this.cursor > 0) {
+            this.draft.splice(--this.cursor, 1);
+          }
+
           break;
         case `${escape}3~`:
           this.draft.splice(this.cursor, 1);
@@ -577,7 +662,9 @@ export class ChatTerminal {
           this.cursor = 0;
           break;
         default:
-          if (!key.startsWith("\u001b") && key >= " " && key !== "\u007f") this.insert(key);
+          if (!key.startsWith("\u001b") && key >= " " && key !== "\u007f") {
+            this.insert(key);
+          }
       }
     }
 
@@ -633,7 +720,10 @@ export const openChatTerminal = Effect.gen(function* () {
         // The PTY may have hung up before the finalizer runs.
       }
 
-      if (wasFlowing !== true) process.stdin.pause();
+      if (wasFlowing !== true) {
+        process.stdin.pause();
+      }
+
       terminal.close();
     }),
   );
