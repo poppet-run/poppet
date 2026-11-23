@@ -42,14 +42,16 @@ export default defineConfig({
     "quality/no-unsafe-dictionary-type": "off",
     "quality/no-widen-then-assert": "off",
 
-    // apps/web uses Preact (HTML attributes like `class`, no React Compiler), and Effect code uses `.use()` / `.catch()`.
+    // apps/web uses Preact (HTML attributes like `class`, no React Compiler), Effect code uses `.use()` / `.catch()`,
+    // and runtime narrowing legitimately uses `instanceof` for Web APIs (Request, URLSearchParams) and error/transport classes.
+    "@nkzw/no-instanceof": "off",
     "react/immutability": "off",
     "react/no-unknown-property": "off",
     "react-hooks/rules-of-hooks": "off",
+    "unicorn/catch-error-name": ["error", { ignore: ["^cause$"] }],
     "unicorn/prefer-top-level-await": "off",
 
     // Temporarily disabled during @cloudflare/oxlint-config migration; evaluate one rule per commit.
-    "@nkzw/no-instanceof": "off",
     "typescript/no-misused-spread": "off",
     "typescript/no-non-null-assertion": "off",
     "typescript/no-unnecessary-type-assertion": "off",
@@ -59,7 +61,6 @@ export default defineConfig({
     "typescript/no-unsafe-member-access": "off",
     "typescript/no-unsafe-return": "off",
     "typescript/no-unsafe-type-assertion": "off",
-    "unicorn/catch-error-name": "off",
 
     // Project anti-slop and Effect rules.
     "anti-slop/no-array-filter-map": "error",
