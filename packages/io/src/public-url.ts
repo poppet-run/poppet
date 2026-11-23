@@ -63,7 +63,7 @@ export const publicAddress = (address: string) => {
   }
 };
 
-export const urlHostname = (url: URL) => url.hostname.replace(/^\[|\]$/g, "");
+export const urlHostname = (url: URL) => url.hostname.replaceAll(/^\[|\]$/g, "");
 
 const noRecords = new Set(["ENODATA", "ENOTFOUND"]);
 

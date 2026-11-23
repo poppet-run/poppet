@@ -9,8 +9,8 @@ import { streamReply } from "#src/reply";
 
 export const sessionTitle = (text: string) => {
   const clean = text
-    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ")
-    .replace(/\s+/gu, " ")
+    .replaceAll(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ")
+    .replaceAll(/\s+/gu, " ")
     .trim();
 
   const characters = [...clean];
@@ -77,7 +77,7 @@ export const generateTitle = (model: ModelOperations, session: Session, prompt: 
     const valid =
       result.finishReason === "stop" &&
       result.output.every((part) => part.type === "text") &&
-      text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").trim().length > 0;
+      text.replaceAll(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").trim().length > 0;
 
     return { title: valid ? sessionTitle(text) : null, usage: result.usage };
   });

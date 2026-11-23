@@ -109,7 +109,7 @@ describe("compileSchema", () => {
   });
 
   test("when patterns require backtracking-only features, rejects discovery", () => {
-    for (const pattern of ["(?=a)", "(a)\\1", "["])
+    for (const pattern of ["(?=a)", String.raw`(a)\1`, "["])
       expect(() => compileSchema({ type: "string", pattern })).toThrow();
   });
 

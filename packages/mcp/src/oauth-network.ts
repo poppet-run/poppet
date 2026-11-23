@@ -38,7 +38,12 @@ const pinnedRequest = (url: URL, address: string, init: RequestInit, signal: Abo
   new Promise<Response>((resolve, reject) => {
     const body = init.body;
 
-    if (body != null && !Schema.is(Schema.String)(body) && !(body instanceof URLSearchParams)) {
+    if (
+      body !== null &&
+      body !== undefined &&
+      !Schema.is(Schema.String)(body) &&
+      !(body instanceof URLSearchParams)
+    ) {
       reject(new Error("Unsupported OAuth request body."));
 
       return;
@@ -111,7 +116,7 @@ export const oauthFetch = (server: URL, operationSignal: AbortSignal): FetchLike
     const endpoint = new URL(input);
     const signals = [operationSignal, AbortSignal.timeout(5000)];
 
-    if (init.signal != null) signals.push(init.signal);
+    if (init.signal !== null && init.signal !== undefined) signals.push(init.signal);
     const signal = AbortSignal.any(signals);
     const address = await oauthAddress(server, endpoint, signal);
 

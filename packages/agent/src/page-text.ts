@@ -80,11 +80,11 @@ const textPage = (body: Uint8Array, contentType: string | undefined) => {
             .filter((part) => part.length > 0)
             .join("\n")
         : decoded
-            .replace(/\s+/g, " ")
+            .replaceAll(/\s+/g, " ")
             .split("\u0001")
             .map((part) => part.trim())
             .join("\n")
-            .replace(/\n+/g, "\n")
+            .replaceAll(/\n+/g, "\n")
             .trim(),
     );
     text = "";
@@ -111,7 +111,8 @@ const textPage = (body: Uint8Array, contentType: string | undefined) => {
 
   return {
     text: parts.filter((part) => part.length > 0).join("\n"),
-    title: Array.from(decodeHTML(title).replace(/\s+/g, " ").trim()).slice(0, 256).join("") || null,
+    title:
+      Array.from(decodeHTML(title).replaceAll(/\s+/g, " ").trim()).slice(0, 256).join("") || null,
   };
 };
 

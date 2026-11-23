@@ -33,14 +33,24 @@ const mergeDetail = (details: ReasoningDetail[], fragment: ReasoningDetail) => {
       fields.every((field) => (detail[field] ?? null) === (fragment[field] ?? null)),
   );
 
-  if (index < 0 && (fragment.index != null || fragment.id != null)) {
+  if (
+    index < 0 &&
+    ((fragment.index !== null && fragment.index !== undefined) ||
+      (fragment.id !== null && fragment.id !== undefined))
+  ) {
     const matches = details.flatMap((detail, position) =>
       detail.type === fragment.type &&
-      ((fragment.index != null && fragment.index === detail.index) ||
-        (fragment.id != null && fragment.id === detail.id)) &&
+      ((fragment.index !== null &&
+        fragment.index !== undefined &&
+        fragment.index === detail.index) ||
+        (fragment.id !== null && fragment.id !== undefined && fragment.id === detail.id)) &&
       fields.every(
         (field) =>
-          detail[field] == null || fragment[field] == null || detail[field] === fragment[field],
+          detail[field] === null ||
+          detail[field] === undefined ||
+          fragment[field] === null ||
+          fragment[field] === undefined ||
+          detail[field] === fragment[field],
       )
         ? [position]
         : [],
@@ -64,8 +74,10 @@ const mergeDetail = (details: ReasoningDetail[], fragment: ReasoningDetail) => {
   details[index] = {
     ...previous,
     ...present,
-    ...(fragment.text != null && { text: (previous.text ?? "") + fragment.text }),
-    ...(fragment.summary != null && { summary: (previous.summary ?? "") + fragment.summary }),
+    ...(fragment.text !== null &&
+      fragment.text !== undefined && { text: (previous.text ?? "") + fragment.text }),
+    ...(fragment.summary !== null &&
+      fragment.summary !== undefined && { summary: (previous.summary ?? "") + fragment.summary }),
   };
 };
 
@@ -113,7 +125,8 @@ export const routerOptions: ChatOptions = {
     const choice = chunk.choices[0];
 
     return (
-      chunk.usage != null &&
+      chunk.usage !== null &&
+      chunk.usage !== undefined &&
       choice !== undefined &&
       choice.finish_reason === finishReason &&
       Object.entries(choice.delta).every(([key, value]) => {

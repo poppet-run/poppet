@@ -55,7 +55,7 @@ export const readVisibleLine = (provider: ProviderId, prompt: string) => {
           if (value !== "") yield* display("\b \b");
           value = value.slice(0, -1);
         } else if (event.key.ctrl && event.key.name === "u") {
-          yield* display(`\r\x1b[2K${prompt}`);
+          yield* display(`\r\u001b[2K${prompt}`);
           value = "";
         } else if (!event.key.ctrl && !event.key.meta && Option.isSome(event.input)) {
           yield* display(event.input.value);

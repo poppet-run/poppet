@@ -19,7 +19,7 @@ test.each([false, true])("renders Markdown with colour=%j while fitting the view
   expect(text).toContain("Heading");
   expect(text).not.toContain("# Heading");
   expect(text).not.toContain("**bold**");
-  expect(text.replace(/\s+/g, " ")).toContain("inline code");
+  expect(text.replaceAll(/\s+/g, " ")).toContain("inline code");
   expect(text).toContain("const answer = 42;");
   expect(text).not.toContain("```");
   expect(text).toContain("https://example.com/docs");
@@ -66,5 +66,5 @@ test("wrapped styles are self-contained and content cannot move the terminal cur
   expect(rows.join("\n")).not.toContain("\u001b[2J");
   expect(rows.join("\n")).not.toContain("\u001b]");
   expect(visible(rows)).toContain("image");
-  expect(visible(rows).replace(/\s+/g, " ")).toContain("Keep this text");
+  expect(visible(rows).replaceAll(/\s+/g, " ")).toContain("Keep this text");
 });

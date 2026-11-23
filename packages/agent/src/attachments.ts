@@ -84,7 +84,7 @@ const isText = (body: Uint8Array) => {
 
 const displayName = (name: string) => {
   const clean = basename(name.replaceAll("\\", "/"))
-    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, "")
+    .replaceAll(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, "")
     .trim();
 
   return [...(clean || "attachment")].slice(0, 255).join("");

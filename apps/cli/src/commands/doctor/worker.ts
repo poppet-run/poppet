@@ -26,8 +26,9 @@ export const gatewayObservation = (status: Schema.JsonObject) => {
       .length,
     unknown: channels.filter((channel) => channel.enabled && channel.connected === undefined)
       .length,
-    configurationErrors: channels.filter((channel) => !channel.enabled && channel.error != null)
-      .length,
+    configurationErrors: channels.filter(
+      (channel) => !channel.enabled && channel.error !== null && channel.error !== undefined,
+    ).length,
   };
 };
 

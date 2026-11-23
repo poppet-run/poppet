@@ -17,10 +17,10 @@ const characters = (text: string) => Array.from(segments.segment(text), ({ segme
 
 const clean = (text: string) =>
   // oxlint-disable-next-line no-control-regex
-  stripVTControlCharacters(text.replace(/\u001b\][\s\S]*?(?:\u0007|\u001b\\)/g, ""))
-    .replace(/\r\n?/g, "\n")
+  stripVTControlCharacters(text.replaceAll(/\u001b\][\s\S]*?(?:\u0007|\u001b\\)/g, ""))
+    .replaceAll(/\r\n?/g, "\n")
     // oxlint-disable-next-line no-control-regex
-    .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
+    .replaceAll(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
 
 const chatKey = (key: string) => {
   if (key === `${escape}27;2;13~`) return "newline";
@@ -265,7 +265,7 @@ export class ChatTerminal {
 
     for (const [index, message] of this.queue.slice(0, shown).entries()) {
       const files = message.attachments.length ? ` [${message.attachments.length} attached]` : "";
-      rows.push(`${index + 1}.${files} ${message.text.replace(/\s+/g, " ")}`);
+      rows.push(`${index + 1}.${files} ${message.text.replaceAll(/\s+/g, " ")}`);
     }
 
     if (this.queue.length > shown && slots > 0)

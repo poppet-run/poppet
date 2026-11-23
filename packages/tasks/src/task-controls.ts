@@ -48,7 +48,7 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
           const patch = command.patch;
           const schedule = patch.schedule ?? job.schedule;
 
-          if (patch.endAt != null && schedule.type === "once")
+          if (patch.endAt !== null && patch.endAt !== undefined && schedule.type === "once")
             return yield* reject(
               "An end time applies only to recurring tasks. Use it with a cron schedule.",
             );

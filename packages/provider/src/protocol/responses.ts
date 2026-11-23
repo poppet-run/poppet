@@ -127,8 +127,10 @@ const mergeItems = (
     if (streamed.type === "reasoning" && item.type === "reasoning") {
       if (
         streamed.id !== item.id ||
-        (streamed.encrypted_content != null &&
-          item.encrypted_content != null &&
+        (streamed.encrypted_content !== null &&
+          streamed.encrypted_content !== undefined &&
+          item.encrypted_content !== null &&
+          item.encrypted_content !== undefined &&
           streamed.encrypted_content !== item.encrypted_content)
       )
         throw interrupted(

@@ -17,7 +17,12 @@ export const ChatHeader = ({
   onDelete,
 }: ChatHeaderProps) => (
   <header class="flex min-h-[60px] items-center gap-4 border-b border-line px-5 py-[0.65rem] mobile:gap-[0.65rem] mobile:p-[0.8rem]">
-    <button class="hidden mobile:block" aria-label="Open conversations" onClick={onOpenSidebar}>
+    <button
+      type="button"
+      class="hidden mobile:block"
+      aria-label="Open conversations"
+      onClick={onOpenSidebar}
+    >
       ☰
     </button>
     <div class="min-w-0 flex-1">
@@ -35,6 +40,7 @@ export const ChatHeader = ({
     )}
     {session && (
       <button
+        type="button"
         class="bg-transparent text-muted hover:bg-surface-hover"
         disabled={!deletable}
         title={deletable ? undefined : "Stop the current reply first"}

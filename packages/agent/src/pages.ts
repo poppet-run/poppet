@@ -42,7 +42,7 @@ export const suppliedPageURLs = (text: string) => {
     let value = match[0];
 
     if (!delimited) {
-      value = value.replace(/[.,;!?]+$/g, "");
+      value = value.replaceAll(/[.,;!?]+$/g, "");
 
       for (const [open, close] of [
         ["(", ")"],

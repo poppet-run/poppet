@@ -29,6 +29,7 @@ export const Sidebar = ({
   <>
     {open && (
       <button
+        type="button"
         class="fixed inset-0 z-2 hidden rounded-none border-0 bg-navy/80 mobile:block"
         aria-label="Close conversations"
         onClick={onClose}
@@ -40,6 +41,7 @@ export const Sidebar = ({
     >
       <Wordmark />
       <button
+        type="button"
         class="bg-transparent text-left hover:bg-surface-hover"
         onClick={() => {
           onFilter("chat");
@@ -76,6 +78,7 @@ export const Sidebar = ({
         ))}
       </nav>
       <button
+        type="button"
         class="border-transparent bg-transparent text-muted hover:bg-surface-hover"
         onClick={onSignOut}
       >

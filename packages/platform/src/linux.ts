@@ -46,7 +46,9 @@ const plainText = (value: string) => {
 const specifierText = (value: string) => plainText(value).replaceAll("%", "%%");
 
 const quotedText = (value: string) =>
-  `"${specifierText(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+  `"${specifierText(value)
+    .replaceAll("\\", String.raw`\\`)
+    .replaceAll('"', String.raw`\"`)}"`;
 
 export const workerUnit = (launch: WorkerLaunch) => {
   const command = [launch.executable, ...launch.arguments]

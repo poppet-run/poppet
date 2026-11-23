@@ -118,7 +118,7 @@ describe("actionApprovals", () => {
 
         while (sent.length === 0) yield* Effect.yieldNow;
         expect(sent[0]).toContain('Review reason: `"\\u0060approve\\u0060\\n\\u2066"`');
-        expect(sent[0]).toContain('"command":"echo \\u202e"');
+        expect(sent[0]).toContain(String.raw`"command":"echo \u202e"`);
         yield* Fiber.interrupt(fiber);
       }),
     );

@@ -11,10 +11,10 @@ export const RecoveryNotice = ({ sending, onRecover, onForget }: RecoveryNoticeP
       Delivery is unconfirmed. Recover to send or check the message without duplicating it.
       Forgetting recovery does not cancel a reply. Check history before resending.
     </span>
-    <button class="shrink-0" disabled={sending} onClick={onRecover}>
+    <button type="button" class="shrink-0" disabled={sending} onClick={onRecover}>
       Recover submission
     </button>
-    <button class="shrink-0" disabled={sending} onClick={onForget}>
+    <button type="button" class="shrink-0" disabled={sending} onClick={onForget}>
       Forget recovery
     </button>
   </div>
