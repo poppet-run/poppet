@@ -62,21 +62,19 @@ export const runWorker = Effect.scoped(
             return value;
           }
 
-          const messagingStatus = {
-            running: true,
-            ...(yield* messaging.status.pipe(
-              Effect.mapError((error) => new TaskError({ message: error.message })),
-            )),
-          };
+          const gatewayStatus = yield* messaging.status.pipe(
+            Effect.mapError((error) => new TaskError({ message: error.message })),
+          );
 
-          return {
-            ...value,
+          const messagingStatus = Object.assign({ running: true }, gatewayStatus);
+
+          return Object.assign({}, value, {
             running: true,
             pid: process.pid,
             startedAt,
             services: { tasks: true, gateway: true },
             messaging: messagingStatus,
-          };
+          });
         }).pipe(
           Effect.provideService(TaskDestinations, destinations),
           deliveries === null

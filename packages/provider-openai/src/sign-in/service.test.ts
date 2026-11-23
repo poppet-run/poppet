@@ -35,8 +35,7 @@ const startPasteSignIn = async (selected: Partial<SignInRequest> = {}) => {
   const errors: Array<string> = [];
   const lines = Effect.runSync(Queue.unbounded<string>());
 
-  const recording: Console.Console = {
-    ...quietConsole,
+  const recording: Console.Console = Object.assign({}, quietConsole, {
     log: (text: string) => {
       const link = text.split("\n").find((line) => line.startsWith("https://"));
 
@@ -47,7 +46,7 @@ const startPasteSignIn = async (selected: Partial<SignInRequest> = {}) => {
     error: (text: string) => {
       errors.push(text);
     },
-  };
+  });
 
   const opened: Array<string> = [];
 

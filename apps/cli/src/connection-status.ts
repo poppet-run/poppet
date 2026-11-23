@@ -42,7 +42,7 @@ export const createConnectionStatus = () => {
     const cached = observed.get(id);
 
     if (error.code === "credential_store_busy" && cached !== undefined) {
-      return Effect.succeed({ ...cached, cached: true });
+      return Effect.succeed(Object.assign({}, cached, { cached: true }));
     }
 
     return Effect.succeed({

@@ -775,12 +775,14 @@ describe.concurrent("Gateway", () => {
             const destination = yield* gateway.resolveDestination("scheduled-thread");
 
             const item = yield* scheduled(destination).pipe(
-              Effect.provideService(Console.Console, {
-                ...quietConsole,
-                error: (...values) => {
-                  errors.push(values.join(" "));
-                },
-              }),
+              Effect.provideService(
+                Console.Console,
+                Object.assign({}, quietConsole, {
+                  error: (...values: ReadonlyArray<unknown>) => {
+                    errors.push(values.join(" "));
+                  },
+                }),
+              ),
             );
 
             expect(item.status).toBe("failed");

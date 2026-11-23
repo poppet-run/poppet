@@ -68,7 +68,7 @@ export type SessionReadResult = typeof SessionReadResult.Type;
 export const SessionTitle = Schema.NonEmptyString.check(
   Schema.makeFilter(
     (value) =>
-      [...value].length <= 80 &&
+      Array.from(value).length <= 80 &&
       value === value.trim() &&
       !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value),
   ),

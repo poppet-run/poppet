@@ -172,9 +172,9 @@ const fixture = (
       }
 
       if (mode === "missing-status" && output[1]) {
-        const call = { ...output[1] };
-        delete call.status;
-        output[1] = call;
+        output[1] = Object.fromEntries(
+          Object.entries(output[1]).filter(([key]) => key !== "status"),
+        );
       }
 
       if (mode === "reasoning-parts") {

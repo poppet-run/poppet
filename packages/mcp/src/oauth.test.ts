@@ -360,12 +360,12 @@ describe("MCP OAuth", () => {
       );
 
       const response = new Response(null, { status: 401 });
-      const rejected = first!.token();
-      await Promise.all([first!.refresh(rejected, response), second!.refresh(rejected, response)]);
-      await first!.refresh(rejected, response);
+      const rejected = first.token();
+      await Promise.all([first.refresh(rejected, response), second.refresh(rejected, response)]);
+      await first.refresh(rejected, response);
 
-      expect(first!.token()).toBe(second!.token());
-      expect(first!.loginRequired() || second!.loginRequired()).toBe(false);
+      expect(first.token()).toBe(second.token());
+      expect(first.loginRequired() || second.loginRequired()).toBe(false);
       expect(state.server.events.filter((event) => event.path === "/token")).toHaveLength(2);
     } finally {
       await state.close();

@@ -61,7 +61,11 @@ export const searchSessions = Effect.fn(function* (
         excerpt = clip(firstHit, excerptBytes);
       } else {
         const side = Math.floor((excerptBytes - hitBytes) / 2);
-        const lead = [...clip([...before].toReversed().join(""), side)].toReversed().join("");
+
+        const lead = Array.from(clip(Array.from(before).toReversed().join(""), side))
+          .toReversed()
+          .join("");
+
         excerpt = `${lead}${firstHit}${clip(after, side)}`;
       }
 

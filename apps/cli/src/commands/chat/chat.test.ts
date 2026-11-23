@@ -323,16 +323,15 @@ const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) 
 
       const started = Promise.withResolvers<void>();
 
-      const watched: Console.Console = {
-        ...consoleOutput,
-        error: (...values) => {
+      const watched: Console.Console = Object.assign({}, consoleOutput, {
+        error: (...values: ReadonlyArray<unknown>) => {
           if (values.join(" ").includes('msg="worker started"')) {
             started.resolve();
           }
 
           consoleOutput.error(...values);
         },
-      };
+      });
 
       const worker = clock.runFork(program(args, readChatLine, watched));
 

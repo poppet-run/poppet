@@ -80,10 +80,10 @@ const wall = (at: number, timeZone: string) => {
   return Date.UTC(
     parts.get("year")!,
     parts.get("month")! - 1,
-    parts.get("day")!,
-    parts.get("hour")!,
-    parts.get("minute")!,
-    parts.get("second")!,
+    parts.get("day"),
+    parts.get("hour"),
+    parts.get("minute"),
+    parts.get("second"),
   );
 };
 

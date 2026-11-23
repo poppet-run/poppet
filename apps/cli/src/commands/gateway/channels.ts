@@ -160,14 +160,15 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
             resolveDestination: gateway.resolveDestination,
             run: superviseAdapter(entry.id, gateway.run, health),
             status: gateway.connectionStatus.pipe(
-              Effect.map((status) => ({
-                ...status,
-                id: entry.id,
-                name: entry.name,
-                enabled: true,
-                restarts: health.restarts,
-                lastError: health.lastError,
-              })),
+              Effect.map((status) =>
+                Object.assign({}, status, {
+                  id: entry.id,
+                  name: entry.name,
+                  enabled: true,
+                  restarts: health.restarts,
+                  lastError: health.lastError,
+                }),
+              ),
             ),
           };
         }),

@@ -56,7 +56,7 @@ const textExtensions = new Set([
 const startsWith = (body: Uint8Array, bytes: ReadonlyArray<number>, offset = 0) =>
   bytes.every((byte, index) => body[offset + index] === byte);
 
-const ascii = (text: string) => [...text].map((character) => character.charCodeAt(0));
+const ascii = (text: string) => Array.from(text, (character) => character.charCodeAt(0));
 
 const imageType = (body: Uint8Array): AttachmentType | null => {
   if (startsWith(body, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
@@ -97,7 +97,9 @@ const displayName = (name: string) => {
     .replaceAll(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, "")
     .trim();
 
-  return [...(clean || "attachment")].slice(0, 255).join("");
+  return Array.from(clean || "attachment")
+    .slice(0, 255)
+    .join("");
 };
 
 const rejected = (name: string, reason: string) =>

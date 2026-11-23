@@ -494,7 +494,7 @@ test.each(["cancel", "exit", "eof", "empty", "raw mode restore error"])(
                   empty: "\u0004",
                   cancel: "Hello\r",
                   "raw mode restore error": "/exit\r",
-                }[mode]!,
+                }[mode],
               );
             }
 

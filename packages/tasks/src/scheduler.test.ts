@@ -1303,11 +1303,13 @@ describe.concurrent("makeTaskWorker", () => {
           );
 
           const worker = yield* runTaskWorker.pipe(
-            Effect.provideService(Clock.Clock, {
-              ...clock,
-              currentTimeMillisUnsafe: () => wallTime,
-              currentTimeMillis: Effect.sync(() => wallTime),
-            }),
+            Effect.provideService(
+              Clock.Clock,
+              Object.assign({}, clock, {
+                currentTimeMillisUnsafe: () => wallTime,
+                currentTimeMillis: Effect.sync(() => wallTime),
+              }),
+            ),
             Effect.forkChild,
           );
 

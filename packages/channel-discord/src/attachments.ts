@@ -11,7 +11,9 @@ export const incomingAttachments = (
 ): ReadonlyArray<IncomingAttachment> =>
   [...attachments].slice(0, 10).map((attachment) => ({
     id: attachment.id,
-    name: [...(attachment.name || "attachment")].slice(0, 1024).join(""),
+    name: Array.from(attachment.name || "attachment")
+      .slice(0, 1024)
+      .join(""),
     size: attachment.size,
     ref: attachment.url,
   }));

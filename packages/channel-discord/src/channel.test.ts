@@ -376,19 +376,19 @@ describe("discordChannelLayer", () => {
           thread.thread_metadata.locked = false;
 
           for (const id of ["invalid", "1".repeat(21)]) {
-            expect(yield* channel.destination!(id).pipe(Effect.result)).toHaveProperty(
+            expect(yield* channel.destination(id).pipe(Effect.result)).toHaveProperty(
               "failure.reason",
               "configuration",
             );
           }
 
-          expect(yield* channel.destination!("400")).toBe("300");
-          expect(yield* channel.destination!("999").pipe(Effect.result)).toHaveProperty(
+          expect(yield* channel.destination("400")).toBe("300");
+          expect(yield* channel.destination("999").pipe(Effect.result)).toHaveProperty(
             "failure.reason",
             "permission",
           );
           expect(channel.homeConversationId).toBe("300");
-          expect(yield* channel.destination!("900")).toBe("900");
+          expect(yield* channel.destination("900")).toBe("900");
           yield* channel.checkAccess({ ...incoming, parentId: "900" }, "900");
           yield* channel.checkAccess(incoming, "300");
           expect(yield* channel.send("300", "Scheduled result", "scheduled-1")).toBe("601");
