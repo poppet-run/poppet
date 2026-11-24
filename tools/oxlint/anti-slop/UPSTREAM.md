@@ -20,8 +20,17 @@ Entry points:
 
 The `no-service-constructor-imports` rule has one local change: it recognizes
 `#src/` package aliases as project-local imports alongside relative paths.
-The remaining rule source is unchanged. All 18 generic rules, all 5 Effect rules,
-and the native `oxc/no-accumulating-spread` companion rule are enabled as errors.
+The remaining rule source is unchanged.
+
+The 12 generic rules that `@nkzw/oxlint-config` (via `@cloudflare/oxlint-config`)
+ships as `quality/*` were removed, along with the shared helpers only they used:
+`no-array-filter-map`, `no-chained-type-assertions`,
+`no-conditional-empty-object-spread`, `no-known-value-widening`,
+`no-object-parameters`, `no-reduce-accumulator-copy`, `no-reflect-apply`,
+`no-reflect-get`, `no-unknown-returns`, `no-unknown-type-aliases`,
+`no-unsafe-dictionary-type`, and `no-widen-then-assert`. Do not restore them on
+update. The remaining 6 generic rules and all 5 Effect rules are enabled as
+errors.
 Oxlint and `@oxlint/plugins` are both pinned to 1.89.0. Agent tooling directories
 and this vendored directory are excluded from linting and formatting.
 
