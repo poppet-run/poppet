@@ -28,20 +28,6 @@ export default defineConfig({
     { name: "anti-slop-effect", specifier: "./tools/oxlint/anti-slop/effect/index.ts" },
   ],
   rules: {
-    // Deduplicate rules already enforced by the vendored anti-slop plugin below.
-    "quality/no-array-filter-map": "off",
-    "quality/no-chained-type-assertions": "off",
-    "quality/no-conditional-empty-object-spread": "off",
-    "quality/no-known-value-widening": "off",
-    "quality/no-object-parameters": "off",
-    "quality/no-reduce-accumulator-copy": "off",
-    "quality/no-reflect-apply": "off",
-    "quality/no-reflect-get": "off",
-    "quality/no-unknown-returns": "off",
-    "quality/no-unknown-type-aliases": "off",
-    "quality/no-unsafe-dictionary-type": "off",
-    "quality/no-widen-then-assert": "off",
-
     // apps/web uses Preact (HTML attributes like `class`, no React Compiler), Effect code uses `.use()` / `.catch()`,
     // and runtime narrowing legitimately uses `instanceof` for Web APIs (Request, URLSearchParams) and error/transport classes.
     "@nkzw/no-instanceof": "off",
@@ -52,22 +38,10 @@ export default defineConfig({
     "unicorn/prefer-top-level-await": "off",
 
     // Project anti-slop and Effect rules.
-    "anti-slop/no-array-filter-map": "error",
-    "anti-slop/no-reduce-accumulator-copy": "error",
-    "anti-slop/no-chained-type-assertions": "error",
-    "anti-slop/no-conditional-empty-object-spread": "error",
-    "anti-slop/no-known-value-widening": "error",
     "anti-slop/no-module-mocking": "error",
-    "anti-slop/no-object-parameters": "error",
-    "anti-slop/no-reflect-apply": "error",
-    "anti-slop/no-reflect-get": "error",
     "anti-slop/no-runtime-typeof": "error",
     "anti-slop/no-shape-in-symbol-names": "error",
     "anti-slop/no-unknown-parameters": "error",
-    "anti-slop/no-unknown-returns": "error",
-    "anti-slop/no-unknown-type-aliases": "error",
-    "anti-slop/no-unsafe-dictionary-type": "error",
-    "anti-slop/no-widen-then-assert": "error",
     "anti-slop/require-readable-spacing": "error",
     "anti-slop/require-safety-comment-for-type-assertion": "error",
     "anti-slop-effect/no-manual-effect-error-tag": "error",

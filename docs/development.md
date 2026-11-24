@@ -122,8 +122,8 @@ Oxlint runs type-aware rules through `oxlint-tsgolint`, using each workspace's
 
 Oxlint also enforces the generic and Effect rules from
 [anti-slop](https://github.com/dmmulroy/anti-slop), vendored under
-`tools/oxlint/anti-slop/`. These rules are errors, and the overlapping `quality/*` rules
-inherited from `@nkzw/oxlint-config` are turned off to avoid running them twice. Keep
+`tools/oxlint/anti-slop/`. These rules are errors. Rules that `@nkzw/oxlint-config` already
+ships as `quality/*` come from that config instead, so only the rest are vendored. Keep
 `@oxlint/plugins` and Oxlint at the same pinned version. See the
 [upstream record](../tools/oxlint/anti-slop/UPSTREAM.md)
 for the source revision and update notes. Vendored code and agent tooling are
