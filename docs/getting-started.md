@@ -134,7 +134,7 @@ poppet chat send $session_id "What should I build first?"
 poppet chat show $session_id
 ```
 
-For a terminal prompt, run `poppet chat interactive`, or append a saved
+For a terminal prompt, run `poppet chat`, or append a saved
 session ID to resume it. Enter sends a message, Shift+Enter adds a newline, and `/exit` leaves.
 See the [interactive prompt guide](chat.md#interactive-prompt) for cancellation.
 

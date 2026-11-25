@@ -100,7 +100,7 @@ Write `$` followed by a skill's name to load that skill for one message:
 Run $weekly-review for the Acorn project
 ```
 
-This works in `chat new`, `chat send`, `chat interactive`, web chat, and messaging,
+This works in `chat new`, `chat send`, `chat`, web chat, and messaging,
 including on models without tool support. Poppet reads the file when it accepts
 the message and saves the name and full text with that message. Later turns replay
 the saved text, so editing or deleting the file does not change what the session

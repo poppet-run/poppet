@@ -182,7 +182,7 @@ Selecting a provider enables search once its key is saved. Restart any running w
 
 | Command                                                    | Action                                                  |
 | ---------------------------------------------------------- | ------------------------------------------------------- |
-| `chat interactive [session] [--skill <name>]`              | Open a terminal prompt for a new or saved session.      |
+| `chat [session] [--skill <name>]`                          | Open a terminal prompt for a new or saved session.      |
 | `chat new [--skill <name>] [--attach <path>]... <message>` | Start a session with the configured provider and model. |
 | `chat send <session> [--attach <path>]... <message>`       | Continue a saved session.                               |
 | `chat rename <session> <title>`                            | Rename a saved session without inference.               |

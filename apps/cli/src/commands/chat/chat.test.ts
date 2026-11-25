@@ -566,7 +566,7 @@ describe.concurrent("chat.ts", () => {
         const input = ["First", "Second", "/exit"];
         await Effect.runPromise(
           chat.program(
-            ["chat", "interactive"],
+            ["chat"],
             Effect.sync(() => input.shift() ?? null),
           ),
         );
@@ -716,7 +716,7 @@ describe.concurrent("chat.ts", () => {
         const input = ["First", "/exit"];
         await Effect.runPromise(
           chat.program(
-            ["chat", "interactive"],
+            ["chat"],
             Effect.sync(() => input.shift() ?? null),
           ),
         );
@@ -758,7 +758,7 @@ describe.concurrent("chat.ts", () => {
         const input = ["First", "/exit"];
         await Effect.runPromise(
           chat.program(
-            ["chat", "interactive"],
+            ["chat"],
             Effect.sync(() => input.shift() ?? null),
           ),
         );
@@ -1070,7 +1070,7 @@ describe.concurrent("chat.ts", () => {
         await chat.configure({ provider: "unused-provider", model: undefined });
         await Effect.runPromise(
           chat.program(
-            ["chat", "interactive", id],
+            ["chat", id],
             Effect.sync(() => {
               expect(chat.lines[1]).toBe(`Session: ${id}`);
               expect(chat.lines.slice(2)).toEqual([
@@ -1091,7 +1091,7 @@ describe.concurrent("chat.ts", () => {
         const missing = await Effect.runPromise(
           chat
             .program(
-              ["chat", "interactive", "missing-session"],
+              ["chat", "missing-session"],
               Effect.sync(() => {
                 throw new Error("Must not prompt before history loads");
               }),
@@ -1154,7 +1154,7 @@ describe.concurrent("chat.ts", () => {
         const input = ["   ", "  First message  ", "Second --help", "/exit"];
         await Effect.runPromise(
           chat.program(
-            ["chat", "interactive", "--skill", "review"],
+            ["chat", "--skill", "review"],
             Effect.sync(() => input.shift() ?? null),
           ),
         );
@@ -1185,7 +1185,7 @@ describe.concurrent("chat.ts", () => {
         const resumed = ["After restart", null];
         await Effect.runPromise(
           chat.program(
-            ["chat", "interactive", id],
+            ["chat", id],
             Effect.sync(() => resumed.shift() ?? null),
           ),
         );
@@ -1233,7 +1233,7 @@ describe.concurrent("chat.ts", () => {
         const input = ["First fails", "Next succeeds", "/exit"];
         await Effect.runPromise(
           chat.program(
-            ["chat", "interactive"],
+            ["chat"],
             Effect.sync(() => input.shift() ?? null),
           ),
         );
@@ -1282,7 +1282,7 @@ describe.concurrent("chat.ts", () => {
         let reads = 0;
         prompt = Effect.runFork(
           chat.program(
-            ["chat", "interactive"],
+            ["chat"],
             Effect.sync(() => {
               reads++;
 

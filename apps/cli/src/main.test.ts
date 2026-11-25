@@ -205,7 +205,7 @@ describe("main.ts", () => {
 
     try {
       const result = await invokeProcess(
-        ["chat", "interactive"],
+        ["chat"],
         { POPPET_DATA_DIR: directory },
         "Never send this\n",
       );

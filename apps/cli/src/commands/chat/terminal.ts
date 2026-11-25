@@ -751,7 +751,7 @@ export class ChatTerminal {
     this.output.write(
       this.sessionId === undefined
         ? "Chat closed. No session was created.\n"
-        : `Resume this session with:\n  poppet chat interactive ${this.sessionId}\n`,
+        : `Resume this session with:\n  poppet chat ${this.sessionId}\n`,
     );
   }
 }

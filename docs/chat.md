@@ -55,8 +55,8 @@ With `chat.logReasoning` enabled, `chat new` streams thinking to stderr using th
 Start a new session or resume one in a terminal:
 
 ```sh
-poppet chat interactive
-poppet chat interactive $session_id
+poppet chat
+poppet chat $session_id
 ```
 
 The conversation appears above a bordered input box at the bottom of the terminal.

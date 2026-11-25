@@ -594,9 +594,9 @@ test.each(["cancel", "exit", "eof", "empty", "raw mode restore error"])(
 
       if (mode === "empty") {
         expect(scrollback).toContain("No session was created.");
-        expect(scrollback).not.toContain("poppet chat interactive");
+        expect(scrollback).not.toContain("Resume this session");
       } else {
-        expect(scrollback).toContain("poppet chat interactive saved-session");
+        expect(scrollback).toContain("poppet chat saved-session");
       }
     } catch (error) {
       process.stderr.write(`${transcript}\n`);
