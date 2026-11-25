@@ -647,6 +647,53 @@ test("submission rejection and explicit recovery forgetting unlock the composer 
   }
 });
 
+test("when signing out during a send, clears the message, unlocks sign-in, and keeps a later send locked", async () => {
+  const { createChatStore } = await import("../stores/chat-store");
+  const originalFetch = globalThis.fetch;
+  const submits: Array<(response: Response) => void> = [];
+
+  const fakeFetch = async (input: Parameters<typeof fetch>[0]) => {
+    if (input === "/api/submissions") {
+      return new Promise<Response>((resolve) => {
+        submits.push(resolve);
+      });
+    }
+
+    return input === "/api/session-list?source=chat" ? sessionList() : Response.json({});
+  };
+
+  globalThis.fetch = Object.assign(fakeFetch, { preconnect: originalFetch.preconnect });
+  history.replaceState(null, "", "/");
+  sessionStorage.clear();
+  const store = createChatStore();
+  const dispose = store.start();
+
+  try {
+    await flush();
+    void store.deliver({ id: "first", sessionId: null, text: "Private message" });
+    await flush();
+    await store.logout();
+    expect(store.$state.get()).toMatchObject({ sending: false, pending: null });
+    expect(sessionStorage.getItem("poppet-submission")).toBeNull();
+
+    await store.login("test-key");
+    void store.deliver({ id: "second", sessionId: null, text: "Next message" });
+    await flush();
+    submits[0]?.(
+      Response.json({ id: "first", sessionId: "chat", status: "accepted", error: null }),
+    );
+    await flush();
+    expect(store.$state.get()).toMatchObject({ sending: true, pending: { id: "second" } });
+    submits[1]?.(Response.json({ message: "Busy" }, { status: 409 }));
+    await flush();
+    expect(store.$state.get()).toMatchObject({ sending: false, pending: null });
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    sessionStorage.clear();
+  }
+});
+
 test("successful polling clears only refresh errors and expired sign-out clears local access", async () => {
   const { createChatStore } = await import("../stores/chat-store");
   const originalFetch = globalThis.fetch;

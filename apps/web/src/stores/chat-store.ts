@@ -74,6 +74,8 @@ export const createChatStore = () => {
 
   const unauthenticate = () => {
     generation++;
+    deliveryLock = false;
+    set("sending", false);
     set("refreshError", "");
     set("authenticated", false);
     set("source", "chat");
@@ -203,8 +205,10 @@ export const createChatStore = () => {
 
       set("error", errorMessage(cause));
     } finally {
-      deliveryLock = false;
-      set("sending", false);
+      if (requestGeneration === generation) {
+        deliveryLock = false;
+        set("sending", false);
+      }
     }
   };
 
@@ -240,15 +244,20 @@ export const createChatStore = () => {
     }
   };
 
+  const signOut = () => {
+    unauthenticate();
+    set("drafts", {});
+    clearPending();
+    set("pending", null);
+  };
+
   const logout = async () => {
     try {
       await api.logout();
-      unauthenticate();
-      set("drafts", {});
+      signOut();
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 401) {
-        unauthenticate();
-        set("drafts", {});
+        signOut();
       } else {
         set("error", errorMessage(cause));
       }
@@ -293,7 +302,9 @@ export const createChatStore = () => {
         set("error", errorMessage(cause));
       }
     } finally {
-      set("sending", false);
+      if (requestGeneration === generation) {
+        set("sending", false);
+      }
     }
   };
 
