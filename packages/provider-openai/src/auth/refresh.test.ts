@@ -68,6 +68,33 @@ describe.concurrent("refresh.ts", () => {
     }
   });
 
+  test("when the saved renewal's identity token expires before JWKS recovers, renews from its rotated refresh token", async () => {
+    const harness = await createHarness();
+
+    try {
+      harness.controls.expireAccess = true;
+      await harness.run(login);
+      harness.controls.jwksUnavailable = true;
+      harness.controls.identityFailure = "expiry";
+      const access = ChatGPTAuth.use((auth) => auth.accessToken);
+      await expect(harness.run(access)).rejects.toMatchObject({ reason: "temporary" });
+
+      harness.controls.jwksUnavailable = false;
+      harness.controls.identityFailure = "none";
+      expect(Redacted.value(await harness.run(access))).toBe("test-access-3");
+      const saved = await harness.saved();
+      expect(saved.pendingRefresh).toBeUndefined();
+      expect(Redacted.value(saved.credentials!.refreshToken!)).toBe("test-refresh-3");
+      expect(
+        harness.grants
+          .filter((grant) => grant.get("grant_type") === "refresh_token")
+          .map((grant) => grant.get("refresh_token")),
+      ).toEqual(["test-refresh-1", "test-refresh-2"]);
+    } finally {
+      await harness.close();
+    }
+  });
+
   test("when renewals run concurrently, serializes them and atomically saves the rotated refresh token", async () => {
     const harness = await createHarness();
 
