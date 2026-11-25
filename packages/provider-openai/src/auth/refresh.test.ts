@@ -247,4 +247,27 @@ describe.concurrent("refresh.ts", () => {
       }
     },
   );
+
+  test("when a saved renewal's access token has expired, refreshes again after verifying it", async () => {
+    const harness = await createHarness();
+
+    try {
+      harness.controls.expireAccess = true;
+      await harness.run(login);
+      harness.controls.jwksUnavailable = true;
+      const access = ChatGPTAuth.use((auth) => auth.accessToken);
+      await expect(harness.run(access)).rejects.toMatchObject({ reason: "temporary" });
+
+      const path = join(harness.directory, "auth/connection.json");
+      const saved = JSON.parse(await readFile(path, "utf8"));
+      saved.pendingRefresh.expiresAt = Date.now();
+      await writeFile(path, JSON.stringify(saved));
+
+      harness.controls.jwksUnavailable = false;
+      expect(Redacted.value(await harness.run(access))).toBe("test-access-3");
+      expect((await harness.saved()).pendingRefresh).toBeUndefined();
+    } finally {
+      await harness.close();
+    }
+  });
 });
