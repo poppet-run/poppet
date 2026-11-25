@@ -54,15 +54,23 @@ export const TimeZone = Schema.String.check(
   ),
 );
 
+const distinctTimes = Schema.makeFilter(
+  (window: { readonly start: string; readonly end: string }) =>
+    window.start !== window.end || "Use different quiet-hours start and end times.",
+);
+
 export const QuietHours = Schema.Struct({
   start: ClockTime,
   end: ClockTime,
   timeZone: TimeZone,
-}).check(
-  Schema.makeFilter(
-    (window) => window.start !== window.end || "Use different quiet-hours start and end times.",
-  ),
-);
+}).check(distinctTimes);
+
+/** Quiet hours as written in config.json, where `timeZone` may come from the top-level setting. */
+export const QuietHoursSetting = Schema.Struct({
+  start: ClockTime,
+  end: ClockTime,
+  timeZone: Schema.optionalKey(TimeZone),
+}).check(distinctTimes);
 
 export type QuietHours = typeof QuietHours.Type;
 

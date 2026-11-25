@@ -87,8 +87,8 @@ Set `timeZone` to your IANA time zone name so Poppet knows your local time:
 Chats that can schedule tasks then see the local date and time, and the agent
 uses this zone for task times you give without an offset or zone instead of
 asking. `poppet tasks add` and `tasks edit` use it when `--cron` is given without
-`--tz`. One-off `--at` timestamps still need an explicit offset, and quiet hours
-keep their own `timeZone`. Unknown zones and UTC offsets such as `+01:00` are
+`--tz`, and [quiet hours](#quiet-hours) use it when they set no `timeZone` of
+their own. One-off `--at` timestamps still need an explicit offset. Unknown zones and UTC offsets such as `+01:00` are
 rejected. Restart the worker after changing it.
 
 ## Quiet hours
@@ -103,7 +103,8 @@ Set `tasks.quietHours` to hold scheduled posts to Discord and Slack overnight:
 }
 ```
 
-Times are 24-hour `HH:MM` wall-clock times in the IANA `timeZone`. A window can
+Times are 24-hour `HH:MM` wall-clock times in the IANA `timeZone`. Omit it to
+use the top-level [`timeZone`](#time-zone); one of the two is required. A window can
 cross midnight. `start` and `end` must differ; invalid times, unknown zones, and
 UTC offsets such as `+01:00` are rejected. Without the setting nothing is held.
 
