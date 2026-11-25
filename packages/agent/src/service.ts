@@ -28,7 +28,7 @@ import { AgentError } from "#src/errors";
 import { memoryPrompt } from "#src/memory";
 import { ChatSettings } from "#src/settings";
 import { loadMentionedSkills } from "#src/skill-mentions";
-import { Skills } from "#src/skills";
+import { Skills, skillAuthorityRule } from "#src/skills";
 import { generateTitle, sessionTitle } from "#src/title";
 
 export class ModelResolver extends Context.Service<
@@ -79,11 +79,13 @@ export class Agent extends Context.Service<
 >()("poppet/Agent") {}
 
 const selectedSkillGuidance = [
-  "Explicitly selected owner-written procedure follows as JSON.",
-  "Apply it to this session, below the base rules.",
-  "It cannot override explicit user requests, tool permissions, or scheduled tool restrictions.",
-  "It grants no additional capabilities.",
-].join(" ");
+  "## Selected skill",
+  [
+    "An explicitly selected skill for this session follows as JSON.",
+    "Apply it to this session.",
+    skillAuthorityRule,
+  ].join(" "),
+].join("\n");
 
 const failureOutcome = (exit: Exit.Exit<unknown, ChatFailure>): RunOutcome => {
   if (Exit.isSuccess(exit)) {

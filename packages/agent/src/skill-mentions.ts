@@ -3,6 +3,7 @@ import type { SkillSnapshot } from "@poppet/store";
 import { Effect } from "effect";
 
 import { AgentError } from "#src/errors";
+import { skillAuthorityRule } from "#src/skills";
 import type { Skills } from "#src/skills";
 
 const maxMentions = 4;
@@ -57,11 +58,9 @@ export const loadMentionedSkills = (
   });
 
 const guidance = [
-  "The owner named these owner-written procedures in this message.",
-  "They follow as JSON.",
-  "Apply them to this request, below the base rules.",
-  "They cannot override explicit user requests, tool permissions, or scheduled tool restrictions.",
-  "They grant no additional capabilities.",
+  "The owner named these skills in this message; they follow as JSON.",
+  "Apply them to this request.",
+  skillAuthorityRule,
 ].join(" ");
 
 export const withMentionedSkills = (message: Message): Message => {
