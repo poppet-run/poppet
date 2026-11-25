@@ -371,6 +371,7 @@ export const webHandler = (
 
         let first = true;
         let closed = false;
+        let cancelled = false;
         const encoder = new TextEncoder();
 
         const release = () => {
@@ -391,15 +392,22 @@ export const webHandler = (
 
         const stream = new ReadableStream<Uint8Array>({
           async pull(controller) {
+            const end = () => {
+              release();
+
+              if (!cancelled) {
+                controller.close();
+              }
+            };
+
             if (!first) {
               await new Promise((resolve) => {
                 setTimeout(resolve, 500);
               });
             }
 
-            if (closed || !authenticated() || request.signal.aborted) {
-              release();
-              controller.close();
+            if (closed || !authenticated()) {
+              end();
 
               return;
             }
@@ -413,6 +421,8 @@ export const webHandler = (
                   : JSON.stringify(await run(chat.snapshot(id)));
 
               if (closed) {
+                end();
+
                 return;
               }
 
@@ -425,13 +435,13 @@ export const webHandler = (
               marker = latest;
               first = false;
             } catch {
-              if (!closed) {
-                release();
-                controller.close();
-              }
+              end();
             }
           },
-          cancel: release,
+          cancel: () => {
+            cancelled = true;
+            release();
+          },
         });
 
         return new Response(stream, {
