@@ -338,7 +338,7 @@ describe("web chat", () => {
       expect(paths.some((path) => path.endsWith(".js"))).toBe(true);
       expect(paths.some((path) => path.endsWith(".css"))).toBe(true);
 
-      await Promise.all(
+      const lazyPaths = await Promise.all(
         paths.map(async (path) => {
           const url = new URL(path, `${settings.origin}/chat/example`);
           const response = await app.send(url.pathname);
@@ -346,10 +346,25 @@ describe("web chat", () => {
           expect(response.headers.get("content-type")).toContain(
             path.endsWith(".js") ? "javascript" : "css",
           );
+
+          // Scripts load the Markdown renderer as a separate chunk with import().
+          return [...(await response.text()).matchAll(/import\("(\/[^"]+\.js)"\)/g)].map(
+            (match) => match[1]!,
+          );
         }),
       );
 
-      expect([...assets.keys()].toSorted()).toEqual(["/index.html", ...paths].toSorted());
+      expect(lazyPaths.flat()).toHaveLength(1);
+
+      for (const path of lazyPaths.flat()) {
+        const response = await app.send(path);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("javascript");
+      }
+
+      expect([...assets.keys()].toSorted()).toEqual(
+        ["/index.html", ...paths, ...lazyPaths.flat()].toSorted(),
+      );
       expect([...assets.values()].map((asset) => [...asset.encoded.keys()].toSorted())).toEqual(
         [...assets.keys()].map(() => ["br", "gzip"]),
       );

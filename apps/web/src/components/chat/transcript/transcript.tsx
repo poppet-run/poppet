@@ -1,7 +1,9 @@
 /** @jsxImportSource preact */
+import { useStore } from "@nanostores/preact";
 import { useLayoutEffect, useRef } from "preact/hooks";
 
 import type { ChatSnapshot } from "../../../api/protocol";
+import { $markdownRenderer } from "./markdown";
 import { Message } from "./message";
 
 interface TranscriptProps {
@@ -20,12 +22,14 @@ export const Transcript = ({
   const transcript = useRef<HTMLDivElement>(null);
   const active = snapshot?.active ?? null;
   const latest = snapshot?.receipts.at(-1);
+  // Rendered Markdown changes reply heights, so keep the reader pinned when it arrives.
+  const markdownReady = useStore($markdownRenderer) !== undefined;
 
   useLayoutEffect(() => {
     if (atBottom && transcript.current) {
       transcript.current.scrollTop = transcript.current.scrollHeight;
     }
-  }, [snapshot, atBottom]);
+  }, [snapshot, atBottom, markdownReady]);
 
   return (
     <div

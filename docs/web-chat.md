@@ -151,7 +151,8 @@ provider continuation data, or the worker's general command endpoint. The browse
 renders Markdown without raw HTML: tags in a reply show as text, apart from a few
 plain formatting tags such as `<br>`, `<sub>` and `<kbd>`. It drops inline images
 and task-list checkboxes, keeps only `http`, `https`, `mailto` and relative links,
-and opens links in a new tab. The worker saves submission receipts
+and opens links in a new tab. The Markdown renderer loads as a separate script after
+the page starts, so a reply shows as plain text until it arrives. The worker saves submission receipts
 in SQLite and tracks their schema migrations separately.
 
 Use your browser's usual modified clicks to open a sidebar conversation in a
