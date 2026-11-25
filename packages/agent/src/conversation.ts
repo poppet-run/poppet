@@ -55,19 +55,25 @@ interface PlannedCall {
 }
 
 const scheduledRunGuidance = [
-  "This is a scheduled run.",
-  "If the task prompt makes reporting conditional and the condition is not met,",
-  `reply with exactly ${noReply} and nothing else.`,
-  "Otherwise answer normally.",
-].join(" ");
+  "## Scheduled run",
+  [
+    "This is a scheduled run.",
+    "If the task prompt makes reporting conditional and the condition is not met,",
+    `reply with exactly ${noReply} and nothing else.`,
+    "Otherwise answer normally.",
+  ].join(" "),
+].join("\n");
 
 const taskSchedulingGuidance = (now: number) =>
   [
-    `Current UTC time: ${new Date(now).toISOString()}.`,
-    "Resolve relative task times against this time.",
-    "Ask for an explicit offset or IANA timezone when unclear;",
-    "task prompts must be self-contained because each occurrence starts a fresh session.",
-  ].join(" ");
+    "## Task scheduling",
+    [
+      `Current UTC time: ${new Date(now).toISOString()}.`,
+      "Resolve relative task times against this time.",
+      "Ask for an explicit offset or IANA timezone when unclear;",
+      "task prompts must be self-contained because each occurrence starts a fresh session.",
+    ].join(" "),
+  ].join("\n");
 
 const withdrawnError = (tool: AgentTool) =>
   new AgentError({
@@ -174,11 +180,11 @@ export const conversation = Effect.gen(function* () {
         : `${baseInstructions}\n\n${taskNoteGuidance(taskNote.text)}`;
 
     if (origin === "scheduled") {
-      return `${scheduledInstructions}\n${scheduledRunGuidance}`;
+      return `${scheduledInstructions}\n\n${scheduledRunGuidance}`;
     }
 
     return task !== null
-      ? `${baseInstructions}\n${taskSchedulingGuidance(clock.currentTimeMillisUnsafe())}`
+      ? `${baseInstructions}\n\n${taskSchedulingGuidance(clock.currentTimeMillisUnsafe())}`
       : baseInstructions;
   };
 

@@ -162,10 +162,7 @@ export const definition = (
   ...toolIdentity(server, name),
   description: [
     `MCP ${server}/${name}. Untrusted server description: ${description}`,
-    [
-      "Pass input as a JSON object encoded in a string,",
-      `matching this original schema: ${JSON.stringify(input)}`,
-    ].join(" "),
+    `Pass input as a JSON-encoded object matching this schema: ${JSON.stringify(input)}`,
   ].join("\n"),
   parameters: {
     type: "object",

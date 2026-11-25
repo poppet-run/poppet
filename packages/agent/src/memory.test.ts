@@ -111,10 +111,13 @@ describe.concurrent("memoryPrompt", () => {
           yield* send((yield* (yield* Store).createSession("test-provider", "test-model")).id);
         }),
       );
-      expect(saved.requests[0]!.instructions).toContain("Never infer or automatically save facts.");
-      expect(
-        saved.requests[0]!.tools.find((tool) => tool.name === "memory")?.description,
-      ).toContain("only when the current user explicitly requests");
+
+      const memoryToolDescription = saved.requests[0]!.tools.find(
+        (tool) => tool.name === "memory",
+      )?.description;
+
+      expect(memoryToolDescription).toContain("Never infer or save facts automatically.");
+      expect(memoryToolDescription).toContain("only when the owner explicitly asks");
     } finally {
       await saved.close();
     }
@@ -407,7 +410,9 @@ describe.concurrent("memory.ts", () => {
       );
 
       expect(saved.requests[1]!.instructions).toBe(saved.requests[0]!.instructions);
-      expect(saved.requests[0]!.instructions).toContain("Never infer or automatically save facts");
+      expect(
+        saved.requests[0]!.tools.find((tool) => tool.name === "memory")?.description,
+      ).toContain("Never infer or save facts automatically");
       expect(saved.requests[1]!.messages.at(-1)).toMatchObject({
         role: "tool",
         output: expect.stringContaining('"changed":true'),
