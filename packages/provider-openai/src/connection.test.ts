@@ -10,4 +10,11 @@ describe("requestFailure", () => {
       requestId: undefined,
     });
   });
+
+  test.each([
+    [429, "insufficient_quota", "usage_limit"],
+    [403, "forbidden", "permission"],
+  ] as const)("when OpenAI returns status %d with code %s, reports %s", (status, code, reason) => {
+    expect(requestFailure(status, code)).toMatchObject({ reason });
+  });
 });

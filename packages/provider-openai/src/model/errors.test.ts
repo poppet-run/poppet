@@ -25,5 +25,7 @@ describe("inferenceFailure", () => {
     expect(failure(403, "subscription_sharing_user_unavailable")).toBe("temporary");
     expect(failure(429, "subscription_sharing_user_unavailable")).toBe("rate-limit");
     expect(failure(403, "forbidden")).toBe("permission");
+    expect(failure(429, "insufficient_quota")).toBe("quota");
+    expect(failure(429, "usage_limit_exceeded")).toBe("quota");
   });
 });
