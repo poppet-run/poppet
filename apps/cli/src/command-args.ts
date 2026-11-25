@@ -23,6 +23,12 @@ const textCommands = new Map<string, TextCommand>([
   ],
 ]);
 
+export const helpRequested = (args: ReadonlyArray<string>) => {
+  const option = args.find((arg) => arg.startsWith("-"));
+
+  return option === "--help" || option === "-h";
+};
+
 export const commandArgs = (
   args: ReadonlyArray<string>,
   gateways: ReadonlyArray<GatewayRegistration>,
@@ -34,7 +40,7 @@ export const commandArgs = (
   let offset = 2;
 
   if (args[0] === "gateway" && gateways.some((entry) => entry.id === args[1])) {
-    if (args.includes("--help") || args.includes("-h")) {
+    if (helpRequested(args)) {
       return args;
     }
   } else {
