@@ -126,7 +126,7 @@ unclear result.
 Pausing cancels a snoozed occurrence. Resume uses the ordinary future cron cadence
 and does not restore the snooze. Recurring expiration and retry freshness use
 `availableAt`, with the existing 24-hour window after that time; one-offs do not
-expire. Retries use the historical occurrence definition.
+expire. Snooze and run reject an expired pending summary; skip it instead. Retries use the historical occurrence definition.
 Unsupported actions fail explicitly. No additional login or model is required
 to manage saved tasks.
 

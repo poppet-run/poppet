@@ -681,6 +681,34 @@ describe.concurrent("TaskRepository", () => {
     }
   });
 
+  test.each(["snooze", "run-now"] as const)(
+    "when a pending recurring occurrence has expired, rejects %s without reviving it",
+    async (action) => {
+      const state = await fixture();
+
+      try {
+        await state.run((repo) =>
+          Effect.gen(function* () {
+            const job = yield* repo.add(recurring, start);
+            yield* repo.reconcile(start + 60_000);
+            const pending = (yield* repo.status()).nextScheduledAt;
+            const later = start + 60_000 + recurringExpiry;
+
+            const command =
+              action === "snooze"
+                ? { action, id: job.id, until: later + 60_000 }
+                : { action, id: job.id };
+
+            expect((yield* Effect.flip(repo.control(command, later))).message).toContain("expired");
+            expect((yield* repo.status()).nextScheduledAt).toBe(pending);
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
   test("when run-now targets a cron job overdue by more than 24 hours, inserts a claimable occurrence instead of expiring it", async () => {
     const state = await fixture(0);
 

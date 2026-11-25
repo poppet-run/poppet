@@ -138,6 +138,17 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
               (nextAt) => sql`UPDATE jobs SET next_at = ${nextAt} WHERE id = ${job.id}`,
             );
 
+          if (
+            command.action !== "skip-next" &&
+            pending !== null &&
+            pending.definition.schedule.type === "cron" &&
+            pending.availableAt <= now - recurringExpiry
+          ) {
+            return yield* reject(
+              "This pending summary expired. Skip it or wait for reconciliation before changing it.",
+            );
+          }
+
           if (command.action === "skip-next") {
             if (pending !== null) {
               yield* sql`UPDATE job_occurrences SET status = 'cancelled', finished_at = ${now},
@@ -181,15 +192,6 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
             if (pending.availableAt > now) {
               return yield* reject(
                 "The next occurrence is held until a future time. Run-now cannot undo a hold.",
-              );
-            }
-
-            if (
-              pending.definition.schedule.type === "cron" &&
-              pending.availableAt <= now - recurringExpiry
-            ) {
-              return yield* reject(
-                "This pending summary expired. Skip it or wait for reconciliation before running current work.",
               );
             }
 
