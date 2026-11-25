@@ -535,6 +535,7 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
 
     let loginRequired = false;
     const server = new URL(config.url);
+    const run = Effect.runPromiseWith(yield* Effect.context());
 
     const readToken = read.pipe(
       Effect.flatMap((current) => {
@@ -660,7 +661,7 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
           }),
         );
 
-      return Effect.runPromise(
+      return run(
         Effect.gen(function* () {
           const limit = Date.now() + 25_000;
 
@@ -705,7 +706,7 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
     };
 
     return {
-      readToken: () => Effect.runPromise(readToken),
+      readToken: () => run(readToken),
       refresh,
       token: () => token,
       secrets: () => [...seenSecrets],
