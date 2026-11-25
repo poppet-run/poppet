@@ -64,6 +64,7 @@ export const createHarness = async () => {
           throw new Error("Unexpected test callback.");
         }
 
+        await controls.beforeCallback?.();
         await fetch(callback, { signal });
       },
       catch: () => new ConnectionError({ reason: "callback", message: "Test browser failed." }),

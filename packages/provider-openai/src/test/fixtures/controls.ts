@@ -20,6 +20,7 @@ export interface Controls {
   refreshError: string | null;
   jwksUnavailable: boolean;
   beforeJwks?: () => Promise<void>;
+  beforeCallback?: () => Promise<void>;
   streamMode: StreamMode;
   expireAccess: boolean;
   omitRefreshFields: boolean;

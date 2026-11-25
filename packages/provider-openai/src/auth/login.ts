@@ -31,7 +31,14 @@ export const loginWorkflow = Effect.gen(function* () {
 
       return yield* store.withPermit(
         Effect.gen(function* () {
-          const current = (yield* store.read) ?? saved;
+          const current = (yield* store.read) ?? {
+            version: 1,
+            hostId: saved.hostId,
+            clientId: null,
+            identity: null,
+            credentials: null,
+            verification: null,
+          };
 
           if (current.clientId !== null && current.clientId !== authorization.clientId) {
             return yield* Effect.fail(

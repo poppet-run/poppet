@@ -145,6 +145,29 @@ describe.concurrent("loginWorkflow", () => {
       await harness.close();
     }
   });
+  test("when credentials are forgotten during browser sign-in, saves the new account without restoring them", async () => {
+    const harness = await createHarness();
+
+    try {
+      await harness.run(login);
+      harness.controls.subject = "another-account";
+      harness.controls.beforeCallback = async () => {
+        delete harness.controls.beforeCallback;
+        await harness.run(
+          Effect.gen(function* () {
+            const auth = yield* ChatGPTAuth;
+
+            return yield* auth.signOut(true);
+          }),
+        );
+      };
+
+      expect(await harness.run(login)).toMatchObject({ connected: true });
+      expect((await harness.saved()).identity?.subject).toBe("another-account");
+    } finally {
+      await harness.close();
+    }
+  });
 
   test("when browser authorization is still waiting, does not hold the credential store permit", async () => {
     const harness = await createHarness();
