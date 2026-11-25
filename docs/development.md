@@ -26,10 +26,11 @@ Skills live inside `@poppet/agent`.
 `bun run format` formats files with Oxfmt.
 `bun run lint:fix` applies safe Oxlint fixes. `bun run check` checks formatting,
 linting, types, the production web build, and Bun tests. GitHub Actions runs the
-same checks on pushes and pull requests. Bun's built-in type checker covers each workspace and the root
-tooling configs. Each typecheck also runs the Effect-patched TypeScript compiler from
-`@effect/tsgo` (`effect-tsgo tsc`), so a floating Effect, an Effect warning, or an Effect error
-fails the check. The plugin options live in `tsconfig.base.json`; suggestions are left to the
+same checks on pushes and pull requests. Bun's built-in type checker covers the root
+tooling configs and `@poppet/web`. The CLI and workspace packages run the Effect-patched
+TypeScript compiler from `@effect/tsgo` (`effect-tsgo tsc`), so TypeScript errors, floating
+Effects, Effect warnings, and Effect errors all fail the check. The plugin options live in
+`tsconfig.base.json`; suggestions are left to the
 editor, and the unstable `effect/cli`, `effect/sql`, `effect/Terminal`, `effect/reactivity`,
 `@effect/platform-bun`, and `@effect/sql-sqlite-bun` modules are allowed because Poppet is
 built on them. TypeScript stays installed for editor support. To check one
@@ -38,7 +39,8 @@ or `bun run --filter '@poppet/provider-openai' test`.
 
 ## Commit hook and agent guard
 
-`bun install` runs `lefthook install`, which adds a pre-commit hook that runs
+`bun install` runs `lefthook install` in local Git checkouts (skipped when `CI` is set or
+`.git` is absent), which adds a pre-commit hook that runs
 `bun run check` (see `lefthook.yml`). A failing check blocks the commit.
 
 `tools/hooks/hook-bypass.ts` refuses shell commands that skip or disable that hook:

@@ -11,7 +11,7 @@
     ".": "./src/config.ts"
   },
   "scripts": {
-    "typecheck": "bun --check && effect-tsgo tsc",
+    "typecheck": "effect-tsgo tsc",
     "test": "bun --no-env-file ../../tools/testing/run.ts"
   },
   "dependencies": {

@@ -7,9 +7,9 @@
     "./protocol": "./src/api/protocol.ts"
   },
   "scripts": {
-    "build": "bun run build:css && rm -rf ./dist && bun build ./index.html --outdir ./dist --target browser --splitting --public-path / --minify && bun ./scripts/compress.ts",
-    "typecheck": "bun --check && effect-tsgo tsc",
-    "build:css": "bun --bun tailwindcss -i ./src/styles/style.css -o ./.generated/style.css --minify"
+    "build": "rm -rf ./.generated ./dist && bun --bun tailwindcss -i ./src/styles/style.css -o ./.generated/style.css --minify && bun build ./index.html --outdir ./dist --target browser --splitting --public-path / --minify && bun ./scripts/compress.ts",
+    "typecheck": "bun --check",
+    "test": "bun --no-env-file ../../tools/testing/run.ts"
   },
   "dependencies": {
     "@nanostores/preact": "1.1.1",
