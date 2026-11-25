@@ -295,7 +295,9 @@ export const discordAdapterLayer = (
               });
             }
 
-            const thread = source.hasThread
+            const existing = source.hasThread;
+
+            const thread = existing
               ? await client.channels.fetch(source.id, { force: true })
               : await source.startThread({ name: threadName(title), autoArchiveDuration: 1440 });
 
@@ -309,7 +311,11 @@ export const discordAdapterLayer = (
             return {
               id: thread.id,
               managedName:
-                thread.ownerId === botId && thread.id === source.id ? threadName(title) : null,
+                thread.ownerId !== botId || thread.id !== source.id
+                  ? null
+                  : existing
+                    ? threadName(title)
+                    : thread.name,
             };
           },
           catch: discordFailure,

@@ -169,6 +169,7 @@ describe("discordAdapterLayer", () => {
     };
 
     let created = false;
+    let createdName: string | null = null;
     let loseSend = false;
     let botReacted = false;
     let reportReactions = true;
@@ -247,7 +248,12 @@ describe("discordAdapterLayer", () => {
 
       if (route === "/channels/300/messages/400/threads") {
         created = true;
-        throw new Error("Lost creation acknowledgement");
+
+        if (createdName === null) {
+          throw new Error("Lost creation acknowledgement");
+        }
+
+        return { ...thread, owner_id: "100", name: createdName };
       }
 
       if (route === "/channels/300/messages") {
@@ -353,6 +359,14 @@ describe("discordAdapterLayer", () => {
             managedName: "Hello",
           });
           expect(yield* naming.current(incoming, "400")).toBe("Renamed thread");
+          created = false;
+          createdName = "Trimmed";
+          client.channels.cache.delete("400");
+          expect(yield* naming.conversation(incoming, "Trimmed ")).toEqual({
+            id: "400",
+            managedName: "Trimmed",
+          });
+          createdName = null;
           expect(yield* naming.rename(incoming, "400", "Hello", "Generated")).toBeNull();
           expect(patch).not.toHaveBeenCalled();
           thread.name = "Hello";
@@ -503,7 +517,7 @@ describe("discordAdapterLayer", () => {
           expect(yield* channel.status).toMatchObject({ connected: false });
           ready.mockReturnValue(true);
           yield* channel.send("400", "Again", "nonce-2");
-          expect(post.mock.calls.filter(([route]) => route.endsWith("/threads"))).toHaveLength(1);
+          expect(post.mock.calls.filter(([route]) => route.endsWith("/threads"))).toHaveLength(2);
           expect(post.mock.calls.filter(([route]) => route.endsWith("/messages"))).toHaveLength(3);
           expect(post).toHaveBeenCalledWith(
             "/channels/400/messages",
