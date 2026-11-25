@@ -8,6 +8,8 @@ import { Deferred, Effect } from "effect";
 import type { ChatReasoningWriter, ChatWriter } from "#src/commands/chat/chat";
 import type { ChatHistoryMessage } from "#src/commands/chat/history";
 import { ChatMarkdown } from "#src/commands/chat/markdown";
+import { mascotWidth, pickMascotExpression, renderMascot } from "#src/commands/chat/mascot";
+import type { MascotColorMode, MascotExpression } from "#src/commands/chat/mascot";
 import { activityIndicator } from "#src/commands/chat/prompt";
 import type { ChatInput } from "#src/commands/chat/prompt";
 
@@ -117,8 +119,61 @@ export class ChatTerminal {
     private readonly exit: () => void,
     private readonly color = !process.env.NO_COLOR,
     private readonly failure: () => void = exit,
+    private readonly expression: MascotExpression = pickMascotExpression(),
   ) {
     this.markdown = new ChatMarkdown(color);
+  }
+
+  private mascotColorMode(): MascotColorMode | null {
+    if (!this.color) {
+      return null;
+    }
+
+    if (this.output.hasColors?.(16_777_216)) {
+      return "truecolor";
+    }
+
+    if (this.output.hasColors?.(256)) {
+      return "256";
+    }
+
+    return null;
+  }
+
+  private welcomeRows(text: string, width: number, styled: boolean): Array<string> {
+    const colorMode = styled ? this.mascotColorMode() : null;
+    const indent = 1;
+    const paddedWidth = indent + mascotWidth;
+
+    if (colorMode === null || width < paddedWidth) {
+      return wrapChatText(text, width).map((row) => (styled ? this.style(row, "2") : row));
+    }
+
+    const margin = " ".repeat(indent);
+    const art = renderMascot(this.expression, colorMode).map((line) => `${margin}${line}`);
+    const gutter = 3;
+
+    if (width >= paddedWidth + gutter + 24) {
+      const copy = wrapChatText(text, width - paddedWidth - gutter).map((row) =>
+        this.style(row, "2"),
+      );
+
+      const offset = Math.max(0, Math.floor((art.length - copy.length) / 2));
+      const total = Math.max(art.length, copy.length);
+      const spacer = " ".repeat(paddedWidth);
+      const gap = " ".repeat(gutter);
+      const combined: Array<string> = [];
+
+      for (let index = 0; index < total; index++) {
+        const left = art[index] ?? spacer;
+        const right = copy[index - offset];
+        combined.push(right === undefined ? left : `${left}${gap}${right}`);
+      }
+
+      return combined;
+    }
+
+    return [...art, "", ...wrapChatText(text, width).map((row) => this.style(row, "2"))];
   }
 
   private style(text: string, code: string) {
@@ -164,6 +219,11 @@ export class ChatTerminal {
   private transcript(width: number, styled: boolean, messages = this.messages) {
     return messages.flatMap((message) => {
       const { kind, text } = message;
+
+      if (kind === "Welcome") {
+        return [...this.welcomeRows(text, width, styled), ""];
+      }
+
       let labelStyle = "2;36";
 
       if (kind === "You") {
@@ -180,10 +240,9 @@ export class ChatTerminal {
         kind === "Poppet" ? this.markdown.render(message, width) : wrapChatText(text, width);
 
       return [
-        ...(kind === "Welcome" || kind === "Session" ? [] : [label]),
+        ...(kind === "Session" ? [] : [label]),
         ...rows.map((row) =>
-          styled &&
-          (kind === "Info" || kind === "Thinking" || kind === "Welcome" || kind === "Session")
+          styled && (kind === "Info" || kind === "Thinking" || kind === "Session")
             ? this.style(row, "2")
             : row,
         ),
