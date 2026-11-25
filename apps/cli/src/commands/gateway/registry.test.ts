@@ -84,6 +84,8 @@ describe("external gateway registrations", () => {
             dataDirectory: directory,
             args: ["setup", "--literal"],
           });
+          yield* invoke(["gateway", "fixture", "setup", "--value", "-h"]);
+          expect(JSON.parse(lines.at(-1)!)).toMatchObject({ args: ["setup", "--value", "-h"] });
           yield* invoke(["worker", "status", "--json"]);
           expect(JSON.parse(lines.at(-1)!).worker.messaging.channels).toMatchObject([
             { id: "discord", enabled: false },

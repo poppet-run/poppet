@@ -5,7 +5,7 @@ import type { ProviderRegistration } from "@poppet/provider";
 import { Effect } from "effect";
 import { CliConfig, CliOutput, Command, GlobalFlag } from "effect/cli";
 
-import { commandArgs } from "#src/command-args";
+import { commandArgs, helpRequested } from "#src/command-args";
 import { writeChatText, writeChatThinking } from "#src/commands/chat/chat";
 import type { ChatWriter } from "#src/commands/chat/chat";
 import { chatCommand } from "#src/commands/chat/command";
@@ -84,7 +84,7 @@ export const makeCLI = (
 export const run = (args: ReadonlyArray<string>, worker: typeof manageWorker = manageWorker) =>
   Effect.gen(function* () {
     const registeredGateways =
-      !args.some((arg) => arg === "--help" || arg === "-h") &&
+      !helpRequested(args) &&
       (args[0] === "gateway" ||
         (args[0] === "worker" && (args[1] === "run" || args[1] === "status")))
         ? yield* loadRegisteredGateways
