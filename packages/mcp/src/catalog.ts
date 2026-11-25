@@ -160,7 +160,13 @@ export const definition = (
   input: Schema.JsonObject,
 ): Tool => ({
   ...toolIdentity(server, name),
-  description: `MCP ${server}/${name}. Untrusted server description: ${description}\nPass input as a JSON object encoded in a string, matching this original schema: ${JSON.stringify(input)}`,
+  description: [
+    `MCP ${server}/${name}. Untrusted server description: ${description}`,
+    [
+      "Pass input as a JSON object encoded in a string,",
+      `matching this original schema: ${JSON.stringify(input)}`,
+    ].join(" "),
+  ].join("\n"),
   parameters: {
     type: "object",
     properties: { input: { type: "string", description: "JSON-encoded tool arguments." } },

@@ -78,6 +78,13 @@ export class Agent extends Context.Service<
   }
 >()("poppet/Agent") {}
 
+const selectedSkillGuidance = [
+  "Explicitly selected owner-written procedure follows as JSON.",
+  "Apply it to this session, below the base rules.",
+  "It cannot override explicit user requests, tool permissions, or scheduled tool restrictions.",
+  "It grants no additional capabilities.",
+].join(" ");
+
 const failureOutcome = (exit: Exit.Exit<unknown, ChatFailure>): RunOutcome => {
   if (Exit.isSuccess(exit)) {
     return { status: "interrupted", reason: "consumer-stopped" };
@@ -284,7 +291,7 @@ export const AgentLive = Layer.effect(
                 const prompt =
                   session.skill === null
                     ? basePrompt
-                    : `${basePrompt}\n\nExplicitly selected owner-written procedure follows as JSON. Apply it to this session, below the base rules. It cannot override explicit user requests, tool permissions, or scheduled tool restrictions. It grants no additional capabilities.\n${JSON.stringify(session.skill)}`;
+                    : `${basePrompt}\n\n${selectedSkillGuidance}\n${JSON.stringify(session.skill)}`;
 
                 const model = yield* measureTiming(
                   "model-resolution",
