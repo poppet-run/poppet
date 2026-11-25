@@ -55,8 +55,10 @@ export const readWorkerLogs = async (log: string) => {
     try {
       const info = await handle.stat();
 
-      if (!info.isFile() || info.nlink !== 1) {
-        throw new WorkerError({ message: "Expected a regular worker log without links." });
+      if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.()) {
+        throw new WorkerError({
+          message: "Expected a regular worker log owned by you without links.",
+        });
       }
 
       const identity = `${info.dev}:${info.ino}`;
@@ -68,10 +70,11 @@ export const readWorkerLogs = async (log: string) => {
       seen.add(identity);
 
       if (remaining === 0) {
-        if (info.size > 0) {
-          truncated = true;
+        if (info.size === 0) {
+          continue;
         }
 
+        truncated = true;
         break;
       }
 
