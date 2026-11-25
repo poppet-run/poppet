@@ -89,12 +89,16 @@ export const runBounded = async (
     }
 
     const [stdout, , code] = await Promise.all([
-      readBoundedText(child.stdout, maxBytes, tooLarge),
-      readBoundedText(child.stderr, maxBytes, tooLarge),
+      readBounded(child.stdout, maxBytes, tooLarge),
+      readBounded(child.stderr, maxBytes, tooLarge),
       child.exited,
     ]);
 
-    return { stdout, code, expired, aborted: signal.aborted };
+    const aborted = signal.aborted;
+    // A killed child may stop mid-character, and callers ignore its output.
+    const text = new TextDecoder("utf-8", { fatal: !expired && !aborted }).decode(stdout);
+
+    return { stdout: text, code, expired, aborted };
   } finally {
     clearTimeout(timer);
     signal.removeEventListener("abort", abort);

@@ -122,6 +122,34 @@ describe("runBounded", () => {
     }
   });
 
+  test("when stderr is not UTF-8, returns stdout", async () => {
+    const child = launch(
+      'process.stdout.write("hello"); process.stderr.write(Buffer.from([0xff, 0xfe]));',
+    );
+
+    try {
+      expect(await runBounded(child, options())).toMatchObject({ stdout: "hello", code: 0 });
+    } finally {
+      child.kill("SIGKILL");
+      await child.exited;
+    }
+  });
+
+  test("when a timeout cuts stdout mid-character, reports the timeout", async () => {
+    const child = launch(
+      "process.stdout.write(Buffer.from([0xe2, 0x82])); setInterval(() => {}, 1000);",
+    );
+
+    try {
+      expect(await runBounded(child, { ...options(), timeout: 200 })).toMatchObject({
+        expired: true,
+      });
+    } finally {
+      child.kill("SIGKILL");
+      await child.exited;
+    }
+  });
+
   test.each(["timeout", "abort", "already aborted"])(
     "when a subprocess is %s, kills and reaps it",
     async (mode) => {
