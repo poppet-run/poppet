@@ -13,7 +13,6 @@ import { Pages } from "#src/pages";
 import { AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy } from "#src/settings";
 import type { ChatPolicy } from "#src/settings";
-import { WebSearch } from "#src/web-search";
 
 export const optionalService = <I, S>(tag: Context.Key<I, S>, value: S | undefined) =>
   value === undefined ? Layer.empty : Layer.succeed(tag, value);
@@ -110,7 +109,6 @@ export const agentHarness = async (policy: Partial<ChatPolicy> = {}) => {
             store,
             LocalMemoryLive.pipe(Layer.provide(store)),
             settings,
-            Layer.succeed(WebSearch, { search: null }),
             Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected page fetch") }),
             Layer.succeed(ModelResolver, { resolve }),
             ...services,

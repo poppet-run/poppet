@@ -24,7 +24,6 @@
     "effect": "4.1.5"
   },
   "devDependencies": {
-    "@poppet/memory": "workspace:*",
-    "@poppet/web-search": "workspace:*"
+    "@poppet/memory": "workspace:*"
   }
 }

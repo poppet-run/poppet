@@ -6,13 +6,7 @@ import { join } from "node:path";
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
-import {
-  loadConfig,
-  quietHours,
-  taskCatchUpMinutes,
-  timeZone,
-  webSearchProvider,
-} from "#src/config";
+import { loadConfig, quietHours, taskCatchUpMinutes, timeZone } from "#src/config";
 import { ConfigSource, loadConfigSource, updateConfigFile } from "#src/source";
 
 const load = (environment: Record<string, string>) =>
@@ -46,7 +40,6 @@ describe("loadConfigSource", () => {
         provider: "other-provider",
         model: "file-model",
         timeZone: "Europe/London",
-        webSearchProvider: "kagi",
         tasks: {
           catchUpMinutes: 15,
           quietHours: { start: "22:00", end: "07:30", timeZone: "Europe/London" },
@@ -92,7 +85,6 @@ describe("loadConfigSource", () => {
 
       const resolved = await Effect.runPromise(
         Effect.all({
-          provider: webSearchProvider,
           zone: timeZone,
           catchUp: taskCatchUpMinutes,
           quiet: quietHours,
@@ -103,7 +95,6 @@ describe("loadConfigSource", () => {
       );
 
       expect(resolved).toMatchObject({
-        provider: "kagi",
         zone: "Europe/London",
         catchUp: 15,
         quiet: { start: "22:00", end: "07:30", timeZone: "Europe/London" },
@@ -112,26 +103,6 @@ describe("loadConfigSource", () => {
         mcp: [{ cwd: join(directory, "local") }],
       });
       expect(JSON.stringify(loaded.source)).not.toContain("secret-key");
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  test.each([
-    [{}, null],
-    [{ webSearchProvider: "brave" }, "brave"],
-    [{ webSearchProvider: "kagi" }, "kagi"],
-  ] as const)("search config %j resolves to %j", async (search, expected) => {
-    const directory = await mkdtemp(join(tmpdir(), "poppet-search-config-"));
-    const path = join(directory, "config.json");
-    const contents = JSON.stringify({ model: "saved-model", ...search });
-
-    try {
-      await writeFile(path, contents);
-      const loaded = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
-      expect(await Effect.runPromise(webSearchProvider.pipe(Effect.provide(loaded.context)))).toBe(
-        expected,
-      );
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -150,12 +121,10 @@ describe("loadConfigSource", () => {
     ["wrong value type", '{"chat":{"outputTokens":"1024"}}'],
     ["wrong reasoning flag type", '{"chat":{"logReasoning":"true"}}'],
     ["wrong timing flag type", '{"chat":{"logTimings":"true"}}'],
-    ["unknown search provider", '{"webSearchProvider":"unknown"}'],
-    ["empty search provider", '{"webSearchProvider":""}'],
-    ["null search provider", '{"webSearchProvider":null}'],
+    ["removed search provider brave", '{"webSearchProvider":"brave"}'],
+    ["removed search provider kagi", '{"webSearchProvider":"kagi"}'],
     ["removed search flag enabled", '{"webSearch":true}'],
     ["removed search flag disabled", '{"webSearch":false}'],
-    ["removed search flag with a provider", '{"webSearch":false,"webSearchProvider":"kagi"}'],
     ["search credential in file", '{"braveSearchApiKey":"must-not-appear"}'],
     ["empty setting", '{"model":""}'],
     ["null setting", '{"model":null}'],

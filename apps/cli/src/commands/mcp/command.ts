@@ -121,7 +121,7 @@ export const mcpCommand = (context: CLIContext) => {
             "API-key setup needs an interactive terminal or --api-key <key>.",
           ),
       }),
-      Effect.provide([runtime.searchCredentials, runtime.mcpSignIns, runtime.config]),
+      Effect.provide([runtime.apiKeys, runtime.mcpSignIns, runtime.config]),
     );
 
   const browser = Flag.Boolean("browser").pipe(

@@ -215,6 +215,61 @@ describe("compileSchema", () => {
     expect(validate({ "x-request-id": "abc", "x-fastmcp-wrap-result": true })).toBe(false);
   });
 
+  test("when schemas use standard JSON Schema or OpenAPI formats, validates values and still rejects unknown formats", () => {
+    const validate = compileSchema({
+      type: "object",
+      additionalProperties: false,
+      required: ["query"],
+      properties: {
+        query: { type: "string" },
+        after: { anyOf: [{ type: "string", format: "date" }, { type: "null" }], default: null },
+        before: { anyOf: [{ type: "string", format: "date" }, { type: "null" }], default: null },
+        updatedAt: { type: "string", format: "date-time" },
+        endpoint: { type: "string", format: "uri" },
+        id: { type: "string", format: "uuid" },
+        count: { type: "integer", format: "int32" },
+      },
+    });
+
+    expect(
+      validate({
+        query: "poppet",
+        after: "2024-02-29",
+        before: null,
+        updatedAt: "2026-11-25T23:15:00Z",
+        endpoint: "https://mcp.kagi.com/mcp",
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        count: 10,
+      }),
+    ).toBe(true);
+
+    for (const args of [
+      { query: "poppet", after: "2025-02-29" },
+      { query: "poppet", after: "not-a-date" },
+      { query: "poppet", updatedAt: "2026-11-25" },
+      { query: "poppet", endpoint: "not a uri" },
+      { query: "poppet", id: "not-a-uuid" },
+      { query: "poppet", count: 2_147_483_648 },
+    ]) {
+      expect(validate(args)).toBe(false);
+    }
+
+    expect(() =>
+      compileSchema({
+        type: "object",
+        properties: { value: { type: "string", format: "url" } },
+      }),
+    ).toThrow();
+    expect(() =>
+      compileSchema({
+        type: "object",
+        properties: {
+          value: { type: "string", format: "date", formatMinimum: "2024-01-01" },
+        },
+      }),
+    ).toThrow();
+  });
+
   test("when output branches contain only required fields, still enforces every original assertion", () => {
     const validate = compileSchema({
       type: "object",

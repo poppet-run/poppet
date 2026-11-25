@@ -3,7 +3,7 @@ import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { Skills } from "@poppet/agent";
-import { Agent, Pages, WebSearch, SkillsLive } from "@poppet/agent";
+import { Agent, Pages, SkillsLive } from "@poppet/agent";
 import { agentHarness, testModel } from "@poppet/agent/test";
 import { AppConfig } from "@poppet/config";
 import { LogfmtLoggerLive } from "@poppet/io";
@@ -11,7 +11,6 @@ import { Memory } from "@poppet/memory";
 import { ProviderError } from "@poppet/provider";
 import type { ModelOperations, ModelRequest, Output } from "@poppet/provider";
 import { SessionReadResult, Store } from "@poppet/store";
-import { WebSearchError } from "@poppet/web-search";
 import { serveWorker, workerSocketPath } from "@poppet/worker";
 import { Clock, Console, Deferred, Effect, Fiber, Layer, Match, Schema, Stream } from "effect";
 import { SqlClient } from "effect/sql";
@@ -59,7 +58,6 @@ const final = () => response([{ type: "text", text: "Acorn summary" }]);
 const fixture = async (
   stream: ModelOperations["stream"],
   pages: Pages["Service"] = { fetch: () => Effect.die("Unexpected page fetch") },
-  webSearch: WebSearch["Service"] = { search: null },
 ) => {
   const harness = await agentHarness();
   const { directory, config, store, settings } = harness;
@@ -80,7 +78,6 @@ const fixture = async (
   const agent = harness.agent(
     () => Effect.succeed(model),
     ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
-    Layer.succeed(WebSearch, webSearch),
     Layer.succeed(Pages, pages),
   );
 
@@ -582,111 +579,6 @@ describe.concurrent("makeTaskWorker", () => {
         }),
       );
       expect(fetched).toEqual(["https://example.com/article"]);
-      expect(state.requests).toHaveLength(2);
-    } finally {
-      await state.close();
-    }
-  });
-
-  test("when scheduled search returns sources, permits reads without write tools or inference pauses", async () => {
-    let turns = 0;
-
-    const state = await fixture(
-      (request) => {
-        expect(request.tools.some((tool) => tool.name === "memory")).toBe(false);
-
-        if (++turns === 1) {
-          return response([
-            {
-              type: "tool-call",
-              callId: "search",
-              namespace: "poppet_web",
-              name: "search_web",
-              arguments: '{"query":"current topic"}',
-            },
-          ]);
-        }
-
-        if (turns === 2) {
-          return response([
-            {
-              type: "tool-call",
-              callId: "page",
-              namespace: "poppet_web",
-              name: "fetch_page",
-              arguments: '{"url":"https://example.com/source"}',
-            },
-          ]);
-        }
-
-        return final();
-      },
-      { fetch: () => Effect.succeed("Source text") },
-      {
-        search: () =>
-          Effect.succeed({
-            results: [{ title: "Source", url: "https://example.com/source", snippet: "Snippet" }],
-            truncated: false,
-          }),
-      },
-    );
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const repo = yield* TaskRepository;
-          yield* repo.add({ ...state.task, prompt: "Research a current topic" }, 0);
-          yield* repo.reconcile(0);
-          const claimed = (yield* repo.claim(0))!;
-          yield* executeOccurrence(repo, claimed);
-          expect((yield* repo.occurrence(claimed.id)).status).toBe("completed");
-          expect(yield* repo.providers()).toEqual([]);
-        }),
-      );
-      expect(state.requests).toHaveLength(3);
-    } finally {
-      await state.close();
-    }
-  });
-
-  test("when search is rate-limited, reports it to the model without pausing the inference provider", async () => {
-    const state = await fixture(
-      () =>
-        response([
-          {
-            type: "tool-call",
-            callId: "search",
-            namespace: "poppet_web",
-            name: "search_web",
-            arguments: '{"query":"topic"}',
-          },
-        ]),
-      undefined,
-      {
-        search: () =>
-          Effect.fail(
-            new WebSearchError({ reason: "tool-rate-limit", message: "Search rate limit" }),
-          ),
-      },
-    );
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const repo = yield* TaskRepository;
-          yield* repo.add(state.task, 0);
-          yield* repo.reconcile(0);
-          const claimed = (yield* repo.claim(0))!;
-          yield* executeOccurrence(repo, claimed);
-          expect(yield* repo.occurrence(claimed.id)).toMatchObject({
-            status: "completed",
-          });
-          expect(
-            yield* (yield* Store).toolCalls((yield* repo.occurrence(claimed.id)).runId!),
-          ).toMatchObject([{ status: "failed", failureReason: "agent:tool-rate-limit" }]);
-          expect(yield* repo.providers()).toEqual([]);
-        }),
-      );
       expect(state.requests).toHaveLength(2);
     } finally {
       await state.close();

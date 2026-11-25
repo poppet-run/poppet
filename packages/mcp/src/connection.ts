@@ -228,7 +228,13 @@ const delegate = (
 const makeClient = () =>
   new Client({ name: "poppet", version: "0.0.0" }, { capabilities: {}, listMaxPages: 8 });
 
-export const fetchHTTP = boundedFetch(262_144, (url, init) => fetch(url, init), 16 * 1024 * 1024);
+const maxMessageBytes = 4 * 1024 * 1024;
+
+export const fetchHTTP = boundedFetch(
+  maxMessageBytes,
+  (url, init) => fetch(url, init),
+  16 * 1024 * 1024,
+);
 
 const makeTransport = (
   config: MCPServer,
@@ -243,7 +249,7 @@ const makeTransport = (
       cwd: config.cwd ?? process.cwd(),
       env: references,
       stderr: "ignore",
-      maxBufferSize: 262_144,
+      maxBufferSize: maxMessageBytes,
     });
   }
 

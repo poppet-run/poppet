@@ -38,7 +38,7 @@ poppet memory set --json project "Poppet"
 
 For commands that take free text, put `--json` before the text; after it,
 `--json` is part of the text. `--json` is available on `config`, `doctor`,
-`provider status` and `models`, `web status`, `chat rename`, `delete`, `prune`,
+`provider status` and `models`, `chat rename`, `delete`, `prune`,
 `search`, `sessions` and `show`, `skills list` and `show`, all `memory` and `tasks`
 commands, `mcp servers` and `tools`, `store status`, and `worker status`.
 Commands that stream answers, prompt for input, or only confirm a setup step
@@ -164,19 +164,6 @@ names leave permissions unchanged; `deny` works without connecting.
 Configuration changes from `add`, `remove`, `allow`, and `deny` take effect in
 the worker after restart. A running worker uses new sign-in tokens on its next
 request. See [MCP tools](mcp.md) for configuration and permissions.
-
-## Web search setup
-
-| Command                       | Action                                                                            |
-| ----------------------------- | --------------------------------------------------------------------------------- |
-| `web login [--api-key <key>]` | Save the selected search provider's key from the flag or hidden prompt.           |
-| `web status`                  | Show whether search is enabled and a key is configured, without a remote request. |
-| `web logout`                  | Remove the saved search key.                                                      |
-
-These commands use `webSearchProvider`, which must be set to `brave` or `kagi`
-for login and logout. With no provider, status reports search as disabled. They do not change inference credentials or require a selected model.
-Selecting a provider enables search once its key is saved. Restart any running worker. See
-[configuration](configuration.md#web-search) for credentials and query handling.
 
 ## Chat
 

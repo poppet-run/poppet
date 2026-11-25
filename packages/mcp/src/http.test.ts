@@ -31,6 +31,7 @@ const serve = (
   mode:
     | "json"
     | "sse"
+    | "large-call"
     | "oversized"
     | "oversized-sse"
     | "redirect"
@@ -114,7 +115,7 @@ const serve = (
 
       if (message.method === "tools/list") {
         return mode === "oversized" || mode === "oversized-sse"
-          ? reply({ tools: [], padding: "x".repeat(300_000) })
+          ? reply({ tools: [], padding: "x".repeat(4_500_000) })
           : reply({
               tools: ["read", "fail"].map((name) => ({
                 name,
@@ -134,6 +135,12 @@ const serve = (
 
       if (message.params?.name === "fail") {
         return new Response("failed", { status: 500 });
+      }
+
+      if (mode === "large-call") {
+        return reply({
+          content: [{ type: "text", text: "a".repeat(600_000) }],
+        });
       }
 
       return reply({
@@ -252,6 +259,21 @@ describe("MCP over HTTP", () => {
       }
     },
   );
+
+  test("when a tool call returns a large body under the 4 MiB transport limit, truncates it to the tool budget", async () => {
+    const server = serve("large-call");
+
+    try {
+      const result = await Effect.runPromise(call().pipe(Effect.provide(layer(server.url)), quiet));
+      expect(Buffer.byteLength(result)).toBeLessThanOrEqual(16_384);
+      expect(JSON.parse(result)).toMatchObject({
+        content: [expect.stringMatching(/^a+$/)],
+        truncated: true,
+      });
+    } finally {
+      await server.stop();
+    }
+  });
 
   test.each(["oversized", "oversized-sse", "redirect"] as const)(
     "when the server's response is %s, rejects discovery and leaves the catalog empty",

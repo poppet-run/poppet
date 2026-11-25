@@ -441,16 +441,14 @@ local wall time across timezone changes. A missing local time during spring DST
 shifts forward; a repeated time during autumn DST runs once. The database stores
 times as UTC milliseconds. `show` includes final answers, run/session IDs, failures,
 and skipped intervals. Each occurrence has a fresh session, current profile and
-facts, conversation search/recall, page reading, and web search when
-configured. Returned memory calls are rejected.
+facts, conversation search/recall, and page reading. Returned memory calls are rejected.
 
 Scheduled runs can use `poppet_history.read_session` after a conversation search
 to read saved context around a match, or page forward with stable message IDs.
 Results are sized from the fixed 16 KiB tool-output budget, may run slightly over
 it, and mark shortened or omitted content. Recalled
 statements remain historical data and should be cited by session/message IDs.
-They cannot authorize memory or task changes, or page fetches. Recalled
-URLs never become web-search grants. Reading does not resume the saved session or
+They cannot authorize memory or task changes, or page fetches. Reading does not resume the saved session or
 import its provider continuation. See [conversation context](chat.md#read-conversation-context).
 
 ## Read a supplied URL
@@ -463,26 +461,8 @@ poppet tasks add page-summary --cron "0 9 * * *" --tz Europe/London "Summarize h
 
 Each occurrence may read that URL through the same bounded [page reader](chat.md#read-a-supplied-url)
 as chat. URLs mentioned only by a skill, prior conversation, or fetched page
-are not authorized. The task retains its scheduled tool restrictions; Bash commands are reviewed separately. No page cache,
-search account, or additional credentials are needed.
-
-## Research with web search
-
-Use web search and the protected page reader for scheduled research.
-
-With [web search configured](configuration.md#web-search), a saved prompt may ask
-for current research without supplying a source URL:
-
-```sh
-poppet tasks add weekly-research --cron "0 9 * * 5" --tz Europe/London "Search for recent Bun releases, read relevant sources, and cite them"
-```
-
-Each occurrence can search and read returned sources on a later model turn.
-Search grants never carry over from older occurrences or saved history. Memory
-keeps its scheduled tool restrictions. Search authentication, service, and rate-limit errors
-return a failed tool result for the model to explain or handle within the run
-budgets. They do not automatically retry or pause the inference provider. Use the
-existing destination flags to deliver completed research through messaging.
+are not authorized. The task retains its scheduled tool restrictions; Bash commands are reviewed separately. No page cache
+or additional credentials are needed.
 
 ## Missed work, pauses, and retries
 

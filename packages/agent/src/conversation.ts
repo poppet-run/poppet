@@ -42,7 +42,6 @@ import { Skills } from "#src/skills";
 import { taskNoteGuidance, taskNoteTool } from "#src/task-note";
 import { taskTool } from "#src/task-tools";
 import { toolExecution, preflightReported, failureReason, failureReply } from "#src/tool-execution";
-import { webSearchTool } from "#src/web-search";
 
 type ConversationEvent = ModelEvent | { readonly type: "reasoning-end" };
 
@@ -112,7 +111,6 @@ export const conversation = Effect.gen(function* () {
     yield* fetchPageTool,
     yield* memoryTool,
     skillView,
-    yield* webSearchTool,
     task,
   ];
 
@@ -587,11 +585,7 @@ export const conversation = Effect.gen(function* () {
                     );
               };
 
-              const { output, urls } = yield* executeTool(run, callId, tool, prepared, guard);
-
-              for (const url of urls) {
-                allowedURLs.add(url);
-              }
+              const output = yield* executeTool(run, callId, tool, prepared, guard);
 
               if (tool.untrustedResult) {
                 untrusted = true;

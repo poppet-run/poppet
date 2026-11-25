@@ -32,7 +32,6 @@
     "@poppet/store": "workspace:*",
     "@poppet/tasks": "workspace:*",
     "@poppet/web": "workspace:*",
-    "@poppet/web-search": "workspace:*",
     "@poppet/worker": "workspace:*",
     "effect": "4.1.5",
     "marked": "18.2.1",

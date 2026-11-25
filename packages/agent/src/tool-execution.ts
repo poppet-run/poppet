@@ -109,10 +109,7 @@ export const toolExecution = Effect.gen(function* () {
         });
       }
 
-      return {
-        output: outcome.output,
-        urls: outcome.reported ? [] : (authorized.grantedURLs?.() ?? []),
-      };
+      return outcome.output;
     });
 
     return tool.uninterruptible === true ? Effect.uninterruptible(operation) : operation;

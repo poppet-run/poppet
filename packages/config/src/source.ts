@@ -36,7 +36,6 @@ const FileSettings = Schema.Struct({
   provider: Schema.optionalKey(ConfigText),
   model: Schema.optionalKey(ConfigText),
   timeZone: Schema.optionalKey(TimeZone),
-  webSearchProvider: Schema.optionalKey(Schema.Literals(["brave", "kagi"])),
   mcpServers: Schema.optionalKey(MCPServers),
   gatewayPackages: Schema.optionalKey(Schema.Array(ConfigText)),
   tasks: Schema.optionalKey(
@@ -118,7 +117,6 @@ export const loadConfigSource = Effect.gen(function* () {
     provider: file.provider,
     model: file.model,
     timeZone: file.timeZone,
-    webSearchProvider: file.webSearchProvider,
     mcpServers: mcpFileValue(file.mcpServers, directory),
     gatewayPackages:
       file.gatewayPackages === undefined ? undefined : JSON.stringify(file.gatewayPackages),

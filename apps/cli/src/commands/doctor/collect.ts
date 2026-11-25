@@ -9,7 +9,6 @@ import {
   dataDirectory,
   gatewayPackages,
   taskCatchUpMinutes,
-  webSearchProvider,
 } from "@poppet/config";
 import { readBoundedText } from "@poppet/io";
 import { mcpServers } from "@poppet/mcp";
@@ -260,7 +259,7 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
       const config = yield* AppConfig;
       const source = yield* ConfigSource;
       yield* ChatSettings;
-      yield* Effect.all([taskCatchUpMinutes, webSearchProvider, gatewayPackages]);
+      yield* Effect.all([taskCatchUpMinutes, gatewayPackages]);
 
       return {
         config,
