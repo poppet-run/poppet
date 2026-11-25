@@ -1,9 +1,9 @@
 import { Database } from "bun:sqlite";
 import { constants } from "node:fs";
-import { open, realpath } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
-import { openNoFollow, unlinkIfPresent, writeFileAtomic } from "@poppet/io";
+import { isMissingFile, openProtectedFile, unlinkIfPresent, writeFileAtomic } from "@poppet/io";
 import { Data, Effect, Schema } from "effect";
 
 export class OwnerLockError extends Data.TaggedError("OwnerLockError")<{
@@ -40,34 +40,28 @@ export const acquireOwnerLock = (path: string) =>
         let database: Database | undefined;
 
         try {
-          const handle = await open(
+          const handle = await openProtectedFile(
             `${lockPath}.sqlite`,
-            constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW,
-            0o600,
+            constants.O_RDWR | constants.O_CREAT,
+            { makePrivate: true },
           );
 
-          try {
-            if (!(await handle.stat()).isFile()) {
-              throw new Error("Invalid lock file");
-            }
-
-            await handle.chmod(0o600);
-          } finally {
-            await handle.close();
-          }
+          await handle.close();
 
           database = new Database(`${lockPath}.sqlite`);
           database.run("PRAGMA locking_mode = EXCLUSIVE");
           database.run("BEGIN EXCLUSIVE");
           database.run("COMMIT");
 
-          const previous = await openNoFollow(lockPath);
+          const previous = await openProtectedFile(lockPath, constants.O_RDONLY).catch(
+            (cause: unknown) => (isMissingFile(cause) ? null : Promise.reject(cause)),
+          );
 
           if (previous !== null) {
             try {
               const info = await previous.stat();
 
-              if (!info.isFile() || info.size > 512) {
+              if (info.size > 512) {
                 throw new Error("Invalid owner marker");
               }
             } finally {
@@ -79,8 +73,12 @@ export const acquireOwnerLock = (path: string) =>
 
           return { database, key, lockPath };
         } catch (cause) {
-          database?.close();
-          activeLocks.delete(key);
+          try {
+            database?.close();
+          } finally {
+            activeLocks.delete(key);
+          }
+
           throw cause;
         }
       },

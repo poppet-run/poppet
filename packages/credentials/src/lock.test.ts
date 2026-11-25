@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -77,7 +77,7 @@ describe("acquireOwnerLock", () => {
     }
   });
 
-  test("when lock markers are stale or unsafe, replaces stale markers and rejects symlinks and named pipes", async () => {
+  test("when lock markers are stale or unsafe, replaces stale markers and rejects symlinks, hard links, and named pipes", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-owner-protected-"));
     const path = join(directory, "owner.lock");
     const target = join(directory, "untouched");
@@ -114,6 +114,12 @@ describe("acquireOwnerLock", () => {
         reason: "storage",
       });
       expect(await readFile(target, "utf8")).toBe("keep this file");
+      await rm(path);
+      await link(target, path);
+      await expect(Effect.runPromise(Effect.scoped(acquireOwnerLock(path)))).rejects.toMatchObject({
+        reason: "storage",
+      });
+      expect(await readFile(path, "utf8")).toBe("keep this file");
       await rm(path);
       makeFIFO(path);
       await expect(Effect.runPromise(Effect.scoped(acquireOwnerLock(path)))).rejects.toMatchObject({
