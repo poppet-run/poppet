@@ -25,7 +25,7 @@ poppet chat sessions
 The answer streams to stdout. The session and run IDs print to stderr. Copy the
 session ID to continue or inspect it in a later invocation:
 
-Bash / POSIX sh:
+Bash / Zsh / POSIX sh:
 
 ```sh
 session_id='paste-session-id-here'

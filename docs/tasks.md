@@ -37,6 +37,15 @@ if its environment selects a different model later.
 
 For a quick test, schedule a review of recent conversations one minute from now:
 
+Bash / Zsh:
+
+```sh
+poppet tasks add summary --in 1m "Summarize recent conversations"
+poppet worker run
+```
+
+fish:
+
 ```fish
 poppet tasks add summary --in 1m "Summarize recent conversations"
 poppet worker run
@@ -332,6 +341,14 @@ scheduled runs carry from one occurrence to the next. A new task has no note.
 A note lets a task report only changes. The run compares what it finds with the
 note, saves the new value, and answers `NO_REPLY` when nothing changed:
 
+Bash / Zsh:
+
+```sh
+poppet tasks add release-watch --cron "0 9 * * *" --tz Europe/London --to discord "Read https://example.com/releases and find the newest release version. The task note holds the version you last reported. If there is no note or the version differs, save the new version as the note and tell me the new version. Otherwise reply NO_REPLY."
+```
+
+fish:
+
 ```fish
 poppet tasks add release-watch --cron "0 9 * * *" --tz Europe/London --to discord "Read https://example.com/releases and find the newest release version. The task note holds the version you last reported. If there is no note or the version differs, save the new version as the note and tell me the new version. Otherwise reply NO_REPLY."
 ```
@@ -491,8 +508,16 @@ occurrence succeeded or is still active; it never searches backward for a failur
 Use `--occurrence <occurrence-id>` with either command to select a particular
 occurrence belonging to the task. For example:
 
+Bash / Zsh:
+
+```sh
+poppet tasks retry '<task-id>' --occurrence '<occurrence-id>'
+```
+
+fish:
+
 ```fish
-poppet tasks retry <task-id> --occurrence <occurrence-id>
+poppet tasks retry '<task-id>' --occurrence '<occurrence-id>'
 ```
 
 Quota failures pause scheduled requests for that provider indefinitely. The CLI

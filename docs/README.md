@@ -4,7 +4,7 @@
 
 Start with [getting started](getting-started.md) to install dependencies, connect a provider, and send your first message.
 
-Shell commands work in Bash, POSIX sh, and fish unless separate examples are shown.
+Shell commands work in Bash, Zsh, POSIX sh, and fish unless separate examples are shown.
 Replace angle-bracket placeholders such as `<task-id>` before running a command.
 Environment overrides last for the current shell scope. Use [configuration](configuration.md)
 for persistent settings.

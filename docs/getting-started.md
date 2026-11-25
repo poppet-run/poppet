@@ -2,7 +2,7 @@
 
 [Documentation index](README.md)
 
-Shell commands work in Bash, POSIX sh, and fish unless separate examples are shown.
+Shell commands work in Bash, Zsh, POSIX sh, and fish unless separate examples are shown.
 Replace angle-bracket placeholders such as `<task-id>` before running a command.
 
 ## Requirements
@@ -26,7 +26,7 @@ poppet config
 `bun link` adds `poppet` to Bun's global bin directory. Make sure that directory
 is on `PATH`. If needed, add it for your shell:
 
-Bash / POSIX sh:
+Bash / Zsh / POSIX sh:
 
 ```sh
 export PATH="$(bun pm bin -g):$PATH"
@@ -118,7 +118,7 @@ poppet chat sessions
 The answer streams to stdout; session and run IDs print to stderr. These one-shot
 commands send one message at a time. Copy the session ID to continue or inspect it:
 
-Bash / POSIX sh:
+Bash / Zsh / POSIX sh:
 
 ```sh
 session_id='paste-session-id-here'
