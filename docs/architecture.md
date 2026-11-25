@@ -52,6 +52,7 @@ The Bun monorepo uses private workspaces:
 | `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery                                               | Agent, config, credentials, I/O helpers, store, tasks, provider contract                             |
 | `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings                                            | Config, credentials, gateway contract                                                                |
 | `@poppet/channel-slack`       | Slack Socket Mode, thread messages, attachments, permissions, and protected settings                                   | Config, credentials, gateway contract                                                                |
+| `@poppet/channel-telegram`    | Telegram Bot API long polling, chats, forum topics, and protected settings                                             | Gateway contract                                                                                     |
 | `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export                                      | None                                                                                                 |
 | `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                                                        | Provider contract, credentials, protocol adapters                                                    |
 | `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                                                       | Provider contract, credentials, protocol adapters                                                    |
@@ -960,7 +961,7 @@ approval callback. Provider credentials and continuation data stay on the host.
 
 `conversation-naming.ts` owns rename reconciliation and owner-override handling.
 
-Discord and Slack thread chat are bundled. Additional adapters can be loaded from explicitly
+Discord and Slack thread chat and Telegram chat are bundled. Additional adapters can be loaded from explicitly
 configured installed packages.
 The gateway runs
 inside the neutral worker host, with scheduling optional, and shares its store, memory, model
@@ -1026,7 +1027,8 @@ The host provides only `ChannelEnvironment.dataDirectory` and bounded secret inp
 through `ChannelInput`. Adapters own argument schemas, credential handling,
 setup messages, optional interactive `promptSetup`, and platform loading. Configuration
 inspection returns either no configured layer or a layer that connects only when built. Discord and Slack expose
-lightweight registration entries and load their SDKs lazily.
+lightweight registration entries and load their SDKs lazily. Telegram calls the Bot API
+with `fetch` and loads its channel module lazily.
 Existing setup commands and settings files are unchanged.
 
 `worker status` reports messaging connection state and configuration errors in a `channels`
@@ -1176,7 +1178,7 @@ slash commands. Live Discord checks remain manual.
 ### External adapters
 
 The CLI loads default `ChannelRegistration` exports listed in `gatewayPackages`
-from `<POPPET_DATA_DIR>/gateways`. Discord and Slack remain bundled. See
+from `<POPPET_DATA_DIR>/gateways`. Discord, Slack, and Telegram remain bundled. See
 [adding a channel](development.md#adding-a-channel) for setup and compatibility.
 
 ## Dependencies

@@ -1501,6 +1501,7 @@ describe.concurrent("chat.ts", () => {
             "Cannot load Discord configuration or credentials. Check config.json and run gateway discord setup again.",
         },
         { id: "slack", enabled: false },
+        { id: "telegram", enabled: false },
       ]);
       await chat.clock.runPromise(TestClock.adjust("61 seconds"));
 

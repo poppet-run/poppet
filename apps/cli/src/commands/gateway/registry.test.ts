@@ -88,6 +88,7 @@ describe("external gateway registrations", () => {
           expect(JSON.parse(lines.at(-1)!).worker.messaging.channels).toMatchObject([
             { id: "discord", enabled: false },
             { id: "slack", enabled: false },
+            { id: "telegram", enabled: false },
             { id: "fixture", enabled: false },
           ]);
 
@@ -96,7 +97,7 @@ describe("external gateway registrations", () => {
           yield* invoke(["worker", "status", "--json"]);
           expect(JSON.parse(lines.at(-1)!).worker.messaging).toMatchObject({
             running: true,
-            channels: [{ id: "discord" }, { id: "slack" }, { id: "fixture" }],
+            channels: [{ id: "discord" }, { id: "slack" }, { id: "telegram" }, { id: "fixture" }],
           });
           yield* Fiber.interrupt(worker);
         }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, environment(directory))),
@@ -177,7 +178,7 @@ describe("external gateway registrations", () => {
         ),
       );
 
-      expect(overridden.map((entry) => entry.id)).toEqual(["discord", "slack"]);
+      expect(overridden.map((entry) => entry.id)).toEqual(["discord", "slack", "telegram"]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

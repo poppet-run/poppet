@@ -20,7 +20,8 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/store`, `@poppet/agent`, `@poppet/io`, `@poppet/mcp`,
 `@poppet/memory`, `@poppet/tasks`, `@poppet/web-search`,
 `@poppet/platform`, `@poppet/worker`, `@poppet/gateway`,
-`@poppet/channel-discord`, `@poppet/channel-slack`, and `@poppet/web`.
+`@poppet/channel-discord`, `@poppet/channel-slack`, `@poppet/channel-telegram`, and
+`@poppet/web`.
 Skills live inside `@poppet/agent`.
 `bun run format` formats files with Oxfmt.
 `bun run lint:fix` applies safe Oxlint fixes. `bun run check` checks formatting,
@@ -291,7 +292,7 @@ Existing credential files and conversation records keep their formats.
 
 ## Adding a channel
 
-Discord and Slack are bundled channels. External packages implement `ChannelRegistration`
+Discord, Slack, and Telegram are bundled channels. External packages implement `ChannelRegistration`
 from `@poppet/gateway` and export it as the default export of a lightweight entry point.
 Install the package in `<POPPET_DATA_DIR>/gateways`, then list its entry point in
 `config.json`, for example:
@@ -308,7 +309,7 @@ and package entry points must be owned by the Poppet user and writable only by
 that user. Entry points resolve inside its local `node_modules` directory.
 Package names and
 package subpaths are accepted; file paths and URLs are rejected. Nothing is
-automatically discovered or installed. Discord and Slack are always registered; duplicate
+automatically discovered or installed. Discord, Slack, and Telegram are always registered; duplicate
 or reserved IDs and malformed registrations stop gateway startup with an error.
 Restart the worker after changing the list or installed packages.
 

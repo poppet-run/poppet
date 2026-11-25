@@ -28,6 +28,7 @@ for persistent settings.
 - [Host commands](commands.md): reviewed Bash execution, Discord and Slack approval, and cron behavior.
 - [Discord](gateways/discord.md): bot setup, thread sessions, permissions, and delivery.
 - [Slack](gateways/slack.md): Socket Mode setup, thread sessions, permissions, and delivery.
+- [Telegram](gateways/telegram.md): bot setup, chats and forum topics, and delivery limits.
 
 ## Providers
 
