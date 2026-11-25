@@ -637,10 +637,14 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
             const { refreshLease: _lease, ...original } = current;
             const record = { ...original };
 
+            let held = true;
+
             const save = (next: SavedSignIn) =>
-              signIns.update(config.id, (previous) =>
-                Effect.succeed(previous?.refreshLease?.id === id ? next : previous),
-              );
+              signIns.update(config.id, (previous) => {
+                held = previous?.refreshLease?.id === id;
+
+                return Effect.succeed(held ? next : previous);
+              });
 
             yield* restore(exchange(record, refreshToken)).pipe(
               Effect.andThen(save(record)),
@@ -654,6 +658,10 @@ export const runtimeAuthorization = (config: MCPOAuthServer, now: () => number) 
                 ),
               ),
             );
+
+            if (!held) {
+              return false;
+            }
 
             yield* readToken;
 

@@ -102,6 +102,8 @@ const harness = async (options: OAuthFixtureOptions = {}, duplicateIssuer = fals
   };
 };
 
+type SignInRecord = Effect.Success<ReturnType<MCPSignIns["Service"]["read"]>>;
+
 const call = Effect.gen(function* () {
   const [tool] = yield* (yield* MCP).snapshot(false);
 
@@ -367,6 +369,52 @@ describe("MCP OAuth", () => {
       expect(first.token()).toBe(second.token());
       expect(first.loginRequired() || second.loginRequired()).toBe(false);
       expect(state.server.events.filter((event) => event.path === "/token")).toHaveLength(2);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when another refresh takes over an expired lease mid-exchange, waits for its token", async () => {
+    let stolen = false;
+
+    const steal = (change: (saved: NonNullable<SignInRecord>) => NonNullable<SignInRecord>) =>
+      state.run(
+        MCPSignIns.use((signIns) =>
+          signIns.update(state.config.id, (saved) =>
+            Effect.succeed(saved === null ? null : change(saved)),
+          ),
+        ),
+      );
+
+    const state = await harness({
+      tokenUses: 1,
+      beforeRefresh: async () => {
+        if (stolen) {
+          return;
+        }
+
+        stolen = true;
+        await steal((saved) => ({
+          ...saved,
+          refreshLease: { id: "other", expiresAt: Date.now() + 5000 },
+        }));
+        setTimeout(() => {
+          void steal(({ refreshLease: _lease, ...saved }) => ({
+            ...saved,
+            tokens: { ...saved.tokens, access_token: "access-other" },
+          }));
+        }, 100);
+      },
+    });
+
+    try {
+      await state.login();
+
+      const authorization = await state.run(runtimeAuthorization(state.config, Date.now));
+
+      await authorization.refresh(authorization.token(), new Response(null, { status: 401 }));
+
+      expect(authorization.token()).toBe("access-other");
     } finally {
       await state.close();
     }
