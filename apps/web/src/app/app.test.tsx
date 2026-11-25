@@ -64,7 +64,7 @@ const flush = () =>
     });
   });
 
-test("when Markdown contains links and interactive HTML, renders safe links and removes controls", async () => {
+test("when Markdown contains links and interactive HTML, shows plain text until the renderer loads, then renders safe links and removes controls", async () => {
   const { Markdown } = await import("../components/chat/transcript/markdown");
   const root = document.createElement("div");
   document.body.append(root);
@@ -86,7 +86,12 @@ test("when Markdown contains links and interactive HTML, renders safe links and 
   ].join("\n\n");
 
   try {
-    await act(() => render(<Markdown text={text} />, root));
+    render(<Markdown text={text} />, root);
+    expect(root.querySelector(".whitespace-pre-wrap")?.textContent).toBe(text);
+
+    for (let attempt = 0; attempt < 50 && !root.querySelector(".markdown"); attempt++) {
+      await flush();
+    }
 
     expect(root.querySelector("h1")?.textContent).toBe("Hello");
     expect(root.querySelector("strong")?.textContent).toBe("World");
