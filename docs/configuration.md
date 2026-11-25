@@ -44,7 +44,6 @@ after editing settings: `poppet worker restart`.
 | `timeZone`                   | Unset            | Your IANA time zone; see [time zone](#time-zone)                                                |
 | `discord`                    | Unconfigured     | Owner ID, guild ID, and home channel ID                                                         |
 | `slack`                      | Unconfigured     | Owner ID, team ID, and home channel ID                                                          |
-| `webSearchProvider`          | Unset            | Enable search with `brave` or `kagi`                                                            |
 | `mcpServers`                 | `[]`             | [MCP servers, sign-in, and tool permissions](mcp.md)                                            |
 | `gatewayPackages`            | `[]`             | Explicitly installed [external gateway packages](development.md#adding-a-gateway)               |
 | `tasks.catchUpMinutes`       | `60`             | Missed recurring-job window, from 0 to 1440 minutes                                             |
@@ -232,40 +231,6 @@ not revoke the remote key or unset an environment override.
 
 See [OpenCode Go](providers/opencode-go.md) and [OpenRouter](providers/openrouter.md) for login and model-selection examples.
 
-## Web search
-
-Set `webSearchProvider` to either `brave` or `kagi` to enable search.
-Omit the field to disable search while keeping saved credentials.
-Search is available only when the selected provider has a saved key.
-For example:
-
-```json
-{ "webSearchProvider": "kagi" }
-```
-
-Then save the selected provider's key:
-
-```sh
-poppet web login
-poppet web status
-```
-
-`web login --api-key <key>` saves a key supplied as an argument. Without the flag,
-login uses a hidden prompt. Credentials stay in `auth/brave-search.json` or
-`auth/kagi-search.json`. Web search uses only saved credentials; environment
-variables cannot supply or override search keys. Switching providers preserves
-both keys. Logout removes only the selected saved key without revoking remote
-access. Restart the worker after changing settings or credentials.
-
-The removed `webSearch` flag is rejected as an unknown field. Remove it from
-existing configuration. Set `webSearchProvider` to enable search, or remove both
-fields to keep search disabled.
-
-Queries go to the selected provider and can contain private information chosen
-by the model. Keys are never sent to fetched pages. Search uses a 15-second
-deadline, 1 MiB response limit, and the fixed tool-output budget. See
-[web search](chat.md#search-the-web).
-
 ## Skill files
 
 Skills live in `<POPPET_DATA_DIR>/skills/<name>/SKILL.md`, with no configurable
@@ -279,6 +244,7 @@ Each request has a 15-second deadline, at most three redirects, and a 1 MiB body
 limit. Only HTTP(S) standard ports are accepted. Ambient proxies and credentials
 are not forwarded. See [page reading](chat.md#read-a-supplied-url).
 
-The retired `browser` configuration key is ignored. It can be removed from existing
-config files. Built-in browser automation is no longer available; web search,
-static page reading, and reviewed Bash commands remain available.
+The retired `browser` configuration key is ignored. Built-in browser automation and
+built-in web search (`webSearch` and `webSearchProvider`, rejected as unknown fields)
+are no longer available; static page reading, [MCP servers](mcp.md), and reviewed
+Bash commands remain available.

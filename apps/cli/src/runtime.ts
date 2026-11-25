@@ -26,7 +26,6 @@ import { Context, Effect, Layer, Schema } from "effect";
 
 import { BashLive } from "#src/bash";
 import { ExternalAgentToolsLive } from "#src/commands/mcp/tools";
-import { WebSearchLive } from "#src/commands/web/search";
 import { createConnectionStatus } from "#src/connection-status";
 
 export const findProvider = (
@@ -131,15 +130,14 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
   ).pipe(Layer.provide(config));
 
   const pages = PagesLive.pipe(Layer.provide([PageTransportLive, chatSettings]));
-  const searchCredentials = ApiKeyStoreLive.pipe(Layer.provide(environment), Layer.provide(config));
-  const webSearch = WebSearchLive.pipe(Layer.provide([config, chatSettings, searchCredentials]));
+  const apiKeys = ApiKeyStoreLive.pipe(Layer.provide(environment), Layer.provide(config));
   const chatTasks = ChatTasksLive.pipe(Layer.provide([tasks, store, skills, chatSettings]));
 
   const mcpSignIns = MCPSignInsLive.pipe(Layer.provide(environment), Layer.provide(config));
 
   const mcp = Layer.unwrap(
     ChatSettings.pipe(Effect.map(({ toolBytes }) => makeMCPLive(toolBytes))),
-  ).pipe(Layer.provide([config, chatSettings, searchCredentials, mcpSignIns]));
+  ).pipe(Layer.provide([config, chatSettings, apiKeys, mcpSignIns]));
 
   const externalTools = ExternalAgentToolsLive.pipe(
     Layer.provideMerge(mcp),
@@ -155,7 +153,6 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
       chatSettings,
       connections,
       pages,
-      webSearch,
       chatTasks,
       externalTools,
       BashLive,
@@ -173,7 +170,7 @@ export const runtimeLayers = (registered: ReadonlyArray<ProviderRegistration>) =
     skills,
     chat,
     connections,
-    searchCredentials,
+    apiKeys,
     mcpSignIns,
     mcp,
     messagingStatus: GatewayRepositoryLive.pipe(

@@ -23,7 +23,6 @@ import { setupCommand } from "#src/commands/setup/command";
 import { skillsCommand } from "#src/commands/skills";
 import { storeCommand } from "#src/commands/store";
 import { tasksCommand } from "#src/commands/tasks/command";
-import { webCommand } from "#src/commands/web/command";
 import { workerCommand } from "#src/commands/worker/command";
 import { manageWorker } from "#src/commands/worker/service";
 import { providers } from "#src/providers";
@@ -59,7 +58,6 @@ export const makeCLI = (
       skillsCommand(context),
       storeCommand(context),
       tasksCommand(context),
-      webCommand(context),
       workerCommand(context),
     ]),
   );

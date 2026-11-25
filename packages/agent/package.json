@@ -21,7 +21,6 @@
     "@poppet/memory": "workspace:*",
     "@poppet/provider": "workspace:*",
     "@poppet/store": "workspace:*",
-    "@poppet/web-search": "workspace:*",
     "effect": "4.1.5",
     "entities": "9.0.0"
   },

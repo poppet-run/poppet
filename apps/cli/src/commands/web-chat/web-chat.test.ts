@@ -5,14 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  AgentLive,
-  ChatSettings,
-  defaultPolicy,
-  ModelResolver,
-  Pages,
-  WebSearch,
-} from "@poppet/agent";
+import { AgentLive, ChatSettings, defaultPolicy, ModelResolver, Pages } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { gatewaySchema } from "@poppet/gateway";
 import { LocalMemoryLive } from "@poppet/memory";
@@ -121,7 +114,6 @@ const fixture = async (
       LocalMemoryLive.pipe(Layer.provide(store)),
       Layer.succeed(ChatSettings, defaultPolicy),
       Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected fetch") }),
-      Layer.succeed(WebSearch, { search: null }),
       Layer.succeed(ModelResolver, { resolve: () => Effect.succeed(model) }),
     ]),
   );

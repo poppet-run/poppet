@@ -39,9 +39,8 @@ The Bun monorepo uses private workspaces:
 | `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                                                     | Config, agent, MCP, memory, tasks, store, platform, gateway, channels, web protocol, provider layers |
 | `@poppet/web`                 | Preact browser chat, Nanostores state, and shared web API types                                                        | None                                                                                                 |
 | `@poppet/mcp`                 | Scoped stdio/HTTP clients, OAuth sign-in, bounded discovery, schema validation                                         | Credentials, I/O helpers, sign-in, provider contract                                                 |
-| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                                                        | Config, I/O helpers, memory, store, web search, provider contract                                    |
+| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                                                        | Config, I/O helpers, memory, store, provider contract                                                |
 | `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation                                       | None                                                                                                 |
-| `@poppet/web-search`          | Brave/Kagi search adapters, validation, and bounded source results                                                     | I/O helpers, Effect                                                                                  |
 | `@poppet/config`              | Validated settings and the `AppConfig` service                                                                         | Provider contract, credential locks, MCP configuration schemas                                       |
 | `@poppet/credentials`         | Protected API-key and record storage, locks, and environment overrides                                                 | Provider contract                                                                                    |
 | `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle                                                  | Config, credentials, provider contract                                                               |
@@ -411,7 +410,7 @@ tokens. Advertised model capacity further limits input and output. The UTF-8 siz
 estimate is not an exact tokenizer, and trimming never changes stored history.
 
 Tool-capable models receive conversation search, explicit
-memory, page reading, and web search when configured. The conversation workflow
+memory, and page reading. The conversation workflow
 validates complete tool requests, records them, executes sequentially, and
 continues with the saved results. Models without tool support receive no tools.
 Text deltas stream immediately; terminal-only text or an unstreamed final suffix
@@ -511,9 +510,8 @@ and scheduled runs. Providers see only the generic tool definition and result.
 No store migration or new configuration is needed.
 
 The host extracts canonical HTTP(S) URLs solely from the current user message or
-saved scheduled prompt. Completed web searches can add their returned source URLs
-for this run only. Whole-batch validation checks the requested initial URL against
-that set before any tool executes. History, skills, snippets, and page links
+saved scheduled prompt. Whole-batch validation checks the requested initial URL against
+that set before any tool executes. History, skills, and page links
 cannot expand it. Page text remains untrusted source material, and guidance asks
 the model to cite the returned final source URL.
 
@@ -552,49 +550,6 @@ checks use the production HTTP(S) client to prove literal-address connections,
 source Host/SNI and TLS identity, proxy isolation, wire/decompression limits, and
 cancellation. Fake-model and scheduler checks cover authorization, durable results,
 failure without replay, and unchanged restrictions on built-in writes and MCP tools.
-
-## Web search
-
-`@poppet/web-search` owns the `WebSearch` service contract, Brave and Kagi v1 HTTP clients,
-response schemas, URL filtering, and Unicode-safe result budgeting.
-Brave uses `/res/v1/llm/context`, requesting at most five URLs and 2,048 context
-tokens. It maps `grounding.generic` titles, URLs, and extracted passages into the
-shared result format, joining passages with blank lines. It depends on
-`@poppet/io` and Effect, with no dependency on the agent or credential storage.
-`agent/web-search.ts` defines `poppet_web.search_web` and validates model arguments.
-The conversation maps `WebSearchError` into `AgentError` while preserving its
-reason and message. A null search operation means disabled or missing credentials,
-so the tool is not advertised.
-
-`cli/web-search.ts` loads credentials and provides the service, and owns the web
-setup commands for the selected provider. The optional `webSearchProvider` setting in `config.json` enables search;
-omitting it disables search. Search settings do not use environment overrides; keys stay outside normal configuration and
-inference-provider packages. CLI setup and the local/worker runtime share these
-layers. Search and page fetching share URL validation and public-address policy
-from `@poppet/io`. No database migration is needed.
-
-Requests use the selected provider's fixed HTTPS endpoint, query-only context, and a separate
-authentication header with redirect rejection. An Effect deadline bounds the
-request and body to 15 seconds. Streaming reads enforce a 1 MiB response limit;
-invalid UTF-8, malformed JSON/schema, unsupported content types, and HTTP failures
-produce sanitized agent errors without replay or backend fallback. Cancellation
-aborts fetch. Authentication and rate-limit failures have tool-specific reason
-codes and never enter inference-provider pause handling.
-
-Results keep at most five source titles, canonical URLs, and snippets in backend
-order, within the serialized tool budget. URLs are reserved first, then remaining
-space is shared across titles and finally snippets. Short fields release their
-unused allocation to longer ones. Invalid URLs, private literal addresses,
-and URLs that cannot fit are omitted and mark the result truncated. Hostname
-address validation remains mandatory when a page is fetched. Only returned
-sources gain a run-local page grant after the tool result is durably completed.
-Grants come from the fresh service result rather than replayed transcript text.
-Whole-batch validation runs first, so search cannot authorize a new fetch in that
-same batch. Results omitted by count or byte limits, snippet links, and previous
-runs never grant access. Scheduled runs use the same path and retain read-only
-memory. Tests cover the request boundary, setup, failure/cancellation,
-limits, grant lifetime, and scheduled execution. Live search-to-page inference
-and scheduled messaging delivery remain separate manual checks.
 
 ## Chat task management
 
@@ -712,7 +667,7 @@ every returned message even if shortened, so large messages cannot trap paging.
 
 The model searches before reading when it lacks a session ID and cites recalled
 statements by session/message IDs. Recall never changes source history, titles,
-activity, continuation, memory, permissions, or run-local web-search grants.
+activity, continuation, memory, or permissions.
 `chat show` and its local/worker inspection path remain unchanged; model recall
 requires no additional socket command or migration.
 

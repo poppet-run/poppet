@@ -22,6 +22,7 @@
     "@poppet/provider": "workspace:*",
     "@poppet/sign-in": "workspace:*",
     "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "effect": "4.1.5",
     "re2-wasm": "1.0.2"
   },

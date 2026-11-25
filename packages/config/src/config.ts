@@ -38,11 +38,6 @@ export const timeZone = Config.schema(TimeZone, "timeZone").pipe(
   Config.map(Option.getOrNull),
 );
 
-export const webSearchProvider = Config.schema(
-  Schema.Literals(["brave", "kagi"]),
-  "webSearchProvider",
-).pipe(Config.option, Config.map(Option.getOrNull));
-
 export interface Settings {
   readonly applicationName: string;
   readonly dataDirectory: string;

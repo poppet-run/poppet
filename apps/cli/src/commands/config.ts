@@ -5,7 +5,6 @@ import {
   quietHours,
   taskCatchUpMinutes,
   timeZone,
-  webSearchProvider,
   gatewayPackages,
 } from "@poppet/config";
 import { mcpServers } from "@poppet/mcp";
@@ -26,7 +25,6 @@ const showConfig = (json: boolean) =>
       {
         ...(yield* AppConfig),
         timeZone: yield* timeZone,
-        webSearchProvider: yield* webSearchProvider,
         mcpServers: yield* mcpServers,
         gatewayPackages: yield* gatewayPackages,
         chat: {

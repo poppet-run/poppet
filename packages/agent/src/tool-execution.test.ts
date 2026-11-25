@@ -13,7 +13,6 @@ import { toolFailureKind } from "#src/tool-execution";
 const policies = {
   read_session: builtinFailures,
   fetch_page: builtinFailures,
-  search_web: builtinFailures,
   memory: memoryFailures,
   manage_tasks: taskFailures,
   bash: bashFailures,
@@ -28,7 +27,6 @@ describe("toolFailureKind", () => {
   test.each([
     ["read_session", agentFailure("tool-storage"), "reported"],
     ["fetch_page", agentFailure("tool-network"), "reported"],
-    ["search_web", agentFailure("tool-rate-limit"), "reported"],
     ["read_session", agentFailure("budget"), "fatal"],
     ["read_session", storeFailure("storage"), "fatal"],
     ["memory", agentFailure("memory-limit"), "reported"],

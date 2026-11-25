@@ -91,7 +91,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     });
   } else if (request.method === "tools/list") {
     if (mode === "oversized") {
-      process.stdout.write("x".repeat(300_000));
+      process.stdout.write("x".repeat(4_500_000));
 
       return;
     }

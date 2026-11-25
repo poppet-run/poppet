@@ -227,7 +227,7 @@ describe("setup", () => {
     const saved = {
       provider: "saved-provider",
       model: "saved-model",
-      webSearchProvider: "brave",
+      tasks: { catchUpMinutes: 15 },
       chat: { outputTokens: 1000 },
       discord: { ownerId: "200", guildId: "300", homeChannelId: "400" },
     };
@@ -295,7 +295,7 @@ describe("setup", () => {
       const f = await fixture();
 
       const saved =
-        '{"provider":"saved-provider","model":"saved-model","webSearchProvider":"brave"}\n';
+        '{"provider":"saved-provider","model":"saved-model","tasks":{"catchUpMinutes":15}}\n';
 
       await writeFile(f.path, saved);
       f.state.failLogin = failure === "login";

@@ -18,7 +18,7 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
 `@poppet/provider-openrouter`, `@poppet/credentials`,
 `@poppet/store`, `@poppet/agent`, `@poppet/io`, `@poppet/mcp`,
-`@poppet/memory`, `@poppet/tasks`, `@poppet/web-search`,
+`@poppet/memory`, `@poppet/tasks`,
 `@poppet/platform`, `@poppet/worker`, `@poppet/gateway`,
 `@poppet/gateway-discord`, `@poppet/gateway-slack`, `@poppet/gateway-telegram`, and
 `@poppet/web`.
@@ -153,7 +153,6 @@ apps/
         memory/           Memory command and operations
         setup/            Interactive setup command
         tasks/            Task command and argument parsing
-        web/              Web search command and service
         web-chat/         Authenticated web listener, submission receipts, and chat lifecycle
         worker/           Worker command, platform selection, host, transport, and logs
       runtime.ts          Generic selection and host configuration layers
@@ -178,12 +177,6 @@ packages/
     src/memory-tools.ts   Validated memory changes with budget checks and source runs
     src/context.ts        Complete-exchange context assembly and limits
     src/settings.ts       Validated chat budgets
-    src/web-search.ts     Search tool definition and model argument validation
-  web-search/             @poppet/web-search
-    src/web-search.ts     Search service, shared HTTP handling, bounded results
-    src/brave.ts          Brave Search adapter
-    src/kagi.ts           Kagi v1 Search adapter
-    src/errors.ts         Search failures adapted by the agent
   io/                     @poppet/io
     src/io.ts             Bounded stream reads and subprocess cleanup
     src/public-url.ts     Shared HTTP URL validation and public-address policy

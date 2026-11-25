@@ -316,7 +316,7 @@ results are bounded context, not a promise of a complete transcript.
 Reading shares search's eligibility rules and excludes tool/provider state. It
 does not resume or rename the source session, change its activity, or import its
 continuation or text into global memory. Recalled URLs do not authorize page
-fetches or become web-search grants. `chat show` keeps its existing inspection
+fetches. `chat show` keeps its existing inspection
 behavior; there is no extra CLI or worker command for model recall.
 
 ## Attach files
@@ -385,42 +385,6 @@ Credentials in URLs are rejected. Each read has a 15-second overall deadline,
 at most three redirects, and 1 MiB limits for transferred and decoded bodies.
 Results fit the 16 KiB tool-output limit; truncation keeps the source URL and flag.
 
-## Search the web
-
-Enable [web search](configuration.md#web-search) to let tool-capable models use
-`poppet_web.search_web` in local, interactive, worker, and messaging chat:
-
-```sh
-poppet chat new "Search for recent Bun releases, read a source, and cite it"
-```
-
-Search sends the model's query to the configured Brave or Kagi search provider and returns at most five sources
-with `title`, `url`, and `snippet`, plus a `truncated` flag. Queries must be trimmed,
-nonempty, and at most 512 UTF-8 bytes. Results keep backend order and fit
-the 16 KiB tool-output limit. Space is reserved for source URLs, then shared across
-titles and passages. The tool omits URLs that cannot fit and local destinations
-such as `localhost`, subdomains of `.localhost`, and `.local` hostnames.
-Brave uses its LLM Context API with at most five URLs and a 2,048-token context
-budget. Its snippets contain extracted passages joined with blank lines; Kagi
-continues to return search snippets. The byte limit still applies to both.
-The tool is absent when disabled or missing a key. A configured key does not
-prove that the remote service accepts it.
-
-After a search completes, `fetch_page` may read the URLs actually included in its
-result on a later model turn. These permissions last only for that run. Search
-and a fetch of a newly discovered URL in one batch are rejected before either
-executes. Links appearing only in snippets or page text grant no access, and all
-page reads retain the existing public-address and connection checks. Search
-results are untrusted data and cannot authorize memory changes.
-
-An answer can use extracted passages directly when sufficient, or fetch a source
-for more detail. Distinguish search excerpts from pages fetched directly and cite
-source URLs.
-Search has a 15-second deadline and a 1 MiB response limit, with cancellation and
-no automatic retries or backend fallback. Failures remain inspectable in
-`chat show`; search authentication and rate-limit errors do not pause inference
-providers. Search uses the existing model-turn, tool-call, and context budgets.
-
 ## Provider and model selection
 
 New sessions use the configured `provider` and required `model`, with
@@ -467,7 +431,7 @@ provider inference also retains its 60-second deadline. Each run permits at most
 sixteen model turns and sixteen tool calls, with 16 KiB per tool result.
 
 Tool-capable models receive conversation search,
-page reading, explicit memory, interactive task management, and web search when configured. Models without tool
+page reading, explicit memory, and interactive task management. Models without tool
 support continue to answer text requests. The runner checks complete tool
 requests before execution and keeps one provider/model throughout the exchange.
 
@@ -478,7 +442,7 @@ whose effects are unknown, such as a memory write without a saved receipt or an 
 after dispatch, is saved as uncertain and ends the run without replay. Budgets
 still bound repeated attempts.
 
-Once a fetched page, web search result, or MCP result enters a run, or your
+Once a fetched page or MCP result enters a run, or your
 message includes attachments, task management, memory changes, and MCP tools are
 withdrawn for the rest of that run. Reading tools remain.
 The model proposes withdrawn actions instead, and a new message from you can

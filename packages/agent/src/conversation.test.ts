@@ -5,8 +5,7 @@ import { ProviderError } from "@poppet/provider";
 import type { Completion, ModelOperations, ModelRequest, Output } from "@poppet/provider";
 import { responsesModel } from "@poppet/provider/protocol";
 import { SessionReadResult, SessionSearchMatch, Store } from "@poppet/store";
-import { WebSearch, WebSearchError, makeBraveSearch } from "@poppet/web-search";
-import { Deferred, Effect, Fiber, Redacted, Schema, Stream } from "effect";
+import { Deferred, Effect, Fiber, Schema, Stream } from "effect";
 import OpenAI from "openai";
 
 import { Bash, commandReviewInstructions } from "#src/bash";
@@ -71,7 +70,6 @@ const fixture = async (
   options: {
     readonly policy?: Partial<ChatPolicy>;
     readonly pages?: Pages["Service"];
-    readonly webSearch?: WebSearch["Service"];
     readonly chatTasks?: ChatTasks["Service"];
     readonly externalTools?: ExternalTools["Service"];
     readonly skills?: Skills["Service"];
@@ -85,7 +83,6 @@ const fixture = async (
   const layer = harness.agent(
     () => Effect.succeed(model),
     optionalService(Pages, options.pages),
-    optionalService(WebSearch, options.webSearch),
     optionalService(ChatTasks, options.chatTasks),
     optionalService(ExternalTools, options.externalTools),
     optionalService(Skills, options.skills),
@@ -195,7 +192,6 @@ describe.concurrent("conversation", () => {
           ]);
         },
         {
-          webSearch: { search: null },
           bash: {
             run: (request) =>
               Effect.sync(() => {
@@ -295,7 +291,6 @@ describe.concurrent("conversation", () => {
         return completed([tool("bash", JSON.stringify(args), "bash-1", "poppet_system")]);
       },
       {
-        webSearch: { search: null },
         bash: {
           run: () =>
             Effect.sync(() => {
@@ -1116,254 +1111,6 @@ describe.concurrent("conversation", () => {
   });
 
   test.each([false, true])(
-    "when search sources are omitted by budget=%j, grants no access to their pages",
-    async (budget) => {
-      const omitted = budget ? `https://example.com/${"x".repeat(2000)}` : "https://example.com/5";
-
-      const searchResponse = {
-        grounding: {
-          generic: budget
-            ? [{ title: "Too long", url: omitted, snippets: [] }]
-            : Array.from({ length: 6 }, (_, i) => ({
-                title: "Source",
-                url: `https://example.com/${i}`,
-                snippets: [],
-              })),
-        },
-      };
-
-      const http = Object.assign(async () => Response.json(searchResponse), {
-        preconnect: () => {},
-      });
-
-      const search = makeBraveSearch(Redacted.make("test-key"), 1024, http);
-
-      let turns = 0;
-
-      const state = await fixture(
-        () =>
-          ++turns === 1
-            ? completed([tool("search_web", '{"query":"topic"}', "search", "poppet_web")])
-            : completed([
-                tool("fetch_page", JSON.stringify({ url: omitted }), "page", "poppet_web"),
-              ]),
-        { webSearch: search },
-      );
-
-      try {
-        await state.run(
-          Effect.gen(function* () {
-            const session = yield* (yield* Store).createSession("test-provider", "test-model");
-            expect(yield* reportedFailures(session.id, "Research")).toEqual([
-              "agent:tool-permission",
-            ]);
-          }),
-        );
-      } finally {
-        await state.close();
-      }
-    },
-  );
-
-  test.each([false, true])(
-    "when search returns sources with scheduled=%j, authorizes later page reads only in that run",
-    async (scheduled) => {
-      let turns = 0;
-      const fetched: Array<string> = [];
-
-      const state = await fixture(
-        (request) => {
-          expect(request.tools.some((entry) => entry.name === "search_web")).toBe(true);
-
-          if (++turns === 1) {
-            return completed([
-              tool("search_web", '{"query":"current topic"}', "search", "poppet_web"),
-            ]);
-          }
-
-          if (turns === 2 || turns === 4) {
-            return completed([
-              tool("fetch_page", '{"url":"https://example.com/source#part"}', "page", "poppet_web"),
-            ]);
-          }
-
-          return final();
-        },
-        {
-          pages: {
-            fetch: (url) =>
-              Effect.sync(() => {
-                fetched.push(url);
-
-                return "Source text";
-              }),
-          },
-          webSearch: {
-            search: () =>
-              Effect.succeed({
-                results: [
-                  { title: "Source", url: "https://example.com/source", snippet: "Snippet" },
-                ],
-                truncated: false,
-              }),
-          },
-        },
-      );
-
-      try {
-        await state.run(
-          Effect.gen(function* () {
-            const store = yield* Store;
-            const session = yield* store.createSession("test-provider", "test-model");
-            const agent = yield* Agent;
-            yield* Stream.runDrain(
-              agent.send(session.id, "Research this topic", {
-                origin: scheduled ? "scheduled" : "interactive",
-              }),
-            );
-            const run = (yield* store.runs(session.id))[0]!;
-            expect(run.status).toBe("completed");
-            expect(
-              (yield* store.toolCalls(run.id)).map((call) => [call.name, call.status]),
-            ).toEqual([
-              ["search_web", "completed"],
-              ["fetch_page", "completed"],
-            ]);
-            expect(
-              yield* reportedFailures(session.id, "Continue", {
-                origin: scheduled ? "scheduled" : "interactive",
-              }),
-            ).toEqual(["agent:tool-permission"]);
-          }),
-        );
-        expect(fetched).toEqual(["https://example.com/source"]);
-      } finally {
-        await state.close();
-      }
-    },
-  );
-
-  test("when search and fetch share a batch, rejects the unauthorized fetch", async () => {
-    let searched = false;
-
-    const state = await fixture(
-      () =>
-        completed([
-          tool("search_web", '{"query":"topic"}', "search", "poppet_web"),
-          tool("fetch_page", '{"url":"https://example.com/source"}', "page", "poppet_web"),
-        ]),
-      {
-        webSearch: {
-          search: () =>
-            Effect.sync(() => {
-              searched = true;
-
-              return { results: [], truncated: false };
-            }),
-        },
-      },
-    );
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const session = yield* (yield* Store).createSession("test-provider", "test-model");
-          expect(yield* reportedFailures(session.id, "Research")).toEqual([
-            "agent:not-executed",
-            "agent:tool-permission",
-          ]);
-        }),
-      );
-      expect(searched).toBe(false);
-    } finally {
-      await state.close();
-    }
-  });
-
-  test("when search snippets contain other URLs, grants no access to them", async () => {
-    let turns = 0;
-
-    const state = await fixture(
-      () =>
-        ++turns === 1
-          ? completed([tool("search_web", '{"query":"topic"}', "search", "poppet_web")])
-          : completed([
-              tool("fetch_page", '{"url":"https://other.example/"}', "page", "poppet_web"),
-            ]),
-      {
-        webSearch: {
-          search: () =>
-            Effect.succeed({
-              results: [
-                {
-                  title: "Source",
-                  url: "https://example.com/",
-                  snippet: "Read https://other.example/",
-                },
-              ],
-              truncated: false,
-            }),
-        },
-      },
-    );
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const session = yield* (yield* Store).createSession("test-provider", "test-model");
-          expect(yield* reportedFailures(session.id, "Research")).toEqual([
-            "agent:tool-permission",
-          ]);
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
-
-  test("when search fails, records and reports the failure without retrying", async () => {
-    const state = await fixture(
-      () => completed([tool("search_web", '{"query":"topic"}', "search", "poppet_web")]),
-      {
-        webSearch: {
-          search: () =>
-            Effect.fail(
-              new WebSearchError({ reason: "tool-rate-limit", message: "Search rate limit" }),
-            ),
-        },
-      },
-    );
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-          const session = yield* store.createSession("test-provider", "test-model");
-          expect(yield* reportedFailures(session.id, "Research")).toEqual([
-            "agent:tool-rate-limit",
-          ]);
-          const run = (yield* store.runs(session.id))[0]!;
-          expect((yield* store.toolCalls(run.id))[0]).toMatchObject({
-            status: "failed",
-            failureReason: "agent:tool-rate-limit",
-            output: null,
-          });
-        }),
-      );
-      expect(state.requests).toHaveLength(2);
-      expect(state.requests[1]?.messages.at(-1)).toEqual({
-        role: "tool",
-        callId: "search",
-        output: JSON.stringify({
-          error: { reason: "tool-rate-limit", message: "Search rate limit" },
-        }),
-      });
-    } finally {
-      await state.close();
-    }
-  });
-
-  test.each([false, true])(
     "when a page URL is explicitly supplied with scheduled=%j, reads it and records durable results",
     async (scheduled) => {
       const fetched: Array<string> = [];
@@ -1956,11 +1703,6 @@ describe.concurrent("conversation", () => {
       reason: "tool-arguments",
     })),
     { name: "unknown tool", call: tool("run_shell", "{}"), reason: "tool-permission" },
-    {
-      name: "unavailable web search",
-      call: tool("search_web", '{"query":"topic"}', "search", "poppet_web"),
-      reason: "tool-permission",
-    },
     {
       name: "unsupplied URL",
       call: tool("fetch_page", '{"url":"https://example.com/"}', "page", "poppet_web"),

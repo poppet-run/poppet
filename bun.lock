@@ -40,7 +40,6 @@
         "@poppet/store": "workspace:*",
         "@poppet/tasks": "workspace:*",
         "@poppet/web": "workspace:*",
-        "@poppet/web-search": "workspace:*",
         "@poppet/worker": "workspace:*",
         "effect": "4.1.5",
         "marked": "18.2.1",
@@ -73,7 +72,6 @@
         "@poppet/memory": "workspace:*",
         "@poppet/provider": "workspace:*",
         "@poppet/store": "workspace:*",
-        "@poppet/web-search": "workspace:*",
         "effect": "4.1.5",
         "entities": "9.0.0",
       },
@@ -163,6 +161,7 @@
         "@poppet/provider": "workspace:*",
         "@poppet/sign-in": "workspace:*",
         "ajv": "8.20.0",
+        "ajv-formats": "3.0.1",
         "effect": "4.1.5",
         "re2-wasm": "1.0.2",
       },
@@ -265,15 +264,6 @@
       },
       "devDependencies": {
         "@poppet/memory": "workspace:*",
-        "@poppet/web-search": "workspace:*",
-      },
-    },
-    "packages/web-search": {
-      "name": "@poppet/web-search",
-      "version": "0.0.0",
-      "dependencies": {
-        "@poppet/io": "workspace:*",
-        "effect": "4.1.5",
       },
     },
     "packages/worker": {
@@ -566,8 +556,6 @@
 
     "@poppet/web": ["@poppet/web@workspace:apps/web"],
 
-    "@poppet/web-search": ["@poppet/web-search@workspace:packages/web-search"],
-
     "@poppet/worker": ["@poppet/worker@workspace:packages/worker"],
 
     "@sapphire/async-queue": ["@sapphire/async-queue@1.5.5", "", {}, "sha512-cvGzxbba6sav2zZkH8GPf2oGk9yYoD5qrNWdu9fRehifgnFZJMV+nuy2nON2roRO4yQQ+v7MK/Pktl/HgfsUXg=="],
@@ -683,6 +671,8 @@
     "@xmldom/xmldom": ["@xmldom/xmldom@0.9.12", "", {}, "sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A=="],
 
     "ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
+
+    "ajv-formats": ["ajv-formats@3.0.1", "", { "dependencies": { "ajv": "^8.0.0" } }, "sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ=="],
 
     "ansi-escapes": ["ansi-escapes@7.3.0", "", { "dependencies": { "environment": "^1.0.0" } }, "sha512-BvU8nYgGQBxcmMuEeUEmNTvrMVjJNSH7RgW24vXexN4Ven6qCvy4TntnvlnwnMLTVlcRQQdbRY8NKnaIoeWDNg=="],
 

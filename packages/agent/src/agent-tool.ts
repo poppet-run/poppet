@@ -41,7 +41,6 @@ export interface ToolContext extends RunContext {
 
 export interface PreparedCall {
   readonly execute: Effect.Effect<string, AgentError | StoreError>;
-  readonly grantedURLs?: () => ReadonlyArray<string>;
 }
 
 export interface ReviewableCall {
@@ -81,8 +80,6 @@ export const reportedReasons: ReadonlySet<string> = new Set([
   "tool-arguments",
   "tool-permission",
   "tool-network",
-  "tool-authentication",
-  "tool-rate-limit",
   "tool-storage",
   "tool-limit",
   "tool-reported",

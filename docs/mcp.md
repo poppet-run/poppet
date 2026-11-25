@@ -242,7 +242,7 @@ stay available after untrusted content unless listed in `reviewedTools`. Task
 and memory tools are still withdrawn. Only opt in a server you trust with that
 content. Text from an email, page, or earlier result can steer that server's
 later calls, limited to its `tools` or `scheduledTools` for that run. URLs
-returned by MCP do not receive web-search grants. Scheduled runs retain the
+returned by MCP do not authorize `fetch_page`. Scheduled runs retain the
 built-in mutation restrictions. Poppet sends the validated arguments and selected
 child credentials, without automatically attaching history or global memory.
 
@@ -309,10 +309,10 @@ forwarding are outside this implementation. Resource links and media are marked 
 
 - At most 8 configured servers, 8 discovery pages per server, 128 discovered tools,
   and 256 KiB of discovery JSON per server.
-- Each stdio read buffer is capped at 256 KiB, before JSON parsing. HTTP JSON
-  bodies, OAuth responses, HTTP errors, and individual SSE events have the same
-  cap. Each successful SSE response has a 16 MiB total byte limit. Oversized
-  protocol messages close the connection.
+- Each stdio read buffer is capped at 4 MiB, before JSON parsing. HTTP JSON
+  bodies, HTTP errors, and individual SSE events have the same cap; OAuth
+  responses stay capped at 256 KiB. Each successful SSE response has a 16 MiB
+  total byte limit. Oversized protocol messages close the connection.
 - HTTP redirects are followed only within the endpoint's origin (or its HTTPS
   upgrade) and only when they keep the method. The SDK's stream reconnection is
   off: a dropped stream fails the connection, and Poppet's backoff reconnects it
@@ -320,7 +320,11 @@ forwarding are outside this implementation. Resource links and media are marked 
   closing its other connections.
 - Allowed descriptions are at most 4096 characters; input/output schemas are at
   most 16 KiB, depth 32, and 1024 nodes. Draft-07 and 2020-12 schemas are validated
-  with AJV. Valid required-only union branches retain their runtime assertions.
+  with AJV. Standard JSON Schema and OpenAPI formats (`date`, `time`, `date-time`,
+  `duration`, `uri`, `uri-reference`, `uri-template`, `email`, `hostname`, `ipv4`,
+  `ipv6`, `uuid`, `json-pointer`, `relative-json-pointer`, `regex`, `byte`,
+  `int32`, `int64`, `float`, `double`, `password`, and `binary`) are validated.
+  Valid required-only union branches retain their runtime assertions.
   Patterns use the non-backtracking RE2 engine; lookarounds and backreferences
   are unsupported, and some Unicode matching differs from JavaScript regexes.
   References, `patternProperties`, and unsupported formats or keywords make that

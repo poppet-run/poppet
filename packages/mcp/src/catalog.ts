@@ -4,6 +4,8 @@ import type { CallToolResult } from "@modelcontextprotocol/client";
 import { fitPrefix, longestFit } from "@poppet/io";
 import type { Tool } from "@poppet/provider";
 import Ajv from "ajv";
+import addFormats from "ajv-formats";
+import type { FormatName } from "ajv-formats";
 import Ajv2020 from "ajv/dist/2020.js";
 import { Schema } from "effect";
 import { RE2 } from "re2-wasm";
@@ -59,6 +61,31 @@ const modernKeywords = new Set([
   "minContains",
   "maxContains",
 ]);
+
+const formats: ReadonlyArray<FormatName> = [
+  "date",
+  "time",
+  "date-time",
+  "duration",
+  "uri",
+  "uri-reference",
+  "uri-template",
+  "email",
+  "hostname",
+  "ipv4",
+  "ipv6",
+  "uuid",
+  "json-pointer",
+  "relative-json-pointer",
+  "regex",
+  "byte",
+  "int32",
+  "int64",
+  "float",
+  "double",
+  "password",
+  "binary",
+];
 
 const regExp = Object.assign((pattern: string, flags: string) => new RE2(pattern, flags), {
   code: "(pattern, flags) => new (require('re2-wasm').RE2)(pattern, flags)",
@@ -144,11 +171,13 @@ export const compileSchema = (input: Schema.JsonObject) => {
     code: { regExp },
   };
 
-  const ajv =
+  const ajv = addFormats(
     input.$schema === "https://json-schema.org/draft/2020-12/schema" ||
-    (input.$schema === undefined && modern)
+      (input.$schema === undefined && modern)
       ? new Ajv2020(options)
-      : new Ajv(options);
+      : new Ajv(options),
+    [...formats],
+  );
 
   return ajv.compile(schema);
 };
