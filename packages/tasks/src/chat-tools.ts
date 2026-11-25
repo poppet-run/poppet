@@ -11,7 +11,7 @@ import {
 import type { ChatTaskAction, ChatTaskContext } from "@poppet/agent";
 import { Store, StoreError } from "@poppet/store";
 import type { Run } from "@poppet/store";
-import { Clock, Effect, Layer, Match, Option, Schema } from "effect";
+import { Clock, Cron, Effect, Layer, Match, Option, Schema } from "effect";
 
 import { bounded, detailsOutput, listOutput, summary } from "#src/task-output";
 import {
@@ -34,10 +34,18 @@ const checkChatCronCadence = (schedule: Schedule, now: number) => {
     return;
   }
 
-  const first = nextOccurrence(schedule, now);
-  const second = first === null ? null : nextOccurrence(schedule, first);
+  nextOccurrence(schedule, now);
 
-  if (first !== null && second !== null && second - first < minChatCronIntervalMs) {
+  // Five-field cron repeats the same minutes every matching hour, and an empty set
+  // matches every minute. Count the gap from the last minute into the next hour too.
+  const { minutes } = Cron.parseUnsafe(schedule.expression, schedule.timezone);
+  const matched = minutes.size === 0 ? [0, 1] : [...minutes].toSorted((a, b) => a - b);
+
+  const gaps = matched.map(
+    (minute, index) => (matched[index + 1] ?? (matched[0] ?? minute) + 60) - minute,
+  );
+
+  if (Math.min(...gaps) * 60_000 < minChatCronIntervalMs) {
     throw new TaskError({
       message: "Recurring tasks created or edited in chat must run at least 5 minutes apart.",
     });
