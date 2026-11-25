@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@nanostores/preact": "1.1.1",
-    "dompurify": "3.5.0",
     "marked": "18.2.1",
     "nanostores": "1.5.5",
     "preact": "11.2.0"

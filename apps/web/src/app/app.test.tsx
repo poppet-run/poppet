@@ -69,29 +69,59 @@ test("when Markdown contains links and interactive HTML, renders safe links and 
   const root = document.createElement("div");
   document.body.append(root);
 
+  const text = [
+    "# Hello",
+    "**World**",
+    '<script>window.hacked=true</script><img src="https://tracker.test/pixel" onerror="alert(1)"><a href="javascript:alert(1)">raw</a>',
+    '<textarea>spoof</textarea><fieldset><label>Choose<select><option>One</option></select></label></fieldset><dialog open>Message</dialog><meter value="1"></meter><progress></progress>',
+    '<div style="position:fixed" onclick="alert(1)">block</div>',
+    'Line<br>break and <b onclick="alert(1)">bold</b> and <kbd>K</kbd>',
+    "[Read more](https://example.com) [mail](mailto:hi@example.com) [here](/chat/abc)",
+    "[a](javascript:alert(1)) [b](JaVaScRiPt:alert(1)) [c](<java\tscript:alert(1)>) [d](data:text/html,<script>x</script>) [e](vbscript:x)",
+    String.raw`<javascript:alert(1)> [f](https://example.com "t\" onmouseover=\"alert(1)")`,
+    "![pixel](https://tracker.test/pixel.png)",
+    "- [x] done\n- [ ] todo",
+    "| a | b |\n|:-|-:|\n| 1 | 2 |",
+    '```js\nconst x = "<script>";\n```',
+  ].join("\n\n");
+
   try {
-    await act(() =>
-      render(
-        <Markdown
-          text={
-            '# Hello\n\n**World**\n\n<script>window.hacked=true</script><img src="https://tracker.test/pixel" onerror="alert(1)"><a href="javascript:alert(1)">click</a>\n\n[Read more](https://example.com)\n\n<textarea>spoof</textarea><fieldset><label>Choose<select><option>One</option></select></label></fieldset><dialog open>Message</dialog><meter value="1"></meter><progress></progress>'
-          }
-        />,
-        root,
-      ),
-    );
+    await act(() => render(<Markdown text={text} />, root));
 
     expect(root.querySelector("h1")?.textContent).toBe("Hello");
     expect(root.querySelector("strong")?.textContent).toBe("World");
-    expect(root.querySelector("script, img, [onerror]")).toBeNull();
-    expect(root.querySelector("a")?.getAttribute("href")).toBeNull();
-    const link = root.querySelector("a[href]");
+    expect(root.querySelector("br")).not.toBeNull();
+    expect(root.querySelector("kbd")?.textContent).toBe("K");
+    expect(root.querySelector("td")?.textContent).toBe("1");
+    expect(root.querySelector("code")?.textContent).toContain('"<script>"');
+    expect(root.textContent).toContain("<script>window.hacked=true</script>");
+    expect(root.textContent).toContain("pixel");
 
-    expect(link?.getAttribute("target")).toBe("_blank");
-    expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(
-      root.querySelector("textarea, select, option, fieldset, label, dialog, meter, progress"),
-    ).toBeNull();
+    expect([...root.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
+      "https://example.com",
+      "mailto:hi@example.com",
+      "/chat/abc",
+      "https://example.com",
+    ]);
+
+    for (const link of root.querySelectorAll("a")) {
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    }
+
+    const allowedTags = new Set(
+      "h1 p strong em br b kbd a ul li table thead tbody tr th td pre code".split(" "),
+    );
+
+    const allowedAttributes = new Set(["href", "title", "target", "rel", "align", "class"]);
+
+    for (const element of root.querySelectorAll(".markdown *")) {
+      expect(allowedTags).toContain(element.tagName.toLowerCase());
+
+      for (const attribute of element.getAttributeNames()) {
+        expect(allowedAttributes).toContain(attribute);
+      }
+    }
   } finally {
     render(null, root);
     root.remove();

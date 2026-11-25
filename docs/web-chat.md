@@ -148,8 +148,10 @@ to **Chats**.
 
 The web API exposes chat operations. It does not expose provider credentials,
 provider continuation data, or the worker's general command endpoint. The browser
-sanitizes Markdown, removes inline images and interactive controls, and opens
-links in a new tab. The worker saves submission receipts
+renders Markdown without raw HTML: tags in a reply show as text, apart from a few
+plain formatting tags such as `<br>`, `<sub>` and `<kbd>`. It drops inline images
+and task-list checkboxes, keeps only `http`, `https`, `mailto` and relative links,
+and opens links in a new tab. The worker saves submission receipts
 in SQLite and tracks their schema migrations separately.
 
 Use your browser's usual modified clicks to open a sidebar conversation in a

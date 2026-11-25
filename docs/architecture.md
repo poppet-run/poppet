@@ -939,7 +939,7 @@ the same protocol. Saved record migrations are independent of the wire protocol.
 ## Web chat
 
 `apps/web` builds the Preact UI and shared API types. Nanostores owns browser state;
-DOMPurify sanitizes rendered Markdown. The worker's `commands/web-chat/server.ts`
+marked renders Markdown with raw HTML escaped and links limited to safe schemes. The worker's `commands/web-chat/server.ts`
 serves built assets and a separate chat-only HTTP API when protected `web.json`
 exists. HTTPS remote access uses an owner-configured reverse proxy. Startup failures
 disable web chat while scheduling and messaging continue. See [web chat](web-chat.md).
