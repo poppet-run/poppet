@@ -45,7 +45,6 @@ const maxStreams = 32;
 const loopbackPeers = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 const securityHeaders = {
-  "cache-control": "no-store",
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
   "content-security-policy":
@@ -107,13 +106,93 @@ const body = async <A>(request: Request, schema: Schema.Codec<A, string | object
   return value.value;
 };
 
+type Encoding = "br" | "gzip";
+
+export interface WebAsset {
+  readonly type: string;
+  readonly body: Uint8Array<ArrayBuffer>;
+  readonly encoded: ReadonlyMap<Encoding, Uint8Array<ArrayBuffer>>;
+  readonly immutable: boolean;
+}
+
+const encodings = [
+  ["br", "br"],
+  ["gzip", "gz"],
+] as const;
+
+/** Loads the built assets with the compressed copies the web build writes beside them. */
+export const loadWebAssets = async (directory: string) => {
+  const names = new Set(await readdir(directory));
+  const files = new Map<string, WebAsset>();
+
+  await Promise.all(
+    [...names].map(async (name) => {
+      if (/^[a-zA-Z0-9_.-]+$/.test(name) && !/\.(?:br|gz)$/.test(name)) {
+        const file = Bun.file(join(directory, name));
+        const encoded = new Map<Encoding, Uint8Array<ArrayBuffer>>();
+
+        for (const [encoding, extension] of encodings) {
+          if (names.has(`${name}.${extension}`)) {
+            encoded.set(encoding, await Bun.file(join(directory, `${name}.${extension}`)).bytes());
+          }
+        }
+
+        files.set(`/${name}`, {
+          type: file.type,
+          body: await file.bytes(),
+          encoded,
+          // Bun names bundled scripts and styles with a content hash, so a new build gets new URLs.
+          immutable: /-[a-z0-9]{8}\.(?:js|css)$/.test(name),
+        });
+      }
+    }),
+  );
+
+  return files;
+};
+
+const accepted = (header: string | null) =>
+  new Set(
+    (header ?? "").split(",").flatMap((part) => {
+      const [name = "", ...parameters] = part.split(";").map((value) => value.trim());
+      const quality = parameters.find((value) => value.startsWith("q="));
+
+      return quality !== undefined && Number(quality.slice(2)) <= 0 ? [] : [name.toLowerCase()];
+    }),
+  );
+
+const assetResponse = (asset: WebAsset, acceptEncoding: string | null) => {
+  const allowed = accepted(acceptEncoding);
+
+  const encoding = encodings
+    .map(([name]) => name)
+    .find((name) => asset.encoded.has(name) && allowed.has(name));
+
+  const headers = new Headers({
+    "content-type": asset.type,
+    "cache-control": asset.immutable ? "public, max-age=31536000, immutable" : "no-store",
+  });
+
+  if (asset.encoded.size > 0) {
+    headers.set("vary", "accept-encoding");
+  }
+
+  if (encoding === undefined) {
+    return new Response(asset.body, { headers });
+  }
+
+  headers.set("content-encoding", encoding);
+
+  return new Response(asset.encoded.get(encoding), { headers });
+};
+
 const throttled = () =>
   Response.json({ message: "Too many login attempts. Wait a minute." }, { status: 429 });
 
 export const webHandler = (
   settings: WebSettings,
   chat: WebChat["Service"],
-  assets: ReadonlyMap<string, Blob>,
+  assets: ReadonlyMap<string, WebAsset>,
 ) => {
   const logins = new Map<string, number>();
   const attempts = new Map<string, { count: number; windowStarted: number }>();
@@ -149,7 +228,9 @@ export const webHandler = (
           : url.pathname,
       );
 
-      return asset ? new Response(asset) : new Response("Not found", { status: 404 });
+      return asset
+        ? assetResponse(asset, request.headers.get("accept-encoding"))
+        : new Response("Not found", { status: 404 });
     }
 
     const now = Date.now();
@@ -384,6 +465,10 @@ export const webHandler = (
       response.headers.set(name, value);
     }
 
+    if (!response.headers.has("cache-control")) {
+      response.headers.set("cache-control", "no-store");
+    }
+
     return response;
   };
 };
@@ -424,16 +509,8 @@ export const serveWebChat = Effect.gen(function* () {
 
   const assets = yield* Effect.tryPromise({
     try: async () => {
-      const directory = fileURLToPath(new URL("../../../../web/dist/", import.meta.url));
-      const files = new Map<string, Blob>();
-
-      await Promise.all(
-        (await readdir(directory)).map(async (name) => {
-          if (/^[a-zA-Z0-9_.-]+$/.test(name)) {
-            const file = Bun.file(join(directory, name));
-            files.set(`/${name}`, new Blob([await file.arrayBuffer()], { type: file.type }));
-          }
-        }),
+      const files = await loadWebAssets(
+        fileURLToPath(new URL("../../../../web/dist/", import.meta.url)),
       );
 
       if (!files.has("/index.html")) {
