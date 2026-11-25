@@ -58,6 +58,7 @@ export type ConnectionFailure =
   | "temporary"
   | "unsupported"
   | "context_limit"
+  | "permission"
   | "interrupted"
   | "verification";
 
@@ -99,7 +100,13 @@ export const classifyChatGPTError = (
 ): ChatGPTClassification | null => {
   const normalized = code ?? "";
 
-  if (normalized === "subscription_sharing_usage_limit_exceeded") {
+  if (
+    [
+      "subscription_sharing_usage_limit_exceeded",
+      "insufficient_quota",
+      "usage_limit_exceeded",
+    ].includes(normalized)
+  ) {
     return "usage_limit";
   }
 
@@ -154,6 +161,9 @@ export const requestFailure = (
   } else if (classified === "context_limit") {
     reason = "context_limit";
     message = "The request exceeded the model context limit.";
+  } else if (classified === "permission") {
+    reason = "permission";
+    message = "OpenAI denied access. Check the account permissions.";
   }
 
   return new ConnectionError({

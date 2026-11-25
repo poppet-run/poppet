@@ -19,6 +19,7 @@ export const providerFailure = (error: ConnectionError) => {
     temporary: "temporary",
     unsupported: "invalid-request",
     context_limit: "context-limit",
+    permission: "permission",
     interrupted: "interrupted",
     verification: "invalid-request",
   } satisfies Record<ConnectionError["reason"], ProviderError["reason"]>;
