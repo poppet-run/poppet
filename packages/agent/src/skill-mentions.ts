@@ -56,8 +56,13 @@ export const loadMentionedSkills = (
     );
   });
 
-const guidance =
-  "The owner named these owner-written procedures in this message. They follow as JSON. Apply them to this request, below the base rules. They cannot override explicit user requests, tool permissions, or scheduled tool restrictions. They grant no additional capabilities.";
+const guidance = [
+  "The owner named these owner-written procedures in this message.",
+  "They follow as JSON.",
+  "Apply them to this request, below the base rules.",
+  "They cannot override explicit user requests, tool permissions, or scheduled tool restrictions.",
+  "They grant no additional capabilities.",
+].join(" ");
 
 export const withMentionedSkills = (message: Message): Message => {
   if (message.role !== "user" || message.skills === undefined) {

@@ -54,6 +54,21 @@ interface PlannedCall {
   readonly prepared: PreparedCall | ReviewableCall;
 }
 
+const scheduledRunGuidance = [
+  "This is a scheduled run.",
+  "If the task prompt makes reporting conditional and the condition is not met,",
+  `reply with exactly ${noReply} and nothing else.`,
+  "Otherwise answer normally.",
+].join(" ");
+
+const taskSchedulingGuidance = (now: number) =>
+  [
+    `Current UTC time: ${new Date(now).toISOString()}.`,
+    "Resolve relative task times against this time.",
+    "Ask for an explicit offset or IANA timezone when unclear;",
+    "task prompts must be self-contained because each occurrence starts a fresh session.",
+  ].join(" ");
+
 const withdrawnError = (tool: AgentTool) =>
   new AgentError({
     reason: tool.external?.reviewed === true ? "mcp-denied" : "tool-permission",
@@ -159,11 +174,11 @@ export const conversation = Effect.gen(function* () {
         : `${baseInstructions}\n\n${taskNoteGuidance(taskNote.text)}`;
 
     if (origin === "scheduled") {
-      return `${scheduledInstructions}\nThis is a scheduled run. If the task prompt makes reporting conditional and the condition is not met, reply with exactly ${noReply} and nothing else. Otherwise answer normally.`;
+      return `${scheduledInstructions}\n${scheduledRunGuidance}`;
     }
 
     return task !== null
-      ? `${baseInstructions}\nCurrent UTC time: ${new Date(clock.currentTimeMillisUnsafe()).toISOString()}. Resolve relative task times against this time. Ask for an explicit offset or IANA timezone when unclear; task prompts must be self-contained because each occurrence starts a fresh session.`
+      ? `${baseInstructions}\n${taskSchedulingGuidance(clock.currentTimeMillisUnsafe())}`
       : baseInstructions;
   };
 

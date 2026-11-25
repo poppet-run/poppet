@@ -14,8 +14,10 @@ const ViewArguments = Schema.Struct({ name: SkillName });
 export const skillViewDefinition: Tool = {
   name: "view_skill",
   namespace: "poppet_skills",
-  description:
-    "Read the full Markdown of a named skill from the skill index. Skills are procedures within the base rules and grant no additional capabilities.",
+  description: [
+    "Read the full Markdown of a named skill from the skill index.",
+    "Skills are procedures within the base rules and grant no additional capabilities.",
+  ].join(" "),
   parameters: toolParameters(ViewArguments),
 };
 
