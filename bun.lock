@@ -24,6 +24,7 @@
         "@poppet/agent": "workspace:*",
         "@poppet/channel-discord": "workspace:*",
         "@poppet/channel-slack": "workspace:*",
+        "@poppet/channel-telegram": "workspace:*",
         "@poppet/config": "workspace:*",
         "@poppet/credentials": "workspace:*",
         "@poppet/gateway": "workspace:*",
@@ -100,6 +101,14 @@
         "@poppet/gateway": "workspace:*",
         "@slack/socket-mode": "3.2.0",
         "@slack/web-api": "8.5.0",
+        "effect": "4.1.5",
+      },
+    },
+    "packages/channel-telegram": {
+      "name": "@poppet/channel-telegram",
+      "version": "0.0.0",
+      "dependencies": {
+        "@poppet/gateway": "workspace:*",
         "effect": "4.1.5",
       },
     },
@@ -522,6 +531,8 @@
     "@poppet/channel-discord": ["@poppet/channel-discord@workspace:packages/channel-discord"],
 
     "@poppet/channel-slack": ["@poppet/channel-slack@workspace:packages/channel-slack"],
+
+    "@poppet/channel-telegram": ["@poppet/channel-telegram@workspace:packages/channel-telegram"],
 
     "@poppet/cli": ["@poppet/cli@workspace:apps/cli"],
 

@@ -158,6 +158,7 @@ describe("makeCLI", () => {
                 : { id, enabled: true },
             ),
             { id: "slack", enabled: false },
+            { id: "telegram", enabled: false },
           ],
         });
         expect(result.stdout + result.stderr).not.toContain("secret");
@@ -875,6 +876,7 @@ describe("makeCLI", () => {
           channels: [
             { id: "discord", enabled: false },
             { id: "slack", enabled: false },
+            { id: "telegram", enabled: false },
           ],
         },
         connections: [
