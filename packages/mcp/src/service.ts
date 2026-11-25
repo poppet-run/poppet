@@ -186,7 +186,7 @@ export const makeMCPLive = (toolBytes: number) =>
 
             const currentState = Ref.getUnsafe(connection.state);
 
-            if (currentState.status === "unavailable") {
+            if (currentState.status === "unavailable" || currentState.status === "needs-login") {
               return yield* Effect.fail(failed(currentState.diagnostic));
             }
 
