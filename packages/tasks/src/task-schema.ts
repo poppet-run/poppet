@@ -34,8 +34,7 @@ export const dueOccurrences = (
   const windowStart = now - catchUpMs;
   const cutoff = endAt === null ? now : Math.min(now, endAt);
   let latest = first;
-  const following = Cron.next(cron, first).getTime();
-  let next = following;
+  let next = Cron.next(cron, first).getTime();
 
   // Start well before the catch-up window after a long outage, so a time-zone
   // transition at its boundary is still traversed in the forward sequence.
@@ -64,7 +63,6 @@ export const dueOccurrences = (
   return {
     latest,
     nextAt: endAt !== null && next > endAt ? null : next,
-    following: endAt !== null && following > endAt ? null : following,
   };
 };
 

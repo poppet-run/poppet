@@ -508,10 +508,8 @@ describe.concurrent("TaskRepository", () => {
             (yield* Effect.flip(repo.retry(saved.occurrence, until + recurringExpiry))).message,
           ).toContain("expired");
           yield* repo.reconcile(until + recurringExpiry);
-          expect(yield* repo.claim(until + recurringExpiry)).toBeNull();
-          yield* repo.reconcile(until + recurringExpiry + 60_000);
-          expect((yield* repo.claim(until + recurringExpiry + 60_000))?.scheduledAt).toBe(
-            until + recurringExpiry + 60_000,
+          expect((yield* repo.claim(until + recurringExpiry))?.scheduledAt).toBe(
+            until + recurringExpiry,
           );
           expect((yield* repo.skips(saved.id)).length).toBeGreaterThan(0);
         }),
@@ -674,6 +672,28 @@ describe.concurrent("TaskRepository", () => {
             { firstAt: start, lastAt: woken, reason: "worker-delayed" },
           ]);
           expect((yield* repo.task(job.id)).nextAt).toBe(start + 24 * 60 * 60_000);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when catchUpMs is 0 and the worker ticks on a later cron slot, runs that slot and skips the earlier ones", async () => {
+    const state = await fixture(0);
+
+    try {
+      await state.run((repo) =>
+        Effect.gen(function* () {
+          const job = yield* repo.add(recurring, start - 60_000);
+          const later = start + 2 * 60_000;
+
+          yield* repo.reconcile(later, false);
+          expect((yield* repo.claim(later))?.scheduledAt).toBe(later);
+          expect(yield* repo.skips(job.id)).toEqual([
+            { firstAt: start, lastAt: later - 1, reason: "worker-delayed" },
+          ]);
+          expect((yield* repo.task(job.id)).nextAt).toBe(later + 60_000);
         }),
       );
     } finally {
