@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { ChannelError } from "@poppet/gateway";
+import { GatewayError } from "@poppet/gateway";
 import { LogfmtLoggerLive } from "@poppet/io";
 import { StoreError } from "@poppet/store";
 import { Clock, Console, Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 
-import { superviseAdapter } from "#src/commands/gateway/channels";
-import type { AdapterHealth } from "#src/commands/gateway/channels";
+import { superviseAdapter } from "#src/commands/gateway/gateways";
+import type { AdapterHealth } from "#src/commands/gateway/gateways";
 
 const quiet: Console.Console = { ...console, error: () => {} };
 
@@ -28,7 +28,7 @@ describe("superviseAdapter", () => {
     await run(
       Effect.gen(function* () {
         const outcomes = [
-          Effect.fail(new ChannelError({ reason: "unavailable", message: "Disconnected" })),
+          Effect.fail(new GatewayError({ reason: "unavailable", message: "Disconnected" })),
           Effect.die("Unexpected payload"),
         ];
 
@@ -76,7 +76,7 @@ describe("superviseAdapter", () => {
           }
 
           return yield* Effect.fail(
-            new ChannelError({ reason: "unavailable", message: "Disconnected" }),
+            new GatewayError({ reason: "unavailable", message: "Disconnected" }),
           );
         });
 

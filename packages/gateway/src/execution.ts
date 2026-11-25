@@ -3,8 +3,8 @@ import type { Agent, ChatFailure } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
 import { Cause, Deferred, Effect, Exit, Fiber, FiberSet, Option, Stream } from "effect";
 
+import type { GatewayError } from "#src/adapter";
 import type { ActionApprovals } from "#src/approvals";
-import type { ChannelError } from "#src/channel";
 import { authorized, finish, mark, wake } from "#src/context";
 import type { GatewayContext, RunningRequest } from "#src/context";
 import { resolveDestination } from "#src/destination";
@@ -23,11 +23,11 @@ export interface Execution {
 
 export const recover = (context: GatewayContext) =>
   Effect.gen(function* () {
-    const { channel, repo, store } = context;
-    const account = yield* channel.accountId;
-    yield* repo.recoverDelivery(channel.id, account);
+    const { adapter, repo, store } = context;
+    const account = yield* adapter.accountId;
+    yield* repo.recoverDelivery(adapter.id, account);
 
-    for (const entry of yield* repo.executing(channel.id, account)) {
+    for (const entry of yield* repo.executing(adapter.id, account)) {
       const run = yield* store.run(entry.runId);
 
       if (run === null) {
@@ -44,7 +44,7 @@ export const recover = (context: GatewayContext) =>
 const settleFailure = (
   context: GatewayContext,
   entry: Inbox,
-  cause: Cause.Cause<ChatFailure | ChannelError>,
+  cause: Cause.Cause<ChatFailure | GatewayError>,
 ) =>
   Effect.gen(function* () {
     const { repo, store, clock } = context;
@@ -76,7 +76,7 @@ const settleFailure = (
 
 const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
   Effect.gen(function* () {
-    const { channel, store } = context;
+    const { adapter, store } = context;
     const { agent, approvals, running } = execution;
     yield* mark(context, entry.message, "working");
 
@@ -105,7 +105,7 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
 
     const taskDestination = (requested: string | null = null) =>
       Effect.gen(function* () {
-        if (!authorized(channel.policy, entry.message)) {
+        if (!authorized(adapter.policy, entry.message)) {
           return yield* Effect.fail(
             new AgentError({
               reason: "tool-permission",
@@ -114,7 +114,7 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
           );
         }
 
-        return yield* resolveDestination(channel, requested).pipe(
+        return yield* resolveDestination(adapter, requested).pipe(
           Effect.mapError(
             (error) => new AgentError({ reason: "tool-permission", message: error.message }),
           ),
@@ -123,8 +123,8 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
 
     yield* Effect.scoped(
       Effect.gen(function* () {
-        yield* channel.typing(conversation).pipe(
-          Effect.catchTag("ChannelError", () => Effect.void),
+        yield* adapter.typing(conversation).pipe(
+          Effect.catchTag("GatewayError", () => Effect.void),
           Effect.andThen(Effect.sleep("8 seconds")),
           Effect.forever,
           Effect.forkScoped,
@@ -154,7 +154,7 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
     ),
   );
 
-const outcome = (exit: Exit.Exit<void, ChatFailure | ChannelError>) =>
+const outcome = (exit: Exit.Exit<void, ChatFailure | GatewayError>) =>
   Effect.gen(function* () {
     if (Exit.isSuccess(exit)) {
       return;
@@ -173,22 +173,22 @@ const claimNext = (
   context: GatewayContext,
   execution: Execution,
   start: (
-    request: Effect.Effect<void, ChatFailure | ChannelError>,
-  ) => Effect.Effect<Fiber.Fiber<void, ChatFailure | ChannelError>>,
+    request: Effect.Effect<void, ChatFailure | GatewayError>,
+  ) => Effect.Effect<Fiber.Fiber<void, ChatFailure | GatewayError>>,
 ) =>
   execution.running.claims.withPermit(
     Effect.gen(function* () {
-      const { channel, repo, clock } = context;
+      const { adapter, repo, clock } = context;
       const { requests } = execution.running;
-      const account = yield* channel.accountId;
+      const account = yield* adapter.accountId;
 
-      const entry = yield* repo.next(channel.id, account, clock.currentTimeMillisUnsafe());
+      const entry = yield* repo.next(adapter.id, account, clock.currentTimeMillisUnsafe());
 
       if (entry === null) {
         return null;
       }
 
-      if (!authorized(channel.policy, entry.message)) {
+      if (!authorized(adapter.policy, entry.message)) {
         yield* repo.state(entry.id, "cancelled");
 
         return "skipped" as const;
@@ -235,7 +235,7 @@ export const processNext = (context: GatewayContext, execution: Execution) =>
 export const dispatchNext = (
   context: GatewayContext,
   execution: Execution,
-  active: FiberSet.FiberSet<void, ChatFailure | ChannelError>,
+  active: FiberSet.FiberSet<void, ChatFailure | GatewayError>,
   limit: number,
 ) =>
   Effect.gen(function* () {

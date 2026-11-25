@@ -3,15 +3,10 @@ import { describe, expect, test } from "bun:test";
 import { Deferred, Effect, Fiber, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
+import { GatewayError } from "#src/adapter";
+import type { ApprovalAction, ApprovalState, IncomingMessage, GatewayAdapter } from "#src/adapter";
 import { actionApprovals } from "#src/approvals";
 import type { ActionApprovals } from "#src/approvals";
-import { ChannelError } from "#src/channel";
-import type {
-  ApprovalAction,
-  ApprovalState,
-  IncomingMessage,
-  MessagingChannel,
-} from "#src/channel";
 
 const message: IncomingMessage = {
   messageId: "message",
@@ -31,7 +26,7 @@ const approval = {
   reason: "List files",
 };
 
-const channel = (sent: Array<string>): MessagingChannel["Service"] => ({
+const channel = (sent: Array<string>): GatewayAdapter["Service"] => ({
   id: "discord",
   accountId: Effect.succeed("bot"),
   policy: { ownerId: "owner", scopeId: "guild" },
@@ -75,7 +70,7 @@ const interactive = () => {
   const updates: Array<ApprovalState> = [];
   const base = channel(sent);
 
-  const adapter: MessagingChannel["Service"] = {
+  const adapter: GatewayAdapter["Service"] = {
     ...base,
     approvals: {
       actions: Stream.never,
@@ -283,7 +278,7 @@ describe("actionApprovals", () => {
         yield* approvals.answerAction({
           ...click(id, []),
           reply: () =>
-            Effect.fail(new ChannelError({ reason: "unavailable", message: "Lost reply" })),
+            Effect.fail(new GatewayError({ reason: "unavailable", message: "Lost reply" })),
         });
         expect(yield* Fiber.join(fiber)).toBe(true);
         expect(
@@ -331,7 +326,7 @@ describe("actionApprovals", () => {
         ...adapter,
         send: (conversation, text, nonce) =>
           sent.length === 1 && fail
-            ? Effect.fail(new ChannelError({ reason: "unavailable", message: "Send failed" }))
+            ? Effect.fail(new GatewayError({ reason: "unavailable", message: "Send failed" }))
             : adapter.send(conversation, text, nonce),
         approvals: {
           ...adapter.approvals!,
@@ -398,7 +393,7 @@ describe("actionApprovals", () => {
       ...adapter,
       send: (_conversation, part) => {
         if (part.startsWith("`")) {
-          return Effect.fail(new ChannelError({ reason: "unavailable", message: "Send failed" }));
+          return Effect.fail(new GatewayError({ reason: "unavailable", message: "Send failed" }));
         }
 
         return adapter.send("thread", part, "summary");

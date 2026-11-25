@@ -11,7 +11,7 @@ import { Clock, Effect, Option } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { doctorSnapshot, gatewayObservation } from "#src/commands/doctor/worker";
-import { MessagingWorker } from "#src/commands/gateway/channels";
+import { MessagingWorker } from "#src/commands/gateway/gateways";
 import { serveWebChat } from "#src/commands/web-chat/server";
 
 export const runWorker = Effect.scoped(

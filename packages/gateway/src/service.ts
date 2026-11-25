@@ -6,9 +6,9 @@ import type { StoreError } from "@poppet/store";
 import { Clock, Context, Effect, FiberSet, Layer, Queue, Stream } from "effect";
 
 import { accept } from "#src/accept";
+import { GatewayAdapter } from "#src/adapter";
+import type { GatewayError, IncomingMessage } from "#src/adapter";
 import { actionApprovals } from "#src/approvals";
-import { MessagingChannel } from "#src/channel";
-import type { ChannelError, IncomingMessage } from "#src/channel";
 import { loop, runningRequests } from "#src/context";
 import type { GatewayContext } from "#src/context";
 import { conversationNaming } from "#src/conversation-naming";
@@ -19,11 +19,11 @@ import type { Execution } from "#src/execution";
 import { GatewayRepository } from "#src/repository";
 
 const gateway = Effect.gen(function* () {
-  const channel = yield* MessagingChannel;
+  const adapter = yield* GatewayAdapter;
   const agent = yield* Agent;
 
   const context: GatewayContext = {
-    channel,
+    adapter,
     repo: yield* GatewayRepository,
     store: yield* Store,
     clock: yield* Clock.Clock,
@@ -37,7 +37,7 @@ const gateway = Effect.gen(function* () {
 
   const running = runningRequests();
   const { maxConcurrentRequests, imageBytes, textFileBytes } = yield* ChatSettings;
-  const approvals = actionApprovals(channel);
+  const approvals = actionApprovals(adapter);
 
   const execution: Execution = {
     agent,
@@ -53,7 +53,7 @@ const gateway = Effect.gen(function* () {
   const { nameNext, externalNameChange } = conversationNaming(context, agent);
   let rejected = 0;
 
-  const handleChannelError = (error: ChannelError) =>
+  const handleGatewayError = (error: GatewayError) =>
     Effect.sync(() => {
       rejected++;
     }).pipe(
@@ -65,7 +65,7 @@ const gateway = Effect.gen(function* () {
     );
 
   const service = {
-    resolveDestination: (requested: string | null = null) => resolveDestination(channel, requested),
+    resolveDestination: (requested: string | null = null) => resolveDestination(adapter, requested),
     accept: (input: IncomingMessage) => accept(context, { approvals, running }, input),
     answerApproval: approvals.answerAction,
     processNext: processNext(context, execution),
@@ -73,17 +73,17 @@ const gateway = Effect.gen(function* () {
     nameNext,
     externalNameChange,
     recover: recover(context),
-    connectionStatus: channel.status.pipe(
+    connectionStatus: adapter.status.pipe(
       Effect.map((connection) => Object.assign({}, connection, { rejected })),
     ),
   };
 
   const run = Effect.gen(function* () {
     yield* service.recover;
-    const active = yield* FiberSet.make<void, ChatFailure | ChannelError>();
+    const active = yield* FiberSet.make<void, ChatFailure | GatewayError>();
     const controlFibers = yield* FiberSet.make<void, StoreError>();
 
-    const receive = Stream.runForEach(channel.messages, (message) =>
+    const receive = Stream.runForEach(adapter.messages, (message) =>
       accept(
         context,
         {
@@ -92,21 +92,21 @@ const gateway = Effect.gen(function* () {
           scheduleControl: (effect) =>
             FiberSet.run(
               controlFibers,
-              effect.pipe(Effect.catchTag("ChannelError", handleChannelError)),
+              effect.pipe(Effect.catchTag("GatewayError", handleGatewayError)),
             ).pipe(Effect.asVoid),
         },
         message,
-      ).pipe(Effect.catchTag("ChannelError", handleChannelError)),
+      ).pipe(Effect.catchTag("GatewayError", handleGatewayError)),
     );
 
     yield* Effect.all(
       [
         receive,
         FiberSet.join(controlFibers),
-        Stream.runForEach(channel.approvals?.actions ?? Stream.never, (action) =>
+        Stream.runForEach(adapter.approvals?.actions ?? Stream.never, (action) =>
           approvals.answerAction(action),
         ).pipe(
-          Effect.catchTag("ChannelError", (error) =>
+          Effect.catchTag("GatewayError", (error) =>
             Effect.logWarning("messaging approval action failed").pipe(
               Effect.annotateLogs({ error: error.message }),
             ),
@@ -120,7 +120,7 @@ const gateway = Effect.gen(function* () {
         FiberSet.join(active),
         loop(service.deliverNext, context.wakes.delivery, "1 second"),
         loop(nameNext, context.wakes.naming, "5 seconds"),
-        Stream.runForEach(channel.naming.changes, externalNameChange),
+        Stream.runForEach(adapter.naming.changes, externalNameChange),
       ],
       { concurrency: "unbounded", discard: true },
     );

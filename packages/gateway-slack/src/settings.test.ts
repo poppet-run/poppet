@@ -3,10 +3,10 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ChannelEnvironment, ChannelInput } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayInput } from "@poppet/gateway";
 import { Effect, Redacted } from "effect";
 
-import { parseConversation } from "#src/channel";
+import { parseConversation } from "#src/adapter";
 import { slack } from "#src/registration";
 import { loadSlackSettings } from "#src/settings";
 
@@ -17,8 +17,8 @@ test("setup protects both tokens and keeps them out of configuration", async () 
     const setup = (args: Array<string>, secret?: string) =>
       Effect.runPromise(
         slack.setup(args).pipe(
-          Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
-          Effect.provideService(ChannelInput, {
+          Effect.provideService(GatewayEnvironment, { dataDirectory: directory }),
+          Effect.provideService(GatewayInput, {
             readSecret:
               secret === undefined
                 ? Effect.die("Unexpected stdin secret read")

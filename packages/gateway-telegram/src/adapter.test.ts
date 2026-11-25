@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { MessagingChannel } from "@poppet/gateway";
+import { GatewayAdapter } from "@poppet/gateway";
 import type { IncomingMessage } from "@poppet/gateway";
 import { Effect, Option, Redacted, Schema, Stream } from "effect";
 
-import { telegramChannelLayer } from "#src/channel";
+import { telegramAdapterLayer } from "#src/adapter";
 
 const token = "123456:telegram-secret";
 
@@ -84,15 +84,15 @@ const fakeApi = (
 
 const run = <A, E>(
   api: ReturnType<typeof fakeApi>,
-  use: (channel: MessagingChannel["Service"]) => Effect.Effect<A, E>,
+  use: (channel: GatewayAdapter["Service"]) => Effect.Effect<A, E>,
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const channel = yield* MessagingChannel;
+      const channel = yield* GatewayAdapter;
       yield* channel.accountId;
 
       return yield* use(channel);
-    }).pipe(Effect.provide(telegramChannelLayer(settings, api.fetcher))),
+    }).pipe(Effect.provide(telegramAdapterLayer(settings, api.fetcher))),
   );
 
 const ownerMessage = (id: number, fields: { [key: string]: Schema.Json }) => ({
@@ -110,7 +110,7 @@ const source: IncomingMessage = {
   mentioned: true,
 };
 
-describe("telegramChannelLayer", () => {
+describe("telegramAdapterLayer", () => {
   test("accepts only the owner's text in the configured chat and maps forum topics", async () => {
     const api = fakeApi([
       ownerMessage(1, {

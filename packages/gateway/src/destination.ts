@@ -1,39 +1,39 @@
 import { DeliveryDestination } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
-import { ChannelError } from "#src/channel";
-import type { MessagingChannel } from "#src/channel";
+import { GatewayError } from "#src/adapter";
+import type { GatewayAdapter } from "#src/adapter";
 
 export const resolveDestination = (
-  channel: MessagingChannel["Service"],
+  adapter: GatewayAdapter["Service"],
   requested: string | null = null,
 ) =>
   Effect.gen(function* () {
-    const conversationId = requested ?? channel.homeConversationId;
+    const conversationId = requested ?? adapter.homeConversationId;
 
     if (conversationId === undefined) {
       return yield* Effect.fail(
-        new ChannelError({
+        new GatewayError({
           reason: "configuration",
           message: "Configure a home channel or select an explicit destination.",
         }),
       );
     }
 
-    const parentId = yield* channel.destination(conversationId);
-    const account = yield* channel.accountId;
+    const parentId = yield* adapter.destination(conversationId);
+    const account = yield* adapter.accountId;
 
     const destination = yield* Schema.decodeUnknownEffect(DeliveryDestination)({
-      adapter: channel.id,
+      adapter: adapter.id,
       account,
-      ownerId: channel.policy.ownerId,
-      scopeId: channel.policy.scopeId,
+      ownerId: adapter.policy.ownerId,
+      scopeId: adapter.policy.scopeId,
       parentId,
       conversationId,
     }).pipe(
       Effect.mapError(
         () =>
-          new ChannelError({
+          new GatewayError({
             reason: "configuration",
             message: "Invalid messaging destination.",
           }),
@@ -41,18 +41,18 @@ export const resolveDestination = (
     );
 
     if (
-      destination.ownerId !== channel.policy.ownerId ||
-      destination.scopeId !== channel.policy.scopeId
+      destination.ownerId !== adapter.policy.ownerId ||
+      destination.scopeId !== adapter.policy.scopeId
     ) {
       return yield* Effect.fail(
-        new ChannelError({
+        new GatewayError({
           reason: "permission",
           message: "The destination is outside the authorized messaging server.",
         }),
       );
     }
 
-    yield* channel.checkAccess(
+    yield* adapter.checkAccess(
       {
         messageId: "scheduled-destination",
         senderId: destination.ownerId,

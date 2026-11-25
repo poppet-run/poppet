@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { ConfigProvider, Console, Deferred, Effect, Fiber } from "effect";
 
 import { run } from "#src/cli";
-import { loadRegisteredChannels } from "#src/commands/gateway/registry";
+import { loadRegisteredGateways } from "#src/commands/gateway/registry";
 
 const install = async (directory: string, name: string, registration: string) => {
   const target = join(directory, "gateways", "node_modules", name);
@@ -22,14 +22,14 @@ const install = async (directory: string, name: string, registration: string) =>
   await writeFile(
     join(target, "index.ts"),
     `import { Effect } from ${JSON.stringify(import.meta.resolve("effect"))};
-     import { ChannelEnvironment } from ${JSON.stringify(import.meta.resolve("@poppet/gateway"))};
+     import { GatewayEnvironment } from ${JSON.stringify(import.meta.resolve("@poppet/gateway"))};
      export default ${registration};`,
   );
 };
 
 const registration = (id: string) => `{
   id: ${JSON.stringify(id)}, name: "Fixture chat", setupHelp: "setup <value>",
-  setup: (args) => ChannelEnvironment.use(({ dataDirectory }) =>
+  setup: (args) => GatewayEnvironment.use(({ dataDirectory }) =>
     Effect.succeed(JSON.stringify({ dataDirectory, args }))),
   load: Effect.succeed(null)
 }`;
@@ -118,7 +118,7 @@ describe("external gateway registrations", () => {
       const outer = join(directory, "gateways", "node_modules", "outside");
       await symlink(outer, join(gateways, "node_modules", "outside"));
 
-      const invoke = loadRegisteredChannels.pipe(
+      const invoke = loadRegisteredGateways.pipe(
         Effect.provideService(ConfigProvider.ConfigProvider, environment(nested)),
         Effect.flip,
       );
@@ -148,15 +148,15 @@ describe("external gateway registrations", () => {
           [["bad/registration"], "Cannot load gateway package"],
           [["../valid"], "Cannot load gateway package"],
           [["file:///tmp/adapter.ts"], "Cannot load gateway package"],
-          [["duplicate/registration"], "Duplicate channel registration: discord"],
-          [["invalid/registration"], "Invalid channel ID: Bad_ID"],
-          [["valid/registration", "valid/registration"], "Duplicate channel registration: extra"],
+          [["duplicate/registration"], "Duplicate gateway registration: discord"],
+          [["invalid/registration"], "Invalid gateway ID: Bad_ID"],
+          [["valid/registration", "valid/registration"], "Duplicate gateway registration: extra"],
         ] as const,
         async ([entries, message]) => {
           await configure(directory, entries);
 
           const result = await Effect.runPromise(
-            loadRegisteredChannels.pipe(
+            loadRegisteredGateways.pipe(
               Effect.provideService(ConfigProvider.ConfigProvider, environment(directory)),
               Effect.result,
             ),
@@ -170,7 +170,7 @@ describe("external gateway registrations", () => {
       await writeFile(join(directory, "config.json"), JSON.stringify({ gatewayPackages: [] }));
 
       const overridden = await Effect.runPromise(
-        loadRegisteredChannels.pipe(
+        loadRegisteredGateways.pipe(
           Effect.provideService(
             ConfigProvider.ConfigProvider,
             environment(directory, { POPPET_GATEWAY_PACKAGES: "[]" }),

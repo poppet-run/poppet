@@ -1,14 +1,14 @@
 export {
-  ChannelError,
-  IncomingMessage,
+  GatewayAdapter,
+  GatewayError,
   IncomingAttachment,
-  MessagingChannel,
+  IncomingMessage,
   type ApprovalAction,
   type ApprovalState,
-  type ChannelPolicy,
-} from "#src/channel";
+  type GatewayPolicy,
+} from "#src/adapter";
 
-export { ChannelEnvironment, ChannelInput, type ChannelRegistration } from "#src/registration";
+export { GatewayEnvironment, GatewayInput, type GatewayRegistration } from "#src/registration";
 
 export { GatewayRepository, GatewayRepositoryLive, TaskDeliveriesLive } from "#src/repository";
 
@@ -16,10 +16,13 @@ export { gatewaySchema } from "#src/migrations";
 
 export { Gateway, GatewayLive } from "#src/service";
 
-export { channelSettings, loadChannelSettings, saveChannelSettings } from "#src/settings";
+export {
+  configuredGatewaySettings,
+  gatewaySettings,
+  loadGatewaySettings,
+  saveGatewaySettings,
+} from "#src/settings";
 
 export { boundedAttachment } from "#src/attachments";
-
-export { configuredChannelSettings } from "#src/settings";
 
 export { parseSetupFlags } from "#src/setup";

@@ -45,7 +45,7 @@ after editing settings: `poppet worker restart`.
 | `slack`                      | Unconfigured     | Owner ID, team ID, and home channel ID                                                          |
 | `webSearchProvider`          | Unset            | Enable search with `brave` or `kagi`                                                            |
 | `mcpServers`                 | `[]`             | [MCP servers, sign-in, and tool permissions](mcp.md)                                            |
-| `gatewayPackages`            | `[]`             | Explicitly installed [external gateway packages](development.md#adding-a-channel)               |
+| `gatewayPackages`            | `[]`             | Explicitly installed [external gateway packages](development.md#adding-a-gateway)               |
 | `tasks.catchUpMinutes`       | `60`             | Missed recurring-job window, from 0 to 1440 minutes                                             |
 | `tasks.quietHours`           | Unset            | Daily window when scheduled messaging posts wait; see [quiet hours](#quiet-hours)               |
 | `chat.outputTokens`          | `2048`           | Requested output limit, from 1 to 32768, capped by model metadata                               |

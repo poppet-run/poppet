@@ -5,7 +5,7 @@ import type { AttachmentInput, Skills } from "@poppet/agent";
 import type { AppConfig } from "@poppet/config";
 import { Effect, Result } from "effect";
 
-import { ChannelError } from "#src/channel";
+import { GatewayError } from "#src/adapter";
 import { finish, mark } from "#src/context";
 import type { GatewayContext } from "#src/context";
 import { failureDecision } from "#src/failure";
@@ -25,9 +25,9 @@ export const prepareSession = (
   onConversation?: (conversation: string, sessionId?: string) => void,
 ) =>
   Effect.gen(function* () {
-    const { channel, repo, store } = context;
+    const { adapter, repo, store } = context;
     const { config, skills } = setup;
-    const account = yield* channel.accountId;
+    const account = yield* adapter.accountId;
 
     const ownerText = entry.message.text;
     const incoming = entry.message.attachments ?? [];
@@ -37,14 +37,14 @@ export const prepareSession = (
     const created =
       entry.conversationId !== null
         ? { id: entry.conversationId, managedName: null }
-        : yield* channel.naming.conversation(
+        : yield* adapter.naming.conversation(
             entry.message,
             sessionTitle(prompt.trim() || incoming[0]?.name || ""),
           );
 
     const conversation = created.id;
     onConversation?.(conversation);
-    yield* channel.checkAccess(entry.message, conversation);
+    yield* adapter.checkAccess(entry.message, conversation);
 
     const reject = (text: string) =>
       Effect.gen(function* () {
@@ -64,11 +64,11 @@ export const prepareSession = (
     const attachments: Array<AttachmentInput> = [];
 
     for (const attachment of incoming) {
-      if (channel.download === undefined) {
+      if (adapter.download === undefined) {
         return yield* reject("This messaging channel cannot receive attachments.");
       }
 
-      const downloaded = yield* channel
+      const downloaded = yield* adapter
         .download(attachment, setup.attachmentBytes)
         .pipe(Effect.result);
 
@@ -86,7 +86,7 @@ export const prepareSession = (
       return yield* reject(`Cannot attach ${JSON.stringify(attachment.name)}: ${message}`);
     }
 
-    const existing = yield* repo.binding(channel.id, account, entry.message.scopeId, conversation);
+    const existing = yield* repo.binding(adapter.id, account, entry.message.scopeId, conversation);
 
     const id =
       entry.sessionId ??
@@ -94,7 +94,7 @@ export const prepareSession = (
       `gateway-${createHash("sha256")
         .update(
           JSON.stringify([
-            channel.id,
+            adapter.id,
             account,
             entry.message.scopeId,
             conversation,
@@ -108,7 +108,7 @@ export const prepareSession = (
     if (session === null) {
       if (config.model === null) {
         return yield* Effect.fail(
-          new ChannelError({
+          new GatewayError({
             reason: "configuration",
             message: "Select a model before starting messaging chat.",
           }),
@@ -127,7 +127,7 @@ export const prepareSession = (
 
       session = yield* store.createSession(config.provider, config.model, {
         id,
-        origin: `gateway:${channel.id}`,
+        origin: `gateway:${adapter.id}`,
         skill: selected.success,
       });
     }

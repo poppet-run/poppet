@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ChannelEnvironment } from "@poppet/gateway";
+import { GatewayEnvironment } from "@poppet/gateway";
 import { Effect, Redacted } from "effect";
 
 import { telegram } from "#src/registration";
@@ -15,7 +15,7 @@ const setup = (directory: string, args: ReadonlyArray<string>) =>
   Effect.runPromise(
     telegram
       .setup(args)
-      .pipe(Effect.provideService(ChannelEnvironment, { dataDirectory: directory })),
+      .pipe(Effect.provideService(GatewayEnvironment, { dataDirectory: directory })),
   );
 
 describe.concurrent("settings", () => {
@@ -100,7 +100,7 @@ describe.concurrent("settings", () => {
         telegram
           .setup(args)
           .pipe(
-            Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
+            Effect.provideService(GatewayEnvironment, { dataDirectory: directory }),
             Effect.result,
           ),
       );

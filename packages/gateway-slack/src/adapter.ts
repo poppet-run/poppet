@@ -1,4 +1,4 @@
-import { boundedAttachment, ChannelError, MessagingChannel } from "@poppet/gateway";
+import { boundedAttachment, GatewayAdapter, GatewayError } from "@poppet/gateway";
 import type { ApprovalAction, IncomingMessage } from "@poppet/gateway";
 import { SocketModeClient } from "@slack/socket-mode";
 import { ErrorCode, WebClient } from "@slack/web-api";
@@ -15,7 +15,7 @@ export const parseConversation = (id: string) => {
   const match = /^([CG][A-Z0-9]+)(?::(\d+\.\d+))?$/.exec(id);
 
   if (!match?.[1]) {
-    throw new ChannelError({
+    throw new GatewayError({
       reason: "configuration",
       message: "Use a Slack channel ID or channel:thread-timestamp.",
     });
@@ -113,7 +113,7 @@ const transientPlatformErrors = new Set([
 ]);
 
 export const slackFailure = (cause: unknown, sending = false) => {
-  if (cause instanceof ChannelError) {
+  if (cause instanceof GatewayError) {
     return cause;
   }
 
@@ -131,7 +131,7 @@ export const slackFailure = (cause: unknown, sending = false) => {
 
   const error = Exit.isSuccess(decoded) ? decoded.value : {};
 
-  return new ChannelError({
+  return new GatewayError({
     reason:
       error.code === ErrorCode.RateLimitedError
         ? "unavailable"
@@ -179,7 +179,7 @@ export const slackSocketSession = (
         duration: "20 seconds",
         orElse: () =>
           Effect.fail(
-            new ChannelError({ reason: "unavailable", message: "Slack connection timed out." }),
+            new GatewayError({ reason: "unavailable", message: "Slack connection timed out." }),
           ),
       }),
     );
@@ -190,9 +190,9 @@ export const slackSocketSession = (
     }
   });
 
-export const slackChannelLayer = (settings: SlackSettings) =>
+export const slackAdapterLayer = (settings: SlackSettings) =>
   Layer.effect(
-    MessagingChannel,
+    GatewayAdapter,
     Effect.gen(function* () {
       const messages = yield* Queue.make<IncomingMessage>({ capacity: 64, strategy: "dropping" });
       const actions = yield* Queue.make<ApprovalAction>({ capacity: 64, strategy: "dropping" });
@@ -258,7 +258,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
 
           if (auth.team_id !== settings.teamId || !auth.user_id) {
             return yield* Effect.fail(
-              new ChannelError({
+              new GatewayError({
                 reason: "configuration",
                 message: "Slack token belongs to another workspace.",
               }),
@@ -403,7 +403,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
             const target = parseConversation(id);
 
             if (!connected) {
-              throw new ChannelError({ reason: "unavailable", message: "Slack is disconnected." });
+              throw new GatewayError({ reason: "unavailable", message: "Slack is disconnected." });
             }
 
             if (
@@ -411,7 +411,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
               message.scopeId !== settings.teamId ||
               message.parentId !== target.channel
             ) {
-              throw new ChannelError({
+              throw new GatewayError({
                 reason: "permission",
                 message: "Slack destination is outside the authorized conversation.",
               });
@@ -420,7 +420,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
             const info = await web.conversations.info({ channel: target.channel });
 
             if (!allowedSlackChannel(info.channel)) {
-              throw new ChannelError({
+              throw new GatewayError({
                 reason: "permission",
                 message: "Use an unshared Slack channel containing the bot.",
               });
@@ -435,7 +435,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
               });
 
               if (history.messages?.[0]?.ts !== target.ts) {
-                throw new ChannelError({
+                throw new GatewayError({
                   reason: "permission",
                   message: "Slack thread no longer exists.",
                 });
@@ -469,7 +469,7 @@ export const slackChannelLayer = (settings: SlackSettings) =>
               const timestamp = parseConversation(message.messageId).ts;
 
               if (timestamp === undefined) {
-                throw new ChannelError({
+                throw new GatewayError({
                   reason: "configuration",
                   message: "Missing Slack message timestamp.",
                 });
@@ -542,6 +542,6 @@ export const slackChannelLayer = (settings: SlackSettings) =>
           current: () => Effect.succeed(""),
           rename: () => Effect.succeed(null),
         },
-      } satisfies MessagingChannel["Service"];
+      } satisfies GatewayAdapter["Service"];
     }),
   );

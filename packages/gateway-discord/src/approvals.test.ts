@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { setImmediate } from "node:timers/promises";
 
-import { MessagingChannel } from "@poppet/gateway";
+import { GatewayAdapter } from "@poppet/gateway";
 import {
   ButtonInteraction,
   ChannelType,
@@ -13,7 +13,7 @@ import {
 } from "discord.js";
 import { Effect, Option, Redacted, Stream } from "effect";
 
-import { discordChannelLayer } from "#src/channel";
+import { discordAdapterLayer } from "#src/adapter";
 
 const user = { id: "100", username: "Poppet", discriminator: "0", avatar: null, bot: true };
 const owner = { ...user, id: "200", username: "Owner", bot: false };
@@ -156,8 +156,8 @@ const fixture = () => {
     post,
     patch,
     interaction,
-    run: <A, E>(effect: Effect.Effect<A, E, MessagingChannel>) =>
-      Effect.runPromise(effect.pipe(Effect.provide(discordChannelLayer(settings, () => client)))),
+    run: <A, E>(effect: Effect.Effect<A, E, GatewayAdapter>) =>
+      Effect.runPromise(effect.pipe(Effect.provide(discordAdapterLayer(settings, () => client)))),
     close: () => {
       login.mockRestore();
       ready.mockRestore();
@@ -176,7 +176,7 @@ describe("Discord approval components", () => {
     try {
       await f.run(
         Effect.gen(function* () {
-          const channel = yield* MessagingChannel;
+          const channel = yield* GatewayAdapter;
           yield* channel.accountId;
           expect(yield* channel.approvals!.send("400", "Exact invocation", "nonce", id)).toBe(
             "600",
@@ -247,7 +247,7 @@ describe("Discord approval components", () => {
     try {
       await f.run(
         Effect.gen(function* () {
-          const channel = yield* MessagingChannel;
+          const channel = yield* GatewayAdapter;
           yield* channel.accountId;
 
           for (const [interactionId, overrides] of [

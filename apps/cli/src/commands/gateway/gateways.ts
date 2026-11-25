@@ -1,15 +1,15 @@
 import type { ChatFailure } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import {
-  ChannelEnvironment,
-  ChannelError,
-  ChannelInput,
   Gateway,
+  GatewayEnvironment,
+  GatewayError,
+  GatewayInput,
   GatewayLive,
   GatewayRepository,
   GatewayRepositoryLive,
 } from "@poppet/gateway";
-import type { ChannelRegistration } from "@poppet/gateway";
+import type { GatewayRegistration } from "@poppet/gateway";
 import type { DeliveryDestination } from "@poppet/store";
 import { StoreError } from "@poppet/store";
 import type { Schema } from "effect";
@@ -21,33 +21,33 @@ export class MessagingWorker extends Context.Service<
     readonly resolveDestination: (
       adapter: string,
       conversationId: string | null,
-    ) => Effect.Effect<DeliveryDestination, ChannelError>;
-    readonly run: Effect.Effect<void, ChatFailure | ChannelError>;
-    readonly status: Effect.Effect<Schema.JsonObject, StoreError | ChannelError>;
+    ) => Effect.Effect<DeliveryDestination, GatewayError>;
+    readonly run: Effect.Effect<void, ChatFailure | GatewayError>;
+    readonly status: Effect.Effect<Schema.JsonObject, StoreError | GatewayError>;
   }
 >()("poppet/MessagingWorker") {}
 
-export const validateChannels = (registered: ReadonlyArray<ChannelRegistration>) => {
+export const validateGateways = (registered: ReadonlyArray<GatewayRegistration>) => {
   const ids = new Set<string>();
 
   for (const entry of registered) {
     if (!/^[a-z][a-z0-9-]{0,63}$/.test(entry.id)) {
-      throw new Error(`Invalid channel ID: ${entry.id}`);
+      throw new Error(`Invalid gateway ID: ${entry.id}`);
     }
 
     if (ids.has(entry.id)) {
-      throw new Error(`Duplicate channel registration: ${entry.id}`);
+      throw new Error(`Duplicate gateway registration: ${entry.id}`);
     }
 
     ids.add(entry.id);
   }
 };
 
-const loadChannels = (registered: ReadonlyArray<ChannelRegistration>) =>
+const loadGateways = (registered: ReadonlyArray<GatewayRegistration>) =>
   AppConfig.use(({ dataDirectory }) =>
     Effect.forEach(registered, (entry) =>
       entry.load.pipe(
-        Effect.provideService(ChannelEnvironment, { dataDirectory }),
+        Effect.provideService(GatewayEnvironment, { dataDirectory }),
         Effect.result,
         Effect.map((loaded) => ({ entry, loaded })),
       ),
@@ -118,7 +118,7 @@ export const superviseAdapter = <E>(
   return attempt(0);
 };
 
-const disabledWorker = (entry: ChannelRegistration, error?: string) => {
+const disabledWorker = (entry: GatewayRegistration, error?: string) => {
   const status = { id: entry.id, name: entry.name, enabled: false };
 
   return {
@@ -128,11 +128,11 @@ const disabledWorker = (entry: ChannelRegistration, error?: string) => {
   };
 };
 
-export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistration>) =>
+export const MessagingWorkerLive = (registered: ReadonlyArray<GatewayRegistration>) =>
   Layer.effect(
     MessagingWorker,
     Effect.gen(function* () {
-      const configured = yield* loadChannels(registered);
+      const configured = yield* loadGateways(registered);
       const repo = yield* GatewayRepository;
 
       const workers = yield* Effect.forEach(configured, ({ entry, loaded }) =>
@@ -182,7 +182,7 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
           return resolve
             ? resolve(conversationId)
             : Effect.fail(
-                new ChannelError({
+                new GatewayError({
                   reason: "configuration",
                   message:
                     "Configure and enable the messaging adapter before selecting a destination.",
@@ -209,9 +209,9 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<ChannelRegistratio
     }),
   ).pipe(Layer.provide(GatewayRepositoryLive));
 
-export const stoppedMessagingStatus = (registered: ReadonlyArray<ChannelRegistration>) =>
+export const stoppedMessagingStatus = (registered: ReadonlyArray<GatewayRegistration>) =>
   Effect.gen(function* () {
-    const configured = yield* loadChannels(registered);
+    const configured = yield* loadGateways(registered);
     const repo = yield* GatewayRepository;
 
     const channels = configured.map(({ entry, loaded }) =>
@@ -243,14 +243,14 @@ const readSecret = Effect.tryPromise({
     return Redacted.make(value.replace(/\r?\n$/, ""));
   },
   catch: () =>
-    new ChannelError({
+    new GatewayError({
       reason: "configuration",
-      message: "Cannot read a channel secret from stdin, or it exceeds 8192 characters.",
+      message: "Cannot read a gateway secret from stdin, or it exceeds 8192 characters.",
     }),
 });
 
-export const setupChannel = (
-  registered: ReadonlyArray<ChannelRegistration>,
+export const setupGateway = (
+  registered: ReadonlyArray<GatewayRegistration>,
   args: ReadonlyArray<string>,
 ) =>
   Effect.gen(function* () {
@@ -258,9 +258,9 @@ export const setupChannel = (
 
     if (entry === undefined) {
       return yield* Effect.fail(
-        new ChannelError({
+        new GatewayError({
           reason: "configuration",
-          message: `Choose a registered channel: ${registered.map((candidate) => candidate.id).join(", ")}.`,
+          message: `Choose a registered gateway: ${registered.map((candidate) => candidate.id).join(", ")}.`,
         }),
       );
     }
@@ -270,8 +270,8 @@ export const setupChannel = (
     const message = yield* entry
       .setup(args.slice(1))
       .pipe(
-        Effect.provideService(ChannelEnvironment, { dataDirectory: config.dataDirectory }),
-        Effect.provideService(ChannelInput, { readSecret }),
+        Effect.provideService(GatewayEnvironment, { dataDirectory: config.dataDirectory }),
+        Effect.provideService(GatewayInput, { readSecret }),
       );
 
     yield* Console.log(message);

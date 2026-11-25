@@ -113,7 +113,7 @@ failure notices wait until the window ends; replies to you are not held.
 A scheduled run that answers with exactly `NO_REPLY` posts nothing; its saved
 output stays inspectable in `tasks show`.
 Discord and [Slack](slack.md) are bundled adapters. Additional adapters can use the
-[external package contract](../development.md#adding-a-channel).
+[external package contract](../development.md#adding-a-gateway).
 
 ## Action approval
 

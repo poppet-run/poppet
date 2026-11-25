@@ -1,5 +1,5 @@
 import { AppConfig, readConfigFile, updateConfigFile } from "@poppet/config";
-import { ChannelEnvironment } from "@poppet/gateway";
+import { GatewayEnvironment } from "@poppet/gateway";
 import { CredentialInput, Provider, ProviderConnection, invalidRequest } from "@poppet/provider";
 import { remoteTaskCommand } from "@poppet/tasks";
 import { workerSocketPath } from "@poppet/worker";
@@ -108,16 +108,16 @@ export const runSetup = (context: CLIContext) =>
 
     const saves = [];
 
-    for (const channel of context.channels) {
-      if (channel.promptSetup === undefined) {
+    for (const gateway of context.gateways) {
+      if (gateway.promptSetup === undefined) {
         continue;
       }
 
-      const save = yield* channel.promptSetup.pipe(
-        Effect.provideService(ChannelEnvironment, { dataDirectory: config.dataDirectory }),
+      const save = yield* gateway.promptSetup.pipe(
+        Effect.provideService(GatewayEnvironment, { dataDirectory: config.dataDirectory }),
       );
 
-      saves.push({ name: channel.name, save });
+      saves.push({ name: gateway.name, save });
     }
 
     yield* updateConfigFile(config.dataDirectory, (current) => ({

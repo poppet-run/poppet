@@ -2,7 +2,7 @@ import type { ApprovalState, IncomingMessage } from "@poppet/gateway";
 import type { KnownBlock } from "@slack/web-api";
 import { Schema } from "effect";
 
-import { escapeSlackText } from "#src/channel";
+import { escapeSlackText } from "#src/adapter";
 import type { SlackSettings } from "#src/settings";
 
 const prefix = "poppet:approval:";

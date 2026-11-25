@@ -1,4 +1,4 @@
-import { ChannelError, MessagingChannel } from "@poppet/gateway";
+import { GatewayAdapter, GatewayError } from "@poppet/gateway";
 import type { IncomingMessage } from "@poppet/gateway";
 import { Deferred, Effect, Layer, Option, Queue, Schedule, Schema, Stream } from "effect";
 
@@ -61,9 +61,9 @@ const failureMessage = (cause: unknown) => {
 };
 
 const telegramFailure = (cause: unknown, sending = false) =>
-  cause instanceof ChannelError
+  cause instanceof GatewayError
     ? cause
-    : new ChannelError({
+    : new GatewayError({
         reason:
           cause instanceof TelegramApiError
             ? cause.code === 429 || cause.code === 409
@@ -97,12 +97,12 @@ const topicName = (title: string) => {
 
 const reactions = { working: "👀", completed: "👍" } as const;
 
-export const telegramChannelLayer = (
+export const telegramAdapterLayer = (
   settings: TelegramSettings,
   fetcher: Fetch = (input, init) => fetch(input, init),
 ) =>
   Layer.effect(
-    MessagingChannel,
+    GatewayAdapter,
     Effect.gen(function* () {
       const call = telegramApi(settings.token, fetcher);
       const chatId = Number(settings.chatId);
@@ -121,7 +121,7 @@ export const telegramChannelLayer = (
 
       const requireReady = () => {
         if (bot === null) {
-          throw new ChannelError({ reason: "unavailable", message: "Telegram is disconnected." });
+          throw new GatewayError({ reason: "unavailable", message: "Telegram is disconnected." });
         }
 
         return bot;
@@ -139,7 +139,7 @@ export const telegramChannelLayer = (
           }
         }
 
-        throw new ChannelError({
+        throw new GatewayError({
           reason: "permission",
           message: "Choose the configured Telegram chat or one of its forum topics.",
         });
@@ -214,7 +214,7 @@ export const telegramChannelLayer = (
         }
       };
 
-      const reportError = (error: ChannelError) =>
+      const reportError = (error: GatewayError) =>
         Effect.sync(() => {
           connectionError = error.message;
         });
@@ -291,7 +291,7 @@ export const telegramChannelLayer = (
           message.parentId !== settings.chatId ||
           message.senderId !== settings.ownerId
         ) {
-          throw new ChannelError({
+          throw new GatewayError({
             reason: "permission",
             message: "This Telegram message is outside the configured chat or owner.",
           });
@@ -322,7 +322,7 @@ export const telegramChannelLayer = (
             member.can_send_messages === false
           ) {
             return yield* Effect.fail(
-              new ChannelError({
+              new GatewayError({
                 reason: "permission",
                 message: "The bot cannot post in this Telegram chat or topic.",
               }),
@@ -370,7 +370,7 @@ export const telegramChannelLayer = (
         const name = topicNames.get(id);
 
         if (name === undefined) {
-          throw new ChannelError({
+          throw new GatewayError({
             reason: "unavailable",
             message: "Telegram has not reported this topic's name since the worker started.",
           });
@@ -486,6 +486,6 @@ export const telegramChannelLayer = (
             ),
             Effect.map((sent) => String(sent.message_id)),
           ),
-      } satisfies MessagingChannel["Service"];
+      } satisfies GatewayAdapter["Service"];
     }),
   );

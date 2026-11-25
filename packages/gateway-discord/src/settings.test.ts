@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ChannelEnvironment, ChannelInput } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayInput } from "@poppet/gateway";
 import { Effect, Redacted } from "effect";
 
 import { discord } from "#src/registration";
@@ -39,8 +39,8 @@ describe.concurrent("settings.ts", () => {
             "discord-secret",
           ])
           .pipe(
-            Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
-            Effect.provideService(ChannelInput, noSecretInput),
+            Effect.provideService(GatewayEnvironment, { dataDirectory: directory }),
+            Effect.provideService(GatewayInput, noSecretInput),
           ),
       );
 
@@ -55,7 +55,7 @@ describe.concurrent("settings.ts", () => {
     }
   });
 
-  test("when --bot-token is omitted, reads the Discord token from ChannelInput.readSecret", async () => {
+  test("when --bot-token is omitted, reads the Discord token from GatewayInput.readSecret", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-discord-stdin-"));
 
     try {
@@ -63,8 +63,8 @@ describe.concurrent("settings.ts", () => {
         discord
           .setup(["setup", "--owner-id", "200", "--guild-id", "300", "--home-channel-id", "400"])
           .pipe(
-            Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
-            Effect.provideService(ChannelInput, {
+            Effect.provideService(GatewayEnvironment, { dataDirectory: directory }),
+            Effect.provideService(GatewayInput, {
               readSecret: Effect.succeed(Redacted.make("discord-secret")),
             }),
           ),
@@ -89,8 +89,8 @@ describe.concurrent("settings.ts", () => {
             "--guild-id=300",
           ])
           .pipe(
-            Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
-            Effect.provideService(ChannelInput, noSecretInput),
+            Effect.provideService(GatewayEnvironment, { dataDirectory: directory }),
+            Effect.provideService(GatewayInput, noSecretInput),
           ),
       );
       expect(await Effect.runPromise(loadDiscordSettings(directory))).toEqual(settings);
@@ -169,8 +169,8 @@ describe.concurrent("settings.ts", () => {
               ],
             )
             .pipe(
-              Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
-              Effect.provideService(ChannelInput, noSecretInput),
+              Effect.provideService(GatewayEnvironment, { dataDirectory: directory }),
+              Effect.provideService(GatewayInput, noSecretInput),
               Effect.result,
             ),
         );
@@ -248,8 +248,8 @@ describe.concurrent("settings.ts", () => {
               token,
             ])
             .pipe(
-              Effect.provideService(ChannelEnvironment, { dataDirectory: directory }),
-              Effect.provideService(ChannelInput, noSecretInput),
+              Effect.provideService(GatewayEnvironment, { dataDirectory: directory }),
+              Effect.provideService(GatewayInput, noSecretInput),
               Effect.result,
             ),
         );

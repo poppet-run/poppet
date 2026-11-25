@@ -1,29 +1,29 @@
 import type { Agent } from "@poppet/agent";
 import { Effect, Result } from "effect";
 
-import { ChannelError } from "#src/channel";
+import { GatewayError } from "#src/adapter";
 import { authorized } from "#src/context";
 import type { GatewayContext } from "#src/context";
 import type { Inbox } from "#src/repository";
 
 const definitiveNamingFailure = (cause: unknown) =>
-  cause instanceof ChannelError &&
+  cause instanceof GatewayError &&
   (cause.reason === "permission" || cause.reason === "configuration");
 
 export const conversationNaming = (context: GatewayContext, agent: Agent["Service"]) => {
-  const { channel, repo, store } = context;
-  const scope = channel.policy.scopeId;
+  const { adapter, repo, store } = context;
+  const scope = adapter.policy.scopeId;
 
   const syncName = (account: string, entry: Inbox) =>
     Effect.gen(function* () {
-      const naming = channel.naming;
+      const naming = adapter.naming;
       const destination = entry.conversationId;
 
-      if (destination === null || !authorized(channel.policy, entry.message)) {
+      if (destination === null || !authorized(adapter.policy, entry.message)) {
         return;
       }
 
-      const binding = yield* repo.namedBinding(channel.id, account, scope, destination);
+      const binding = yield* repo.namedBinding(adapter.id, account, scope, destination);
 
       if (
         !binding ||
@@ -36,7 +36,7 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
       }
 
       const key = {
-        adapter: channel.id,
+        adapter: adapter.id,
         account,
         scope,
         conversation: destination,
@@ -106,7 +106,7 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
         definitiveNamingFailure(cause) && entry.conversationId !== null && entry.sessionId !== null
           ? repo
               .disableNaming({
-                adapter: channel.id,
+                adapter: adapter.id,
                 account,
                 scope,
                 conversation: entry.conversationId,
@@ -118,13 +118,13 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
     );
 
   const nameNext = Effect.gen(function* () {
-    const account = yield* channel.accountId;
+    const account = yield* adapter.accountId;
 
     const entries = yield* repo.namingEntries(
-      channel.id,
+      adapter.id,
       account,
-      channel.policy.scopeId,
-      channel.policy.ownerId,
+      adapter.policy.scopeId,
+      adapter.policy.ownerId,
     );
 
     for (const entry of entries) {
@@ -139,24 +139,24 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
 
   const externalNameChange = (destination: string) =>
     Effect.gen(function* () {
-      const account = yield* channel.accountId;
-      const entry = yield* repo.namingEntry(channel.id, account, scope, destination);
+      const account = yield* adapter.accountId;
+      const entry = yield* repo.namingEntry(adapter.id, account, scope, destination);
 
       if (!entry) {
         return;
       }
 
-      const binding = yield* repo.namedBinding(channel.id, account, scope, destination);
+      const binding = yield* repo.namedBinding(adapter.id, account, scope, destination);
 
       if (!binding || binding.namingDisabled || binding.managedName === null) {
         return;
       }
 
-      const current = yield* channel.naming.current(entry.message, destination);
+      const current = yield* adapter.naming.current(entry.message, destination);
 
       if (current !== binding.managedName && current !== binding.pendingName) {
         yield* repo.disableNaming({
-          adapter: channel.id,
+          adapter: adapter.id,
           account,
           scope,
           conversation: destination,

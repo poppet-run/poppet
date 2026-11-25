@@ -7,8 +7,8 @@ import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 
 import { AgentError } from "@poppet/agent";
-import { ChannelEnvironment, ChannelError, MessagingChannel } from "@poppet/gateway";
-import type { ChannelRegistration, IncomingMessage } from "@poppet/gateway";
+import { GatewayAdapter, GatewayEnvironment, GatewayError } from "@poppet/gateway";
+import type { GatewayRegistration, IncomingMessage } from "@poppet/gateway";
 import { Provider, ProviderConnection, invalidRequest } from "@poppet/provider";
 import type { ModelDescription, ModelRequest, ProviderRegistration } from "@poppet/provider";
 import { requestWorker, workerSocketPath } from "@poppet/worker";
@@ -42,7 +42,7 @@ const description: ModelDescription = {
   },
 };
 
-const fixture = async (registeredChannels?: ReadonlyArray<ChannelRegistration>) => {
+const fixture = async (registeredChannels?: ReadonlyArray<GatewayRegistration>) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-chat-cli-"));
 
   const environment = { POPPET_DATA_DIR: directory };
@@ -360,20 +360,20 @@ const exampleChannel = (id: string) => {
   const replies = Effect.runSync(Queue.make<string>());
   const state = { configured: false, built: 0, closed: 0, directory: "", sent };
 
-  const registration: ChannelRegistration = {
+  const registration: GatewayRegistration = {
     id,
     name: id,
     setupHelp: "setup",
     setup: (args) =>
       Effect.gen(function* () {
         expect(args).toEqual(["setup"]);
-        state.directory = (yield* ChannelEnvironment).dataDirectory;
+        state.directory = (yield* GatewayEnvironment).dataDirectory;
         state.configured = true;
 
         return `${id} configured`;
       }),
     load: Effect.gen(function* () {
-      const environment = yield* ChannelEnvironment;
+      const environment = yield* GatewayEnvironment;
 
       if (!state.configured) {
         return null;
@@ -382,7 +382,7 @@ const exampleChannel = (id: string) => {
       expect(environment.dataDirectory).toBe(state.directory);
 
       return Layer.effect(
-        MessagingChannel,
+        GatewayAdapter,
         Effect.acquireRelease(
           Effect.sync(() => {
             state.built++;
@@ -398,7 +398,7 @@ const exampleChannel = (id: string) => {
                 ["thread", "home"].includes(conversationId)
                   ? Effect.succeed(conversationId === "home" ? "home" : "parent")
                   : Effect.fail(
-                      new ChannelError({ reason: "permission", message: "Unknown thread" }),
+                      new GatewayError({ reason: "permission", message: "Unknown thread" }),
                     ),
               typing: () => Effect.void,
               mark: () => Effect.void,
@@ -419,7 +419,7 @@ const exampleChannel = (id: string) => {
                 current: () => Effect.die("Unexpected name lookup"),
                 rename: () => Effect.die("Unexpected rename"),
               },
-            } satisfies MessagingChannel["Service"];
+            } satisfies GatewayAdapter["Service"];
           }),
           () =>
             Effect.sync(() => {
@@ -1334,27 +1334,27 @@ describe.concurrent("chat.ts", () => {
     const first = exampleChannel("example-channel");
     const second = exampleChannel("other-channel");
 
-    const broken: ChannelRegistration = {
+    const broken: GatewayRegistration = {
       id: "broken-channel",
       name: "Broken channel",
       setupHelp: "setup",
       setup: () =>
         Effect.fail(
-          new ChannelError({ reason: "configuration", message: "Invalid channel settings" }),
+          new GatewayError({ reason: "configuration", message: "Invalid channel settings" }),
         ),
       load: Effect.fail(
-        new ChannelError({ reason: "configuration", message: "Invalid channel settings" }),
+        new GatewayError({ reason: "configuration", message: "Invalid channel settings" }),
       ),
     };
 
-    const buildFailure: ChannelRegistration = {
+    const buildFailure: GatewayRegistration = {
       ...broken,
       id: "build-failure",
       load: Effect.succeed(
         Layer.effect(
-          MessagingChannel,
+          GatewayAdapter,
           Effect.fail(
-            new ChannelError({
+            new GatewayError({
               reason: "configuration",
               message: "Credential storage unavailable",
             }),

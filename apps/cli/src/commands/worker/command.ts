@@ -7,12 +7,12 @@ import { Command } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
 import { jsonFlag } from "#src/commands/flags";
-import { stoppedMessagingStatus } from "#src/commands/gateway/channels";
+import { stoppedMessagingStatus } from "#src/commands/gateway/gateways";
 import { renderWorkerStatus, WorkerStatusReport } from "#src/commands/worker/format";
 import { printParsed } from "#src/output";
 
 export const workerCommand = (context: CLIContext) => {
-  const { runtime, worker, startWorker, channels } = context;
+  const { runtime, worker, startWorker, gateways } = context;
 
   const runWorkerCommand = (action: WorkerAction, json = false) => {
     if (action === "stop" || action === "uninstall" || action === "logs") {
@@ -45,7 +45,7 @@ export const workerCommand = (context: CLIContext) => {
 
       const overview = yield* readLocalTaskStatus.pipe(Effect.provide(runtime.tasks));
 
-      const messaging = yield* stoppedMessagingStatus(channels).pipe(
+      const messaging = yield* stoppedMessagingStatus(gateways).pipe(
         Effect.provide(runtime.messagingStatus),
       );
 

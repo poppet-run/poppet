@@ -1,5 +1,5 @@
-import { ChannelEnvironment, ChannelError, ChannelInput, parseSetupFlags } from "@poppet/gateway";
-import type { ChannelRegistration } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayError, GatewayInput, parseSetupFlags } from "@poppet/gateway";
+import type { GatewayRegistration } from "@poppet/gateway";
 import { Effect, Layer, Redacted, Schema } from "effect";
 
 import { DiscordSettings, loadDiscordSettings, saveDiscordSettings } from "#src/settings";
@@ -23,8 +23,8 @@ export const discord = {
         ["bot-token"],
       );
 
-      const environment = yield* ChannelEnvironment;
-      const input = yield* ChannelInput;
+      const environment = yield* GatewayEnvironment;
+      const input = yield* GatewayInput;
       const token = values["bot-token"] ?? Redacted.value(yield* input.readSecret);
 
       const settings = yield* Schema.decodeUnknownEffect(DiscordSettings)({
@@ -35,7 +35,7 @@ export const discord = {
       }).pipe(
         Effect.mapError(
           () =>
-            new ChannelError({
+            new GatewayError({
               reason: "configuration",
               message: "Use numeric Discord IDs and a nonempty bot token without whitespace.",
             }),
@@ -47,7 +47,7 @@ export const discord = {
       return "Discord settings saved. Restart the worker to apply them. Only the configured owner can invoke Poppet; channel members can read its replies.";
     }),
   load: Effect.gen(function* () {
-    const { dataDirectory } = yield* ChannelEnvironment;
+    const { dataDirectory } = yield* GatewayEnvironment;
     const settings = yield* loadDiscordSettings(dataDirectory);
 
     if (settings === null) {
@@ -57,13 +57,13 @@ export const discord = {
     return Layer.unwrap(
       Effect.tryPromise({
         try: () =>
-          import("#src/channel").then(({ discordChannelLayer }) => discordChannelLayer(settings)),
+          import("#src/adapter").then(({ discordAdapterLayer }) => discordAdapterLayer(settings)),
         catch: () =>
-          new ChannelError({
+          new GatewayError({
             reason: "configuration",
-            message: "Cannot load Discord channel adapter.",
+            message: "Cannot load Discord gateway adapter.",
           }),
       }),
     );
   }),
-} satisfies ChannelRegistration;
+} satisfies GatewayRegistration;

@@ -3,14 +3,14 @@ import type { ChatFailure } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
 import { Match } from "effect";
 
-import { ChannelError } from "#src/channel";
+import { GatewayError } from "#src/adapter";
 
 export interface FailureDecision {
   readonly retryAfterMs: number | null;
   readonly reply: string | null;
 }
 
-const failureReply = (error: ChatFailure | ChannelError | null) => {
+const failureReply = (error: ChatFailure | GatewayError | null) => {
   if (error === null || error instanceof StoreError) {
     return null;
   }
@@ -27,7 +27,7 @@ const failureReply = (error: ChatFailure | ChannelError | null) => {
   return "The request failed. Use /status in this conversation to inspect its session before sending a new request.";
 };
 
-export const channelRetryDelay = (error: ChannelError, attempts: number) => {
+export const gatewayRetryDelay = (error: GatewayError, attempts: number) => {
   const limit = Match.value(error.reason).pipe(
     Match.when("unavailable", () => 6),
     Match.when("uncertain", () => 3),
@@ -38,9 +38,9 @@ export const channelRetryDelay = (error: ChannelError, attempts: number) => {
 };
 
 export const failureDecision = (
-  error: ChatFailure | ChannelError | null,
+  error: ChatFailure | GatewayError | null,
   attempts: number,
 ): FailureDecision => ({
-  retryAfterMs: error instanceof ChannelError ? channelRetryDelay(error, attempts) : null,
+  retryAfterMs: error instanceof GatewayError ? gatewayRetryDelay(error, attempts) : null,
   reply: failureReply(error),
 });

@@ -1,12 +1,12 @@
 import { describe, expect, jest, spyOn, test } from "bun:test";
 import { setImmediate } from "node:timers";
 
-import { MessagingChannel } from "@poppet/gateway";
+import { GatewayAdapter } from "@poppet/gateway";
 import { ChannelType, Client, Events, MessageFlags, Options } from "discord.js";
 import { Effect, Layer, Option, Redacted, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
-import { discordChannelLayer } from "#src/channel";
+import { discordAdapterLayer } from "#src/adapter";
 
 const user = { id: "100", username: "Poppet", discriminator: "0", avatar: null, bot: true };
 
@@ -19,7 +19,7 @@ const settings = {
   token: Redacted.make("secret-discord-token"),
 };
 
-describe("discordChannelLayer", () => {
+describe("discordAdapterLayer", () => {
   test.each(["completed", "stopped"] as const)(
     "when marking %s is rate limited, retries removal without replaying completed reactions",
     async (state) => {
@@ -95,7 +95,7 @@ describe("discordChannelLayer", () => {
         jest.useFakeTimers();
         await Effect.runPromise(
           Effect.gen(function* () {
-            const channel = yield* MessagingChannel;
+            const channel = yield* GatewayAdapter;
             yield* channel.accountId;
 
             const incoming = {
@@ -117,7 +117,7 @@ describe("discordChannelLayer", () => {
               "DELETE 👀",
               "DELETE 👀",
             ]);
-          }).pipe(Effect.provide(discordChannelLayer(settings))),
+          }).pipe(Effect.provide(discordAdapterLayer(settings))),
         );
       } finally {
         jest.useRealTimers();
@@ -305,7 +305,7 @@ describe("discordChannelLayer", () => {
       const guild = await client.guilds.fetch("500");
       await Effect.runPromise(
         Effect.gen(function* () {
-          const channel = yield* MessagingChannel;
+          const channel = yield* GatewayAdapter;
           expect(yield* channel.accountId).toBe(user.id);
           expect(yield* channel.status).toMatchObject({ account: user.id, connected: true });
 
@@ -520,7 +520,7 @@ describe("discordChannelLayer", () => {
             "failure.reason",
             "uncertain",
           );
-        }).pipe(Effect.provide(discordChannelLayer(settings, () => client))),
+        }).pipe(Effect.provide(discordAdapterLayer(settings, () => client))),
       );
       expect(login).toHaveBeenCalledTimes(1);
       expect(destroyed).toHaveBeenCalledTimes(1);
@@ -558,7 +558,7 @@ describe("discordChannelLayer", () => {
     try {
       await Effect.runPromise(
         Effect.gen(function* () {
-          const channel = yield* MessagingChannel;
+          const channel = yield* GatewayAdapter;
           yield* Effect.yieldNow;
           const status = yield* channel.status;
           expect(status).toMatchObject({ connected: false, account: null });
@@ -577,7 +577,7 @@ describe("discordChannelLayer", () => {
           });
         }).pipe(
           Effect.provide(
-            discordChannelLayer(settings, () => client).pipe(Layer.provideMerge(TestClock.layer())),
+            discordAdapterLayer(settings, () => client).pipe(Layer.provideMerge(TestClock.layer())),
           ),
         ),
       );

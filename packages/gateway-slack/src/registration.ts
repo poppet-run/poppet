@@ -1,5 +1,5 @@
-import { ChannelEnvironment, ChannelError, ChannelInput, parseSetupFlags } from "@poppet/gateway";
-import type { ChannelRegistration } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayError, GatewayInput, parseSetupFlags } from "@poppet/gateway";
+import type { GatewayRegistration } from "@poppet/gateway";
 import { Effect, Layer, Redacted, Schema } from "effect";
 
 import { SlackSettings, loadSlackSettings, saveSlackSettings } from "#src/settings";
@@ -24,8 +24,8 @@ export const slack = {
         ["bot-token", "app-token"],
       );
 
-      const environment = yield* ChannelEnvironment;
-      const input = yield* ChannelInput;
+      const environment = yield* GatewayEnvironment;
+      const input = yield* GatewayInput;
       let token = values["bot-token"];
       let appToken = values["app-token"];
 
@@ -51,7 +51,7 @@ export const slack = {
       }).pipe(
         Effect.mapError(
           () =>
-            new ChannelError({
+            new GatewayError({
               reason: "configuration",
               message: "Use valid Slack IDs and a nonempty bot token without whitespace.",
             }),
@@ -63,7 +63,7 @@ export const slack = {
       return "Slack settings saved. Restart the worker to apply them. Only the configured owner can invoke Poppet; channel members can read its replies.";
     }),
   load: Effect.gen(function* () {
-    const { dataDirectory } = yield* ChannelEnvironment;
+    const { dataDirectory } = yield* GatewayEnvironment;
     const settings = yield* loadSlackSettings(dataDirectory);
 
     if (settings === null) {
@@ -73,13 +73,13 @@ export const slack = {
     return Layer.unwrap(
       Effect.tryPromise({
         try: () =>
-          import("#src/channel").then(({ slackChannelLayer }) => slackChannelLayer(settings)),
+          import("#src/adapter").then(({ slackAdapterLayer }) => slackAdapterLayer(settings)),
         catch: () =>
-          new ChannelError({
+          new GatewayError({
             reason: "configuration",
-            message: "Cannot load Slack channel adapter.",
+            message: "Cannot load Slack gateway adapter.",
           }),
       }),
     );
   }),
-} satisfies ChannelRegistration;
+} satisfies GatewayRegistration;

@@ -1,5 +1,5 @@
 import { BunServices } from "@effect/platform-bun";
-import type { ChannelRegistration } from "@poppet/gateway";
+import type { GatewayRegistration } from "@poppet/gateway";
 import { LogfmtLoggerLive } from "@poppet/io";
 import type { ProviderRegistration } from "@poppet/provider";
 import { Effect } from "effect";
@@ -15,7 +15,7 @@ import { createCLIContext } from "#src/commands/context";
 import { doctorCommand } from "#src/commands/doctor/command";
 import { UsageError } from "#src/commands/errors";
 import { gatewayCommand } from "#src/commands/gateway/command";
-import { channels, loadRegisteredChannels } from "#src/commands/gateway/registry";
+import { gateways, loadRegisteredGateways } from "#src/commands/gateway/registry";
 import { mcpCommand } from "#src/commands/mcp/command";
 import { memoryCommand } from "#src/commands/memory/command";
 import { providerCommand } from "#src/commands/provider";
@@ -32,7 +32,7 @@ export const makeCLI = (
   registered: ReadonlyArray<ProviderRegistration>,
   write: ChatWriter = writeChatText,
   worker: typeof manageWorker = manageWorker,
-  registeredChannels: ReadonlyArray<ChannelRegistration> = channels,
+  registeredGateways: ReadonlyArray<GatewayRegistration> = gateways,
   readLine = readChatLine,
   writeThinking: ChatWriter = writeChatThinking,
 ) => {
@@ -40,7 +40,7 @@ export const makeCLI = (
     registered,
     write,
     worker,
-    registeredChannels,
+    registeredGateways,
     readLine,
     writeThinking,
   );
@@ -67,7 +67,7 @@ export const makeCLI = (
   const execute = Command.runWith(app, { version: "0.0.0", renderErrors: false });
 
   return (args: ReadonlyArray<string>) =>
-    execute(commandArgs(args, registeredChannels)).pipe(
+    execute(commandArgs(args, registeredGateways)).pipe(
       Effect.catchTag("ShowHelp", (error) =>
         CliOutput.Formatter.use((formatter) =>
           Effect.fail(new UsageError({ message: formatter.formatErrors(error.errors) })),
@@ -83,12 +83,12 @@ export const makeCLI = (
 
 export const run = (args: ReadonlyArray<string>, worker: typeof manageWorker = manageWorker) =>
   Effect.gen(function* () {
-    const registeredChannels =
+    const registeredGateways =
       !args.some((arg) => arg === "--help" || arg === "-h") &&
       (args[0] === "gateway" ||
         (args[0] === "worker" && (args[1] === "run" || args[1] === "status")))
-        ? yield* loadRegisteredChannels
-        : channels;
+        ? yield* loadRegisteredGateways
+        : gateways;
 
-    return yield* makeCLI(providers, undefined, worker, registeredChannels)(args);
+    return yield* makeCLI(providers, undefined, worker, registeredGateways)(args);
   });

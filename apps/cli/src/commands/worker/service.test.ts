@@ -13,7 +13,7 @@ import { WorkerRequests, workerSocketPath, requestWorker } from "@poppet/worker"
 import { Console, Deferred, Effect, Fiber, Layer, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 
-import { MessagingWorker } from "#src/commands/gateway/channels";
+import { MessagingWorker } from "#src/commands/gateway/gateways";
 import { runWorker } from "#src/commands/worker/host";
 import { workerLaunch } from "#src/commands/worker/service";
 
