@@ -453,7 +453,11 @@ export const createChatStore = () => {
     };
   };
 
-  const pop = () => set("sessionId", sessionFromUrl());
+  const pop = () => {
+    set("sessionId", sessionFromUrl());
+    set("sidebar", false);
+    set("error", "");
+  };
 
   const start = () => {
     try {
