@@ -93,6 +93,7 @@ const harness = async (options: OAuthFixtureOptions = {}, duplicateIssuer = fals
     mcp,
     run: <A, E>(program: Effect.Effect<A, E, MCPSignIns | ApiKeyStore>) =>
       Effect.runPromise(program.pipe(Effect.provide(services), quiet)),
+    signIn: login,
     login: (configured = config) =>
       Effect.runPromise(login(configured).pipe(Effect.provide(services), quiet)),
     close: async () => {
@@ -488,6 +489,46 @@ describe("MCP OAuth", () => {
       } finally {
         await badIssuer.close();
       }
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when the token endpoint is a private address, names the blocked endpoint", async () => {
+    const state = await harness({ tokenEndpoint: "https://10.0.0.1/token" });
+
+    try {
+      const failure = await state.run(Effect.flip(state.signIn()));
+
+      expect(failure.message).toContain("OAuth endpoints must use public HTTPS");
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when the token endpoint rejects the authorization code, names the OAuth error code", async () => {
+    const state = await harness();
+
+    try {
+      const failure = await state.run(
+        Effect.flip(
+          signIn(state.config, {
+            noBrowser: false,
+            remote: false,
+            paste: Effect.never,
+            open: (url) =>
+              Effect.promise(async () => {
+                const callback = await state.server.approve(new URL(url));
+                callback.searchParams.set("code", "forged");
+                await fetch(callback);
+              }),
+            timeoutMs: 5000,
+            now: Date.now,
+          }),
+        ),
+      );
+
+      expect(failure.message).toContain("sign-in failed (invalid_grant)");
     } finally {
       await state.close();
     }

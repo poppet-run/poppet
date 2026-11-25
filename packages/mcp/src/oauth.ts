@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
-import { auth, extractWWWAuthenticateParams } from "@modelcontextprotocol/client";
+import { auth, extractWWWAuthenticateParams, OAuthError } from "@modelcontextprotocol/client";
 import type {
   AuthOptions,
   FetchLike,
@@ -19,7 +19,7 @@ import { Context, Data, Effect, Layer, Option, Redacted, Schema } from "effect";
 import type { Types } from "effect";
 
 import type { MCPHTTPServer, MCPOAuth } from "#src/config";
-import { oauthAddress, oauthFetch } from "#src/oauth-network";
+import { BlockedOAuthEndpoint, oauthAddress, oauthFetch } from "#src/oauth-network";
 
 export class MCPLoginRequired extends Data.TaggedError("MCPLoginRequired")<{
   readonly message: string;
@@ -348,16 +348,14 @@ export const signIn = <E>(config: MCPOAuthServer, options: SignInOptions<E>) =>
           return cause;
         }
 
-        if (cause instanceof Error && cause.message === "OAuth endpoints must use https.") {
+        if (cause instanceof BlockedOAuthEndpoint) {
           return new MCPSignInError({ message: `MCP ${config.id}: ${cause.message}` });
         }
 
-        const errorCodeSchema = Schema.Struct({
-          errorCode: Schema.String.check(Schema.isPattern(/^[a-z0-9_]{1,64}$/)),
-        });
-
-        const parsed = Schema.decodeUnknownOption(errorCodeSchema)(cause);
-        const code = Option.isSome(parsed) ? parsed.value.errorCode : undefined;
+        const code =
+          OAuthError.isInstance(cause) && /^[a-z0-9_]{1,64}$/.test(cause.code)
+            ? cause.code
+            : undefined;
 
         return new MCPSignInError({
           message:

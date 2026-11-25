@@ -26,6 +26,7 @@ export interface OAuthFixtureOptions {
   challengeToolCall?: boolean;
   refreshError?: string;
   stepUpScope?: string;
+  tokenEndpoint?: string;
 }
 
 export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
@@ -89,7 +90,7 @@ export const serveOAuth = (initial: OAuthFixtureOptions = {}) => {
         return Response.json({
           issuer: options.issuer ?? issuer,
           authorization_endpoint: `${origin}/authorize`,
-          token_endpoint: `${origin}/token`,
+          token_endpoint: options.tokenEndpoint ?? `${origin}/token`,
           registration_endpoint: `${origin}${options.customDiscovery ? "/custom-register" : "/register"}`,
           response_types_supported: ["code"],
           code_challenge_methods_supported: ["S256"],
