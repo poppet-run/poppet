@@ -249,6 +249,17 @@ describe("ChatTasks", () => {
             "tool-arguments",
           );
 
+          const unevenCron: ChatTaskAction = {
+            ...create,
+            schedule: { type: "cron", expression: "0,10,15-59 * * * *", timezone: "UTC" },
+          };
+
+          const uneven = yield* recorded(unevenCron, "uneven-cron");
+          expect(yield* execute(unevenCron, uneven.context).pipe(Effect.result)).toHaveProperty(
+            "failure.reason",
+            "tool-arguments",
+          );
+
           const validCron: ChatTaskAction = {
             ...create,
             schedule: { type: "cron", expression: "*/5 * * * *", timezone: "UTC" },

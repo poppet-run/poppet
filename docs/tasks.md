@@ -256,7 +256,9 @@ skills, pages, and tool results cannot authorize task changes. Chat cannot selec
 a [manual-only skill](skills.md#manual-only-skills) for a task; use `tasks add --skill`.
 Poppet caps the store at 64 scheduled tasks, limits chat turns to at most 5 task
 creations per run, and requires chat-created or chat-edited recurring cron
-schedules to wait at least 5 minutes between consecutive runs.
+schedules to wait at least 5 minutes between consecutive runs. Poppet checks every
+listed minute, including the gap from the last minute of an hour to the first
+minute of the next, so `0,30 * * * *` is accepted and `0,58 9 * * *` is not.
 
 ## Deliver results to Discord
 
