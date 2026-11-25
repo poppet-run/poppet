@@ -113,62 +113,61 @@ export const chatCommand = (context: CLIContext) => {
       }
     });
 
-  return Command.make("chat").pipe(
-    Command.withDescription("Chat with the configured provider and model"),
+  return Command.make(
+    "chat",
+    {
+      id: Argument.String("session").pipe(
+        Argument.withSchema(Session.fields.id),
+        Argument.optional,
+      ),
+      skill: skillFlag,
+    },
+    ({ id, skill }) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const options = { sessionId: Option.getOrUndefined(id), skill };
+
+          const rich =
+            readLine === readChatLine &&
+            process.stdin.isTTY &&
+            process.stdout.isTTY &&
+            process.env.TERM !== "dumb";
+
+          if (!rich) {
+            return yield* interactiveChat(
+              options,
+              (command, onSession) => runChat(command, onSession, true),
+              readChatInput(readLine),
+              undefined,
+              (sessionId) => loadHistory(sessionId),
+            );
+          }
+
+          const { terminal, stopped } = yield* openChatTerminal;
+
+          const chat = interactiveChat(
+            options,
+            (command, onSession) => runChat(command, onSession, true, terminal),
+            terminal.read,
+            {
+              welcome: terminal.welcome,
+              session: terminal.session,
+              info: terminal.info,
+              error: terminal.error,
+              begin: terminal.begin,
+              finish: Effect.void,
+            },
+            (sessionId) => loadHistory(sessionId, terminal),
+          );
+
+          yield* Effect.raceFirst(chat, stopped).pipe(
+            Effect.provideService(Console.Console, terminal.console(yield* Console.Console)),
+          );
+        }),
+      ),
+  ).pipe(
+    Command.withDescription("Chat in the terminal, or manage saved sessions"),
     Command.withSubcommands([
-      Command.make(
-        "interactive",
-        {
-          id: Argument.String("session").pipe(
-            Argument.withSchema(Session.fields.id),
-            Argument.optional,
-          ),
-          skill: skillFlag,
-        },
-        ({ id, skill }) =>
-          Effect.scoped(
-            Effect.gen(function* () {
-              const options = { sessionId: Option.getOrUndefined(id), skill };
-
-              const rich =
-                readLine === readChatLine &&
-                process.stdin.isTTY &&
-                process.stdout.isTTY &&
-                process.env.TERM !== "dumb";
-
-              if (!rich) {
-                return yield* interactiveChat(
-                  options,
-                  (command, onSession) => runChat(command, onSession, true),
-                  readChatInput(readLine),
-                  undefined,
-                  (sessionId) => loadHistory(sessionId),
-                );
-              }
-
-              const { terminal, stopped } = yield* openChatTerminal;
-
-              const chat = interactiveChat(
-                options,
-                (command, onSession) => runChat(command, onSession, true, terminal),
-                terminal.read,
-                {
-                  welcome: terminal.welcome,
-                  session: terminal.session,
-                  info: terminal.info,
-                  error: terminal.error,
-                  begin: terminal.begin,
-                  finish: Effect.void,
-                },
-                (sessionId) => loadHistory(sessionId, terminal),
-              );
-
-              yield* Effect.raceFirst(chat, stopped).pipe(
-                Effect.provideService(Console.Console, terminal.console(yield* Console.Console)),
-              );
-            }),
-          ),
-      ).pipe(Command.withDescription("Open a terminal prompt for a new or saved session")),
       Command.make(
         "new",
         {

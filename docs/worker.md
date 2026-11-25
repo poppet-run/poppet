@@ -224,7 +224,7 @@ Chat, memory, session inspection, and `store status` work while it is running:
 ```sh
 poppet memory set project.name Acorn
 poppet chat new "What is the project called?"
-poppet chat interactive
+poppet chat
 poppet chat sessions
 poppet chat search "project"
 poppet memory list
@@ -305,7 +305,7 @@ seconds. Native launchd and systemd behavior remain manual checks.
 ## Optional naming work
 
 Chat rename commands use the same local-or-worker routing as chat inspection.
-`chat interactive [session]` uses the same worker transport for each entered
+`chat [session]` uses the same worker transport for each entered
 message. Waiting at the prompt does not hold storage. Session metadata is returned
 with the existing stderr announcement, so one-shot clients keep their output and
 interactive clients can retain the session after a failed turn.

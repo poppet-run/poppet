@@ -390,7 +390,7 @@ assistant-capable provider and model for messaging and scheduled tasks.
 
 - [ ] Sign in to each provider you use, select a supported model, and start a
       chat. Ask it to use a local read-only tool and expect inference and the tool round trip to succeed.
-- [ ] Run `poppet chat interactive`. Send two messages, confirm context is
+- [ ] Run `poppet chat`. Send two messages, confirm context is
       retained, then cancel a longer request with Ctrl-C. Start another chat and confirm
       it works.
 - [ ] For ChatGPT, repeat a request when the access token nears expiry. Expect
