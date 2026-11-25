@@ -506,6 +506,40 @@ describe.concurrent("conversation", () => {
     }
   });
 
+  test("when the owner's timezone is configured, schedules tasks in it instead of asking", async () => {
+    const chatTasks: ChatTasks["Service"] = { prepare: () => Effect.die("unused") };
+
+    const configured = await fixture(() => final(), {
+      chatTasks,
+      policy: { timeZone: "Europe/London" },
+    });
+
+    const unset = await fixture(() => final(), { chatTasks });
+
+    try {
+      for (const state of [configured, unset]) {
+        await state.run(
+          Effect.gen(function* () {
+            const session = yield* (yield* Store).createSession("test-provider", "test-model");
+            expect(yield* reportedFailures(session.id, "Remind me at 9")).toEqual([]);
+          }),
+        );
+      }
+
+      expect(configured.requests[0]!.instructions).toContain(
+        "The owner's timezone is Europe/London, where it is",
+      );
+      expect(configured.requests[0]!.instructions).toContain(
+        "Use Europe/London when the owner gives no offset or timezone",
+      );
+      expect(unset.requests[0]!.instructions).toContain("Ask for an explicit offset");
+      expect(unset.requests[0]!.instructions).not.toContain("owner's timezone");
+    } finally {
+      await configured.close();
+      await unset.close();
+    }
+  });
+
   test("when page content is untrusted, withdraws task, memory, and MCP tools for the rest of the run", async () => {
     let turns = 0;
 

@@ -1,3 +1,4 @@
+import { timeZone } from "@poppet/config";
 import { Session } from "@poppet/store";
 import { TaskPatch, NewTask, TaskError, parseTimestamp, taskOperation } from "@poppet/tasks";
 import { Effect, Option, Schema } from "effect";
@@ -41,6 +42,8 @@ export const tasksCommand = (context: CLIContext) => {
         },
         ({ id, name, prompt, at, cron, tz, until, json }) =>
           Effect.gen(function* () {
+            const defaultZone = yield* timeZone;
+
             const patch = yield* taskOperation(() => {
               const fields: Record<string, Schema.Json> = {};
 
@@ -57,6 +60,8 @@ export const tasksCommand = (context: CLIContext) => {
                   Option.fromUndefinedOr(at[0]),
                   Option.fromUndefinedOr(cron[0]),
                   Option.fromUndefinedOr(tz[0]),
+                  Option.none(),
+                  defaultZone,
                 );
               }
 
@@ -66,7 +71,7 @@ export const tasksCommand = (context: CLIContext) => {
 
               if (Object.keys(fields).length === 0) {
                 throw new TaskError({
-                  message: "Supply --name, --prompt, --at, --cron with --tz, or --until.",
+                  message: "Supply --name, --prompt, --at, --cron, or --until.",
                 });
               }
 
@@ -74,7 +79,7 @@ export const tasksCommand = (context: CLIContext) => {
             });
 
             yield* runTaskCommand(runtime, { action: "edit", id, patch }, json);
-          }),
+          }).pipe(Effect.provide(runtime.config)),
       ).pipe(Command.withDescription("Edit a task's name, prompt, complete schedule or end time")),
       Command.make(
         "run",
@@ -104,7 +109,7 @@ export const tasksCommand = (context: CLIContext) => {
             Flag.map(([value]) => Option.fromUndefinedOr(value)),
           ),
           tz: Flag.String("tz").pipe(
-            Flag.withDescription("Timezone for --cron"),
+            Flag.withDescription("Timezone for --cron; defaults to timeZone in config.json"),
             Flag.atMost(1),
             Flag.map(([value]) => Option.fromUndefinedOr(value)),
           ),
@@ -124,7 +129,11 @@ export const tasksCommand = (context: CLIContext) => {
         },
         ({ name, at, cron, tz, delay, until, prompt, skill, to, json }) =>
           Effect.gen(function* () {
-            const schedule = yield* taskOperation(() => parseTaskSchedule(at, cron, tz, delay));
+            const defaultZone = yield* timeZone;
+
+            const schedule = yield* taskOperation(() =>
+              parseTaskSchedule(at, cron, tz, delay, defaultZone),
+            );
 
             const delivery = yield* taskOperation(() => parseTaskDestination(to));
 

@@ -719,6 +719,31 @@ describe("makeCLI", () => {
     }
   });
 
+  test("when the owner's timezone is configured, schedules cron tasks in it without --tz", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-tasks-zone-"));
+
+    const environment = await configure(directory, {
+      model: "test-model",
+      timeZone: "Europe/London",
+    });
+
+    try {
+      const added = await invoke(
+        ["tasks", "add", "--json", "Summary", "--cron", "0 9 * * *", "Summarize"],
+        environment,
+      );
+
+      expect(added.exitCode).toBe(0);
+      expect(JSON.parse(added.stdout).schedule).toEqual({
+        type: "cron",
+        expression: "0 9 * * *",
+        timezone: "Europe/London",
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("when managing saved tasks without credentials, validates schedules before creating a store", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-tasks-cli-"));
     const environment = await configure(directory, { model: "test-model" });

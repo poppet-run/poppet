@@ -41,6 +41,7 @@ after editing settings: `poppet worker restart`.
 | `provider`                   | `openai-chatgpt` | Default provider for new chats and tasks                                                        |
 | `model`                      | Unset            | Required model ID for new chats and tasks                                                       |
 | `applicationName`            | `Poppet`         | Name used during initial ChatGPT registration                                                   |
+| `timeZone`                   | Unset            | Your IANA time zone; see [time zone](#time-zone)                                                |
 | `discord`                    | Unconfigured     | Owner ID, guild ID, and home channel ID                                                         |
 | `slack`                      | Unconfigured     | Owner ID, team ID, and home channel ID                                                          |
 | `webSearchProvider`          | Unset            | Enable search with `brave` or `kagi`                                                            |
@@ -72,6 +73,23 @@ writable by group or other users. Symlinks and hard links are rejected. Unknown
 keys, incorrect types, and invalid values fail clearly. Text values must be
 nonempty and trimmed. Relative MCP working-directory paths
 resolve beside `config.json`; bare executable names use `PATH`. Literal `~` is not expanded.
+
+## Time zone
+
+Set `timeZone` to your IANA time zone name so Poppet knows your local time:
+
+```json
+{
+  "timeZone": "Europe/London"
+}
+```
+
+Chats that can schedule tasks then see the local date and time, and the agent
+uses this zone for task times you give without an offset or zone instead of
+asking. `poppet tasks add` and `tasks edit` use it when `--cron` is given without
+`--tz`. One-off `--at` timestamps still need an explicit offset, and quiet hours
+keep their own `timeZone`. Unknown zones and UTC offsets such as `+01:00` are
+rejected. Restart the worker after changing it.
 
 ## Quiet hours
 

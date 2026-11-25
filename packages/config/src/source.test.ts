@@ -6,7 +6,13 @@ import { join } from "node:path";
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
-import { loadConfig, quietHours, taskCatchUpMinutes, webSearchProvider } from "#src/config";
+import {
+  loadConfig,
+  quietHours,
+  taskCatchUpMinutes,
+  timeZone,
+  webSearchProvider,
+} from "#src/config";
 import { ConfigSource, loadConfigSource, updateConfigFile } from "#src/source";
 
 const load = (environment: Record<string, string>) =>
@@ -39,6 +45,7 @@ describe("loadConfigSource", () => {
       const file = {
         provider: "other-provider",
         model: "file-model",
+        timeZone: "Europe/London",
         webSearchProvider: "kagi",
         tasks: {
           catchUpMinutes: 15,
@@ -86,6 +93,7 @@ describe("loadConfigSource", () => {
       const resolved = await Effect.runPromise(
         Effect.all({
           provider: webSearchProvider,
+          zone: timeZone,
           catchUp: taskCatchUpMinutes,
           quiet: quietHours,
           mcp: mcpServers,
@@ -96,6 +104,7 @@ describe("loadConfigSource", () => {
 
       expect(resolved).toMatchObject({
         provider: "kagi",
+        zone: "Europe/London",
         catchUp: 15,
         quiet: { start: "22:00", end: "07:30", timeZone: "Europe/London" },
         output: 4096,
@@ -150,6 +159,7 @@ describe("loadConfigSource", () => {
     ["search credential in file", '{"braveSearchApiKey":"must-not-appear"}'],
     ["empty setting", '{"model":""}'],
     ["null setting", '{"model":null}'],
+    ["unknown time zone", '{"timeZone":"Mars/Olympus"}'],
     ["non-object settings", "[]"],
     ["oversized file", " ".repeat(65_537)],
   ])(

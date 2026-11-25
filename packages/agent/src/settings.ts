@@ -1,3 +1,4 @@
+import { timeZone } from "@poppet/config";
 import { savedFactsBytes } from "@poppet/memory";
 import { Config, Context, Effect, Layer, Schema } from "effect";
 
@@ -21,6 +22,7 @@ export interface ChatPolicy {
   readonly textFileBytes: number;
   readonly imagesPerRequest: number;
   readonly imageContextBytes: number;
+  readonly timeZone: string | null;
 }
 
 export class ChatSettings extends Context.Service<ChatSettings, ChatPolicy>()(
@@ -47,6 +49,7 @@ export const defaultPolicy: ChatPolicy = {
   textFileBytes: 64 * 1024,
   imagesPerRequest: 8,
   imageContextBytes: 6144,
+  timeZone: null,
 };
 
 const bounded = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }));
@@ -70,6 +73,7 @@ export const ChatSettingsLive = Layer.effect(
         maxConcurrentRequests: Config.schema(bounded(8), "maxConcurrentRequests").pipe(
           Config.withDefault(defaultPolicy.maxConcurrentRequests),
         ),
+        timeZone,
       },
       { concurrency: 1 },
     ).pipe(Effect.map((settings) => Object.assign({}, defaultPolicy, settings))),

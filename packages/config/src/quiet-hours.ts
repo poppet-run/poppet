@@ -48,14 +48,16 @@ const ClockTime = Schema.String.check(
   ),
 );
 
+export const TimeZone = Schema.String.check(
+  Schema.makeFilter(
+    (zone) => knownZone(zone) || "Use an IANA time zone name, such as Europe/London.",
+  ),
+);
+
 export const QuietHours = Schema.Struct({
   start: ClockTime,
   end: ClockTime,
-  timeZone: Schema.String.check(
-    Schema.makeFilter(
-      (zone) => knownZone(zone) || "Use an IANA time zone name, such as Europe/London.",
-    ),
-  ),
+  timeZone: TimeZone,
 }).check(
   Schema.makeFilter(
     (window) => window.start !== window.end || "Use different quiet-hours start and end times.",

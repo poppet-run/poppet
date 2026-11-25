@@ -18,7 +18,9 @@ export {
   updateConfigFile,
 } from "#src/source";
 
-export { QuietHours, quietHours, quietHoursEnd } from "#src/quiet-hours";
+import { TimeZone } from "#src/quiet-hours";
+
+export { QuietHours, quietHours, quietHoursEnd, TimeZone } from "#src/quiet-hours";
 
 export const gatewayPackages = Config.schema(
   Schema.fromJsonString(Schema.Array(ConfigText)),
@@ -29,6 +31,12 @@ export const taskCatchUpMinutes = Config.schema(
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1440 })),
   "catchUpMinutes",
 ).pipe(Config.withDefault(60));
+
+/** The owner's IANA time zone, or null when unset. */
+export const timeZone = Config.schema(TimeZone, "timeZone").pipe(
+  Config.option,
+  Config.map(Option.getOrNull),
+);
 
 export const webSearchProvider = Config.schema(
   Schema.Literals(["brave", "kagi"]),
